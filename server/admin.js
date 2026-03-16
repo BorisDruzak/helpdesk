@@ -1,0 +1,4052 @@
+        let pollInterval = null;
+        let currentTools = [];
+        let selectedTool = null;
+        let currentEditorTab = 'form';
+        let appInitialized = false;
+        
+        // Auth header for API calls (admin uses admin_auth_token from localStorage)
+        function getAuthHeaders(includeContentType) {
+            const token = localStorage.getItem('admin_auth_token');
+            const headers = {};
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            if (includeContentType) headers['Content-Type'] = 'application/json';
+            return headers;
+        }
+
+        /** Безопасный разбор ответа как JSON (избегает ошибки при HTML/не-JSON). */
+        async function responseToJson(response) {
+            const text = await response.text();
+            if (!text || !text.trim()) return {};
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                const preview = text.slice(0, 120).replace(/\s+/g, ' ');
+                throw new Error('Сервер вернул не JSON (возможно, требуется вход в панель). ' + (preview ? ' Ответ: ' + preview : ''));
+            }
+        }
+        
+        // Initialize (will be called after successful login)
+        function initializeApp() {
+            if (appInitialized) {
+                return; // Prevent double initialization
+            }
+            appInitialized = true;
+            loadAgents();
+            loadTickets();
+            loadPendingConnections();
+            startPolling();
+        }
+        
+        // Don't auto-initialize - wait for authentication
+        // document.addEventListener('DOMContentLoaded', () => {
+        //     initializeApp();
+        // });
+        
+        // Polling
+        function startPolling() {
+            // Poll every 3 seconds
+            pollInterval = setInterval(() => {
+                loadAgents();
+                loadTickets();
+                loadPendingConnections();
+            }, 3000);
+        }
+        
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+        
+        // Load Agents
+        async function loadAgents() {
+            try {
+                const response = await fetch('/api/agents', { headers: getAuthHeaders() });
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'ok') {
+                    updateAgentStatus(data.agents || []);
+                    updateDeviceSelector(data.agents || []);
+                } else {
+                    if (response.status === 401) console.warn('Auth required for /api/agents');
+                    updateAgentStatus([]);
+                }
+            } catch (error) {
+                console.error('Error loading agents:', error);
+                updateAgentStatus([]);
+            }
+        }
+        
+        function updateAgentStatus(agents) {
+            const container = document.getElementById('agentStatusContainer');
+            
+            if (agents.length === 0) {
+                container.innerHTML = `
+                    <div class="agent-status agent-offline">
+                        <span class="status-indicator"></span>
+                        Не в сети (0 агентов)
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="agent-status agent-online">
+                        <span class="status-indicator"></span>
+                        В сети (${agents.length} ${agents.length > 1 ? 'агента' : 'агент'})
+                    </div>
+                `;
+            }
+        }
+        
+        function updateDeviceSelector(agents) {
+            const select = document.getElementById('deviceSelect');
+            const currentValue = select.value;
+            
+            select.innerHTML = '<option value="">-- Выберите устройство --</option>';
+            
+            agents.forEach(agent => {
+                const option = document.createElement('option');
+                option.value = agent.device_id;
+                option.textContent = `${agent.device_id} (${agent.user_display_name || 'Неизвестно'})`;
+                select.appendChild(option);
+            });
+            
+            // Restore selection if still available
+            if (currentValue && agents.some(a => a.device_id === currentValue)) {
+                select.value = currentValue;
+            }
+        }
+        
+        // Load Tickets
+        async function loadTickets() {
+            try {
+                const response = await fetch('/api/tickets', { headers: getAuthHeaders() });
+                const data = await response.json();
+                
+                const loadingEl = document.getElementById('ticketsLoading');
+                const errorEl = document.getElementById('ticketsError');
+                const containerEl = document.getElementById('ticketsContainer');
+                const emptyEl = document.getElementById('ticketsEmpty');
+                
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    const tickets = data.tickets || [];
+                    
+                    if (tickets.length === 0) {
+                        containerEl.style.display = 'none';
+                        emptyEl.style.display = 'block';
+                    } else {
+                        emptyEl.style.display = 'none';
+                        containerEl.style.display = 'block';
+                        renderTicketsTable(tickets);
+                    }
+                } else {
+                    errorEl.textContent = `Ошибка: ${data.error || 'Неизвестная ошибка'}`;
+                    errorEl.style.display = 'block';
+                    containerEl.style.display = 'none';
+                    emptyEl.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading tickets:', error);
+                const errorEl = document.getElementById('ticketsError');
+                errorEl.textContent = `Ошибка: ${error.message}`;
+                errorEl.style.display = 'block';
+                document.getElementById('ticketsLoading').style.display = 'none';
+                document.getElementById('ticketsContainer').style.display = 'none';
+            }
+        }
+        
+        function renderTicketsTable(tickets) {
+            const tbody = document.getElementById('ticketsTableBody');
+            tbody.innerHTML = '';
+            
+            // Sort by updated_at descending
+            tickets.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+            
+            tickets.forEach(ticketData => {
+                // Поддержка старого формата (когда tickets это массив объектов ticket) и нового (с ticket и session)
+                const ticket = ticketData.ticket || ticketData;
+                
+                const row = document.createElement('tr');
+                
+                const statusClass = ticket.status === 'open' ? 'status-open' : 
+                                   ticket.status === 'closed' ? 'status-closed' : 'status-pending';
+                
+                const tags = (ticket.tags || []).map(tag => 
+                    `<span class="tag">${tag}</span>`
+                ).join('');
+                
+                const updatedAt = ticket.updated_at ?
+                    new Date(ticket.updated_at).toLocaleString('ru-RU') : '—';
+                
+                // Индикатор online/offline агента
+                const agentOnline = ticket.agent_online || false;
+                const agentStatusClass = agentOnline ? 'agent-online' : 'agent-offline';
+                const agentStatusText = agentOnline ? '🟢 В сети' : '🔴 Не в сети';
+                
+                row.innerHTML = `
+                    <td><a href="/ticket.html?ticket_id=${ticket.ticket_id}" class="ticket-link">${ticket.ticket_id}</a></td>
+                    <td>${ticket.device_id || '—'}</td>
+                    <td><span class="agent-status ${agentStatusClass}" style="font-size: 11px; padding: 3px 8px;">${agentStatusText}</span></td>
+                    <td>${ticket.user_display_name || '—'}</td>
+                    <td>${ticket.title || 'Без названия'}</td>
+                    <td><span class="status-badge ${statusClass}">${ticket.status || 'неизвестно'}</span></td>
+                    <td>${updatedAt}</td>
+                    <td>${ticket.assigned_to || '-'}</td>
+                    <td>${tags || '-'}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Load Tools
+        async function loadTools() {
+            const deviceId = document.getElementById('deviceSelect').value;
+            
+            if (!deviceId) {
+                alert('Сначала выберите устройство');
+                return;
+            }
+            
+            const loadingEl = document.getElementById('toolsLoading');
+            const errorEl = document.getElementById('toolsError');
+            const containerEl = document.getElementById('toolsContainer');
+            const emptyEl = document.getElementById('toolsEmpty');
+            
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            containerEl.style.display = 'none';
+            emptyEl.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/tools?device_id=${deviceId}`, { headers: getAuthHeaders() });
+                const data = await response.json();
+                
+                loadingEl.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    currentTools = data.tools || [];
+                    
+                    if (currentTools.length === 0) {
+                        emptyEl.style.display = 'block';
+                    } else {
+                        containerEl.style.display = 'block';
+                        renderToolsList(currentTools);
+                    }
+                } else {
+                    errorEl.textContent = `Ошибка: ${data.error || 'Неизвестная ошибка'}`;
+                    errorEl.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading tools:', error);
+                loadingEl.style.display = 'none';
+                errorEl.textContent = `Ошибка: ${error.message}`;
+                errorEl.style.display = 'block';
+            }
+        }
+        
+        function renderToolsList(tools) {
+            const listEl = document.getElementById('toolsList');
+            listEl.innerHTML = '';
+            
+            tools.forEach((tool, index) => {
+                const toolEl = document.createElement('div');
+                toolEl.className = 'tool-item';
+                toolEl.onclick = () => selectTool(index);
+                
+                const riskClass = tool.risk_level === 'low' ? 'badge-low' : 
+                                 tool.risk_level === 'medium' ? 'badge-medium' : 'badge-high';
+                
+                const allowRoles = (tool.allow_roles || []).join(', ') || 'не указаны';
+                const requiresConsent = tool.requires_consent ? 'требуется согласие' : 'без согласия';
+                
+                toolEl.innerHTML = `
+                    <div class="tool-header">
+                        <span class="tool-name">${tool.name || 'Без названия'}</span>
+                        <div class="tool-badges">
+                            <span class="badge ${riskClass}">${tool.risk_level || 'неизвестно'}</span>
+                            <span class="badge">${requiresConsent}</span>
+                        </div>
+                    </div>
+                    <div class="tool-description">${tool.description || 'Без описания'}</div>
+                    <div class="tool-module">Модуль: ${tool.module || 'неизвестно'} | Роли: ${allowRoles}</div>
+                `;
+                
+                listEl.appendChild(toolEl);
+            });
+        }
+        
+        function selectTool(index) {
+            selectedTool = currentTools[index];
+            
+            // Update selected state
+            const toolItems = document.querySelectorAll('.tool-item');
+            toolItems.forEach((item, i) => {
+                item.classList.toggle('selected', i === index);
+            });
+            
+            // Show editor
+            document.getElementById('toolEditor').style.display = 'block';
+            document.getElementById('toolEditorTitle').textContent = `Tool: ${selectedTool.name}`;
+            
+            // Build form
+            buildParamsForm(selectedTool.params_schema || {});
+            
+            // Reset result
+            document.getElementById('toolResult').style.display = 'none';
+        }
+        
+        function clearToolSelection() {
+            selectedTool = null;
+            document.getElementById('toolEditor').style.display = 'none';
+            
+            const toolItems = document.querySelectorAll('.tool-item');
+            toolItems.forEach(item => item.classList.remove('selected'));
+        }
+        
+        function buildParamsForm(schema) {
+            const formEl = document.getElementById('paramsForm');
+            formEl.innerHTML = '';
+            
+            if (!schema.properties || Object.keys(schema.properties).length === 0) {
+                formEl.innerHTML = '<p style="color: #8e8e93;">This tool has no parameters</p>';
+                document.getElementById('paramsJsonInput').value = '{}';
+                return;
+            }
+            
+            const params = {};
+            
+            for (const [key, prop] of Object.entries(schema.properties)) {
+                const groupEl = document.createElement('div');
+                groupEl.className = 'form-group';
+                
+                const label = document.createElement('label');
+                label.textContent = `${key}${schema.required?.includes(key) ? ' *' : ''}`;
+                groupEl.appendChild(label);
+                
+                let inputEl;
+                
+                if (prop.type === 'boolean') {
+                    inputEl = document.createElement('select');
+                    inputEl.innerHTML = `
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    `;
+                    params[key] = true;
+                } else if (prop.type === 'number' || prop.type === 'integer') {
+                    inputEl = document.createElement('input');
+                    inputEl.type = 'number';
+                    inputEl.placeholder = prop.description || key;
+                    params[key] = 0;
+                } else if (prop.enum) {
+                    inputEl = document.createElement('select');
+                    prop.enum.forEach(val => {
+                        const option = document.createElement('option');
+                        option.value = val;
+                        option.textContent = val;
+                        inputEl.appendChild(option);
+                    });
+                    params[key] = prop.enum[0];
+                } else {
+                    inputEl = document.createElement('input');
+                    inputEl.type = 'text';
+                    inputEl.placeholder = prop.description || key;
+                    params[key] = '';
+                }
+                
+                inputEl.id = `param_${key}`;
+                inputEl.dataset.paramKey = key;
+                inputEl.dataset.paramType = prop.type;
+                
+                inputEl.addEventListener('input', updateJsonFromForm);
+                
+                groupEl.appendChild(inputEl);
+                
+                if (prop.description) {
+                    const desc = document.createElement('small');
+                    desc.style.color = '#8e8e93';
+                    desc.textContent = prop.description;
+                    groupEl.appendChild(desc);
+                }
+                
+                formEl.appendChild(groupEl);
+            }
+            
+            // Initialize JSON
+            document.getElementById('paramsJsonInput').value = JSON.stringify(params, null, 2);
+        }
+        
+        function updateJsonFromForm() {
+            const params = {};
+            const inputs = document.querySelectorAll('[data-param-key]');
+            
+            inputs.forEach(input => {
+                const key = input.dataset.paramKey;
+                const type = input.dataset.paramType;
+                let value = input.value;
+                
+                if (type === 'boolean') {
+                    value = value === 'true';
+                } else if (type === 'number' || type === 'integer') {
+                    value = parseFloat(value) || 0;
+                }
+                
+                params[key] = value;
+            });
+            
+            document.getElementById('paramsJsonInput').value = JSON.stringify(params, null, 2);
+        }
+        
+        function switchEditorTab(tab) {
+            currentEditorTab = tab;
+            
+            // Update tabs
+            document.querySelectorAll('.editor-tab').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent.toLowerCase().includes(tab));
+            });
+            
+            // Update content
+            document.querySelectorAll('.editor-content').forEach(content => {
+                content.classList.toggle('active', content.id.includes(tab === 'form' ? 'form' : 'json'));
+            });
+            
+            // Sync JSON to form if switching to form
+            if (tab === 'form') {
+                try {
+                    const params = JSON.parse(document.getElementById('paramsJsonInput').value);
+                    
+                    for (const [key, value] of Object.entries(params)) {
+                        const input = document.getElementById(`param_${key}`);
+                        if (input) {
+                            input.value = value;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Invalid JSON:', e);
+                }
+            }
+        }
+        
+        async function runTool() {
+            if (!selectedTool) {
+                alert('Инструмент не выбран');
+                return;
+            }
+            
+            const deviceId = document.getElementById('deviceSelect').value;
+            if (!deviceId) {
+                alert('Выберите устройство');
+                return;
+            }
+            
+            let params;
+            try {
+                params = JSON.parse(document.getElementById('paramsJsonInput').value);
+            } catch (e) {
+                alert('Некорректный JSON параметров: ' + e.message);
+                return;
+            }
+            
+            const resultEl = document.getElementById('toolResult');
+            const contentEl = document.getElementById('toolResultContent');
+            
+            resultEl.style.display = 'block';
+            contentEl.innerHTML = '<p style="color: #8e8e93;">Выполнение инструмента...</p>';
+            
+            try {
+                const response = await fetch('/api/admin/run_tool', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        tool_name: selectedTool.name,
+                        params: params,
+                        mode: 'system_ticket'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    contentEl.innerHTML = `
+                        <div class="success-message">
+                            Инструмент выполнен успешно!<br>
+                            <a href="/ticket.html?ticket_id=${data.ticket_id}" class="ticket-link" target="_blank">
+                                Открыть тикет ${data.ticket_id}
+                            </a>
+                        </div>
+                        <pre>${JSON.stringify(data.result, null, 2)}</pre>
+                    `;
+                    
+                    // Refresh tickets
+                    loadTickets();
+                } else {
+                    contentEl.innerHTML = `
+                        <div class="error-message">
+                            Ошибка: ${data.error || 'Неизвестная ошибка'}<br>
+                            ${data.details ? JSON.stringify(data.details) : ''}
+                        </div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error running tool:', error);
+                contentEl.innerHTML = `
+                    <div class="error-message">
+                        Ошибка: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        function refreshAll() {
+            loadAgents();
+            loadTickets();
+            
+            const deviceId = document.getElementById('deviceSelect').value;
+            if (deviceId && currentTools.length > 0) {
+                loadTools();
+            }
+        }
+
+        // Token Generation Functions
+        async function generateToken() {
+            const deviceUuid = document.getElementById('deviceUuidInput').value.trim();
+            const tokenError = document.getElementById('tokenError');
+            const tokenResult = document.getElementById('tokenResult');
+            const generatedToken = document.getElementById('generatedToken');
+            
+            // Hide previous messages
+            tokenError.style.display = 'none';
+            tokenResult.style.display = 'none';
+            
+            if (!deviceUuid) {
+                tokenError.textContent = 'Please enter device UUID';
+                tokenError.style.display = 'block';
+                return;
+            }
+            
+            // Validate UUID format
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(deviceUuid)) {
+                tokenError.textContent = 'Invalid UUID format';
+                tokenError.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        uuid: deviceUuid
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    generatedToken.value = data.token;
+                    tokenResult.style.display = 'block';
+                } else {
+                    tokenError.textContent = data.error || 'Не удалось сгенерировать токен';
+                    tokenError.style.display = 'block';
+                }
+            } catch (error) {
+                tokenError.textContent = `Ошибка: ${error.message}`;
+                tokenError.style.display = 'block';
+            }
+        }
+        
+        function clearTokenForm() {
+            document.getElementById('deviceUuidInput').value = '';
+            document.getElementById('tokenError').style.display = 'none';
+            document.getElementById('tokenResult').style.display = 'none';
+            document.getElementById('tokenSuccess').style.display = 'none';
+        }
+        
+        function copyToken() {
+            const tokenInput = document.getElementById('generatedToken');
+            tokenInput.select();
+            tokenInput.setSelectionRange(0, 99999); // For mobile devices
+            
+            try {
+                document.execCommand('copy');
+                const tokenSuccess = document.getElementById('tokenSuccess');
+                tokenSuccess.style.display = 'block';
+                setTimeout(() => {
+                    tokenSuccess.style.display = 'none';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy token:', err);
+            }
+        }
+
+        // Pending Connections Functions
+        async function loadPendingConnections() {
+            const loadingEl = document.getElementById('pendingConnectionsLoading');
+            const listEl = document.getElementById('pendingConnectionsList');
+            const emptyEl = document.getElementById('pendingConnectionsEmpty');
+            const tbody = document.getElementById('pendingConnectionsTableBody');
+            
+            try {
+                loadingEl.style.display = 'block';
+                listEl.style.display = 'none';
+                emptyEl.style.display = 'none';
+                
+                const response = await fetch('/api/pending_connections', { headers: getAuthHeaders() });
+                const data = await response.json();
+                
+                loadingEl.style.display = 'none';
+                
+                if (data.status === 'ok' && data.pending_connections && data.pending_connections.length > 0) {
+                    tbody.innerHTML = '';
+                    
+                    data.pending_connections.forEach(conn => {
+                        const row = document.createElement('tr');
+                        
+                        const ageMinutes = Math.floor(conn.age_seconds / 60);
+                        const ageSeconds = Math.floor(conn.age_seconds % 60);
+                        const ageText = ageMinutes > 0
+                            ? `${ageMinutes}м ${ageSeconds}с назад`
+                            : `${ageSeconds}с назад`;
+                        
+                        const reasonText = conn.reason === 'no_token'
+                            ? 'Нет токена'
+                            : conn.reason === 'invalid_token'
+                            ? 'Неверный токен'
+                            : 'Неизвестно';
+                        
+                        row.innerHTML = `
+                            <td style="font-family: monospace; font-size: 12px;">${conn.device_id}</td>
+                            <td>${ageText}</td>
+                            <td><span class="status-badge status-pending">${reasonText}</span></td>
+                            <td>${conn.ip_address || '—'}</td>
+                            <td>
+                                <button class="btn" style="padding: 4px 8px; font-size: 12px;" 
+                                        onclick="useDeviceUuid('${conn.device_id}')">
+                                    Использовать UUID
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    
+                    listEl.style.display = 'block';
+                } else {
+                    emptyEl.style.display = 'block';
+                }
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                console.error('Error loading pending connections:', error);
+            }
+        }
+        
+        function useDeviceUuid(deviceUuid) {
+            document.getElementById('deviceUuidInput').value = deviceUuid;
+            // Scroll to form
+            document.getElementById('deviceUuidInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById('deviceUuidInput').focus();
+        }
+
+        // ============================================
+        // Ticket Queue (Stage 10.1)
+        // ============================================
+        const QUEUE_LAYOUT_KEY = 'admin_queue_layout_v1';
+        const QUEUE_POLL_INTERVAL_MS = 25000;
+        const QUEUE_POLL_INTERVAL_WS_ACTIVE_MS = 60000;
+        let queueState = { tickets: [], lastSync: null, wsConnected: false, canWrite: true, actorId: '', actorRole: '', subscribedTicketIds: new Set(), queueReloadLock: false };
+        const STATUS_RU_TO_CANONICAL = { 'Новая': 'new', 'В очереди у оператора': 'triaged', 'В работе': 'in_progress', 'Ожидание ответа пользователя': 'waiting_on_user', 'Ожидание внешней стороны': 'waiting_on_vendor', 'Решена': 'resolved', 'Закрыта': 'closed' };
+        const STATUS_CANONICAL_TO_RU = { 'new': 'Новая', 'triaged': 'В очереди у оператора', 'in_progress': 'В работе', 'waiting_on_user': 'Ожидание ответа пользователя', 'waiting_on_vendor': 'Ожидание внешней стороны', 'resolved': 'Решена', 'closed': 'Закрыта' };
+        const PRIORITY_CLASS_TO_RU = { P0: 'Критический', P1: 'Высокий', P2: 'Средний', P3: 'Низкий' };
+        let queueManageModalTicketId = null;
+        let queueManageModalTicket = null;
+        let queueManageAssignAvailable = true;
+        let queuePollTimer = null;
+        let queueWs = null;
+        let queueReconnectAttempts = 0;
+        const QUEUE_WS_RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000];
+        let queueDebounceReloadTimer = null;
+        const QUEUE_DEBOUNCE_RELOAD_MS = 400;
+
+        let pendingAgentUpdateOperationId = null;
+        let pendingAgentUpdateDeviceId = null;
+        let agentUpdatesBulkRows = [];
+        let agentUpdatesBulkStatus = {};
+
+        function setPendingAgentUpdateOperation(opId, deviceId) {
+            pendingAgentUpdateOperationId = opId;
+            pendingAgentUpdateDeviceId = deviceId;
+        }
+
+        function setBulkPendingOperations(ops) {
+            agentUpdatesBulkRows = (ops || []).slice();
+            agentUpdatesBulkStatus = {};
+        }
+
+        function agentUpdateOnOperationUpdated(data) {
+            const opId = data.operation_id;
+            const status = data.status;
+            const errMsg = data.error && data.error.message ? data.error.message : (data.error && data.error.code ? data.error.code : '');
+            if (pendingAgentUpdateOperationId && opId === pendingAgentUpdateOperationId) {
+                const resultEl = document.getElementById('agentUpdatesResult');
+                const resultContent = document.getElementById('agentUpdatesResultContent');
+                if (resultEl && resultContent) {
+                    resultEl.style.display = 'block';
+                    if (status === 'succeeded') {
+                        resultContent.innerHTML = '<p class="success-message">Успех. Агент перезапустится и подключится с новой версией.</p>';
+                    } else {
+                        resultContent.innerHTML = '<p class="error-message">Ошибка: ' + escapeHtml(errMsg || status || 'Неизвестно') + '</p>';
+                    }
+                }
+                if (pendingAgentUpdateDeviceId && queueWs && queueWs.readyState === WebSocket.OPEN) {
+                    try { queueWs.send(JSON.stringify({ type: 'unsubscribe_device', device_id: pendingAgentUpdateDeviceId })); } catch (e) {}
+                }
+                pendingAgentUpdateOperationId = null;
+                pendingAgentUpdateDeviceId = null;
+            }
+            if (opId && agentUpdatesBulkRows.some(function(r) { return r.operation_id === opId; })) {
+                agentUpdatesBulkStatus[opId] = { status: status, error_message: errMsg };
+                renderAgentUpdatesBulkResult();
+            }
+        }
+
+        function renderAgentUpdatesBulkResult() {
+            const container = document.getElementById('agentUpdatesBulkResultContent');
+            if (!container) return;
+            let html = '';
+            agentUpdatesBulkRows.forEach(function(r) {
+                const entry = agentUpdatesBulkStatus[r.operation_id];
+                const status = entry ? entry.status : 'pending';
+                const err = entry ? entry.error_message : '';
+                const buildStr = r.build ? (r.build.target + ' / ' + r.build.version) : '—';
+                let statusHtml = '<span class="badge badge-secondary">Ожидание...</span>';
+                if (status === 'succeeded') statusHtml = '<span class="badge badge-success">Успех</span>';
+                else if (status === 'failed') statusHtml = '<span class="badge badge-danger">Ошибка</span> ' + escapeHtml(err);
+                html += '<div style="margin-bottom: 6px;"><code>' + escapeHtml((r.device_id || '').slice(0, 8)) + '...</code> ' + buildStr + ' — ' + statusHtml + '</div>';
+            });
+            container.innerHTML = html || '<p class="muted">Нет записей.</p>';
+        }
+
+        function queueStatusLabel(status) {
+            return STATUS_CANONICAL_TO_RU[status] || status || 'Не указан';
+        }
+
+        function queueStatusClass(status) {
+            return String(status || 'unknown').replace(/[_\s]+/g, '-').toLowerCase();
+        }
+
+        function queuePriorityClass(ticket) {
+            return ticket.priority_class || 'P3';
+        }
+
+        function queuePriorityLabel(ticket) {
+            const priorityClass = queuePriorityClass(ticket);
+            const ru = PRIORITY_CLASS_TO_RU[priorityClass] || priorityClass;
+            return `${ru} (${priorityClass})`;
+        }
+
+        function queueActionMarker(ticket) {
+            if (ticket.requires_operator_action) return { cls: 'needs-action', text: 'Требует действия' };
+            if ((ticket.status || '').startsWith('waiting_')) return { cls: 'waiting', text: 'Ожидание' };
+            return null;
+        }
+
+        function getQueueLayoutKey() {
+            const actorId = queueState.actorId || localStorage.getItem('admin_user_login') || 'default';
+            return QUEUE_LAYOUT_KEY + ':' + actorId;
+        }
+
+        function queueLayoutLoad() {
+            try {
+                const raw = localStorage.getItem(getQueueLayoutKey());
+                if (!raw) return { pinned_top: [], manual_rank: {}, compact: false, updated_at: '' };
+                const data = JSON.parse(raw);
+                return {
+                    pinned_top: Array.isArray(data.pinned_top) ? data.pinned_top : [],
+                    manual_rank: data.manual_rank && typeof data.manual_rank === 'object' ? data.manual_rank : {},
+                    compact: !!data.compact,
+                    updated_at: data.updated_at || ''
+                };
+            } catch (e) {
+                return { pinned_top: [], manual_rank: {}, compact: false, updated_at: '' };
+            }
+        }
+
+        function queueLayoutSave(layout) {
+            try {
+                layout.updated_at = new Date().toISOString();
+                localStorage.setItem(getQueueLayoutKey(), JSON.stringify(layout));
+            } catch (e) { console.warn('queueLayoutSave', e); }
+        }
+
+        function queueApplyOrder(tickets) {
+            if (!tickets || tickets.length === 0) return tickets;
+            const layout = queueLayoutLoad();
+            const pinnedSet = new Set(layout.pinned_top);
+            const rank = layout.manual_rank || {};
+            const baseSort = (a, b) => {
+                const pa = Number(a.effective_priority || 0);
+                const pb = Number(b.effective_priority || 0);
+                if (pa !== pb) return pb - pa;
+                const ta = new Date(a.created_at || 0).getTime();
+                const tb = new Date(b.created_at || 0).getTime();
+                return ta - tb;
+            };
+            const pinned = tickets.filter(t => pinnedSet.has(t.ticket_id));
+            const rest = tickets.filter(t => !pinnedSet.has(t.ticket_id));
+            const sortByRank = (list, useRank) => {
+                return list.slice().sort((a, b) => {
+                    if (useRank) {
+                        const ra = rank[a.ticket_id];
+                        const rb = rank[b.ticket_id];
+                        if (ra != null && rb != null) return ra - rb;
+                        if (ra != null) return -1;
+                        if (rb != null) return 1;
+                    }
+                    return baseSort(a, b);
+                });
+            };
+            return [...sortByRank(pinned, true), ...sortByRank(rest, true)];
+        }
+
+        function queueBuildParams() {
+            const q = new URLSearchParams();
+            const search = document.getElementById('queueSearch')?.value?.trim();
+            if (search) q.set('ticket_code', search);
+            const queueId = document.getElementById('filterQueue')?.value;
+            if (queueId) q.set('queue_id', queueId);
+            const status = document.getElementById('filterStatus')?.value;
+            if (status) q.set('status', status);
+            const assignee = document.getElementById('filterAssignee')?.value;
+            if (assignee) q.set('assignee_id', assignee);
+            if (document.getElementById('filterUnassigned')?.checked) q.set('unassigned', 'true');
+            if (document.getElementById('filterFrBreached')?.checked) q.set('first_response_breached', 'true');
+            if (document.getElementById('filterResBreached')?.checked) q.set('resolution_breached', 'true');
+            if (document.getElementById('filterWatching')?.checked && queueState.actorId) q.set('watching_actor_id', queueState.actorId);
+            return q.toString();
+        }
+
+        function queueFormatAge(createdAt) {
+            if (!createdAt) return '-';
+            const d = new Date(createdAt);
+            const sec = Math.floor((Date.now() - d) / 1000);
+            if (sec < 60) return sec + 's';
+            if (sec < 3600) return Math.floor(sec / 60) + 'm';
+            if (sec < 86400) return Math.floor(sec / 3600) + 'h';
+            return Math.floor(sec / 86400) + 'd';
+        }
+
+        function queueSlaShort(ticket) {
+            const fr = ticket.first_response_breached_at ? 'breach' : (ticket.first_response_due_at ? 'due' : '-');
+            const res = ticket.resolution_breached_at ? 'breach' : (ticket.resolution_due_at ? 'due' : '-');
+            return { fr, res };
+        }
+
+        async function queueLoadTickets() {
+            if (queueState.queueReloadLock) return;
+            queueState.queueReloadLock = true;
+            const loadingEl = document.getElementById('queueTableLoading');
+            const errorEl = document.getElementById('queueTableError');
+            const tableEl = document.getElementById('queueTable');
+            const emptyEl = document.getElementById('queueEmpty');
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+            if (tableEl) tableEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'none';
+            try {
+                const query = queueBuildParams();
+                const url = '/api/tickets' + (query ? '?' + query : '');
+                const response = await fetch(url, { headers: getAuthHeaders() });
+                const data = await response.json();
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (data.status !== 'ok') {
+                    if (errorEl) { errorEl.textContent = data.error || 'Ошибка загрузки тикетов'; errorEl.style.display = 'block'; }
+                    return;
+                }
+                const raw = (data.tickets || []).map(t => t.ticket || t);
+                queueState.tickets = raw;
+                queueState.lastSync = new Date().toISOString();
+                const layout = queueLayoutLoad();
+                const compactEl = document.getElementById('queueCompactMode');
+                if (compactEl) compactEl.checked = layout.compact;
+                queueRenderTable();
+                queueUpdateKpi();
+                queueWsUpdateSubscriptions();
+                document.getElementById('queueRowCount').textContent = raw.length + ' строк';
+                document.getElementById('queueLastSync').textContent = 'Обновлено: ' + new Date().toLocaleTimeString();
+            } catch (err) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (errorEl) { errorEl.textContent = err.message || 'Ошибка сети'; errorEl.style.display = 'block'; }
+            } finally {
+                queueState.queueReloadLock = false;
+            }
+        }
+
+        function queueUpdateKpi() {
+            const t = queueState.tickets;
+            const open = t.filter(x => x.status && !['resolved', 'closed'].includes(x.status)).length;
+            const breached = t.filter(x => x.first_response_breached_at || x.resolution_breached_at).length;
+            const unassigned = t.filter(x => !x.assignee_id).length;
+            const elOpen = document.getElementById('kpiOpen'); if (elOpen) elOpen.innerHTML = 'Открыто: <strong>' + open + '</strong>';
+            const elBreach = document.getElementById('kpiBreached'); if (elBreach) elBreach.innerHTML = 'SLA нарушен: <strong>' + breached + '</strong>';
+            const elUn = document.getElementById('kpiUnassigned'); if (elUn) elUn.innerHTML = 'Без исполнителя: <strong>' + unassigned + '</strong>';
+        }
+
+        function queueFilteredTickets() {
+            const priorityFilter = document.getElementById('filterPriority')?.value || '';
+            const requesterFilter = (document.getElementById('filterRequester')?.value || '').trim().toLowerCase();
+            return (queueState.tickets || []).filter((ticket) => {
+                if (priorityFilter && queuePriorityClass(ticket) !== priorityFilter) return false;
+                if (requesterFilter) {
+                    const requesterText = String(ticket.requester_display_name || ticket.requester_id || '').toLowerCase();
+                    if (!requesterText.includes(requesterFilter)) return false;
+                }
+                return true;
+            });
+        }
+
+        function queueRenderTable() {
+            const tbody = document.getElementById('queueTableBody');
+            const tableEl = document.getElementById('queueTable');
+            const emptyEl = document.getElementById('queueEmpty');
+            if (!tbody) return;
+            queueApplySingleModeUi();
+            const sorted = queueApplyOrder(queueFilteredTickets());
+            const compact = document.getElementById('queueCompactMode')?.checked;
+            if (tableEl) { tableEl.classList.toggle('compact', !!compact); tableEl.style.display = sorted.length ? 'table' : 'none'; }
+            if (emptyEl) emptyEl.style.display = sorted.length ? 'none' : 'block';
+            const canWrite = queueState.canWrite;
+            const layout = queueLayoutLoad();
+            const pinnedSet = new Set(layout.pinned_top);
+            const rank = layout.manual_rank || {};
+            const hasLocalOrder = layout.pinned_top.length > 0 || Object.keys(rank).length > 0;
+            tbody.innerHTML = sorted.map((t, idx) => {
+                const code = t.ticket_code || t.ticket_id?.slice(0,8) || '-';
+                const statusClass = queueStatusClass(t.status);
+                const priorityClass = queuePriorityClass(t).toLowerCase();
+                const marker = queueActionMarker(t);
+                const markerHtml = marker ? `<div class="queue-action-marker ${marker.cls}">${marker.text}</div>` : '';
+                const isPinned = pinnedSet.has(t.ticket_id);
+                const canTakeSelf = canWrite && !!queueState.actorId && !t.assignee_id && t.status === 'new';
+                const takeSelfBtn = canTakeSelf
+                    ? `<button type="button" class="btn btn-sm btn-success" onclick="queueTakeSelf('${t.ticket_id}')" title="Назначить заявку на себя">Взять себе</button>`
+                    : '';
+                const actions = canWrite ? `
+                    <div class="queue-actions-inline">
+                        ${takeSelfBtn}
+                        <button type="button" class="btn btn-sm btn-primary" onclick="queueActionOpenManage('${t.ticket_id}')" title="Статус, назначение, профиль инициатора">Управление</button>
+                        <a href="/ticket.html?ticket_id=${t.ticket_id}" class="btn btn-sm">Открыть</a>
+                    </div>
+                ` : '<a href="/ticket.html?ticket_id=' + t.ticket_id + '" class="btn btn-sm">Открыть</a>';
+                const upDisabled = idx === 0 ? ' disabled' : '';
+                const downDisabled = idx === sorted.length - 1 ? ' disabled' : '';
+                const filterQueueId = document.getElementById('filterQueue')?.value || '';
+                const sameQueue = filterQueueId && (String(t.queue_id) === String(filterQueueId));
+                const serverOrderBtns = (canWrite && sameQueue) ? `<span class="queue-server-order-btns" title="Порядок в очереди (сохраняется в БД)"><button type="button" class="btn btn-sm" title="Вверх"${upDisabled} onclick="queueOrderServer('${t.ticket_id}','up')">↑</button><button type="button" class="btn btn-sm" title="Вниз"${downDisabled} onclick="queueOrderServer('${t.ticket_id}','down')">↓</button><button type="button" class="btn btn-sm" title="В начало" onclick="queueOrderServer('${t.ticket_id}','top')">⏫</button><button type="button" class="btn btn-sm" title="В конец" onclick="queueOrderServer('${t.ticket_id}','bottom')">⏬</button></span> ` : '';
+                return `<tr data-ticket-id="${t.ticket_id}">
+                    <td class="col-pin"><button type="button" class="pin-btn ${isPinned ? 'pinned' : ''}" data-ticket-id="${t.ticket_id}" title="${isPinned ? 'Открепить' : 'Закрепить'}">${isPinned ? '📌' : '📄'}</button></td>
+                    <td class="col-ticket"><a href="/ticket.html?ticket_id=${t.ticket_id}">${code}</a></td>
+                    <td class="col-title" title="${(t.title || '').replace(/"/g, '&quot;')}">${(t.title || '-').slice(0, 40)}${(t.title || '').length > 40 ? '…' : ''}</td>
+                    <td class="col-queue">${t.queue_code || t.queue_id || '-'}</td>
+                    <td class="col-status"><span class="badge-status status-${statusClass}">${queueStatusLabel(t.status)}</span>${markerHtml}</td>
+                    <td class="col-priority"><span class="badge-priority priority-${priorityClass}">${queuePriorityLabel(t)}</span></td>
+                    <td class="col-assignee">${t.assignee_id || '-'}</td>
+                    <td class="col-requester">${t.requester_display_name || t.requester_id || '-'}</td>
+                    <td class="col-created">${t.created_at ? new Date(t.created_at).toLocaleString() : '-'}</td>
+                    <td class="col-age">${queueFormatAge(t.created_at)}</td>
+                    <td class="col-actions">${canWrite ? `<span class="queue-move-btns"><button type="button" class="btn btn-sm" title="Вверх (локально)"${upDisabled} onclick="queueMoveRow('${t.ticket_id}', -1)">↑</button><button type="button" class="btn btn-sm" title="Вниз (локально)"${downDisabled} onclick="queueMoveRow('${t.ticket_id}', 1)">↓</button></span> ${serverOrderBtns}` : ''}${actions}</td>
+                </tr>`;
+            }).join('');
+            document.getElementById('queueLocalOrderActive')?.classList.toggle('hidden', !hasLocalOrder);
+            const filterQueueId = document.getElementById('filterQueue')?.value || '';
+            const hasSingleQueue = queueSingleMode() || (!!filterQueueId && queueState.tickets.length > 0);
+            const anyManualRank = queueState.tickets.some(t => t.manual_rank != null);
+            const badgeEl = document.getElementById('queueOrderModeBadge');
+            const resetWrapEl = document.getElementById('queueOrderServerWrap');
+            if (badgeEl) {
+                if (hasSingleQueue && canWrite) {
+                    badgeEl.textContent = anyManualRank ? 'РУЧНОЙ' : 'АВТО';
+                    badgeEl.classList.remove('hidden');
+                    badgeEl.classList.toggle('manual', !!anyManualRank);
+                } else {
+                    badgeEl.classList.add('hidden');
+                }
+            }
+            if (resetWrapEl) {
+                if (hasSingleQueue && canWrite) {
+                    resetWrapEl.classList.remove('hidden');
+                } else {
+                    resetWrapEl.classList.add('hidden');
+                }
+            }
+            queueBindPinButtons();
+        }
+
+        function queueBindPinButtons() {
+            document.querySelectorAll('.queue-table .pin-btn').forEach(btn => {
+                btn.removeEventListener('click', queueHandlePinClick);
+                btn.addEventListener('click', queueHandlePinClick);
+            });
+        }
+
+        function queueHandlePinClick(ev) {
+            const ticketId = ev.target.closest('.pin-btn')?.dataset?.ticketId;
+            if (!ticketId) return;
+            const layout = queueLayoutLoad();
+            const idx = layout.pinned_top.indexOf(ticketId);
+            if (idx >= 0) layout.pinned_top.splice(idx, 1);
+            else layout.pinned_top.push(ticketId);
+            queueLayoutSave(layout);
+            queueRenderTable();
+        }
+
+        function queueMoveRow(ticketId, delta) {
+            const layout = queueLayoutLoad();
+            const sorted = queueApplyOrder(queueState.tickets);
+            const idx = sorted.findIndex(t => t.ticket_id === ticketId);
+            if (idx < 0) return;
+            const swapIdx = delta < 0 ? idx - 1 : idx + 1;
+            if (swapIdx < 0 || swapIdx >= sorted.length) return;
+            const rank = layout.manual_rank || {};
+            const myRank = rank[ticketId] != null ? rank[ticketId] : idx;
+            const other = sorted[swapIdx];
+            const otherRank = rank[other.ticket_id] != null ? rank[other.ticket_id] : swapIdx;
+            rank[ticketId] = otherRank;
+            rank[other.ticket_id] = myRank;
+            layout.manual_rank = rank;
+            queueLayoutSave(layout);
+            queueRenderTable();
+        }
+
+        function queueLayoutReset() {
+            const layout = { pinned_top: [], manual_rank: {}, compact: !!document.getElementById('queueCompactMode')?.checked, updated_at: '' };
+            queueLayoutSave(layout);
+            queueLoadTickets();
+        }
+
+        async function queueOrderServer(ticketId, direction) {
+            try {
+                const res = await fetch('/api/tickets/' + ticketId + '/order', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ direction: direction })
+                });
+                const data = await res.json();
+                if (data.status === 'ok') { queueToast('Порядок обновлён'); queueLoadTickets(); }
+                else { queueToast(data.error || 'Ошибка', true); if (res.status === 403) queueState.canWrite = false; }
+            } catch (e) { queueToast(e.message, true); }
+        }
+
+        async function queueOrderResetServer() {
+            const queueId = document.getElementById('filterQueue')?.value;
+            if (!queueId) { queueToast('Выберите одну очередь', true); return; }
+            if (!confirm('Сбросить ручной порядок очереди? Позиции будут пересчитаны по приоритету и SLA.')) return;
+            try {
+                const res = await fetch('/api/tickets/queues/' + queueId + '/order/reset', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.status === 'ok') { queueToast('Порядок сброшен'); queueLoadTickets(); }
+                else { queueToast(data.error || 'Ошибка', true); if (res.status === 403) queueState.canWrite = false; }
+            } catch (e) { queueToast(e.message, true); }
+        }
+
+        let queueCachedUsers = [];
+        let queueCachedQueues = [];
+        let queueCachedDevices = [];
+
+        function queueSingleMode() {
+            return (queueCachedQueues || []).length <= 1;
+        }
+
+        function queueApplySingleModeUi() {
+            document.body.classList.toggle('queue-single-mode', queueSingleMode());
+            const queueFilter = document.getElementById('filterQueue');
+            if (queueSingleMode() && queueFilter && queueCachedQueues.length === 1) {
+                queueFilter.value = String(queueCachedQueues[0].id);
+            }
+        }
+
+        async function queueAssignSubmit(selectEl) {
+            const ticketId = selectEl?.dataset?.ticketId;
+            const assigneeId = selectEl?.value;
+            if (!ticketId) return;
+            try {
+                const res = await fetch(`/api/tickets/${ticketId}/assign`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ assignee_id: assigneeId === '' ? null : assigneeId })
+                });
+                const data = await res.json();
+                if (data.status === 'ok') { queueToast('Исполнитель изменён'); queueLoadTickets(); }
+                else { queueToast(data.error || 'Ошибка', true); if (res.status === 403) queueState.canWrite = false; }
+            } catch (e) { queueToast(e.message, true); }
+        }
+
+        async function queueTakeSelf(ticketId) {
+            if (!ticketId) return;
+            if (!queueState.actorId) {
+                queueToast('Не удалось определить текущего пользователя', true);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/tickets/${ticketId}/assign`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ assignee_id: queueState.actorId, take_self: true })
+                });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    queueToast('Заявка назначена на вас');
+                    queueLoadTickets();
+                    return;
+                }
+                queueToast(data.message || data.error || 'Ошибка', true);
+                if (res.status === 403) queueState.canWrite = false;
+            } catch (e) {
+                queueToast(e.message, true);
+            }
+        }
+
+        function queueManageModalClose() {
+            const overlay = document.getElementById('queueManageModalOverlay');
+            if (overlay) overlay.style.display = 'none';
+            queueManageModalTicketId = null;
+            queueManageModalTicket = null;
+        }
+
+        function queueManageFillStatus(ticket) {
+            const sel = document.getElementById('queueManageStatus');
+            if (!sel) return;
+            const canonical = ticket?.status || 'new';
+            const opts = Object.entries(STATUS_CANONICAL_TO_RU)
+                .filter(([can]) => can !== 'closed')
+                .map(([can, ru]) => `<option value="${can}"${canonical === can ? ' selected' : ''}>${ru}</option>`);
+            sel.innerHTML = opts.length ? opts.join('') : '<option value="new">Новая</option>';
+        }
+
+        function queueManageFillAssign(ticket) {
+            const wrap = document.getElementById('queueManageAssignWrap');
+            const sel = document.getElementById('queueManageAssign');
+            const degraded = document.getElementById('queueManageAssignDegraded');
+            const autoBtn = document.getElementById('queueManageAssignAuto');
+            const isSupport = queueState.actorRole === 'support';
+            if (autoBtn) autoBtn.style.display = isSupport ? 'none' : '';
+            if (!sel) return;
+            if (!queueManageAssignAvailable || !queueCachedUsers.length) {
+                if (degraded) degraded.style.display = 'block';
+                if (wrap) wrap.style.display = 'none';
+                document.getElementById('queueManageAssignApply')?.setAttribute('disabled', 'disabled');
+                return;
+            }
+            if (degraded) degraded.style.display = 'none';
+            if (wrap) wrap.style.display = '';
+            document.getElementById('queueManageAssignApply')?.removeAttribute('disabled');
+            const assigneeId = ticket?.assignee_id || '';
+            const assignableUsers = queueCachedUsers.filter(u => (u.actor_role === 'support' || u.actor_role === 'admin') && u.is_active !== false);
+            if (isSupport) {
+                const selfLogin = queueState.actorId || '';
+                if (!selfLogin) {
+                    if (degraded) degraded.style.display = 'block';
+                    if (wrap) wrap.style.display = 'none';
+                    document.getElementById('queueManageAssignApply')?.setAttribute('disabled', 'disabled');
+                    return;
+                }
+                const selfUser = assignableUsers.find(u => (u.user_login || '') === selfLogin);
+                const activeCount = Number(selfUser?.active_count || 0);
+                const suffix = ` [активных: ${activeCount}${selfUser?.assignment_available === false ? ', лимит' : ''}]`;
+                sel.innerHTML = `<option value="${selfLogin}">${selfLogin}${suffix}</option>`;
+                sel.value = selfLogin;
+                return;
+            }
+            const opts = ['<option value="">Снять назначение</option>'].concat(assignableUsers.map(u => {
+                const activeCount = Number(u.active_count || 0);
+                const suffix = ` [активных: ${activeCount}${u.assignment_available === false ? ', лимит' : ''}]`;
+                return `<option value="${u.user_login || ''}"${(u.user_login || '') === assigneeId ? ' selected' : ''}>${u.user_login || ''}${suffix}</option>`;
+            }));
+            sel.innerHTML = opts.join('');
+        }
+
+        function queueManageFillQueueAndPriority(ticket) {
+            const qSel = document.getElementById('queueManageQueueId');
+            const urgencySel = document.getElementById('queueManageUrgency');
+            const urgencyReason = document.getElementById('queueManageUrgencyReason');
+            const importanceSel = document.getElementById('queueManageImportance');
+            const importanceReason = document.getElementById('queueManageImportanceReason');
+            if (qSel && queueCachedQueues.length) {
+                qSel.innerHTML = queueCachedQueues.map(q => `<option value="${q.id}"${(ticket?.queue_id != null && String(ticket.queue_id) === String(q.id)) ? ' selected' : ''}>${q.code || q.name || q.id}</option>`).join('');
+            }
+            if (urgencySel) urgencySel.value = String(Boolean(ticket?.urgency));
+            if (importanceSel) importanceSel.value = String(Boolean(ticket?.importance));
+            if (urgencyReason) urgencyReason.value = ticket?.urgency_reason || '';
+            if (importanceReason) importanceReason.value = ticket?.importance_reason || '';
+        }
+
+        function queueManageFillRequester(ticket) {
+            const profile = ticket?.requester_profile || {};
+            const displayNameInput = document.getElementById('queueManageRequesterDisplayName');
+            const fullNameInput = document.getElementById('queueManageRequesterFullName');
+            const buildingInput = document.getElementById('queueManageRequesterBuilding');
+            const roomInput = document.getElementById('queueManageRequesterRoom');
+            const phoneInput = document.getElementById('queueManageRequesterPhone');
+            if (displayNameInput) displayNameInput.value = ticket?.requester_display_name || '';
+            if (fullNameInput) fullNameInput.value = profile.full_name || '';
+            if (buildingInput) buildingInput.value = profile.building || '';
+            if (roomInput) roomInput.value = profile.room || '';
+            if (phoneInput) phoneInput.value = profile.phone || '';
+        }
+
+        function queueManageFillDevice(ticket) {
+            const select = document.getElementById('queueManageDeviceId');
+            if (!select) return;
+            const current = ticket?.device_id || '';
+            const options = ['<option value="">-- Выберите агент --</option>'].concat(
+                (queueCachedDevices || []).map(device => {
+                    const label = (device.hostname || device.device_id || 'device') + (device.online ? ' (online)' : ' (offline)');
+                    return `<option value="${device.device_id}">${label}</option>`;
+                })
+            );
+            select.innerHTML = options.join('');
+            select.value = current && (queueCachedDevices || []).some(device => device.device_id === current) ? current : '';
+        }
+
+        async function queueActionOpenManage(ticketId) {
+            queueManageModalTicketId = ticketId;
+            const overlay = document.getElementById('queueManageModalOverlay');
+            const codeEl = document.getElementById('queueManageModalTicketCode');
+            if (!overlay) return;
+            overlay.style.display = 'flex';
+            document.getElementById('queueManageStatusError')?.style?.setProperty('display', 'none');
+            document.getElementById('queueManageAssignError')?.style?.setProperty('display', 'none');
+            document.getElementById('queueManageQueueError')?.style?.setProperty('display', 'none');
+            const t = queueState.tickets.find(x => x.ticket_id === ticketId);
+            if (t) {
+                queueManageModalTicket = t;
+                if (codeEl) codeEl.textContent = t.ticket_code || t.ticket_id?.slice(0, 8) || ticketId;
+                queueManageFillStatus(t);
+                queueManageFillQueueAndPriority(t);
+                queueManageFillRequester(t);
+            } else {
+                queueManageModalTicket = null;
+                if (codeEl) codeEl.textContent = ticketId.slice(0, 8);
+                try {
+                    const res = await fetch('/api/tickets/' + ticketId, { headers: getAuthHeaders() });
+                    const data = await res.json();
+                    if (data.ticket) {
+                        queueManageModalTicket = data.ticket;
+                        queueManageFillStatus(data.ticket);
+                        queueManageFillQueueAndPriority(data.ticket);
+                        queueManageFillRequester(data.ticket);
+                    }
+                } catch (e) {}
+            }
+            queueManageFillAssign(queueManageModalTicket || {});
+            queueManageFillDevice(queueManageModalTicket || {});
+
+            if (queueCachedQueues.length === 0) {
+                try {
+                    const r = await fetch('/api/admin/tickets/queues', { headers: getAuthHeaders() });
+                    if (r.ok) {
+                        const data = await r.json();
+                        queueCachedQueues = data.queues || [];
+                    } else {
+                        queueCachedQueues = [];
+                    }
+                    queueManageFillQueueAndPriority(queueManageModalTicket || {});
+                } catch (e) {
+                    queueCachedQueues = [];
+                    queueManageFillQueueAndPriority(queueManageModalTicket || {});
+                }
+            }
+            if (queueCachedUsers.length === 0) {
+                try {
+                    const r = await fetch('/api/admin/users', { headers: getAuthHeaders() });
+                    if (r.status === 403 || r.status === 404) {
+                        queueManageAssignAvailable = false;
+                        queueManageFillAssign(queueManageModalTicket || {});
+                        return;
+                    }
+                    if (!r.ok) return;
+                    const data = await r.json();
+                    if (data.users) {
+                        queueCachedUsers = data.users.filter(u => u.is_active !== false);
+                        queueManageAssignAvailable = true;
+                        queueManageFillAssign(queueManageModalTicket || {});
+                    }
+                } catch (e) {
+                    queueManageAssignAvailable = false;
+                    queueManageFillAssign(queueManageModalTicket || {});
+                }
+            }
+            if (queueCachedDevices.length === 0) {
+                try {
+                    const r = await fetch('/api/devices', { headers: getAuthHeaders() });
+                    if (r.ok) {
+                        const data = await r.json();
+                        queueCachedDevices = data.devices || [];
+                    } else {
+                        queueCachedDevices = [];
+                    }
+                } catch (e) {
+                    queueCachedDevices = [];
+                }
+                queueManageFillDevice(queueManageModalTicket || {});
+            }
+        }
+
+        async function queueManageStatusApply() {
+            if (!queueManageModalTicketId) return;
+            const canonical = document.getElementById('queueManageStatus')?.value;
+            if (!canonical) return;
+            const errEl = document.getElementById('queueManageStatusError');
+            errEl.style.display = 'none';
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/status`, { method: 'POST', headers: getAuthHeaders(true), body: JSON.stringify({ to_status: canonical }) });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Статус изменён'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.error || data.invalid_transition || data.message || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManageAssignApply() {
+            if (!queueManageModalTicketId || !queueManageAssignAvailable) return;
+            const assigneeId = document.getElementById('queueManageAssign')?.value;
+            const errEl = document.getElementById('queueManageAssignError');
+            errEl.style.display = 'none';
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/assign`, { method: 'POST', headers: getAuthHeaders(true), body: JSON.stringify({ assignee_id: assigneeId === '' ? null : assigneeId }) });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Исполнитель изменён'); queueLoadTickets(); queueManageModalTicket = queueManageModalTicket || {}; queueManageModalTicket.assignee_id = assigneeId || null; }
+                else { errEl.textContent = data.error || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManageAssignAuto() {
+            if (!queueManageModalTicketId || !queueManageAssignAvailable) return;
+            const errEl = document.getElementById('queueManageAssignError');
+            errEl.style.display = 'none';
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/assign`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ auto_assign: true, reason: 'auto_balance' })
+                });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast(data.auto_assigned ? 'Тикет автоназначен' : 'Исполнитель изменён'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.message || data.error || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManageQueueApply() {
+            if (!queueManageModalTicketId) return;
+            const queueId = document.getElementById('queueManageQueueId')?.value;
+            const reason = (document.getElementById('queueManageQueueReason')?.value || '').trim() || 'manual';
+            const errEl = document.getElementById('queueManageQueueError');
+            errEl.style.display = 'none';
+            if (!queueId) { errEl.textContent = 'Выберите очередь'; errEl.style.display = 'inline'; return; }
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/queue`, { method: 'POST', headers: getAuthHeaders(true), body: JSON.stringify({ queue_id: parseInt(queueId, 10), reason: reason }) });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Очередь изменена'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.error || data.message || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManagePriorityApply() {
+            if (!queueManageModalTicketId) return;
+            const urgency = document.getElementById('queueManageUrgency')?.value === 'true';
+            const urgencyReason = (document.getElementById('queueManageUrgencyReason')?.value || '').trim();
+            const importance = document.getElementById('queueManageImportance')?.value === 'true';
+            const importanceReason = (document.getElementById('queueManageImportanceReason')?.value || '').trim();
+            const errEl = document.getElementById('queueManageQueueError');
+            errEl.style.display = 'none';
+            if (!urgencyReason || !importanceReason) {
+                errEl.textContent = 'Заполните оба обоснования';
+                errEl.style.display = 'inline';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/priority`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        urgency: urgency,
+                        importance: importance,
+                        urgency_reason: urgencyReason,
+                        importance_reason: importanceReason
+                    })
+                });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Приоритет пересчитан'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.error || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManageRequesterApply() {
+            if (!queueManageModalTicketId) return;
+            const errEl = document.getElementById('queueManageRequesterError');
+            errEl.style.display = 'none';
+            const payload = {
+                user_display_name: document.getElementById('queueManageRequesterDisplayName')?.value || '',
+                requester_profile: {
+                    full_name: document.getElementById('queueManageRequesterFullName')?.value || '',
+                    building: document.getElementById('queueManageRequesterBuilding')?.value || '',
+                    room: document.getElementById('queueManageRequesterRoom')?.value || '',
+                    phone: document.getElementById('queueManageRequesterPhone')?.value || ''
+                }
+            };
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/requester_profile`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Профиль инициатора сохранён'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.error || data.message || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
+        }
+
+        async function queueManageRerouteClick() {
+            if (!queueManageModalTicketId) return;
+            if (!confirm('Выполнить перемаршрутизацию тикета? Очередь будет пересчитана по правилам маршрутизации.')) return;
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/reroute`, { method: 'POST', headers: getAuthHeaders(true), body: JSON.stringify({}) });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Перемаршрутизация выполнена'); queueLoadTickets(); queueManageModalClose(); }
+                else { queueToast((data.error || data.message || 'Ошибка') + (data.details ? ' ' + JSON.stringify(data.details) : ''), true); }
+            } catch (e) { queueToast('Сеть: ' + e.message, true); }
+        }
+
+        async function queueManageDeviceApply() {
+            if (!queueManageModalTicketId) return;
+            const deviceId = document.getElementById('queueManageDeviceId')?.value || '';
+            const reason = (document.getElementById('queueManageDeviceReason')?.value || '').trim() || 'manual_bind';
+            const errEl = document.getElementById('queueManageDeviceError');
+            errEl.style.display = 'none';
+            if (!deviceId) {
+                errEl.textContent = 'Выберите агент';
+                errEl.style.display = 'inline';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/device`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ device_id: deviceId, reason: reason })
+                });
+                const data = await res.json();
+                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
+                if (data.status === 'ok') { queueToast('Тикет привязан к агенту'); queueLoadTickets(); queueManageModalClose(); }
+                else { errEl.textContent = data.error || data.message || 'Ошибка'; errEl.style.display = 'inline'; }
+            } catch (e) {
+                errEl.textContent = e.message;
+                errEl.style.display = 'inline';
+            }
+        }
+
+        function queueToast(message, isError) {
+            const el = document.getElementById('queueToast');
+            if (!el) return;
+            el.textContent = message;
+            el.className = 'queue-toast' + (isError ? ' error' : '');
+            el.style.display = 'block';
+            clearTimeout(queueToast._t);
+            queueToast._t = setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+
+        function queueInit() {
+            queueState.actorId = localStorage.getItem('admin_user_login') || '';
+            const role = localStorage.getItem('admin_actor_role') || '';
+            queueState.actorRole = role;
+            queueState.canWrite = role !== 'auditor';
+            const layout = queueLayoutLoad();
+            const compactEl = document.getElementById('queueCompactMode');
+            if (compactEl) {
+                compactEl.checked = layout.compact;
+                compactEl.addEventListener('change', () => {
+                    const l = queueLayoutLoad();
+                    l.compact = compactEl.checked;
+                    queueLayoutSave(l);
+                    queueRenderTable();
+                });
+            }
+            document.getElementById('queueRefreshBtn')?.addEventListener('click', () => queueLoadTickets());
+            document.getElementById('queueResetLocalOrder')?.addEventListener('click', () => queueLayoutReset());
+            document.getElementById('queueOrderResetBtn')?.addEventListener('click', () => queueOrderResetServer());
+            document.getElementById('queueResetFilters')?.addEventListener('click', () => {
+                document.getElementById('filterQueue').value = '';
+                document.getElementById('filterStatus').value = '';
+                document.getElementById('filterPriority').value = '';
+                document.getElementById('filterAssignee').value = '';
+                document.getElementById('filterRequester').value = '';
+                document.getElementById('filterWatching').checked = false;
+                document.getElementById('filterUnassigned').checked = false;
+                document.getElementById('filterFrBreached').checked = false;
+                document.getElementById('filterResBreached').checked = false;
+                document.getElementById('queueSearch').value = '';
+                queueLoadTickets();
+            });
+            document.getElementById('queueEmptyResetFilters')?.addEventListener('click', () => document.getElementById('queueResetFilters')?.click());
+            let searchDebounce;
+            document.getElementById('queueSearch')?.addEventListener('input', () => {
+                clearTimeout(searchDebounce);
+                searchDebounce = setTimeout(() => queueLoadTickets(), 400);
+            });
+            ['filterQueue','filterStatus','filterPriority','filterAssignee','filterUnassigned','filterFrBreached','filterResBreached','filterWatching'].forEach(id => {
+                document.getElementById(id)?.addEventListener('change', () => queueLoadTickets());
+            });
+            document.getElementById('filterRequester')?.addEventListener('change', () => queueLoadTickets());
+            document.getElementById('presetUnassigned')?.addEventListener('click', () => { document.getElementById('filterUnassigned').checked = true; queueLoadTickets(); });
+            document.getElementById('presetMyQueue')?.addEventListener('click', () => {
+                const login = localStorage.getItem('admin_user_login');
+                if (login) { document.getElementById('filterAssignee').value = login; document.getElementById('filterUnassigned').checked = false; queueLoadTickets(); }
+                else alert('Логин не найден');
+            });
+            document.getElementById('presetBreached')?.addEventListener('click', () => { document.getElementById('filterFrBreached').checked = true; document.getElementById('filterResBreached').checked = true; queueLoadTickets(); });
+            document.getElementById('presetHighPriority')?.addEventListener('click', () => { document.getElementById('filterPriority').value = 'P0'; queueLoadTickets(); });
+            // Populate status/priority dropdowns
+            const statusOpts = ['new','triaged','in_progress','waiting_on_user','waiting_on_vendor','resolved','closed'];
+            const selStatus = document.getElementById('filterStatus');
+            if (selStatus && selStatus.options.length <= 1) { statusOpts.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = queueStatusLabel(s); selStatus.appendChild(o); }); }
+            const priorities = ['P0','P1','P2','P3'];
+            const selPri = document.getElementById('filterPriority');
+            if (selPri && selPri.options.length <= 1) { priorities.forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = `${PRIORITY_CLASS_TO_RU[p]} (${p})`; selPri.appendChild(o); }); }
+            fetch('/api/admin/tickets/queues', { headers: getAuthHeaders() }).then(r => {
+                if (!r.ok) { queueCachedQueues = []; return; }
+                return r.json();
+            }).then(data => {
+                if (data) queueCachedQueues = data.queues || [];
+                queueApplySingleModeUi();
+                const sel = document.getElementById('filterQueue');
+                if (!sel || sel.options.length > 1) return;
+                queueCachedQueues.forEach(q => { const o = document.createElement('option'); o.value = q.id; o.textContent = q.code || q.name || q.id; sel.appendChild(o); });
+                queueApplySingleModeUi();
+            }).catch(() => { queueCachedQueues = []; });
+            fetch('/api/admin/users', { headers: getAuthHeaders() }).then(r => {
+                if (r.status === 403 || r.status === 404) return;
+                return r.json();
+            }).then(data => {
+                if (data && data.users) {
+                    queueCachedUsers = data.users.filter(u => u.is_active !== false);
+                    if (document.getElementById('queueTableBody')?.innerHTML) queueRenderTable();
+                }
+            }).catch(() => {});
+            document.getElementById('queueManageModalClose')?.addEventListener('click', queueManageModalClose);
+            document.getElementById('queueManageModalOverlay')?.addEventListener('click', (e) => { if (e.target.id === 'queueManageModalOverlay') queueManageModalClose(); });
+            document.getElementById('queueManageStatusApply')?.addEventListener('click', () => queueManageStatusApply());
+            document.getElementById('queueManageAssignApply')?.addEventListener('click', () => queueManageAssignApply());
+            document.getElementById('queueManageAssignAuto')?.addEventListener('click', () => queueManageAssignAuto());
+            document.getElementById('queueManageQueueApply')?.addEventListener('click', () => queueManageQueueApply());
+            document.getElementById('queueManagePriorityApply')?.addEventListener('click', () => queueManagePriorityApply());
+            document.getElementById('queueManageDeviceApply')?.addEventListener('click', () => queueManageDeviceApply());
+            document.getElementById('queueManageRequesterApply')?.addEventListener('click', () => queueManageRequesterApply());
+            document.getElementById('queueManageRerouteBtn')?.addEventListener('click', () => queueManageRerouteClick());
+            queueLoadTickets();
+            queueWsConnect();
+            queueStartPolling();
+        }
+
+        function queueStartPolling() {
+            queueStopPolling();
+            const interval = queueState.wsConnected ? QUEUE_POLL_INTERVAL_WS_ACTIVE_MS : QUEUE_POLL_INTERVAL_MS;
+            queuePollTimer = setInterval(() => {
+                const tab = document.getElementById('tab-queue');
+                if (tab && tab.classList.contains('active') && typeof queueLoadTickets === 'function')
+                    queueLoadTickets();
+            }, interval);
+        }
+        function queueStopPolling() {
+            if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
+        }
+
+        function queueSetRealtimeIndicator(connected) {
+            queueState.wsConnected = !!connected;
+            const el = document.getElementById('realtimeIndicator');
+            if (el) {
+                el.textContent = connected ? '● Онлайн' : '○ Ограниченный режим';
+                el.className = 'realtime-indicator' + (connected ? ' live' : ' degraded');
+            }
+            queueStartPolling();
+        }
+
+        function queueWsUpdateSubscriptions() {
+            if (!queueWs || queueWs.readyState !== WebSocket.OPEN) return;
+            const visible = new Set(Array.from(document.querySelectorAll('#queueTableBody tr[data-ticket-id]')).map(r => r.dataset.ticketId));
+            const prev = queueState.subscribedTicketIds;
+            const toAdd = [...visible].filter(id => !prev.has(id));
+            const toRemove = [...prev].filter(id => !visible.has(id));
+            const token = localStorage.getItem('admin_auth_token');
+            if (!token) return;
+            toAdd.forEach(ticketId => {
+                queueWs.send(JSON.stringify({ type: 'subscribe_ticket', ticket_id: ticketId, since_event_id: 0 }));
+                queueState.subscribedTicketIds.add(ticketId);
+            });
+            toRemove.forEach(ticketId => {
+                queueWs.send(JSON.stringify({ type: 'unsubscribe_ticket', ticket_id: ticketId }));
+                queueState.subscribedTicketIds.delete(ticketId);
+            });
+        }
+
+        function queueScheduleReload(immediate, eventType) {
+            const forceReload = ['status_changed', 'queue_changed', 'assignee_changed', 'sla_breached', 'routing_applied', 'priority_changed'].includes(eventType);
+            if (forceReload) {
+                if (queueDebounceReloadTimer) clearTimeout(queueDebounceReloadTimer);
+                queueDebounceReloadTimer = null;
+                queueLoadTickets();
+                return;
+            }
+            if (queueState.queueReloadLock) return;
+            if (queueDebounceReloadTimer) clearTimeout(queueDebounceReloadTimer);
+            queueDebounceReloadTimer = setTimeout(() => {
+                queueDebounceReloadTimer = null;
+                queueLoadTickets();
+            }, QUEUE_DEBOUNCE_RELOAD_MS);
+        }
+
+        function queueWsConnect() {
+            if (queueWs && (queueWs.readyState === WebSocket.OPEN || queueWs.readyState === WebSocket.CONNECTING)) return;
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = proto + '//' + location.host + '/ws_ui';
+            try {
+                queueWs = new WebSocket(url);
+            } catch (e) {
+                queueSetRealtimeIndicator(false);
+                return;
+            }
+            queueWs.onopen = () => {
+                queueReconnectAttempts = 0;
+                const token = localStorage.getItem('admin_auth_token');
+                if (!token) { queueWs.close(); return; }
+                queueWs.send(JSON.stringify({ type: 'ui_hello', token: token }));
+            };
+            queueWs.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    if (data.type === 'ui_hello_ack') {
+                        queueSetRealtimeIndicator(true);
+                        queueWsUpdateSubscriptions();
+                        return;
+                    }
+                    if (data.type === 'ticket_event_committed' && data.ticket_id && queueState.subscribedTicketIds.has(data.ticket_id)) {
+                        queueScheduleReload(false, data.event_type);
+                    }
+                    if (data.type === 'operation_updated') {
+                        if (typeof agentUpdateOnOperationUpdated === 'function') agentUpdateOnOperationUpdated(data);
+                    }
+                } catch (e) { console.warn('queue ws message', e); }
+            };
+            queueWs.onclose = () => {
+                queueWs = null;
+                queueState.subscribedTicketIds.clear();
+                queueSetRealtimeIndicator(false);
+                const tab = document.getElementById('tab-queue');
+                if (tab && tab.classList.contains('active')) {
+                    const delay = QUEUE_WS_RECONNECT_BACKOFF_MS[Math.min(queueReconnectAttempts, QUEUE_WS_RECONNECT_BACKOFF_MS.length - 1)];
+                    queueReconnectAttempts++;
+                    setTimeout(queueWsConnect, delay);
+                }
+            };
+            queueWs.onerror = () => { queueWs.close(); };
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                if (queueWs && queueWs.readyState === WebSocket.OPEN) {
+                    queueState.subscribedTicketIds.forEach(tid => {
+                        try { queueWs.send(JSON.stringify({ type: 'unsubscribe_ticket', ticket_id: tid })); } catch (e) {}
+                    });
+                    queueState.subscribedTicketIds.clear();
+                }
+            } else if (document.visibilityState === 'visible') {
+                const tab = document.getElementById('tab-queue');
+                if (tab && tab.classList.contains('active') && queueWs?.readyState === WebSocket.OPEN)
+                    queueWsUpdateSubscriptions();
+            }
+        });
+
+        // ============================================
+        // Tab Management
+        // ============================================
+        
+        // Tab switching functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabLinks = document.querySelectorAll('.tab-link');
+            tabLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const tabName = this.getAttribute('data-tab');
+                    switchTab(tabName);
+                });
+            });
+        });
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all menu items
+            document.querySelectorAll('.tab-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Show selected tab
+            const selectedTab = document.getElementById(`tab-${tabName}`);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
+            
+            // Add active class to menu item
+            const selectedLink = document.querySelector(`.tab-link[data-tab="${tabName}"]`);
+            if (selectedLink) {
+                selectedLink.classList.add('active');
+            }
+            
+            // Load tab-specific data
+            if (tabName === 'queue') {
+                if (typeof queueInit === 'function' && !document.getElementById('queueTableBody')?.dataset?.inited) {
+                    const body = document.getElementById('queueTableBody');
+                    if (body) body.dataset.inited = '1';
+                    queueInit();
+                } else if (typeof queueLoadTickets === 'function') queueLoadTickets();
+                queueStartPolling();
+            } else {
+                queueStopPolling();
+            }
+            if (tabName === 'devices') {
+                loadDevicesList();
+                devicesApplyHash();
+            } else             if (tabName === 'modules') {
+                loadModulesTab();
+                initRegistryModulesToggles();
+            } else if (tabName === 'users') {
+                loadUsersTab();
+            } else if (tabName === 'agent-updates') {
+                loadAgentUpdatesTab();
+            }
+        }
+
+        // ============================================
+        // Users Tab Functions
+        // ============================================
+
+        async function loadUsersTab() {
+            const loadingEl = document.getElementById('usersListLoading');
+            const errorEl = document.getElementById('usersListError');
+            const containerEl = document.getElementById('usersListContainer');
+            const emptyEl = document.getElementById('usersListEmpty');
+            const tbodyEl = document.getElementById('usersListTableBody');
+            if (!loadingEl || !tbodyEl) return;
+            loadingEl.style.display = 'block';
+            if (errorEl) errorEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (containerEl) containerEl.style.display = 'none';
+            try {
+                const r = await fetch('/api/admin/users?include_inactive=true', { headers: getAuthHeaders() });
+                const data = await r.json();
+                loadingEl.style.display = 'none';
+                if (!r.ok) {
+                    if (errorEl) { errorEl.textContent = data.error || 'API недоступен'; errorEl.style.display = 'block'; }
+                    return;
+                }
+                const users = data.users || [];
+                if (users.length === 0) {
+                    if (emptyEl) emptyEl.style.display = 'block';
+                    return;
+                }
+                if (containerEl) containerEl.style.display = 'block';
+                const roles = ['admin', 'support', 'auditor', 'user'];
+                tbodyEl.innerHTML = users.map(u => {
+                    const lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleString('ru-RU') : '—';
+                    const roleOpts = roles.map(r => `<option value="${r}"${(u.actor_role || '') === r ? ' selected' : ''}>${r}</option>`).join('');
+                    return `<tr data-login="${(u.user_login || '').replace(/"/g, '&quot;')}">
+                        <td><strong>${(u.user_login || '').replace(/</g, '&lt;')}</strong></td>
+                        <td><select class="users-role-select" data-login="${(u.user_login || '').replace(/"/g, '&quot;')}" title="Изменить роль">${roleOpts}</select></td>
+                        <td>${u.is_active !== false ? 'Да' : 'Нет'}</td>
+                        <td>${lastLogin}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-secondary users-pwd-btn" data-login="${(u.user_login || '').replace(/"/g, '&quot;')}">Сменить пароль</button>
+                            ${u.is_active !== false ? `<button type="button" class="btn btn-sm users-deactivate-btn" data-login="${(u.user_login || '').replace(/"/g, '&quot;')}">Деактивировать</button>` : ''}
+                        </td>
+                    </tr>`;
+                }).join('');
+                bindUsersTabHandlers();
+            } catch (e) {
+                loadingEl.style.display = 'none';
+                if (errorEl) { errorEl.textContent = 'Ошибка: ' + e.message; errorEl.style.display = 'block'; }
+            }
+        }
+
+        function bindUsersTabHandlers() {
+            document.querySelectorAll('.users-role-select').forEach(sel => {
+                sel.onchange = function() {
+                    const login = this.getAttribute('data-login');
+                    const role = this.value;
+                    if (!login) return;
+                    fetch('/api/admin/users/' + encodeURIComponent(login), {
+                        method: 'PATCH',
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({ actor_role: role })
+                    }).then(r => r.json()).then(data => {
+                        if (data.status === 'ok') {
+                            if (typeof queueCachedUsers !== 'undefined') queueCachedUsers = [];
+                            if (typeof queueRenderTable === 'function') queueRenderTable();
+                        } else alert(data.error || 'Ошибка');
+                    }).catch(e => alert(e.message));
+                };
+            });
+            document.querySelectorAll('.users-pwd-btn').forEach(btn => {
+                btn.onclick = function() {
+                    const login = this.getAttribute('data-login');
+                    if (!login) return;
+                    const pwd = prompt('Новый пароль для ' + login + ':');
+                    if (pwd == null || pwd === '') return;
+                    fetch('/api/admin/users/' + encodeURIComponent(login) + '/password', {
+                        method: 'POST',
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({ password: pwd })
+                    }).then(r => r.json()).then(data => {
+                        if (data.status === 'ok') alert('Пароль обновлён');
+                        else alert(data.error || 'Ошибка');
+                    }).catch(e => alert(e.message));
+                };
+            });
+            document.querySelectorAll('.users-deactivate-btn').forEach(btn => {
+                btn.onclick = function() {
+                    const login = this.getAttribute('data-login');
+                    if (!login) return;
+                    if (!confirm('Деактивировать пользователя ' + login + '? Он не сможет входить в панель.')) return;
+                    fetch('/api/admin/users/' + encodeURIComponent(login) + '/deactivate', {
+                        method: 'POST',
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({})
+                    }).then(r => r.json()).then(data => {
+                        if (data.status === 'ok') loadUsersTab();
+                        else alert(data.error || 'Ошибка');
+                    }).catch(e => alert(e.message));
+                };
+            });
+        }
+
+        (function initUsersForm() {
+            const form = document.getElementById('usersAddForm');
+            if (!form) return;
+            form.onsubmit = async function(e) {
+                e.preventDefault();
+                const loginEl = document.getElementById('usersAddLogin');
+                const pwdEl = document.getElementById('usersAddPassword');
+                const roleEl = document.getElementById('usersAddRole');
+                const errEl = document.getElementById('usersAddError');
+                const okEl = document.getElementById('usersAddSuccess');
+                if (errEl) errEl.style.display = 'none';
+                if (okEl) okEl.style.display = 'none';
+                const login = (loginEl && loginEl.value || '').trim();
+                const password = pwdEl && pwdEl.value;
+                const role = roleEl && roleEl.value || 'support';
+                if (!login) { if (errEl) { errEl.textContent = 'Введите логин'; errEl.style.display = 'block'; } return; }
+                if (!password) { if (errEl) { errEl.textContent = 'Введите пароль'; errEl.style.display = 'block'; } return; }
+                try {
+                    const r = await fetch('/api/admin/users', {
+                        method: 'POST',
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({ login: login, password: password, actor_role: role })
+                    });
+                    const data = await r.json();
+                    if (data.status === 'ok') {
+                        if (okEl) { okEl.textContent = 'Пользователь ' + login + ' создан'; okEl.style.display = 'block'; setTimeout(() => { okEl.style.display = 'none'; }, 3000); }
+                        if (pwdEl) pwdEl.value = '';
+                        if (typeof queueCachedUsers !== 'undefined') queueCachedUsers = [];
+                        if (typeof queueRenderTable === 'function') queueRenderTable();
+                        loadUsersTab();
+                    } else {
+                        if (errEl) { errEl.textContent = data.error || 'Ошибка'; errEl.style.display = 'block'; }
+                    }
+                } catch (e) {
+                    if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+                }
+            };
+        })();
+
+        // ============================================
+        // Agent Updates Tab
+        // ============================================
+
+        let agentUpdatesTabInitialized = false;
+
+        async function loadAgentUpdatesTab() {
+            const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
+            const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const refreshBuildsBtn = document.getElementById('agentUpdatesRefreshBuilds');
+            const triggerBtn = document.getElementById('agentUpdatesTriggerBtn');
+            if (!deviceSelect || !buildSelect) return;
+
+            if (!agentUpdatesTabInitialized) {
+                agentUpdatesTabInitialized = true;
+                if (refreshBuildsBtn) refreshBuildsBtn.addEventListener('click', () => loadAgentUpdatesBuilds(true));
+                if (triggerBtn) triggerBtn.addEventListener('click', triggerAgentUpdate);
+                const uploadForm = document.getElementById('agentBuildUploadForm');
+                if (uploadForm) uploadForm.addEventListener('submit', submitAgentBuildUpload);
+                const uploadFile = document.getElementById('agentBuildUploadFile');
+                if (uploadFile) uploadFile.addEventListener('change', syncAgentBuildUploadArchiveType);
+                const bulkAllEl = document.getElementById('agentUpdatesBulkAllOnline');
+                const bulkDevicesWrap = document.getElementById('agentUpdatesBulkDevicesWrap');
+                if (bulkAllEl && bulkDevicesWrap) bulkAllEl.addEventListener('change', function() { bulkDevicesWrap.style.display = this.checked ? 'none' : 'block'; });
+                const bulkBtn = document.getElementById('agentUpdatesBulkBtn');
+                if (bulkBtn) bulkBtn.addEventListener('click', triggerBulkAgentUpdate);
+            }
+
+            // Устройства — из /api/agents (только онлайн)
+            try {
+                const r = await fetch('/api/agents', { headers: getAuthHeaders() });
+                const data = await r.json();
+                deviceSelect.innerHTML = '<option value="">— Выберите устройство —</option>';
+                if (r.ok && data.agents && data.agents.length > 0) {
+                    data.agents.forEach(agent => {
+                        const opt = document.createElement('option');
+                        opt.value = agent.device_id;
+                        opt.textContent = `${agent.device_id} (${agent.user_display_name || '—'})`;
+                        deviceSelect.appendChild(opt);
+                    });
+                    const bulkDevicesEl = document.getElementById('agentUpdatesBulkDevices');
+                    if (bulkDevicesEl) {
+                        bulkDevicesEl.innerHTML = '';
+                        data.agents.forEach(agent => {
+                            const opt = document.createElement('option');
+                            opt.value = agent.device_id;
+                            opt.textContent = (agent.device_id || '').slice(0, 8) + '... (' + (agent.os_type || '—') + ')';
+                            bulkDevicesEl.appendChild(opt);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Agent updates: load agents', e);
+            }
+
+            loadAgentUpdatesBuilds(false);
+        }
+
+        async function triggerBulkAgentUpdate() {
+            const bulkAllEl = document.getElementById('agentUpdatesBulkAllOnline');
+            const bulkDevicesEl = document.getElementById('agentUpdatesBulkDevices');
+            const channelEl = document.getElementById('agentUpdatesBulkChannel');
+            const versionEl = document.getElementById('agentUpdatesBulkVersion');
+            const resultEl = document.getElementById('agentUpdatesBulkResult');
+            const resultContent = document.getElementById('agentUpdatesBulkResultContent');
+            const body = { channel: (channelEl && channelEl.value) || 'stable' };
+            const v = (versionEl && versionEl.value) ? String(versionEl.value).trim() : '';
+            if (v) body.version = v;
+            if (!bulkAllEl || !bulkAllEl.checked) {
+                const selected = bulkDevicesEl ? Array.from(bulkDevicesEl.selectedOptions || []).map(function(o) { return o.value; }).filter(Boolean) : [];
+                body.device_ids = selected.length ? selected : null;
+            } else {
+                body.device_ids = null;
+            }
+            if (resultEl) { resultEl.style.display = 'block'; resultContent.innerHTML = 'Отправка запроса...'; }
+            try {
+                const r = await fetch('/api/agents/update_bulk', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(body)
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    resultContent.innerHTML = '<p class="error-message">' + (data.error || 'Ошибка запроса') + '</p>';
+                    return;
+                }
+                const ops = data.operations || [];
+                const errs = data.errors || [];
+                setBulkPendingOperations(ops);
+                if (ops.length === 0 && errs.length === 0) {
+                    resultContent.innerHTML = '<p class="muted">Нет устройств для обновления (выберите устройства или «Все онлайн»).</p>';
+                    return;
+                }
+                let msg = ops.length ? 'Запущено обновлений: ' + ops.length + '.' : '';
+                if (errs.length) msg += ' Ошибки: ' + errs.length + ' (' + errs.map(function(e) { return e.device_id ? (e.device_id.slice(0, 8) + '...') : ''; }).join(', ') + ').';
+                resultContent.innerHTML = '<p>' + msg + ' Ожидание результатов...</p>';
+                agentUpdatesBulkRows = ops;
+                agentUpdatesBulkStatus = {};
+                renderAgentUpdatesBulkResult();
+                if (queueWs && queueWs.readyState === WebSocket.OPEN && ops.length) {
+                    const deviceIds = {};
+                    ops.forEach(function(o) { if (o.device_id) deviceIds[o.device_id] = true; });
+                    Object.keys(deviceIds).forEach(function(deviceId) {
+                        try { queueWs.send(JSON.stringify({ type: 'subscribe_device', device_id: deviceId })); } catch (e) {}
+                    });
+                }
+            } catch (e) {
+                resultContent.innerHTML = '<p class="error-message">Ошибка: ' + escapeHtml(e.message) + '</p>';
+            }
+        }
+
+        async function loadAgentUpdatesBuilds(showLoading) {
+            const loadingEl = document.getElementById('agentUpdatesBuildsLoading');
+            const errorEl = document.getElementById('agentUpdatesBuildsError');
+            const containerEl = document.getElementById('agentUpdatesBuildsContainer');
+            const tbodyEl = document.getElementById('agentUpdatesBuildsTableBody');
+            const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            if (!tbodyEl || !buildSelect) return;
+
+            if (showLoading !== false && loadingEl) loadingEl.style.display = 'block';
+            if (errorEl) errorEl.style.display = 'none';
+
+            try {
+                const r = await fetch('/api/agent_builds?limit=100', { headers: getAuthHeaders() });
+                const data = await r.json();
+                if (loadingEl) loadingEl.style.display = 'none';
+
+                if (!r.ok) {
+                    if (errorEl) { errorEl.textContent = data.error || 'Ошибка загрузки билдов'; errorEl.style.display = 'block'; }
+                    buildSelect.innerHTML = '<option value="">— Ошибка загрузки —</option>';
+                    return;
+                }
+
+                const builds = data.builds || [];
+                const valueSep = '|';
+
+                buildSelect.innerHTML = '<option value="">— Выберите билд —</option>';
+                builds.forEach(b => {
+                    const val = [b.target, b.channel, b.version].join(valueSep);
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = `${b.target} / ${b.channel} / ${b.version}`;
+                    buildSelect.appendChild(opt);
+                });
+
+                tbodyEl.innerHTML = builds.map(b => {
+                    const sizeKb = b.size != null ? Math.round(b.size / 1024) + ' КБ' : '—';
+                    const created = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU') : '—';
+                    return `<tr><td>${b.target}</td><td>${b.channel}</td><td>${b.version}</td><td>${sizeKb}</td><td>${created}</td></tr>`;
+                }).join('');
+                if (containerEl) containerEl.style.display = 'block';
+            } catch (e) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (errorEl) { errorEl.textContent = 'Ошибка: ' + e.message; errorEl.style.display = 'block'; }
+                buildSelect.innerHTML = '<option value="">— Ошибка —</option>';
+            }
+        }
+
+        async function triggerAgentUpdate() {
+            const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
+            const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const restartDelayEl = document.getElementById('agentUpdatesRestartDelay');
+            const resultEl = document.getElementById('agentUpdatesResult');
+            const resultContent = document.getElementById('agentUpdatesResultContent');
+            const errorEl = document.getElementById('agentUpdatesError');
+
+            const deviceId = deviceSelect && deviceSelect.value ? deviceSelect.value.trim() : '';
+            const buildVal = buildSelect && buildSelect.value ? buildSelect.value : '';
+            const valueSep = '|';
+            const parts = buildVal.split(valueSep);
+
+            if (!deviceId) {
+                if (errorEl) { errorEl.textContent = 'Выберите устройство'; errorEl.style.display = 'block'; }
+                if (resultEl) resultEl.style.display = 'none';
+                return;
+            }
+            if (parts.length !== 3 || !parts[0]) {
+                if (errorEl) { errorEl.textContent = 'Выберите билд агента'; errorEl.style.display = 'block'; }
+                if (resultEl) resultEl.style.display = 'none';
+                return;
+            }
+
+            const target = parts[0];
+            const channel = parts[1];
+            const version = parts[2];
+            const restart_delay_sec = restartDelayEl ? parseInt(restartDelayEl.value, 10) : 2;
+            const body = { target, channel, version };
+            if (!isNaN(restart_delay_sec) && restart_delay_sec >= 0) body.restart_delay_sec = restart_delay_sec;
+
+            if (errorEl) errorEl.style.display = 'none';
+            if (resultEl) { resultEl.style.display = 'block'; resultContent.textContent = 'Отправка запроса...'; }
+
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/agent/update', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(body)
+                });
+                const data = await r.json();
+
+                if (r.ok && data.status === 'accepted') {
+                    const opId = data.operation_id || '';
+                    const buildStr = data.build ? (data.build.target + ' / ' + data.build.channel + ' / ' + data.build.version) : '—';
+                    resultContent.innerHTML = `
+                        <p class="success-message">Обновление принято в очередь. Ожидание результата...</p>
+                        <p><strong>ID операции:</strong> <code>${opId}</code></p>
+                        <p><strong>Билд:</strong> ${buildStr}</p>
+                    `;
+                    if (typeof queueWs !== 'undefined' && queueWs && queueWs.readyState === WebSocket.OPEN && deviceId) {
+                        try { queueWs.send(JSON.stringify({ type: 'subscribe_device', device_id: deviceId })); } catch (e) {}
+                        if (typeof setPendingAgentUpdateOperation === 'function') setPendingAgentUpdateOperation(opId, deviceId);
+                    }
+                } else {
+                    resultContent.innerHTML = `
+                        <p class="error-message">${data.error || 'Ошибка запроса'}</p>
+                        ${data.error_code ? `<p><code>${data.error_code}</code></p>` : ''}
+                    `;
+                }
+            } catch (e) {
+                resultContent.innerHTML = '<p class="error-message">Ошибка: ' + e.message + '</p>';
+            }
+        }
+
+        function syncAgentBuildUploadArchiveType() {
+            const fileInput = document.getElementById('agentBuildUploadFile');
+            const archiveSelect = document.getElementById('agentBuildUploadArchiveType');
+            if (!fileInput || !archiveSelect || !fileInput.files || !fileInput.files.length) return;
+            const name = (fileInput.files[0].name || '').toLowerCase();
+            if (name.endsWith('.zip')) archiveSelect.value = 'zip';
+            else if (name.endsWith('.tar.gz') || name.endsWith('.tgz')) archiveSelect.value = 'tar.gz';
+        }
+
+        async function submitAgentBuildUpload(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('agentBuildUploadFile');
+            const targetEl = document.getElementById('agentBuildUploadTarget');
+            const channelEl = document.getElementById('agentBuildUploadChannel');
+            const versionEl = document.getElementById('agentBuildUploadVersion');
+            const archiveTypeEl = document.getElementById('agentBuildUploadArchiveType');
+            const overwriteEl = document.getElementById('agentBuildUploadOverwrite');
+            const resultEl = document.getElementById('agentBuildUploadResult');
+            const errorEl = document.getElementById('agentBuildUploadError');
+            const submitBtn = document.getElementById('agentBuildUploadSubmit');
+            if (!fileInput || !fileInput.files || !fileInput.files[0] || !targetEl || !channelEl || !versionEl || !archiveTypeEl) return;
+            const version = (versionEl.value || '').trim();
+            if (!version) {
+                if (errorEl) { errorEl.textContent = 'Укажите версию'; errorEl.style.display = 'block'; }
+                if (resultEl) resultEl.style.display = 'none';
+                return;
+            }
+            if (errorEl) errorEl.style.display = 'none';
+            if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Загрузка...'; }
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('target', targetEl.value);
+                formData.append('channel', channelEl.value);
+                formData.append('version', version);
+                formData.append('archive_type', archiveTypeEl.value);
+                if (overwriteEl && overwriteEl.checked) formData.append('overwrite', 'true');
+                const r = await fetch('/api/agent_builds/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': (localStorage.getItem('admin_auth_token') || '') ? 'Bearer ' + localStorage.getItem('admin_auth_token') : '' },
+                    body: formData
+                });
+                const data = await r.json();
+                if (resultEl) {
+                    resultEl.style.display = 'block';
+                    if (r.ok && data.status === 'success') {
+                        resultEl.innerHTML = '<p class="success-message">Билд загружен.</p><p><strong>' + (data.target || '') + ' / ' + (data.channel || '') + ' / ' + (data.version || '') + '</strong>, размер ' + (data.size ? Math.round(data.size / 1024) + ' КБ' : '—') + '</p>';
+                        loadAgentUpdatesBuilds(true);
+                        fileInput.value = '';
+                        versionEl.value = '';
+                    } else {
+                        resultEl.innerHTML = '<p class="error-message">' + (data.error || 'Ошибка загрузки') + '</p>';
+                    }
+                }
+            } catch (err) {
+                if (resultEl) { resultEl.style.display = 'block'; resultEl.innerHTML = '<p class="error-message">Ошибка: ' + escapeHtml(err.message) + '</p>'; }
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        }
+
+        // ============================================
+        // Devices Tab Functions
+        // ============================================
+
+        let currentDeviceIdForTokens = null;
+        const DEVICE_HASH_PREFIX = 'device-';
+        const DEVICE_MODULE_CONSOLE_MAX = 80;
+
+        function getDeviceModuleConsoleStore() {
+            if (!window._deviceModuleConsole) window._deviceModuleConsole = {};
+            return window._deviceModuleConsole;
+        }
+
+        function deviceModuleConsoleLog(deviceId, text, isError) {
+            const store = getDeviceModuleConsoleStore();
+            if (!store[deviceId]) store[deviceId] = [];
+            store[deviceId].push({ time: Date.now(), text: text, isError: !!isError });
+            const arr = store[deviceId];
+            if (arr.length > DEVICE_MODULE_CONSOLE_MAX) arr.splice(0, arr.length - DEVICE_MODULE_CONSOLE_MAX);
+            if (getDeviceIdFromHash() === deviceId) renderDeviceModuleConsole(deviceId);
+        }
+
+        function renderDeviceModuleConsole(deviceId) {
+            const el = document.getElementById('deviceModuleConsole');
+            if (!el) return;
+            const store = getDeviceModuleConsoleStore();
+            const messages = (store[deviceId] || []).slice(-50);
+            if (messages.length === 0) {
+                el.textContent = 'Нет сообщений. Действия с модулями и результаты появятся здесь.';
+                el.style.color = '#888';
+                return;
+            }
+            el.style.color = '';
+            el.innerHTML = messages.map(function (m) {
+                const timeStr = new Date(m.time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const cls = m.isError ? 'device-console-err' : 'device-console-ok';
+                return '<div class="' + cls + '" style="margin-bottom: 4px;">[' + escapeHtml(timeStr) + '] ' + escapeHtml(m.text) + '</div>';
+            }).join('');
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function getDeviceIdFromHash() {
+            const h = (window.location.hash || '').slice(1);
+            if (h.startsWith(DEVICE_HASH_PREFIX)) return h.slice(DEVICE_HASH_PREFIX.length);
+            return null;
+        }
+
+        function setDeviceHash(deviceId) {
+            window.location.hash = DEVICE_HASH_PREFIX + deviceId;
+        }
+
+        function clearDeviceHash() {
+            if (window.location.hash.slice(1).startsWith(DEVICE_HASH_PREFIX)) {
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+        }
+
+        function scheduleDeviceModulesRefreshAfterAction(deviceId) {
+            [2000, 5000, 9000].forEach(function(ms) {
+                setTimeout(function() {
+                    if (getDeviceIdFromHash() === deviceId) refreshDeviceModulesOnly(deviceId);
+                }, ms);
+            });
+        }
+
+        async function refreshDeviceModulesOnly(deviceId) {
+            if (!deviceId || getDeviceIdFromHash() !== deviceId) return;
+            const installedWrap = document.getElementById('agentInstalledModulesWrap');
+            if (!installedWrap) return;
+            try {
+                const modR = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/modules', { headers: getAuthHeaders() });
+                const modData = await responseToJson(modR);
+                if (getDeviceIdFromHash() !== deviceId) return;
+                if (modR.ok && modData.modules && modData.modules.length) {
+                    const rows = modData.modules.map(m => {
+                        const state = m.active ? 'активен' : 'неактивен';
+                        const mod = escapeHtml(m.module_name);
+                        const ver = escapeHtml(m.version || '');
+                        return '<tr><td><code>' + mod + '</code></td><td>' + ver + '</td><td>' + state + '</td><td><button type="button" class="btn btn-small btn-secondary agent-module-update" data-module="' + mod + '" data-version="' + ver + '">Обновить</button> <button type="button" class="btn btn-small btn-danger agent-module-remove" data-module="' + mod + '">Удалить</button></td></tr>';
+                    }).join('');
+                    installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong></p><table class="queue-table" style="max-width: 640px;"><thead><tr><th>Модуль</th><th>Версия</th><th>Состояние</th><th>Действия</th></tr></thead><tbody>' + rows + '</tbody></table>';
+                } else {
+                    installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong> нет данных или модулей нет.</p>';
+                }
+            } catch (e) {
+                if (getDeviceIdFromHash() === deviceId) installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong> ошибка загрузки — ' + escapeHtml(e.message) + '</p>';
+            }
+        }
+
+        function devicesApplyHash() {
+            const deviceId = getDeviceIdFromHash();
+            const listSection = document.getElementById('devicesListSection');
+            const agentPanel = document.getElementById('deviceAgentPanel');
+            const tokensSection = document.getElementById('deviceTokensSection');
+            if (deviceId) {
+                if (listSection) listSection.style.display = 'none';
+                if (tokensSection) tokensSection.style.display = 'none';
+                if (agentPanel) {
+                    agentPanel.style.display = 'block';
+                    loadDeviceAgentPage(deviceId);
+                }
+            } else {
+                if (listSection) listSection.style.display = 'block';
+                if (agentPanel) agentPanel.style.display = 'none';
+            }
+        }
+
+        async function loadDeviceAgentPage(deviceId, silent) {
+            const loadingEl = document.getElementById('deviceAgentLoading');
+            const errorEl = document.getElementById('deviceAgentError');
+            const contentEl = document.getElementById('deviceAgentContent');
+            const titleEl = document.getElementById('deviceAgentTitle');
+            if (!contentEl) return;
+            if (!silent) {
+                loadingEl.style.display = 'block';
+                errorEl.style.display = 'none';
+                contentEl.style.display = 'none';
+            }
+            titleEl.textContent = deviceId;
+
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId), { headers: getAuthHeaders() });
+                const data = await responseToJson(r);
+                if (!silent) loadingEl.style.display = 'none';
+                if (!r.ok || data.status !== 'ok') {
+                    if (!silent) {
+                        errorEl.textContent = data.error || 'Не удалось загрузить данные устройства';
+                        errorEl.style.display = 'block';
+                    }
+                    return;
+                }
+                const d = data.device;
+                document.getElementById('agentHostname').textContent = d.hostname || '—';
+                document.getElementById('agentDeviceId').textContent = d.device_id || '—';
+                document.getElementById('agentOnline').innerHTML = d.online ? '<span style="color: green;">В сети</span>' : '<span style="color: #999;">Не в сети</span>';
+                document.getElementById('agentOs').textContent = d.os || '—';
+                document.getElementById('agentVersion').textContent = d.agent_version || '—';
+                const appliedWrap = document.getElementById('agentAppliedUpdateWrap');
+                const appliedVal = document.getElementById('agentAppliedUpdateVersion');
+                if (appliedWrap && appliedVal) {
+                    if (d.applied_update_version) {
+                        appliedWrap.style.display = '';
+                        appliedVal.textContent = d.applied_update_version + (d.last_update_operation_id ? ' (операция ' + (d.last_update_operation_id || '').slice(0, 8) + '…)' : '');
+                    } else {
+                        appliedWrap.style.display = 'none';
+                        appliedVal.textContent = '—';
+                    }
+                }
+                document.getElementById('agentProtocol').textContent = d.protocol_version || '—';
+                document.getElementById('agentToolsVersion').textContent = d.tools_version || '—';
+                document.getElementById('agentToolsCount').textContent = d.tools_count != null ? d.tools_count : '—';
+                document.getElementById('agentModulesCount').textContent = d.active_modules_count != null ? d.active_modules_count : '—';
+                document.getElementById('agentFirstSeen').textContent = d.first_seen_at ? new Date(d.first_seen_at).toLocaleString('ru-RU') : '—';
+                document.getElementById('agentLastSeen').textContent = d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ru-RU') : '—';
+                document.getElementById('agentLastHandshake').textContent = d.last_handshake_at ? new Date(d.last_handshake_at).toLocaleString('ru-RU') : '—';
+
+                const modulesWrap = document.getElementById('agentModulesListWrap');
+                if (d.modules && d.modules.length) {
+                    modulesWrap.innerHTML = '<p><strong>Модули (из handshake):</strong> ' + d.modules.map(m => '<code>' + escapeHtml(m) + '</code>').join(', ') + '</p>';
+                } else {
+                    modulesWrap.innerHTML = '<p><strong>Модули (из handshake):</strong> —</p>';
+                }
+
+                if (!silent) {
+                    const installedWrap = document.getElementById('agentInstalledModulesWrap');
+                    installedWrap.innerHTML = '<p class="loading">Загрузка установленных модулей...</p>';
+                    try {
+                        const modR = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/modules', { headers: getAuthHeaders() });
+                        const modData = await responseToJson(modR);
+                        if (modR.ok && modData.modules && modData.modules.length) {
+                            const rows = modData.modules.map(m => {
+                                const state = m.active ? 'активен' : 'неактивен';
+                                const mod = escapeHtml(m.module_name);
+                                const ver = escapeHtml(m.version || '');
+                                return '<tr><td><code>' + mod + '</code></td><td>' + ver + '</td><td>' + state + '</td><td><button type="button" class="btn btn-small btn-secondary agent-module-update" data-module="' + mod + '" data-version="' + ver + '">Обновить</button> <button type="button" class="btn btn-small btn-danger agent-module-remove" data-module="' + mod + '">Удалить</button></td></tr>';
+                            }).join('');
+                            installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong></p><table class="queue-table" style="max-width: 640px;"><thead><tr><th>Модуль</th><th>Версия</th><th>Состояние</th><th>Действия</th></tr></thead><tbody>' + rows + '</tbody></table>';
+                            deviceModuleConsoleLog(deviceId, 'Загружены модули: ' + modData.modules.length + ' шт.', false);
+                        } else {
+                            installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong> нет данных или модулей нет.</p>';
+                            deviceModuleConsoleLog(deviceId, 'Модулей на агенте нет или ответ пуст.', false);
+                        }
+                    } catch (e) {
+                        installedWrap.innerHTML = '<p><strong>Установленные модули на агенте:</strong> ошибка загрузки — ' + escapeHtml(e.message) + '</p>';
+                        deviceModuleConsoleLog(deviceId, 'Ошибка загрузки модулей: ' + e.message, true);
+                    }
+                    renderDeviceModuleConsole(deviceId);
+                    const installLink = document.getElementById('deviceAgentInstallModuleLink');
+                    if (installLink) {
+                        installLink.href = '#';
+                        installLink.onclick = function(e) { e.preventDefault(); setDeviceIdForModulesTab(deviceId); switchTab('modules'); };
+                    }
+                }
+                if (!silent) contentEl.style.display = 'block';
+            } catch (e) {
+                if (!silent) {
+                    loadingEl.style.display = 'none';
+                    errorEl.textContent = 'Ошибка: ' + e.message;
+                    errorEl.style.display = 'block';
+                }
+            }
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
+        function setDeviceIdForModulesTab(deviceId) {
+            window._selectedDeviceIdForModules = deviceId;
+        }
+
+        async function deviceAgentRefresh() {
+            const deviceId = getDeviceIdFromHash();
+            if (!deviceId) return;
+            const btn = document.getElementById('deviceAgentRefreshBtn');
+            if (btn) btn.disabled = true;
+            deviceModuleConsoleLog(deviceId, 'Запрос данных с агента...', false);
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/check', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true)
+                });
+                const data = await responseToJson(r);
+                if (r.ok && data.status === 'ok') {
+                    deviceModuleConsoleLog(deviceId, 'Данные с агента обновлены.', false);
+                    renderDeviceModuleConsole(deviceId);
+                    // Периодически подгружаем данные — страница сама обновит поля без перезагрузки
+                    const pollCount = 5;
+                    const pollIntervalMs = 2000;
+                    let attempts = 0;
+                    function poll() {
+                        attempts++;
+                        loadDeviceAgentPage(deviceId, true);
+                        if (attempts < pollCount) setTimeout(poll, pollIntervalMs);
+                        if (btn) btn.disabled = false;
+                    }
+                    setTimeout(poll, pollIntervalMs);
+                } else {
+                    const msg = data.error || 'Ошибка запроса';
+                    deviceModuleConsoleLog(deviceId, msg, true);
+                    renderDeviceModuleConsole(deviceId);
+                    alert(msg);
+                    if (btn) btn.disabled = false;
+                }
+            } catch (e) {
+                deviceModuleConsoleLog(deviceId, 'Ошибка: ' + e.message, true);
+                renderDeviceModuleConsole(deviceId);
+                alert('Ошибка: ' + e.message);
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        (function initDeviceAgentPanel() {
+            const backLink = document.getElementById('deviceAgentBackLink');
+            if (backLink) {
+                backLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    clearDeviceHash();
+                    document.getElementById('devicesListSection').style.display = 'block';
+                    document.getElementById('deviceAgentPanel').style.display = 'none';
+                    loadDevicesList();
+                });
+            }
+            const refreshBtn = document.getElementById('deviceAgentRefreshBtn');
+            if (refreshBtn) refreshBtn.addEventListener('click', deviceAgentRefresh);
+            const tokensBtn = document.getElementById('deviceAgentTokensBtn');
+            if (tokensBtn) {
+                tokensBtn.addEventListener('click', function() {
+                    const deviceId = getDeviceIdFromHash();
+                    if (deviceId) { currentDeviceIdForTokens = deviceId; viewDeviceTokens(deviceId); document.getElementById('deviceTokensSection').style.display = 'block'; }
+                });
+            }
+            const agentPanel = document.getElementById('deviceAgentPanel');
+            if (agentPanel) {
+                agentPanel.addEventListener('click', function(e) {
+                    const removeBtn = e.target.closest('.agent-module-remove');
+                    const updateBtn = e.target.closest('.agent-module-update');
+                    if (removeBtn) { e.preventDefault(); agentModuleRemove(removeBtn.getAttribute('data-module')); }
+                    if (updateBtn) { e.preventDefault(); agentModuleUpdate(updateBtn.getAttribute('data-module'), updateBtn.getAttribute('data-version')); }
+                });
+            }
+            window.addEventListener('hashchange', function() {
+                if (document.querySelector('#tab-devices.active')) devicesApplyHash();
+            });
+        })();
+
+        async function agentModuleRemove(moduleName) {
+            const deviceId = getDeviceIdFromHash();
+            if (!deviceId || !moduleName) return;
+            if (!confirm('Удалить модуль «' + moduleName + '» с агента?')) return;
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/modules/remove', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ module_name: moduleName })
+                });
+                const data = await responseToJson(r);
+                if (r.ok && (data.status === 'accepted' || data.status === 'ok')) {
+                    deviceModuleConsoleLog(deviceId, 'Модуль «' + moduleName + '» удалён.', false);
+                    renderDeviceModuleConsole(deviceId);
+                    scheduleDeviceModulesRefreshAfterAction(deviceId);
+                } else {
+                    const msg = data.error || 'Ошибка';
+                    deviceModuleConsoleLog(deviceId, 'Ошибка удаления «' + moduleName + '»: ' + msg, true);
+                    renderDeviceModuleConsole(deviceId);
+                    alert(msg);
+                }
+            } catch (e) {
+                deviceModuleConsoleLog(deviceId, 'Ошибка удаления «' + moduleName + '»: ' + e.message, true);
+                renderDeviceModuleConsole(deviceId);
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function agentModuleUpdate(moduleName, version) {
+            const deviceId = getDeviceIdFromHash();
+            if (!deviceId || !moduleName) return;
+            if (!version) { alert('Версия модуля неизвестна.'); return; }
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/modules/install', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ module_name: moduleName, version: version })
+                });
+                const data = await responseToJson(r);
+                if (r.ok && (data.status === 'accepted' || data.status === 'ok')) {
+                    deviceModuleConsoleLog(deviceId, 'Модуль «' + moduleName + '» ' + version + ' установлен/обновлён.', false);
+                    renderDeviceModuleConsole(deviceId);
+                    scheduleDeviceModulesRefreshAfterAction(deviceId);
+                } else {
+                    const msg = data.error || 'Ошибка';
+                    deviceModuleConsoleLog(deviceId, 'Ошибка установки «' + moduleName + '» ' + version + ': ' + msg, true);
+                    renderDeviceModuleConsole(deviceId);
+                    alert(msg);
+                }
+            } catch (e) {
+                deviceModuleConsoleLog(deviceId, 'Ошибка установки «' + moduleName + '»: ' + e.message, true);
+                renderDeviceModuleConsole(deviceId);
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function loadDevicesList() {
+            const loadingEl = document.getElementById('devicesListLoading');
+            const errorEl = document.getElementById('devicesListError');
+            const containerEl = document.getElementById('devicesListContainer');
+            const tbodyEl = document.getElementById('devicesListTableBody');
+            const bulkBar = document.getElementById('devicesBulkBar');
+            const selectAllCb = document.getElementById('devicesSelectAll');
+
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            containerEl.style.display = 'none';
+            if (bulkBar) bulkBar.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/devices', { headers: getAuthHeaders() });
+                const data = await response.json();
+
+                if (data.status === 'ok' && data.devices) {
+                    loadingEl.style.display = 'none';
+                    containerEl.style.display = 'block';
+
+                    if (data.devices.length === 0) {
+                        tbodyEl.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Устройств не найдено</td></tr>';
+                    } else {
+                        tbodyEl.innerHTML = data.devices.map(device => {
+                            const hostname = (device.hostname && device.hostname.trim()) ? escapeHtml(device.hostname) : '—';
+                            const hostnameLink = '<a href="#" class="device-hostname-link" data-device-id="' + escapeHtml(device.device_id) + '">' + hostname + '</a>';
+                            const status = device.online ? '<span style="color: green;">В сети</span>' : '<span style="color: #999;">Не в сети</span>';
+                            const lastActivity = device.last_seen_at ? new Date(device.last_seen_at).toLocaleString('ru-RU') : '—';
+                            const did = escapeHtml(device.device_id);
+                            return `<tr>
+                                <td><input type="checkbox" class="device-row-cb" value="${did}" data-device-id="${did}"></td>
+                                <td>${hostnameLink}</td>
+                                <td>${status}</td>
+                                <td>${lastActivity}</td>
+                                <td>
+                                    <div class="dropdown-actions">
+                                        <button type="button" class="btn btn-small btn-secondary dropdown-trigger">Действия ▾</button>
+                                        <ul class="dropdown-menu">
+                                            <li><a href="#" class="device-action-check" data-device-id="${did}">Проверить устройство</a></li>
+                                            <li><a href="#" class="device-action-modules" data-device-id="${did}">Список модулей</a></li>
+                                            <li><a href="#" class="device-action-install" data-device-id="${did}">Установить модуль</a></li>
+                                            <li><a href="#" class="device-action-tokens" data-device-id="${did}">Токены устройства</a></li>
+                                            <li><a href="#" class="device-action-delete" data-device-id="${did}">Удалить устройство</a></li>
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>`;
+                        }).join('');
+                        if (bulkBar) bulkBar.style.display = 'block';
+                        bindDevicesListHandlers();
+                    }
+                    if (selectAllCb) selectAllCb.checked = false;
+                } else {
+                    throw new Error(data.error || 'Не удалось загрузить список устройств');
+                }
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                errorEl.textContent = 'Ошибка: ' + error.message;
+                errorEl.style.display = 'block';
+            }
+        }
+
+        function bindDevicesListHandlers() {
+            document.querySelectorAll('.device-hostname-link').forEach(a => {
+                a.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const id = this.getAttribute('data-device-id');
+                    if (id) setDeviceHash(id);
+                    devicesApplyHash();
+                });
+            });
+            document.querySelectorAll('.device-action-check').forEach(a => {
+                a.addEventListener('click', function(e) { e.preventDefault(); deviceActionCheck(this.getAttribute('data-device-id')); });
+            });
+            document.querySelectorAll('.device-action-modules').forEach(a => {
+                a.addEventListener('click', function(e) { e.preventDefault(); const id = this.getAttribute('data-device-id'); setDeviceHash(id); devicesApplyHash(); });
+            });
+            document.querySelectorAll('.device-action-install').forEach(a => {
+                a.addEventListener('click', function(e) { e.preventDefault(); setDeviceIdForModulesTab(this.getAttribute('data-device-id')); switchTab('modules'); });
+            });
+            document.querySelectorAll('.device-action-tokens').forEach(a => {
+                a.addEventListener('click', function(e) { e.preventDefault(); viewDeviceTokens(this.getAttribute('data-device-id')); });
+            });
+            document.querySelectorAll('.device-action-delete').forEach(a => {
+                a.addEventListener('click', function(e) { e.preventDefault(); deviceActionDelete(this.getAttribute('data-device-id')); });
+            });
+            const selectAll = document.getElementById('devicesSelectAll');
+            if (selectAll) {
+                selectAll.onclick = function() {
+                    document.querySelectorAll('.device-row-cb').forEach(cb => { cb.checked = this.checked; });
+                    devicesUpdateBulkCount();
+                };
+            }
+            document.querySelectorAll('.device-row-cb').forEach(cb => {
+                cb.addEventListener('change', devicesUpdateBulkCount);
+            });
+            const bulkDeselect = document.getElementById('devicesBulkDeselect');
+            if (bulkDeselect) bulkDeselect.addEventListener('click', function() {
+                document.querySelectorAll('.device-row-cb').forEach(c => { c.checked = false; });
+                const sa = document.getElementById('devicesSelectAll'); if (sa) sa.checked = false;
+                devicesUpdateBulkCount();
+            });
+            const bulkRefresh = document.getElementById('devicesBulkRefresh');
+            if (bulkRefresh) bulkRefresh.addEventListener('click', devicesBulkRefresh);
+            const bulkDelete = document.getElementById('devicesBulkDelete');
+            if (bulkDelete) bulkDelete.addEventListener('click', devicesBulkDelete);
+            document.querySelectorAll('.dropdown-trigger').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const menu = this.nextElementSibling;
+                    document.querySelectorAll('.dropdown-menu').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+                    menu.classList.toggle('open');
+                });
+            });
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('open'));
+            });
+        }
+
+        function devicesUpdateBulkCount() {
+            const n = document.querySelectorAll('.device-row-cb:checked').length;
+            const el = document.getElementById('devicesBulkCount');
+            if (el) el.textContent = 'Выбрано: ' + n;
+        }
+
+        async function deviceActionCheck(deviceId) {
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/check', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true)
+                });
+                const data = await responseToJson(r);
+                if (r.ok && data.status === 'ok') {
+                    alert('Запрос проверки отправлен. Данные обновятся после ответа агента.');
+                    loadDevicesList();
+                } else {
+                    alert(data.error || 'Ошибка');
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function deviceActionDelete(deviceId) {
+            if (!confirm('Удалить устройство ' + deviceId + ' из БД? Будут удалены токены, очередь команд и данные модулей. Тикеты не удаляются.')) return;
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId), {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                const data = await responseToJson(r);
+                if (r.ok && data.status === 'ok') {
+                    clearDeviceHash();
+                    loadDevicesList();
+                    alert('Устройство удалено.');
+                } else {
+                    alert(data.error || 'Ошибка');
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function devicesBulkRefresh() {
+            const ids = Array.from(document.querySelectorAll('.device-row-cb:checked')).map(cb => cb.getAttribute('data-device-id')).filter(Boolean);
+            if (ids.length === 0) { alert('Выберите хотя бы одно устройство.'); return; }
+            let ok = 0, fail = 0;
+            for (const deviceId of ids) {
+                try {
+                    const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/check', {
+                        method: 'POST',
+                        headers: getAuthHeaders(true)
+                    });
+                    const data = await responseToJson(r);
+                    if (r.ok && data.status === 'ok') ok++; else fail++;
+                } catch (e) { fail++; }
+            }
+            loadDevicesList();
+            alert('Запрос проверки отправлен: ' + ok + ' устройств. Не в сети или ошибка: ' + fail);
+        }
+
+        async function devicesBulkDelete() {
+            const ids = Array.from(document.querySelectorAll('.device-row-cb:checked')).map(cb => cb.getAttribute('data-device-id')).filter(Boolean);
+            if (ids.length === 0) { alert('Выберите хотя бы одно устройство.'); return; }
+            if (!confirm('Удалить из БД выбранные устройства (' + ids.length + ')? Будут удалены токены, очередь команд и данные модулей.')) return;
+            let ok = 0, fail = 0;
+            for (const deviceId of ids) {
+                try {
+                    const r = await fetch('/api/devices/' + encodeURIComponent(deviceId), {
+                        method: 'DELETE',
+                        headers: getAuthHeaders()
+                    });
+                    const data = await responseToJson(r);
+                    if (r.ok && data.status === 'ok') ok++; else fail++;
+                } catch (e) { fail++; }
+            }
+            clearDeviceHash();
+            loadDevicesList();
+            alert('Удалено: ' + ok + '. Ошибок: ' + fail);
+        }
+
+        async function viewDeviceTokens(deviceId) {
+            currentDeviceIdForTokens = deviceId;
+            const sectionEl = document.getElementById('deviceTokensSection');
+            const loadingEl = document.getElementById('deviceTokensLoading');
+            const errorEl = document.getElementById('deviceTokensError');
+            const containerEl = document.getElementById('deviceTokensContainer');
+            const tbodyEl = document.getElementById('deviceTokensTableBody');
+
+            sectionEl.style.display = 'block';
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            containerEl.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/tokens`, { headers: getAuthHeaders() });
+                const data = await response.json();
+
+                if (data.status === 'success' && data.tokens) {
+                    loadingEl.style.display = 'none';
+                    containerEl.style.display = 'block';
+
+                    if (data.tokens.length === 0) {
+                        tbodyEl.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">Токенов нет</td></tr>';
+                    } else {
+                        tbodyEl.innerHTML = data.tokens.map(token => `
+                            <tr>
+                                <td><code>${token.token_prefix}...</code></td>
+                                <td>${token.created_at ? new Date(token.created_at).toLocaleString('ru-RU') : '—'}</td>
+                                <td>${token.expires_at ? new Date(token.expires_at).toLocaleString('ru-RU') : 'Бессрочно'}</td>
+                                <td>${token.last_used_at ? new Date(token.last_used_at).toLocaleString('ru-RU') : '—'}</td>
+                                <td>
+                                    ${token.is_active 
+                                        ? '<span style="color: green;">Активен</span>' 
+                                        : '<span style="color: #999;">Отозван/истёк</span>'}
+                                </td>
+                                <td>
+                                    ${token.is_active 
+                                        ? `<button class="btn btn-danger btn-small" onclick="revokeToken('${token.token_hash}')">Отозвать</button>`
+                                        : '<span style="color: #8e8e93;">Уже отозван</span>'}
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                } else {
+                    throw new Error(data.error || 'Не удалось загрузить токены');
+                }
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                errorEl.textContent = 'Ошибка: ' + error.message;
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function revokeToken(tokenHash) {
+            if (!confirm('Отозвать этот токен? Устройство не сможет подключаться с ним.')) {
+                return;
+            }
+
+            if (!currentDeviceIdForTokens) {
+                alert('Устройство не выбрано');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/devices/${currentDeviceIdForTokens}/tokens/revoke`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        token_hash: tokenHash
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    alert('Токен отозван');
+                    viewDeviceTokens(currentDeviceIdForTokens);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Не удалось отозвать токен'));
+                }
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        async function generateTokenDevices() {
+            const deviceUuid = document.getElementById('deviceUuidInputDevices').value.trim();
+            const tokenError = document.getElementById('tokenErrorDevices');
+            const tokenResult = document.getElementById('tokenResultDevices');
+            const generatedToken = document.getElementById('generatedTokenDevices');
+            
+            tokenError.style.display = 'none';
+            tokenResult.style.display = 'none';
+            
+            if (!deviceUuid) {
+                tokenError.textContent = 'Введите UUID устройства';
+                tokenError.style.display = 'block';
+                return;
+            }
+            
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(deviceUuid)) {
+                tokenError.textContent = 'Неверный формат UUID';
+                tokenError.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        uuid: deviceUuid
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    generatedToken.value = data.token;
+                    tokenResult.style.display = 'block';
+                    // Reload devices list and tokens if viewing
+                    loadDevicesList();
+                    if (currentDeviceIdForTokens === deviceUuid) {
+                        viewDeviceTokens(deviceUuid);
+                    }
+                } else {
+                    tokenError.textContent = data.error || 'Не удалось сгенерировать токен';
+                    tokenError.style.display = 'block';
+                }
+            } catch (error) {
+                tokenError.textContent = 'Ошибка: ' + error.message;
+                tokenError.style.display = 'block';
+            }
+        }
+
+        function clearTokenFormDevices() {
+            document.getElementById('deviceUuidInputDevices').value = '';
+            document.getElementById('tokenErrorDevices').style.display = 'none';
+            document.getElementById('tokenResultDevices').style.display = 'none';
+        }
+
+        function copyTokenDevices() {
+            const tokenInput = document.getElementById('generatedTokenDevices');
+            tokenInput.select();
+            tokenInput.setSelectionRange(0, 99999);
+            try {
+                document.execCommand('copy');
+                alert('Токен скопирован в буфер обмена.');
+            } catch (err) {
+                console.error('Failed to copy token:', err);
+            }
+        }
+
+        // ============================================
+        // Modules Tab Functions
+        // ============================================
+
+        let modulesDataTab = [];
+        let devicesDataTab = [];
+        let selectedDeviceIdTab = null;
+
+        async function loadModulesTab() {
+            await Promise.all([
+                loadDevicesListModules(),
+                loadModulesList()
+            ]);
+        }
+
+        function modulesInstallConsoleLog(message, isError) {
+            const consoleEl = document.getElementById('modules-install-console');
+            if (!consoleEl) return;
+            const row = document.createElement('div');
+            row.className = isError ? 'log-error' : 'log-line';
+            row.textContent = message;
+            consoleEl.appendChild(row);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function renderDevicesListModules() {
+            const tbody = document.getElementById('devices-table-modules-body');
+            const checkboxesWrap = document.getElementById('devices-checkboxes-modules');
+            const select = document.getElementById('deploy-device-modules');
+            if (!tbody || !checkboxesWrap || !select) return;
+
+            const currentValue = selectedDeviceIdTab || select.value;
+            tbody.innerHTML = '';
+            checkboxesWrap.innerHTML = '';
+            select.innerHTML = '<option value="">Выберите устройство...</option>';
+
+            (devicesDataTab || []).forEach(device => {
+                const deviceId = device.device_id || '';
+                const hostname = device.hostname || 'unknown';
+                const status = device.online ? 'online' : 'offline';
+                const statusLabel = device.online ? 'В сети' : 'Не в сети';
+                const modulesCount = device.active_modules_count ?? 0;
+                const toolCount = device.tools_count ?? 0;
+
+                const row = document.createElement('tr');
+                row.dataset.deviceId = deviceId;
+                row.innerHTML = `
+                    <td><input type="checkbox" class="modules-device-cb" value="${escapeHtml(deviceId)}"></td>
+                    <td><code>${escapeHtml(deviceId)}</code></td>
+                    <td>${escapeHtml(hostname)}</td>
+                    <td><span class="badge badge-${status === 'online' ? 'active' : 'removed'}">${escapeHtml(statusLabel)}</span></td>
+                    <td>${escapeHtml(device.os || '?')}</td>
+                    <td>${modulesCount}</td>
+                    <td>${toolCount}</td>
+                    <td><button type="button" class="btn btn-small btn-secondary modules-open-device-btn" data-device-id="${escapeHtml(deviceId)}">Открыть</button></td>
+                `;
+                tbody.appendChild(row);
+
+                const compactItem = document.createElement('label');
+                compactItem.style.display = 'inline-flex';
+                compactItem.style.alignItems = 'center';
+                compactItem.style.gap = '8px';
+                compactItem.style.marginRight = '12px';
+                compactItem.innerHTML = `
+                    <input type="checkbox" class="modules-device-cb" value="${escapeHtml(deviceId)}">
+                    <span>${escapeHtml(hostname)} (${escapeHtml(deviceId.slice(0, 8))}...)</span>
+                `;
+                checkboxesWrap.appendChild(compactItem);
+
+                const option = document.createElement('option');
+                option.value = deviceId;
+                option.textContent = `${hostname} (${deviceId})`;
+                select.appendChild(option);
+            });
+
+            if (currentValue && (devicesDataTab || []).some(device => device.device_id === currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        async function loadDevicesListModules() {
+            const tbody = document.getElementById('devices-table-modules-body');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="8"><div class="loading">Загрузка устройств...</div></td></tr>';
+            }
+            try {
+                const response = await fetch('/api/devices', { headers: getAuthHeaders() });
+                const data = await responseToJson(response);
+                if (!response.ok || data.status !== 'ok') {
+                    if (tbody) {
+                        tbody.innerHTML = '<tr><td colspan="8"><div class="error-message">Не удалось загрузить устройства</div></td></tr>';
+                    }
+                    return;
+                }
+
+                devicesDataTab = data.devices || [];
+                renderDevicesListModules();
+
+                const selected = selectedDeviceIdTab || document.getElementById('deploy-device-modules')?.value;
+                if (selected) {
+                    selectDeviceModules(selected, true);
+                }
+            } catch (error) {
+                if (tbody) {
+                    tbody.innerHTML = `<tr><td colspan="8"><div class="error-message">Ошибка: ${escapeHtml(error.message)}</div></td></tr>`;
+                }
+            }
+        }
+
+        function selectDeviceModules(deviceId, silent) {
+            const select = document.getElementById('deploy-device-modules');
+            const details = document.getElementById('device-details-modules');
+            selectedDeviceIdTab = deviceId || null;
+            if (select && deviceId) {
+                select.value = deviceId;
+            }
+            document.querySelectorAll('#devices-table-modules-body tr').forEach(row => {
+                row.classList.toggle('selected', row.dataset.deviceId === deviceId);
+            });
+            if (!deviceId) {
+                if (details) details.style.display = 'none';
+                return;
+            }
+            if (details) details.style.display = 'block';
+            if (!silent) {
+                loadDeviceDetailsModules(deviceId);
+            } else {
+                loadDeviceDetailsModules(deviceId);
+            }
+        }
+
+        function initRegistryModulesToggles() {
+            const btnUpload = document.getElementById('registry-btn-upload-modules');
+            const btnServer = document.getElementById('registry-btn-server-modules');
+            const sectionUpload = document.getElementById('registry-upload-section');
+            const sectionServer = document.getElementById('registry-server-section');
+            if (!btnUpload || !btnServer || !sectionUpload || !sectionServer) return;
+
+            function toggleSection(section, btn, otherSection, otherBtn) {
+                const isOpen = section.style.display !== 'none';
+                section.style.display = isOpen ? 'none' : 'block';
+                btn.setAttribute('aria-expanded', !isOpen);
+                if (!isOpen && section === sectionServer) {
+                    loadModulesList();
+                }
+            }
+
+            btnUpload.addEventListener('click', () => toggleSection(sectionUpload, btnUpload, sectionServer, btnServer));
+            btnServer.addEventListener('click', () => toggleSection(sectionServer, btnServer, sectionUpload, btnUpload));
+        }
+
+        async function loadModulesList() {
+            const container = document.getElementById('modules-list-modules');
+            container.innerHTML = '<div class="loading">Загрузка модулей...</div>';
+
+            try {
+                const response = await fetch('/api/modules', { headers: getAuthHeaders() });
+                const data = await response.json();
+
+                if (data.modules) {
+                    modulesDataTab = data.modules;
+                    renderModulesList();
+                    updateDeployModuleSelect();
+                } else {
+                    container.innerHTML = '<div class="error-message">Не удалось загрузить модули</div>';
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">Ошибка: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderModulesList() {
+            const container = document.getElementById('modules-list-modules');
+            if (modulesDataTab.length === 0) {
+                container.innerHTML = '<div class="empty">Нет загруженных модулей</div>';
+                return;
+            }
+            container.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Модуль</th>
+                            <th>Версия</th>
+                            <th>Manifest</th>
+                            <th>Platforms</th>
+                            <th>Tools</th>
+                            <th>Validation</th>
+                            <th>Загружен</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${modulesDataTab.map(m => `
+                            <tr>
+                                <td><strong>${escapeHtml(m.module_name)}</strong>${m.legacy_manifest ? ' <span class="badge badge-warning">legacy</span>' : ''}</td>
+                                <td>${escapeHtml(m.version)}</td>
+                                <td>v${escapeHtml(String(m.manifest_version || '1'))}</td>
+                                <td>${escapeHtml((m.platforms || []).join(', ') || 'any')}</td>
+                                <td>${m.tools_count || 0}</td>
+                                <td>${escapeHtml(m.validation_status || 'unknown')}</td>
+                                <td>${m.created_at ? new Date(m.created_at).toLocaleString() : '?'}</td>
+                                <td>
+                                    <button type="button" class="btn btn-small" data-module-name="${escapeHtml(m.module_name)}" data-version="${escapeHtml(m.version)}" onclick="showInstallDialogModules(this)">Установить...</button>
+                                    <button type="button" class="btn btn-small btn-secondary" data-module-name="${escapeHtml(m.module_name)}" data-version="${escapeHtml(m.version)}" onclick="showModuleDetailModules(this)">Details</button>
+                                    <button type="button" class="btn btn-small btn-secondary" data-module-name="${escapeHtml(m.module_name)}" data-version="${escapeHtml(m.version)}" onclick="openUploadForUpdateModules(this)">Обновить</button>
+                                    <button type="button" class="btn btn-small btn-danger" data-module-name="${escapeHtml(m.module_name)}" data-version="${escapeHtml(m.version)}" onclick="deleteModuleFromServerModules(this)">Удалить</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function showModuleDetailModules(btn) {
+            const name = btn.getAttribute('data-module-name');
+            const version = btn.getAttribute('data-version');
+            if (!name || !version) return;
+            const wrap = document.getElementById('module-detail-modules');
+            const content = document.getElementById('module-detail-content-modules');
+            if (!wrap || !content) return;
+            wrap.style.display = 'block';
+            content.innerHTML = '<div class="loading">Загрузка деталей...</div>';
+            try {
+                const response = await fetch(`/api/modules/${encodeURIComponent(name)}/${encodeURIComponent(version)}`, { headers: getAuthHeaders() });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    content.innerHTML = `<div class="error-message">${escapeHtml(data.error || 'Не удалось загрузить детали модуля')}</div>`;
+                    return;
+                }
+                content.innerHTML = `
+                    <div class="toolset-info">
+                        <div class="info-card"><label>Validation</label><value>${escapeHtml(data.validation_status || 'unknown')}</value></div>
+                        <div class="info-card"><label>Manifest</label><value>v${escapeHtml(String(data.manifest_version || '1'))}</value></div>
+                        <div class="info-card"><label>Platforms</label><value>${escapeHtml((data.platforms || []).join(', ') || 'any')}</value></div>
+                        <div class="info-card"><label>Tools</label><value>${(data.tools || []).length}</value></div>
+                    </div>
+                    ${renderErrorInfoModules(data.validation_json)}
+                    <div class="section"><h4>Tools Contract</h4><pre>${escapeHtml(JSON.stringify(data.tools || [], null, 2))}</pre></div>
+                    <div class="section"><h4>Manifest JSON</h4><pre>${escapeHtml(JSON.stringify(data.manifest_json || {}, null, 2))}</pre></div>
+                    <div class="section"><h4>Validation JSON</h4><pre>${escapeHtml(JSON.stringify(data.validation_json || {}, null, 2))}</pre></div>
+                `;
+            } catch (error) {
+                content.innerHTML = `<div class="error-message">${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderErrorInfoModules(validationJson) {
+            if (!validationJson) return '';
+            const warnings = validationJson.warnings || [];
+            const errors = validationJson.errors || {};
+            const errorItems = Object.entries(errors).flatMap(([section, items]) => (items || []).map(item => `${section}: ${item}`));
+            return `
+                    <div class="section">
+                        <h4>Validation Summary</h4>
+                        ${warnings.length ? `<div class="preflight-warning" style="display:block;">Warnings:<br>${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
+                        ${errorItems.length ? `<div class="error-message" style="display:block;">${errorItems.map(item => escapeHtml(item)).join('<br>')}</div>` : ''}
+                    </div>
+            `;
+        }
+
+        async function deleteModuleFromServerModules(btn) {
+            const name = btn.getAttribute('data-module-name');
+            const version = btn.getAttribute('data-version');
+            if (!name || !version || !confirm(`Удалить модуль "${name}" версии ${version} с сервера? Это действие необратимо.`)) return;
+            try {
+                const response = await fetch(`/api/modules/${encodeURIComponent(name)}/${encodeURIComponent(version)}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                const data = await response.json();
+                if (response.ok && (data.status === 'ok' || data.status === 'success')) {
+                    await loadModulesList();
+                    updateDeployModuleSelect();
+                } else {
+                    alert('Ошибка удаления: ' + (data.error || response.status));
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        function openUploadForUpdateModules(btn) {
+            const name = btn.getAttribute('data-module-name');
+            const version = btn.getAttribute('data-version');
+            if (!name || !version) return;
+            window._modulesUpdateOld = { module_name: name, version: version };
+            const sectionUpload = document.getElementById('registry-upload-section');
+            const sectionServer = document.getElementById('registry-server-section');
+            if (sectionUpload) sectionUpload.style.display = 'block';
+            if (sectionServer) sectionServer.style.display = 'none';
+            const btnUpload = document.getElementById('registry-btn-upload-modules');
+            if (btnUpload) btnUpload.setAttribute('aria-expanded', 'true');
+            const btnServer = document.getElementById('registry-btn-server-modules');
+            if (btnServer) btnServer.setAttribute('aria-expanded', 'false');
+            const nameInput = document.getElementById('upload-module-name-modules');
+            const versionInput = document.getElementById('upload-version-modules');
+            if (nameInput) { nameInput.value = name; nameInput.readOnly = true; }
+            if (versionInput) { versionInput.value = ''; versionInput.placeholder = `Новая версия (старую оставим как ${version})`; versionInput.readOnly = false; }
+            versionInput?.focus();
+        }
+
+        function clearUploadUpdateStateModules() {
+            window._modulesUpdateOld = null;
+            const nameInput = document.getElementById('upload-module-name-modules');
+            const versionInput = document.getElementById('upload-version-modules');
+            if (nameInput) { nameInput.readOnly = false; nameInput.placeholder = '?? manifest'; }
+            if (versionInput) { versionInput.placeholder = '?? manifest'; }
+        }
+
+        function showInstallDialogModules(btn) {
+            const moduleName = btn.getAttribute('data-module-name');
+            const version = btn.getAttribute('data-version');
+            if (!moduleName || !version) return;
+            const moduleSelect = document.getElementById('deploy-module-modules');
+            const massSelect = document.getElementById('mass-deploy-module-modules');
+            if (moduleSelect) moduleSelect.value = `${moduleName}:${version}`;
+            if (massSelect) massSelect.value = `${moduleName}:${version}`;
+            const deviceSelect = document.getElementById('deploy-device-modules');
+            if (!deviceSelect || !deviceSelect.value) {
+                alert('Выберите устройство в правом блоке, чтобы установить ' + moduleName + ' ' + version);
+                if (deviceSelect) deviceSelect.focus();
+            } else {
+                document.getElementById('deploy-form-modules').dispatchEvent(new Event('submit'));
+            }
+        }
+
+        let toolsetDataCacheModules = null;
+
+        async function loadDeviceDetailsModules(deviceId) {
+            const container = document.getElementById('device-details-content-modules');
+            const desiredDiff = document.getElementById('desired-diff-modules');
+            container.innerHTML = '<div class="loading">Загрузка данных устройства...</div>';
+            if (desiredDiff) desiredDiff.innerHTML = '<div class="loading">Loading desired state...</div>';
+
+            try {
+                const headers = getAuthHeaders();
+                const [modulesRes, toolsetRes, debugRes, desiredRes] = await Promise.all([
+                    fetch(`/api/devices/${deviceId}/modules`, { headers }),
+                    fetch(`/api/devices/${deviceId}/toolset`, { headers }),
+                    fetch(`/api/devices/${deviceId}/modules/debug`, { headers }).catch(() => null),
+                    fetch(`/api/devices/${deviceId}/modules/desired_diff`, { headers }).catch(() => null)
+                ]);
+
+                const modulesData = await modulesRes.json();
+                toolsetDataCacheModules = await toolsetRes.json();
+                const debugData = debugRes ? await debugRes.json() : null;
+                const desiredData = desiredRes ? await desiredRes.json() : null;
+
+                if (modulesData.status === 'ok' && toolsetDataCacheModules.status === 'ok') {
+                    renderDeviceDetailsModules(deviceId, modulesData, toolsetDataCacheModules, debugData, desiredData);
+                    checkPreflightModules();
+                } else {
+                    container.innerHTML = '<div class="error-message">Не удалось загрузить данные устройства</div>';
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">Ошибка: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderDeviceDetailsModules(deviceId, modulesData, toolsetData, debugData, desiredData) {
+            const container = document.getElementById('device-details-content-modules');
+            const desiredDiff = document.getElementById('desired-diff-modules');
+            const modules = modulesData.modules || [];
+            const toolsByModule = toolsetData.tools_by_module || {};
+            const modulesWithDrift = modules.map(m => {
+                const hasTools = toolsByModule[m.module_name] && toolsByModule[m.module_name].length > 0;
+                let driftStatus = null;
+                if (m.active && !hasTools) driftStatus = 'active_no_tools';
+                else if (!m.active && hasTools) driftStatus = 'tools_no_active';
+                else if (m.active && hasTools) driftStatus = 'ok';
+                return { ...m, driftStatus, toolsCount: hasTools ? toolsByModule[m.module_name].length : 0 };
+            });
+            const recentOps = (debugData && debugData.recent_operations) ? debugData.recent_operations : [];
+            const mismatches = (debugData && debugData.mismatches) ? debugData.mismatches : [];
+
+            container.innerHTML = `
+                <div class="section">
+                    <h3>Снимок toolset</h3>
+                    <div class="toolset-info">
+                        <div class="info-card"><label>Toolset hash</label><value>${toolsetData.toolset_hash || '?'}</value></div>
+                        <div class="info-card"><label>Инструментов</label><value>${toolsetData.tool_count || 0}</value></div>
+                        <div class="info-card"><label>Снимок</label><value>${toolsetData.captured_at ? new Date(toolsetData.captured_at).toLocaleString() : '?'}</value></div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="syncModulesModules('${deviceId}')">Синхронизировать снимок</button>
+                </div>
+                <div class="section">
+                    <h3>Модули на устройстве (${modules.length})</h3>
+                    ${renderModulesTableModules(modulesWithDrift, deviceId)}
+                </div>
+                <div class="section">
+                    <h3>Последние операции</h3>
+                    ${renderOperationsTableModules(recentOps)}
+                </div>
+                <div class="section">
+                    <h3>Debug mismatch</h3>
+                    ${renderMismatchesModules(mismatches)}
+                </div>
+                <div class="section">
+                    <h3>Инструменты по модулям</h3>
+                    ${renderToolsByModuleModules(toolsByModule)}
+                </div>
+            `;
+            if (desiredDiff) desiredDiff.innerHTML = renderDesiredDiffModules(desiredData);
+        }
+
+        function renderDesiredDiffModules(desiredData) {
+            if (!desiredData || desiredData.status !== 'ok') {
+                return '<div class="empty">No desired diff data</div>';
+            }
+            const diff = desiredData.diff || [];
+            if (!diff.length) return '<div class="empty">Desired state is empty</div>';
+            return `
+                <table>
+                    <thead><tr><th>Module</th><th>Desired</th><th>Actual</th><th>Status</th><th>Reason</th></tr></thead>
+                    <tbody>
+                        ${diff.map(item => `<tr>
+                            <td><strong>${escapeHtml(item.module_name)}</strong></td>
+                            <td>${escapeHtml(item.desired_state || '?')} ${escapeHtml(item.desired_version || '')}</td>
+                            <td>${escapeHtml(item.actual_state || '?')} ${escapeHtml(item.actual_version || '')}</td>
+                            <td>${escapeHtml(item.diff_status || 'unknown')}</td>
+                            <td>${escapeHtml(item.reason || '?')}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderModulesTableModules(modules, deviceId) {
+            if (!modules || modules.length === 0) return '<div class="empty">Нет установленных модулей</div>';
+            return `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Модуль</th>
+                            <th>Версия</th>
+                            <th>State</th>
+                            <th>Installed / Active</th>
+                            <th>Drift</th>
+                            <th>Source</th>
+                            <th>Manifest</th>
+                            <th>Error</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${modules.map(m => {
+                            const stateClass = (m.state === 'active') ? 'active' : (m.state === 'missing') ? 'missing' : (m.state === 'removed') ? 'removed' : (m.state === 'failed') ? 'failed' : 'installed';
+                            let driftHtml = '';
+                            if (m.driftStatus === 'ok') driftHtml = '<span class="drift-indicator drift-ok">ok</span>';
+                            else if (m.driftStatus === 'active_no_tools') driftHtml = '<span class="drift-indicator drift-warning" title="Модуль активен, но tools не попали в snapshot">warn</span>';
+                            else if (m.driftStatus === 'tools_no_active') driftHtml = '<span class="drift-indicator drift-warning" title="В snapshot есть tools, но модуль не активен">warn</span>';
+                            const errorHtml = m.last_error_code ? `<div class="error-text" title="${escapeHtml(m.last_error_message || '')}">${escapeHtml(m.last_error_code)}</div>` : '?';
+                            const activeVersion = modules.find(x => x.module_name === m.module_name && x.active)?.version;
+                            const isActive = m.active && m.version === activeVersion;
+                            const hasRollbackTarget = isActive && modules.some(x =>
+                                x.module_name === m.module_name &&
+                                x.installed &&
+                                x.version !== m.version &&
+                                x.state !== 'removed'
+                            );
+                            return `
+                                <tr>
+                                    <td><strong>${escapeHtml(m.module_name)}</strong></td>
+                                    <td>${escapeHtml(m.version)}</td>
+                                    <td><span class="badge badge-${stateClass}">${escapeHtml(m.state)}</span></td>
+                                    <td>${m.installed ? 'yes' : 'no'} / ${m.active ? 'yes' : 'no'}</td>
+                                    <td>${driftHtml || '?'}</td>
+                                    <td>${escapeHtml(m.source || 'device')}</td>
+                                    <td>${m.manifest_version ? `v${escapeHtml(String(m.manifest_version))}${m.legacy_manifest ? ' legacy' : ''}` : '?'}</td>
+                                    <td>${errorHtml}</td>
+                                    <td>
+                                        ${!isActive && m.installed ? `<button class="btn btn-small btn-success" onclick="activateModuleModules('${deviceId}', '${m.module_name}', '${m.version}')">Активировать</button>` : ''}
+                                        ${hasRollbackTarget ? `<button class="btn btn-small btn-warning" onclick="rollbackModuleModules('${deviceId}', '${m.module_name}')">Откатить</button>` : ''}
+                                        ${isActive ? `<button class="btn btn-small btn-secondary" onclick="deactivateModuleModules('${deviceId}', '${m.module_name}')">Деактивировать</button>` : ''}
+                                        ${m.state === 'failed' ? `<button class="btn btn-small btn-warning" onclick="reinstallModuleModules('${deviceId}', '${m.module_name}', '${m.version}')">Переустановить</button>` : ''}
+                                        ${!isActive && m.installed ? `<button class="btn btn-small btn-danger" onclick="removeModuleVersionModules('${deviceId}', '${m.module_name}', '${m.version}')">Удалить</button>` : ''}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderOperationsTableModules(operations) {
+            if (!operations || operations.length === 0) return '<div class="empty">Нет операций</div>';
+            return `
+                <table class="operations-table">
+                    <thead><tr><th>Operation ID</th><th>Kind</th><th>Status</th><th>Error</th></tr></thead>
+                    <tbody>
+                        ${operations.map(op => {
+                            const statusClass = op.status === 'succeeded' ? 'active' : op.status === 'failed' ? 'failed' : 'installed';
+                            const err = op.error_code || op.error_message ? (op.error_code ? op.error_code + ': ' : '') + (op.error_message || '') : '?';
+                            return `<tr><td><code>${escapeHtml((op.operation_id || '').substring(0, 8))}...</code></td><td>${escapeHtml(op.kind || '?')}</td><td><span class="badge badge-${statusClass}">${escapeHtml(op.status || '?')}</span></td><td class="error-text">${escapeHtml(err)}</td></tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderMismatchesModules(mismatches) {
+            if (!mismatches || mismatches.length === 0) return '<div class="empty">No mismatches</div>';
+            return `
+                <table>
+                    <thead><tr><th>Module</th><th>Kind</th><th>Desired</th><th>Actual</th></tr></thead>
+                    <tbody>
+                        ${mismatches.map(item => `<tr><td>${escapeHtml(item.module_name || '?')}</td><td>${escapeHtml(item.kind || '?')}</td><td>${escapeHtml(item.desired_version || '?')}</td><td>${escapeHtml(item.actual_version || '?')}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderToolsByModuleModules(toolsByModule) {
+            if (!toolsByModule || Object.keys(toolsByModule).length === 0) return '<div class="empty">Нет инструментов</div>';
+            return Object.entries(toolsByModule).map(([name, tools]) => `
+                <div style="margin-bottom: 15px;">
+                    <h4>${escapeHtml(name)} (${tools.length})</h4>
+                    <table><thead><tr><th>Инструмент</th><th>Origin</th><th>Описание</th></tr></thead>
+                    <tbody>${(tools || []).map(t => `<tr><td><code>${escapeHtml(t.name || t.tool || t.tool_id || '?')}</code></td><td>${escapeHtml(t.origin || '?')}</td><td>${escapeHtml(t.description || '?')}</td></tr>`).join('')}</tbody>
+                    </table>
+                </div>
+            `).join('');
+        }
+
+        function checkPreflightModules() {
+            const moduleSelect = document.getElementById('deploy-module-modules');
+            const deviceId = document.getElementById('deploy-device-modules')?.value;
+            const warningDiv = document.getElementById('preflight-warning-modules');
+            if (!moduleSelect || !moduleSelect.value || !deviceId || !toolsetDataCacheModules) {
+                if (warningDiv) warningDiv.style.display = 'none';
+                return;
+            }
+            const [moduleName, version] = moduleSelect.value.split(':');
+            fetch(`/api/devices/${deviceId}/modules`, { headers: getAuthHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'ok') return;
+                    const deviceModules = data.modules || [];
+                    const existing = deviceModules.find(m => m.module_name === moduleName && m.version === version);
+                    const active = deviceModules.find(m => m.module_name === moduleName && m.active);
+                    let text = '';
+                    if (existing && existing.installed) {
+                        text = `Модуль ${moduleName} ${version} уже установлен.`;
+                        if (active && active.version === version) text += ' И уже активен.';
+                    }
+                    if (warningDiv) {
+                        warningDiv.innerHTML = text;
+                        warningDiv.style.display = text ? 'block' : 'none';
+                    }
+                }).catch(() => {});
+        }
+
+        async function syncModulesModules(deviceId) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/sync`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ actor_role: 'admin' })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') {
+                    alert('Синхронизация запущена.');
+                    setTimeout(() => loadDeviceDetailsModules(deviceId), 2000);
+                } else alert('Ошибка: ' + (data.error || 'Неизвестно'));
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
+
+        async function reconcileDeviceModules(deviceId) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/reconcile`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                if (response.ok && data.status === 'ok') {
+                    alert('Reconcile started.');
+                    setTimeout(() => loadDeviceDetailsModules(deviceId), 1500);
+                } else {
+                    alert('Ошибка reconcile: ' + (data.error || 'Неизвестно'));
+                }
+            } catch (e) {
+                alert('Ошибка reconcile: ' + e.message);
+            }
+        }
+
+        function scheduleModuleDetailsRefresh(deviceId, firstDelay = 1500, secondDelay = 4000) {
+            if (!deviceId) return;
+            setTimeout(() => loadDeviceDetailsModules(deviceId), firstDelay);
+            setTimeout(() => loadDeviceDetailsModules(deviceId), secondDelay);
+        }
+
+        async function removeModuleVersionModules(deviceId, moduleName, version) {
+            if (!confirm(`Удалить модуль ${moduleName} версии ${version}?`)) return;
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/remove_version`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ module_name: moduleName, version: version, actor_role: 'admin' })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') { alert('Удаление запущено.'); scheduleModuleDetailsRefresh(deviceId); }
+                else alert('Ошибка: ' + (data.error || 'Неизвестно'));
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
+
+        async function reinstallModuleModules(deviceId, moduleName, version) {
+            if (!confirm(`Переустановить ${moduleName} ${version}? Будет выполнено удаление и повторная установка.`)) return;
+            try {
+                const modRes = await fetch(`/api/devices/${deviceId}/modules`, { headers: getAuthHeaders() });
+                const modData = await modRes.json();
+                const activeMod = modData.modules?.find(m => m.module_name === moduleName && m.active);
+                if (activeMod) {
+                    await deactivateModuleModules(deviceId, moduleName);
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                const existing = modData.modules?.find(m => m.module_name === moduleName && m.version === version && m.installed);
+                if (existing) {
+                    await removeModuleVersionModules(deviceId, moduleName, version);
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                const response = await fetch(`/api/devices/${deviceId}/modules/install`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ module_name: moduleName, version: version, actor_role: 'admin' })
+                });
+                const data = await response.json();
+                if (response.status === 202 && data.status === 'accepted') {
+                    alert('Переустановка запущена.');
+                    setTimeout(() => loadDeviceDetailsModules(deviceId), 2000);
+                } else alert('Ошибка: ' + (data.error || 'Неизвестно'));
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
+
+        function updateDeployModuleSelect() {
+            const select = document.getElementById('deploy-module-modules');
+            const massSelect = document.getElementById('mass-deploy-module-modules');
+            const opts = '<option value="">Выберите модуль...</option>' + (modulesDataTab || []).map(m =>
+                `<option value="${m.module_name}:${m.version}">${m.module_name} (${m.version})</option>`
+            ).join('');
+            if (select) { select.innerHTML = opts; }
+            if (massSelect) { massSelect.innerHTML = opts; }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Create module form handler (POST /api/modules/create)
+        document.getElementById('create-module-form-modules')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('create-module-btn-modules');
+            const msg = document.getElementById('create-module-message-modules');
+            btn.disabled = true;
+            msg.innerHTML = '<div class="loading">Сборка и проверка...</div>';
+            try {
+                const payload = {
+                    module_name: document.getElementById('create-module-name-modules').value.trim(),
+                    version: document.getElementById('create-version-modules').value.trim(),
+                    tool_name: document.getElementById('create-tool-name-modules').value.trim(),
+                    method_name: document.getElementById('create-method-name-modules')?.value?.trim(),
+                    description: document.getElementById('create-description-modules').value.trim(),
+                    user_function_body: document.getElementById('create-code-body-modules').value.trim(),
+                    risk_level: document.getElementById('create-risk-level-modules').value,
+                    overwrite: document.getElementById('create-overwrite-modules').checked
+                };
+
+                const jsonFields = [
+                    ['params_schema', 'create-params-schema-modules'],
+                    ['platforms', 'create-platforms-modules'],
+                    ['presets', 'create-presets-modules'],
+                    ['capabilities', 'create-capabilities-modules'],
+                    ['metadata', 'create-metadata-modules']
+                ];
+                for (const [payloadKey, elementId] of jsonFields) {
+                    const raw = document.getElementById(elementId)?.value?.trim();
+                    if (!raw) continue;
+                    try {
+                        payload[payloadKey] = JSON.parse(raw);
+                    } catch (error) {
+                        msg.innerHTML = `<div class="error-message">Ошибка JSON в ${escapeHtml(payloadKey)}: ${escapeHtml(error.message)}</div>`;
+                        btn.disabled = false;
+                        return;
+                    }
+                }
+
+                const response = await fetch('/api/modules/create', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (response.ok && data.status === 'success') {
+                    msg.innerHTML = `<div class="success">Модуль создан: ${escapeHtml(data.module_name)}/${escapeHtml(data.version)}. Validation: ${escapeHtml(data.validation_status || 'passed')}.</div>`;
+                    if (data.warnings && data.warnings.length) {
+                        msg.innerHTML += `<div class="preflight-warning" style="display:block; margin-top:8px;">${data.warnings.map(w => escapeHtml(w)).join('<br>')}</div>`;
+                    }
+                    document.getElementById('create-module-form-modules').reset();
+                    await loadModulesList();
+                    updateDeployModuleSelect();
+                } else {
+                    const errList = (data.preflight_errors && data.preflight_errors.length)
+                        ? '<ul>' + data.preflight_errors.map(x => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>'
+                        : '';
+                    msg.innerHTML = `<div class="error-message">${escapeHtml(data.error || 'Ошибка')}${errList}</div>`;
+                }
+            } catch (err) {
+                msg.innerHTML = '<div class="error-message">Ошибка: ' + escapeHtml(err.message) + '</div>';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        function escapeHtml(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // Upload form handler
+        document.getElementById('upload-form-modules')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('upload-btn-modules');
+            const messageDiv = document.getElementById('upload-message-modules');
+            const form = e.target;
+            const formData = new FormData(form);
+            const moduleNameInput = document.getElementById('upload-module-name-modules');
+            const versionInput = document.getElementById('upload-version-modules');
+            const overwriteCheckbox = document.getElementById('upload-overwrite-modules');
+            if (overwriteCheckbox?.checked) formData.set('overwrite', 'true');
+
+            const updateOld = window._modulesUpdateOld;
+            if (updateOld) {
+                const name = (moduleNameInput?.value || '').trim();
+                const newVersion = (versionInput?.value || '').trim();
+                if (name !== updateOld.module_name) {
+                    messageDiv.innerHTML = '<div class="error">??? ?????????? ??? ?????? ?????? ????????? ? ???????.</div>';
+                    return;
+                }
+                if (!newVersion || newVersion === updateOld.version) {
+                    messageDiv.innerHTML = '<div class="error">??????? ????? ??????, ???????? ?? ??????? (' + updateOld.version + ').</div>';
+                    return;
+                }
+            }
+
+            btn.disabled = true;
+            messageDiv.innerHTML = '<div class="loading">????????...</div>';
+
+            try {
+                const response = await fetch('/api/modules/upload', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.status === 200 && data.status === 'success') {
+                    messageDiv.innerHTML = `<div class="success">?????? ????????: ${escapeHtml(data.module_name)}/${escapeHtml(data.version)}. Validation: ${escapeHtml(data.validation_status || 'passed')}.</div>`;
+                    if (data.warnings && data.warnings.length) {
+                        messageDiv.innerHTML += `<div class="preflight-warning" style="display:block; margin-top:8px;">${data.warnings.map(w => escapeHtml(w)).join('<br>')}</div>`;
+                    }
+                    if (updateOld && data.module_name === updateOld.module_name && data.version !== updateOld.version) {
+                        const delRes = await fetch(`/api/modules/${encodeURIComponent(updateOld.module_name)}/${encodeURIComponent(updateOld.version)}`, {
+                            method: 'DELETE',
+                            headers: getAuthHeaders()
+                        });
+                        const delData = delRes.ok ? await delRes.json() : {};
+                        if (delRes.ok && (delData.status === 'ok' || delData.status === 'success')) {
+                            messageDiv.innerHTML += '<div class="success">?????? ?????? ' + escapeHtml(updateOld.version) + ' ??????? ? ???????.</div>';
+                        } else {
+                            messageDiv.innerHTML += '<div class="error">?????? ?????? ?? ???????: ' + escapeHtml(delData.error || String(delRes.status)) + '</div>';
+                        }
+                        clearUploadUpdateStateModules();
+                        await loadModulesList();
+                        updateDeployModuleSelect();
+                    } else {
+                        await loadModulesList();
+                        updateDeployModuleSelect();
+                    }
+                    form.reset();
+                    if (moduleNameInput) moduleNameInput.readOnly = false;
+                    if (versionInput) versionInput.placeholder = '?? manifest';
+                } else {
+                    const errList = (data.preflight_errors && data.preflight_errors.length)
+                        ? '<ul>' + data.preflight_errors.map(x => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>'
+                        : '';
+                    messageDiv.innerHTML = '<div class="error">?????? ????????: ' + escapeHtml(data.error || '??????????? ??????') + errList + '</div>';
+                }
+            } catch (error) {
+                messageDiv.innerHTML = '<div class="error">??????: ' + escapeHtml(error.message) + '</div>';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('reconcile-btn-modules')?.addEventListener('click', () => {
+            const deviceId = document.getElementById('deploy-device-modules')?.value || selectedDeviceIdTab;
+            if (!deviceId) {
+                alert('??????? ???????? ??????????.');
+                return;
+            }
+            reconcileDeviceModules(deviceId);
+        });
+
+        // Deploy form handler
+        document.getElementById('deploy-form-modules')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const deviceId = document.getElementById('deploy-device-modules').value;
+            const moduleSelector = document.getElementById('deploy-module-modules').value;
+            const btn = document.getElementById('deploy-btn-modules');
+            
+            if (!deviceId || !moduleSelector) {
+                alert('Выберите устройство и модуль');
+                return;
+            }
+            
+            const [moduleName, version] = moduleSelector.split(':');
+            
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/install`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        actor_role: 'admin'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.status === 202 && data.status === 'accepted') {
+                    alert(`Установка запущена. ID операции: ${data.operation_id.substring(0, 8)}...`);
+                    scheduleModuleDetailsRefresh(deviceId);
+                } else {
+                    alert(`Ошибка: ${data.error || 'Неизвестная ошибка'}`);
+                }
+            } catch (error) {
+                alert(`Ошибка: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        async function activateModuleModules(deviceId, moduleName, version) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/activate`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') {
+                    alert('Активация запущена.');
+                    scheduleModuleDetailsRefresh(deviceId);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        async function deactivateModuleModules(deviceId, moduleName) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/deactivate`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted' || data.status === 'success') {
+                    alert('Деактивация запущена.');
+                    scheduleModuleDetailsRefresh(deviceId);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        async function rollbackModuleModules(deviceId, moduleName) {
+            if (!confirm(`Откатить модуль ${moduleName} на предыдущую версию?`)) return;
+            try {
+                const response = await fetch('/api/rollback_module', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        name: moduleName,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success' || data.status === 'ok') {
+                    const version = data?.data?.observations?.active_version || data?.observations?.active_version || '?';
+                    alert(`Откат выполнен. Активна версия ${version}.`);
+                    scheduleModuleDetailsRefresh(deviceId, 1000, 3000);
+                } else {
+                    alert('Ошибка rollback: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            } catch (error) {
+                alert('Ошибка rollback: ' + error.message);
+            }
+        }
+
+        document.getElementById('mass-install-btn-modules')?.addEventListener('click', async () => {
+            const checkboxes = document.querySelectorAll('#devices-table-modules-body .modules-device-cb:checked, #devices-checkboxes-modules input[type="checkbox"]:checked');
+            const deviceIds = Array.from(checkboxes).map(cb => cb.value || cb.getAttribute('data-device-id')).filter(Boolean);
+            const massSelect = document.getElementById('mass-deploy-module-modules');
+            const sel = massSelect?.value;
+            const replaceCb = document.getElementById('mass-deploy-replace-modules');
+            const replaceIfExists = replaceCb ? replaceCb.checked : false;
+            if (!sel || deviceIds.length === 0) {
+                alert('Выберите хотя бы одно устройство и модуль.');
+                return;
+            }
+            const [moduleName, version] = sel.split(':');
+            if (!moduleName || !version) {
+                alert('Выберите модуль (имя и версия).');
+                return;
+            }
+            const btn = document.getElementById('mass-install-btn-modules');
+            btn.disabled = true;
+            const consoleEl = document.getElementById('modules-install-console');
+            if (consoleEl) consoleEl.innerHTML = '';
+            modulesInstallConsoleLog('Установка модуля ' + moduleName + ' ' + version + ' на ' + deviceIds.length + ' устройств...');
+            try {
+                const response = await fetch('/api/modules/bulk_install', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        device_ids: deviceIds,
+                        replace_if_exists: replaceIfExists
+                    })
+                });
+                const data = await responseToJson(response);
+                if (response.status === 202 && data.status === 'accepted') {
+                    const ops = data.operations || [];
+                    const skipped = data.skipped || [];
+                    modulesInstallConsoleLog('Принято: ' + ops.length + ' операций.');
+                    skipped.forEach(s => modulesInstallConsoleLog('Пропущено ' + (s.device_id || '') + ': ' + (s.reason || ''), true));
+                    ops.forEach(o => modulesInstallConsoleLog('Устройство ' + (o.device_id || '').slice(0, 8) + '... → операция ' + (o.operation_id || '').slice(0, 8) + '...'));
+                    if (ops.length > 0) {
+                        modulesInstallConsoleLog('Ожидание результатов (опрос статуса операций)...');
+                        for (const o of ops) {
+                            const opId = o.operation_id;
+                            const devId = (o.device_id || '').slice(0, 8);
+                            await new Promise(r => setTimeout(r, 1500));
+                            try {
+                                const opRes = await fetch('/api/operations/' + encodeURIComponent(opId), { headers: getAuthHeaders() });
+                                const opData = await responseToJson(opRes);
+                                const status = opData.operation?.status || opData.status || 'unknown';
+                                const err = opData.operation?.error_message || opData.error_message;
+                                if (status === 'succeeded') modulesInstallConsoleLog(devId + '...: успех.');
+                                else if (status === 'failed' || status === 'timed_out') modulesInstallConsoleLog(devId + '...: ' + status + (err ? ' — ' + err : ''), true);
+                                else modulesInstallConsoleLog(devId + '...: ' + status);
+                            } catch (e) {
+                                modulesInstallConsoleLog(devId + '...: ошибка запроса статуса — ' + e.message, true);
+                            }
+                        }
+                        modulesInstallConsoleLog('Готово.');
+                    }
+                    if (selectedDeviceIdTab) scheduleModuleDetailsRefresh(selectedDeviceIdTab);
+                } else {
+                    modulesInstallConsoleLog('Ошибка: ' + (data.error || 'Неизвестно'), true);
+                    if (data.error_code) modulesInstallConsoleLog('Код: ' + data.error_code, true);
+                }
+            } catch (e) {
+                modulesInstallConsoleLog('Ошибка: ' + e.message, true);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('deploy-module-modules')?.addEventListener('change', checkPreflightModules);
+        document.getElementById('deploy-device-modules')?.addEventListener('change', function() {
+            const deviceId = this.value;
+            if (deviceId) selectDeviceModules(deviceId);
+            else document.getElementById('device-details-modules').style.display = 'none';
+            checkPreflightModules();
+        });
+
+        const AUTH_TOKEN_KEY = 'admin_auth_token';
+        const USER_LOGIN_KEY = 'admin_user_login';
+        
+        // Check authentication on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem(AUTH_TOKEN_KEY);
+            if (token) {
+                // Verify token is still valid by making a test request
+                verifyToken(token);
+            } else {
+                showLogin();
+            }
+        });
+        
+        // Verify token by making a test API request
+        async function verifyToken(token) {
+            try {
+                const response = await fetch('/api/agents', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok || response.status === 404) {
+                    // Token is valid (404 is ok for empty agents list)
+                    showMainContent(token);
+                    // Initialize app if not already initialized
+                    if (typeof initializeApp === 'function') {
+                        initializeApp();
+                    }
+                } else if (response.status === 401) {
+                    // Token invalid, show login
+                    localStorage.removeItem(AUTH_TOKEN_KEY);
+                    localStorage.removeItem(USER_LOGIN_KEY);
+                    showLogin();
+                } else {
+                    showLogin();
+                }
+            } catch (error) {
+                console.error('Token verification error:', error);
+                showLogin();
+            }
+        }
+        
+        // Show login form, hide main content
+        function showLogin() {
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('mainContent').style.display = 'none';
+        }
+        
+        // Show main content, hide login
+        function showMainContent(token) {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            // Ticket Queue is default tab: init if visible
+            const queueTab = document.getElementById('tab-queue');
+            if (queueTab && queueTab.classList.contains('active')) {
+                const b = document.getElementById('queueTableBody');
+                if (b && !b.dataset.inited && typeof queueInit === 'function') {
+                    b.dataset.inited = '1';
+                    queueInit();
+                }
+            }
+            // Update user info in header if available
+            const userLogin = localStorage.getItem(USER_LOGIN_KEY);
+            if (userLogin) {
+                updateUserInfo(userLogin);
+            }
+        }
+        
+        // Update user info in header
+        function updateUserInfo(login) {
+            const headerActions = document.querySelector('.header-actions');
+            if (headerActions && !document.getElementById('userInfo')) {
+                const userInfo = document.createElement('div');
+                userInfo.className = 'user-info';
+                userInfo.id = 'userInfo';
+                userInfo.innerHTML = `
+                    <span>👤 ${login}</span>
+                    <button class="btn btn-secondary" onclick="handleLogout()" style="padding: 6px 12px; font-size: 12px;">Logout</button>
+                `;
+                headerActions.appendChild(userInfo);
+            }
+        }
+        
+        // Handle login form submission
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const login = document.getElementById('loginInput').value;
+            const password = document.getElementById('passwordInput').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            errorDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/ui_login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        login: login,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    // Save token and user info
+                    localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+                    localStorage.setItem(USER_LOGIN_KEY, data.user_login);
+                    if (data.actor_role) localStorage.setItem('admin_actor_role', data.actor_role);
+                    
+                    // Show main content
+                    showMainContent(data.token);
+                    
+                    // Initialize main app
+                    if (typeof initializeApp === 'function') {
+                        initializeApp();
+                    }
+                } else {
+                    errorDiv.textContent = data.error || 'Ошибка входа';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = `Ошибка: ${error.message}`;
+                errorDiv.style.display = 'block';
+            }
+        }
+        
+        // Handle logout
+        function handleLogout() {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem(USER_LOGIN_KEY);
+            localStorage.removeItem('admin_actor_role');
+            if (typeof stopPolling === 'function') {
+                stopPolling();
+            }
+            appInitialized = false;
+            showLogin();
+        }
+        
+        // Intercept all fetch calls to add auth token
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const token = localStorage.getItem(AUTH_TOKEN_KEY);
+            
+            if (token && args[0] && typeof args[0] === 'string') {
+                // Simple URL fetch
+                if (!args[1]) {
+                    args[1] = {};
+                }
+                if (!args[1].headers) {
+                    args[1].headers = {};
+                }
+                if (!args[1].headers['Authorization']) {
+                    args[1].headers['Authorization'] = `Bearer ${token}`;
+                }
+            } else if (token && args[0] && typeof args[0] === 'object') {
+                // Request object fetch
+                if (!args[0].headers) {
+                    args[0].headers = {};
+                }
+                if (!args[0].headers['Authorization']) {
+                    args[0].headers['Authorization'] = `Bearer ${token}`;
+                }
+            }
+            
+            return originalFetch.apply(this, args);
+        };
+
+

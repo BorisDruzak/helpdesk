@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket</title>
+    <link rel="stylesheet" href="/ticket.css">
+</head>
+<body>
+    <div id="ticketApp" class="ticket-app hidden">
+        <header id="topbar" class="ticket-topbar">
+            <span class="tb-code">Тикет: <strong id="tbCode">—</strong></span>
+            <span id="tbStatus" class="tb-status">—</span>
+            <span class="tb-queue">Очередь: <strong id="tbQueue">—</strong></span>
+            <span class="tb-assignee">Исполнитель: <strong id="tbAssignee">—</strong></span>
+            <span class="tb-priority">Приоритет: <strong id="tbPriority">—</strong></span>
+            <span class="tb-sla">FRT: <strong id="tbSlaFr">—</strong></span>
+            <span class="tb-sla">Resolution: <strong id="tbSlaRes">—</strong></span>
+            <span id="tbLive" class="tb-degraded">○ Загрузка</span>
+            <a class="tb-admin-link" href="/admin">Админка</a>
+        </header>
+
+        <div id="ticketMain" class="ticket-main">
+            <aside class="ticket-sidebar">
+                <section class="sidebar-card">
+                    <h2>Инициатор</h2>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Текущее имя</span>
+                            <span id="sideRequesterName" class="sidebar-value sidebar-strong">—</span>
+                        </div>
+                        <div class="sidebar-form-grid sidebar-editable">
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Отображаемое имя</span>
+                                <input id="sideRequesterDisplayNameInput" type="text" placeholder="Иван Иванов">
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">ФИО</span>
+                                <input id="sideRequesterFullNameInput" type="text" placeholder="Иванов Иван Иванович">
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Корпус</span>
+                                <input id="sideRequesterBuildingInput" type="text" placeholder="Корпус А">
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Кабинет</span>
+                                <input id="sideRequesterRoomInput" type="text" placeholder="203">
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Телефон</span>
+                                <input id="sideRequesterPhoneInput" type="text" placeholder="+7 ...">
+                            </label>
+                            <button id="sideRequesterApplyBtn" class="btn btn-primary" type="button">Сохранить профиль</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="sidebar-card">
+                    <h3>Статус</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Текущий статус</span>
+                            <span id="sideStatusText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Описание</span>
+                            <span id="sideDescriptionText" class="sidebar-value sidebar-multiline">—</span>
+                        </div>
+                        <div class="sidebar-inline-controls sidebar-editable">
+                            <select id="sideStatusSelect"></select>
+                            <button id="sideStatusApplyBtn" class="btn btn-secondary" type="button">Изменить статус</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="sidebar-card">
+                    <h3>Приоритет</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Итог</span>
+                            <span id="sidePrioritySummary" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-section sidebar-editable">
+                            <div id="sideUrgencyToggle" class="segmented-control" data-value="false">
+                                <button type="button" data-value="true">Срочно</button>
+                                <button type="button" data-value="false" class="active">Несрочно</button>
+                            </div>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Обоснование срочности</span>
+                                <input id="sideUrgencyReasonInput" type="text" placeholder="Почему это срочно или нет">
+                            </label>
+                            <div id="sideImportanceToggle" class="segmented-control" data-value="false">
+                                <button type="button" data-value="true">Важно</button>
+                                <button type="button" data-value="false" class="active">Неважно</button>
+                            </div>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Обоснование важности</span>
+                                <input id="sideImportanceReasonInput" type="text" placeholder="Почему это важно или нет">
+                            </label>
+                            <button id="sidePriorityApplyBtn" class="btn btn-secondary" type="button">Применить приоритет</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="sidebar-card">
+                    <h3>Исполнитель</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Текущий исполнитель</span>
+                            <span id="sideAssigneeText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-inline-controls sidebar-editable">
+                            <select id="sideAssigneeSelect"></select>
+                            <button id="sideAssigneeApplyBtn" class="btn btn-secondary" type="button">Назначить</button>
+                            <button id="sideAutoAssignBtn" class="btn btn-secondary" type="button">Автоназначение</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="sideQueueSection" class="sidebar-card">
+                    <h3>Очередь</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Текущая очередь</span>
+                            <span id="sideQueueText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-inline-controls sidebar-editable">
+                            <select id="sideQueueSelect"></select>
+                            <button id="sideQueueApplyBtn" class="btn btn-secondary" type="button">Перенести</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="sidebar-card">
+                    <h3>Действия</h3>
+                    <div class="sidebar-grid">
+                        <div id="sideActionState" class="ticket-state-marker hidden"></div>
+                        <div id="sideActions" class="sidebar-inline-controls">
+                            <button id="sideCloseBtn" class="btn btn-danger" type="button">Закрыть тикет</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="ticketHistory" class="sidebar-card">
+                    <h3>История изменений</h3>
+                    <div class="empty">Загрузка…</div>
+                </section>
+            </aside>
+
+            <main class="ticket-content">
+                <section id="timeline" class="ticket-timeline"></section>
+
+                <section id="inlinePanel" class="inline-panel hidden">
+                    <div class="inline-panel-card">
+                        <div class="inline-panel-head">
+                            <h3 id="inlinePanelTitle">Действие</h3>
+                        </div>
+                        <div id="inlinePanelBody" class="inline-panel-body"></div>
+                        <div id="inlinePanelError" class="inline-panel-error"></div>
+                        <div class="inline-panel-actions">
+                            <button id="inlinePanelApply" class="btn btn-primary" type="button">Применить</button>
+                            <button id="inlinePanelCancel" class="btn btn-secondary" type="button">Отмена</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="composer" class="ticket-composer">
+                    <div class="composer-topbar">
+                        <label class="composer-toggle">
+                            <input id="internalToggle" type="checkbox">
+                            <span>Внутреннее сообщение</span>
+                        </label>
+                        <button id="composerMenuBtn" class="btn btn-secondary" type="button">Быстрые действия</button>
+                        <div id="composerMenuDropdown" class="composer-menu hidden"></div>
+                    </div>
+                    <div class="composer-input-row">
+                        <textarea id="messageInput" rows="4" placeholder="Введите сообщение"></textarea>
+                    </div>
+                    <div class="composer-actions">
+                        <button id="attachButton" class="btn btn-secondary" type="button">Вложение</button>
+                        <input id="attachFileInput" type="file" hidden>
+                        <button id="sendButton" class="btn btn-primary" type="button">Отправить</button>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div id="ticketLoading" class="ticket-state-screen">Загрузка тикета…</div>
+    <div id="ticketError" class="ticket-state-screen hidden"></div>
+
+    <script src="/ticket.js"></script>
+</body>
+</html>
