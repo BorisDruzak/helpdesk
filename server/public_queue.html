@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Очередь обращений</title>
+    <link rel="stylesheet" href="/public_queue.css">
+</head>
+<body>
+    <div class="pq-container">
+        <header class="pq-header">
+            <h1 class="pq-title">Очередь обращений</h1>
+            <div class="pq-meta">
+                <span id="pqLastUpdate" class="pq-last-update">—</span>
+                <span id="pqSyncStatus" class="pq-sync-status" title="Статус обновления">●</span>
+            </div>
+        </header>
+
+        <section class="pq-kpi" id="pqKpi">
+            <div class="pq-kpi-item"><span class="pq-kpi-label">В работе</span><span id="pqKpiBacklog" class="pq-kpi-value">—</span></div>
+            <div class="pq-kpi-item"><span class="pq-kpi-label" title="SLA: первый ответ">Срок первого ответа</span><span id="pqKpiSlaFr" class="pq-kpi-value">—</span></div>
+            <div class="pq-kpi-item"><span class="pq-kpi-label" title="SLA: решение">Срок решения</span><span id="pqKpiSlaRes" class="pq-kpi-value">—</span></div>
+            <div class="pq-kpi-item"><span class="pq-kpi-label">Ср. время решения (мин)</span><span id="pqKpiAvgRes" class="pq-kpi-value">—</span></div>
+            <div class="pq-kpi-item"><span class="pq-kpi-label">Закрыто сегодня</span><span id="pqKpiClosedToday" class="pq-kpi-value">—</span></div>
+        </section>
+
+        <section class="pq-controls">
+            <div class="pq-queue-fixed">Очередь: <strong id="pqQueueName">—</strong></div>
+            <label>Код талона:
+                <input type="text" id="pqTicketCode" class="pq-input" placeholder="T-000001" />
+            </label>
+            <button type="button" id="pqSearchBtn" class="pq-btn">Найти</button>
+        </section>
+
+        <section class="pq-table-wrap">
+            <table class="pq-table" id="pqTable">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Талон</th>
+                        <th>ФИО</th>
+                        <th>Статус</th>
+                        <th>Приоритет</th>
+                        <th>Срочность</th>
+                        <th>Важность</th>
+                        <th>Ожидание</th>
+                    </tr>
+                </thead>
+                <tbody id="pqTbody">
+                </tbody>
+            </table>
+        </section>
+    </div>
+    <script src="/public_queue.js"></script>
+</body>
+</html>

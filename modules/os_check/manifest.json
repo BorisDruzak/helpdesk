@@ -1,0 +1,1 @@
+{"module_name":"os_check","module_version":"1.0.1","description":"Module for checking operating system information (Windows, Linux, Mac)","author":"admin","entrypoint":"module.py"}

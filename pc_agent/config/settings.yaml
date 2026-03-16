@@ -1,0 +1,30 @@
+server:
+  ws_url: "ws://localhost:8666/ws"
+  api_url: "http://localhost:8666/api"
+  http_port: 12345
+  reconnect_interval: 5
+
+security:
+  allow_remote_code: true
+
+paths:
+  modules_dir: "modules/dynamic"
+  data_dir: "data"
+  identity_file: "data/identity.json"
+  temp_dir: "data/temp"
+
+logging:
+  level: "INFO"
+  file: "logs/agent.log"
+
+enabled_modules:
+  - "system"
+  - "screen"
+  - "diag_logs"
+
+ui:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+  autostart_gui: true
+

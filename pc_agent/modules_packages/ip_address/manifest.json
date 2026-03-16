@@ -1,0 +1,7 @@
+{
+  "module_name": "ip_address",
+  "module_version": "1.0.0",
+  "description": "Узнаёт IP-адрес машины (только stdlib, без внешних зависимостей).",
+  "entrypoint": "module:register",
+  "requirements": []
+}

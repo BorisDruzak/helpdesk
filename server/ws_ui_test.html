@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket UI Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        h2 {
+            color: #555;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .controls {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        input, select, textarea, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input, select, textarea {
+            flex: 1;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            padding: 4px;
+            margin: 2px 0;
+            border-left: 3px solid #ccc;
+            padding-left: 8px;
+        }
+        .log-entry.tx {
+            border-left-color: #2196F3;
+            background: #e3f2fd;
+        }
+        .log-entry.rx {
+            border-left-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        .log-entry.error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+        .log-entry.info {
+            border-left-color: #FF9800;
+            background: #fff3e0;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 11px;
+        }
+        .chat-messages {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .chat-message {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            background: white;
+            border-left: 3px solid #4CAF50;
+        }
+        .chat-message.from-support {
+            border-left-color: #2196F3;
+        }
+        .chat-message.from-agent {
+            border-left-color: #FF9800;
+        }
+        .message-header {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        .message-text {
+            font-size: 14px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 WebSocket UI Test</h1>
+    
+    <div class="container">
+        <h2>Подключение</h2>
+        <div id="status" class="status disconnected">Отключено</div>
+        <div class="controls">
+            <div class="control-group">
+                <label>WebSocket URL:</label>
+                <input type="text" id="wsUrl" value="ws://localhost:8666/ws_ui">
+                <button id="connectBtn" onclick="connect()">Подключиться</button>
+                <button id="disconnectBtn" onclick="disconnect()" disabled>Отключиться</button>
+            </div>
+            <div class="control-group">
+                <label>Роль:</label>
+                <select id="role">
+                    <option value="support">support</option>
+                    <option value="admin">admin</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Управление чатом</h2>
+        <div class="controls">
+            <div class="control-group">
+                <label>Device ID:</label>
+                <input type="text" id="deviceId" value="test_pc_01">
+            </div>
+            <div class="control-group">
+                <label>Job ID:</label>
+                <input type="text" id="jobId" placeholder="Будет заполнено после старта чата">
+                <button onclick="startChat()">Создать чат</button>
+            </div>
+            <div class="control-group">
+                <button onclick="subscribeChat()">Подписаться на чат</button>
+                <button onclick="unsubscribeChat()">Отписаться от чата</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Чат</h2>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="controls">
+            <div class="control-group">
+                <textarea id="messageText" placeholder="Введите сообщение..." rows="3"></textarea>
+            </div>
+            <div class="control-group">
+                <button onclick="sendMessage()">Отправить сообщение</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Запуск инструментов</h2>
+        <div class="controls">
+            <div class="control-group">
+                <label>Tool:</label>
+                <input type="text" id="toolName" value="diag.hello" placeholder="module.tool">
+            </div>
+            <div class="control-group">
+                <label>Params (JSON):</label>
+                <textarea id="toolParams" rows="3">{}</textarea>
+            </div>
+            <div class="control-group">
+                <button onclick="runTool()">Запустить tool</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Лог событий</h2>
+        <button onclick="clearLog()">Очистить лог</button>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let connectionId = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = `Подключено (connection_id: ${connectionId})`;
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = 'Отключено';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            const role = document.getElementById('role').value;
+            
+            log(`Подключение к ${url}...`, 'info');
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                log('WebSocket соединение установлено', 'info');
+                
+                // Отправляем ui_hello
+                const hello = {
+                    type: 'ui_hello',
+                    role: role
+                };
+                ws.send(JSON.stringify(hello));
+                log(`TX: ${JSON.stringify(hello)}`, 'tx');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                log(`RX: ${JSON.stringify(data, null, 2)}`, 'rx');
+                
+                // Обработка ui_hello_ack
+                if (data.type === 'ui_hello_ack') {
+                    connectionId = data.connection_id;
+                    updateStatus(true);
+                }
+                
+                // Обработка chat_event
+                if (data.type === 'chat_event') {
+                    addChatMessage(data.event);
+                }
+                
+                // Обработка ошибок
+                if (data.type === 'error') {
+                    log(`Ошибка: ${data.error}`, 'error');
+                }
+            };
+            
+            ws.onerror = (error) => {
+                log(`Ошибка WebSocket: ${error}`, 'error');
+            };
+            
+            ws.onclose = () => {
+                log('WebSocket соединение закрыто', 'info');
+                updateStatus(false);
+                connectionId = null;
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        async function startChat() {
+            const deviceId = document.getElementById('deviceId').value;
+            
+            try {
+                const response = await fetch('http://localhost:8666/api/chat_start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        actor_role: 'support'
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Чат создан: ${JSON.stringify(data)}`, 'info');
+                
+                if (data.status === 'success') {
+                    document.getElementById('jobId').value = data.job_id;
+                    log(`Job ID: ${data.job_id}`, 'info');
+                }
+            } catch (error) {
+                log(`Ошибка создания чата: ${error}`, 'error');
+            }
+        }
+
+        function subscribeChat() {
+            const jobId = document.getElementById('jobId').value;
+            
+            if (!ws || !jobId) {
+                log('Необходимо подключиться и указать job_id', 'error');
+                return;
+            }
+            
+            const msg = {
+                type: 'subscribe_chat',
+                job_id: jobId
+            };
+            
+            ws.send(JSON.stringify(msg));
+            log(`TX: ${JSON.stringify(msg)}`, 'tx');
+        }
+
+        function unsubscribeChat() {
+            const jobId = document.getElementById('jobId').value;
+            
+            if (!ws || !jobId) {
+                log('Необходимо подключиться и указать job_id', 'error');
+                return;
+            }
+            
+            const msg = {
+                type: 'unsubscribe_chat',
+                job_id: jobId
+            };
+            
+            ws.send(JSON.stringify(msg));
+            log(`TX: ${JSON.stringify(msg)}`, 'tx');
+        }
+
+        function sendMessage() {
+            const jobId = document.getElementById('jobId').value;
+            const text = document.getElementById('messageText').value;
+            
+            if (!ws || !jobId || !text) {
+                log('Необходимо подключиться, указать job_id и текст сообщения', 'error');
+                return;
+            }
+            
+            const msg = {
+                type: 'chat_send',
+                job_id: jobId,
+                text: text,
+                from: 'support'
+            };
+            
+            ws.send(JSON.stringify(msg));
+            log(`TX: ${JSON.stringify(msg)}`, 'tx');
+            
+            // Очищаем поле ввода
+            document.getElementById('messageText').value = '';
+        }
+
+        function runTool() {
+            const deviceId = document.getElementById('deviceId').value;
+            const jobId = document.getElementById('jobId').value;
+            const tool = document.getElementById('toolName').value;
+            const paramsText = document.getElementById('toolParams').value;
+            
+            if (!ws || !deviceId || !tool) {
+                log('Необходимо подключиться и указать device_id и tool', 'error');
+                return;
+            }
+            
+            let params = {};
+            try {
+                params = JSON.parse(paramsText);
+            } catch (e) {
+                log(`Ошибка парсинга params: ${e}`, 'error');
+                return;
+            }
+            
+            const msg = {
+                type: 'run_tool',
+                device_id: deviceId,
+                tool: tool,
+                params: params,
+                chat_job_id: jobId || null
+            };
+            
+            ws.send(JSON.stringify(msg));
+            log(`TX: ${JSON.stringify(msg)}`, 'tx');
+        }
+
+        function addChatMessage(event) {
+            const chatDiv = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            
+            const from = event.from || 'unknown';
+            msgDiv.className = `chat-message from-${from}`;
+            
+            const timestamp = new Date(event.ts * 1000).toLocaleTimeString();
+            const eventType = event.event || 'unknown';
+            
+            msgDiv.innerHTML = `
+                <div class="message-header">
+                    <strong>${from}</strong> | ${eventType} | ${timestamp}
+                </div>
+                <div class="message-text">${event.text || JSON.stringify(event)}</div>
+            `;
+            
+            chatDiv.appendChild(msgDiv);
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+

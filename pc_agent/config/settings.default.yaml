@@ -1,0 +1,33 @@
+# Шаблон настроек агента. При первом запуске копируется в data_root/settings.yaml.
+# Фактические пути (data_dir, logs, modules) задаются через runtime_paths (data_root).
+
+server:
+  ws_url: "ws://localhost:8666/ws"
+  api_url: "http://localhost:8666/api"
+  http_port: 12345
+  reconnect_interval: 5
+
+security:
+  allow_remote_code: false
+
+paths:
+  data_dir: "."
+  identity_file: "identity.json"
+  temp_dir: "temp"
+
+logging:
+  level: "INFO"
+  file: "logs/agent.log"
+
+enabled_modules:
+  - "system"
+  - "screen"
+
+ui:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8765
+  autostart_gui: false
+
+modules:
+  extra_paths: []

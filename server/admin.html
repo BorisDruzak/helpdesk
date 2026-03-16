@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель администратора</title>
+    <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+    <!-- Форма входа -->
+    <div id="loginContainer">
+        <div class="login-box">
+            <h1>🔐 Вход в панель</h1>
+            <p>Введите учётные данные для доступа в панель администратора</p>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginInput">Логин:</label>
+                    <input type="text" id="loginInput" name="login" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="passwordInput">Пароль:</label>
+                    <input type="password" id="passwordInput" name="password" required autocomplete="current-password">
+                </div>
+                <div id="loginError" class="error-message" style="display: none; margin-bottom: 15px;"></div>
+                <div class="login-actions">
+                    <button type="submit" class="btn">Войти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content (hidden by default) -->
+    <div id="mainContent" style="display: none;">
+    <div class="app-layout">
+        <!-- Sidebar Menu -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Панель администратора</h2>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link active" data-tab="queue">
+                        <span class="icon">📋</span>
+                        <span>Очередь тикетов</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="home">
+                        <span class="icon">🏠</span>
+                        <span>Главная</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="devices">
+                        <span class="icon">💻</span>
+                        <span>Устройства</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="modules">
+                        <span class="icon">📦</span>
+                        <span>Модули</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="users">
+                        <span class="icon">👥</span>
+                        <span>Пользователи</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="agent-updates">
+                        <span class="icon">🔄</span>
+                        <span>Обновление агентов</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content-area">
+            <!-- Ticket Queue Tab (Stage 10.1) -->
+            <div id="tab-queue" class="tab-content active">
+                <div id="queueToolbar" class="queue-toolbar">
+                    <h1 class="queue-title">Единая рабочая очередь</h1>
+                    <div class="queue-toolbar-right">
+                        <span id="realtimeIndicator" class="realtime-indicator" title="Статус обновлений">● В сети</span>
+                        <input type="text" id="queueSearch" class="queue-search" placeholder="Поиск по коду / названию / устройству..." />
+                        <button type="button" class="btn btn-primary" id="queueRefreshBtn">Обновить</button>
+                        <label class="density-toggle"><input type="checkbox" id="queueCompactMode" /> Компактно</label>
+                    </div>
+                </div>
+                <div id="queueKpi" class="queue-kpi">
+                    <span id="kpiOpen">Открыто: <strong>0</strong></span>
+                    <span id="kpiBreached">SLA нарушен: <strong>0</strong></span>
+                    <span id="kpiUnassigned">Без исполнителя: <strong>0</strong></span>
+                    <span id="kpiMyQueue">Моя очередь: <strong>-</strong></span>
+                </div>
+                <div id="queueFilters" class="queue-filters">
+                    <select id="filterQueue"><option value="">Все очереди</option></select>
+                    <select id="filterStatus"><option value="">Все статусы</option></select>
+                    <select id="filterPriority"><option value="">Все приоритеты</option></select>
+                    <select id="filterAssignee"><option value="">Все исполнители</option></select>
+                    <input type="text" id="filterRequester" placeholder="Инициатор (ФИО или логин)" />
+                    <label><input type="checkbox" id="filterWatching" /> Наблюдаю</label>
+                    <label><input type="checkbox" id="filterUnassigned" /> Без исполнителя</label>
+                    <label><input type="checkbox" id="filterFrBreached" /> FR нарушен</label>
+                    <label><input type="checkbox" id="filterResBreached" /> Res нарушен</label>
+                    <button type="button" class="btn btn-secondary btn-sm" id="presetMyQueue">Моя очередь</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="presetUnassigned">Без исполнителя</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="presetBreached">Нарушения</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="presetHighPriority">Высокий приоритет</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="queueResetFilters">Сбросить фильтры</button>
+                    <span id="queueOrderModeBadge" class="queue-order-mode-badge hidden" title="Режим порядка в очереди">—</span>
+                    <span id="queueOrderServerWrap" class="queue-order-server-wrap hidden">
+                        <button type="button" class="btn btn-sm" id="queueOrderResetBtn" title="Сбросить ручной порядок очереди">Сбросить авто</button>
+                    </span>
+                </div>
+                <div id="queueTableWrap" class="queue-table-wrap">
+                    <div id="queueTableLoading" class="queue-loading">Загрузка...</div>
+                    <div id="queueTableError" class="queue-error" style="display:none;"></div>
+                    <table id="queueTable" class="queue-table" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th class="col-pin">Закрепить</th>
+                                <th class="col-ticket">Тикет</th>
+                                <th class="col-title">Название</th>
+                                <th class="col-queue">Очередь</th>
+                                <th class="col-status">Статус</th>
+                                <th class="col-priority">Приоритет</th>
+                                <th class="col-assignee">Исполнитель</th>
+                                <th class="col-requester">Инициатор</th>
+                                <th class="col-created">Создан</th>
+                                <th class="col-age">Возраст</th>
+                                <th class="col-actions">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody"></tbody>
+                    </table>
+                    <div id="queueEmpty" class="queue-empty" style="display:none;">Нет тикетов по выбранным фильтрам. <button type="button" class="btn btn-secondary btn-sm" id="queueEmptyResetFilters">Сбросить фильтры</button></div>
+                </div>
+                <div id="queueFooter" class="queue-footer">
+                    <span id="queueRowCount">0 строк</span>
+                    <span id="queueLastSync" class="muted">Обновлено: -</span>
+                    <span id="queueLocalOrderActive" class="queue-local-order-indicator hidden" title="Применён локальный порядок (pin/up/down)">Локальный порядок</span>
+                    <span id="queueSyncError" class="queue-sync-error" style="display:none;"></span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="queueResetLocalOrder">Сбросить локальный порядок</button>
+                </div>
+                <div id="queueToast" class="queue-toast" style="display:none;" aria-live="polite"></div>
+                <!-- Единое модальное окно «Управление тикетом» (Stage 10.3): Статус, Назначить, Очередь -->
+                <div id="queueManageModalOverlay" class="queue-modal-overlay" style="display:none;">
+                    <div id="queueManageModal" class="queue-modal queue-manage-modal">
+                        <h3>Управление тикетом</h3>
+                        <p class="queue-modal-hint" id="queueManageModalTicketCode">—</p>
+                        <div class="queue-manage-sections">
+                            <section class="queue-manage-section">
+                                <h4>Статус</h4>
+                                <div class="form-group">
+                                    <label for="queueManageStatus">Статус</label>
+                                    <select id="queueManageStatus"></select>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManageStatusApply">Применить</button>
+                                <span id="queueManageStatusError" class="error-message" style="display:none;"></span>
+                            </section>
+                            <section class="queue-manage-section">
+                                <h4>Назначить</h4>
+                                <div id="queueManageAssignDegraded" class="queue-manage-degraded" style="display:none;">Список пользователей недоступен</div>
+                                <div class="form-group" id="queueManageAssignWrap">
+                                    <label for="queueManageAssign">Исполнитель</label>
+                                    <select id="queueManageAssign"><option value="">Снять назначение</option></select>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManageAssignApply">Применить</button>
+                                <button type="button" class="btn btn-sm btn-secondary" id="queueManageAssignAuto">Автоназначить</button>
+                                <span id="queueManageAssignError" class="error-message" style="display:none;"></span>
+                            </section>
+                            <section class="queue-manage-section" id="queueManageQueueSection">
+                                <h4>Очередь</h4>
+                                <div class="form-group">
+                                    <label for="queueManageQueueId">Очередь</label>
+                                    <select id="queueManageQueueId"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageQueueReason">Причина</label>
+                                    <input type="text" id="queueManageQueueReason" value="manual" placeholder="manual">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManageQueueApply">Сменить очередь</button>
+                                <div class="form-group" style="margin-top:12px;">
+                                    <label for="queueManageUrgency">Срочность</label>
+                                    <select id="queueManageUrgency"><option value="true">Срочно</option><option value="false" selected>Несрочно</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageUrgencyReason">Обоснование срочности</label>
+                                    <input type="text" id="queueManageUrgencyReason" placeholder="Почему тикет срочный или несрочный">
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageImportance">Важность</label>
+                                    <select id="queueManageImportance"><option value="true">Важно</option><option value="false" selected>Неважно</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageImportanceReason">Обоснование важности</label>
+                                    <input type="text" id="queueManageImportanceReason" placeholder="Почему тикет важен или неважен">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManagePriorityApply">Применить приоритет</button>
+                                <div style="margin-top:12px;">
+                                    <button type="button" class="btn btn-sm btn-secondary" id="queueManageRerouteBtn" title="Пересчитать очередь по правилам маршрутизации">Перемаршрутизация</button>
+                                </div>
+                                <span id="queueManageQueueError" class="error-message" style="display:none;"></span>
+                            </section>
+                            <section class="queue-manage-section">
+                                <h4>Привязка к агенту</h4>
+                                <div class="form-group">
+                                    <label for="queueManageDeviceId">Агент</label>
+                                    <select id="queueManageDeviceId"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageDeviceReason">Причина</label>
+                                    <input type="text" id="queueManageDeviceReason" value="manual_bind" placeholder="manual_bind">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManageDeviceApply">Привязать к агенту</button>
+                                <span id="queueManageDeviceError" class="error-message" style="display:none;"></span>
+                            </section>
+                            <section class="queue-manage-section">
+                                <h4>Инициатор</h4>
+                                <div class="form-group">
+                                    <label for="queueManageRequesterDisplayName">Отображаемое имя</label>
+                                    <input type="text" id="queueManageRequesterDisplayName" placeholder="ФИО или локальное имя пользователя">
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageRequesterFullName">ФИО</label>
+                                    <input type="text" id="queueManageRequesterFullName" placeholder="Иванов Иван Иванович">
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageRequesterBuilding">Корпус</label>
+                                    <input type="text" id="queueManageRequesterBuilding" placeholder="Корпус / здание">
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageRequesterRoom">Кабинет</label>
+                                    <input type="text" id="queueManageRequesterRoom" placeholder="Кабинет / комната">
+                                </div>
+                                <div class="form-group">
+                                    <label for="queueManageRequesterPhone">Телефон</label>
+                                    <input type="text" id="queueManageRequesterPhone" placeholder="+7 ...">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="queueManageRequesterApply">Сохранить профиль</button>
+                                <span id="queueManageRequesterError" class="error-message" style="display:none;"></span>
+                            </section>
+                        </div>
+                        <div class="queue-modal-actions" style="margin-top:16px;">
+                            <button type="button" class="btn btn-secondary" id="queueManageModalClose">Закрыть</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Home Tab -->
+            <div id="tab-home" class="tab-content">
+                <div class="page-header">
+                    <h1>Главная</h1>
+                    <div class="header-actions">
+                        <button class="btn" onclick="refreshAll()">🔄 Обновить всё</button>
+                        <div id="agentStatusContainer"></div>
+                    </div>
+                </div>
+
+        <!-- Тикеты -->
+        <div class="section">
+            <h2>📋 Тикеты</h2>
+            <div id="ticketsLoading" class="loading">Загрузка тикетов...</div>
+            <div id="ticketsError" class="error-message" style="display: none;"></div>
+            <div id="ticketsContainer" style="display: none;">
+                <table id="ticketsTable">
+                    <thead>
+                        <tr>
+                            <th>ID тикета</th>
+                            <th>ID устройства</th>
+                            <th>Агент</th>
+                            <th>Пользователь</th>
+                            <th>Название</th>
+                            <th>Статус</th>
+                            <th>Обновлён</th>
+                            <th>Исполнитель</th>
+                            <th>Метки</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ticketsTableBody">
+                    </tbody>
+                </table>
+            </div>
+            <div id="ticketsEmpty" class="empty-state" style="display: none;">
+                <div class="empty-state-icon">📭</div>
+                <p>Тикеты не найдены</p>
+            </div>
+        </div>
+
+        <!-- Инструменты -->
+        <div class="section">
+            <h2>🔧 Инструменты</h2>
+            
+            <div class="device-selector">
+                <label for="deviceSelect">Выберите устройство:</label>
+                <select id="deviceSelect" class="form-group">
+                    <option value="">-- Выберите устройство --</option>
+                </select>
+            </div>
+
+            <button class="btn" onclick="loadTools()">Загрузить инструменты</button>
+            
+            <div id="toolsLoading" class="loading" style="display: none;">Загрузка инструментов...</div>
+            <div id="toolsError" class="error-message" style="display: none;"></div>
+            
+            <div id="toolsContainer" style="display: none;">
+                <div class="tools-list" id="toolsList"></div>
+                
+                <div id="toolEditor" class="tool-editor" style="display: none;">
+                    <h3 id="toolEditorTitle">Инструмент: </h3>
+                    
+                    <div class="editor-tabs">
+                        <button class="editor-tab active" onclick="switchEditorTab('form')">Форма</button>
+                        <button class="editor-tab" onclick="switchEditorTab('json')">Исходный JSON</button>
+                    </div>
+                    
+                    <div id="formEditor" class="editor-content active">
+                        <div id="paramsForm"></div>
+                    </div>
+                    
+                    <div id="jsonEditor" class="editor-content">
+                        <div class="form-group">
+                            <label>Параметры JSON:</label>
+                            <textarea id="paramsJsonInput" placeholder='{"param1": "value1", "param2": "value2"}'></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button class="btn btn-success" onclick="runTool()">▶️ Выполнить (системный тикет)</button>
+                        <button class="btn btn-secondary" onclick="clearToolSelection()">Отмена</button>
+                    </div>
+                    
+                    <div id="toolResult" style="display: none;">
+                        <div class="result-panel">
+                            <h4>Результат:</h4>
+                            <div id="toolResultContent"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="toolsEmpty" class="empty-state" style="display: none;">
+                <div class="empty-state-icon">🔧</div>
+                <p>Выберите устройство и нажмите «Загрузить инструменты»</p>
+            </div>
+        </div>
+
+        <!-- Генерация токена агента -->
+        <div class="section">
+            <h2>🔑 Генерация токена агента</h2>
+            <p style="margin-bottom: 15px; color: #6e6e73;">
+                Сгенерировать токен для агента. Попытки подключения без токена отображаются ниже.
+            </p>
+            
+            <div id="pendingConnectionsContainer" style="margin-bottom: 20px;">
+                <h3 style="font-size: 16px; margin-bottom: 10px;">Ожидающие подключения</h3>
+                <div id="pendingConnectionsLoading" class="loading" style="display: none;">Загрузка...</div>
+                <div id="pendingConnectionsList" style="display: none;">
+                    <table style="width: 100%; margin-bottom: 15px;">
+                        <thead>
+                            <tr>
+                                <th>UUID устройства</th>
+                                <th>Время назад</th>
+                                <th>Причина</th>
+                                <th>IP-адрес</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingConnectionsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="pendingConnectionsEmpty" class="empty-state" style="display: none; padding: 20px;">
+                    <div class="empty-state-icon">🔒</div>
+                    <p>Нет ожидающих подключений</p>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="deviceUuidInput">UUID устройства:</label>
+                <input type="text" id="deviceUuidInput" placeholder="Введите UUID устройства (например, 78f395c8-0d0b-420e-a6c1-22fae424927d)" 
+                       style="font-family: monospace;">
+            </div>
+            
+            <div class="form-actions">
+                <button class="btn btn-success" onclick="generateToken()">🔑 Сгенерировать токен</button>
+                <button class="btn btn-secondary" onclick="clearTokenForm()">Очистить</button>
+            </div>
+            
+            <div id="tokenResult" style="display: none; margin-top: 20px;">
+                <div class="result-panel">
+                    <h4>Сгенерированный токен:</h4>
+                    <div style="margin-bottom: 10px;">
+                        <input type="text" id="generatedToken" readonly 
+                               style="width: 100%; padding: 8px; font-family: monospace; font-size: 12px; 
+                                      background: #f9f9fb; border: 1px solid #e5e5e7; border-radius: 6px;">
+                    </div>
+                    <button class="btn btn-secondary" onclick="copyToken()">📋 Копировать токен</button>
+                    <div id="tokenSuccess" class="success-message" style="display: none; margin-top: 10px;">
+                        Токен скопирован в буфер обмена
+                    </div>
+                </div>
+            </div>
+            
+            <div id="tokenError" class="error-message" style="display: none;"></div>
+        </div>
+            </div> <!-- End of Home Tab -->
+
+            <!-- Devices Tab -->
+            <div id="tab-devices" class="tab-content">
+                <div class="page-header">
+                    <h1>Устройства</h1>
+                </div>
+
+                <!-- Token Generation Section (at top) -->
+                <div class="section">
+                    <h2>🔑 Генерация токена</h2>
+                    <p style="margin-bottom: 15px; color: #6e6e73;">
+                        Генерация токена аутентификации для устройства.
+                    </p>
+                    <div class="form-group">
+                        <label for="deviceUuidInputDevices">UUID устройства:</label>
+                        <input type="text" id="deviceUuidInputDevices" placeholder="Введите UUID устройства" 
+                               style="font-family: monospace;">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-success" onclick="generateTokenDevices()">🔑 Сгенерировать токен</button>
+                        <button class="btn btn-secondary" onclick="clearTokenFormDevices()">Очистить</button>
+                    </div>
+                    <div id="tokenResultDevices" style="display: none; margin-top: 20px;">
+                        <div class="result-panel">
+                            <h4>Сгенерированный токен:</h4>
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="generatedTokenDevices" readonly 
+                                       style="width: 100%; padding: 8px; font-family: monospace; font-size: 12px; 
+                                              background: #f9f9fb; border: 1px solid #e5e5e7; border-radius: 6px;">
+                            </div>
+                            <button class="btn btn-secondary" onclick="copyTokenDevices()">📋 Копировать токен</button>
+                        </div>
+                    </div>
+                    <div id="tokenErrorDevices" class="error-message" style="display: none;"></div>
+                </div>
+
+                <!-- Agent detail panel (shown when hash is #device-<uuid>) -->
+                <div id="deviceAgentPanel" class="section" style="display: none;">
+                    <div class="page-header" style="display: flex; align-items: center; gap: 12px;">
+                        <a href="#" id="deviceAgentBackLink" class="btn btn-secondary">← К списку устройств</a>
+                        <h2 style="margin: 0;">Агент: <span id="deviceAgentTitle">—</span></h2>
+                    </div>
+                    <div id="deviceAgentLoading" class="loading">Загрузка...</div>
+                    <div id="deviceAgentError" class="error-message" style="display: none;"></div>
+                    <div id="deviceAgentContent" style="display: none;">
+                        <div class="device-agent-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                            <div class="info-card"><label>Хост</label><value id="agentHostname">—</value></div>
+                            <div class="info-card"><label>Устройство (UUID)</label><value id="agentDeviceId" style="font-family: monospace; font-size: 12px;">—</value></div>
+                            <div class="info-card"><label>Статус</label><value id="agentOnline">—</value></div>
+                            <div class="info-card"><label>ОС</label><value id="agentOs">—</value></div>
+                            <div class="info-card"><label>Версия агента</label><value id="agentVersion">—</value></div>
+                            <div class="info-card" id="agentAppliedUpdateWrap" style="display: none;"><label>Подтверждённое обновление</label><value id="agentAppliedUpdateVersion">—</value></div>
+                            <div class="info-card"><label>Протокол</label><value id="agentProtocol">—</value></div>
+                            <div class="info-card"><label>Инструменты (tools_version)</label><value id="agentToolsVersion">—</value></div>
+                            <div class="info-card"><label>Инструментов</label><value id="agentToolsCount">—</value></div>
+                            <div class="info-card"><label>Модулей активно</label><value id="agentModulesCount">—</value></div>
+                            <div class="info-card"><label>Первое появление</label><value id="agentFirstSeen">—</value></div>
+                            <div class="info-card"><label>Последняя активность</label><value id="agentLastSeen">—</value></div>
+                            <div class="info-card"><label>Последний handshake</label><value id="agentLastHandshake">—</value></div>
+                        </div>
+                        <div id="agentModulesListWrap" style="margin-bottom: 16px;"></div>
+                        <div class="device-modules-and-console" style="display: grid; grid-template-columns: 1fr minmax(280px, 360px); gap: 20px; align-items: start; margin-bottom: 16px;">
+                            <div>
+                                <div id="agentInstalledModulesWrap" style="margin-bottom: 0;"></div>
+                            </div>
+                            <div class="panel" style="margin: 0; min-height: 120px;">
+                                <h3 style="margin: 0 0 8px 0; font-size: 14px;">Консоль</h3>
+                                <div id="deviceModuleConsole" class="device-module-console" style="font-family: monospace; font-size: 12px; max-height: 240px; overflow-y: auto; padding: 8px; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; white-space: pre-wrap; word-break: break-word;"></div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="deviceAgentRefreshBtn">Обновить данные с агента</button>
+                            <a href="#" id="deviceAgentInstallModuleLink" class="btn btn-secondary">Установить модуль</a>
+                            <button type="button" class="btn btn-secondary" id="deviceAgentTokensBtn">Токены устройства</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Devices List Section -->
+                <div id="devicesListSection" class="section">
+                    <h2>📱 Список устройств</h2>
+                    <div id="devicesBulkBar" style="display: none; margin-bottom: 12px; padding: 10px; background: #f5f5f7; border-radius: 8px;">
+                        <span id="devicesBulkCount">Выбрано: 0</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="devicesBulkDeselect">Снять выделение</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="devicesBulkRefresh">Обновить данные с агентов</button>
+                        <button type="button" class="btn btn-danger btn-sm" id="devicesBulkDelete">Удалить выбранные из БД</button>
+                    </div>
+                    <div id="devicesListLoading" class="loading">Загрузка устройств...</div>
+                    <div id="devicesListError" class="error-message" style="display: none;"></div>
+                    <div id="devicesListContainer" style="display: none;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 36px;"><input type="checkbox" id="devicesSelectAll" title="Выбрать все"></th>
+                                    <th>Hostname</th>
+                                    <th>Статус</th>
+                                    <th>Последняя активность</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devicesListTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Device Tokens Section -->
+                <div class="section" id="deviceTokensSection" style="display: none;">
+                    <h2>🔐 Токены устройства</h2>
+                    <div id="deviceTokensLoading" class="loading">Загрузка токенов...</div>
+                    <div id="deviceTokensError" class="error-message" style="display: none;"></div>
+                    <div id="deviceTokensContainer" style="display: none;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Префикс токена</th>
+                                    <th>Создан</th>
+                                    <th>Истекает</th>
+                                    <th>Последнее использование</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deviceTokensTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div> <!-- End of Devices Tab -->
+
+            <!-- Modules Tab -->
+            <div id="tab-modules" class="tab-content">
+                <div class="page-header">
+                    <h1>Модули</h1>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <!-- Реестр модулей: один блок с двумя раскрываемыми секциями -->
+                    <div class="panel">
+                        <h2>Реестр модулей</h2>
+                        <div class="registry-actions" style="display: flex; gap: 10px; margin-bottom: 16px;">
+                            <button type="button" class="btn btn-secondary" id="registry-btn-upload-modules" aria-expanded="false" aria-controls="registry-upload-section">Загрузка модуля</button>
+                            <button type="button" class="btn btn-secondary" id="registry-btn-server-modules" aria-expanded="false" aria-controls="registry-server-section">Модули на сервере</button>
+                        </div>
+
+                        <!-- Секция: Загрузка модуля (создание из кода + ZIP) -->
+                        <div id="registry-upload-section" class="registry-section" style="display: none;">
+                            <div class="upload-form create-module-form">
+                                <h3>Создать модуль из кода</h3>
+                                <p style="font-size: 13px; color: #6e6e73; margin-bottom: 10px;">Заполните поля — сервер соберёт модуль по шаблону, проверит (preflight + smoke) и сохранит. Установить можно через блок «Установка» или API <code>POST /api/modules/bulk_install</code>.</p>
+                                <form id="create-module-form-modules">
+                                    <div class="form-group">
+                                        <label for="create-module-name-modules">Имя модуля <span class="required">*</span></label>
+                                        <input type="text" id="create-module-name-modules" name="module_name" required placeholder="например my_tool" pattern="[a-zA-Z0-9_]+">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-version-modules">Версия <span class="required">*</span></label>
+                                        <input type="text" id="create-version-modules" name="version" required placeholder="1.0.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-tool-name-modules">Имя инструмента <span class="required">*</span></label>
+                                        <input type="text" id="create-tool-name-modules" name="tool_name" required placeholder="например get_info">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-method-name-modules">Method</label>
+                                        <input type="text" id="create-method-name-modules" name="method_name" placeholder="run">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-description-modules">Описание инструмента <span class="required">*</span></label>
+                                        <input type="text" id="create-description-modules" name="description" required placeholder="Краткое описание для API">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-platforms-modules">Platforms (JSON)</label>
+                                        <textarea id="create-platforms-modules" name="platforms" rows="2" placeholder='["any"]'></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-risk-level-modules">Уровень риска</label>
+                                        <select id="create-risk-level-modules" name="risk_level">
+                                            <option value="safe_readonly">safe_readonly</option>
+                                            <option value="safe_write">safe_write</option>
+                                            <option value="dangerous">dangerous</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-code-body-modules">Тело функции (код) <span class="required">*</span></label>
+                                        <textarea id="create-code-body-modules" name="user_function_body" rows="8" required placeholder="return {&quot;ok&quot;: True}  # только тело async-функции, без async def"></textarea>
+                                        <small>Только тело async-функции, возвращающей Dict. Пример: <code>return {&quot;ok&quot;: True}</code></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-params-schema-modules">Параметры (params_schema, JSON-массив)</label>
+                                        <textarea id="create-params-schema-modules" name="params_schema" rows="3" placeholder='[{"name": "path", "type": "string", "default": ""}]'></textarea>
+                                        <small>Опционально. JSON-массив параметров. Если задан, в теле функции доступна переменная <code>params</code>. Пример: <code>[{"name":"target","type":"string","required":true}]</code></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-presets-modules">Presets (JSON)</label>
+                                        <textarea id="create-presets-modules" name="presets" rows="3" placeholder='[{"id":"default","name":"Default","description":"Default preset","params":{}}]'></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-capabilities-modules">Capabilities (JSON)</label>
+                                        <textarea id="create-capabilities-modules" name="capabilities" rows="3" placeholder='[]'></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="create-metadata-modules">Metadata (JSON)</label>
+                                        <textarea id="create-metadata-modules" name="metadata" rows="4" placeholder='{"domain":"custom","risk_level":"safe_readonly","requires_consent":false,"timeout_sec":30,"idempotent":true,"allow_roles":["admin"],"scopes":["custom"]}'></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label><input type="checkbox" id="create-overwrite-modules" name="overwrite"> Перезаписать при совпадении имени и версии</label>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary" id="create-module-btn-modules">Создать и сохранить модуль</button>
+                                </form>
+                                <div id="create-module-message-modules"></div>
+                            </div>
+
+                            <div class="upload-form">
+                                <h3>Загрузить модуль (ZIP)</h3>
+                                <form id="upload-form-modules" enctype="multipart/form-data">
+                                    <div class="form-group">
+                                        <label for="upload-file-modules">ZIP файл</label>
+                                        <input type="file" id="upload-file-modules" name="file" accept=".zip" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="upload-module-name-modules">Имя модуля</label>
+                                        <input type="text" id="upload-module-name-modules" name="module_name" placeholder="из manifest">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="upload-version-modules">Версия</label>
+                                        <input type="text" id="upload-version-modules" name="version" placeholder="из manifest">
+                                    </div>
+                                    <div class="form-group">
+                                        <label><input type="checkbox" id="upload-overwrite-modules" name="overwrite"> Перезаписать при совпадении имени и версии</label>
+                                    </div>
+                                    <button type="submit" class="btn" id="upload-btn-modules">Загрузить</button>
+                                </form>
+                                <div id="upload-message-modules"></div>
+                            </div>
+                        </div>
+
+                        <!-- Секция: Модули на сервере (список, удалить, обновить) -->
+                        <div id="registry-server-section" class="registry-section" style="display: none;">
+                            <div class="section">
+                                <h3>Загруженные модули на сервере</h3>
+                                <div id="modules-list-modules">
+                                    <div class="loading">Загрузка...</div>
+                                </div>
+                                <div id="module-detail-modules" style="display:none; margin-top: 16px;">
+                                    <h4>Module Details</h4>
+                                    <div id="module-detail-content-modules"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Установить модули на устройства -->
+                    <div class="panel" style="grid-column: 1 / -1;">
+                        <h2>Установить модули на устройства</h2>
+                        <p style="font-size: 13px; color: #6e6e73; margin-bottom: 12px;">Выберите одно или несколько устройств из списка (из БД), выберите модуль с сервера и нажмите «Установить». Внизу отображается консоль с прогрессом и ошибками.</p>
+                        <div id="devices-table-modules-wrap" style="margin-bottom: 16px;">
+                            <div class="loading" id="devices-table-modules-loading">Загрузка устройств...</div>
+                            <div id="devices-table-modules" style="display: none;">
+                                <table class="queue-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 36px;"><input type="checkbox" id="modules-select-all-devices" title="Выбрать все"></th>
+                                            <th>Hostname</th>
+                                            <th>Устройство (UUID)</th>
+                                            <th>Статус</th>
+                                            <th>ОС</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="devices-table-modules-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label for="mass-deploy-module-modules">Модуль с сервера</label>
+                                <select id="mass-deploy-module-modules" style="min-width: 220px;">
+                                    <option value="">Выберите модуль...</option>
+                                </select>
+                            </div>
+                            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="mass-deploy-replace-modules"> Заменить при совпадении</label>
+                            <button type="button" class="btn btn-primary" id="mass-install-btn-modules">Установить на выбранные</button>
+                        </div>
+                        <div class="section" style="margin-top: 20px;">
+                            <h3>Консоль установки</h3>
+                            <div id="modules-install-console" class="install-console" style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 280px; overflow-y: auto; min-height: 120px;"></div>
+                            <div style="margin-top: 8px;">
+                                <button type="button" class="btn btn-secondary btn-sm" id="modules-install-console-clear">Очистить консоль</button>
+                            </div>
+                        </div>
+                        <div id="devices-checkboxes-modules" style="display: none;"></div>
+                        <div id="devices-list-modules" style="display: none;">
+                            <div class="loading">Загрузка устройств...</div>
+                        </div>
+                        <div id="device-details-modules" style="display: none; margin-top: 30px;">
+                            <div class="section">
+                                <h3>Установка на устройство</h3>
+                                <form id="deploy-form-modules" class="deploy-form">
+                                    <div class="form-group">
+                                        <label for="deploy-device-modules">Устройство</label>
+                                        <select id="deploy-device-modules" name="device_id" required>
+                                            <option value="">Выберите устройство...</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="deploy-module-modules">Модуль</label>
+                                        <select id="deploy-module-modules" name="module_selector" required>
+                                            <option value="">Выберите модуль...</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn" id="deploy-btn-modules">Установить</button>
+                                    <button type="button" class="btn btn-secondary" id="reconcile-btn-modules">Reconcile now</button>
+                                </form>
+                                <div id="preflight-warning-modules" class="preflight-warning" style="display: none;"></div>
+                            </div>
+                            <div class="section">
+                                <h3>Desired vs Actual</h3>
+                                <div id="desired-diff-modules"></div>
+                            </div>
+                            <div id="device-details-content-modules"></div>
+                        </div>
+                    </div>
+                </div>
+            </div> <!-- End of Modules Tab -->
+
+            <!-- Users Tab -->
+            <div id="tab-users" class="tab-content">
+                <div class="page-header">
+                    <h1>Пользователи</h1>
+                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">Регистрация пользователей панели и назначение ролей. Активные пользователи с ролями support/admin доступны как исполнители в очереди тикетов.</p>
+                </div>
+
+                <div class="section">
+                    <h2>➕ Добавить пользователя</h2>
+                    <form id="usersAddForm" class="users-form">
+                        <div class="form-group">
+                            <label for="usersAddLogin">Логин</label>
+                            <input type="text" id="usersAddLogin" required placeholder="логин для входа">
+                        </div>
+                        <div class="form-group">
+                            <label for="usersAddPassword">Пароль</label>
+                            <input type="password" id="usersAddPassword" required placeholder="пароль">
+                        </div>
+                        <div class="form-group">
+                            <label for="usersAddRole">Роль</label>
+                            <select id="usersAddRole">
+                                <option value="admin">admin</option>
+                                <option value="support">support</option>
+                                <option value="auditor">auditor</option>
+                                <option value="user">user</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Зарегистрировать</button>
+                        </div>
+                        <div id="usersAddError" class="error-message" style="display:none;"></div>
+                        <div id="usersAddSuccess" class="success-message" style="display:none;"></div>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h2>📋 Список пользователей</h2>
+                    <div id="usersListLoading" class="loading">Загрузка...</div>
+                    <div id="usersListError" class="error-message" style="display:none;"></div>
+                    <div id="usersListContainer" style="display:none;">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Логин</th>
+                                    <th>Роль</th>
+                                    <th>Активен</th>
+                                    <th>Последний вход</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersListTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="usersListEmpty" class="empty-state" style="display:none;">
+                        <p>Пользователей пока нет. Добавьте первого выше.</p>
+                    </div>
+                </div>
+            </div> <!-- End of Users Tab -->
+
+            <!-- Agent Updates Tab -->
+            <div id="tab-agent-updates" class="tab-content">
+                <div class="page-header">
+                    <h1>Обновление агентов</h1>
+                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">Удалённое обновление PC Agent на подключённых устройствах. Доступны только агенты в сети. Выберите устройство и билд, затем нажмите «Запустить обновление».</p>
+                </div>
+
+                <div class="section">
+                    <h2>Запуск обновления на устройстве</h2>
+                    <div class="agent-updates-form">
+                        <div class="form-group">
+                            <label for="agentUpdatesDeviceSelect">Устройство</label>
+                            <select id="agentUpdatesDeviceSelect">
+                                <option value="">— Выберите устройство —</option>
+                            </select>
+                            <span id="agentUpdatesDeviceHint" class="muted" style="font-size: 12px; display: block; margin-top: 4px;">Загружаются только подключённые агенты</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesBuildSelect">Билд агента</label>
+                            <select id="agentUpdatesBuildSelect">
+                                <option value="">— Загрузите список билдов —</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="agentUpdatesRefreshBuilds" style="margin-top: 6px;">Обновить список билдов</button>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesRestartDelay">Задержка перед перезапуском (сек)</label>
+                            <input type="number" id="agentUpdatesRestartDelay" min="0" max="60" value="2" style="width: 80px;">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="agentUpdatesTriggerBtn">Запустить обновление</button>
+                        </div>
+                    </div>
+                    <div id="agentUpdatesResult" class="result-panel" style="display: none; margin-top: 16px;">
+                        <h4>Результат</h4>
+                        <div id="agentUpdatesResultContent"></div>
+                    </div>
+                    <div id="agentUpdatesError" class="error-message" style="display: none; margin-top: 12px;"></div>
+                </div>
+
+                <div class="section">
+                    <h2>Массовое обновление</h2>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Запуск обновления для нескольких устройств. Target подбирается по ОС устройства (Windows → windows_amd64, Linux → linux_alt_x86_64).</p>
+                    <div class="agent-updates-form">
+                        <div class="form-group">
+                            <label><input type="checkbox" id="agentUpdatesBulkAllOnline" checked> Все онлайн-агенты</label>
+                        </div>
+                        <div class="form-group" id="agentUpdatesBulkDevicesWrap" style="display: none;">
+                            <label>Устройства (если не «все»)</label>
+                            <select id="agentUpdatesBulkDevices" multiple style="min-height: 100px; width: 100%; max-width: 400px;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesBulkChannel">Канал</label>
+                            <select id="agentUpdatesBulkChannel">
+                                <option value="stable">stable</option>
+                                <option value="beta">beta</option>
+                                <option value="dev">dev</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesBulkVersion">Версия (пусто = последняя)</label>
+                            <input type="text" id="agentUpdatesBulkVersion" placeholder="например 3.1.0" style="width: 120px;">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="agentUpdatesBulkBtn">Запустить массовое обновление</button>
+                        </div>
+                    </div>
+                    <div id="agentUpdatesBulkResult" class="result-panel" style="display: none; margin-top: 12px;">
+                        <h4>Результаты массового обновления</h4>
+                        <div id="agentUpdatesBulkResultContent"></div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>Загрузка билда</h2>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Загрузите архив агента (ZIP или tar.gz), укажите target, канал и версию. После загрузки билд появится в списке доступных.</p>
+                    <form id="agentBuildUploadForm" class="agent-updates-form">
+                        <div class="form-group">
+                            <label for="agentBuildUploadFile">Файл (ZIP или tar.gz)</label>
+                            <input type="file" id="agentBuildUploadFile" accept=".zip,.tar.gz,.tgz" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentBuildUploadTarget">Target</label>
+                            <select id="agentBuildUploadTarget">
+                                <option value="windows_amd64">windows_amd64</option>
+                                <option value="linux_alt_x86_64">linux_alt_x86_64</option>
+                                <option value="linux_amd64">linux_amd64</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentBuildUploadChannel">Канал</label>
+                            <select id="agentBuildUploadChannel">
+                                <option value="stable">stable</option>
+                                <option value="beta">beta</option>
+                                <option value="dev">dev</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentBuildUploadVersion">Версия</label>
+                            <input type="text" id="agentBuildUploadVersion" placeholder="например 3.1.0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentBuildUploadArchiveType">Тип архива</label>
+                            <select id="agentBuildUploadArchiveType">
+                                <option value="zip">zip</option>
+                                <option value="tar.gz">tar.gz</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentBuildUploadOverwrite">Перезаписать при совпадении</label>
+                            <input type="checkbox" id="agentBuildUploadOverwrite" value="1">
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="agentBuildUploadSubmit">Загрузить билд</button>
+                        </div>
+                    </form>
+                    <div id="agentBuildUploadResult" class="result-panel" style="display: none; margin-top: 12px;"></div>
+                    <div id="agentBuildUploadError" class="error-message" style="display: none; margin-top: 8px;"></div>
+                </div>
+
+                <div class="section">
+                    <h2>Доступные билды</h2>
+                    <div id="agentUpdatesBuildsLoading" class="loading">Загрузка...</div>
+                    <div id="agentUpdatesBuildsError" class="error-message" style="display: none;"></div>
+                    <div id="agentUpdatesBuildsContainer" style="display: none;">
+                        <table class="queue-table">
+                            <thead>
+                                <tr>
+                                    <th>Target</th>
+                                    <th>Канал</th>
+                                    <th>Версия</th>
+                                    <th>Размер</th>
+                                    <th>Загружен</th>
+                                </tr>
+                            </thead>
+                            <tbody id="agentUpdatesBuildsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div> <!-- End of Agent Updates Tab -->
+        </div> <!-- End of main-content-area -->
+    </div> <!-- End of app-layout -->
+    </div> <!-- End of mainContent -->
+
+    <script src="/admin.js?v=4"></script>
+</body>
+</html>

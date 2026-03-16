@@ -1,0 +1,267 @@
+"""
+Канонические статусы и общие правила тикетного домена.
+
+Новая каноника хранится в snake_case и используется во всех новых обработчиках.
+Для совместимости soft-нормализация принимает legacy значения из старого API/UI.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+
+
+CANONICAL_STATUSES = (
+    "new",
+    "triaged",
+    "in_progress",
+    "waiting_on_user",
+    "waiting_on_vendor",
+    "resolved",
+    "closed",
+)
+
+WAITING_STATUSES = {"waiting_on_user", "waiting_on_vendor"}
+TERMINAL_STATUSES = {"resolved", "closed"}
+ACTIVE_OPERATOR_STATUSES = {"in_progress"}
+
+STATUS_LABELS_RU = {
+    "new": "Новая",
+    "triaged": "В очереди у оператора",
+    "in_progress": "В работе",
+    "waiting_on_user": "Ожидание ответа пользователя",
+    "waiting_on_vendor": "Ожидание внешней стороны",
+    "resolved": "Решена",
+    "closed": "Закрыта",
+}
+
+ACTION_REQUIRED_STATUSES = {"new", "triaged", "in_progress"}
+
+_NORMALIZE_MAP = {
+    "new": "new",
+    "triaged": "triaged",
+    "in_progress": "in_progress",
+    "in progress": "in_progress",
+    "open": "in_progress",
+    "waiting_on_user": "waiting_on_user",
+    "waiting on user": "waiting_on_user",
+    "waiting_user": "waiting_on_user",
+    "waiting_on_vendor": "waiting_on_vendor",
+    "waiting on vendor": "waiting_on_vendor",
+    "waiting_vendor": "waiting_on_vendor",
+    "resolved": "resolved",
+    "closed": "closed",
+    "new ticket": "new",
+    "new_request": "new",
+    "newrequest": "new",
+}
+
+
+PRIORITY_CLASS_TO_LEGACY_PRIORITY = {
+    "P0": "P1",
+    "P1": "P2",
+    "P2": "P3",
+    "P3": "P4",
+}
+
+PRIORITY_CLASS_TO_FLAGS: dict[str, tuple[bool, bool]] = {
+    "P0": (True, True),
+    "P1": (True, False),
+    "P2": (False, True),
+    "P3": (False, False),
+}
+
+PRIORITY_CLASS_BASE_SCORE = {
+    "P0": 4_000_000,
+    "P1": 3_000_000,
+    "P2": 2_000_000,
+    "P3": 1_000_000,
+}
+
+WAITING_STATUS_PENALTY = 500_000
+
+REQUESTER_PROFILE_FIELDS = ("full_name", "building", "room", "phone")
+
+
+def normalize_status(raw: str) -> Tuple[Optional[str], bool]:
+    if not raw or not isinstance(raw, str):
+        return None, False
+    s = raw.strip()
+    if not s:
+        return None, False
+    if s in CANONICAL_STATUSES:
+        return s, False
+    key = s.lower()
+    canonical = _NORMALIZE_MAP.get(key)
+    if canonical is not None:
+        return canonical, canonical != s
+    return None, False
+
+
+def is_valid_canonical_status(status: str) -> bool:
+    return status in CANONICAL_STATUSES
+
+
+def resolve_status(raw: str, fsm_mode: str = "soft") -> Tuple[Optional[str], bool]:
+    if not raw or not isinstance(raw, str):
+        return None, False
+    s = raw.strip()
+    if not s:
+        return None, False
+    if fsm_mode == "strict":
+        if s in CANONICAL_STATUSES:
+            return s, False
+        return None, False
+    return normalize_status(raw)
+
+
+def is_waiting_status(status: Optional[str]) -> bool:
+    return (status or "") in WAITING_STATUSES
+
+
+def is_terminal_status(status: Optional[str]) -> bool:
+    return (status or "") in TERMINAL_STATUSES
+
+
+def is_active_operator_status(status: Optional[str]) -> bool:
+    return (status or "") in ACTIVE_OPERATOR_STATUSES
+
+
+def requires_operator_action(status: Optional[str]) -> bool:
+    return (status or "") in ACTION_REQUIRED_STATUSES
+
+
+def status_label_ru(status: Optional[str]) -> str:
+    if not status:
+        return "Не указан"
+    return STATUS_LABELS_RU.get(status, status)
+
+
+def normalize_boolish(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "urgent", "important"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "not_urgent", "not_important"}:
+            return False
+    raise ValueError(f"{field_name} must be boolean")
+
+
+def priority_class_from_flags(urgency: bool, importance: bool) -> str:
+    if urgency and importance:
+        return "P0"
+    if urgency and not importance:
+        return "P1"
+    if not urgency and importance:
+        return "P2"
+    return "P3"
+
+
+def normalize_ticket_priority_inputs(
+    urgency: Any,
+    importance: Any,
+    urgency_reason: Any = None,
+    importance_reason: Any = None,
+) -> Dict[str, Any]:
+    urgency_bool = normalize_boolish(urgency, "urgency")
+    importance_bool = normalize_boolish(importance, "importance")
+    urgency_reason_clean = str(urgency_reason or "").strip()
+    importance_reason_clean = str(importance_reason or "").strip()
+    if not urgency_reason_clean:
+        raise ValueError("urgency_reason is required")
+    if not importance_reason_clean:
+        raise ValueError("importance_reason is required")
+    if len(urgency_reason_clean) > 500:
+        raise ValueError("urgency_reason must be at most 500 characters")
+    if len(importance_reason_clean) > 500:
+        raise ValueError("importance_reason must be at most 500 characters")
+    priority_class = priority_class_from_flags(urgency_bool, importance_bool)
+    return {
+        "urgency": 1 if urgency_bool else 0,
+        "importance": 1 if importance_bool else 0,
+        "urgency_reason": urgency_reason_clean,
+        "importance_reason": importance_reason_clean,
+        "priority_class": priority_class,
+        "legacy_priority": PRIORITY_CLASS_TO_LEGACY_PRIORITY[priority_class],
+    }
+
+
+def extract_priority_class(ticket: Any) -> str:
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    if isinstance(custom_fields, dict):
+        priority_class = custom_fields.get("priority_class")
+        if priority_class in PRIORITY_CLASS_BASE_SCORE:
+            return priority_class
+    priority = getattr(ticket, "priority", None)
+    reverse_map = {v: k for k, v in PRIORITY_CLASS_TO_LEGACY_PRIORITY.items()}
+    return reverse_map.get(priority, "P3")
+
+
+def compute_effective_priority(priority_class: str, status: Optional[str], created_at: Optional[datetime]) -> int:
+    score = PRIORITY_CLASS_BASE_SCORE.get(priority_class, PRIORITY_CLASS_BASE_SCORE["P3"])
+    if is_waiting_status(status):
+        score -= WAITING_STATUS_PENALTY
+    if created_at:
+        age_seconds = max(int((datetime.now(timezone.utc) - created_at).total_seconds()), 0)
+        score += min(age_seconds // 3600, 499_999)
+    return score
+
+
+def normalize_requester_profile(raw_profile: Any) -> Dict[str, Optional[str]]:
+    if raw_profile is None:
+        return {field: None for field in REQUESTER_PROFILE_FIELDS}
+    if not isinstance(raw_profile, dict):
+        raise ValueError("requester_profile must be an object")
+    profile: Dict[str, Optional[str]] = {}
+    for field in REQUESTER_PROFILE_FIELDS:
+        value = raw_profile.get(field)
+        if value is None:
+            profile[field] = None
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"requester_profile.{field} must be string")
+        cleaned = value.strip()
+        profile[field] = cleaned or None
+    return profile
+
+
+def merge_requester_custom_fields(
+    current_custom_fields: Any,
+    *,
+    user_display_name: Optional[str] = None,
+    requester_profile: Optional[Dict[str, Optional[str]]] = None,
+    priority_class: Optional[str] = None,
+) -> Dict[str, Any]:
+    merged = dict(current_custom_fields or {})
+    if user_display_name is not None:
+        merged["user_display_name"] = user_display_name.strip() or None
+    if requester_profile is not None:
+        merged["requester_profile"] = requester_profile
+    if priority_class is not None:
+        merged["priority_class"] = priority_class
+    return merged
+
+
+def get_requester_profile(ticket: Any) -> Dict[str, Optional[str]]:
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    raw_profile = custom_fields.get("requester_profile") if isinstance(custom_fields, dict) else None
+    try:
+        return normalize_requester_profile(raw_profile)
+    except ValueError:
+        return {field: None for field in REQUESTER_PROFILE_FIELDS}
+
+
+def get_requester_display_name(ticket: Any) -> Optional[str]:
+    profile = get_requester_profile(ticket)
+    if profile.get("full_name"):
+        return profile["full_name"]
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    if isinstance(custom_fields, dict):
+        user_display_name = str(custom_fields.get("user_display_name") or "").strip()
+        if user_display_name:
+            return user_display_name
+    requester_id = str(getattr(ticket, "requester_id", "") or "").strip()
+    return requester_id or None

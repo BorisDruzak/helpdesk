@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Console</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 24px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 24px;
+            font-size: 24px;
+        }
+        .section {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #fafafa;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        .section-title {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        input[type="text"]:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        select:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #2196F3;
+        }
+        button.secondary:hover {
+            background: #1976D2;
+        }
+        .status {
+            padding: 12px;
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .events-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .event-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid #ddd;
+            background: #fafafa;
+            border-radius: 3px;
+        }
+        .event-item.chat_session {
+            border-left-color: #2196F3;
+        }
+        .event-item.chat_message {
+            border-left-color: #4CAF50;
+        }
+        .event-item.event_delivered {
+            border-left-color: #FF9800;
+        }
+        .event-item.chat_ended {
+            border-left-color: #f44336;
+        }
+        .event-item.tool-call {
+            border-left-color: #9C27B0;
+        }
+        .event-item.tool-progress {
+            border-left-color: #00BCD4;
+        }
+        .event-item.tool-result {
+            border-left-color: #8BC34A;
+        }
+        .event-item.tool-error {
+            border-left-color: #f44336;
+        }
+        .event-time {
+            color: #999;
+            font-size: 11px;
+        }
+        .event-type {
+            font-weight: 600;
+            color: #333;
+            margin-right: 8px;
+        }
+        .flex-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .flex-row input {
+            flex: 1;
+        }
+        .job-id-display {
+            padding: 8px 12px;
+            background: #e3f2fd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #1976D2;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Support Console</h1>
+        
+        <div class="section">
+            <div class="section-title">Device Selection</div>
+            <div class="form-group">
+                <label for="deviceId">Device ID:</label>
+                <input type="text" id="deviceId" value="test_pc_01" placeholder="test_pc_01">
+            </div>
+            <button onclick="loadDevices()" class="secondary">Refresh Devices</button>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Chat Control</div>
+            <div id="status"></div>
+            <button onclick="startChat()" id="startBtn">Start Chat</button>
+            <div id="jobIdDisplay" style="display: none;" class="job-id-display">
+                <strong>Job ID:</strong> <span id="jobIdValue"></span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Send Message</div>
+            <div class="form-group">
+                <label for="messageText">Message:</label>
+                <textarea id="messageText" placeholder="Type your message here..."></textarea>
+            </div>
+            <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Run Tool</div>
+            <div class="form-group">
+                <label for="toolSelect">Select Tool:</label>
+                <select id="toolSelect" disabled>
+                    <option value="">-- Select a tool --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="toolParamsJson">Parameters (JSON):</label>
+                <textarea id="toolParamsJson" placeholder="{}" disabled>{}</textarea>
+            </div>
+            <div class="flex-row">
+                <button onclick="loadTools()" id="refreshToolsBtn" disabled class="secondary">Refresh Tools</button>
+                <button onclick="runTool()" id="runToolBtn" disabled>Run Tool</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Events</div>
+            <div class="events-container" id="eventsContainer">
+                <div style="color: #999; text-align: center; padding: 20px;">No events yet. Start a chat to see events.</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentJobId = null;
+        let eventsPollInterval = null;
+        let lastEventTs = null;
+        let currentDeviceId = null;
+        let availableTools = [];
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+            statusDiv.style.display = 'block';
+            
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        function hideStatus() {
+            document.getElementById('status').style.display = 'none';
+        }
+        
+        async function loadDevices() {
+            try {
+                const response = await fetch('/api/devices');
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.devices && data.devices.length > 0) {
+                    const deviceIdInput = document.getElementById('deviceId');
+                    const currentValue = deviceIdInput.value;
+                    
+                    // Можно добавить dropdown, но пока просто показываем список
+                    showStatus(`Found ${data.devices.length} device(s): ${data.devices.join(', ')}`, 'success');
+                } else {
+                    showStatus('No devices connected', 'error');
+                }
+            } catch (error) {
+                showStatus('Error loading devices: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadTools() {
+            const deviceId = document.getElementById('deviceId').value.trim();
+            if (!deviceId) {
+                showStatus('Please enter Device ID', 'error');
+                return;
+            }
+            
+            const refreshBtn = document.getElementById('refreshToolsBtn');
+            const originalText = refreshBtn ? refreshBtn.textContent : '';
+            if (refreshBtn) {
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = 'Loading...';
+            }
+            
+            try {
+                const response = await fetch('/api/list_tools', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        actor_role: 'admin'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Агент возвращает формат: {status: "success", data: {observations: {tools: [...]}}}
+                let toolsList = [];
+                if (data.status === 'success' && data.data && data.data.observations && Array.isArray(data.data.observations.tools)) {
+                    // Формат от агента через orchestrator
+                    toolsList = data.data.observations.tools.map(tool => ({
+                        tool: tool.name,
+                        module: tool.module,
+                        spec: {
+                            description: tool.description || 'No description',
+                            risk_level: tool.risk_level,
+                            capabilities: tool.capabilities,
+                            params_schema: tool.params_schema || {},
+                            metadata: tool.metadata
+                        }
+                    }));
+                } else if (data.status === 'ok' && Array.isArray(data.tools)) {
+                    // Альтернативный формат (для совместимости)
+                    toolsList = data.tools;
+                }
+                
+                if (toolsList.length > 0) {
+                    availableTools = toolsList;
+                    const toolSelect = document.getElementById('toolSelect');
+                    
+                    // Очищаем существующие опции кроме первой
+                    toolSelect.innerHTML = '<option value="">-- Select a tool --</option>';
+                    
+                    // Добавляем опции для каждого инструмента
+                    toolsList.forEach(tool => {
+                        const option = document.createElement('option');
+                        option.value = tool.tool;
+                        option.textContent = `${tool.tool} - ${tool.spec.description || 'No description'}`;
+                        toolSelect.appendChild(option);
+                    });
+                    
+                    // Включаем элементы управления инструментами
+                    toolSelect.disabled = false;
+                    document.getElementById('toolParamsJson').disabled = false;
+                    document.getElementById('runToolBtn').disabled = false;
+                    
+                    showStatus(`Loaded ${toolsList.length} tools successfully!`, 'success');
+                } else {
+                    showStatus('Failed to load tools: ' + (data.error || data.message || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Error loading tools: ' + error.message, 'error');
+            } finally {
+                if (refreshBtn) {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = originalText || 'Refresh Tools';
+                }
+            }
+        }
+        
+        async function runTool() {
+            const deviceId = document.getElementById('deviceId').value.trim();
+            const toolName = document.getElementById('toolSelect').value;
+            const paramsText = document.getElementById('toolParamsJson').value.trim();
+            
+            if (!deviceId) {
+                showStatus('Please enter Device ID', 'error');
+                return;
+            }
+            
+            if (!toolName) {
+                showStatus('Please select a tool', 'error');
+                return;
+            }
+            
+            // Парсим JSON параметры
+            let parsedParams = {};
+            if (paramsText) {
+                try {
+                    parsedParams = JSON.parse(paramsText);
+                } catch (e) {
+                    showStatus('Invalid JSON in parameters: ' + e.message, 'error');
+                    return;
+                }
+            }
+            
+            const runToolBtn = document.getElementById('runToolBtn');
+            runToolBtn.disabled = true;
+            runToolBtn.textContent = 'Running...';
+            
+            try {
+                const requestBody = {
+                    device_id: deviceId,
+                    tool: toolName,
+                    params: parsedParams,
+                    actor_role: 'admin'
+                };
+                
+                // Добавляем chat_job_id если есть активный чат
+                if (currentJobId) {
+                    requestBody.chat_job_id = currentJobId;
+                }
+                
+                const response = await fetch('/api/run_tool', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    showStatus('Tool executed successfully! Check events for results.', 'success');
+                } else {
+                    showStatus('Failed to run tool: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Error running tool: ' + error.message, 'error');
+            } finally {
+                runToolBtn.disabled = false;
+                runToolBtn.textContent = 'Run Tool';
+            }
+        }
+        
+        async function startChat() {
+            const deviceId = document.getElementById('deviceId').value.trim();
+            if (!deviceId) {
+                showStatus('Please enter Device ID', 'error');
+                return;
+            }
+            
+            currentDeviceId = deviceId;
+            
+            const startBtn = document.getElementById('startBtn');
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting...';
+            
+            try {
+                const response = await fetch('/api/chat_start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        actor_role: 'support'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.job_id) {
+                    currentJobId = data.job_id;
+                    document.getElementById('jobIdValue').textContent = currentJobId;
+                    document.getElementById('jobIdDisplay').style.display = 'block';
+                    document.getElementById('sendBtn').disabled = false;
+                    
+                    showStatus('Chat started successfully!', 'success');
+                    startBtn.textContent = 'Chat Started';
+                    
+                    // Включаем кнопку обновления инструментов
+                    document.getElementById('refreshToolsBtn').disabled = false;
+                    
+                    // Загружаем список инструментов
+                    await loadTools();
+                    
+                    // Начинаем polling событий
+                    startEventsPolling();
+                } else {
+                    showStatus('Failed to start chat: ' + (data.error || 'Unknown error'), 'error');
+                    startBtn.disabled = false;
+                    startBtn.textContent = 'Start Chat';
+                }
+            } catch (error) {
+                showStatus('Error starting chat: ' + error.message, 'error');
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Chat';
+            }
+        }
+        
+        async function sendMessage() {
+            const deviceId = document.getElementById('deviceId').value.trim();
+            const messageText = document.getElementById('messageText').value.trim();
+            
+            if (!deviceId) {
+                showStatus('Please enter Device ID', 'error');
+                return;
+            }
+            
+            if (!currentJobId) {
+                showStatus('Please start a chat first', 'error');
+                return;
+            }
+            
+            if (!messageText) {
+                showStatus('Please enter a message', 'error');
+                return;
+            }
+            
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+            
+            try {
+                const response = await fetch('/api/chat_send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        job_id: currentJobId,
+                        text: messageText,
+                        from: 'support',
+                        actor_role: 'support'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('messageText').value = '';
+                    showStatus('Message sent successfully!', 'success');
+                } else {
+                    showStatus('Failed to send message: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Error sending message: ' + error.message, 'error');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+            }
+        }
+        
+        function startEventsPolling() {
+            // Останавливаем предыдущий polling, если есть
+            if (eventsPollInterval) {
+                clearInterval(eventsPollInterval);
+            }
+            
+            // Сбрасываем timestamp последнего события
+            lastEventTs = null;
+            
+            // Начинаем polling каждую секунду
+            eventsPollInterval = setInterval(pollEvents, 1000);
+            
+            // Сразу делаем первый запрос
+            pollEvents();
+        }
+        
+        function stopEventsPolling() {
+            if (eventsPollInterval) {
+                clearInterval(eventsPollInterval);
+                eventsPollInterval = null;
+            }
+        }
+        
+        async function pollEvents() {
+            if (!currentJobId) {
+                return;
+            }
+            
+            try {
+                // Формируем URL с since_ts, если есть
+                let url = `/api/chat_events?job_id=${encodeURIComponent(currentJobId)}`;
+                if (lastEventTs !== null) {
+                    url += `&since_ts=${lastEventTs}`;
+                }
+                url += `&limit=200`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.status === 'ok' && Array.isArray(data.events)) {
+                    // Если это первый запрос (lastEventTs === null), показываем все события
+                    // Если это последующие запросы, добавляем только новые события
+                    if (lastEventTs === null) {
+                        // Первый запрос - показываем все события
+                        displayEvents(data.events);
+                    } else if (data.events.length > 0) {
+                        // Последующие запросы - добавляем только новые события
+                        appendEvents(data.events);
+                    }
+                    
+                    // Обновляем timestamp последнего события
+                    if (data.events.length > 0) {
+                        const lastEvent = data.events[data.events.length - 1];
+                        if (lastEvent.ts) {
+                            lastEventTs = lastEvent.ts;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling events:', error);
+            }
+        }
+        
+        function formatEvent(event) {
+            const eventType = event.event || 'unknown';
+            const eventTime = event.ts ? new Date(event.ts * 1000).toLocaleTimeString() : '';
+            const eventClass = eventType.replace(/_/g, '-');
+            
+            let eventContent = '';
+            if (eventType === 'chat_message') {
+                eventContent = `From: ${event.from || 'unknown'}, Text: ${event.text || ''}`;
+            } else if (eventType === 'chat_session') {
+                eventContent = `Session started`;
+            } else if (eventType === 'event_delivered') {
+                eventContent = `Event delivered: ${event.event_id || ''}`;
+            } else if (eventType === 'chat_ended') {
+                eventContent = `Chat ended`;
+                // Останавливаем polling при завершении чата
+                stopEventsPolling();
+            } else if (eventType === 'tool_call') {
+                const toolName = event.tool || 'unknown';
+                const paramsStr = event.params ? JSON.stringify(event.params) : '{}';
+                eventContent = `Tool Call: ${toolName} with params ${paramsStr}`;
+            } else if (eventType === 'tool_progress') {
+                const toolName = event.tool || 'unknown';
+                const progress = event.progress || 0;
+                const message = event.message || '';
+                eventContent = `Tool Progress: ${toolName} - ${progress}% ${message}`;
+            } else if (eventType === 'tool_result') {
+                const toolName = event.tool || 'unknown';
+                const status = event.status || 'unknown';
+                const resultPreview = event.result ? JSON.stringify(event.result).substring(0, 100) + '...' : 'N/A';
+                eventContent = `Tool Result: ${toolName} - Status: ${status}, Result: ${resultPreview}`;
+            } else if (eventType === 'tool_error') {
+                const toolName = event.tool || 'unknown';
+                const error = event.error || 'Unknown error';
+                eventContent = `Tool Error: ${toolName} - ${error}`;
+            } else {
+                eventContent = JSON.stringify(event, null, 2);
+            }
+            
+            return `
+                <div class="event-item ${eventClass}">
+                    <span class="event-time">${eventTime}</span>
+                    <span class="event-type">[${eventType}]</span>
+                    <span>${eventContent}</span>
+                </div>
+            `;
+        }
+        
+        function displayEvents(events) {
+            const container = document.getElementById('eventsContainer');
+            
+            if (events.length === 0) {
+                container.innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">No events yet.</div>';
+                return;
+            }
+            
+            container.innerHTML = events.map(formatEvent).join('');
+            
+            // Прокручиваем вниз
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function appendEvents(events) {
+            const container = document.getElementById('eventsContainer');
+            
+            if (events.length === 0) {
+                return;
+            }
+            
+            // Удаляем сообщение "No events yet", если оно есть
+            if (container.innerHTML.includes('No events yet')) {
+                container.innerHTML = '';
+            }
+            
+            // Добавляем новые события
+            const newEventsHtml = events.map(formatEvent).join('');
+            container.innerHTML += newEventsHtml;
+            
+            // Прокручиваем вниз
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // Обработка Enter в поле сообщения
+        document.getElementById('messageText').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Обработка выбора инструмента - показываем подсказку по параметрам
+        document.getElementById('toolSelect').addEventListener('change', function(e) {
+            const selectedTool = e.target.value;
+            if (!selectedTool) {
+                return;
+            }
+            
+            const tool = availableTools.find(t => t.tool === selectedTool);
+            if (tool && tool.spec && tool.spec.params_schema) {
+                // Если есть JSON Schema, показываем пример
+                const paramsTextarea = document.getElementById('toolParamsJson');
+                const schema = tool.spec.params_schema;
+                
+                // Генерируем пример на основе schema
+                const example = {};
+                if (schema.properties) {
+                    for (const [key, prop] of Object.entries(schema.properties)) {
+                        if (prop.default !== undefined) {
+                            example[key] = prop.default;
+                        } else if (prop.type === 'string') {
+                            example[key] = prop.example || '';
+                        } else if (prop.type === 'number' || prop.type === 'integer') {
+                            example[key] = prop.example || 0;
+                        } else if (prop.type === 'boolean') {
+                            example[key] = false;
+                        } else if (prop.type === 'array') {
+                            example[key] = [];
+                        } else if (prop.type === 'object') {
+                            example[key] = {};
+                        }
+                    }
+                }
+                
+                if (Object.keys(example).length > 0) {
+                    paramsTextarea.value = JSON.stringify(example, null, 2);
+                    paramsTextarea.placeholder = 'Edit parameters as needed';
+                } else {
+                    paramsTextarea.value = '{}';
+                    paramsTextarea.placeholder = 'No parameters required or schema not available';
+                }
+            }
+        });
+        
+        // Загружаем список устройств при загрузке страницы
+        window.addEventListener('load', function() {
+            loadDevices();
+        });
+    </script>
+</body>
+</html>
+

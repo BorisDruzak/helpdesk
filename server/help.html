@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help Desk</title>
+    <link rel="stylesheet" href="/help.css">
+</head>
+<body>
+    <main class="help-shell">
+        <section class="hero-card">
+            <div class="hero-copy">
+                <p class="eyebrow">Help Desk</p>
+                <h1>Создание заявки и чат по коду</h1>
+                <p class="hero-text">
+                    Создайте заявку без входа в систему. Для доступа к переписке используйте код авторизации,
+                    который выдаётся при создании заявки или приходит в первом сообщении от поддержки.
+                </p>
+            </div>
+            <div class="hero-code" id="authCodeCard" hidden>
+                <span class="hero-code-label">Код авторизации</span>
+                <strong id="authCodeValue">—</strong>
+                <p id="authCodeHint">Сохраните код. Он понадобится для входа в тикет.</p>
+            </div>
+        </section>
+
+        <section class="help-grid">
+            <article class="panel panel-form" id="createPanel">
+                <div class="panel-head">
+                    <h2>Новая заявка</h2>
+                    <p>Заполните профиль и описание проблемы.</p>
+                </div>
+                <form id="createForm" class="stack">
+                    <label>
+                        <span>Отображаемое имя</span>
+                        <input type="text" id="createDisplayName" placeholder="Иван Иванов" required>
+                    </label>
+                    <label>
+                        <span>ФИО</span>
+                        <input type="text" id="createFullName" placeholder="Иванов Иван Иванович">
+                    </label>
+                    <div class="two-col">
+                        <label>
+                            <span>Корпус</span>
+                            <input type="text" id="createBuilding" placeholder="Корпус A">
+                        </label>
+                        <label>
+                            <span>Кабинет</span>
+                            <input type="text" id="createRoom" placeholder="203">
+                        </label>
+                    </div>
+                    <label>
+                        <span>Телефон</span>
+                        <input type="text" id="createPhone" placeholder="+7 ...">
+                    </label>
+                    <div class="two-col">
+                        <label>
+                            <span>Срочность</span>
+                            <select id="createUrgency">
+                                <option value="false">Несрочно</option>
+                                <option value="true">Срочно</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>Важность</span>
+                            <select id="createImportance">
+                                <option value="false">Неважно</option>
+                                <option value="true">Важно</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label>
+                        <span>Обоснование срочности</span>
+                        <input type="text" id="createUrgencyReason" placeholder="Почему это срочно" required>
+                    </label>
+                    <label>
+                        <span>Обоснование важности</span>
+                        <input type="text" id="createImportanceReason" placeholder="Почему это важно" required>
+                    </label>
+                    <label>
+                        <span>Описание проблемы</span>
+                        <textarea id="createDescription" rows="6" placeholder="Подробно опишите, что произошло" required></textarea>
+                    </label>
+                    <button type="submit" class="primary-btn" id="createSubmitBtn">Создать заявку</button>
+                </form>
+            </article>
+
+            <article class="panel panel-auth" id="authPanel" hidden>
+                <div class="panel-head">
+                    <h2>Вход в тикет</h2>
+                    <p>Введите код авторизации для доступа к переписке.</p>
+                </div>
+                <form id="authForm" class="stack">
+                    <label>
+                        <span>Код</span>
+                        <input type="text" id="authCodeInput" placeholder="Например AB12CD34" autocomplete="one-time-code">
+                    </label>
+                    <button type="submit" class="primary-btn">Войти</button>
+                </form>
+            </article>
+
+            <article class="panel panel-chat" id="chatPanel" hidden>
+                <div class="panel-head">
+                    <div>
+                        <h2 id="chatTitle">Тикет</h2>
+                        <p id="chatMeta">Статус: —</p>
+                    </div>
+                    <div class="chat-actions">
+                        <a id="queueLink" href="/queue" class="ghost-btn" target="_blank" rel="noreferrer">Публичная очередь</a>
+                    </div>
+                </div>
+                <div class="chat-history" id="chatHistory"></div>
+                <form id="chatForm" class="chat-form">
+                    <textarea id="chatMessageInput" rows="3" placeholder="Введите сообщение"></textarea>
+                    <button type="submit" class="primary-btn" id="chatSubmitBtn">Отправить</button>
+                </form>
+            </article>
+        </section>
+
+        <section class="status-bar" id="statusBar">Готово</section>
+    </main>
+    <script src="/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+pydantic
+PyYAML
+aiosqlite
+aiohttp
+loguru
+mss
+# Запись экрана (screen.record): нужен ffmpeg — системный (apt install ffmpeg) или imageio-ffmpeg (бинарник в пакете)
+imageio-ffmpeg
+psutil
+pynput
+requests
+PySide6
+qasync
+

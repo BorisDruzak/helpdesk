@@ -1,0 +1,9 @@
+{
+  "databases": {
+    "main": {
+      "path": "data/main/database.db",
+      "added": "2026-01-31T18:36:10.686720"
+    }
+  },
+  "last_used": "main"
+}

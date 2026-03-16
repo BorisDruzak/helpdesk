@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modules Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f7;
+            color: #1d1d1f;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .panel h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e5e7;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e5e7;
+        }
+
+        .upload-form {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f7;
+            border-radius: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d2d2d7;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-group input[type="file"] {
+            padding: 6px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #8e8e93;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e5e7;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f5f5f7;
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-active {
+            background: #34c759;
+            color: white;
+        }
+
+        .badge-installed {
+            background: #8e8e93;
+            color: white;
+        }
+
+        .badge-missing {
+            background: #ff9500;
+            color: white;
+        }
+
+        .badge-removed {
+            background: #ff3b30;
+            color: white;
+        }
+
+        .badge-failed {
+            background: #ff3b30;
+            color: white;
+        }
+
+        .badge-drift {
+            background: #ff9500;
+            color: white;
+        }
+
+        .drift-indicator {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .drift-ok {
+            color: #34c759;
+        }
+
+        .drift-warning {
+            color: #ff9500;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background: #007aff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+
+        .btn:hover {
+            background: #0051d5;
+        }
+
+        .btn:disabled {
+            background: #d2d2d7;
+            cursor: not-allowed;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn-secondary {
+            background: #8e8e93;
+        }
+
+        .btn-secondary:hover {
+            background: #6e6e73;
+        }
+
+        .btn-danger {
+            background: #ff3b30;
+        }
+
+        .btn-danger:hover {
+            background: #d62828;
+        }
+
+        .btn-warning {
+            background: #ff9500;
+        }
+
+        .btn-warning:hover {
+            background: #e68900;
+        }
+
+        .device-item {
+            padding: 12px;
+            border: 1px solid #e5e5e7;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .device-item:hover {
+            background: #f5f5f7;
+            border-color: #007aff;
+        }
+
+        .device-item.selected {
+            background: #e3f2fd;
+            border-color: #007aff;
+        }
+
+        .device-item h3 {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .device-item .meta {
+            font-size: 12px;
+            color: #8e8e93;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #8e8e93;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .warning {
+            background: #fff3e0;
+            color: #e65100;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #8e8e93;
+        }
+
+        code {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            background: #f5f5f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .bytes {
+            color: #8e8e93;
+            font-size: 12px;
+        }
+
+        .error-text {
+            color: #ff3b30;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .toolset-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .info-card {
+            padding: 15px;
+            background: #f5f5f7;
+            border-radius: 8px;
+        }
+
+        .info-card label {
+            display: block;
+            font-size: 12px;
+            color: #8e8e93;
+            margin-bottom: 5px;
+        }
+
+        .info-card value {
+            display: block;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .deploy-form {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f7;
+            border-radius: 8px;
+        }
+
+        .preflight-warning {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff3e0;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .operations-table {
+            font-size: 12px;
+        }
+
+        .operations-table th,
+        .operations-table td {
+            padding: 8px;
+        }
+
+        /* Login Form Styles */
+        #loginContainer {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f5f5f7;
+        }
+
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .login-box p {
+            text-align: center;
+            color: #6e6e73;
+            margin-bottom: 30px;
+        }
+
+        .login-actions {
+            margin-top: 25px;
+        }
+
+        .login-actions .btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+        }
+
+        .error-message {
+            background: #fee;
+            border: 1px solid #fcc;
+            border-radius: 6px;
+            padding: 12px;
+            color: #c33;
+            font-size: 14px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .user-info span {
+            color: #6e6e73;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Form -->
+    <div id="loginContainer">
+        <div class="login-box">
+            <h1>🔐 Modules Management</h1>
+            <p>Enter your credentials to access modules management</p>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginInput">Login:</label>
+                    <input type="text" id="loginInput" name="login" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="passwordInput">Password:</label>
+                    <input type="password" id="passwordInput" name="password" required autocomplete="current-password">
+                </div>
+                <div id="loginError" class="error-message" style="display: none; margin-bottom: 15px;"></div>
+                <div class="login-actions">
+                    <button type="submit" class="btn">Sign In</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content (hidden by default) -->
+    <div id="mainContent" style="display: none;">
+    <div class="container">
+        <div class="header">
+            <h1>Modules Management</h1>
+            <p>Upload modules to server and deploy to devices</p>
+        </div>
+
+        <!-- Панель A: Module Registry (Server) -->
+        <div class="panel">
+            <h2>Module Registry</h2>
+            
+            <div class="upload-form">
+                <h3>Upload Module</h3>
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="upload-file">ZIP File</label>
+                        <input type="file" id="upload-file" name="file" accept=".zip" required>
+                        <small>Select module ZIP file</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="upload-module-name">Module Name</label>
+                        <input type="text" id="upload-module-name" name="module_name" required>
+                        <small>Optional: will be extracted from manifest if not provided</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="upload-version">Version</label>
+                        <input type="text" id="upload-version" name="version" required>
+                        <small>Optional: will be extracted from manifest if not provided</small>
+                    </div>
+                    <button type="submit" class="btn" id="upload-btn">Upload</button>
+                </form>
+                <div id="upload-message"></div>
+            </div>
+
+            <div class="section">
+                <h3>Uploaded Modules</h3>
+                <div id="modules-list">
+                    <div class="loading">Loading modules...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Панель B: Devices -->
+        <div class="panel">
+            <h2>Devices</h2>
+            
+            <div id="devices-list">
+                <div class="loading">Loading devices...</div>
+            </div>
+
+            <div id="device-details" style="display: none; margin-top: 30px;">
+                <div class="section">
+                    <h3>Deploy to Device</h3>
+                    <form id="deploy-form" class="deploy-form">
+                        <div class="form-group">
+                            <label for="deploy-device">Device</label>
+                            <select id="deploy-device" name="device_id" required>
+                                <option value="">Select device...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="deploy-module">Module</label>
+                            <select id="deploy-module" name="module_selector" required>
+                                <option value="">Select module...</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" class="btn" id="deploy-btn">Install</button>
+                    </form>
+                    <div id="preflight-warning" class="preflight-warning" style="display: none;"></div>
+                </div>
+
+                <div id="device-details-content"></div>
+            </div>
+        </div>
+    </div>
+    </div> <!-- End of mainContent -->
+
+    <!-- Authentication JavaScript -->
+    <script>
+        const AUTH_TOKEN_KEY = 'modules_auth_token';
+        const USER_LOGIN_KEY = 'modules_user_login';
+        
+        // Check authentication on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem(AUTH_TOKEN_KEY);
+            if (token) {
+                // Verify token is still valid by making a test request
+                verifyToken(token);
+            } else {
+                showLogin();
+            }
+        });
+        
+        // Verify token by making a test API request
+        async function verifyToken(token) {
+            try {
+                const response = await fetch('/api/modules', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok || response.status === 404) {
+                    // Token is valid (404 is ok for empty modules list)
+                    showMainContent(token);
+                } else if (response.status === 401) {
+                    // Token invalid, show login
+                    localStorage.removeItem(AUTH_TOKEN_KEY);
+                    localStorage.removeItem(USER_LOGIN_KEY);
+                    showLogin();
+                } else {
+                    showLogin();
+                }
+            } catch (error) {
+                console.error('Token verification error:', error);
+                showLogin();
+            }
+        }
+        
+        // Show login form, hide main content
+        function showLogin() {
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('mainContent').style.display = 'none';
+        }
+        
+        // Show main content, hide login
+        function showMainContent(token) {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            
+            // Update user info in header if available
+            const userLogin = localStorage.getItem(USER_LOGIN_KEY);
+            if (userLogin) {
+                updateUserInfo(userLogin);
+            }
+            
+            // Initialize app
+            if (typeof initializeApp === 'function') {
+                initializeApp();
+            }
+        }
+        
+        // Update user info in header
+        function updateUserInfo(login) {
+            const header = document.querySelector('.header');
+            if (header) {
+                let userInfoDiv = document.getElementById('userInfo');
+                if (!userInfoDiv) {
+                    userInfoDiv = document.createElement('div');
+                    userInfoDiv.id = 'userInfo';
+                    userInfoDiv.className = 'user-info';
+                    header.appendChild(userInfoDiv);
+                }
+                userInfoDiv.innerHTML = `
+                    <span>User: ${login}</span>
+                    <button class="btn btn-secondary" onclick="handleLogout()">Logout</button>
+                `;
+            }
+        }
+        
+        // Handle login form submission
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const login = document.getElementById('loginInput').value;
+            const password = document.getElementById('passwordInput').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            errorDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/ui_login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        login: login,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    // Save token and user info
+                    localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+                    localStorage.setItem(USER_LOGIN_KEY, data.user_login);
+                    
+                    // Show main content
+                    showMainContent(data.token);
+                    
+                    // Initialize main app
+                    if (typeof initializeApp === 'function') {
+                        initializeApp();
+                    }
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.style.display = 'block';
+            }
+        }
+        
+        // Handle logout
+        function handleLogout() {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem(USER_LOGIN_KEY);
+            showLogin();
+        }
+        
+        // Intercept all fetch calls to add auth token
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const token = localStorage.getItem(AUTH_TOKEN_KEY);
+            
+            if (token && args[0] && typeof args[0] === 'string') {
+                // Simple URL fetch
+                if (!args[1]) {
+                    args[1] = {};
+                }
+                if (!args[1].headers) {
+                    args[1].headers = {};
+                }
+                if (!args[1].headers['Authorization']) {
+                    args[1].headers['Authorization'] = `Bearer ${token}`;
+                }
+            } else if (token && args[0] && typeof args[0] === 'object') {
+                // Request object fetch
+                if (!args[0].headers) {
+                    args[0].headers = {};
+                }
+                if (!args[0].headers['Authorization']) {
+                    args[0].headers['Authorization'] = `Bearer ${token}`;
+                }
+            }
+            
+            return originalFetch.apply(this, args);
+        };
+    </script>
+
+    <script>
+        let modulesData = [];
+        let devicesData = [];
+        let selectedDeviceId = null;
+        let lastOperationId = null;
+        let operationCheckInterval = null;
+        let toolsetDataCache = null;
+
+        // ============================================
+        // Registry Panel (Server)
+        // ============================================
+
+        async function loadModules() {
+            const container = document.getElementById('modules-list');
+            container.innerHTML = '<div class="loading">Loading modules...</div>';
+
+            try {
+                const response = await fetch('/api/modules');
+                const data = await response.json();
+                
+                if (data.modules) {
+                    modulesData = data.modules;
+                    renderModules();
+                    updateDeployModuleSelect();
+                } else {
+                    container.innerHTML = '<div class="error">Error loading modules</div>';
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function renderModules() {
+            const container = document.getElementById('modules-list');
+            
+            if (modulesData.length === 0) {
+                container.innerHTML = '<div class="empty">No modules uploaded yet</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Module Name</th>
+                            <th>Version</th>
+                            <th>SHA256</th>
+                            <th>Size</th>
+                            <th>Uploaded At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${modulesData.map(m => `
+                            <tr>
+                                <td><strong>${m.module_name}</strong></td>
+                                <td>${m.version}</td>
+                                <td><code>${m.sha256.substring(0, 16)}...</code></td>
+                                <td class="bytes">${formatBytes(m.size)}</td>
+                                <td>${new Date(m.created_at).toLocaleString()}</td>
+                                <td>
+                                    <button class="btn btn-small" onclick="showInstallDialog('${m.module_name}', '${m.version}')">
+                                        Install to device...
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('upload-btn');
+            const messageDiv = document.getElementById('upload-message');
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            btn.disabled = true;
+            messageDiv.innerHTML = '<div class="loading">Uploading...</div>';
+            
+            try {
+                const response = await fetch('/api/modules/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.status === 200 && data.status === 'success') {
+                    messageDiv.innerHTML = `
+                        <div class="success">
+                            Module uploaded successfully: ${data.module_name}/${data.version}
+                        </div>
+                    `;
+                    form.reset();
+                    await loadModules();
+                } else {
+                    messageDiv.innerHTML = `
+                        <div class="error">
+                            Upload failed: ${data.error || 'Unknown error'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `
+                    <div class="error">
+                        Upload error: ${error.message}
+                    </div>
+                `;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ============================================
+        // Devices Panel
+        // ============================================
+
+        async function loadDevices() {
+            const container = document.getElementById('devices-list');
+            container.innerHTML = '<div class="loading">Loading devices...</div>';
+
+            try {
+                const response = await fetch('/api/devices');
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    devicesData = data.devices;
+                    renderDevices();
+                    updateDeployDeviceSelect();
+                } else {
+                    container.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error loading devices: ${error.message}</div>`;
+            }
+        }
+
+        function renderDevices() {
+            const container = document.getElementById('devices-list');
+            
+            if (devicesData.length === 0) {
+                container.innerHTML = '<div class="empty">No devices found</div>';
+                return;
+            }
+
+            container.innerHTML = devicesData.map(device => `
+                <div class="device-item ${device.device_id === selectedDeviceId ? 'selected' : ''}" 
+                     onclick="selectDevice('${device.device_id}')">
+                    <h3>${device.hostname || device.device_id}</h3>
+                    <div class="meta">
+                        <div>Tools: ${device.tools_count || 0}</div>
+                        <div>Active modules: ${device.active_modules_count || 0}</div>
+                        <div>Hash: ${device.toolset_hash ? device.toolset_hash.substring(0, 8) + '...' : 'N/A'}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function selectDevice(deviceId) {
+            selectedDeviceId = deviceId;
+            renderDevices();
+            
+            const deployDeviceSelect = document.getElementById('deploy-device');
+            if (deployDeviceSelect) {
+                deployDeviceSelect.value = deviceId;
+            }
+            
+            document.getElementById('device-details').style.display = 'block';
+            await loadDeviceDetails(deviceId);
+        }
+
+        async function loadDeviceDetails(deviceId) {
+            const container = document.getElementById('device-details-content');
+            container.innerHTML = '<div class="loading">Loading device details...</div>';
+
+            try {
+                const [modulesRes, toolsetRes, debugRes] = await Promise.all([
+                    fetch(`/api/devices/${deviceId}/modules`),
+                    fetch(`/api/devices/${deviceId}/toolset`),
+                    fetch(`/api/devices/${deviceId}/modules/debug`).catch(() => null)
+                ]);
+
+                const modulesData = await modulesRes.json();
+                toolsetDataCache = await toolsetRes.json();
+                const debugData = debugRes ? await debugRes.json() : null;
+
+                if (modulesData.status === 'ok' && toolsetDataCache.status === 'ok') {
+                    renderDeviceDetails(deviceId, modulesData, toolsetDataCache, debugData);
+                    // Update preflight check
+                    checkPreflight();
+                } else {
+                    container.innerHTML = `<div class="error">Error loading details</div>`;
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function renderDeviceDetails(deviceId, modulesData, toolsetData, debugData) {
+            const device = devicesData.find(d => d.device_id === deviceId);
+            const container = document.getElementById('device-details-content');
+            
+            // Calculate drift for each module
+            const toolsByModule = toolsetData.tools_by_module || {};
+            const modulesWithDrift = modulesData.modules.map(m => {
+                const hasTools = toolsByModule[m.module_name] && toolsByModule[m.module_name].length > 0;
+                let driftStatus = null;
+                
+                if (m.active && !hasTools) {
+                    driftStatus = 'active_no_tools';
+                } else if (!m.active && hasTools) {
+                    driftStatus = 'tools_no_active';
+                } else if (m.active && hasTools) {
+                    driftStatus = 'ok';
+                }
+                
+                return { ...m, driftStatus, toolsCount: hasTools ? toolsByModule[m.module_name].length : 0 };
+            });
+
+            container.innerHTML = `
+                <div class="section">
+                    <h3>Toolset Info</h3>
+                    <div class="toolset-info">
+                        <div class="info-card">
+                            <label>Toolset Hash</label>
+                            <value>${toolsetData.toolset_hash || 'N/A'}</value>
+                        </div>
+                        <div class="info-card">
+                            <label>Tools Count</label>
+                            <value>${toolsetData.tool_count || 0}</value>
+                        </div>
+                        <div class="info-card">
+                            <label>Captured At</label>
+                            <value>${toolsetData.captured_at ? new Date(toolsetData.captured_at).toLocaleString() : 'N/A'}</value>
+                        </div>
+                    </div>
+                    <button class="btn" onclick="syncModules('${deviceId}')">Sync Modules</button>
+                </div>
+
+                <div class="section">
+                    <h3>Modules (${modulesData.count || 0})</h3>
+                    ${renderModulesTable(modulesWithDrift, deviceId)}
+                </div>
+
+                <div class="section">
+                    <h3>Recent Operations</h3>
+                    ${renderOperations(debugData && debugData.recent_operations ? debugData.recent_operations : [])}
+                </div>
+
+                <div class="section">
+                    <h3>Tools by Module</h3>
+                    ${renderToolsByModule(toolsetData.tools_by_module || {})}
+                </div>
+            `;
+        }
+
+        function renderModulesTable(modules, deviceId) {
+            if (!modules || modules.length === 0) {
+                return '<div class="empty">No modules installed</div>';
+            }
+
+            return `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Module</th>
+                            <th>Version</th>
+                            <th>State</th>
+                            <th>Status</th>
+                            <th>Drift</th>
+                            <th>Error</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${modules.map(m => {
+                            const stateClass = m.state === 'active' ? 'active' : 
+                                             m.state === 'missing' ? 'missing' : 
+                                             m.state === 'removed' ? 'removed' :
+                                             m.state === 'failed' ? 'failed' : 'installed';
+                            
+                            let driftIndicator = '';
+                            if (m.driftStatus === 'ok') {
+                                driftIndicator = '<span class="drift-indicator drift-ok">✅</span>';
+                            } else if (m.driftStatus === 'active_no_tools') {
+                                driftIndicator = '<span class="drift-indicator drift-warning" title="Active but tools missing">⚠️</span>';
+                            } else if (m.driftStatus === 'tools_no_active') {
+                                driftIndicator = '<span class="drift-indicator drift-warning" title="Tools present but module not active">⚠️</span>';
+                            }
+                            
+                            const errorDisplay = m.last_error_code ? 
+                                `<div class="error-text" title="${m.last_error_message || ''}">${m.last_error_code}</div>` : 
+                                '-';
+                            
+                            const activeVersion = modules.find(mod => mod.module_name === m.module_name && mod.active)?.version;
+                            const isActive = m.active && m.version === activeVersion;
+                            
+                            return `
+                                <tr>
+                                    <td><strong>${m.module_name}</strong></td>
+                                    <td>${m.version}</td>
+                                    <td><span class="badge badge-${stateClass}">${m.state}</span></td>
+                                    <td>${m.installed ? '✓' : '✗'} / ${m.active ? '✓' : '✗'}</td>
+                                    <td>${driftIndicator}</td>
+                                    <td>${errorDisplay}</td>
+                                    <td>
+                                        ${!isActive && m.installed ? `<button class="btn btn-small" onclick="activateModule('${deviceId}', '${m.module_name}', '${m.version}')">Activate</button>` : ''}
+                                        ${isActive ? `<button class="btn btn-small btn-secondary" onclick="deactivateModule('${deviceId}', '${m.module_name}')">Deactivate</button>` : ''}
+                                        ${m.state === 'failed' ? `<button class="btn btn-small btn-warning" onclick="reinstallModule('${deviceId}', '${m.module_name}', '${m.version}')">Reinstall</button>` : ''}
+                                        ${!isActive && m.installed ? `<button class="btn btn-small btn-danger" onclick="removeModuleVersion('${deviceId}', '${m.module_name}', '${m.version}')">Remove</button>` : ''}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderOperations(operations) {
+            if (!operations || operations.length === 0) {
+                return '<div class="empty">No recent operations</div>';
+            }
+
+            return `
+                <table class="operations-table">
+                    <thead>
+                        <tr>
+                            <th>Operation ID</th>
+                            <th>Kind</th>
+                            <th>Status</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${operations.map(op => {
+                            const opId = op.operation_id ? op.operation_id.substring(0, 8) + '...' : 'N/A';
+                            const kind = op.kind || 'N/A';
+                            const status = op.status || 'N/A';
+                            const statusClass = status === 'succeeded' ? 'active' : status === 'failed' ? 'removed' : 'installed';
+                            const error = op.error_code ? `<span style="color: #ff3b30;">${op.error_code}</span>` : '-';
+                            return `
+                                <tr>
+                                    <td><code>${opId}</code></td>
+                                    <td>${kind}</td>
+                                    <td><span class="badge badge-${statusClass}">${status}</span></td>
+                                    <td>${error}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderToolsByModule(toolsByModule) {
+            if (!toolsByModule || Object.keys(toolsByModule).length === 0) {
+                return '<div class="empty">No tools available</div>';
+            }
+
+            return Object.entries(toolsByModule).map(([moduleName, tools]) => `
+                <div style="margin-bottom: 20px;">
+                    <h4>${moduleName} (${tools.length} tools)</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tool Name</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tools.map(tool => `
+                                <tr>
+                                    <td><code>${tool.name || tool.tool_id || 'N/A'}</code></td>
+                                    <td>${tool.description || 'N/A'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `).join('');
+        }
+
+        // ============================================
+        // Deploy Form
+        // ============================================
+
+        function updateDeployDeviceSelect() {
+            const select = document.getElementById('deploy-device');
+            if (!select) return;
+            
+            const currentValue = select.value;
+            
+            select.innerHTML = '<option value="">Select device...</option>' +
+                devicesData.map(d => 
+                    `<option value="${d.device_id}">${d.hostname || d.device_id} (${d.tools_count || 0} tools)</option>`
+                ).join('');
+            
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        }
+
+        function updateDeployModuleSelect() {
+            const select = document.getElementById('deploy-module');
+            if (!select) return;
+            
+            const currentValue = select.value;
+            
+            // Group modules by name, show latest version
+            const grouped = {};
+            modulesData.forEach(m => {
+                if (!grouped[m.module_name] || 
+                    compareVersions(m.version, grouped[m.module_name].version) > 0) {
+                    grouped[m.module_name] = m;
+                }
+            });
+            
+            select.innerHTML = '<option value="">Select module...</option>' +
+                Object.values(grouped).map(m => 
+                    `<option value="${m.module_name}:${m.version}">${m.module_name} (${m.version})</option>`
+                ).join('');
+            
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        }
+
+        function compareVersions(v1, v2) {
+            const parts1 = v1.split('.').map(Number);
+            const parts2 = v2.split('.').map(Number);
+            for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+                const a = parts1[i] || 0;
+                const b = parts2[i] || 0;
+                if (a > b) return 1;
+                if (a < b) return -1;
+            }
+            return 0;
+        }
+
+        function showInstallDialog(moduleName, version) {
+            if (devicesData.length === 0) {
+                alert('No devices available. Please wait for devices to load.');
+                loadDevices();
+                return;
+            }
+            
+            const deviceSelect = document.getElementById('deploy-device');
+            const moduleSelect = document.getElementById('deploy-module');
+            
+            if (!deviceSelect || !moduleSelect) {
+                alert('Please select a device first');
+                return;
+            }
+            
+            moduleSelect.value = `${moduleName}:${version}`;
+            
+            if (!deviceSelect.value) {
+                alert(`Select a device and click "Install" to install ${moduleName} ${version}`);
+                deviceSelect.focus();
+            } else {
+                document.getElementById('deploy-form').dispatchEvent(new Event('submit'));
+            }
+        }
+
+        function checkPreflight() {
+            const moduleSelect = document.getElementById('deploy-module');
+            const deviceId = document.getElementById('deploy-device').value;
+            const warningDiv = document.getElementById('preflight-warning');
+            
+            if (!moduleSelect || !moduleSelect.value || !deviceId || !toolsetDataCache) {
+                warningDiv.style.display = 'none';
+                return;
+            }
+            
+            const [moduleName, version] = moduleSelect.value.split(':');
+            
+            // Get current device modules
+            fetch(`/api/devices/${deviceId}/modules`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'ok') return;
+                    
+                    const deviceModules = data.modules || [];
+                    const existingModule = deviceModules.find(m => 
+                        m.module_name === moduleName && m.version === version
+                    );
+                    const activeModule = deviceModules.find(m => 
+                        m.module_name === moduleName && m.active
+                    );
+                    
+                    let warningText = '';
+                    if (existingModule && existingModule.installed) {
+                        warningText = `⚠️ Module ${moduleName} ${version} is already installed.`;
+                        if (activeModule && activeModule.version === version) {
+                            warningText += ' It is currently active.';
+                        }
+                    } else if (activeModule && activeModule.version === version) {
+                        warningText = `⚠️ Module ${moduleName} ${version} is already active.`;
+                    }
+                    
+                    if (warningText) {
+                        warningDiv.innerHTML = warningText;
+                        warningDiv.style.display = 'block';
+                    } else {
+                        warningDiv.style.display = 'none';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        document.getElementById('deploy-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const deviceId = document.getElementById('deploy-device').value;
+            const moduleSelector = document.getElementById('deploy-module').value;
+            const btn = document.getElementById('deploy-btn');
+            
+            if (!deviceId || !moduleSelector) {
+                alert('Please select both device and module');
+                return;
+            }
+            
+            const [moduleName, version] = moduleSelector.split(':');
+            
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/install`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        actor_role: 'admin'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.status === 202 && data.status === 'accepted') {
+                    lastOperationId = data.operation_id;
+                    alert(`Installation started. Operation ID: ${data.operation_id.substring(0, 8)}...`);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('deploy-module').addEventListener('change', checkPreflight);
+        document.getElementById('deploy-device').addEventListener('change', function() {
+            const deviceId = this.value;
+            if (deviceId) {
+                selectDevice(deviceId);
+            } else {
+                document.getElementById('device-details').style.display = 'none';
+            }
+            checkPreflight();
+        });
+
+        // ============================================
+        // Module Actions
+        // ============================================
+
+        async function activateModule(deviceId, moduleName, version) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/activate`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') {
+                    alert(`Activation started. Operation ID: ${data.operation_id.substring(0, 8)}...`);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function deactivateModule(deviceId, moduleName) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/deactivate`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted' || data.status === 'success') {
+                    alert(`Deactivation started. Operation ID: ${data.operation_id || data.request_id || 'N/A'}`);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function removeModuleVersion(deviceId, moduleName, version) {
+            if (!confirm(`Remove module ${moduleName} version ${version}?`)) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/remove_version`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') {
+                    alert(`Removal started. Operation ID: ${data.operation_id.substring(0, 8)}...`);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function reinstallModule(deviceId, moduleName, version) {
+            if (!confirm(`Reinstall module ${moduleName} ${version}? This will deactivate and remove the current version first.`)) {
+                return;
+            }
+            try {
+                // Step 1: Deactivate if active
+                const modulesRes = await fetch(`/api/devices/${deviceId}/modules`);
+                const modulesData = await modulesRes.json();
+                const activeModule = modulesData.modules?.find(m => m.module_name === moduleName && m.active);
+                
+                if (activeModule) {
+                    await deactivateModule(deviceId, moduleName);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                // Step 2: Remove version if installed
+                const existingModule = modulesData.modules?.find(m => 
+                    m.module_name === moduleName && m.version === version
+                );
+                if (existingModule && existingModule.installed) {
+                    await removeModuleVersion(deviceId, moduleName, version);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                // Step 3: Install
+                const response = await fetch(`/api/devices/${deviceId}/modules/install`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        module_name: moduleName,
+                        version: version,
+                        actor_role: 'admin'
+                    })
+                });
+                const data = await response.json();
+                if (response.status === 202 && data.status === 'accepted') {
+                    alert(`Reinstallation started. Operation ID: ${data.operation_id.substring(0, 8)}...`);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function syncModules(deviceId) {
+            try {
+                const response = await fetch(`/api/devices/${deviceId}/modules/sync`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.status === 'accepted') {
+                    // Новый формат: operations.modules_sync и operations.toolset_sync
+                    const modulesOp = data.operations?.modules_sync || data.operation_id;
+                    const toolsetOp = data.operations?.toolset_sync;
+                    const msg = toolsetOp 
+                        ? `Sync started. Modules: ${modulesOp.substring(0, 8)}..., Toolset: ${toolsetOp.substring(0, 8)}...`
+                        : `Sync started. Operation ID: ${modulesOp.substring(0, 8)}...`;
+                    alert(msg);
+                    setTimeout(() => loadDeviceDetails(deviceId), 2000);
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // ============================================
+        // Utility Functions
+        // ============================================
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // ============================================
+        // Initial Load
+        // ============================================
+
+        // Initialize app function (called after authentication)
+        function initializeApp() {
+            loadModules();
+            loadDevices();
+            
+            // Refresh every 30 seconds
+            setInterval(() => {
+                loadModules();
+                loadDevices();
+                if (selectedDeviceId) {
+                    loadDeviceDetails(selectedDeviceId);
+                }
+            }, 30000);
+        }
+    </script>
+</body>
+</html>

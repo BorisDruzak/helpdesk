@@ -1,0 +1,125 @@
+from pathlib import Path
+
+from aiohttp import web
+
+
+BASE_DIR = Path(__file__).parent.parent
+
+
+def _html_file_response(path: Path) -> web.FileResponse:
+    """Return HTML file with explicit UTF-8 charset to avoid mojibake."""
+    return web.FileResponse(
+        path,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+
+
+async def handle_index(request):
+    return _html_file_response(BASE_DIR / "web_interface.html")
+
+
+async def handle_admin_page(request):
+    return _html_file_response(BASE_DIR / "admin.html")
+
+
+async def handle_favicon(request):
+    """Отдаём 204 No Content, чтобы браузер не получал 404 по /favicon.ico."""
+    return web.Response(status=204)
+
+
+async def handle_admin_css(request):
+    return web.FileResponse(
+        BASE_DIR / "admin.css",
+        headers={"Content-Type": "text/css; charset=utf-8"},
+    )
+
+
+async def handle_admin_js(request):
+    return web.FileResponse(
+        BASE_DIR / "admin.js",
+        headers={"Content-Type": "application/javascript; charset=utf-8"},
+    )
+
+
+async def handle_ticket_page(request):
+    return _html_file_response(BASE_DIR / "ticket.html")
+
+
+async def handle_ticket_page_by_id(request):
+    return _html_file_response(BASE_DIR / "ticket.html")
+
+
+async def handle_chat_debug(request):
+    return _html_file_response(BASE_DIR / "chat_debug.html")
+
+
+async def handle_chat_ws(request):
+    return _html_file_response(BASE_DIR / "chat_ws.html")
+
+
+async def handle_test_simple(request):
+    html_path = BASE_DIR / "test_web_simple.html"
+    if html_path.exists():
+        return _html_file_response(html_path)
+    return web.Response(text="Test page not found", status=404)
+
+
+async def handle_ws_ui_test(request):
+    return _html_file_response(BASE_DIR / "ws_ui_test.html")
+
+
+async def handle_modules_page(request):
+    return _html_file_response(BASE_DIR / "modules.html")
+
+
+async def handle_public_queue_page(request):
+    """Stage 10.2: публичная страница очереди (без авторизации)."""
+    return _html_file_response(BASE_DIR / "public_queue.html")
+
+
+async def handle_public_queue_css(request):
+    return web.FileResponse(
+        BASE_DIR / "public_queue.css",
+        headers={"Content-Type": "text/css; charset=utf-8"},
+    )
+
+
+async def handle_public_queue_js(request):
+    return web.FileResponse(
+        BASE_DIR / "public_queue.js",
+        headers={"Content-Type": "application/javascript; charset=utf-8"},
+    )
+
+
+async def handle_help_page(request):
+    return _html_file_response(BASE_DIR / "help.html")
+
+
+async def handle_help_css(request):
+    return web.FileResponse(
+        BASE_DIR / "help.css",
+        headers={"Content-Type": "text/css; charset=utf-8"},
+    )
+
+
+async def handle_help_js(request):
+    return web.FileResponse(
+        BASE_DIR / "help.js",
+        headers={"Content-Type": "application/javascript; charset=utf-8"},
+    )
+
+
+async def handle_ticket_css(request):
+    """Stage 10.4: стили страницы тикета (chat-first)."""
+    return web.FileResponse(
+        BASE_DIR / "ticket.css",
+        headers={"Content-Type": "text/css; charset=utf-8"},
+    )
+
+
+async def handle_ticket_js(request):
+    """Stage 10.4: скрипт страницы тикета (chat-first, slash-команды, WS)."""
+    return web.FileResponse(
+        BASE_DIR / "ticket.js",
+        headers={"Content-Type": "application/javascript; charset=utf-8"},
+    )

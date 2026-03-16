@@ -1,0 +1,604 @@
+/**
+ * Stage 10.4: Chat-first страница тикета.
+ * Один таймлайн (чат + системные события), компактная верхняя панель.
+ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+.hidden { display: none !important; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f0f1f3;
+    color: #1a1a1a;
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.ticket-app { display: flex; flex-direction: column; height: 100vh; max-width: 1400px; margin: 0 auto; background: #fff; box-shadow: 0 0 20px rgba(0,0,0,0.08); }
+
+/* Верхняя панель тикета */
+.ticket-topbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e2e4e8;
+    background: #fff;
+    font-size: 13px;
+}
+.ticket-topbar .tb-code { font-weight: 700; color: #1a1a1a; }
+.ticket-topbar .tb-status { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.ticket-topbar .tb-queue,
+.ticket-topbar .tb-assignee,
+.ticket-topbar .tb-priority { color: #555; }
+.ticket-topbar .tb-sla { color: #666; font-size: 12px; }
+.ticket-topbar .tb-sla.breach { color: #c00; }
+.ticket-topbar .tb-live { color: #0a0; font-size: 11px; }
+.ticket-topbar .tb-degraded { color: #b80; font-size: 11px; }
+.ticket-topbar .tb-admin-link {
+    margin-left: auto;
+    text-decoration: none;
+    color: #0f172a;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.ticket-topbar .tb-admin-link:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+}
+
+.ticket-main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.ticket-sidebar {
+    border-right: 1px solid #e2e4e8;
+    background: #f8fafc;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sidebar-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.sidebar-card h2,
+.sidebar-card h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+    color: #111827;
+}
+
+.sidebar-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.sidebar-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sidebar-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.sidebar-value {
+    font-size: 14px;
+    color: #111827;
+    word-break: break-word;
+}
+
+.sidebar-multiline {
+    white-space: pre-wrap;
+}
+
+.sidebar-strong {
+    font-weight: 700;
+}
+
+.sidebar-section {
+    border: 1px solid #edf2f7;
+    border-radius: 12px;
+    padding: 12px;
+    background: #f8fafc;
+}
+
+.sidebar-form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.sidebar-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.sidebar-input-group input,
+.sidebar-inline-controls select,
+.sidebar-inline-controls input,
+.sidebar-form-grid input,
+.sidebar-form-grid select {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 14px;
+    background: #fff;
+}
+
+.sidebar-inline-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.sidebar-inline-controls select {
+    min-width: 160px;
+    flex: 1 1 180px;
+}
+
+.sidebar-inline-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.segmented-control {
+    display: inline-flex;
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 3px;
+    background: #fff;
+    gap: 4px;
+}
+
+.segmented-control button {
+    flex: 1 1 50%;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.segmented-control button.active {
+    background: #2563eb;
+    color: #fff;
+}
+
+.ticket-state-marker {
+    margin-bottom: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ticket-state-marker.needs-action {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.ticket-state-marker.waiting {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.sidebar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.sidebar-actions .btn {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sidebar-actions .btn-primary { background: #2563eb; color: #fff; }
+.sidebar-actions .btn-secondary { background: #e5e7eb; color: #111827; }
+.sidebar-actions .btn-danger { background: #dc2626; color: #fff; }
+
+.ticket-content {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Область таймлайна (чат + события) */
+.ticket-timeline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background: #fafafa;
+    overscroll-behavior: contain;
+}
+
+.ticket-history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.history-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #f8fafc;
+}
+
+.history-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.history-meta {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 4px;
+}
+
+.history-details {
+    font-size: 12px;
+    color: #374151;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.ticket-timeline .empty { text-align: center; color: #888; padding: 40px 20px; font-size: 14px; }
+
+/* Сообщение в таймлайне */
+.timeline-item { margin-bottom: 14px; display: flex; gap: 10px; }
+.timeline-item.from-user { flex-direction: row-reverse; }
+.timeline-item .ti-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #4a6fa5 0%, #3d5a80 100%);
+    color: #fff; font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.timeline-item.from-user .ti-avatar { background: linear-gradient(135deg, #007aff 0%, #0051d5 100%); }
+.timeline-item .ti-body { flex: 1; min-width: 0; max-width: 85%; }
+.timeline-item.from-user .ti-body { max-width: 85%; }
+.timeline-item .ti-meta { font-size: 12px; color: #666; margin-bottom: 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.timeline-item.from-user .ti-meta { justify-content: flex-end; }
+.timeline-item .ti-badge-internal { background: #f0c040; color: #333; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+/* Пузырьки: пользователь (синий), поддержка (голубой), по умолчанию (нейтральный) */
+.timeline-item .ti-bubble {
+    padding: 10px 14px; border-radius: 12px; word-break: break-word;
+    background: #e8eaed; color: #1a1a1a;
+}
+.timeline-item.from-user .ti-bubble { background: #007aff; color: #fff; }
+.timeline-item.from-staff .ti-bubble { background: #e0f2fe; color: #0c4a6e; border: 1px solid #7dd3fc; }
+.timeline-item .ti-time { font-size: 11px; color: #999; margin-top: 4px; }
+
+/* Системные сообщения — отдельный цвет (серый с бордером), не путать с чатом */
+.timeline-item.system .ti-avatar { background: #6b7280; }
+.timeline-item.system .ti-bubble {
+    background: #f3f4f6;
+    color: #374151;
+    font-size: 13px;
+    border: 1px solid #d1d5db;
+}
+.timeline-item.system .ti-body {
+    max-width: min(100%, 760px);
+}
+.timeline-item.system .ti-bubble.error { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.timeline-item.system .ti-bubble.success { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+.timeline-item .ti-tool-result { margin-top: 8px; padding: 8px; background: #f3f4f6; border-radius: 8px; font-size: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+.ti-system-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ti-system-title {
+    font-weight: 700;
+}
+
+.ti-system-meta {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.ti-system-detail {
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+/* Артефакты: скриншоты и записи экрана в таймлайне */
+.ti-artifacts, .ti-attachments { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px; }
+.ti-artifact { display: inline-block; border-radius: 8px; overflow: hidden; background: #f3f4f6; min-width: 120px; }
+.ti-artifact .artifact-loading { display: inline-block; padding: 12px 16px; font-size: 12px; color: #6b7280; }
+.ti-artifact .artifact-error { display: inline-block; padding: 12px 16px; font-size: 12px; color: #b91c1c; }
+.ti-artifact .artifact-label { display: block; font-size: 11px; color: #6b7280; padding: 4px 8px; }
+.ti-artifact .artifact-media { display: block; max-width: 100%; max-height: 320px; object-fit: contain; vertical-align: top; }
+.ti-artifact video.artifact-media { max-height: 360px; min-width: 200px; }
+
+/* Кнопка меню слева в composer и выпадающее меню */
+.composer-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0;
+}
+.composer-menu-btn {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border: 1px solid #d1d5db;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    background: #fff;
+    color: #374151;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+}
+.composer-menu-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+}
+.composer-menu-btn:disabled {
+    color: #9ca3af;
+    background: #f3f4f6;
+    cursor: not-allowed;
+}
+.composer-menu-btn .menu-btn-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+.composer-menu-dropdown {
+    display: none;
+    position: absolute;
+    left: 16px;
+    bottom: 100%;
+    margin-bottom: 4px;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid #e2e4e8;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    z-index: 200;
+    padding: 8px 0;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+.composer-menu-dropdown.open { display: block; }
+.composer-menu-dropdown.hidden { display: none !important; }
+.composer-menu-dropdown .menu-group-label {
+    padding: 6px 14px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6b7280;
+}
+.composer-menu-dropdown .menu-item {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: #1a1a1a;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.composer-menu-dropdown .menu-item:hover {
+    background: #eff6ff;
+}
+.composer-menu-dropdown .menu-item:disabled {
+    color: #9ca3af;
+    cursor: not-allowed;
+}
+.composer-menu-dropdown .menu-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 6px 0;
+}
+
+/* Кнопка «Приложить файл» (скрепка) */
+.btn-attach {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #fff;
+    color: #555;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-attach:hover {
+    background: #f3f4f6;
+    color: #1a1a1a;
+}
+.btn-attach .icon-attach { flex-shrink: 0; }
+
+/* Inline-панель (над composer) */
+.inline-panel {
+    display: none;
+    border-top: 1px solid #e2e4e8;
+    background: #fff;
+    padding: 12px 16px;
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    z-index: 30;
+}
+.inline-panel.open { display: block; }
+.inline-panel.hidden { display: none !important; }
+.inline-panel-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.inline-panel-head {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.inline-panel-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+.inline-panel-body .form-group { margin-bottom: 12px; }
+.inline-panel-body .form-group:last-child { margin-bottom: 0; }
+.inline-panel-body label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #374151; }
+.inline-panel-body select,
+.inline-panel-body input[type="text"],
+.inline-panel-body input[type="number"],
+.inline-panel-body textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;
+}
+.inline-panel-error {
+    font-size: 12px; color: #b91c1c; min-height: 18px;
+}
+.inline-panel-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    position: relative;
+    z-index: 31;
+}
+.inline-panel-foot .btn {
+    padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none;
+}
+.inline-panel-foot .btn-primary { background: #007aff; color: #fff; }
+.inline-panel-foot .btn-primary:hover { background: #0056b3; }
+.inline-panel-foot .btn-secondary { background: #e5e7eb; color: #374151; }
+.inline-panel-foot .btn-secondary:hover { background: #d1d5db; }
+.inline-panel-body .risk-label { font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.inline-panel-body .risk-label input[type="checkbox"] { width: 18px; height: 18px; }
+
+/* Composer */
+.ticket-composer {
+    border-top: 1px solid #e2e4e8;
+    padding: 12px 16px;
+    background: #fff;
+}
+.ticket-composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+}
+.ticket-composer .composer-row { display: flex; gap: 0; align-items: flex-end; flex-wrap: wrap; }
+.ticket-composer .composer-input-wrap { flex: 1; min-width: 120px; position: relative; }
+.ticket-composer .composer-input-wrap textarea { border-radius: 0; }
+.ticket-composer .composer-menu-btn + .composer-input-wrap textarea { border-radius: 0 10px 10px 0; }
+.ticket-composer textarea {
+    width: 100%; min-height: 44px; max-height: 120px;
+    padding: 10px 12px; padding-right: 32px;
+    border: 1px solid #d1d5db; border-radius: 10px;
+    font-size: 14px; font-family: inherit; resize: none;
+    transition: border-color 0.2s;
+}
+.ticket-composer textarea:focus { outline: none; border-color: #007aff; }
+.ticket-composer textarea::placeholder { color: #9ca3af; }
+.ticket-composer .composer-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ticket-composer .internal-toggle {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; cursor: pointer; user-select: none;
+}
+.ticket-composer .internal-toggle input { width: 16px; height: 16px; cursor: pointer; }
+.ticket-composer .btn-send {
+    padding: 10px 20px; background: #007aff; color: #fff; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s;
+}
+.ticket-composer .btn-send:hover { background: #0056b3; }
+.ticket-composer .btn-send:disabled { background: #9ca3af; cursor: not-allowed; }
+
+/* Состояния загрузки и ошибки */
+.ticket-loading { text-align: center; padding: 60px 20px; color: #666; }
+.ticket-error { padding: 20px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin: 20px; }
+.ticket-error.hidden { display: none; }
+
+/* Скрытые блоки до загрузки */
+.ticket-app .ticket-topbar.hidden,
+.ticket-app .ticket-main.hidden,
+.ticket-app .ticket-timeline.hidden,
+.ticket-app .ticket-composer.hidden { display: none !important; }
+
+@media (max-width: 1100px) {
+    .ticket-main {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-sidebar {
+        border-right: none;
+        border-bottom: 1px solid #e2e4e8;
+    }
+}
+
+@media (max-width: 800px) {
+    .ticket-composer .composer-actions {
+        width: 100%;
+        justify-content: space-between;
+        padding-top: 8px;
+    }
+
+    .sidebar-inline-controls select,
+    .sidebar-inline-controls .btn,
+    .sidebar-inline-actions .btn {
+        width: 100%;
+    }
+
+    .ticket-composer {
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+}

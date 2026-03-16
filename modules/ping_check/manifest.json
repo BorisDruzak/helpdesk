@@ -1,0 +1,9 @@
+{
+  "module_name": "ping_check",
+  "module_version": "1.0.0",
+  "description": "Module for checking network connectivity by pinging IP addresses",
+  "author": "admin",
+  "entrypoint": "module.py"
+}
+
+
