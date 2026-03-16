@@ -2,6 +2,7 @@
 .pytest_cache/
 .cursor/
 .vscode/
+.cursorignore
 __pycache__/
 *.pyc
 *.pyo
@@ -24,3 +25,6 @@ pc_agent/venv/
 pc_agent/data/
 pc_agent/build/
 pc_agent/dist/
+.env
+*.env
+db_config.json
