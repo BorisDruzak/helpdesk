@@ -1,128 +1,117 @@
 #!/usr/bin/env python3
-"""Upload the local workspace to the remote Linux host as a tar.gz archive."""
+"""Deploy the current local Git branch to the Linux working copy."""
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
-import tarfile
-import tempfile
-import time
 from pathlib import Path
 
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
-DEFAULT_REMOTE = "altserver@192.168.100.17"
-DEFAULT_REMOTE_ROOT = "/var/chat_bot/pc_client"
+DEFAULT_REMOTE_NAME = "linux"
+DEFAULT_REMOTE_HOST = "altserver@192.168.100.17"
+DEFAULT_REMOTE_WORKTREE = "/var/chat_bot/pc_client"
 DEFAULT_KEY = Path(r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519")
-RSYNC_EXCLUDES = [
-    ".git/",
-    ".run/",
-    ".cursor/",
-    ".vscode/",
-    ".pytest_cache/",
-    "data/",
-    "temp/",
-    "uploads/",
-    "build/",
-    "dist/",
-    "server/venv/",
-    "server/data/",
-    "server/uploads/",
-    "server/reports/",
-    "pc_agent/venv/",
-    "pc_agent/data/",
-    "pc_agent/build/",
-    "pc_agent/dist/",
-    "src/venv/",
-]
-
-SKIP_PARTS = {
-    ".git",
-    ".run",
-    ".cursor",
-    ".vscode",
-    ".pytest_cache",
-    "__pycache__",
-    "venv",
-    "data",
-    "build",
-    "dist",
-    "uploads",
-    "reports",
-    "temp",
-}
-SKIP_SUFFIXES = {".pyc", ".pyo", ".log", ".tmp", ".bak", ".zip", ".rar"}
+DEFAULT_GIT = Path(r"C:\Program Files\Git\bin\git.exe")
+DEFAULT_SSH = Path(r"C:\Windows\System32\OpenSSH\ssh.exe")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
-    parser.add_argument("--remote", default=DEFAULT_REMOTE)
-    parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
-    parser.add_argument("--archive-name", default=f"pc_client_sync_{int(time.time())}.tar.gz")
+    parser.add_argument("--remote-name", default=DEFAULT_REMOTE_NAME)
+    parser.add_argument("--remote-host", default=DEFAULT_REMOTE_HOST)
+    parser.add_argument("--remote-worktree", default=DEFAULT_REMOTE_WORKTREE)
+    parser.add_argument("--branch")
     return parser.parse_args()
 
 
-def ssh_base_command() -> list[str]:
-    command = ["ssh"]
+def git_env() -> dict[str, str]:
+    env = os.environ.copy()
     if DEFAULT_KEY.exists():
-        command.extend(["-i", str(DEFAULT_KEY)])
-    return command
+        key_arg = DEFAULT_KEY.as_posix()
+        env["GIT_SSH_COMMAND"] = f'ssh -i "{key_arg}"'
+    return env
 
 
-def scp_base_command() -> list[str]:
-    command = ["scp"]
-    if DEFAULT_KEY.exists():
-        command.extend(["-i", str(DEFAULT_KEY)])
-    return command
+def run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout and exc.stdout.strip():
+            print(exc.stdout.strip())
+        if exc.stderr and exc.stderr.strip():
+            print(exc.stderr.strip())
+        raise
+    if completed.stdout.strip():
+        print(completed.stdout.strip())
+    if completed.stderr.strip():
+        print(completed.stderr.strip())
+    return completed.stdout.strip()
 
 
-def should_skip(path: Path, workspace: Path) -> bool:
-    relative = path.relative_to(workspace)
-    if any(part in SKIP_PARTS for part in relative.parts):
-        return True
-    if path.suffix.lower() in SKIP_SUFFIXES:
-        return True
-    return False
+def detect_branch(workspace: Path, env: dict[str, str]) -> str:
+    git_binary = str(DEFAULT_GIT if DEFAULT_GIT.exists() else "git")
+    branch = run([git_binary, "rev-parse", "--abbrev-ref", "HEAD"], cwd=workspace, env=env)
+    if branch == "HEAD":
+        raise SystemExit("Detached HEAD is not supported for deploy; checkout a branch first.")
+    return branch
 
 
-def build_archive(workspace: Path, archive_path: Path) -> None:
-    with tarfile.open(archive_path, "w:gz") as tar:
-        for path in workspace.rglob("*"):
-            if should_skip(path, workspace):
-                continue
-            tar.add(path, arcname=path.relative_to(workspace))
+def build_remote_command(remote_worktree: str, branch: str) -> str:
+    safe_worktree = remote_worktree.replace('"', '\\"')
+    safe_branch = branch.replace('"', '\\"')
+    return (
+        f'cd "{safe_worktree}" && '
+        'dirty=$(git status --porcelain --untracked-files=no) && '
+        'if [ -n "$dirty" ]; then '
+        'echo "REMOTE_WORKTREE_DIRTY" >&2; '
+        'echo "$dirty" >&2; '
+        "exit 2; "
+        'fi && '
+        f'git pull --ff-only origin "{safe_branch}" && '
+        "git rev-parse HEAD"
+    )
 
 
 def main() -> None:
     args = parse_args()
-    with tempfile.TemporaryDirectory() as temp_dir:
-        archive_path = Path(temp_dir) / args.archive_name
-        build_archive(args.workspace, archive_path)
+    env = git_env()
+    git_binary = str(DEFAULT_GIT if DEFAULT_GIT.exists() else "git")
+    ssh_binary = str(DEFAULT_SSH if DEFAULT_SSH.exists() else "ssh")
 
-        remote_archive = f"/tmp/{args.archive_name}"
-        scp_command = [*scp_base_command(), str(archive_path), f"{args.remote}:{remote_archive}"]
-        print("Uploading archive...")
-        subprocess.run(scp_command, check=True)
+    branch = args.branch or detect_branch(args.workspace, env)
+    print(f"Deploy branch: {branch}")
 
-        remote_unpack_dir = f"/tmp/pc_client_unpack_{int(time.time())}"
-        rsync_excludes = " ".join(f"--exclude='{item}'" for item in RSYNC_EXCLUDES)
-        remote_command = (
-            f"rm -rf {remote_unpack_dir} && "
-            f"mkdir -p {remote_unpack_dir} {args.remote_root} && "
-            f"tar -xzf {remote_archive} -C {remote_unpack_dir} && "
-            f"rsync -rlt --delete --omit-dir-times {rsync_excludes} "
-            f"{remote_unpack_dir}/ {args.remote_root}/ && "
-            f"mkdir -p {args.remote_root}/server/uploads && "
-            f"rsync -rlt --include='*/' --include='*.py' --exclude='*' "
-            f"{remote_unpack_dir}/server/uploads/ {args.remote_root}/server/uploads/ && "
-            f"rm -rf {remote_unpack_dir} {remote_archive}"
-        )
-        ssh_command = [*ssh_base_command(), args.remote, remote_command]
-        print("Extracting archive on remote host...")
-        subprocess.run(ssh_command, check=True)
+    try:
+        run([git_binary, "push", args.remote_name, branch], cwd=args.workspace, env=env)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(f"Git push failed with exit code {exc.returncode}.") from exc
 
-    print(f"Remote workspace updated: {args.remote}:{args.remote_root}")
+    ssh_command = [ssh_binary]
+    if DEFAULT_KEY.exists():
+        ssh_command.extend(["-i", str(DEFAULT_KEY)])
+    ssh_command.extend([args.remote_host, build_remote_command(args.remote_worktree, branch)])
+    try:
+        run(ssh_command, cwd=args.workspace)
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 2:
+            raise SystemExit(
+                "Remote working copy is dirty. Move Linux-only changes back to Windows, "
+                "or commit/stash them on Linux before deploy."
+            ) from exc
+        raise SystemExit(f"Remote update failed with exit code {exc.returncode}.") from exc
+
+    print(f"Remote workspace updated via Git: {args.remote_host}:{args.remote_worktree}")
 
 
 if __name__ == "__main__":
