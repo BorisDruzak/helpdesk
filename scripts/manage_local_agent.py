@@ -182,7 +182,10 @@ def _start(
         stream.write(f"\n[{_utc_now()}] start {name}\n")
         creationflags = 0
         if os.name == "nt":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+            # С GUI не использовать CREATE_NO_WINDOW, иначе окно может не появиться
+            if not gui:
+                creationflags |= subprocess.CREATE_NO_WINDOW
         proc = subprocess.Popen(
             cmd,
             cwd=WORKSPACE,

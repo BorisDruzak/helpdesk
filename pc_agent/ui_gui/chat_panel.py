@@ -185,7 +185,9 @@ class ChatPanel(QWidget):
 
                     base_url = get_config().server.api_url
                 except Exception:
-                    base_url = "http://localhost:8666/api"
+                    from pc_agent.config.config_loader import ServerConfig
+
+                    base_url = ServerConfig().api_url
             self.client = ServerApiClient(base_url, device_id, actor_role)
 
         if base_url is None:
@@ -194,7 +196,9 @@ class ChatPanel(QWidget):
 
                 base_url = get_config().server.api_url
             except Exception:
-                base_url = "http://localhost:8666/api"
+                from pc_agent.config.config_loader import ServerConfig
+
+                base_url = ServerConfig().api_url
 
         self.device_id = device_id
         try:

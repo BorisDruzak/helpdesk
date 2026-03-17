@@ -6,6 +6,10 @@ from aiohttp import web
 BASE_DIR = Path(__file__).parent.parent
 
 
+# Запрет кэширования админки, чтобы после деплоя всегда подгружалась новая версия.
+_NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate"}
+
+
 def _html_file_response(path: Path) -> web.FileResponse:
     """Return HTML file with explicit UTF-8 charset to avoid mojibake."""
     return web.FileResponse(
@@ -19,7 +23,9 @@ async def handle_index(request):
 
 
 async def handle_admin_page(request):
-    return _html_file_response(BASE_DIR / "admin.html")
+    r = _html_file_response(BASE_DIR / "admin.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_favicon(request):
@@ -28,17 +34,21 @@ async def handle_favicon(request):
 
 
 async def handle_admin_css(request):
-    return web.FileResponse(
+    r = web.FileResponse(
         BASE_DIR / "admin.css",
         headers={"Content-Type": "text/css; charset=utf-8"},
     )
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_admin_js(request):
-    return web.FileResponse(
+    r = web.FileResponse(
         BASE_DIR / "admin.js",
         headers={"Content-Type": "application/javascript; charset=utf-8"},
     )
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_ticket_page(request):

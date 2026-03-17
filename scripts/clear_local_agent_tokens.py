@@ -10,6 +10,20 @@
 
 Для именованного инстанса (manage_local_agent):
   python scripts/clear_local_agent_tokens.py --data-dir .local-agent/instances/notoken/data
+
+Если после нажатия «Отклонить» в админке агент больше не подключается:
+  выполните этот скрипт с --data-dir вашего инстанса — флаг будет удалён, можно снова
+  запросить одобрение.
+
+Если ошибка «Cannot connect to host localhost:8666» или «Удаленный компьютер отклонил»:
+  сервер может быть на другом хосте. Задайте переменные окружения перед запуском агента:
+  PC_AGENT_WS_URL=http://192.168.100.17:8666/ws  PC_AGENT_API_URL=http://192.168.100.17:8666/api
+  (или укажите URL вашего сервера). Либо используйте scripts/manage_local_agent.py start notoken --gui,
+  он подставляет нужные URL для тестового сервера.
+
+Где хранится токен на агенте:
+  В SQLite: <data_dir>/storage.db, таблица auth_tokens (поле token, device_id, is_active).
+  Пример: .local-agent/instances/notoken/data/storage.db
 """
 from __future__ import annotations
 

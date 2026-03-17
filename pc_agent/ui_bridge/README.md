@@ -60,7 +60,7 @@ HTTP API сервер для UI Bridge.
   }
   ```
 
-- `POST /ui/chat_send` - заготовка для отправки сообщений (не реализовано)
+- `POST /ui/chat_send` - отправка сообщения в чат тикета (ticket_id, text, from_role, attachment_refs, metadata). Требует on_chat_send в агенте.
 
 - `GET /health` - health check
 

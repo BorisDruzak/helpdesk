@@ -361,13 +361,14 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
             stop_event.set()
         raise
     
-    # Получаем конфигурацию для API URL
+    # Получаем конфигурацию для API URL (дефолт — сервер 192.168.100.17, не localhost)
     try:
         from pc_agent.config.config_loader import get_config
         api_url = get_config().server.api_url
     except Exception as e:
+        from pc_agent.config.config_loader import ServerConfig
         logger.warning(f"Не удалось загрузить конфиг, используем дефолтный API URL: {e}")
-        api_url = "http://localhost:8666/api"
+        api_url = ServerConfig().api_url
     
     # Получаем device UUID для диалога
     try:
@@ -402,7 +403,15 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         while not valid_token:
             wait_dialog = WaitForAuthDialog(device_uuid, on_auth_complete=lambda: auth_complete_event and auth_complete_event.set())
             wait_dialog.start_polling()
-            result = wait_dialog.exec()
+            # Неблокирующее ожидание: exec() блокирует поток и не даёт asyncio-задаче опроса статуса выполняться.
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            def on_finished():
+                if not future.done():
+                    future.set_result(wait_dialog.result())
+            wait_dialog.finished.connect(on_finished)
+            wait_dialog.show()
+            result = await future
             if result == 1:  # QDialog.Accepted
                 valid_token = wait_dialog.get_token()
                 if valid_token:

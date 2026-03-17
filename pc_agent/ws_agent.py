@@ -2751,33 +2751,10 @@ async def main_async(
                 port = ui_config.port
                 logger.info(f"🖥️  Запускаю GUI на {host}:{port} (ожидаю авторизации)...")
                 
-                # Создаем событие для ожидания завершения авторизации в GUI
+                # Создаем событие для завершения авторизации (токен получен — одобрение или ввод вручную)
                 gui_auth_complete = asyncio.Event()
                 
-                # Сначала отправляем запрос на подключение (до показа GUI); при pending ждём одобрения до 10 мин
-                if not agent.auth_token:
-                    flag_path = agent._connection_rejected_flag_path()
-                    if not flag_path.exists():
-                        try:
-                            # Ждём одобрения до 600 с; wait_for чуть больше
-                            ok, rejected = await asyncio.wait_for(
-                                agent.request_connection_flow(wait_for_approval_seconds=600),
-                                timeout=620,
-                            )
-                            if ok:
-                                gui_auth_complete.set()
-                            elif rejected:
-                                try:
-                                    flag_path.parent.mkdir(parents=True, exist_ok=True)
-                                    flag_path.write_text("rejected", encoding="utf-8")
-                                except Exception as e:
-                                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
-                        except asyncio.TimeoutError:
-                            logger.debug("Таймаут ожидания ответа по запросу подключения")
-                    else:
-                        logger.warning("Подключение ранее отклонено; диалог ожидает ввода токена вручную или одобрения после сброса флага.")
-                
-                # Обертываем run_gui чтобы сигнализировать о завершении авторизации
+                # Обертываем run_gui: при отсутствии токена GUI сразу покажет «Ожидании подтверждения администратором»
                 async def run_gui_with_auth():
                     try:
                         await run_gui(host, port, stop_event, gui_auth_complete)
@@ -2789,19 +2766,39 @@ async def main_async(
                 
                 gui_task = asyncio.create_task(run_gui_with_auth(), name="run_gui")
                 
-                # Даем GUI немного времени на запуск
-                logger.info("⏳ Даю GUI время на запуск...")
-                await asyncio.sleep(0.5)
+                # Даем GUI время показать окно и диалог «Ожидании подтверждения администратором»
+                await asyncio.sleep(1.0)
                 
-                # Ждем, пока GUI завершит авторизацию и сохранит токен
+                # В фоне отправляем запрос на подключение; при одобрении токен сохранится и GUI его подхватит
+                flag_path = agent._connection_rejected_flag_path()
+                if not agent.auth_token and not flag_path.exists():
+                    async def do_connection_flow():
+                        try:
+                            ok, rejected = await agent.request_connection_flow(wait_for_approval_seconds=600)
+                            if ok:
+                                gui_auth_complete.set()
+                            elif rejected:
+                                try:
+                                    flag_path.parent.mkdir(parents=True, exist_ok=True)
+                                    flag_path.write_text("rejected", encoding="utf-8")
+                                except Exception as e:
+                                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            logger.debug(f"Запрос подключения завершился с ошибкой: {e}")
+                    asyncio.create_task(do_connection_flow(), name="connection_flow")
+                elif flag_path.exists():
+                    logger.warning("Подключение ранее отклонено; в GUI доступен ввод токена вручную или сброс через scripts/clear_local_agent_tokens.py")
+                
+                # Ждем, пока GUI завершит авторизацию (одобрение или ввод токена)
                 logger.info("⏳ Ожидаю завершения авторизации в GUI...")
                 try:
-                    # Ждем максимум 5 минут на авторизацию
-                    await asyncio.wait_for(gui_auth_complete.wait(), timeout=300)
+                    await asyncio.wait_for(gui_auth_complete.wait(), timeout=620)
                     logger.info("✅ GUI авторизация завершена")
                 except asyncio.TimeoutError:
                     logger.warning("⏱️ Тайм-аут ожидания авторизации в GUI")
-                    logger.info("💡 Возможно, диалог авторизации не был показан или пользователь не ввел токен")
+                    logger.info("💡 Диалог «Ожидании подтверждения администратором» должен быть виден; при необходимости введите токен вручную")
                 
                 # Токен хранится только в БД — опрашиваем БД, не identity.json
                 if agent.db_manager and agent.identity_manager.uuid:

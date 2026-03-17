@@ -4,12 +4,12 @@ HTTP API сервер для UI Bridge.
 Предоставляет эндпоинты:
 - GET /ui/events - SSE или long-poll для получения событий
 - POST /ui/consent_decision - обработка решений о согласии
-- POST /ui/chat_send - заготовка для отправки сообщений в чат
+- POST /ui/chat_send - отправка сообщения в чат тикета (ticket_id, text, from_role, attachment_refs, metadata)
 """
 
 import asyncio
 import json
-from typing import Callable, Optional, Dict, Any, Union, Awaitable
+from typing import Callable, Optional, Dict, Any, Union, Awaitable, List
 from aiohttp import web
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response, StreamResponse
@@ -36,6 +36,9 @@ class UiApiServer:
         on_update_settings: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_test_connection: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_restart_agent: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_chat_send: Optional[
+            Callable[..., Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]
+        ] = None,
     ):
         """
         Инициализация UiApiServer.
@@ -55,6 +58,7 @@ class UiApiServer:
         self.on_update_settings = on_update_settings
         self.on_test_connection = on_test_connection
         self.on_restart_agent = on_restart_agent
+        self.on_chat_send = on_chat_send
         self.app = web.Application()
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -291,16 +295,81 @@ class UiApiServer:
     
     async def handle_chat_send(self, request: Request) -> Response:
         """
-        Обработчик POST /ui/chat_send (заготовка).
+        Обработчик POST /ui/chat_send.
         
-        Пока не реализован, возвращает заглушку.
+        Принимает JSON:
+        {
+            "ticket_id": "...",   // обязательно
+            "text": "...",        // обязательно
+            "from_role": "user",  // опционально, по умолчанию "user"
+            "attachment_refs": [], // опционально
+            "metadata": {}        // опционально
+        }
+        Вызывает on_chat_send и возвращает результат отправки на сервер (Ticket API).
         """
-        return web.json_response({
-            "status": "not_implemented",
-            "message": "Chat send endpoint is not implemented yet"
-        }, status=501, headers={
-            "Access-Control-Allow-Origin": "*"
-        })
+        try:
+            data = await request.json()
+        except json.JSONDecodeError as e:
+            return web.json_response({
+                "status": "error",
+                "error": f"Invalid JSON: {str(e)}"
+            }, status=400, headers={"Access-Control-Allow-Origin": "*"})
+
+        ticket_id = data.get("ticket_id")
+        text = data.get("text")
+        if not ticket_id:
+            return web.json_response({
+                "status": "error",
+                "error": "Missing required field: ticket_id"
+            }, status=400, headers={"Access-Control-Allow-Origin": "*"})
+        if text is None:
+            return web.json_response({
+                "status": "error",
+                "error": "Missing required field: text"
+            }, status=400, headers={"Access-Control-Allow-Origin": "*"})
+
+        from_role = data.get("from_role", "user")
+        attachment_refs: Optional[List[str]] = data.get("attachment_refs")
+        metadata: Optional[Dict[str, Any]] = data.get("metadata")
+
+        if not self.on_chat_send:
+            return web.json_response({
+                "status": "error",
+                "error": "chat_send not configured"
+            }, status=501, headers={"Access-Control-Allow-Origin": "*"})
+
+        try:
+            result = await self._invoke_maybe_async(
+                self.on_chat_send,
+                ticket_id,
+                text,
+                from_role,
+                attachment_refs,
+                metadata,
+            )
+            if result is None:
+                result = {}
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except Exception as e:
+            err_msg = str(e)
+            if "Тикет не найден" in err_msg or "404" in err_msg:
+                return web.json_response({
+                    "status": "error",
+                    "error": err_msg
+                }, status=404, headers={"Access-Control-Allow-Origin": "*"})
+            if "Тикет закрыт" in err_msg or "ticket_closed" in err_msg or "409" in err_msg:
+                return web.json_response({
+                    "status": "error",
+                    "error": err_msg
+                }, status=409, headers={"Access-Control-Allow-Origin": "*"})
+            logger.exception(e)
+            return web.json_response({
+                "status": "error",
+                "error": err_msg
+            }, status=500, headers={"Access-Control-Allow-Origin": "*"})
     
     async def handle_stop_recording(self, request: Request) -> Response:
         """
@@ -511,7 +580,7 @@ class UiApiServer:
             logger.info(f"   Эндпоинты:")
             logger.info(f"   - GET  /ui/events (SSE или long-poll)")
             logger.info(f"   - POST /ui/consent_decision")
-            logger.info(f"   - POST /ui/chat_send (заготовка)")
+            logger.info(f"   - POST /ui/chat_send")
             logger.info(f"   - POST /ui/stop_recording")
             logger.info(f"   - POST /ui/request_support")
             logger.info(f"   - GET  /ui/settings")

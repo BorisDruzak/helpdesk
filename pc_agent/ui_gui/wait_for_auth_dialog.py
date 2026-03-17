@@ -60,8 +60,6 @@ class WaitForAuthDialog(QDialog):
 
     def start_polling(self) -> None:
         """Запускает опрос БД каждые 2 секунды."""
-        if self.on_auth_complete:
-            self.on_auth_complete()
         self._poll_timer.start(2000)
 
     def _check_token(self) -> None:
@@ -85,6 +83,8 @@ class WaitForAuthDialog(QDialog):
                 self._token = row[0]
                 self._poll_timer.stop()
                 logger.info("Токен получен из БД после одобрения администратором")
+                if self.on_auth_complete:
+                    self.on_auth_complete()
                 self.accept()
         except Exception as e:
             logger.debug(f"Ошибка проверки токена в БД: {e}")
