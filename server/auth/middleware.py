@@ -16,6 +16,8 @@ AUTH_WHITELIST = {
     "/api/login",
     "/api/ui_login",  # UI login endpoint
     "/api/health",
+    "/api/connection_request",
+    "/api/connection_request/status",
 }
 
 

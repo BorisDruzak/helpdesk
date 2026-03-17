@@ -29,6 +29,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_support_test"
 )
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
+TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
 
 
@@ -60,6 +61,10 @@ def run_migrations():
     
     alembic_cfg = Config(str(alembic_ini))
     alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    # Resolve script_location relative to server dir (alembic resolves relative to CWD otherwise)
+    script_path = server_dir / "app" / "db" / "migrations"
+    if script_path.exists():
+        alembic_cfg.set_main_option("script_location", str(script_path))
     
     # upgrade head (sync command)
     command.upgrade(alembic_cfg, "head")
@@ -98,6 +103,7 @@ async def cleanup_db(run_migrations, test_engine):
                 device_toolset_snapshots,
                 device_config,
                 devices,
+                connection_requests,
                 ui_users,
                 tickets
             RESTART IDENTITY CASCADE
@@ -147,6 +153,13 @@ async def test_app(patched_get_session, test_engine):
                 "created_at": "2026-01-01T00:00:00+00:00",
                 "type": "ui",
             }
+        if token == TEST_UI_ADMIN_TOKEN:
+            return {
+                "user_login": "admin-test",
+                "actor_role": "admin",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
         if token.startswith(TEST_UI_USER_PREFIX):
             return {
                 "user_login": token.split(":", 1)[1],
@@ -167,6 +180,13 @@ async def test_app(patched_get_session, test_engine):
             return AuthContext(
                 actor_id="support-test",
                 actor_role="support",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token == TEST_UI_ADMIN_TOKEN:
+            return AuthContext(
+                actor_id="admin-test",
+                actor_role="admin",
                 auth_type=AuthType.UI_TOKEN,
                 token=token,
             )

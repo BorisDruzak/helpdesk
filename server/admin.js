@@ -649,10 +649,94 @@
         
         function useDeviceUuid(deviceUuid) {
             document.getElementById('deviceUuidInput').value = deviceUuid;
-            // Scroll to form
             document.getElementById('deviceUuidInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
             document.getElementById('deviceUuidInput').focus();
         }
+
+        async function loadConnectionPolicy() {
+            try {
+                const r = await fetch('/api/admin/connection_policy', { headers: getAuthHeaders() });
+                const data = await r.json();
+                if (data.policy) {
+                    const radio = document.querySelector('input[name="connectionPolicy"][value="' + data.policy + '"]');
+                    if (radio) radio.checked = true;
+                }
+            } catch (e) { console.error('loadConnectionPolicy:', e); }
+        }
+
+        async function loadConnectionRequests() {
+            const loadingEl = document.getElementById('connectionRequestsLoading');
+            const emptyEl = document.getElementById('connectionRequestsEmpty');
+            const listEl = document.getElementById('connectionRequestsList');
+            const tbody = document.getElementById('connectionRequestsTableBody');
+            if (!tbody) return;
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (listEl) listEl.style.display = 'none';
+            try {
+                const r = await fetch('/api/admin/connection_requests', { headers: getAuthHeaders() });
+                const data = await r.json();
+                if (loadingEl) loadingEl.style.display = 'none';
+                const requests = (data.connection_requests || []);
+                if (requests.length === 0) {
+                    if (emptyEl) emptyEl.style.display = 'block';
+                    return;
+                }
+                tbody.innerHTML = requests.map(req => {
+                    const created = req.created_at ? new Date(req.created_at).toLocaleString('ru-RU') : '—';
+                    const did = (req.device_id || '').replace(/"/g, '&quot;');
+                    return '<tr><td style="font-family:monospace;font-size:12px;">' + (req.device_id || '') + '</td><td>' + (req.ip_address || '—') + '</td><td>' + (req.hostname || '—') + '</td><td>' + created + '</td><td><button type="button" class="btn btn-success btn-sm connection-request-approve" data-device-id="' + did + '">Одобрить</button> <button type="button" class="btn btn-danger btn-sm connection-request-reject" data-device-id="' + did + '">Отклонить</button></td></tr>';
+                }).join('');
+                if (listEl) listEl.style.display = 'block';
+                document.querySelectorAll('.connection-request-approve').forEach(btn => {
+                    btn.addEventListener('click', function() { connectionRequestAction(this.getAttribute('data-device-id'), 'approve'); });
+                });
+                document.querySelectorAll('.connection-request-reject').forEach(btn => {
+                    btn.addEventListener('click', function() { connectionRequestAction(this.getAttribute('data-device-id'), 'reject'); });
+                });
+            } catch (e) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (emptyEl) { emptyEl.textContent = 'Ошибка загрузки'; emptyEl.style.display = 'block'; }
+                console.error('loadConnectionRequests:', e);
+            }
+        }
+
+        async function connectionRequestAction(deviceId, action) {
+            if (!deviceId) return;
+            const path = action === 'approve' ? 'approve' : 'reject';
+            try {
+                const r = await fetch('/api/admin/connection_requests/' + encodeURIComponent(deviceId) + '/' + path, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({})
+                });
+                const data = await r.json();
+                if (data.status === 'ok') {
+                    loadConnectionRequests();
+                } else {
+                    alert(data.error || 'Ошибка');
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        document.getElementById('connectionPolicySaveBtn')?.addEventListener('click', async function() {
+            const selected = document.querySelector('input[name="connectionPolicy"]:checked');
+            const policy = selected ? selected.value : 'manual';
+            const statusEl = document.getElementById('connectionPolicyStatus');
+            try {
+                const r = await fetch('/api/admin/connection_policy', {
+                    method: 'PATCH',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ policy: policy })
+                });
+                const data = await r.json();
+                if (statusEl) { statusEl.textContent = data.status === 'ok' ? 'Сохранено' : (data.error || ''); if (data.status === 'ok') setTimeout(function() { statusEl.textContent = ''; }, 2000); }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = 'Ошибка: ' + e.message;
+            }
+        });
 
         // ============================================
         // Ticket Queue (Stage 10.1)
@@ -1899,6 +1983,8 @@
             if (tabName === 'devices') {
                 loadDevicesList();
                 devicesApplyHash();
+                loadConnectionPolicy();
+                loadConnectionRequests();
             } else             if (tabName === 'modules') {
                 loadModulesTab();
                 initRegistryModulesToggles();

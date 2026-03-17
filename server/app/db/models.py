@@ -1172,6 +1172,38 @@ class UiToken(Base):
         )
 
 
+class ConnectionRequest(Base):
+    """
+    Pending or resolved device connection request (agent requests token).
+    status: pending | approved | rejected
+    """
+    __tablename__ = "connection_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<ConnectionRequest(id={self.id}, device_id={self.device_id!r}, status={self.status!r})>"
+
+
+class ServerConfig(Base):
+    """Key-value server config (e.g. connection_policy)."""
+    __tablename__ = "server_config"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class UiUser(Base):
     """Stage 10: UI пользователь (логин, хеш пароля, роль). Управление из БД."""
     __tablename__ = "ui_users"

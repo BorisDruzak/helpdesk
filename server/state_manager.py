@@ -50,6 +50,9 @@ class StateManager:
         # Попытки подключения без токена (device_id -> {attempted_at, ip_address, user_agent})
         # RUNTIME: Очищаются после генерации токена или через TTL
         self.pending_connections: Dict[str, dict] = {}
+        # Однократная выдача токена при approve connection request (device_id -> raw_token)
+        # Удаляется после первого GET /api/connection_request/status по этому device_id
+        self.approved_connection_tokens: Dict[str, str] = {}
         
         # ============================================================================
         # Tickets Runtime Data (НЕ Source of Truth!)

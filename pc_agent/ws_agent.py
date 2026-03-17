@@ -22,8 +22,9 @@ import atexit
 import queue
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
+import aiohttp
 import aiohttp
 from aiohttp import ClientSession, WSMsgType, ClientWebSocketResponse, ClientTimeout
 from loguru import logger
@@ -51,6 +52,7 @@ from pc_agent.core import runtime_paths
 from network.uploader import get_uploader
 from ui_bridge import EventBus, UiApiServer
 from ui_bridge.models import ConsentDecision
+from ui_gui.server_api import TicketApiClient
 from ui_bridge.settings_service import AgentSettingsService
 from core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
 from pc_agent.version import AGENT_VERSION
@@ -469,6 +471,32 @@ class WSAgent:
             async def on_restart_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
                 return await self.schedule_restart(payload)
 
+            async def on_chat_send(
+                ticket_id: str,
+                text: str,
+                from_role: str = "user",
+                attachment_refs: Optional[List[str]] = None,
+                metadata: Optional[Dict[str, Any]] = None,
+            ) -> Dict[str, Any]:
+                """Отправка сообщения в тикет через Ticket API сервера."""
+                api_url = get_config().server.api_url
+                client = TicketApiClient(
+                    api_url,
+                    self.device_id,
+                    user_display_name="User",
+                    auth_token=self.auth_token,
+                )
+                try:
+                    return await client.send_message(
+                        ticket_id,
+                        text,
+                        from_role=from_role,
+                        attachment_refs=attachment_refs,
+                        metadata=metadata,
+                    )
+                finally:
+                    await client.close()
+
             self.ui_api_server = UiApiServer(
                 event_bus=self.event_bus,
                 host=ui_host,
@@ -478,6 +506,7 @@ class WSAgent:
                 on_update_settings=on_update_settings,
                 on_test_connection=on_test_connection,
                 on_restart_agent=on_restart_agent,
+                on_chat_send=on_chat_send,
             )
             logger.success(f"✅ UiApiServer создан на {ui_host}:{ui_port}")
             
@@ -1745,6 +1774,135 @@ class WSAgent:
         logger.info("💡 После регистрации на сервере админ может сгенерировать токен")
         return False
     
+    def _connection_rejected_flag_path(self) -> Path:
+        """Путь к файлу-флагу «подключение отклонено» (не отправлять запросы повторно)."""
+        root = self._data_root or Path(".")
+        return Path(root) / "connection_rejected.flag"
+
+    async def request_connection_flow(self) -> bool:
+        """
+        Запрос авторизации у сервера (connection request flow).
+        Вызывается при отсутствии токена. POST /api/connection_request, при pending — опрос status.
+        Returns:
+            True — токен получен и сохранён, можно подключаться по WS.
+            False — отклонено администратором или ошибка; повторные запросы не отправлять.
+        """
+        api_url = get_config().server.api_url.rstrip("/")
+        device_id = self.device_id or self.identity_manager.uuid
+        if not device_id:
+            logger.error("request_connection_flow: device_id отсутствует")
+            return False
+
+        import socket
+        hostname = socket.gethostname() if hasattr(socket, "gethostname") else None
+
+        async with ClientSession() as session:
+            try:
+                resp = await session.post(
+                    f"{api_url}/connection_request",
+                    json={
+                        "device_id": device_id,
+                        "hostname": hostname,
+                        "metadata": {},
+                    },
+                    timeout=aiohttp.ClientTimeout(total=15),
+                )
+            except Exception as e:
+                logger.error(f"Ошибка запроса подключения: {e}")
+                return False
+
+            if resp.status == 403:
+                data = await resp.json() if resp.content_type == "application/json" else {}
+                logger.warning(f"Администратор отклонил подключение: {data.get('message', '')}")
+                if self.event_bus:
+                    await self.event_bus.publish({
+                        "event_type": "connection_rejected",
+                        "data": {"message": "Администратор отклонил подключение"},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                return False
+
+            if resp.status != 200:
+                logger.error(f"Сервер вернул {resp.status} при запросе подключения")
+                return False
+
+            data = await resp.json()
+            status = data.get("status")
+
+            if status == "approved":
+                token = data.get("token")
+                if not token:
+                    logger.error("Нет токена в ответе approved")
+                    return False
+                self.auth_token = token
+                self.identity_manager.token = token
+                if self.db_manager:
+                    try:
+                        await self.db_manager.save_auth_token(token, device_id)
+                    except Exception as e:
+                        logger.warning(f"Не удалось сохранить токен в БД: {e}")
+                logger.info("✅ Токен получен по запросу подключения (accept_all)")
+                if self.event_bus:
+                    await self.event_bus.publish({
+                        "event_type": "connection_approved",
+                        "data": {},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                return True
+
+            if status == "pending":
+                if self.event_bus:
+                    await self.event_bus.publish({
+                        "event_type": "connection_request_pending",
+                        "data": {"message": "Дождитесь авторизации от Администратора"},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                poll_interval = 5
+                while True:
+                    await asyncio.sleep(poll_interval)
+                    try:
+                        status_resp = await session.get(
+                            f"{api_url}/connection_request/status",
+                            params={"device_id": device_id},
+                            timeout=aiohttp.ClientTimeout(total=10),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Ошибка опроса статуса: {e}")
+                        continue
+                    if status_resp.status != 200:
+                        continue
+                    status_data = await status_resp.json()
+                    st = status_data.get("status")
+                    if st == "approved":
+                        token = status_data.get("token")
+                        if token:
+                            self.auth_token = token
+                            self.identity_manager.token = token
+                            if self.db_manager:
+                                try:
+                                    await self.db_manager.save_auth_token(token, device_id)
+                                except Exception as e:
+                                    logger.warning(f"Не удалось сохранить токен в БД: {e}")
+                            logger.info("✅ Токен получен по опросу (одобрено администратором)")
+                            if self.event_bus:
+                                await self.event_bus.publish({
+                                    "event_type": "connection_approved",
+                                    "data": {},
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                            return True
+                    elif st == "rejected":
+                        logger.warning("Администратор отклонил подключение")
+                        if self.event_bus:
+                            await self.event_bus.publish({
+                                "event_type": "connection_rejected",
+                                "data": {"message": "Администратор отклонил подключение"},
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                        return False
+
+        return False
+
     async def _request_token_from_console(self) -> bool:
         """
         Запрашивает токен через консоль (когда GUI отключен).
@@ -1845,13 +2003,30 @@ class WSAgent:
         """
         Основной цикл работы агента с WebSocket.
         """
-        # Проверяем аутентификацию (загружаем токен если есть)
-        # ВАЖНО: Не блокируем подключение если токена нет!
-        # Агент должен подключиться к серверу, чтобы сервер зарегистрировал попытку в pending_connections
         await self.authenticate()
-        # Если токена нет, агент все равно попытается подключиться
-        # Сервер проверит токен и зарегистрирует попытку подключения для админа
-        
+
+        # Если токена нет — используем flow «запрос на подключение» (connection request)
+        if not self.auth_token:
+            flag_path = self._connection_rejected_flag_path()
+            if flag_path.exists():
+                logger.warning("Подключение ранее было отклонено администратором. Новые запросы не отправляются.")
+                if self.event_bus:
+                    await self.event_bus.publish({
+                        "event_type": "connection_rejected",
+                        "data": {"message": "Администратор отклонил подключение"},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                return
+            ok = await self.request_connection_flow()
+            if not ok:
+                try:
+                    flag_path.parent.mkdir(parents=True, exist_ok=True)
+                    flag_path.write_text("rejected", encoding="utf-8")
+                except Exception as e:
+                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
+                return
+            # Токен получен и сохранён в request_connection_flow(), продолжаем
+
         # Запускаем UI API сервер как background task (если еще не запущен)
         if self.ui_api_server and not self.ui_api_task:
             await self.ui_api_server.start()

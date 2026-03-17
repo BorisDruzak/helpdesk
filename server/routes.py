@@ -6,6 +6,15 @@ from aiohttp import web
 
 # Import handlers from modules
 from auth.handlers import handle_login, handle_ui_login, handle_get_device_tokens, handle_revoke_device_token
+from auth.connection_request_handlers import (
+    handle_connection_request,
+    handle_connection_request_status,
+    handle_admin_connection_policy_get,
+    handle_admin_connection_policy_patch,
+    handle_admin_connection_requests_list,
+    handle_admin_connection_request_approve,
+    handle_admin_connection_request_reject,
+)
 from auth.admin_users_handlers import (
     handle_admin_users_list,
     handle_admin_users_post,
@@ -257,6 +266,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/login', handle_login),
         web.post('/api/ui_login', handle_ui_login),  # UI user login
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
+        # Connection request flow (no auth: agent requests token)
+        web.post('/api/connection_request', handle_connection_request),
+        web.get('/api/connection_request/status', handle_connection_request_status),
 
         # ============================================================================
         # Agents API
@@ -375,6 +387,12 @@ def setup_routes(app: web.Application) -> None:
         web.patch('/api/admin/users/{user_login}', handle_admin_users_patch),
         web.post('/api/admin/users/{user_login}/password', handle_admin_users_password_post),
         web.post('/api/admin/users/{user_login}/deactivate', handle_admin_users_deactivate_post),
+        # Connection request policy and pending requests (admin)
+        web.get('/api/admin/connection_policy', handle_admin_connection_policy_get),
+        web.patch('/api/admin/connection_policy', handle_admin_connection_policy_patch),
+        web.get('/api/admin/connection_requests', handle_admin_connection_requests_list),
+        web.post('/api/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
+        web.post('/api/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         # Stage 9: Admin Config API (feature-flagged)
         web.get('/api/admin/tickets/queues', handle_admin_queues_list),
         web.post('/api/admin/tickets/queues', handle_admin_queues_post),

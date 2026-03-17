@@ -13,6 +13,7 @@ from loguru import logger
 from .main_window import MainWindow
 from .sse_client import SseClient
 from .token_dialog import TokenDialog
+from .wait_for_auth_dialog import WaitForAuthDialog
 
 
 class EventHandler(QObject):
@@ -394,88 +395,61 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         if auth_complete_event:
             auth_complete_event.set()
     
-    # Если токен невалиден или отсутствует - показываем диалог авторизации
+    # Если токен невалиден или отсутствует — показываем «Дождитесь авторизации» или диалог ввода токена
     if not valid_token:
-        logger.info("🔑 Требуется авторизация")
-        logger.info("=" * 70)
-        logger.info("💡 Подсказка:")
-        logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
-        logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-        logger.info("   3. Введите device UUID и скопируйте токен")
-        logger.info("   4. Вставьте токен в диалог")
-        logger.info("=" * 70)
-        
-        # Показываем диалог авторизации ДО создания главного окна
-        logger.info("🔄 Начинаю цикл авторизации...")
+        logger.info("🔑 Требуется авторизация (запрос на подключение или ввод токена вручную)")
+        # Сначала показываем экран «Дождитесь авторизации»; агент отправит запрос на подключение
         while not valid_token:
-            logger.info("📋 Вызываю show_token_dialog_async...")
-            token = None
-            try:
-                token = await show_token_dialog_async(device_uuid)
-                logger.info(f"📋 show_token_dialog_async вернул: {'токен' if token else 'None'}")
-                if token:
-                    logger.info(f"📋 Получен токен длиной {len(token)} символов")
-            except Exception as e:
-                logger.error(f"❌ Ошибка при показе диалога: {e}")
-                logger.exception(e)
-                token = None
-                # Продолжаем цикл, чтобы пользователь мог попробовать снова
-                continue
-            
-            # Если токен не получен, выходим из цикла
-            if not token:
-                logger.info("⛔ Авторизация отменена пользователем")
-                if stop_event:
-                    stop_event.set()
+            wait_dialog = WaitForAuthDialog(device_uuid, on_auth_complete=lambda: auth_complete_event and auth_complete_event.set())
+            wait_dialog.start_polling()
+            result = wait_dialog.exec()
+            if result == 1:  # QDialog.Accepted
+                valid_token = wait_dialog.get_token()
+                if valid_token:
+                    if auth_complete_event:
+                        auth_complete_event.set()
+                    break
+            if wait_dialog.was_manual_requested():
+                # Пользователь нажал «Ввести токен вручную» — показываем старый диалог
                 if auth_complete_event:
-                    auth_complete_event.set()  # Сигнализируем, что авторизация завершена (отменена)
-                return
-            
-            # Токен уже сохранен в БД внутри show_token_dialog_async
-            # Не проверяем agent токен через HTTP API - agent токены работают только через WebSocket
-            # Токен будет проверен при подключении агента к серверу через WebSocket
-            logger.info("💡 Токен получен и уже сохранен в БД")
-            valid_token = token
-            
-            # КРИТИЧНО: Загружаем токен из БД для использования в GUI
-            # Это гарантирует, что токен доступен даже если была ошибка при сохранении
-            try:
-                from core.database import db_manager
-                if db_manager:
-                    # Используем синхронный метод для получения токена из БД
-                    import sqlite3
-                    from core.identity import IdentityManager
-                    identity_manager = IdentityManager()
-                    identity_data = identity_manager.load_or_create()
-                    device_uuid = identity_data.get('uuid')
-                    
-                    if device_uuid:
-                        conn = sqlite3.connect(db_manager._db_path)
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            SELECT token FROM auth_tokens
-                            WHERE device_id = ? AND is_active = 1
-                            ORDER BY created_at DESC
-                            LIMIT 1
-                        """, (device_uuid,))
-                        row = cursor.fetchone()
-                        conn.close()
-                        
-                        if row:
-                            valid_token = row[0]
-                            logger.info(f"✅ Токен загружен из БД для использования в GUI: {valid_token[:20]}...")
-                        else:
-                            logger.warning("⚠️ Токен не найден в БД после сохранения, используем токен из диалога")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось загрузить токен из БД: {e}, используем токен из диалога")
-            
-            logger.info("✅ Токен принят (будет проверен при WebSocket handshake)")
-            
-            # Сигнализируем о завершении авторизации
+                    auth_complete_event.set()
+                token = None
+                try:
+                    token = await show_token_dialog_async(device_uuid)
+                except Exception as e:
+                    logger.error(f"Ошибка при показе диалога токена: {e}")
+                    token = None
+                if token:
+                    valid_token = token
+                    try:
+                        from core.database import db_manager
+                        if db_manager:
+                            import sqlite3
+                            conn = sqlite3.connect(db_manager._db_path)
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                SELECT token FROM auth_tokens
+                                WHERE device_id = ? AND is_active = 1
+                                ORDER BY created_at DESC
+                                LIMIT 1
+                            """, (device_uuid,))
+                            row = cursor.fetchone()
+                            conn.close()
+                            if row:
+                                valid_token = row[0]
+                    except Exception as e:
+                        logger.warning(f"Не удалось загрузить токен из БД: {e}")
+                    if auth_complete_event:
+                        auth_complete_event.set()
+                    break
+                continue
+            # Отмена
+            logger.info("Авторизация отменена пользователем")
+            if stop_event:
+                stop_event.set()
             if auth_complete_event:
                 auth_complete_event.set()
-                logger.info("✅ Событие авторизации установлено")
-        
+            return
         logger.info("=" * 70)
     
     # ===== ТОЛЬКО ПОСЛЕ УСПЕШНОЙ АВТОРИЗАЦИИ СОЗДАЕМ ГЛАВНОЕ ОКНО =====
