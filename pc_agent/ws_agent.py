@@ -1857,51 +1857,61 @@ class WSAgent:
                         "data": {"message": "Дождитесь авторизации от Администратора"},
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                poll_interval = 5
-                while True:
-                    await asyncio.sleep(poll_interval)
-                    try:
-                        status_resp = await session.get(
-                            f"{api_url}/connection_request/status",
-                            params={"device_id": device_id},
-                            timeout=aiohttp.ClientTimeout(total=10),
-                        )
-                    except Exception as e:
-                        logger.warning(f"Ошибка опроса статуса: {e}")
-                        continue
-                    if status_resp.status != 200:
-                        continue
-                    status_data = await status_resp.json()
-                    st = status_data.get("status")
-                    if st == "approved":
-                        token = status_data.get("token")
-                        if token:
-                            self.auth_token = token
-                            self.identity_manager.token = token
-                            if self.db_manager:
-                                try:
-                                    await self.db_manager.save_auth_token(token, device_id)
-                                except Exception as e:
-                                    logger.warning(f"Не удалось сохранить токен в БД: {e}")
-                            logger.info("✅ Токен получен по опросу (одобрено администратором)")
-                            if self.event_bus:
-                                await self.event_bus.publish({
-                                    "event_type": "connection_approved",
-                                    "data": {},
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-                            return True
-                    elif st == "rejected":
-                        logger.warning("Администратор отклонил подключение")
-                        if self.event_bus:
-                            await self.event_bus.publish({
-                                "event_type": "connection_rejected",
-                                "data": {"message": "Администратор отклонил подключение"},
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-                        return False
+                logger.info("Запрос на подключение в ожидании; опрос статуса в фоне")
+                asyncio.create_task(self._poll_connection_status_background(device_id), name="poll_connection_status")
+                return False
 
         return False
+
+    async def _poll_connection_status_background(self, device_id: str) -> None:
+        """Фоновый опрос статуса запроса (pending). При одобрении сохраняет токен в БД."""
+        api_url = (get_config().server.api_url or "").rstrip("/")
+        if not api_url:
+            return
+        poll_interval = 5
+        async with aiohttp.ClientSession() as session:
+            while True:
+                await asyncio.sleep(poll_interval)
+                try:
+                    status_resp = await session.get(
+                        f"{api_url}/connection_request/status",
+                        params={"device_id": device_id},
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    )
+                except Exception as e:
+                    logger.warning(f"Ошибка опроса статуса: {e}")
+                    continue
+                if status_resp.status != 200:
+                    continue
+                status_data = await status_resp.json()
+                st = status_data.get("status")
+                if st == "approved":
+                    token = status_data.get("token")
+                    if token:
+                        self.auth_token = token
+                        self.identity_manager.token = token
+                        if self.db_manager:
+                            try:
+                                await self.db_manager.save_auth_token(token, device_id)
+                            except Exception as e:
+                                logger.warning(f"Не удалось сохранить токен в БД: {e}")
+                        logger.info("✅ Токен получен по опросу (одобрено администратором)")
+                        if self.event_bus:
+                            await self.event_bus.publish({
+                                "event_type": "connection_approved",
+                                "data": {},
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                    return
+                elif st == "rejected":
+                    logger.warning("Администратор отклонил подключение")
+                    if self.event_bus:
+                        await self.event_bus.publish({
+                            "event_type": "connection_rejected",
+                            "data": {"message": "Администратор отклонил подключение"},
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                    return
 
     async def _request_token_from_console(self) -> bool:
         """
@@ -2728,11 +2738,22 @@ async def main_async(
                 # Создаем событие для ожидания завершения авторизации в GUI
                 gui_auth_complete = asyncio.Event()
                 
+                # Сначала отправляем запрос на подключение (до показа GUI), чтобы не блокировать event loop в exec()
+                if not agent.auth_token:
+                    flag_path = agent._connection_rejected_flag_path()
+                    if not flag_path.exists():
+                        try:
+                            ok = await asyncio.wait_for(agent.request_connection_flow(), timeout=12)
+                            if ok:
+                                gui_auth_complete.set()
+                        except asyncio.TimeoutError:
+                            logger.debug("Таймаут ожидания ответа по запросу подключения (ожидаем в фоне)")
+                    else:
+                        logger.warning("Подключение ранее отклонено; диалог ожидает ввода токена вручную или одобрения после сброса флага.")
+                
                 # Обертываем run_gui чтобы сигнализировать о завершении авторизации
                 async def run_gui_with_auth():
                     try:
-                        # run_gui сам проверит токен и покажет диалог если нужно
-                        # После успешной авторизации GUI создаст главное окно
                         await run_gui(host, port, stop_event, gui_auth_complete)
                         gui_auth_complete.set()
                     except Exception as e:

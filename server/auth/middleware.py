@@ -152,6 +152,8 @@ async def auth_middleware(request: web.Request, handler):
     # Skip authentication for whitelisted endpoints
     if request.path in AUTH_WHITELIST:
         return await handler(request)
+    if request.path.startswith("/api/connection_request"):
+        return await handler(request)
 
     # Скачивание артефакта по ссылке тикета: GET .../download?ticket_id=... — без токена (проверка в handler)
     if (

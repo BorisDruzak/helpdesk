@@ -112,20 +112,22 @@ def _pid_is_running(pid: int) -> bool:
     return str(pid) in result.stdout
 
 
-def _build_env(ws_url: str, api_url: str, auth_token: str | None) -> dict[str, str]:
+def _build_env(ws_url: str, api_url: str, auth_token: str | None, ui_port: int | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env["PC_AGENT_WS_URL"] = ws_url
     env["PC_AGENT_API_URL"] = api_url
     if auth_token:
         env["AUTH_TOKEN"] = auth_token
+    if ui_port is not None:
+        env["PC_AGENT_UI_PORT"] = str(ui_port)
     return env
 
 
-def _verify(name: str, ws_url: str, api_url: str, auth_token: str | None) -> int:
+def _verify(name: str, ws_url: str, api_url: str, auth_token: str | None, ui_port: int | None = None) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
     layout = _ensure_instance_layout(name)
-    env = _build_env(ws_url, api_url, auth_token)
+    env = _build_env(ws_url, api_url, auth_token, ui_port)
     cmd = [
         str(VENV_PYTHON),
         "-m",
@@ -147,6 +149,7 @@ def _start(
     api_url: str,
     auth_token: str | None,
     foreground: bool,
+    ui_port: int | None = None,
 ) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
@@ -155,7 +158,7 @@ def _start(
         raise SystemExit(f"Instance '{name}' is already running with PID {current['pid']}")
 
     layout = _ensure_instance_layout(name)
-    env = _build_env(ws_url, api_url, auth_token)
+    env = _build_env(ws_url, api_url, auth_token, ui_port)
     if not gui and not auth_token:
         print("[manage_local_agent] warning: headless start without --auth-token usually exits after token prompt")
     cmd = [
@@ -288,6 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--ws-url", default=DEFAULT_WS_URL)
     start.add_argument("--api-url", default=DEFAULT_API_URL)
     start.add_argument("--auth-token", default=None)
+    start.add_argument("--ui-port", type=int, default=None, metavar="PORT", help="UI API port (default 8765; use if port is busy)")
 
     stop = subparsers.add_parser("stop", help="Stop a named local agent instance")
     stop.add_argument("name")
@@ -309,9 +313,9 @@ def main() -> int:
     if args.command == "bootstrap":
         return _bootstrap(args.python, args.reinstall)
     if args.command == "verify":
-        return _verify(args.name, args.ws_url, args.api_url, args.auth_token)
+        return _verify(args.name, args.ws_url, args.api_url, args.auth_token, getattr(args, "ui_port", None))
     if args.command == "start":
-        return _start(args.name, args.gui, args.ws_url, args.api_url, args.auth_token, args.foreground)
+        return _start(args.name, args.gui, args.ws_url, args.api_url, args.auth_token, args.foreground, getattr(args, "ui_port", None))
     if args.command == "stop":
         return _stop(args.name)
     if args.command == "status":

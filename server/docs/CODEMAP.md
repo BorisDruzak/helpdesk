@@ -51,6 +51,7 @@
 | `server/app/repos/device_modules_repo.py` | Установленные модули на устройстве |
 | `server/app/repos/device_desired_modules_repo.py` | Желаемое состояние модулей |
 | `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа |
+| `server/app/repos/connection_requests_repo.py` | Запросы на подключение устройств, политика (reject_all/accept_all/manual) |
 | Остальные repos | artifacts, notifications, playbook, tickets, agents, jobs, ui_users и др. — см. `server/app/repos/`. |
 
 ### 2.4 Сервисы (app/services)
@@ -75,7 +76,7 @@
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
 | `server/uploads/` | handlers |
-| `server/auth/` | handlers, admin_users_handlers, middleware, service, password_service |
+| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, password_service |
 | `server/playbook_handlers.py` | Старт playbook run |
 | `server/static_pages/` | handlers для admin, ticket, public_queue, CSS/JS |
 

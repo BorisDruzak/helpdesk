@@ -152,6 +152,17 @@ class ConfigLoader:
                     update={"server": self._config.server.model_copy(update=updates)}
                 )
                 logger.debug(f"   Server URL overridden from env: ws_url={self._config.server.ws_url!r}")
+        ui_port_str = os.environ.get("PC_AGENT_UI_PORT", "").strip()
+        if ui_port_str:
+            try:
+                ui_port = int(ui_port_str)
+                if 1 <= ui_port <= 65535:
+                    self._config = self._config.model_copy(
+                        update={"ui": self._config.ui.model_copy(update={"port": ui_port})}
+                    )
+                    logger.debug(f"   UI port overridden from env: port={ui_port}")
+            except ValueError:
+                pass
         logger.info(f"✅ Конфигурация загружена: {self.config_path}")
         logger.debug(f"   WebSocket URL: {self._config.server.ws_url}")
         logger.debug(f"   API URL: {self._config.server.api_url}")
