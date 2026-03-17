@@ -562,9 +562,18 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         window_closing = True
         
         # Сразу останавливаем опрос тикетов, чтобы не было запросов list_tickets после закрытия
-        if hasattr(window, "chat_panel"):
-            window.chat_panel._stop_ticket_list_polling()
-            window.chat_panel._stop_ticket_detail_polling()
+        try:
+            cp = getattr(window, "chat_panel", None)
+        except Exception:
+            cp = None
+        if cp:
+            for method_name in ("_stop_ticket_list_polling", "_stop_ticket_detail_polling"):
+                stopper = getattr(cp, method_name, None)
+                if callable(stopper):
+                    try:
+                        stopper()
+                    except Exception as e:
+                        logger.debug(f"Ошибка остановки polling ({method_name}): {e}")
         logger.info("GUI закрывается, останавливаю SSE клиент...")
         sse_client.stop()
         sse_task_obj.cancel()
@@ -613,4 +622,3 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         await asyncio.wait_for(sse_task_obj, timeout=2.0)
     except (asyncio.CancelledError, asyncio.TimeoutError):
         pass
-

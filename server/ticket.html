@@ -171,14 +171,28 @@
                             <span>Внутреннее сообщение</span>
                         </label>
                         <button id="composerMenuBtn" class="btn btn-secondary" type="button">Быстрые действия</button>
-                        <div id="composerMenuDropdown" class="composer-menu hidden"></div>
+                        <div id="composerMenuDropdown" class="composer-menu hidden">
+                            <button class="menu-item" data-cmd="/tool" type="button">Инструменты ПК</button>
+                            <button class="menu-item" data-cmd="/status" type="button">Сменить статус</button>
+                            <button class="menu-item" data-cmd="/priority" type="button">Сменить приоритет</button>
+                            <button class="menu-item" data-cmd="/assign" type="button">Назначить исполнителя</button>
+                            <button class="menu-item" data-cmd="/assign_auto" type="button">Автоназначение</button>
+                            <button class="menu-item" data-cmd="/queue" type="button">Сменить очередь</button>
+                            <button class="menu-item" data-cmd="/requester" type="button">Профиль инициатора</button>
+                            <button class="menu-item" data-cmd="/reroute" type="button">Пересчитать очередь</button>
+                            <button class="menu-item" data-cmd="/worklog" type="button">Добавить трудозатраты</button>
+                            <button class="menu-item" data-cmd="/close" type="button">Подтвердить решение</button>
+                        </div>
                     </div>
                     <div class="composer-input-row">
                         <textarea id="messageInput" rows="4" placeholder="Введите сообщение"></textarea>
                     </div>
+                    <div id="pendingAttachments" class="pending-attachments hidden"></div>
                     <div class="composer-actions">
+                        <button id="quickScreenshotBtn" class="btn btn-secondary" type="button">Скриншот ПК</button>
+                        <button id="quickRecordBtn" class="btn btn-secondary" type="button">Видео 15с</button>
                         <button id="attachButton" class="btn btn-secondary" type="button">Вложение</button>
-                        <input id="attachFileInput" type="file" hidden>
+                        <input id="attachFileInput" type="file" hidden multiple>
                         <button id="sendButton" class="btn btn-primary" type="button">Отправить</button>
                     </div>
                 </section>

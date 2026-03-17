@@ -240,6 +240,22 @@ body {
 .sidebar-actions .btn-secondary { background: #e5e7eb; color: #111827; }
 .sidebar-actions .btn-danger { background: #dc2626; color: #fff; }
 
+.btn {
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #111827;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn:hover { background: #eef2ff; border-color: #a5b4fc; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn.btn-primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+.btn.btn-primary:hover { background: #1d4ed8; border-color: #1e40af; }
+.btn.btn-danger { background: #dc2626; border-color: #b91c1c; color: #fff; }
+
 .ticket-content {
     min-width: 0;
     display: flex;
@@ -360,6 +376,20 @@ body {
 .ti-artifact .artifact-label { display: block; font-size: 11px; color: #6b7280; padding: 4px 8px; }
 .ti-artifact .artifact-media { display: block; max-width: 100%; max-height: 320px; object-fit: contain; vertical-align: top; }
 .ti-artifact video.artifact-media { max-height: 360px; min-width: 200px; }
+.ti-artifact .artifact-download {
+    display: inline-block;
+    margin: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #e2e8f0;
+    color: #1e293b;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 600;
+}
+.ti-artifact .artifact-download:hover {
+    background: #cbd5e1;
+}
 
 /* Кнопка меню слева в composer и выпадающее меню */
 .composer-row {
@@ -396,7 +426,8 @@ body {
     font-size: 20px;
     line-height: 1;
 }
-.composer-menu-dropdown {
+.composer-menu-dropdown,
+.composer-menu {
     display: none;
     position: absolute;
     left: 16px;
@@ -412,9 +443,12 @@ body {
     max-height: 70vh;
     overflow-y: auto;
 }
-.composer-menu-dropdown.open { display: block; }
-.composer-menu-dropdown.hidden { display: none !important; }
-.composer-menu-dropdown .menu-group-label {
+.composer-menu-dropdown.open,
+.composer-menu.open { display: block; }
+.composer-menu-dropdown.hidden,
+.composer-menu.hidden { display: none !important; }
+.composer-menu-dropdown .menu-group-label,
+.composer-menu .menu-group-label {
     padding: 6px 14px 4px;
     font-size: 11px;
     font-weight: 600;
@@ -422,7 +456,8 @@ body {
     letter-spacing: 0.03em;
     color: #6b7280;
 }
-.composer-menu-dropdown .menu-item {
+.composer-menu-dropdown .menu-item,
+.composer-menu .menu-item {
     display: block;
     width: 100%;
     padding: 10px 14px;
@@ -434,14 +469,17 @@ body {
     cursor: pointer;
     transition: background 0.15s;
 }
-.composer-menu-dropdown .menu-item:hover {
+.composer-menu-dropdown .menu-item:hover,
+.composer-menu .menu-item:hover {
     background: #eff6ff;
 }
-.composer-menu-dropdown .menu-item:disabled {
+.composer-menu-dropdown .menu-item:disabled,
+.composer-menu .menu-item:disabled {
     color: #9ca3af;
     cursor: not-allowed;
 }
-.composer-menu-dropdown .menu-divider {
+.composer-menu-dropdown .menu-divider,
+.composer-menu .menu-divider {
     height: 1px;
     background: #e5e7eb;
     margin: 6px 0;
@@ -538,6 +576,23 @@ body {
     bottom: 0;
     z-index: 20;
 }
+.ticket-composer .composer-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.ticket-composer .composer-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #475569;
+    user-select: none;
+}
+.ticket-composer .composer-input-row {
+    margin-bottom: 8px;
+}
 .ticket-composer .composer-row { display: flex; gap: 0; align-items: flex-end; flex-wrap: wrap; }
 .ticket-composer .composer-input-wrap { flex: 1; min-width: 120px; position: relative; }
 .ticket-composer .composer-input-wrap textarea { border-radius: 0; }
@@ -551,7 +606,7 @@ body {
 }
 .ticket-composer textarea:focus { outline: none; border-color: #007aff; }
 .ticket-composer textarea::placeholder { color: #9ca3af; }
-.ticket-composer .composer-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ticket-composer .composer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ticket-composer .internal-toggle {
     display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; cursor: pointer; user-select: none;
 }
@@ -562,6 +617,45 @@ body {
 }
 .ticket-composer .btn-send:hover { background: #0056b3; }
 .ticket-composer .btn-send:disabled { background: #9ca3af; cursor: not-allowed; }
+
+.pending-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.pending-attachment {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    border-radius: 10px;
+}
+.pending-attachment-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1e3a8a;
+    word-break: break-word;
+}
+.pending-attachment-meta {
+    margin-left: auto;
+    font-size: 11px;
+    color: #475569;
+}
+.pending-attachment-remove {
+    border: none;
+    border-radius: 8px;
+    background: #dbeafe;
+    color: #1e3a8a;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.pending-attachment-remove:hover {
+    background: #bfdbfe;
+}
 
 /* Состояния загрузки и ошибки */
 .ticket-loading { text-align: center; padding: 60px 20px; color: #666; }

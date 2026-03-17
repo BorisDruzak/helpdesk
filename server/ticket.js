@@ -54,6 +54,7 @@
     let actorRole = ''; // admin | support | auditor — из snapshot или по умолчанию
     let usersCache = [];
     let queuesCache = [];
+    let pendingAttachments = [];
 
     function getToken() {
         const t = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -90,7 +91,7 @@
         const kind = (art.kind || '').toLowerCase();
         if (mime.startsWith('video/') || kind === 'screen_recording') return 'video';
         if (mime.startsWith('image/') || kind === 'screenshot') return 'image';
-        return 'image';
+        return 'file';
     }
 
     /** Строит HTML блок .ti-artifacts для списка артефактов (placeholder — медиа подгружается в loadArtifactMedia). */
@@ -135,6 +136,14 @@
                     video.controls = true;
                     video.src = objectUrl;
                     wrap.insertBefore(video, wrap.querySelector('.artifact-label') || wrap.firstChild);
+                } else if (mediaType === 'file') {
+                    const link = document.createElement('a');
+                    link.className = 'artifact-download';
+                    link.href = objectUrl;
+                    link.download = wrap.querySelector('.artifact-label')?.textContent || 'attachment';
+                    link.textContent = 'Скачать файл';
+                    link.target = '_blank';
+                    wrap.insertBefore(link, wrap.querySelector('.artifact-label') || wrap.firstChild);
                 } else {
                     const img = document.createElement('img');
                     img.className = 'artifact-media';
@@ -541,6 +550,66 @@
         }, { forceScroll: true, forceSidebarSync: false });
     }
 
+    function kindFromFile(file) {
+        const mime = (file && file.type ? String(file.type) : '').toLowerCase();
+        if (mime.startsWith('image/')) return 'screenshot';
+        if (mime.startsWith('video/')) return 'screen_recording';
+        return 'file';
+    }
+
+    async function uploadAttachment(file) {
+        if (!file) return null;
+        const form = new FormData();
+        form.append('file', file, file.name || 'attachment.bin');
+        form.append('ticket_id', ticketId);
+        form.append('kind', kindFromFile(file));
+        const r = await fetch('/api/upload', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: form
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.status === 'error') {
+            throw new Error(d.error || ('Ошибка загрузки файла: HTTP ' + r.status));
+        }
+        return {
+            artifact_id: d.artifact_id,
+            name: file.name || d.filename || 'attachment',
+            kind: d.kind || kindFromFile(file),
+            mime_type: d.mime_type || file.type || '',
+            size: d.size || file.size || 0
+        };
+    }
+
+    function renderPendingAttachments() {
+        const wrap = el('pendingAttachments');
+        if (!wrap) return;
+        if (!pendingAttachments.length) {
+            wrap.classList.add('hidden');
+            wrap.innerHTML = '';
+            return;
+        }
+        wrap.classList.remove('hidden');
+        wrap.innerHTML = pendingAttachments.map((item, idx) => {
+            const title = item.name || item.artifact_id || 'attachment';
+            const kind = item.kind || 'file';
+            const sizeKb = item.size ? Math.max(1, Math.round(item.size / 1024)) : 0;
+            return `<div class="pending-attachment">
+  <span class="pending-attachment-name">${escapeHtml(title)}</span>
+  <span class="pending-attachment-meta">${escapeHtml(kind)}${sizeKb ? ' • ' + sizeKb + ' KB' : ''}</span>
+  <button class="pending-attachment-remove" data-attachment-index="${idx}" type="button">Удалить</button>
+</div>`;
+        }).join('');
+        wrap.querySelectorAll('.pending-attachment-remove').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.getAttribute('data-attachment-index'));
+                if (!Number.isFinite(idx)) return;
+                pendingAttachments.splice(idx, 1);
+                renderPendingAttachments();
+            });
+        });
+    }
+
     async function loadSnapshot() {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 15000);
@@ -640,26 +709,62 @@
         }, POLL_FALLBACK_MS);
     }
 
-    async function sendMessage(text, visibility) {
+    async function sendMessage(text, visibility, attachmentRefs) {
         const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+        const refs = Array.isArray(attachmentRefs) ? attachmentRefs.filter(Boolean) : [];
         const r = await fetch('/api/tickets/' + ticketId + '/message', {
             method: 'POST',
             headers: authHeaders(true),
-            body: JSON.stringify({ message_id: messageId, text: text.trim(), visibility: visibility || 'public' })
+            body: JSON.stringify({
+                message_id: messageId,
+                text: (text || '').trim(),
+                visibility: visibility || 'public',
+                attachment_refs: refs
+            })
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
             showSystemMessage(data.details?.text || data.error || 'Ошибка отправки', true);
-            return;
+            return false;
         }
         if (data.status === 'error') {
             showSystemMessage(data.error || 'Ошибка отправки', true);
-            return;
+            return false;
         }
         // Не добавляем оптимистичное сообщение: ждём ticket_event_committed по WS или обновление по polling.
         if (data.event_id != null) {
             lastEventId = Math.max(lastEventId, data.event_id);
         }
+        return true;
+    }
+
+    async function runQuickTool(toolName, params, successMessage) {
+        if (!canPerformActions()) {
+            showSystemMessage('Недостаточно прав для запуска инструмента', true);
+            return;
+        }
+        if (!meta.device_id) {
+            showSystemMessage('Нет привязки тикета к устройству', true);
+            return;
+        }
+        const payload = {
+            device_id: meta.device_id,
+            ticket_id: ticketId,
+            tool_name: toolName
+        };
+        if (params && typeof params === 'object') payload.params = params;
+        const r = await fetch('/api/tools/run', {
+            method: 'POST',
+            headers: authHeaders(true),
+            body: JSON.stringify(payload)
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.status === 'error') {
+            showSystemMessage(d.error || 'Ошибка запуска инструмента', true);
+            return;
+        }
+        showSystemMessage(successMessage || ('Инструмент запущен: ' + toolName), false);
+        setTimeout(() => loadSnapshot(), 1800);
     }
 
     function openInlinePanel(title, bodyHtml, onApply, onOpen) {
@@ -1218,6 +1323,8 @@
                 const menuBtn = el('composerMenuBtn');
                 const menuDropdown = el('composerMenuDropdown');
                 const readOnly = !canPerformActions();
+                const quickScreenshotBtn = el('quickScreenshotBtn');
+                const quickRecordBtn = el('quickRecordBtn');
                 if (menuBtn) {
                     menuBtn.disabled = readOnly;
                     menuBtn.onclick = (e) => {
@@ -1251,6 +1358,8 @@
                     if (!canPerformActions()) control.setAttribute('disabled', 'disabled');
                     else control.removeAttribute('disabled');
                 });
+                if (quickScreenshotBtn) quickScreenshotBtn.disabled = readOnly || !meta.device_id;
+                if (quickRecordBtn) quickRecordBtn.disabled = readOnly || !meta.device_id;
                 refreshCloseControls();
                 refreshSidebarOptions();
                 if (canPerformActions()) {
@@ -1289,18 +1398,22 @@
         const sendBtn = el('sendButton');
         const internalCheck = el('internalToggle');
 
-        function doSend() {
+        async function doSend() {
             const text = (textarea && textarea.value || '').trim();
-            if (!text) return;
+            const attachmentRefs = pendingAttachments.map((item) => item.artifact_id).filter(Boolean);
+            if (!text && attachmentRefs.length === 0) return;
             const visibility = (internalCheck && internalCheck.checked) ? 'internal' : 'public';
-            textarea.value = '';
-            sendMessage(text, visibility);
+            const ok = await sendMessage(text, visibility, attachmentRefs);
+            if (!ok) return;
+            if (textarea) textarea.value = '';
+            pendingAttachments = [];
+            renderPendingAttachments();
         }
 
-        if (sendBtn) sendBtn.addEventListener('click', doSend);
+        if (sendBtn) sendBtn.addEventListener('click', () => { void doSend(); });
         if (textarea) {
             textarea.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void doSend(); }
             });
             textarea.addEventListener('focus', () => {
                 const timelineEl = el('timeline');
@@ -1311,11 +1424,34 @@
         const attachInput = el('attachFileInput');
         if (attachBtn && attachInput) {
             attachBtn.addEventListener('click', () => attachInput.click());
-            attachInput.addEventListener('change', () => {
-                if (attachInput.files && attachInput.files.length > 0) {
-                    showSystemMessage('Прикрепление файлов к сообщениям пока не реализовано. Выберите файлы позже или отправьте текст.', true);
-                    attachInput.value = '';
+            attachInput.addEventListener('change', async () => {
+                const files = attachInput.files ? Array.from(attachInput.files) : [];
+                if (!files.length) return;
+                for (const file of files) {
+                    try {
+                        const artifact = await uploadAttachment(file);
+                        if (artifact && artifact.artifact_id) {
+                            pendingAttachments.push(artifact);
+                        }
+                    } catch (err) {
+                        showSystemMessage(err.message || String(err), true);
+                    }
                 }
+                renderPendingAttachments();
+                attachInput.value = '';
+            });
+        }
+
+        const quickScreenshotBtn = el('quickScreenshotBtn');
+        if (quickScreenshotBtn) {
+            quickScreenshotBtn.addEventListener('click', () => {
+                void runQuickTool('screen.collect', {}, 'Запрос на скриншот отправлен');
+            });
+        }
+        const quickRecordBtn = el('quickRecordBtn');
+        if (quickRecordBtn) {
+            quickRecordBtn.addEventListener('click', () => {
+                void runQuickTool('screen.record', { duration_sec: 15 }, 'Запрос на запись видео отправлен');
             });
         }
     }

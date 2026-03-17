@@ -876,6 +876,17 @@ class MainWindow(QMainWindow):
                         logger.warning(f"stop_recording: HTTP {resp.status} {text}")
         except Exception as e:
             logger.error(f"Ошибка отправки stop_recording: {e}")
+
+    def closeEvent(self, event):  # noqa: N802 (Qt API)
+        """Безопасно останавливает фоновые UI-таймеры и виджеты при закрытии окна."""
+        try:
+            if hasattr(self, "chat_panel") and self.chat_panel:
+                self.chat_panel._stop_ticket_list_polling()
+                self.chat_panel._stop_ticket_detail_polling()
+        except Exception as e:
+            logger.debug(f"closeEvent: stop polling failed: {e}")
+        self._hide_stop_button()
+        super().closeEvent(event)
     
     def _load_device_uuid(self):
         """Загружает device UUID из identity manager."""

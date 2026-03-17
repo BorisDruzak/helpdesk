@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.serializers import serialize_datetime_recursive, ticket_to_dict
 from app.db import get_session
 from app.repos import (
+    ArtifactsRepo,
     ChangeLinksRepo,
     DevicesRepo,
     NotificationPrefsRepo,
@@ -179,6 +180,8 @@ def _serialize_message(event: Any) -> Dict[str, Any]:
         "ts": getattr(event, "created_at", None).isoformat() if getattr(event, "created_at", None) else None,
         "agent_seq": getattr(event, "agent_seq", None),
         "visibility": payload.get("visibility") or "public",
+        "attachment_refs": payload.get("attachment_refs") or [],
+        "attachments": payload.get("attachments") or [],
         "direction": "from_agent" if sender_role == "agent" else "to_agent",
     }
 
@@ -201,6 +204,61 @@ async def _queue_code_map(session: Any, queue_ids: Iterable[Optional[int]]) -> D
         if queue:
             result[queue.id] = queue.code
     return result
+
+
+def _normalize_attachment_refs(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("attachment_refs must be an array")
+    refs: List[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            artifact_id = item.strip()
+        elif isinstance(item, dict):
+            artifact_id = str(item.get("artifact_id") or "").strip()
+        else:
+            artifact_id = ""
+        if not artifact_id:
+            raise ValueError("each attachment_refs item must contain artifact_id")
+        if artifact_id not in refs:
+            refs.append(artifact_id)
+    return refs
+
+
+def _artifact_type(mime_type: Optional[str], kind: Optional[str]) -> str:
+    mime = (mime_type or "").lower()
+    kind_val = (kind or "").lower()
+    if mime.startswith("image/") or kind_val == "screenshot":
+        return "image"
+    if mime.startswith("video/") or kind_val == "screen_recording":
+        return "video"
+    return "file"
+
+
+async def _resolve_attachment_descriptors(
+    artifacts_repo: ArtifactsRepo,
+    ticket_id: str,
+    attachment_refs: List[str],
+) -> List[Dict[str, Any]]:
+    descriptors: List[Dict[str, Any]] = []
+    for artifact_id in attachment_refs:
+        artifact = await artifacts_repo.get_by_id(artifact_id)
+        if not artifact:
+            raise ValueError(f"artifact {artifact_id} not found")
+        if artifact.ticket_id and artifact.ticket_id != ticket_id:
+            raise ValueError(f"artifact {artifact_id} belongs to another ticket")
+        descriptors.append(
+            {
+                "artifact_id": artifact.artifact_id,
+                "type": _artifact_type(artifact.mime_type, artifact.kind),
+                "mime_type": artifact.mime_type,
+                "kind": artifact.kind,
+                "name": artifact.original_name,
+                "url": f"/api/artifacts/{artifact.artifact_id}/download",
+            }
+        )
+    return descriptors
 
 
 async def _ticket_payload(session: Any, ticket: Any) -> Dict[str, Any]:
@@ -527,14 +585,29 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
 async def handle_ticket_send_message(request: web.Request) -> web.Response:
     data = await _read_json(request)
     text = str(data.get("text") or "").strip()
-    if not text:
-        return _validation_error({"text": "text is required"})
+    try:
+        attachment_refs = _normalize_attachment_refs(data.get("attachment_refs"))
+    except ValueError as exc:
+        return _validation_error({"attachment_refs": str(exc)})
+    if not text and not attachment_refs:
+        return _validation_error({"text": "text or attachment_refs is required"})
     message_id = str(data.get("message_id") or str(uuid.uuid4())).strip()
 
     async with get_session() as session:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
         if error:
             return error
+        artifacts_repo = ArtifactsRepo(session)
+        attachments: List[Dict[str, Any]] = []
+        if attachment_refs:
+            try:
+                attachments = await _resolve_attachment_descriptors(
+                    artifacts_repo,
+                    ticket.ticket_id,
+                    attachment_refs,
+                )
+            except ValueError as exc:
+                return _validation_error({"attachment_refs": str(exc)})
         visibility = str(data.get("visibility") or "public").strip() or "public"
         if visibility == "internal" and not _is_staff(auth_context):
             visibility = "public"
@@ -546,6 +619,9 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             "text": text,
             "visibility": visibility,
         }
+        if attachment_refs:
+            payload["attachment_refs"] = attachment_refs
+            payload["attachments"] = attachments
         result = await repo.add_event(
             ticket_id=ticket.ticket_id,
             device_id=ticket.device_id,
