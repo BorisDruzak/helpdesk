@@ -22,7 +22,7 @@ import atexit
 import queue
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 import aiohttp
 import aiohttp
@@ -1779,19 +1779,25 @@ class WSAgent:
         root = self._data_root or Path(".")
         return Path(root) / "connection_rejected.flag"
 
-    async def request_connection_flow(self) -> bool:
+    async def request_connection_flow(self, wait_for_approval_seconds: int = 600) -> Tuple[bool, bool]:
         """
         Запрос авторизации у сервера (connection request flow).
-        Вызывается при отсутствии токена. POST /api/connection_request, при pending — опрос status.
+        Вызывается при отсутствии токена. POST /api/connection_request;
+        при status pending — ожидает одобрения/отклонения опросом (poll), не выходит сразу.
+
         Returns:
-            True — токен получен и сохранён, можно подключаться по WS.
-            False — отклонено администратором или ошибка; повторные запросы не отправлять.
+            (True, False) — токен получен и сохранён, можно подключаться по WS.
+            (False, True) — явно отклонено администратором (нужно записать флаг).
+            (False, False) — ошибка или таймаут ожидания (флаг не ставить).
         """
-        api_url = get_config().server.api_url.rstrip("/")
+        api_url = (get_config().server.api_url or "").rstrip("/")
+        if not api_url:
+            logger.error("request_connection_flow: server.api_url не задан")
+            return (False, False)
         device_id = self.device_id or self.identity_manager.uuid
         if not device_id:
             logger.error("request_connection_flow: device_id отсутствует")
-            return False
+            return (False, False)
 
         import socket
         hostname = socket.gethostname() if hasattr(socket, "gethostname") else None
@@ -1809,7 +1815,7 @@ class WSAgent:
                 )
             except Exception as e:
                 logger.error(f"Ошибка запроса подключения: {e}")
-                return False
+                return (False, False)
 
             if resp.status == 403:
                 data = await resp.json() if resp.content_type == "application/json" else {}
@@ -1820,11 +1826,11 @@ class WSAgent:
                         "data": {"message": "Администратор отклонил подключение"},
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                return False
+                return (False, True)
 
             if resp.status != 200:
                 logger.error(f"Сервер вернул {resp.status} при запросе подключения")
-                return False
+                return (False, False)
 
             data = await resp.json()
             status = data.get("status")
@@ -1833,7 +1839,7 @@ class WSAgent:
                 token = data.get("token")
                 if not token:
                     logger.error("Нет токена в ответе approved")
-                    return False
+                    return (False, False)
                 self.auth_token = token
                 self.identity_manager.token = token
                 if self.db_manager:
@@ -1848,7 +1854,7 @@ class WSAgent:
                         "data": {},
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                return True
+                return (True, False)
 
             if status == "pending":
                 if self.event_bus:
@@ -1857,61 +1863,56 @@ class WSAgent:
                         "data": {"message": "Дождитесь авторизации от Администратора"},
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                logger.info("Запрос на подключение в ожидании; опрос статуса в фоне")
-                asyncio.create_task(self._poll_connection_status_background(device_id), name="poll_connection_status")
-                return False
-
-        return False
-
-    async def _poll_connection_status_background(self, device_id: str) -> None:
-        """Фоновый опрос статуса запроса (pending). При одобрении сохраняет токен в БД."""
-        api_url = (get_config().server.api_url or "").rstrip("/")
-        if not api_url:
-            return
-        poll_interval = 5
-        async with aiohttp.ClientSession() as session:
-            while True:
-                await asyncio.sleep(poll_interval)
-                try:
-                    status_resp = await session.get(
-                        f"{api_url}/connection_request/status",
-                        params={"device_id": device_id},
-                        timeout=aiohttp.ClientTimeout(total=10),
-                    )
-                except Exception as e:
-                    logger.warning(f"Ошибка опроса статуса: {e}")
-                    continue
-                if status_resp.status != 200:
-                    continue
-                status_data = await status_resp.json()
-                st = status_data.get("status")
-                if st == "approved":
-                    token = status_data.get("token")
-                    if token:
-                        self.auth_token = token
-                        self.identity_manager.token = token
-                        if self.db_manager:
-                            try:
-                                await self.db_manager.save_auth_token(token, device_id)
-                            except Exception as e:
-                                logger.warning(f"Не удалось сохранить токен в БД: {e}")
-                        logger.info("✅ Токен получен по опросу (одобрено администратором)")
+                logger.info("Запрос на подключение в ожидании; ожидаю одобрения/отклонения администратором...")
+                # Ожидаем одобрения/отклонения опросом статуса (без фоновой задачи — блокируем до результата)
+                poll_interval = 5
+                deadline = time.monotonic() + wait_for_approval_seconds
+                while time.monotonic() < deadline:
+                    await asyncio.sleep(poll_interval)
+                    try:
+                        status_resp = await session.get(
+                            f"{api_url}/connection_request/status",
+                            params={"device_id": device_id},
+                            timeout=aiohttp.ClientTimeout(total=10),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Ошибка опроса статуса: {e}")
+                        continue
+                    if status_resp.status != 200:
+                        continue
+                    status_data = await status_resp.json()
+                    st = status_data.get("status")
+                    if st == "approved":
+                        token = status_data.get("token")
+                        if token:
+                            self.auth_token = token
+                            self.identity_manager.token = token
+                            if self.db_manager:
+                                try:
+                                    await self.db_manager.save_auth_token(token, device_id)
+                                except Exception as e:
+                                    logger.warning(f"Не удалось сохранить токен в БД: {e}")
+                            logger.info("✅ Токен получен по опросу (одобрено администратором)")
+                            if self.event_bus:
+                                await self.event_bus.publish({
+                                    "event_type": "connection_approved",
+                                    "data": {},
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                            return (True, False)
+                    elif st == "rejected":
+                        logger.warning("Администратор отклонил подключение")
                         if self.event_bus:
                             await self.event_bus.publish({
-                                "event_type": "connection_approved",
-                                "data": {},
+                                "event_type": "connection_rejected",
+                                "data": {"message": "Администратор отклонил подключение"},
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             })
-                    return
-                elif st == "rejected":
-                    logger.warning("Администратор отклонил подключение")
-                    if self.event_bus:
-                        await self.event_bus.publish({
-                            "event_type": "connection_rejected",
-                            "data": {"message": "Администратор отклонил подключение"},
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
-                    return
+                        return (False, True)
+                logger.warning("Таймаут ожидания одобрения администратором")
+                return (False, False)
+
+        return (False, False)
 
     async def _request_token_from_console(self) -> bool:
         """
@@ -2027,13 +2028,14 @@ class WSAgent:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 return
-            ok = await self.request_connection_flow()
+            ok, rejected = await self.request_connection_flow()
             if not ok:
-                try:
-                    flag_path.parent.mkdir(parents=True, exist_ok=True)
-                    flag_path.write_text("rejected", encoding="utf-8")
-                except Exception as e:
-                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
+                if rejected:
+                    try:
+                        flag_path.parent.mkdir(parents=True, exist_ok=True)
+                        flag_path.write_text("rejected", encoding="utf-8")
+                    except Exception as e:
+                        logger.warning(f"Не удалось записать флаг отклонения: {e}")
                 return
             # Токен получен и сохранён в request_connection_flow(), продолжаем
 
@@ -2738,16 +2740,26 @@ async def main_async(
                 # Создаем событие для ожидания завершения авторизации в GUI
                 gui_auth_complete = asyncio.Event()
                 
-                # Сначала отправляем запрос на подключение (до показа GUI), чтобы не блокировать event loop в exec()
+                # Сначала отправляем запрос на подключение (до показа GUI); при pending ждём одобрения до 10 мин
                 if not agent.auth_token:
                     flag_path = agent._connection_rejected_flag_path()
                     if not flag_path.exists():
                         try:
-                            ok = await asyncio.wait_for(agent.request_connection_flow(), timeout=12)
+                            # Ждём одобрения до 600 с; wait_for чуть больше
+                            ok, rejected = await asyncio.wait_for(
+                                agent.request_connection_flow(wait_for_approval_seconds=600),
+                                timeout=620,
+                            )
                             if ok:
                                 gui_auth_complete.set()
+                            elif rejected:
+                                try:
+                                    flag_path.parent.mkdir(parents=True, exist_ok=True)
+                                    flag_path.write_text("rejected", encoding="utf-8")
+                                except Exception as e:
+                                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
                         except asyncio.TimeoutError:
-                            logger.debug("Таймаут ожидания ответа по запросу подключения (ожидаем в фоне)")
+                            logger.debug("Таймаут ожидания ответа по запросу подключения")
                     else:
                         logger.warning("Подключение ранее отклонено; диалог ожидает ввода токена вручную или одобрения после сброса флага.")
                 
