@@ -98,6 +98,8 @@ class Ticket(Base):
     manual_rank: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
     manual_rank_updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     manual_rank_updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Скрытие из веб-очереди (только для закрытых): в БД остаётся, в список не попадает
+    archived_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     
     __table_args__ = (
         Index("ix_tickets_device_id_status", "device_id", "status"),

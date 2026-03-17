@@ -1,0 +1,77 @@
+import asyncio
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import ui_gui.main as gui_main_module
+import ws_agent as ws_agent_module
+
+
+class _FakeIdentityManager:
+    uuid = "test-device"
+    token = None
+
+
+class _FakeAgent:
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.identity_manager = _FakeIdentityManager()
+        self.db_manager = None
+        self.ui_api_server = None
+        self.ui_api_task = None
+        self.auth_token = None
+        self.cleaned_up = False
+        _FakeAgent.instances.append(self)
+
+    async def initialize(self):
+        return None
+
+    @property
+    def device_id(self):
+        return "test-device"
+
+    async def run(self):
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            # Эмулируем зависающий shutdown внутри agent.run().
+            await asyncio.shield(asyncio.sleep(30))
+            raise
+
+    async def cleanup(self):
+        self.cleaned_up = True
+
+
+@pytest.mark.asyncio
+async def test_main_async_does_not_hang_when_gui_stops_and_agent_cancel_is_slow(monkeypatch, tmp_path):
+    async def fake_run_gui(host, port, stop_event=None, auth_complete_event=None):
+        if auth_complete_event:
+            auth_complete_event.set()
+        if stop_event:
+            stop_event.set()
+        await asyncio.sleep(0)
+
+    fake_config = SimpleNamespace(
+        server=SimpleNamespace(ws_url="ws://127.0.0.1:8666/ws", api_url="http://127.0.0.1:8666/api"),
+        logging=SimpleNamespace(level="DEBUG"),
+        enabled_modules=["system"],
+        ui=SimpleNamespace(host="127.0.0.1", port=8765, enabled=True, autostart_gui=False),
+    )
+
+    monkeypatch.setattr(gui_main_module, "run_gui", fake_run_gui)
+    monkeypatch.setattr(ws_agent_module, "WSAgent", _FakeAgent)
+    monkeypatch.setattr(ws_agent_module, "get_config", lambda: fake_config)
+
+    await asyncio.wait_for(
+        ws_agent_module.main_async(enable_gui=True, data_root=tmp_path, install_root=tmp_path / "install"),
+        timeout=12,
+    )
+
+    assert _FakeAgent.instances
+    assert _FakeAgent.instances[-1].cleaned_up is True

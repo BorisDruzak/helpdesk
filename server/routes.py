@@ -54,6 +54,8 @@ from tickets.handlers import (
     handle_ticket_order,
     handle_ticket_queue_order_reset,
     handle_ticket_assign,
+    handle_tickets_archive,
+    handle_tickets_bulk_assign,
     handle_ticket_bind_device,
     handle_ticket_mark_read,
     handle_ticket_requester_profile,
@@ -291,6 +293,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/tickets/metrics/top', handle_ticket_metrics_top),
         web.get('/api/tickets/metrics/status_age', handle_ticket_metrics_status_age),
         web.post('/api/tickets/queues/{queue_id}/order/reset', handle_ticket_queue_order_reset),
+        web.post('/api/tickets/archive', handle_tickets_archive),
+        web.post('/api/tickets/bulk_assign', handle_tickets_bulk_assign),
         web.get('/api/tickets/{ticket_id}', handle_ticket_get),
         web.get('/api/tickets/{ticket_id}/snapshot', handle_ticket_get_snapshot),  # New snapshot endpoint
         web.post('/api/tickets/{ticket_id}/message', handle_ticket_send_message),

@@ -851,6 +851,8 @@
         async function queueLoadTickets() {
             if (queueState.queueReloadLock) return;
             queueState.queueReloadLock = true;
+            const wrapEl = document.getElementById('queueTableWrap');
+            const savedScrollTop = wrapEl ? wrapEl.scrollTop : 0;
             const loadingEl = document.getElementById('queueTableLoading');
             const errorEl = document.getElementById('queueTableError');
             const tableEl = document.getElementById('queueTable');
@@ -876,6 +878,7 @@
                 const compactEl = document.getElementById('queueCompactMode');
                 if (compactEl) compactEl.checked = layout.compact;
                 queueRenderTable();
+                if (wrapEl) wrapEl.scrollTop = savedScrollTop;
                 queueUpdateKpi();
                 queueWsUpdateSubscriptions();
                 document.getElementById('queueRowCount').textContent = raw.length + ' строк';
@@ -926,6 +929,7 @@
             const pinnedSet = new Set(layout.pinned_top);
             const rank = layout.manual_rank || {};
             const hasLocalOrder = layout.pinned_top.length > 0 || Object.keys(rank).length > 0;
+            const isClosed = (t) => (t.status || '').toLowerCase() === 'closed';
             tbody.innerHTML = sorted.map((t, idx) => {
                 const code = t.ticket_code || t.ticket_id?.slice(0,8) || '-';
                 const statusClass = queueStatusClass(t.status);
@@ -944,12 +948,10 @@
                         <a href="/ticket.html?ticket_id=${t.ticket_id}" class="btn btn-sm">Открыть</a>
                     </div>
                 ` : '<a href="/ticket.html?ticket_id=' + t.ticket_id + '" class="btn btn-sm">Открыть</a>';
-                const upDisabled = idx === 0 ? ' disabled' : '';
-                const downDisabled = idx === sorted.length - 1 ? ' disabled' : '';
-                const filterQueueId = document.getElementById('filterQueue')?.value || '';
-                const sameQueue = filterQueueId && (String(t.queue_id) === String(filterQueueId));
-                const serverOrderBtns = (canWrite && sameQueue) ? `<span class="queue-server-order-btns" title="Порядок в очереди (сохраняется в БД)"><button type="button" class="btn btn-sm" title="Вверх"${upDisabled} onclick="queueOrderServer('${t.ticket_id}','up')">↑</button><button type="button" class="btn btn-sm" title="Вниз"${downDisabled} onclick="queueOrderServer('${t.ticket_id}','down')">↓</button><button type="button" class="btn btn-sm" title="В начало" onclick="queueOrderServer('${t.ticket_id}','top')">⏫</button><button type="button" class="btn btn-sm" title="В конец" onclick="queueOrderServer('${t.ticket_id}','bottom')">⏬</button></span> ` : '';
-                return `<tr data-ticket-id="${t.ticket_id}">
+                const closedAttr = isClosed(t) ? ' data-queue-closed="1"' : '';
+                return `<tr data-ticket-id="${t.ticket_id}" data-queue-id="${t.queue_id || ''}"${closedAttr}>
+                    <td class="col-select">${canWrite ? `<input type="checkbox" class="queue-row-cb" value="${t.ticket_id}" data-closed="${isClosed(t) ? '1' : '0'}">` : ''}</td>
+                    <td class="col-drag">${canWrite ? '<span class="queue-drag-handle" draggable="true" title="Перетащите для изменения порядка">⋮⋮</span>' : ''}</td>
                     <td class="col-pin"><button type="button" class="pin-btn ${isPinned ? 'pinned' : ''}" data-ticket-id="${t.ticket_id}" title="${isPinned ? 'Открепить' : 'Закрепить'}">${isPinned ? '📌' : '📄'}</button></td>
                     <td class="col-ticket"><a href="/ticket.html?ticket_id=${t.ticket_id}">${code}</a></td>
                     <td class="col-title" title="${(t.title || '').replace(/"/g, '&quot;')}">${(t.title || '-').slice(0, 40)}${(t.title || '').length > 40 ? '…' : ''}</td>
@@ -960,7 +962,7 @@
                     <td class="col-requester">${t.requester_display_name || t.requester_id || '-'}</td>
                     <td class="col-created">${t.created_at ? new Date(t.created_at).toLocaleString() : '-'}</td>
                     <td class="col-age">${queueFormatAge(t.created_at)}</td>
-                    <td class="col-actions">${canWrite ? `<span class="queue-move-btns"><button type="button" class="btn btn-sm" title="Вверх (локально)"${upDisabled} onclick="queueMoveRow('${t.ticket_id}', -1)">↑</button><button type="button" class="btn btn-sm" title="Вниз (локально)"${downDisabled} onclick="queueMoveRow('${t.ticket_id}', 1)">↓</button></span> ${serverOrderBtns}` : ''}${actions}</td>
+                    <td class="col-actions">${actions}</td>
                 </tr>`;
             }).join('');
             document.getElementById('queueLocalOrderActive')?.classList.toggle('hidden', !hasLocalOrder);
@@ -986,6 +988,169 @@
                 }
             }
             queueBindPinButtons();
+            queueBindQueueRowDrag();
+            queueBindMassSelection();
+        }
+
+        function queueBindQueueRowDrag() {
+            const tbody = document.getElementById('queueTableBody');
+            if (!tbody) return;
+            let draggedRow = null;
+            tbody.querySelectorAll('.queue-drag-handle').forEach(handle => {
+                handle.addEventListener('dragstart', function(e) {
+                    const tr = e.target.closest('tr');
+                    if (!tr) return;
+                    draggedRow = tr;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', tr.dataset.ticketId || '');
+                    tr.classList.add('queue-drag-dragging');
+                });
+                handle.addEventListener('dragend', function(e) {
+                    const tr = e.target.closest('tr');
+                    if (tr) tr.classList.remove('queue-drag-dragging');
+                    draggedRow = null;
+                });
+            });
+            tbody.querySelectorAll('tr[data-ticket-id]').forEach(row => {
+                row.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    if (!draggedRow || draggedRow === this) return;
+                    const rect = this.getBoundingClientRect();
+                    const mid = rect.top + rect.height / 2;
+                    this.classList.toggle('queue-drag-over-bottom', e.clientY >= mid);
+                    this.classList.toggle('queue-drag-over-top', e.clientY < mid);
+                });
+                row.addEventListener('dragleave', function() {
+                    this.classList.remove('queue-drag-over-top', 'queue-drag-over-bottom');
+                });
+                row.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    this.classList.remove('queue-drag-over-top', 'queue-drag-over-bottom');
+                    if (!draggedRow || draggedRow === this) return;
+                    const ticketId = draggedRow.dataset.ticketId;
+                    const targetId = this.dataset.ticketId;
+                    if (!ticketId || !targetId || ticketId === targetId) return;
+                    const sorted = queueApplyOrder(queueFilteredTickets());
+                    const fromIdx = sorted.findIndex(t => t.ticket_id === ticketId);
+                    const toIdx = sorted.findIndex(t => t.ticket_id === targetId);
+                    if (fromIdx < 0 || toIdx < 0) return;
+                    const layout = queueLayoutLoad();
+                    const rank = layout.manual_rank || {};
+                    const myRank = rank[ticketId] != null ? rank[ticketId] : fromIdx;
+                    const targetRank = rank[targetId] != null ? rank[targetId] : toIdx;
+                    rank[ticketId] = targetRank;
+                    rank[targetId] = myRank;
+                    layout.manual_rank = rank;
+                    queueLayoutSave(layout);
+                    queueRenderTable();
+                    const filterQueueId = document.getElementById('filterQueue')?.value || '';
+                    const sameQueue = filterQueueId && draggedRow.dataset.queueId === filterQueueId;
+                    if (sameQueue && typeof queueOrderServerMoveToPosition === 'function') {
+                        queueOrderServerMoveToPosition(ticketId, fromIdx, toIdx);
+                    }
+                });
+            });
+        }
+
+        async function queueOrderServerMoveToPosition(ticketId, fromIdx, toIdx) {
+            if (fromIdx < 0 || fromIdx === toIdx) return;
+            const direction = toIdx < fromIdx ? 'up' : 'down';
+            const count = Math.abs(toIdx - fromIdx);
+            for (let i = 0; i < count; i++) {
+                try {
+                    const res = await fetch('/api/tickets/' + ticketId + '/order', {
+                        method: 'POST',
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({ direction: direction })
+                    });
+                    const data = await res.json();
+                    if (data.status !== 'ok') break;
+                } catch (e) { break; }
+            }
+            queueLoadTickets();
+        }
+
+        function queueBindMassSelection() {
+            const selectAll = document.getElementById('queueSelectAll');
+            const massBar = document.getElementById('queueMassActionsBar');
+            const countEl = document.getElementById('queueMassSelectedCount');
+            const deselectBtn = document.getElementById('queueMassDeselect');
+            const archiveBtn = document.getElementById('queueMassArchive');
+            const assignSelect = document.getElementById('queueMassAssignSelect');
+            const assignBtn = document.getElementById('queueMassAssignBtn');
+            function updateMassBar() {
+                const checked = document.querySelectorAll('.queue-row-cb:checked');
+                const n = checked.length;
+                if (massBar) massBar.style.display = n ? 'flex' : 'none';
+                if (countEl) countEl.textContent = 'Выбрано: ' + n;
+            }
+            if (selectAll) {
+                selectAll.onclick = function() {
+                    const checked = this.checked;
+                    document.querySelectorAll('.queue-row-cb').forEach(cb => { cb.checked = checked; });
+                    updateMassBar();
+                };
+            }
+            document.addEventListener('change', function(e) {
+                if (e.target && e.target.classList && e.target.classList.contains('queue-row-cb')) updateMassBar();
+            });
+            if (deselectBtn) deselectBtn.addEventListener('click', function() {
+                const sa = document.getElementById('queueSelectAll'); if (sa) sa.checked = false;
+                document.querySelectorAll('.queue-row-cb').forEach(cb => { cb.checked = false; });
+                updateMassBar();
+            });
+            if (archiveBtn) archiveBtn.addEventListener('click', queueMassArchive);
+            if (assignBtn && assignSelect) assignBtn.addEventListener('click', () => queueMassAssign(assignSelect));
+            queueFillMassAssignSelect();
+            updateMassBar();
+        }
+
+        function queueFillMassAssignSelect() {
+            const assignSelect = document.getElementById('queueMassAssignSelect');
+            if (!assignSelect || !queueCachedUsers || !queueCachedUsers.length) return;
+            const assignable = queueCachedUsers.filter(u => (u.actor_role === 'support' || u.actor_role === 'admin') && u.is_active !== false);
+            assignSelect.innerHTML = '<option value="">Исполнитель...</option>' + assignable.map(u => `<option value="${(u.user_login || u.login || '').replace(/"/g, '&quot;')}">${(u.user_login || u.login || '').replace(/</g, '&lt;')}</option>`).join('');
+        }
+
+        async function queueMassArchive() {
+            const closed = Array.from(document.querySelectorAll('.queue-row-cb:checked[data-closed="1"]')).map(cb => cb.value);
+            if (closed.length === 0) { queueToast('Выберите только закрытые тикеты', true); return; }
+            try {
+                const res = await fetch('/api/tickets/archive', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ ticket_ids: closed })
+                });
+                const data = await responseToJson(res);
+                if (data.status === 'ok') {
+                    queueToast('Тикеты отправлены в архив');
+                    document.querySelectorAll('.queue-row-cb:checked').forEach(cb => { cb.checked = false; });
+                    document.getElementById('queueSelectAll') && (document.getElementById('queueSelectAll').checked = false);
+                    queueLoadTickets();
+                } else { queueToast(data.error || 'Ошибка', true); }
+            } catch (e) { queueToast(e.message, true); }
+        }
+
+        async function queueMassAssign(selectEl) {
+            const assigneeId = (selectEl && selectEl.value) || '';
+            if (!assigneeId) { queueToast('Выберите исполнителя', true); return; }
+            const nonClosed = Array.from(document.querySelectorAll('.queue-row-cb:checked[data-closed="0"]')).map(cb => cb.value);
+            if (nonClosed.length === 0) { queueToast('Выберите тикеты (не закрытые)', true); return; }
+            if (nonClosed.length > 3) { queueToast('Максимум 3 тикета для массового назначения', true); return; }
+            try {
+                const res = await fetch('/api/tickets/bulk_assign', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ ticket_ids: nonClosed, assignee_id: assigneeId })
+                });
+                const data = await responseToJson(res);
+                if (data.status === 'ok') {
+                    queueToast('Исполнитель назначен');
+                    document.querySelectorAll('.queue-row-cb:checked').forEach(cb => { cb.checked = false; });
+                    document.getElementById('queueSelectAll') && (document.getElementById('queueSelectAll').checked = false);
+                    queueLoadTickets();
+                } else { queueToast(data.error || 'Ошибка', true); }
+            } catch (e) { queueToast(e.message, true); }
         }
 
         function queueBindPinButtons() {
@@ -1544,6 +1709,7 @@
             }).then(data => {
                 if (data && data.users) {
                     queueCachedUsers = data.users.filter(u => u.is_active !== false);
+                    queueFillMassAssignSelect();
                     if (document.getElementById('queueTableBody')?.innerHTML) queueRenderTable();
                 }
             }).catch(() => {});
@@ -2952,14 +3118,19 @@
         }
 
         async function loadDevicesListModules() {
+            const wrap = document.getElementById('devices-table-modules-wrap');
+            const loadingEl = document.getElementById('devices-table-modules-loading');
+            const tableEl = document.getElementById('devices-table-modules');
             const tbody = document.getElementById('devices-table-modules-body');
-            if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="8"><div class="loading">Загрузка устройств...</div></td></tr>';
-            }
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (tableEl) tableEl.style.display = 'none';
+            if (tbody) tbody.innerHTML = '';
             try {
                 const response = await fetch('/api/devices', { headers: getAuthHeaders() });
                 const data = await responseToJson(response);
+                if (loadingEl) loadingEl.style.display = 'none';
                 if (!response.ok || data.status !== 'ok') {
+                    if (tableEl) tableEl.style.display = 'block';
                     if (tbody) {
                         tbody.innerHTML = '<tr><td colspan="8"><div class="error-message">Не удалось загрузить устройства</div></td></tr>';
                     }
@@ -2967,6 +3138,7 @@
                 }
 
                 devicesDataTab = data.devices || [];
+                if (tableEl) tableEl.style.display = 'table';
                 renderDevicesListModules();
 
                 const selected = selectedDeviceIdTab || document.getElementById('deploy-device-modules')?.value;
@@ -2974,6 +3146,8 @@
                     selectDeviceModules(selected, true);
                 }
             } catch (error) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (tableEl) tableEl.style.display = 'table';
                 if (tbody) {
                     tbody.innerHTML = `<tr><td colspan="8"><div class="error-message">Ошибка: ${escapeHtml(error.message)}</div></td></tr>`;
                 }

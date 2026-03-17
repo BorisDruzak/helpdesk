@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -24,7 +25,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QTabWidget,
+    QScrollArea,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -229,7 +231,10 @@ class ChatPanel(QWidget):
             QWidget { font-size: 13px; }
             QGroupBox { font-weight: 700; border: 1px solid #dbe2ea; border-radius: 10px; margin-top: 8px; background: #f8fafc; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 2px 6px; }
-            QListWidget { border: 1px solid #d6dee7; border-radius: 10px; background: #ffffff; }
+            QListWidget { border: none; background: transparent; outline: none; }
+            QListWidget::item { border: 1px solid #c8d3e0; border-radius: 999px; padding: 12px 18px; margin: 6px 8px; background: #ffffff; min-height: 24px; }
+            QListWidget::item:hover { background: #eef3f8; border-color: #93c5fd; }
+            QListWidget::item:selected { background: #dbeafe; border-color: #2563eb; }
             QPushButton { border: 1px solid #c8d3e0; border-radius: 8px; background: #eef3f8; padding: 6px 10px; }
             QPushButton:hover { background: #dde8f7; }
             QLineEdit, QTextEdit, QComboBox { border: 1px solid #cfd9e5; border-radius: 8px; background: #ffffff; padding: 6px; }
@@ -240,18 +245,32 @@ class ChatPanel(QWidget):
         root_layout.setContentsMargins(8, 8, 8, 8)
         root_layout.setSpacing(8)
 
-        self.tabs = QTabWidget()
-        root_layout.addWidget(self.tabs)
+        nav_row = QHBoxLayout()
+        self.btn_list = QPushButton("Список тикетов")
+        self.btn_list.setMinimumHeight(40)
+        self.btn_list.clicked.connect(self._show_list_screen)
+        self.btn_chat = QPushButton("Тикет / Чат")
+        self.btn_chat.setMinimumHeight(40)
+        self.btn_chat.clicked.connect(self._show_chat_screen)
+        nav_row.addWidget(self.btn_list)
+        nav_row.addWidget(self.btn_chat)
+        nav_row.addStretch(1)
+        root_layout.addLayout(nav_row)
 
-        self._setup_tickets_tab()
-        self._setup_ticket_chat_tab()
-        self.tabs.setCurrentWidget(self.tickets_tab)
+        self.stacked = QStackedWidget()
+        self._setup_list_screen()
+        self._setup_chat_screen()
+        self.stacked.addWidget(self.list_screen)
+        self.stacked.addWidget(self.chat_screen)
+        self.stacked.setCurrentWidget(self.list_screen)
+        root_layout.addWidget(self.stacked)
+        self.btn_list.setStyleSheet("font-weight: 700; background: #dbeafe;")
 
         self._refresh_profile_selector()
 
-    def _setup_tickets_tab(self) -> None:
-        self.tickets_tab = QWidget()
-        layout = QVBoxLayout(self.tickets_tab)
+    def _setup_list_screen(self) -> None:
+        self.list_screen = QWidget()
+        layout = QVBoxLayout(self.list_screen)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
@@ -275,7 +294,7 @@ class ChatPanel(QWidget):
         actions_row.addStretch(1)
         layout.addLayout(actions_row)
 
-        tickets_group = QGroupBox("Список тикетов")
+        tickets_group = QGroupBox("Список тикетов (только тикеты этого агента)")
         tickets_layout = QVBoxLayout(tickets_group)
 
         self.tickets_list = QListWidget()
@@ -291,24 +310,37 @@ class ChatPanel(QWidget):
         tickets_layout.addLayout(open_row)
 
         layout.addWidget(tickets_group, 1)
-        self.tabs.addTab(self.tickets_tab, "Тикеты")
 
-    def _setup_ticket_chat_tab(self) -> None:
-        self.ticket_chat_tab = QWidget()
-        layout = QVBoxLayout(self.ticket_chat_tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+    def _setup_chat_screen(self) -> None:
+        self.chat_screen = QWidget()
+        main_layout = QHBoxLayout(self.chat_screen)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(12)
+
+        left_panel = QFrame()
+        left_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        left_panel.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;")
+        left_panel.setFixedWidth(280)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setSpacing(10)
 
         self.ticket_info_label = QLabel("Тикет не выбран")
         self.ticket_info_label.setStyleSheet("font-weight: 700; padding: 8px; border-radius: 8px; background: #dbeafe;")
-        layout.addWidget(self.ticket_info_label)
+        left_layout.addWidget(self.ticket_info_label)
 
-        self.ticket_meta_label = QLabel("Откройте тикет в первой вкладке.")
+        self.ticket_meta_label = QLabel("Откройте тикет в списке.")
         self.ticket_meta_label.setWordWrap(True)
         self.ticket_meta_label.setStyleSheet(
-            "padding: 6px 8px; color: #334155; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px;"
+            "padding: 6px 8px; color: #334155; background: #fff; border: 1px solid #dbe2ea; border-radius: 8px; font-size: 12px;"
         )
-        layout.addWidget(self.ticket_meta_label)
+        left_layout.addWidget(self.ticket_meta_label)
+        left_layout.addStretch(1)
+        main_layout.addWidget(left_panel)
+
+        right_center = QWidget()
+        center_layout = QVBoxLayout(right_center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(8)
 
         self.timeline_view = QTextEdit()
         self.timeline_view.setReadOnly(True)
@@ -317,12 +349,15 @@ class ChatPanel(QWidget):
         self.timeline_view.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
-        layout.addWidget(self.timeline_view, 1)
+        self.timeline_view.setStyleSheet(
+            "QTextEdit { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; font-size: 13px; }"
+        )
+        center_layout.addWidget(self.timeline_view, 1)
 
         self.input_line = QLineEdit()
         self.input_line.setPlaceholderText("Сообщение в тикет")
         self.input_line.returnPressed.connect(self._on_send)
-        layout.addWidget(self.input_line)
+        center_layout.addWidget(self.input_line)
 
         actions = QHBoxLayout()
         self.send_btn = QPushButton("Отправить")
@@ -342,9 +377,9 @@ class ChatPanel(QWidget):
         actions.addWidget(self.video_btn)
         actions.addWidget(self.close_ticket_btn)
         actions.addWidget(self.tool_status_label, 1)
-        layout.addLayout(actions)
+        center_layout.addLayout(actions)
 
-        self.tabs.addTab(self.ticket_chat_tab, "Тикет")
+        main_layout.addWidget(right_center, 1)
 
     def _profiles_dir_ready(self) -> None:
         self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
@@ -568,36 +603,67 @@ class ChatPanel(QWidget):
                 priority=ticket.get("priority_class") or ticket.get("priority") or "—",
                 queue=ticket.get("queue_code") or ticket.get("queue_id") or "—",
                 assignee=ticket.get("assignee_id") or "Не назначен",
-                description=ticket.get("description") or "—",
+                description=(ticket.get("description") or "—")[:200],
             )
         )
+        requester_name = ticket.get("requester_display_name") or "Пользователь"
+        assignee_name = ticket.get("assignee_id") or "Поддержка"
 
-        timeline_lines: List[tuple[float, str]] = []
+        items: List[tuple[float, str, str]] = []
 
         for message in messages:
             ts = message.get("ts")
             role = message.get("from_role") or "user"
-            text = message.get("text") or ""
+            text = (message.get("text") or "").strip()
             attachment_refs = message.get("attachment_refs") or []
-            suffix = ""
+            attach_suffix = ""
             if attachment_refs:
-                refs_text = ", ".join(str(ref) for ref in attachment_refs)
-                suffix = f" | вложения: {refs_text}"
-            line = f"[{self._format_ts(ts)}] {role}: {text}{suffix}"
-            timeline_lines.append((self._ts_sort_value(ts), line))
+                attach_suffix = " [вложения: " + ", ".join(str(r) for r in attachment_refs[:5]) + "]"
+            sender = requester_name if role == "user" else assignee_name
+            if role == "user":
+                block = (
+                    f'<div style="text-align:right; margin:8px 0;"><span style="font-size:11px; color:#666;">{self._escape_html(sender)}</span><br>'
+                    f'<span style="background:#dcfce7; color:#166534; padding:8px 12px; border-radius:12px; display:inline-block; max-width:85%;">'
+                    f'{self._escape_html(text)}{self._escape_html(attach_suffix)}</span><br><span style="font-size:11px; color:#999;">{self._format_ts(ts)}</span></div>'
+                )
+            elif role in ("support", "admin", "agent"):
+                block = (
+                    f'<div style="text-align:left; margin:8px 0;"><span style="font-size:11px; color:#666;">{self._escape_html(sender)}</span><br>'
+                    f'<span style="background:#e0f2fe; color:#0c4a6e; padding:8px 12px; border-radius:12px; display:inline-block; max-width:85%;">'
+                    f'{self._escape_html(text)}{self._escape_html(attach_suffix)}</span><br><span style="font-size:11px; color:#999;">{self._format_ts(ts)}</span></div>'
+                )
+            else:
+                block = (
+                    f'<div style="text-align:left; margin:8px 0;"><span style="background:#f3f4f6; padding:8px 12px; border-radius:12px;">'
+                    f'{self._escape_html(text)}{self._escape_html(attach_suffix)}</span> <span style="font-size:11px; color:#999;">{self._format_ts(ts)}</span></div>'
+                )
+            items.append((self._ts_sort_value(ts), "msg", block))
 
+        _HIDDEN = frozenset({
+            "chat_message", "job_started", "job_running", "job_succeeded", "job_completed",
+            "chat_session", "chat_ended", "event_delivered", "tool_response", "routing_applied",
+            "initial_message_sent_to_agent", "initial_message_pending_delivery", "initial_message_send_failed",
+            "no_active_job", "message_read",
+        })
         merged_events = list(events) + self.local_action_buffer.get(self.active_ticket_id, [])
         for event in merged_events:
+            ev_type = event.get("type") or event.get("event_type") or ""
+            if ev_type in _HIDDEN:
+                continue
             ts = event.get("ts")
-            line = f"[{self._format_ts(ts)}] EVENT: {self._format_event_text(event)}"
-            timeline_lines.append((self._ts_sort_value(ts), line))
+            line = self._format_event_text(event)
+            block = (
+                f'<div style="text-align:center; margin:8px 0;"><span style="background:#f3f4f6; color:#374151; padding:6px 12px; border-radius:8px; font-size:12px;">'
+                f'⚙ {self._escape_html(line)}</span><br><span style="font-size:11px; color:#999;">{self._format_ts(ts)}</span></div>'
+            )
+            items.append((self._ts_sort_value(ts), "event", block))
 
-        timeline_lines.sort(key=lambda item: item[0])
-        if timeline_lines:
-            self.timeline_view.setPlainText("\n\n".join(line for _, line in timeline_lines))
+        items.sort(key=lambda x: x[0])
+        if items:
+            html = "<br>".join(block for _, _, block in items)
+            self.timeline_view.setHtml(html)
         else:
-            self.timeline_view.setPlainText("Пока нет сообщений или событий")
-
+            self.timeline_view.setHtml("<p style='color:#888;'>Пока нет сообщений.</p>")
         self.timeline_view.moveCursor(self.timeline_view.textCursor().MoveOperation.End)
 
     def _ts_sort_value(self, value) -> float:
@@ -627,6 +693,18 @@ class ChatPanel(QWidget):
         if isinstance(value, str):
             return value
         return str(value)
+
+    @staticmethod
+    def _escape_html(s: str) -> str:
+        if not s:
+            return ""
+        return (
+            str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
 
     def _format_event_text(self, event: dict) -> str:
         event_type = event.get("type") or event.get("event_type") or "event"
@@ -852,6 +930,13 @@ class ChatPanel(QWidget):
         if self._ticket_detail_timer.isActive():
             self._ticket_detail_timer.stop()
 
+    def _show_list_screen(self) -> None:
+        self.stacked.setCurrentWidget(self.list_screen)
+        self.btn_list.setStyleSheet("font-weight: 700; background: #dbeafe;")
+        self.btn_chat.setStyleSheet("")
+
     def _show_chat_screen(self) -> None:
-        self.tabs.setCurrentWidget(self.ticket_chat_tab)
+        self.stacked.setCurrentWidget(self.chat_screen)
+        self.btn_chat.setStyleSheet("font-weight: 700; background: #dbeafe;")
+        self.btn_list.setStyleSheet("")
         self.input_line.setFocus()

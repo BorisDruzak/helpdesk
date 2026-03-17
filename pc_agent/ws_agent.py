@@ -2317,18 +2317,35 @@ class WSAgent:
         
         except asyncio.CancelledError:
             logger.info("🛑 Получен сигнал отмены, выполняю clean shutdown...")
-            # Закрываем WebSocket соединение если открыто
+            # Закрываем WebSocket соединение явно, иначе выход из ws_connect может зависать на closing handshake.
+            if self._agent_ws and not self._agent_ws.closed:
+                try:
+                    await asyncio.wait_for(
+                        self._agent_ws.close(
+                            code=aiohttp.WSCloseCode.GOING_AWAY,
+                            message=b"agent_shutdown",
+                        ),
+                        timeout=1.5,
+                    )
+                except Exception as e:
+                    logger.debug(f"Ошибка быстрого закрытия WebSocket: {e}")
+                finally:
+                    self._agent_ws = None
             # Закрываем HTTP сессию
             if self._http_session:
-                await self._http_session.close()
-                self._http_session = None
+                try:
+                    await asyncio.wait_for(self._http_session.close(), timeout=1.5)
+                except Exception as e:
+                    logger.debug(f"Ошибка закрытия HTTP сессии при shutdown: {e}")
+                finally:
+                    self._http_session = None
             # Останавливаем flusher если запущен
             if self.flusher_task:
                 self.flusher_task.cancel()
                 try:
-                    await self.flusher_task
-                except asyncio.CancelledError:
-                    pass
+                    await asyncio.wait_for(self.flusher_task, timeout=1.5)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    logger.debug("Ожидание остановки WSOutboxFlusher превысило таймаут")
             raise
 
 
@@ -2610,9 +2627,11 @@ async def main_async(
             logger.info("🛑 Получен сигнал остановки от GUI, завершаю работу...")
             agent_task.cancel()
             try:
-                await agent_task
+                await asyncio.wait_for(agent_task, timeout=5.0)
             except asyncio.CancelledError:
                 pass
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Агент не завершился за 5 секунд после закрытия GUI")
         
         # Если агент завершился, останавливаем GUI
         if agent_task in done:
@@ -2620,9 +2639,11 @@ async def main_async(
                 logger.info("🛑 Агент завершился, останавливаю GUI...")
                 gui_task.cancel()
                 try:
-                    await gui_task
+                    await asyncio.wait_for(gui_task, timeout=3.0)
                 except asyncio.CancelledError:
                     pass
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ GUI не завершился за 3 секунды после остановки агента")
         
     except KeyboardInterrupt:
         logger.info("⛔ Получен сигнал остановки (Ctrl+C)")
@@ -2631,7 +2652,10 @@ async def main_async(
         logger.exception(e)
     finally:
         # Очистка
-        await agent.cleanup()
+        try:
+            await asyncio.wait_for(agent.cleanup(), timeout=8.0)
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Очистка агента превысила таймаут 8 секунд")
         logger.info("👋 Завершение работы агента")
 
 

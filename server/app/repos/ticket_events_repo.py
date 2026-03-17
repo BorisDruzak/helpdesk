@@ -635,6 +635,7 @@ class TicketEventsRepo:
             "assignee_id", "requester_id", "sla_policy_id", "resolved_at", "closed_at",
             "resolution_code", "root_cause", "parent_ticket_id",
             "manual_rank", "manual_rank_updated_at", "manual_rank_updated_by",
+            "archived_at",
         }
         for key, value in fields.items():
             if key in allowed and hasattr(ticket, key):
@@ -875,6 +876,8 @@ class TicketEventsRepo:
                         stmt = stmt.where(Ticket.ticket_code == val)
                     else:
                         stmt = stmt.where(Ticket.ticket_code.ilike(f"%{val}%"))
+            if filters.get("exclude_archived") is True:
+                stmt = stmt.where(Ticket.archived_at.is_(None))
         
         # Ordering
         order_field = getattr(Ticket, order_by, Ticket.created_at)

@@ -697,7 +697,7 @@
         .queue-kpi strong { color: var(--text); }
         .queue-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 20px; background: var(--surface); border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--border); }
         .queue-filters select, .queue-filters input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
-        .queue-table-wrap { background: var(--surface); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 12px; min-height: 200px; }
+        .queue-table-wrap { background: var(--surface); border-radius: 8px; border: 1px solid var(--border); overflow: auto; margin-bottom: 12px; min-height: 200px; max-height: 65vh; }
         .queue-loading, .queue-error, .queue-empty { padding: 24px; text-align: center; color: var(--muted); }
         .queue-error { color: var(--danger); }
         .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -741,6 +741,14 @@
         .queue-order-mode-badge.hidden { display: none; }
         .queue-order-server-wrap { margin-left: 6px; }
         .queue-order-server-wrap.hidden { display: none; }
+        .queue-mass-actions-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px; }
+        .queue-mass-assign-wrap { display: flex; align-items: center; gap: 8px; }
+        .queue-mass-assign-wrap select { min-width: 140px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); }
+        .queue-drag-handle { cursor: grab; color: var(--muted); font-size: 14px; user-select: none; padding: 0 4px; }
+        .queue-drag-handle:active { cursor: grabbing; }
+        .queue-table tr.queue-drag-dragging { opacity: 0.5; }
+        .queue-table tr.queue-drag-over-top { border-top: 2px solid var(--info); }
+        .queue-table tr.queue-drag-over-bottom { border-bottom: 2px solid var(--info); }
         .queue-server-order-btns { display: inline-flex; gap: 1px; margin-right: 4px; }
         .queue-server-order-btns .btn { padding: 2px 4px; font-size: 10px; min-width: 22px; }
         .pin-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 4px; }
@@ -756,8 +764,8 @@
         .queue-modal .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
         .queue-modal select, .queue-modal input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
         .queue-modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-        .queue-manage-modal { max-width: 480px; }
-        .queue-manage-sections { display: flex; flex-direction: column; gap: 20px; }
+        .queue-manage-modal { max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; }
+        .queue-manage-sections { display: flex; flex-direction: column; gap: 20px; overflow-y: auto; flex: 1; min-height: 0; padding-right: 8px; }
         .queue-manage-section { padding: 12px 0; border-bottom: 1px solid var(--border); }
         .queue-manage-section:last-of-type { border-bottom: none; }
         .queue-manage-section h4 { margin: 0 0 10px 0; font-size: 14px; }

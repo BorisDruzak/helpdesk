@@ -308,27 +308,32 @@ body {
 }
 .ticket-timeline .empty { text-align: center; color: #888; padding: 40px 20px; font-size: 14px; }
 
-/* Сообщение в таймлайне */
+/* Сообщение в таймлайне: слева — поддержка, справа — пользователь, по центру — системные */
 .timeline-item { margin-bottom: 14px; display: flex; gap: 10px; }
-.timeline-item.from-user { flex-direction: row-reverse; }
+.timeline-item.from-staff { flex-direction: row; justify-content: flex-start; }
+.timeline-item.from-user { flex-direction: row-reverse; justify-content: flex-start; }
+.timeline-item.system { justify-content: center; }
 .timeline-item .ti-avatar {
     width: 32px; height: 32px; border-radius: 50%;
     background: linear-gradient(135deg, #4a6fa5 0%, #3d5a80 100%);
     color: #fff; font-size: 12px; font-weight: 600;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.timeline-item.from-user .ti-avatar { background: linear-gradient(135deg, #007aff 0%, #0051d5 100%); }
+.timeline-item.from-user .ti-avatar { background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); }
+.timeline-item.from-staff .ti-avatar { background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); }
 .timeline-item .ti-body { flex: 1; min-width: 0; max-width: 85%; }
-.timeline-item.from-user .ti-body { max-width: 85%; }
+.timeline-item.from-user .ti-body { max-width: 85%; margin-left: auto; }
+.timeline-item.from-staff .ti-body { max-width: 85%; margin-right: auto; }
+.timeline-item.system .ti-body { margin-left: auto; margin-right: auto; }
 .timeline-item .ti-meta { font-size: 12px; color: #666; margin-bottom: 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .timeline-item.from-user .ti-meta { justify-content: flex-end; }
 .timeline-item .ti-badge-internal { background: #f0c040; color: #333; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-/* Пузырьки: пользователь (синий), поддержка (голубой), по умолчанию (нейтральный) */
+/* Пузырьки: пользователь справа (зелёный), поддержка слева (голубой), системные по центру (серый) */
 .timeline-item .ti-bubble {
     padding: 10px 14px; border-radius: 12px; word-break: break-word;
     background: #e8eaed; color: #1a1a1a;
 }
-.timeline-item.from-user .ti-bubble { background: #007aff; color: #fff; }
+.timeline-item.from-user .ti-bubble { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
 .timeline-item.from-staff .ti-bubble { background: #e0f2fe; color: #0c4a6e; border: 1px solid #7dd3fc; }
 .timeline-item .ti-time { font-size: 11px; color: #999; margin-top: 4px; }
 

@@ -131,6 +131,31 @@
                     </div>
                 </section>
 
+                <section id="sideDeviceSection" class="sidebar-card">
+                    <h3>Агент</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Текущий агент</span>
+                            <span id="sideDeviceText" class="sidebar-value">Не привязан</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Состояние</span>
+                            <span id="sideDeviceState" class="sidebar-value">Ожидает привязки</span>
+                        </div>
+                        <div class="sidebar-section sidebar-editable">
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Выбрать агент</span>
+                                <select id="sideDeviceSelect"></select>
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Причина</span>
+                                <input id="sideDeviceReasonInput" type="text" value="manual_bind" placeholder="manual_bind">
+                            </label>
+                            <button id="sideDeviceApplyBtn" class="btn btn-secondary" type="button">Привязать к агенту</button>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="sidebar-card">
                     <h3>Действия</h3>
                     <div class="sidebar-grid">
@@ -178,6 +203,7 @@
                             <button class="menu-item" data-cmd="/assign" type="button">Назначить исполнителя</button>
                             <button class="menu-item" data-cmd="/assign_auto" type="button">Автоназначение</button>
                             <button class="menu-item" data-cmd="/queue" type="button">Сменить очередь</button>
+                            <button class="menu-item" data-cmd="/device" type="button">Привязать к агенту</button>
                             <button class="menu-item" data-cmd="/requester" type="button">Профиль инициатора</button>
                             <button class="menu-item" data-cmd="/reroute" type="button">Пересчитать очередь</button>
                             <button class="menu-item" data-cmd="/worklog" type="button">Добавить трудозатраты</button>

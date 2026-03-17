@@ -523,6 +523,8 @@ async def handle_tickets_list(request: web.Request) -> web.Response:
         filters["requester_id"] = auth_context.actor_id
     elif request.query.get("device_id"):
         filters["device_id"] = request.query.get("device_id")
+    if auth_context.actor_role in {"admin", "support", "auditor"}:
+        filters["exclude_archived"] = True
 
     async with get_session() as session:
         repo = TicketEventsRepo(session)
@@ -969,6 +971,94 @@ async def handle_ticket_assign(request: web.Request) -> web.Response:
         )
 
 
+async def handle_tickets_archive(request: web.Request) -> web.Response:
+    """POST /api/tickets/archive — пометить закрытые тикеты как архивные (скрыть из веб-очереди)."""
+    data = await _read_json(request)
+    auth_context = _auth(request)
+    if not _is_staff(auth_context):
+        return _json_error("forbidden", status=403)
+    ticket_ids = data.get("ticket_ids") or []
+    if not isinstance(ticket_ids, list) or not ticket_ids:
+        return _validation_error({"ticket_ids": "ticket_ids (array) is required"})
+    now = datetime.now(timezone.utc)
+    async with get_session() as session:
+        repo = TicketEventsRepo(session)
+        archived = 0
+        for ticket_id in ticket_ids[:100]:
+            ticket_id = str(ticket_id).strip()
+            if not ticket_id:
+                continue
+            ticket = await repo.get_ticket(ticket_id)
+            if ticket is None:
+                continue
+            status = (getattr(ticket, "status", None) or "").lower()
+            if status != "closed":
+                continue
+            await repo.update_ticket(ticket_id, archived_at=now)
+            archived += 1
+        await session.commit()
+    return _json_ok(archived=archived)
+
+
+async def handle_tickets_bulk_assign(request: web.Request) -> web.Response:
+    """POST /api/tickets/bulk_assign — назначить исполнителя на до 3 тикетов (только не закрытые)."""
+    data = await _read_json(request)
+    auth_context = _auth(request)
+    if not _is_staff(auth_context):
+        return _json_error("forbidden", status=403)
+    ticket_ids = data.get("ticket_ids") or []
+    assignee_id = (data.get("assignee_id") or "").strip()
+    if not assignee_id:
+        return _validation_error({"assignee_id": "assignee_id is required"})
+    if not isinstance(ticket_ids, list):
+        return _validation_error({"ticket_ids": "ticket_ids must be an array"})
+    if len(ticket_ids) > 3:
+        return _json_error("Максимум 3 тикета для массового назначения", status=400)
+    if not ticket_ids:
+        return _json_ok(assigned=0)
+    async with get_session() as session:
+        repo = TicketEventsRepo(session)
+        assignment_service = TicketAssignmentService(repo)
+        assigned = 0
+        for ticket_id in ticket_ids:
+            ticket_id = str(ticket_id).strip()
+            if not ticket_id:
+                continue
+            ticket = await repo.get_ticket(ticket_id)
+            if ticket is None:
+                continue
+            status = (getattr(ticket, "status", None) or "").lower()
+            if status in ("closed", "resolved"):
+                continue
+            try:
+                selection = await assignment_service.resolve_assignee(
+                    ticket,
+                    requested_assignee_id=assignee_id,
+                    auto_assign=False,
+                )
+            except TicketAssignmentError:
+                continue
+            aid = selection["assignee_id"]
+            await assignment_service.assign_ticket(
+                ticket.ticket_id,
+                ticket.device_id,
+                aid,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason="bulk_assign",
+                comment=None,
+                old_assignee=getattr(ticket, "assignee_id", None),
+                auto_assigned=False,
+                active_count=selection["active_count"],
+                limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                db_session=session,
+                close_ola=True,
+            )
+            assigned += 1
+        await session.commit()
+    return _json_ok(assigned=assigned)
+
+
 async def handle_ticket_bind_device(request: web.Request) -> web.Response:
     data = await _read_json(request)
     auth_context = _auth(request)
@@ -982,10 +1072,15 @@ async def handle_ticket_bind_device(request: web.Request) -> web.Response:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
         if error:
             return error
+        previous_device_id = ticket.device_id
+        devices_repo = DevicesRepo(session)
+        device = await devices_repo.get_by_device_id(device_id)
+        if device is None:
+            return _validation_error({"device_id": "unknown device_id"})
         custom_fields = mark_public_ticket_unbound(getattr(ticket, "custom_fields", None), False)
         await repo.update_ticket(ticket.ticket_id, device_id=device_id, custom_fields=custom_fields)
         payload = {
-            "previous_device_id": ticket.device_id,
+            "previous_device_id": previous_device_id,
             "device_id": device_id,
             "actor_id": auth_context.actor_id,
             "actor_role": auth_context.actor_role,

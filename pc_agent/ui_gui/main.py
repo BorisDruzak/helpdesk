@@ -537,6 +537,7 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
     # Создаем событие для ожидания закрытия окна
     window_closed = asyncio.Event()
     window_closing = False  # Флаг для защиты от двойного вызова
+    sse_stop_task: Optional[asyncio.Task] = None
     
     # Запускаем SSE клиент в фоне
     async def sse_task():
@@ -556,7 +557,7 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
     
     # Обработчик закрытия окна
     def on_window_closed():
-        nonlocal window_closing
+        nonlocal window_closing, sse_stop_task
         if window_closing:
             return  # Уже обрабатывается
         window_closing = True
@@ -576,6 +577,10 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
                         logger.debug(f"Ошибка остановки polling ({method_name}): {e}")
         logger.info("GUI закрывается, останавливаю SSE клиент...")
         sse_client.stop()
+        try:
+            sse_stop_task = asyncio.create_task(sse_client.stop_async(), name="gui.sse_stop")
+        except Exception as e:
+            logger.debug(f"Не удалось создать задачу остановки SSE: {e}")
         sse_task_obj.cancel()
         window_closed.set()
         if stop_event:
@@ -618,7 +623,12 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
                 await cp.client.close()
             except Exception as e:
                 logger.debug(f"Закрытие client: {e}")
+    if sse_stop_task:
+        try:
+            await asyncio.wait_for(sse_stop_task, timeout=1.5)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            logger.debug("Остановка SSE клиента превысила таймаут")
     try:
         await asyncio.wait_for(sse_task_obj, timeout=2.0)
     except (asyncio.CancelledError, asyncio.TimeoutError):
-        pass
+        logger.debug("Ожидание завершения SSE задачи превысило таймаут")

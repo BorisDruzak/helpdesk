@@ -31,7 +31,8 @@
         'initial_message_sent_to_agent',
         'initial_message_pending_delivery',
         'initial_message_send_failed',
-        'no_active_job'
+        'no_active_job',
+        'message_read'
     ]);
     /** Сопоставление module → сценарий для панели «Инструменты ПК» */
     const TOOL_SCENARIOS = {
@@ -54,6 +55,7 @@
     let actorRole = ''; // admin | support | auditor — из snapshot или по умолчанию
     let usersCache = [];
     let queuesCache = [];
+    let devicesCache = [];
     let pendingAttachments = [];
 
     function getToken() {
@@ -184,6 +186,32 @@
         }
     }
 
+    function hasBoundDevice() {
+        return Boolean(meta.device_id) && !Boolean(meta.public_ticket_unbound);
+    }
+
+    function findDevice(deviceId) {
+        if (!deviceId) return null;
+        return (devicesCache || []).find((device) => device.device_id === deviceId) || null;
+    }
+
+    function deviceLabel(deviceId) {
+        if (!deviceId) return 'Не привязан';
+        const device = findDevice(deviceId);
+        if (!device) return deviceId;
+        const host = device.hostname || device.device_id || 'device';
+        return device.online ? `${host} (online)` : `${host} (offline)`;
+    }
+
+    function refreshDeviceActionControls() {
+        const quickScreenshotBtn = el('quickScreenshotBtn');
+        const quickRecordBtn = el('quickRecordBtn');
+        const readOnly = !canPerformActions();
+        const available = hasBoundDevice();
+        if (quickScreenshotBtn) quickScreenshotBtn.disabled = readOnly || !available;
+        if (quickRecordBtn) quickRecordBtn.disabled = readOnly || !available;
+    }
+
     function setSegmentedValue(containerId, value) {
         const container = el(containerId);
         if (!container) return;
@@ -246,9 +274,24 @@
         if (el('sideAssigneeSelect')) el('sideAssigneeSelect').value = meta.assignee_id || '';
         if (el('sideQueueText')) el('sideQueueText').textContent = meta.queue_code || meta.queue_id || '—';
         if (el('sideQueueSelect')) el('sideQueueSelect').value = meta.queue_id != null ? String(meta.queue_id) : '';
+        if (el('sideDeviceText')) el('sideDeviceText').textContent = hasBoundDevice() ? deviceLabel(meta.device_id) : 'Не привязан';
+        if (el('sideDeviceState')) {
+            let stateText = 'Ожидает привязки';
+            if (hasBoundDevice()) {
+                const device = findDevice(meta.device_id);
+                stateText = device && device.online ? 'Агент подключён' : 'Привязан, агент офлайн';
+            } else if (meta.public_ticket_unbound) {
+                stateText = 'Веб-тикет без агента';
+            }
+            el('sideDeviceState').textContent = stateText;
+        }
+        if (el('sideDeviceSelect')) {
+            el('sideDeviceSelect').value = hasBoundDevice() ? (meta.device_id || '') : '';
+        }
         const queueSection = el('sideQueueSection');
         if (queueSection) queueSection.classList.toggle('hidden', queuesCache.length <= 1);
         syncActionStateMarker();
+        refreshDeviceActionControls();
     }
 
     function renderSidebar(force) {
@@ -271,13 +314,23 @@
                 priority_changed: 'Изменение приоритета',
                 assignee_changed: 'Изменение исполнителя',
                 queue_changed: 'Изменение очереди',
-                requester_profile_changed: 'Изменение профиля инициатора'
+                requester_profile_changed: 'Изменение профиля инициатора',
+                device_changed: 'Привязка к агенту'
             };
             const title = titleMap[item.event_type] || item.event_type;
-            const before = payload.old_value != null ? JSON.stringify(payload.old_value) : '';
-            const after = payload.new_value != null ? JSON.stringify(payload.new_value) : '';
+            let before = payload.old_value;
+            let after = payload.new_value;
+            if (item.event_type === 'device_changed') {
+                before = payload.previous_device_id || before;
+                after = payload.device_id || after;
+            }
             const metaLine = [payload.actor_id || 'system', formatTime(item.ts)].filter(Boolean).join(' • ');
-            const details = [before ? `Было: ${before}` : '', after ? `Стало: ${after}` : '', payload.reason ? `Причина: ${payload.reason}` : '', payload.comment ? `Комментарий: ${payload.comment}` : ''].filter(Boolean).join('\n');
+            const details = [
+                before ? `Было: ${formatChangeValue(item.event_type, before)}` : '',
+                after ? `Стало: ${formatChangeValue(item.event_type, after)}` : '',
+                payload.reason ? `Причина: ${payload.reason}` : '',
+                payload.comment ? `Комментарий: ${payload.comment}` : ''
+            ].filter(Boolean).join('\n');
             return `<div class="history-item"><div class="history-title">${escapeHtml(title)}</div><div class="history-meta">${escapeHtml(metaLine)}</div><div class="history-details">${escapeHtml(details || 'Без деталей')}</div></div>`;
         }).join('');
     }
@@ -286,6 +339,7 @@
         if (value == null || value === '') return '—';
         if (type === 'status_changed') return statusLabel(value);
         if (type === 'priority_changed') return priorityLabel(value);
+        if (type === 'device_changed') return deviceLabel(String(value));
         if (typeof value === 'object') return JSON.stringify(value);
         return String(value);
     }
@@ -296,7 +350,8 @@
             priority_changed: 'Изменён приоритет',
             assignee_changed: 'Изменён исполнитель',
             queue_changed: 'Изменена очередь',
-            requester_profile_changed: 'Обновлён профиль инициатора'
+            requester_profile_changed: 'Обновлён профиль инициатора',
+            device_changed: 'Привязан агент'
         };
         let before = payload.old_value;
         let after = payload.new_value;
@@ -315,6 +370,9 @@
         } else if (type === 'requester_profile_changed') {
             before = payload.old_value;
             after = payload.new_value || payload.requester_profile;
+        } else if (type === 'device_changed') {
+            before = payload.previous_device_id || payload.old_value;
+            after = payload.device_id || payload.new_value;
         }
         const lines = [
             `Было: ${formatChangeValue(type, before)}`,
@@ -376,6 +434,9 @@
             const vis = payload.visibility || 'public';
             const isUser = fromRole === 'user';
             const isStaff = fromRole === 'support' || fromRole === 'admin' || fromRole === 'agent';
+            const senderName = isUser
+                ? (meta.requester_display_name || 'Пользователь')
+                : (payload.actor_id || payload.sender_display_name || meta.assignee_id || (fromRole === 'support' ? 'Поддержка' : fromRole === 'admin' ? 'Админ' : 'Агент'));
             const avatar = isUser ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : fromRole === 'agent' ? 'G' : '?');
             const internalBadge = vis === 'internal' ? '<span class="ti-badge-internal">Внутр.</span>' : '';
             const attachments = payload.attachments || [];
@@ -388,7 +449,7 @@
                 html: `<div class="timeline-item ${isUser ? 'from-user' : ''} ${isStaff ? 'from-staff' : ''}" data-event-id="${escapeHtml(String(id))}">
   <div class="ti-avatar">${escapeHtml(avatar)}</div>
   <div class="ti-body">
-    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(fromRole)}</span></div>
+    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(senderName)}</span></div>
     <div class="ti-bubble">${escapeHtml(text)}</div>
     ${attachmentsHtml}
     <div class="ti-time">${escapeHtml(formatTime(ts))}</div>
@@ -437,7 +498,7 @@
         if (type === 'message_read') {
             return { id, type: 'system', html: renderMessageReadEventCard(ts, { ...payload, event_id: id }) };
         }
-        if (type === 'status_changed' || type === 'queue_changed' || type === 'assignee_changed' || type === 'priority_changed' || type === 'requester_profile_changed') {
+        if (type === 'status_changed' || type === 'queue_changed' || type === 'assignee_changed' || type === 'priority_changed' || type === 'requester_profile_changed' || type === 'device_changed') {
             return { id, type: 'system', html: renderChangeEventCard(type, ts, { ...payload, event_id: id }) };
         }
         return { id, type: 'system', html: `<div class="timeline-item system" data-event-id="${escapeHtml(String(id))}">
@@ -502,6 +563,10 @@
             if (ev.payload.urgency_reason) meta.urgency_reason = ev.payload.urgency_reason;
             if (ev.payload.importance_reason) meta.importance_reason = ev.payload.importance_reason;
         }
+        if (ev.event_type === 'device_changed' && ev.payload) {
+            meta.device_id = ev.payload.device_id || meta.device_id;
+            meta.public_ticket_unbound = false;
+        }
         if (ev.event_type === 'requester_profile_changed' && ev.payload) {
             meta.requester_profile = ev.payload.requester_profile || meta.requester_profile;
             meta.requester_display_name = ev.payload.requester_display_name || meta.requester_display_name;
@@ -509,7 +574,7 @@
         meta.requires_operator_action = meta.status === 'new' || meta.status === 'triaged' || meta.status === 'in_progress';
         setTopbar(meta);
         renderSidebar(opts.forceSidebarSync === true);
-        renderHistory(events.filter((item) => ['status_changed', 'priority_changed', 'assignee_changed', 'queue_changed', 'requester_profile_changed'].includes(item.event_type)));
+        renderHistory(events.filter((item) => ['status_changed', 'priority_changed', 'assignee_changed', 'queue_changed', 'requester_profile_changed', 'device_changed'].includes(item.event_type)));
         restoreTimelineScroll(timelineEl, scrollState, opts.forceScroll === true || opts.forceStick === true || (ev.event_type === 'chat_message' && (ev.payload || {}).from === 'user'));
     }
 
@@ -645,6 +710,7 @@
             requester_display_name: data.requester_display_name,
             requires_operator_action: data.requires_operator_action,
             resolution_confirmation_pending: !!data.resolution_confirmation_pending,
+            public_ticket_unbound: !!data.public_ticket_unbound,
             first_response_due_at: data.first_response_due_at,
             resolution_due_at: data.resolution_due_at,
         };
@@ -743,7 +809,7 @@
             showSystemMessage('Недостаточно прав для запуска инструмента', true);
             return;
         }
-        if (!meta.device_id) {
+        if (!hasBoundDevice()) {
             showSystemMessage('Нет привязки тикета к устройству', true);
             return;
         }
@@ -822,6 +888,15 @@
         return queuesCache;
     }
 
+    async function ensureDevicesLoaded() {
+        if (devicesCache.length) return devicesCache;
+        const r = await fetch('/api/devices', { headers: authHeaders() });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'Не удалось загрузить список агентов');
+        devicesCache = d.devices || d || [];
+        return devicesCache;
+    }
+
     function populateStatusSelect() {
         const select = el('sideStatusSelect');
         if (!select || select.options.length) return;
@@ -849,12 +924,33 @@
         if (queueSection) queueSection.classList.toggle('hidden', queuesCache.length <= 1);
     }
 
+    function populateDeviceSelect() {
+        const select = el('sideDeviceSelect');
+        if (!select) return;
+        const sortedDevices = (devicesCache || []).slice().sort((left, right) => {
+            const onlineDelta = Number(Boolean(right.online)) - Number(Boolean(left.online));
+            if (onlineDelta !== 0) return onlineDelta;
+            return String(left.hostname || left.device_id || '').localeCompare(String(right.hostname || right.device_id || ''), 'ru');
+        });
+        const currentDeviceId = hasBoundDevice() ? (meta.device_id || '') : '';
+        const options = ['<option value="">-- Выберите агент --</option>'];
+        if (currentDeviceId && !sortedDevices.some((device) => device.device_id === currentDeviceId)) {
+            options.push(`<option value="${escapeHtml(currentDeviceId)}">${escapeHtml(deviceLabel(currentDeviceId))}</option>`);
+        }
+        sortedDevices.forEach((device) => {
+            options.push(`<option value="${escapeHtml(device.device_id)}">${escapeHtml(deviceLabel(device.device_id))}</option>`);
+        });
+        select.innerHTML = options.join('');
+        select.value = currentDeviceId;
+    }
+
     async function refreshSidebarOptions() {
         if (!canPerformActions()) return;
         try {
-            await Promise.all([ensureUsersLoaded(), ensureQueuesLoaded()]);
+            await Promise.all([ensureUsersLoaded(), ensureQueuesLoaded(), ensureDevicesLoaded()]);
             populateAssigneeSelect();
             populateQueueSelect();
+            populateDeviceSelect();
             syncSidebarForm(false);
         } catch (err) {
             console.warn('sidebar options', err);
@@ -925,6 +1021,26 @@
         const r = await fetch('/api/tickets/' + ticketId + '/queue', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ queue_id: queueId, reason: 'manual' }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.details?.queue_id || d.error || 'Ошибка смены очереди');
+    }
+
+    async function applyDeviceBinding(deviceIdOverride, reasonOverride) {
+        const deviceId = (deviceIdOverride || el('sideDeviceSelect')?.value || '').trim();
+        const reason = (reasonOverride || el('sideDeviceReasonInput')?.value || '').trim() || 'manual_bind';
+        if (!deviceId) throw new Error('Выберите агент');
+        const r = await fetch('/api/tickets/' + ticketId + '/device', {
+            method: 'POST',
+            headers: authHeaders(true),
+            body: JSON.stringify({ device_id: deviceId, reason })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.details?.device_id || d.error || 'Ошибка привязки к агенту');
+        const updatedTicket = d.ticket || {};
+        meta.device_id = updatedTicket.device_id || deviceId;
+        meta.public_ticket_unbound = Boolean(updatedTicket.public_ticket_unbound);
+        setTopbar(meta);
+        renderSidebar(true);
+        showSystemMessage('Тикет привязан к агенту');
+        await loadSnapshot();
     }
 
     async function closeTicket() {
@@ -1059,6 +1175,26 @@
                 });
             return;
         }
+        if (cmd === '/device') {
+            await ensureDevicesLoaded();
+            const sortedDevices = (devicesCache || []).slice().sort((left, right) => {
+                const onlineDelta = Number(Boolean(right.online)) - Number(Boolean(left.online));
+                if (onlineDelta !== 0) return onlineDelta;
+                return String(left.hostname || left.device_id || '').localeCompare(String(right.hostname || right.device_id || ''), 'ru');
+            });
+            const options = ['<option value="">-- Выберите агент --</option>'].concat(
+                sortedDevices.map((device) => `<option value="${escapeHtml(device.device_id)}"${hasBoundDevice() && meta.device_id === device.device_id ? ' selected' : ''}>${escapeHtml(deviceLabel(device.device_id))}</option>`)
+            ).join('');
+            openInlinePanel('Привязать к агенту',
+                `<div class="form-group"><label>Агент</label><select id="cmdDeviceSelect">${options}</select></div>
+                 <div class="form-group"><label>Причина</label><input type="text" id="cmdDeviceReason" value="manual_bind" placeholder="manual_bind"/></div>`,
+                async (body) => {
+                    const deviceId = body.querySelector('#cmdDeviceSelect').value || '';
+                    const reason = body.querySelector('#cmdDeviceReason').value || 'manual_bind';
+                    await applyDeviceBinding(deviceId, reason);
+                });
+            return;
+        }
         if (cmd === '/priority') {
             openInlinePanel('Изменить приоритет',
                 `<div class="form-group"><label>Срочность</label><select id="cmdPriorityUrgency"><option value="true"${meta.urgency ? ' selected' : ''}>Срочно</option><option value="false"${!meta.urgency ? ' selected' : ''}>Несрочно</option></select></div>
@@ -1122,7 +1258,7 @@
             return;
         }
         if (cmd === '/tool' || cmd === '/module') {
-            if (!meta.device_id) { showSystemMessage('Нет привязки к устройству', true); return; }
+            if (!hasBoundDevice()) { showSystemMessage('Нет привязки к устройству', true); return; }
             const r = await fetch('/api/tools?device_id=' + encodeURIComponent(meta.device_id), { headers: authHeaders() });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) {
@@ -1323,8 +1459,6 @@
                 const menuBtn = el('composerMenuBtn');
                 const menuDropdown = el('composerMenuDropdown');
                 const readOnly = !canPerformActions();
-                const quickScreenshotBtn = el('quickScreenshotBtn');
-                const quickRecordBtn = el('quickRecordBtn');
                 if (menuBtn) {
                     menuBtn.disabled = readOnly;
                     menuBtn.onclick = (e) => {
@@ -1358,8 +1492,7 @@
                     if (!canPerformActions()) control.setAttribute('disabled', 'disabled');
                     else control.removeAttribute('disabled');
                 });
-                if (quickScreenshotBtn) quickScreenshotBtn.disabled = readOnly || !meta.device_id;
-                if (quickRecordBtn) quickRecordBtn.disabled = readOnly || !meta.device_id;
+                refreshDeviceActionControls();
                 refreshCloseControls();
                 refreshSidebarOptions();
                 if (canPerformActions()) {
@@ -1380,6 +1513,9 @@
                     });
                     el('sideQueueApplyBtn')?.addEventListener('click', async () => {
                         try { await applyQueue(); } catch (err) { showSystemMessage(err.message || String(err), true); }
+                    });
+                    el('sideDeviceApplyBtn')?.addEventListener('click', async () => {
+                        try { await applyDeviceBinding(); } catch (err) { showSystemMessage(err.message || String(err), true); }
                     });
                 }
                 el('sideCloseBtn')?.addEventListener('click', async () => {

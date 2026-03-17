@@ -28,6 +28,25 @@ class SseClient:
         self.url = f"{self.base_url}/ui/events"
         self._running = False
         self._session: Optional[aiohttp.ClientSession] = None
+        self._response: Optional[aiohttp.ClientResponse] = None
+
+    async def _close_transport(self) -> None:
+        """Жестко закрывает текущий SSE transport, чтобы shutdown не висел на stream reader."""
+        response = self._response
+        self._response = None
+        if response is not None:
+            try:
+                response.close()
+            except Exception as e:
+                logger.debug(f"Ошибка закрытия SSE response: {e}")
+
+        session = self._session
+        self._session = None
+        if session is not None and not session.closed:
+            try:
+                await session.close()
+            except Exception as e:
+                logger.debug(f"Ошибка закрытия SSE session: {e}")
     
     async def run(self, on_event_cb: Callable[[dict], None]):
         """
@@ -50,6 +69,7 @@ class SseClient:
                     headers={"Accept": "text/event-stream"},
                     timeout=aiohttp.ClientTimeout(total=None)  # Без таймаута
                 ) as response:
+                    self._response = response
                     if response.status != 200:
                         logger.error(f"Ошибка подключения к SSE: HTTP {response.status}")
                         await asyncio.sleep(5)
@@ -99,14 +119,12 @@ class SseClient:
             except Exception as e:
                 logger.error(f"Неожиданная ошибка в SSE клиенте: {e}")
             finally:
-                if self._session:
-                    try:
-                        await self._session.close()
-                    except asyncio.CancelledError:
-                        # При отмене задачи await close() тоже отменяется — планируем закрытие
-                        asyncio.create_task(self._session.close())
-                        raise
-                    self._session = None
+                try:
+                    await self._close_transport()
+                except asyncio.CancelledError:
+                    # При отмене всё равно планируем фактическое закрытие, чтобы transport не зависал.
+                    asyncio.create_task(self._close_transport())
+                    raise
             
             # Переподключение через 5 секунд
             if self._running:
@@ -119,6 +137,10 @@ class SseClient:
         """Останавливает SSE клиент."""
         self._running = False
 
+    async def stop_async(self) -> None:
+        """Останавливает SSE клиент и сразу рвёт текущее соединение."""
+        self._running = False
+        await self._close_transport()
 
 
 

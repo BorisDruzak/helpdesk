@@ -45,12 +45,6 @@
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
-                    <a href="#" class="tab-link" data-tab="home">
-                        <span class="icon">🏠</span>
-                        <span>Главная</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
                     <a href="#" class="tab-link" data-tab="devices">
                         <span class="icon">💻</span>
                         <span>Устройства</span>
@@ -116,12 +110,23 @@
                         <button type="button" class="btn btn-sm" id="queueOrderResetBtn" title="Сбросить ручной порядок очереди">Сбросить авто</button>
                     </span>
                 </div>
+                <div id="queueMassActionsBar" class="queue-mass-actions-bar" style="display:none;">
+                    <span id="queueMassSelectedCount">Выбрано: 0</span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="queueMassDeselect">Снять выделение</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="queueMassArchive" title="Только для закрытых тикетов">В архив</button>
+                    <span class="queue-mass-assign-wrap">
+                        <select id="queueMassAssignSelect"><option value="">Исполнитель...</option></select>
+                        <button type="button" class="btn btn-primary btn-sm" id="queueMassAssignBtn" title="До 3 тикетов (только не закрытые)">Назначить</button>
+                    </span>
+                </div>
                 <div id="queueTableWrap" class="queue-table-wrap">
                     <div id="queueTableLoading" class="queue-loading">Загрузка...</div>
                     <div id="queueTableError" class="queue-error" style="display:none;"></div>
                     <table id="queueTable" class="queue-table" style="display:none;">
                         <thead>
                             <tr>
+                                <th class="col-select" style="width:36px;"><input type="checkbox" id="queueSelectAll" title="Выбрать все"></th>
+                                <th class="col-drag" style="width:24px;" title="Перетащите для изменения порядка"></th>
                                 <th class="col-pin">Закрепить</th>
                                 <th class="col-ticket">Тикет</th>
                                 <th class="col-title">Название</th>
@@ -673,10 +678,13 @@
                                     <thead>
                                         <tr>
                                             <th style="width: 36px;"><input type="checkbox" id="modules-select-all-devices" title="Выбрать все"></th>
-                                            <th>Hostname</th>
                                             <th>Устройство (UUID)</th>
+                                            <th>Hostname</th>
                                             <th>Статус</th>
                                             <th>ОС</th>
+                                            <th>Модулей</th>
+                                            <th>Инструментов</th>
+                                            <th>Действия</th>
                                         </tr>
                                     </thead>
                                     <tbody id="devices-table-modules-body"></tbody>
