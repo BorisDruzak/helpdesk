@@ -1,29 +1,57 @@
-# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
-server/venv
-pc_agent/venv
-src/venv
+﻿# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
 
-# Other project
+# Virtualenvs - do not index
+server/venv/
+pc_agent/venv/
+src/venv/
+.venvs/
+venv/
+
+# Other project / legacy
 src/
 
-# Python cache
+# Python cache and test artifacts
 **/__pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
 
-# Databases and data
+# Run dirs and local agent data
+.run/
+.local-agent/
+
+# Build and install artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Data, uploads, reports
+data/
+server/data/
+server/reports/
+server/uploads/
+pc_agent/data/
+uploads/
+
+# Secrets and config with secrets
+.env
+*.env
+db_config.json
+
+# Logs and temp
+*.log
+*.tmp
+*.bak
+
+# Databases (local copies)
 *.db
 *.db-wal
 *.db-shm
-data/
-server/data/
-pc_agent/data/
 
-# Archives
+# Archives (large/binary)
 *.zip
 *.rar
-
-
 
 # Cursor plans (optional)
 .cursor/plans/

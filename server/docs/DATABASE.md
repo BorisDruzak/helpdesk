@@ -223,6 +223,20 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 
 Команды: из каталога `server` — `alembic upgrade head`, `alembic revision --autogenerate`.
 
+**Подгрузка .env:** Alembic сам не читает `server/.env`. Для запуска миграций с теми же настройками, что и сервер, используйте скрипт `server/scripts/run_migrations.py` (подгружает `server/.env` и вызывает alembic). Пример: из каталога `server` — `python scripts/run_migrations.py upgrade head` или `python scripts/run_migrations.py current`.
+
+### Миграции на удалённом хосте (PostgreSQL на удалённой шаре)
+
+- Миграции выполняются **на Linux-хосте**, где развёрнут код (например `/var/chat_bot/pc_client`), так как именно там настроен доступ к БД.
+- **Один раз** на удалённом хосте нужно создать `server/.env` с `DATABASE_URL=postgresql+asyncpg://user:password@host:port/dbname`. Файл в репозиторий не коммитится (см. `.gitignore`). Можно скопировать с рабочей машины или создать вручную; шаблон — `server/.env.example`.
+- **С Windows** миграции на удалённом хосте запускаются так (после deploy):
+  ```text
+  python scripts/run_remote_migrations.py              # upgrade head
+  python scripts/run_remote_migrations.py current
+  python scripts/run_remote_migrations.py upgrade head
+  ```
+  Скрипт по SSH выполняет на хосте `server/venv/bin/python server/scripts/run_migrations.py ...`; `run_migrations.py` подгружает `server/.env` и запускает alembic.
+
 ---
 
 ## Связанные документы
