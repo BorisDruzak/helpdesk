@@ -19,7 +19,7 @@
 - Базовый поток работы: правки локально → проверка локально → локальный commit → deploy проверенного состояния на Linux → запуск и smoke/browser-проверка на Linux → остановка сервера → push только проверенных изменений.
 - Если локальная копия отсутствует или устарела, обновлять её через проектные скрипты из `scripts/`.
 - На 17 марта 2026 года более свежая версия была разово подтянута с Linux-runtime в локальный Windows-репозиторий. После этой синхронизации единственным источником истины считается локальная копия на Windows.
-- Git remote для Linux-хоста: bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`. Для локального репозитория использовать remote `linux`.
+- Git remote для Linux-хоста: bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`. Для локального Windows-репозитория использовать remote `linux`, а Linux working copy в `/var/chat_bot/pc_client` работает от `origin`.
 
 ## Канонический pipeline работы
 
@@ -34,7 +34,7 @@
 9. После запуска выполнять `python scripts/manage_remote_stack.py smoke server`, а если менялся веб, дополнительно проверять GUI через MCP по `http://192.168.100.17:8666/admin`.
 10. После проверок останавливать сервер на Linux через `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
 11. В GitHub отправлять только изменения, которые уже прошли проверки и были проверены на нужном сценарии.
-12. Если нужно передать код на Linux через Git, делать это по цепочке `git commit` локально → `git push linux <branch>` → на Linux `git pull linux <branch>` или `git fetch/reset` в рабочей копии.
+12. Если нужно передать код на Linux через Git, делать это по цепочке `git commit` локально → `git push linux <branch>` → на Linux в `/var/chat_bot/pc_client` выполнять `git pull --ff-only origin <branch>`.
 
 ## Документация (источник истины)
 

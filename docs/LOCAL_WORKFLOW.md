@@ -13,7 +13,7 @@
 - В GitHub публикуется только то, что уже прошло проверку.
 - Канонический порядок: локальные правки -> локальные проверки -> локальный commit -> deploy на Linux -> remote start/smoke/browser -> stop -> push проверенных изменений.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
-- Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный remote: `linux`.
+- Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный Windows-remote: `linux`; Linux working copy `/var/chat_bot/pc_client` использует `origin`.
 
 ## Рекомендуемый поток
 
@@ -93,8 +93,7 @@ git push -u origin main
 
 ```bash
 cd /var/chat_bot/pc_client
-git fetch linux master
-git reset --hard FETCH_HEAD
+git pull --ff-only origin master
 ```
 
 ## Жёсткий порядок действий
