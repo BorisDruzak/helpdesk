@@ -1176,6 +1176,8 @@ class ConnectionRequest(Base):
     """
     Pending or resolved device connection request (agent requests token).
     status: pending | approved | rejected
+    last_request_at: обновляется при каждом POST от агента; в списке для админки
+    показываются только запросы с last_request_at за последние 30 сек.
     """
     __tablename__ = "connection_requests"
 
@@ -1188,6 +1190,12 @@ class ConnectionRequest(Base):
         TIMESTAMP(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
+    )
+    last_request_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)

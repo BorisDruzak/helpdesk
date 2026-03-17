@@ -1864,11 +1864,25 @@ class WSAgent:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 logger.info("Запрос на подключение в ожидании; ожидаю одобрения/отклонения администратором...")
-                # Ожидаем одобрения/отклонения опросом статуса (без фоновой задачи — блокируем до результата)
+                # Ожидаем одобрения/отклонения: каждые 5 сек обновляем запрос (POST) и опрашиваем статус (GET)
+                # — чтобы в админке запрос отображался только пока агент активен
                 poll_interval = 5
                 deadline = time.monotonic() + wait_for_approval_seconds
                 while time.monotonic() < deadline:
                     await asyncio.sleep(poll_interval)
+                    # Heartbeat: POST обновляет last_request_at на сервере (запрос остаётся в списке админки)
+                    try:
+                        await session.post(
+                            f"{api_url}/connection_request",
+                            json={
+                                "device_id": device_id,
+                                "hostname": hostname,
+                                "metadata": {},
+                            },
+                            timeout=aiohttp.ClientTimeout(total=5),
+                        )
+                    except Exception as e:
+                        logger.debug(f"Ошибка heartbeat connection_request: {e}")
                     try:
                         status_resp = await session.get(
                             f"{api_url}/connection_request/status",

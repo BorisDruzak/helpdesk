@@ -1,11 +1,14 @@
 """Repository for connection_requests and server_config (connection policy)."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ConnectionRequest, ServerConfig
+
+# Показывать в админке только запросы, обновлённые за последние N секунд
+PENDING_ACTIVE_SECONDS = 30
 
 CONNECTION_POLICY_KEY = "connection_policy"
 POLICY_REJECT_ALL = "reject_all"
@@ -56,23 +59,41 @@ class ConnectionRequestsRepo:
         hostname: Optional[str] = None,
         metadata: Optional[dict] = None,
     ) -> ConnectionRequest:
+        now = datetime.now(timezone.utc)
         req = ConnectionRequest(
             device_id=device_id,
             status="pending",
             ip_address=ip_address,
             hostname=hostname,
             request_metadata=metadata or {},
+            last_request_at=now,
         )
         self.session.add(req)
         await self.session.flush()
         return req
 
-    async def list_pending(self):
+    async def touch_pending_request(self, device_id: str) -> bool:
+        """Обновляет last_request_at у существующего pending-запроса. Возвращает True если обновлён."""
+        now = datetime.now(timezone.utc)
         result = await self.session.execute(
-            select(ConnectionRequest)
-            .where(ConnectionRequest.status == "pending")
-            .order_by(ConnectionRequest.created_at.desc())
+            update(ConnectionRequest)
+            .where(
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "pending",
+            )
+            .values(last_request_at=now)
         )
+        await self.session.flush()
+        return result.rowcount > 0
+
+    async def list_pending(self, only_active: bool = True):
+        """Список pending-запросов. При only_active=True — только с last_request_at за последние PENDING_ACTIVE_SECONDS сек."""
+        q = select(ConnectionRequest).where(ConnectionRequest.status == "pending")
+        if only_active:
+            since = datetime.now(timezone.utc) - timedelta(seconds=PENDING_ACTIVE_SECONDS)
+            q = q.where(ConnectionRequest.last_request_at >= since)
+        q = q.order_by(ConnectionRequest.last_request_at.desc())
+        result = await self.session.execute(q)
         return list(result.scalars().all())
 
     async def set_approved(self, device_id: str) -> None:

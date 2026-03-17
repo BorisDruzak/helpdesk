@@ -99,9 +99,11 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 "device_id": device_id,
             })
 
-        # POLICY_MANUAL: create pending request
+        # POLICY_MANUAL: create pending request или обновить last_request_at (heartbeat)
         existing = await repo.get_pending_by_device_id(device_id)
         if existing:
+            await repo.touch_pending_request(device_id)
+            await session.commit()
             return web.json_response({
                 "status": "pending",
                 "message": "Request already pending",
