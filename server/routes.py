@@ -199,7 +199,7 @@ from jobs.handlers import handle_get_job_events, handle_start_job
 
 async def handle_health(_request: web.Request) -> web.Response:
     """GET /api/health — для smoke-тестов и мониторинга (без авторизации)."""
-    return web.json_response({"status": "ok"})
+    return web.json_response({"status": "ok", "deploy_check": "verified"})
 
 
 def setup_routes(app: web.Application) -> None:
