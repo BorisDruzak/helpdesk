@@ -96,6 +96,14 @@ cd /var/chat_bot/pc_client
 git pull --ff-only origin master
 ```
 
+Для быстрой SSH-проверки после deploy можно выполнить:
+
+```bash
+cd /var/chat_bot/pc_client
+git rev-parse HEAD
+git status --short
+```
+
 ## Жёсткий порядок действий
 
 1. Работать только в `C:\Users\admin-2\CodexProjects\pc_client`.
