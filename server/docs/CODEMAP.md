@@ -40,8 +40,8 @@
 ### 2.2.1 Tools / единый путь run_tool
 | Файл | Назначение |
 |------|------------|
-| `server/tools/service.py` | Канонический вход `ToolService.run_tool`: pre-start event `tool_call_started`, отправка команды агенту |
-| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolService` |
+| `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, отправка команды агенту |
+| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService` |
 
 ### 2.3 БД и репозитории
 | Файл | Назначение |

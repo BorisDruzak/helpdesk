@@ -1498,8 +1498,11 @@ class DatabaseManager:
         if schedule in intervals:
             return now + intervals[schedule]
         
-        # Для cron или timestamp - возвращаем now + 1 час как fallback
-        return now + 3600
+        # MVP не поддерживает cron/timestamp и другие форматы.
+        raise ValueError(
+            f"Unsupported schedule '{schedule}'. "
+            "Supported values: minutely, hourly, daily, weekly"
+        )
     
     async def get_due_scheduled_tasks(self, now: Optional[float] = None) -> List[Dict[str, Any]]:
         """Получает задачи, готовые к выполнению."""
@@ -1558,6 +1561,90 @@ class DatabaseManager:
                     (now, next_run, task_id)
                 )
                 await db.commit()
+
+    async def list_scheduled_tasks(self) -> List[Dict[str, Any]]:
+        """Возвращает полный список scheduled tasks."""
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """
+                SELECT task_id, kind, schedule, params_json, enabled,
+                       last_run_at, next_run_at, created_at
+                FROM scheduled_tasks
+                ORDER BY created_at ASC
+                """
+            )
+            rows = await cursor.fetchall()
+
+        tasks: List[Dict[str, Any]] = []
+        for row in rows:
+            task = dict(row)
+            if task.get("params_json"):
+                try:
+                    task["params"] = json.loads(task["params_json"])
+                except json.JSONDecodeError:
+                    task["params"] = None
+            else:
+                task["params"] = None
+            tasks.append(task)
+        return tasks
+
+    async def get_scheduled_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Возвращает scheduled task по ID."""
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """
+                SELECT task_id, kind, schedule, params_json, enabled,
+                       last_run_at, next_run_at, created_at
+                FROM scheduled_tasks
+                WHERE task_id = ?
+                """,
+                (task_id,)
+            )
+            row = await cursor.fetchone()
+
+        if not row:
+            return None
+
+        task = dict(row)
+        if task.get("params_json"):
+            try:
+                task["params"] = json.loads(task["params_json"])
+            except json.JSONDecodeError:
+                task["params"] = None
+        else:
+            task["params"] = None
+        return task
+
+    async def disable_scheduled_task(self, task_id: str) -> bool:
+        """Отключает scheduled task (cancel semantics для MVP)."""
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            cursor = await db.execute(
+                """
+                UPDATE scheduled_tasks
+                SET enabled = 0
+                WHERE task_id = ?
+                """,
+                (task_id,)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def request_scheduled_task_run_now(self, task_id: str) -> bool:
+        """Планирует немедленный запуск задачи без удаления расписания."""
+        now = time.time()
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            cursor = await db.execute(
+                """
+                UPDATE scheduled_tasks
+                SET enabled = 1, next_run_at = ?
+                WHERE task_id = ?
+                """,
+                (now, task_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
     
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # LEGACY COMPATIBILITY - Jobs

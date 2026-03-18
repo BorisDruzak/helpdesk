@@ -160,6 +160,7 @@ class WSAgent:
         self._log_publisher_task: Optional[asyncio.Task] = None
         self._housekeeping_task: Optional[asyncio.Task] = None
         self._consent_cleanup_task: Optional[asyncio.Task] = None
+        self._scheduler_task: Optional[asyncio.Task] = None
         
         # Process-local dedupe: command_id -> Future с результатом (для in_progress без дубля)
         self._running_commands: Dict[str, asyncio.Future] = {}
@@ -409,6 +410,10 @@ class WSAgent:
             
             self._consent_cleanup_task = asyncio.create_task(housekeeping_cleanup_expired_consents_task())
             logger.success("✅ Housekeeping task для expired_consents запущен")
+
+            # Runtime loop планировщика (MVP).
+            self._scheduler_task = asyncio.create_task(self._scheduler_runtime_loop())
+            logger.success("✅ Scheduler runtime loop запущен")
             # Даем задаче время на инициализацию в event loop
             await asyncio.sleep(0)
             logger.success("✅ Задача публикации логов в EventBus запущена")
@@ -566,6 +571,16 @@ class WSAgent:
                     pass
                 self._consent_cleanup_task = None
                 logger.info("✅ Housekeeping task для expired_consents остановлен")
+
+            if self._scheduler_task:
+                logger.info("🛑 Останавливаю scheduler runtime task...")
+                self._scheduler_task.cancel()
+                try:
+                    await self._scheduler_task
+                except asyncio.CancelledError:
+                    pass
+                self._scheduler_task = None
+                logger.info("✅ Scheduler runtime task остановлен")
             
             # Останавливаем UI API сервер
             if self.ui_api_server and self.ui_api_task:
@@ -1010,16 +1025,13 @@ class WSAgent:
                         )
                         return
                 
-                # Фаза 7: Scheduler методы — заглушки; до scheduler_v1 не рекламировать в UI
+                # Scheduler MVP: отдельная обработка scheduler RPC.
                 if method in SCHEDULER_METHODS:
-                    logger.warning(f"Scheduler method '{method}' not yet implemented")
-                    result = {
-                        "status": "error",
-                        "error": {
-                            "code": "NOT_IMPLEMENTED",
-                            "message": f"Method '{method}' reserved for future scheduler feature"
-                        }
-                    }
+                    result = await self._handle_scheduler_rpc(
+                        method=method,
+                        params=params if isinstance(params, dict) else {},
+                        request_id=request_id,
+                    )
                     await self.send_envelope(
                         ws, "rpc_response", request_id, result,
                         trace_id=trace_id,
@@ -1661,6 +1673,189 @@ class WSAgent:
                 details={"exception_type": type(e).__name__}
             )
             return response.model_dump()
+
+    def _scheduler_success(self, observations: Dict[str, Any], request_id: Optional[str]) -> Dict[str, Any]:
+        return {
+            "status": "success",
+            "data": {"observations": observations},
+            "meta": {
+                "request_id": request_id,
+                "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+    def _scheduler_error(self, code: str, message: str, request_id: Optional[str]) -> Dict[str, Any]:
+        return {
+            "status": "error",
+            "error": {"code": code, "message": message},
+            "data": {},
+            "meta": {
+                "request_id": request_id,
+                "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+    async def _handle_scheduler_rpc(
+        self,
+        method: str,
+        params: Dict[str, Any],
+        request_id: Optional[str],
+    ) -> Dict[str, Any]:
+        if not self.db_manager:
+            return self._scheduler_error("DB_UNAVAILABLE", "Database is not initialized", request_id)
+
+        try:
+            if method == "schedule_task":
+                kind = str(params.get("kind") or "").strip()
+                schedule = str(params.get("schedule") or "").strip()
+                task_params = params.get("params")
+                if not isinstance(task_params, dict):
+                    task_params = {}
+
+                if kind != "run_tool":
+                    return self._scheduler_error(
+                        "VALIDATION_ERROR",
+                        "Scheduler MVP supports only kind='run_tool'",
+                        request_id,
+                    )
+
+                if schedule not in {"minutely", "hourly", "daily", "weekly"}:
+                    return self._scheduler_error(
+                        "VALIDATION_ERROR",
+                        "Unsupported schedule. Allowed: minutely, hourly, daily, weekly",
+                        request_id,
+                    )
+
+                tool_name = str(task_params.get("tool_name") or "").strip()
+                if not tool_name:
+                    return self._scheduler_error(
+                        "VALIDATION_ERROR",
+                        "params.tool_name is required for kind='run_tool'",
+                        request_id,
+                    )
+
+                task_id = str(uuid.uuid4())
+                await self.db_manager.create_scheduled_task(
+                    task_id=task_id,
+                    kind=kind,
+                    schedule=schedule,
+                    params=task_params,
+                    enabled=True,
+                )
+                task = await self.db_manager.get_scheduled_task(task_id)
+                return self._scheduler_success(
+                    {
+                        "task_id": task_id,
+                        "created": True,
+                        "task": task,
+                    },
+                    request_id,
+                )
+
+            if method == "cancel_task":
+                task_id = str(params.get("task_id") or "").strip()
+                if not task_id:
+                    return self._scheduler_error("VALIDATION_ERROR", "task_id is required", request_id)
+                updated = await self.db_manager.disable_scheduled_task(task_id)
+                if not updated:
+                    return self._scheduler_error("NOT_FOUND", f"Task not found: {task_id}", request_id)
+                task = await self.db_manager.get_scheduled_task(task_id)
+                return self._scheduler_success(
+                    {"task_id": task_id, "canceled": True, "task": task},
+                    request_id,
+                )
+
+            if method == "list_tasks":
+                tasks = await self.db_manager.list_scheduled_tasks()
+                return self._scheduler_success(
+                    {"tasks": tasks, "count": len(tasks)},
+                    request_id,
+                )
+
+            if method == "task_run_now":
+                task_id = str(params.get("task_id") or "").strip()
+                if not task_id:
+                    return self._scheduler_error("VALIDATION_ERROR", "task_id is required", request_id)
+                updated = await self.db_manager.request_scheduled_task_run_now(task_id)
+                if not updated:
+                    return self._scheduler_error("NOT_FOUND", f"Task not found: {task_id}", request_id)
+                task = await self.db_manager.get_scheduled_task(task_id)
+                return self._scheduler_success(
+                    {"task_id": task_id, "queued_for_immediate_run": True, "task": task},
+                    request_id,
+                )
+
+            return self._scheduler_error("UNKNOWN_METHOD", f"Unknown scheduler method: {method}", request_id)
+        except ValueError as exc:
+            return self._scheduler_error("VALIDATION_ERROR", str(exc), request_id)
+        except Exception as exc:
+            logger.error(f"Scheduler RPC error: method={method}, error={exc}", exc_info=True)
+            return self._scheduler_error("SCHEDULER_ERROR", str(exc), request_id)
+
+    async def _scheduler_runtime_loop(self) -> None:
+        """Периодически выполняет due scheduled tasks (MVP)."""
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                if not self.db_manager:
+                    continue
+                due_tasks = await self.db_manager.get_due_scheduled_tasks()
+                if not due_tasks:
+                    continue
+
+                for task in due_tasks:
+                    try:
+                        await self._execute_scheduled_task(task)
+                    except Exception as exc:
+                        logger.error(
+                            f"Failed to execute scheduled task: task_id={task.get('task_id')} error={exc}",
+                            exc_info=True,
+                        )
+                    finally:
+                        task_id = str(task.get("task_id") or "")
+                        if task_id:
+                            await self.db_manager.update_scheduled_task_after_run(task_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error(f"Scheduler loop error: {exc}", exc_info=True)
+                await asyncio.sleep(2.0)
+
+    async def _execute_scheduled_task(self, task: Dict[str, Any]) -> None:
+        """Выполняет одну scheduled task через обычный command/orchestrator path."""
+        if not self.db_manager:
+            return
+
+        task_id = str(task.get("task_id") or "")
+        kind = str(task.get("kind") or "")
+        if kind != "run_tool":
+            logger.warning(f"Skip unsupported scheduled task kind: task_id={task_id} kind={kind}")
+            return
+
+        task_params = task.get("params")
+        if not isinstance(task_params, dict):
+            task_params = {}
+
+        tool_name = str(task_params.get("tool_name") or "").strip()
+        if not tool_name:
+            logger.warning(f"Skip scheduled task without tool_name: task_id={task_id}")
+            return
+
+        run_tool_params = {
+            "tool_name": tool_name,
+            "params": task_params.get("params") if isinstance(task_params.get("params"), dict) else {},
+            "ticket_id": task_params.get("ticket_id"),
+        }
+        run_tool_params = {k: v for k, v in run_tool_params.items() if v is not None}
+
+        logger.info(f"Scheduler executing run_tool: task_id={task_id} tool_name={tool_name}")
+        await self.execute_command(
+            command="run_tool",
+            params=run_tool_params,
+            request_id=f"scheduler-{task_id}-{uuid.uuid4()}",
+            device_id=self.device_id,
+            actor_role="agent",
+        )
     
     def _format_uptime(self, seconds: float) -> str:
         """

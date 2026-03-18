@@ -505,9 +505,22 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 
 Для методов из `IDEMPOTENT_METHODS` (ticket_open, ticket_closed, start_job, stop_job, run_tool, schedule_task, cancel_task, task_run_now) в `rpc_request` может требоваться **idempotency_key**. Ответ кэшируется в БД (`rpc_idempotency_cache`) с TTL 1 час (`IDEMPOTENCY_TTL_SECONDS`); при повторном запросе с тем же ключом возвращается кэшированный результат.
 
-## Scheduler (заглушки)
+## Scheduler MVP
 
-Методы `schedule_task`, `cancel_task`, `list_tasks`, `task_run_now` объявлены в протоколе, но на агенте возвращают **NOT_IMPLEMENTED** — функциональность запланирована, не реализована.
+На агенте реализованы RPC-методы:
+
+- `schedule_task`
+- `cancel_task`
+- `list_tasks`
+- `task_run_now`
+
+Ограничения MVP:
+
+- Поддерживается только `kind="run_tool"`.
+- Поддерживаются только расписания `minutely | hourly | daily | weekly`.
+- `cron`/`timestamp` и другие форматы отклоняются с `VALIDATION_ERROR` (без silent fallback).
+- Планировщик выполняет due-задачи через тот же путь `execute_command("run_tool", ...)`, что и обычные команды.
+- `cancel_task` отключает задачу (`enabled=0`), `task_run_now` планирует немедленный запуск без удаления расписания.
 
 ## Сильные и слабые стороны протокола
 
@@ -524,8 +537,8 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 ### Слабые стороны и ограничения
 
 - **handle_ack асинхронный без ожидания:** на агенте `handle_ack()` запускает `_handle_ack_async()` через create_task и не ждёт завершения; при очень быстром повторном claim теоретически возможна гонка.
-- **Command in_progress:** при статусе in_progress команда выполняется повторно; при падении агента после mark_command_started и до mark_command_seen возможен дубль при retry.
-- **Scheduler не реализован:** методы планировщика — заглушки NOT_IMPLEMENTED.
+- **Command in_progress:** агент использует `seen_commands` + process-local `_running_commands`; дубликат с тем же `command_id` ждёт текущий Future, stale `in_progress` (TTL) разрешает controlled retry.
+- **Scheduler MVP ограничен:** только `run_tool` и fixed schedules (`minutely|hourly|daily|weekly`), без cron/timestamp и без произвольных видов задач.
 - **Один цикл DeviceOutboxSender на сервере:** один poll по всем устройствам (интервал 1 с, лимит команд за раз); при большой нагрузке может стать узким местом.
 - **Синхронное ожидание send_ws_command:** ожидание Future по таймауту (WS_COMMAND_TIMEOUT) держит корутину; при большом числе одновременных run_tool растёт число висящих задач.
 - **Коды UNAUTHORIZED/RATE_LIMIT в NACK:** в документации перечислены, в коде сервера при handshake используется закрытие с кодом 4003 без отдельного кода UNAUTHORIZED; RATE_LIMIT не возвращается в outbox_nack.

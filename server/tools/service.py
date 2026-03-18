@@ -460,3 +460,12 @@ class ToolService:
                 "status": "error",
                 "error": str(e)
             }
+
+
+class ToolExecutionService(ToolService):
+    """
+    Канонический фасад выполнения run_tool.
+
+    ToolService сохранен для обратной совместимости, а все новые вызовы
+    должны использовать ToolExecutionService.
+    """

@@ -2,7 +2,7 @@
 
 Краткое описание поведения сервера в рамках Protocol V3 и ссылка на полную спецификацию.
 
-**Дата обновления:** 2026-02-26
+**Дата обновления:** 2026-03-18
 
 ---
 
@@ -96,9 +96,9 @@ SERVER_CAPABILITIES = [
 
 ## Сильные и слабые стороны (сервер)
 
-**Сильные:** строгая проверка protocol_version и capabilities; device_id только из токена (БД); device binding для тикетов; дедупликация по (device_id, ticket_id, agent_seq) и (device_id, device_seq); tool_call_started до отправки run_tool; нормализация command_result и защита terminal состояний (COMMAND_RESULT_LIFECYCLE).
+**Сильные:** строгая проверка protocol_version и capabilities; device_id только из токена (БД); device binding для тикетов; дедупликация по (device_id, ticket_id, agent_seq) и (device_id, device_seq); tool_call_started до отправки run_tool; нормализация command_result и защита terminal состояний (COMMAND_RESULT_LIFECYCLE); единый run_tool backend-фасад (`ToolExecutionService`) для API/админки/smoke.
 
-**Слабые/ограничения:** монолитный agent_handler; один цикл DeviceOutboxSender; синхронное ожидание в send_ws_command по таймауту; admin run_tool может идти другим путём (без создания tool_call_started в том же месте, что и ToolService). Подробнее: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md).
+**Слабые/ограничения:** монолитный agent_handler; один цикл DeviceOutboxSender; синхронное ожидание в send_ws_command по таймауту. `send_ws_command` теперь транспортный слой (enqueue + wait) без run_tool policy/consent-веток. Подробнее: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md).
 
 ---
 

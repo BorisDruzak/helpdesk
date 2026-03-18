@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.repos import DeviceModulesRepo, ToolsetSnapshotsRepo
-from tools.service import ToolService
+from tools.service import ToolExecutionService
 
 
 async def run_smoke_for_module_tools(
@@ -24,7 +24,7 @@ async def run_smoke_for_module_tools(
     Возвращает список результатов: {tool, success, error_code?, duration_ms, device_id}.
     """
     results = []
-    tool_service = ToolService(state)
+    tool_service = ToolExecutionService(state)
     for t in module_tools:
         tool_name = t.get("tool") or t.get("name")
         if not tool_name:

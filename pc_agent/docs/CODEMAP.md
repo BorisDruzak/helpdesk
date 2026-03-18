@@ -8,7 +8,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration; Scheduler RPC + runtime loop |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI |
@@ -21,7 +21,7 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/core/orchestrator.py` | Обработка команд: run_tool, collect/list/update, lifecycle операций, кэш модулей, self-heal после rollback |
-| `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, DB_SCHEMA_VERSION |
+| `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries |
 | `pc_agent/core/identity.py` | device_id, AUTH_TOKEN, auth_tokens, legacy |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
@@ -94,6 +94,7 @@
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`
+- **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
 - **device_seq, agent_seq** — тип события только по ним; outbox в `core/database.py`
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
@@ -115,7 +116,7 @@
 
 ## 5. Хранилище и миграции
 
-- SQLite: `pc_agent/data/storage.db`. Версия схемы: `core/database.py` (DB_SCHEMA_VERSION). Таблицы: outbox, seq_ticket, seq_device, seen_commands, pending_consents, auth_tokens. См. `docs/DATABASE.md`, `docs/SENDER.md`.
+- SQLite: `pc_agent/data/storage.db`. Версия схемы: `core/database.py` (DB_SCHEMA_VERSION). Таблицы: outbox, seq_ticket, seq_device, seen_commands, pending_consents, auth_tokens, scheduled_tasks. См. `docs/DATABASE.md`, `docs/SENDER.md`.
 
 ---
 

@@ -7,7 +7,7 @@ import uuid
 from aiohttp import web
 from loguru import logger
 from websocket.protocol import send_ws_command
-from tools.service import ToolService
+from tools.service import ToolExecutionService
 
 
 async def handle_send_command(request):
@@ -327,7 +327,7 @@ async def handle_smoke_run(request):
             }, status=409)
         
         # Шаг 2: run_tool через ToolService (единая точка входа)
-        tool_service = ToolService(state)
+        tool_service = ToolExecutionService(state)
         run_res = await tool_service.run_tool(
             device_id=device_id,
             ticket_id=str(uuid.uuid4()),

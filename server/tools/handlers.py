@@ -6,7 +6,7 @@ import json
 import asyncio
 from aiohttp import web
 from loguru import logger
-from .service import ToolService
+from .service import ToolExecutionService
 from utils import new_call_id, now_iso
 from auth.context import AuthContext
 from websocket.protocol import WsCommandQueueFullError
@@ -31,7 +31,7 @@ async def handle_get_tools(request):
             }, status=400)
         
         state = request.app['state']
-        tool_service = ToolService(state)
+        tool_service = ToolExecutionService(state)
         
         tools = await tool_service.get_tools_list(device_id)
         # При офлайн-агенте или отсутствии snapshot возвращаем пустой список,
@@ -122,7 +122,7 @@ async def handle_tools_run(request):
         wait_mode = request.query.get("wait", "0") == "1"
         
         state = request.app['state']
-        tool_service = ToolService(state)
+        tool_service = ToolExecutionService(state)
         
         # Phase 4: Policy check ПЕРЕД созданием operation
         # Получаем tools list для получения metadata

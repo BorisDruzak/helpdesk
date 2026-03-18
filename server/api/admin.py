@@ -10,7 +10,7 @@ from loguru import logger
 from utils import now_iso, new_ticket_id, new_session_id
 from config import ENABLE_DB_PERSISTENCE
 from models import Session
-from tools.service import ToolService
+from tools.service import ToolExecutionService
 from websocket.protocol import WsCommandQueueFullError
 
 try:
@@ -150,7 +150,7 @@ async def handle_admin_run_tool(request):
             await db_session.commit()
             
             auth_context = request.get("auth_context")
-            tool_service = ToolService(state)
+            tool_service = ToolExecutionService(state)
             logger.info(f"[ADMIN_RUN_TOOL] Вызов ToolService.run_tool для device_id={device_id} (tool_call_started создаётся в ToolService)")
             
             try:
