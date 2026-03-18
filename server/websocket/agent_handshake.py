@@ -23,7 +23,8 @@ from websocket.batch_ack_manager import BatchAckManager, NackInfo
 from websocket.validator import EventValidator
 from websocket.command_result_parser import normalize_command_result_payload
 from config import ENABLE_DB_PERSISTENCE
-from auth.service import AuthService
+from auth.agent_token_service import AgentTokenService
+from auth.connection_request_service import ConnectionRequestService
 from auth.context import AuthContext, AuthType
 from websocket.contexts import AgentConnectionContext, EnvelopeContext
 from websocket.agent_services import (
@@ -112,37 +113,36 @@ async def handle_handshake(
         data.get("uuid")
     )
     
+    connection_request_service = ConnectionRequestService()
     if not token:
         logger.warning("рџ”ґ РџРѕРїС‹С‚РєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ Р±РµР· С‚РѕРєРµРЅР°")
-        # РЎРѕС…СЂР°РЅСЏРµРј РїРѕРїС‹С‚РєСѓ РїРѕРґРєР»СЋС‡РµРЅРёСЏ РґР»СЏ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ РІ admin РїР°РЅРµР»Рё
+        # Persist pending attempt in DB for admin visibility.
         if payload_device_id:
-            state.pending_connections[payload_device_id] = {
-                "device_id": payload_device_id,
-                "attempted_at": time.time(),
-                "ip_address": request.remote,
-                "user_agent": request.headers.get("User-Agent", ""),
-                "reason": "no_token"
-            }
-            logger.info(f"рџ“ќ Р—Р°РїРёСЃР°РЅР° РїРѕРїС‹С‚РєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ РґР»СЏ device_id={payload_device_id[:8]}...")
+            await connection_request_service.record_unauthorized_attempt(
+                device_id=payload_device_id,
+                ip_address=request.remote,
+                user_agent=request.headers.get("User-Agent", ""),
+                reason="no_token",
+            )
+            logger.info(f"[handshake] Unauthorized attempt persisted: device_id={payload_device_id[:8]}... reason=no_token")
         await ws.close(code=4003, message=b"Token required")
         return (ws, agent_id, device_id, authenticated)
     
     # РџСЂРѕРІРµСЂСЏРµРј С‚РѕРєРµРЅ С‡РµСЂРµР· AuthService (Р‘Р”)
-    auth_service = AuthService(state)
-    token_info = await auth_service.verify_agent_token(token)
+    token_service = AgentTokenService()
+    token_info = await token_service.verify_agent_token(token)
     
     if not token_info:
         logger.warning(f"рџ”ґ РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ Р°РіРµРЅС‚Р°: {token[:8]}...")
-        # РЎРѕС…СЂР°РЅСЏРµРј РїРѕРїС‹С‚РєСѓ РїРѕРґРєР»СЋС‡РµРЅРёСЏ СЃ РЅРµРІР°Р»РёРґРЅС‹Рј С‚РѕРєРµРЅРѕРј
+        # Persist pending attempt with invalid token reason.
         if payload_device_id:
-            state.pending_connections[payload_device_id] = {
-                "device_id": payload_device_id,
-                "attempted_at": time.time(),
-                "ip_address": request.remote,
-                "user_agent": request.headers.get("User-Agent", ""),
-                "reason": "invalid_token"
-            }
-            logger.info(f"рџ“ќ Р—Р°РїРёСЃР°РЅР° РїРѕРїС‹С‚РєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ СЃ РЅРµРІР°Р»РёРґРЅС‹Рј С‚РѕРєРµРЅРѕРј РґР»СЏ device_id={payload_device_id[:8]}...")
+            await connection_request_service.record_unauthorized_attempt(
+                device_id=payload_device_id,
+                ip_address=request.remote,
+                user_agent=request.headers.get("User-Agent", ""),
+                reason="invalid_token",
+            )
+            logger.info(f"[handshake] Unauthorized attempt persisted: device_id={payload_device_id[:8]}... reason=invalid_token")
         await ws.close(code=4003, message=b"Invalid token")
         return (ws, agent_id, device_id, authenticated)
     

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 from loguru import logger
 from .service import AuthService
+from .connection_request_service import ConnectionRequestService
 
 
 async def handle_login(request):
@@ -58,10 +59,9 @@ async def handle_login(request):
         
         logger.info(f"✅ Токен сгенерирован для device_id={uuid_str[:8]}...")
         
-        # Удаляем из pending_connections если была попытка подключения
-        if uuid_str in state.pending_connections:
-            del state.pending_connections[uuid_str]
-            logger.info(f"📝 Удалена попытка подключения для device_id={uuid_str[:8]}... после генерации токена")
+        # Если для устройства был pending запрос на подключение, считаем его закрытым.
+        connection_request_service = ConnectionRequestService()
+        await connection_request_service.clear_pending_after_manual_token_issue(device_id=uuid_str)
         
         return web.json_response({
             "status": "success",

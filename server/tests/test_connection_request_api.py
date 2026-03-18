@@ -162,6 +162,28 @@ async def test_admin_reject_request(test_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_status_token_is_db_backed_not_state(test_client, test_engine):
+    """Approved token is consumed from DB without relying on StateManager memory."""
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+    await test_client.post("/api/connection_request", json={"device_id": device_id})
+    await test_client.post(
+        f"/api/admin/connection_requests/{device_id}/approve",
+        headers=_admin_headers(),
+        json={},
+    )
+
+    # Simulate process-local state loss: DB path must still work.
+    test_client.app["state"] = test_client.app["state"].__class__()
+
+    r = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    assert r.status == 200
+    payload = await r.json()
+    assert payload.get("status") == "approved"
+    assert payload.get("token")
+
+
+@pytest.mark.asyncio
 async def test_connection_request_missing_device_id(test_client):
     """POST without device_id returns 400."""
     r = await test_client.post("/api/connection_request", json={})

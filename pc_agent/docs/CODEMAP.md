@@ -20,7 +20,8 @@
 ### 2.1 Ядро (core/)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/core/orchestrator.py` | Обработка команд: run_tool, collect/list/update, lifecycle операций, кэш модулей, self-heal после rollback |
+| `pc_agent/core/orchestrator.py` | Обработка команд: run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей |
+| `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries |
 | `pc_agent/core/identity.py` | device_id, AUTH_TOKEN, auth_tokens, legacy |
@@ -99,7 +100,7 @@
 - **device_seq, agent_seq** — тип события только по ним; outbox в `core/database.py`
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
-- **consent, pending_consents** — `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
+- **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
 - **аутентификация, токен** — `core/identity.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`

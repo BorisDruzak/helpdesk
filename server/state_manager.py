@@ -31,13 +31,9 @@ class StateManager:
     
     def __init__(self):
         # ============================================================================
-        # Users and Authentication
+        # Users (Config fallback only)
         # ============================================================================
         self.users: Dict[str, str] = USERS.copy()
-        self.tokens: Dict[str, dict] = {}
-        
-        # Инициализируем токены для известных агентов (in-memory; в production — DB-backed, см. docs/BOTTLENECKS_AND_RISKS.md)
-        self._init_default_tokens()
         
         # ============================================================================
         # Agents (Runtime)
@@ -47,12 +43,6 @@ class StateManager:
         self.connected_agents: Dict[str, dict] = {}
         # Реестр административных клиентов
         self.admin_clients: Set[Any] = set()
-        # Попытки подключения без токена (device_id -> {attempted_at, ip_address, user_agent})
-        # RUNTIME: Очищаются после генерации токена или через TTL
-        self.pending_connections: Dict[str, dict] = {}
-        # Однократная выдача токена при approve connection request (device_id -> raw_token)
-        # Удаляется после первого GET /api/connection_request/status по этому device_id
-        self.approved_connection_tokens: Dict[str, str] = {}
         
         # ============================================================================
         # Tickets Runtime Data (НЕ Source of Truth!)
@@ -126,28 +116,6 @@ class StateManager:
             self.ui_publisher = None
             logger.warning("[StateManager] UiPublisher not available")
         
-        # Инициализируем токены для известных агентов
-        self._init_default_tokens()
-    
-    # ============================================================================
-    # Initialization Methods
-    # ============================================================================
-    
-    def _init_default_tokens(self):
-        """Инициализирует токены для известных агентов при старте сервера."""
-        # Токен для агента из identity.json
-        known_tokens = [
-            "token-f5514904-118f-437e-907a-7e018161fa3c",
-            "token-5db311f2-6b7e-4235-9ff4-09e7095d7f5f",
-            "token-78f395c8-0d0b-420e-a6c1-22fae424927d"
-        ]
-        
-        for token in known_tokens:
-            self.tokens[token] = {
-                "user": "sosn.alt.adm",
-                "created_at": "server_startup",
-                "type": "agent"
-            }
     
     # ============================================================================
     # Agent Management Methods (Runtime)

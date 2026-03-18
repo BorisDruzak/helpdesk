@@ -1,4 +1,4 @@
-﻿"""
+"""
 РЈРЅРёРІРµСЂСЃР°Р»СЊРЅС‹Р№ РєРѕРЅС‚СЂРѕР»Р»РµСЂ Р°РіРµРЅС‚Р° (orchestrator).
 
 Р­С‚РѕС‚ РјРѕРґСѓР»СЊ СЂРµР°Р»РёР·СѓРµС‚ РµРґРёРЅСѓСЋ С‚РѕС‡РєСѓ РІС…РѕРґР° РґР»СЏ РѕР±СЂР°Р±РѕС‚РєРё РІСЃРµС… РєРѕРјР°РЅРґ,
@@ -35,6 +35,7 @@ from core.tool_response import ToolResponse, ToolMeta, ToolData, ErrorInfo, ok, 
 from core.artifacts import ArtifactIntent, ArtifactManager
 from core.tools import ToolSpec, check_policy, ToolMetadata
 from core.policy_engine import PolicyEngine
+from core.consent_service import ConsentService, ConsentState
 from network.uploader import get_uploader
 from core.identity import IdentityManager
 from core.module_manager import ModuleManager
@@ -105,6 +106,10 @@ class AgentOrchestrator:
 
         # UI Bridge РґР»СЏ РїСѓР±Р»РёРєР°С†РёРё СЃРѕР±С‹С‚РёР№ (СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚СЃСЏ РёР·РІРЅРµ)
         self.ui_bus = None
+        self.consent_service = ConsentService(
+            db_manager=self.db_manager,
+            device_id_getter=lambda: self.device_id or self.agent_uuid or "unknown",
+        )
 
         # Tech debt (BOTTLENECKS): Р—Р°РєРѕРјРјРµРЅС‚РёСЂРѕРІР°РЅРЅС‹Р№ consent-РїСѓС‚СЊ; РїСЂРё РІРєР»СЋС‡РµРЅРёРё СЃРѕРіР»Р°СЃРѕРІР°С‚СЊ
         # СЃ С‚РµРєСѓС‰РµР№ РјРѕРґРµР»СЊСЋ consent РІ Р‘Р” Рё server waiting_consent. Р РЋР С. docs/BOTTLENECKS_AND_RISKS.md
@@ -2986,31 +2991,19 @@ class AgentOrchestrator:
             if not decision_allow:
                 # Р•СЃР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ СЃРѕРіР»Р°СЃРёРµ, СЃРѕР·РґР°РµРј pending tool call Рё РїСѓР±Р»РёРєСѓРµРј СЃРѕР±С‹С‚РёРµ
                 if decision_requires_consent:
-                    consent_token = str(uuid.uuid4())
                     session_key = self._session_key_from_command(meta, command_params)
-                    
-                    # РЎРѕС…СЂР°РЅСЏРµРј pending tool call
-                    if self.db_manager:
-                        try:
-                            await self.db_manager.add_pending_consent(
-                                operation_id=consent_token,
-                                device_id=self.device_id or self.agent_uuid or "unknown",
-                                tool_name=tool,
-                                params=tool_params,
-                                payload_hash=self._hash_payload(tool_params),
-                                request_id=meta.request_id,
-                                session_key=session_key,
-                                actor_role=actor_role,
-                                ticket_id=command_params.get("ticket_id"),
-                                job_id=command_params.get("job_id") or chat_job_id,
-                                expires_at=int(time.time()) + 1800  # 30 РјРёРЅСѓС‚
-                            )
-                            logger.info(f"Pending consent saved to DB: operation_id={consent_token}")
-                        except Exception as e:
-                            logger.error(f"Failed to save pending consent: {e}")
-                            # Fallback to in-memory if DB fails (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ)
-                    else:
-                        logger.warning("db_manager not available, consent not persisted")
+                    consent_record = await self.consent_service.create_pending(
+                        tool_name=tool,
+                        params=tool_params,
+                        payload_hash=self._hash_payload(tool_params),
+                        request_id=meta.request_id,
+                        session_key=session_key,
+                        actor_role=actor_role,
+                        ticket_id=command_params.get("ticket_id"),
+                        job_id=command_params.get("job_id") or chat_job_id,
+                        expires_in_sec=1800,
+                    )
+                    consent_token = consent_record.consent_token
                     
                     # Р¤РѕСЂРјРёСЂСѓРµРј СЃРѕР±С‹С‚РёРµ consent_required
                     event = {
@@ -3053,6 +3046,7 @@ class AgentOrchestrator:
                             "requires_consent": True,
                             "consent_token": consent_token,
                             "session_key": session_key,
+                            "consent_state": ConsentState.WAITING_USER.value,
                             "tool": tool,
                             "risk_level": metadata.risk_level,
                             "reason": decision_reason,
@@ -3400,28 +3394,26 @@ class AgentOrchestrator:
             # Р•СЃР»Рё session_key РЅРµ СѓРєР°Р·Р°РЅ, РёСЃРїРѕР»СЊР·СѓРµРј request_id РєР°Рє fallback
             if not session_key:
                 session_key = meta.request_id or str(uuid.uuid4())
-            
-            # Р—Р°РїРёСЃС‹РІР°РµРј СЂРµС€РµРЅРёРµ РІ consent_cache
-            if session_key not in self.consent_cache:
-                self.consent_cache[session_key] = {}
-            self.consent_cache[session_key][consent_token] = approved
-            logger.info(f"СЂСџвЂњвЂ№ Р РµС€РµРЅРёРµ Рѕ СЃРѕРіР»Р°СЃРёРё Р·Р°РїРёСЃР°РЅРѕ: consent_token={consent_token}, approved={approved}, session_key={session_key}")
-            
-            # РќР°С…РѕРґРёРј pending tool call
-            pending = None
-            if self.db_manager:
-                try:
-                    pending = await self.db_manager.get_pending_consent(consent_token)
-                except Exception as e:
-                    logger.error(f"Failed to get pending consent: {e}")
 
-            if not pending:
+            consent_record = await self.consent_service.apply_decision(
+                consent_token=consent_token,
+                approved=approved,
+            )
+            if consent_record.state == ConsentState.EXPIRED:
+                return fail(
+                    code="CONSENT_EXPIRED",
+                    message=f"Consent token expired: {consent_token}",
+                    meta=meta,
+                    retriable=False
+                )
+            if not consent_record.pending:
                 return fail(
                     code="UNKNOWN_CONSENT_TOKEN",
                     message=f"Unknown consent_token: {consent_token}",
                     meta=meta,
                     retriable=False
                 )
+            pending = consent_record.pending
             
             # РР·РІР»РµРєР°РµРј РґР°РЅРЅС‹Рµ РёР· pending
             tool_name = pending["tool_name"]
@@ -3433,15 +3425,7 @@ class AgentOrchestrator:
             pending_ticket_id = pending.get("ticket_id")
             pending_job_id = pending.get("job_id")
             
-            # РЈРґР°Р»СЏРµРј pending РІРЅРµ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ outcome
-            if self.db_manager:
-                try:
-                    await self.db_manager.remove_pending_consent(consent_token)
-                    logger.info(f"Pending consent removed from DB: operation_id={consent_token}")
-                except Exception as e:
-                    logger.error(f"Failed to remove pending consent: {e}")
-            
-            if approved:
+            if consent_record.state == ConsentState.APPROVED:
                 # Р’С‹РїРѕР»РЅСЏРµРј РёРЅСЃС‚СЂСѓРјРµРЅС‚
                 logger.info(f"РІСљвЂ¦ РЎРѕРіР»Р°СЃРёРµ РїРѕР»СѓС‡РµРЅРѕ, РІС‹РїРѕР»РЅСЏСЋ tool: {tool_name}, consent_token={consent_token}")
                 
@@ -3487,6 +3471,7 @@ class AgentOrchestrator:
                         "ok": result.status == "success",
                         "result_preview": result_preview,
                         "request_id": pending_request_id,
+                        "consent_state": ConsentState.RESOLVED.value,
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
@@ -3508,6 +3493,7 @@ class AgentOrchestrator:
                         "session_key": session_key,
                         "tool_name": tool_name,
                         "request_id": pending_request_id,
+                        "consent_state": ConsentState.REJECTED.value,
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }

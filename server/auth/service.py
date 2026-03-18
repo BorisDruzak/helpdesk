@@ -17,6 +17,7 @@ from auth.password_service import verify_password
 
 class AuthService:
     """Сервис для работы с аутентификацией."""
+    _LEGACY_TOKEN_STORE: dict[str, dict] = {}
     
     def __init__(self, state_manager):
         self.state = state_manager
@@ -180,7 +181,7 @@ class AuthService:
         Legacy method for backward compatibility.
         
         DEPRECATED: Use generate_agent_token() instead.
-        This method still works but uses old state.tokens storage.
+        This method still works but uses legacy in-process storage.
         
         Args:
             uuid_str: UUID устройства
@@ -191,8 +192,8 @@ class AuthService:
         """
         token = f"token-{uuid_str}"
         
-        # Сохраняем токен в state (legacy, для совместимости)
-        self.state.tokens[token] = {
+        # Legacy-only storage (не участвует в production auth path).
+        self._LEGACY_TOKEN_STORE[token] = {
             "uuid": uuid_str,
             "user": login,
             "created_at": time.time()
@@ -266,7 +267,7 @@ class AuthService:
         Legacy method for backward compatibility.
         
         DEPRECATED: Use verify_agent_token() or verify_ui_token() instead.
-        This method checks state.tokens first, then falls back to DB.
+        This method checks legacy in-process storage only.
         
         Args:
             token: Токен для проверки
@@ -274,15 +275,15 @@ class AuthService:
         Returns:
             Информация о токене если он валиден, иначе None
         """
-        # First check legacy state.tokens
-        if token in self.state.tokens:
-            legacy_data = self.state.tokens[token]
-            logger.debug(f"[AuthService] Token found in legacy state.tokens: {token[:8]}...")
+        # Legacy-only in-memory store (internal compatibility path).
+        if token in self._LEGACY_TOKEN_STORE:
+            legacy_data = self._LEGACY_TOKEN_STORE[token]
+            logger.debug(f"[AuthService] Token found in legacy token store: {token[:8]}...")
             return legacy_data
         
         # Fallback to DB требует async; этот метод sync — legacy. Использовать verify_agent_token/verify_ui_token (docs/BOTTLENECKS_AND_RISKS.md Phase 3).
         logger.warning(
-            "[AuthService] verify_token() called with token not in state.tokens. "
+            "[AuthService] verify_token() called with token not in legacy token store. "
             "Use async verify_agent_token() or verify_ui_token() instead."
         )
         return None
@@ -324,8 +325,11 @@ class AuthService:
         Args:
             token: Токен для отзыва
         """
-        if token in self.state.tokens:
-            del self.state.tokens[token]
+        if token in self._LEGACY_TOKEN_STORE:
+            del self._LEGACY_TOKEN_STORE[token]
             logger.info(f"[AuthService] Revoked legacy token: {token[:8]}...")
         else:
-            logger.warning(f"[AuthService] revoke_token() called with token not in state.tokens. Use async revoke_agent_token() or revoke_ui_token() instead.")
+            logger.warning(
+                "[AuthService] revoke_token() called with token not in legacy store. "
+                "Use async revoke_agent_token() or revoke_ui_token() instead."
+            )

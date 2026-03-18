@@ -12,6 +12,8 @@ from app.db import get_session
 from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
 from websocket.batch_ack_manager import NackInfo
+from websocket.command_result_components import CommandResultNormalizer, CommandResultFutureResolver
+from websocket.outbox_ingest_components import OutboxEnvelopeValidator as OutboxEnvelopeValidatorComponent
 
 from .contexts import AgentConnectionContext, EnvelopeContext
 
@@ -118,14 +120,44 @@ class CommandResultService:
 
     def __init__(self, legacy_handler: Callable[..., Awaitable[None]]) -> None:
         self._legacy_handler = legacy_handler
+        self._normalizer = CommandResultNormalizer()
+        self._lifecycle = OperationLifecycleService()
+        self._future_resolver = CommandResultFutureResolver()
+        self._event_publisher = CommandResultEventPublisher()
+        self._artifact_handler = CommandResultArtifactHandler()
 
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> None:
-        await self._legacy_handler(
+        normalized = self._normalizer.normalize(message)
+        await self._artifact_handler.pre_handle(normalized, ctx)
+        await self._lifecycle.handle(self._legacy_handler, message, ctx)
+        await self._event_publisher.post_handle(normalized, ctx)
+
+
+class OperationLifecycleService:
+    """Lifecycle orchestrator for command_result state transitions."""
+
+    async def handle(
+        self,
+        legacy_handler: Callable[..., Awaitable[None]],
+        message: dict[str, Any],
+        ctx: AgentConnectionContext,
+    ) -> None:
+        await legacy_handler(
             ws=ctx.ws,
             data=message,
             state=ctx.state,
             agent_id=ctx.agent_id,
         )
+
+
+class CommandResultEventPublisher:
+    async def post_handle(self, normalized: Any, ctx: AgentConnectionContext) -> None:
+        _ = (normalized, ctx)
+
+
+class CommandResultArtifactHandler:
+    async def pre_handle(self, normalized: Any, ctx: AgentConnectionContext) -> None:
+        _ = (normalized, ctx)
 
 
 class OutboxIngestService:
@@ -140,9 +172,24 @@ class OutboxIngestService:
         self._legacy_handler = legacy_handler
         self._batch_ack_manager = batch_ack_manager
         self._event_validator = event_validator
+        self._validator = OutboxEnvelopeValidatorComponent()
+        self._guards = OutboxGuardService(batch_ack_manager)
+        self._dedupe = OutboxDedupService()
+        self._persistence = OutboxPersistenceService()
+        self._ack_decision = OutboxAckDecisionService()
+        self._event_publish = OutboxEventPublishService()
 
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> bool:
         if await self._apply_post_handshake_guards(message, ctx):
+            return True
+        envelope_check = self._validator.validate(message)
+        if not envelope_check.ok:
+            return await self._ack_decision.reject_invalid_envelope(
+                batch_ack_manager=self._batch_ack_manager,
+                ctx=ctx,
+                envelope_check=envelope_check,
+            )
+        if self._dedupe.is_duplicate(ctx, envelope_check.outbox_id):
             return True
         return await self._legacy_handler(
             ws=ctx.ws,
@@ -174,18 +221,12 @@ class OutboxIngestService:
         # 1) UNAUTHORIZED (message-level, post-handshake).
         actor_role = ((message.get("meta") or {}).get("actor_role") or "agent").lower()
         if actor_role not in {"agent", "system"}:
-            self._batch_ack_manager.add_nack(
-                device_id=ctx.agent_id,
+            await self._guards.reject_unauthorized(
+                ctx=ctx,
                 outbox_id=str(outbox_id),
                 trace_id=trace_id,
-                nack_info=NackInfo(
-                    retryable=False,
-                    error_code="UNAUTHORIZED",
-                    error_message=f"actor_role '{actor_role}' is not allowed for outbox_item",
-                    retry_after_sec=None,
-                ),
+                actor_role=actor_role,
             )
-            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
             return True
 
         # 2) RATE_LIMITED (message-level, post-handshake).
@@ -200,20 +241,92 @@ class OutboxIngestService:
             window.popleft()
         window.append(now)
         if len(window) > OUTBOX_INGEST_RATE_LIMIT_PER_SEC:
-            self._batch_ack_manager.add_nack(
-                device_id=ctx.agent_id,
+            await self._guards.reject_rate_limited(
+                ctx=ctx,
                 outbox_id=str(outbox_id),
                 trace_id=trace_id,
-                nack_info=NackInfo(
-                    retryable=True,
-                    error_code="RATE_LIMITED",
-                    error_message="Outbox ingest rate limit exceeded",
-                    retry_after_sec=1,
-                ),
             )
-            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
             return True
         return False
+
+
+class OutboxGuardService:
+    def __init__(self, batch_ack_manager: Any) -> None:
+        self._batch_ack_manager = batch_ack_manager
+
+    async def reject_unauthorized(self, *, ctx: AgentConnectionContext, outbox_id: str, trace_id: str, actor_role: str) -> None:
+        self._batch_ack_manager.add_nack(
+            device_id=ctx.agent_id,
+            outbox_id=outbox_id,
+            trace_id=trace_id,
+            nack_info=NackInfo(
+                retryable=False,
+                error_code="UNAUTHORIZED",
+                error_message=f"actor_role '{actor_role}' is not allowed for outbox_item",
+                retry_after_sec=None,
+            ),
+        )
+        await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+
+    async def reject_rate_limited(self, *, ctx: AgentConnectionContext, outbox_id: str, trace_id: str) -> None:
+        self._batch_ack_manager.add_nack(
+            device_id=ctx.agent_id,
+            outbox_id=outbox_id,
+            trace_id=trace_id,
+            nack_info=NackInfo(
+                retryable=True,
+                error_code="RATE_LIMITED",
+                error_message="Outbox ingest rate limit exceeded",
+                retry_after_sec=1,
+            ),
+        )
+        await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+
+
+class OutboxDedupService:
+    def is_duplicate(self, ctx: AgentConnectionContext, outbox_id: Optional[str]) -> bool:
+        if not ctx.agent_id or not outbox_id:
+            return False
+        key = "_outbox_seen_ids"
+        seen = getattr(ctx.state, key, None)
+        if seen is None:
+            seen = {}
+            setattr(ctx.state, key, seen)
+        agent_seen = seen.setdefault(ctx.agent_id, set())
+        if outbox_id in agent_seen:
+            return True
+        agent_seen.add(outbox_id)
+        if len(agent_seen) > 10000:
+            # bound runtime memory
+            seen[ctx.agent_id] = set(list(agent_seen)[-5000:])
+        return False
+
+
+class OutboxPersistenceService:
+    pass
+
+
+class OutboxAckDecisionService:
+    async def reject_invalid_envelope(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, envelope_check: Any) -> bool:
+        if not ctx.agent_id or not envelope_check.trace_id:
+            return True
+        batch_ack_manager.add_nack(
+            device_id=ctx.agent_id,
+            outbox_id=envelope_check.outbox_id or "unknown",
+            trace_id=envelope_check.trace_id,
+            nack_info=NackInfo(
+                retryable=False,
+                error_code="VALIDATION_ERROR",
+                error_message=envelope_check.error_message or "Invalid outbox envelope",
+                retry_after_sec=None,
+            ),
+        )
+        await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        return True
+
+
+class OutboxEventPublishService:
+    pass
 
 
 class AgentCommandService:

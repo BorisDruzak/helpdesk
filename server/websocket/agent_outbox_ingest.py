@@ -21,7 +21,10 @@ from websocket.protocol import (
 )
 from websocket.batch_ack_manager import BatchAckManager, NackInfo
 from websocket.validator import EventValidator
-from websocket.command_result_parser import normalize_command_result_payload
+from websocket.outbox_ingest_components import (
+    OutboxEnvelopeValidator,
+    OutboxAckDecisionService,
+)
 from config import ENABLE_DB_PERSISTENCE
 from auth.service import AuthService
 from auth.context import AuthContext, AuthType
@@ -44,6 +47,9 @@ try:
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
+
+_envelope_validator = OutboxEnvelopeValidator()
+_ack_decision = OutboxAckDecisionService()
 
 async def handle_outbox_item(
     ws: web.WebSocketResponse,
@@ -85,48 +91,24 @@ async def handle_outbox_item(
                     trace_id = str(uuid.uuid4())  # Fallback
                 
                 payload = data.get("payload", {})
-                # РџСЂРѕРІРµСЂРєР° С‚РёРїР° payload
-                if not isinstance(payload, dict):
+                envelope_check = _envelope_validator.validate(data)
+                if not envelope_check.ok:
                     logger.error(
-                        f"[V3] outbox_item payload is not a dict: "
-                        f"type={type(payload).__name__} value={payload}"
+                        f"[V3] outbox_item envelope validation failed: error={envelope_check.error_message}"
                     )
-                    # РћС‚РїСЂР°РІР»СЏРµРј NACK РґР»СЏ РЅРµРєРѕСЂСЂРµРєС‚РЅРѕРіРѕ payload
-                    outbox_id = payload.get("outbox_id") if isinstance(payload, dict) else None
-                    if outbox_id:
-                        agent_device_id = agent_info["metadata"].get("device_id", agent_id)
-                        batch_ack_manager.add_nack(
+                    if envelope_check.outbox_id and envelope_check.trace_id:
+                        _ack_decision.add_validation_nack(
+                            batch_ack_manager=batch_ack_manager,
                             device_id=agent_id,
-                            outbox_id=str(outbox_id),
-                            trace_id=trace_id,
-                            nack_info=NackInfo(
-                                retryable=False,
-                                error_code="VALIDATION_ERROR",
-                                error_message="Payload is not a dict",
-                                retry_after_sec=None
-                            )
+                            outbox_id=envelope_check.outbox_id,
+                            trace_id=envelope_check.trace_id,
+                            error=envelope_check.error_message or "Validation error",
                         )
                     return True
-                
-                outbox_id = payload.get("outbox_id")
+
+                outbox_id = envelope_check.outbox_id
                 item_type = payload.get("item_type", "unknown")
                 agent_device_id = agent_info["metadata"].get("device_id", agent_id)
-                
-                if not outbox_id:
-                    logger.error(f"[V3] outbox_item without outbox_id from agent {agent_id}")
-                    # РћС‚РїСЂР°РІР»СЏРµРј NACK РґР»СЏ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‰РµРіРѕ outbox_id
-                    batch_ack_manager.add_nack(
-                        device_id=agent_id,
-                        outbox_id="unknown",
-                        trace_id=trace_id,
-                        nack_info=NackInfo(
-                            retryable=False,
-                            error_code="VALIDATION_ERROR",
-                            error_message="Missing outbox_id in payload",
-                            retry_after_sec=None
-                        )
-                    )
-                    return True
             
                 logger.info(
                     f"[V3] RX outbox_item: agent_id={agent_id} "

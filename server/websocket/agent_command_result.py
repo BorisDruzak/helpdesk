@@ -21,7 +21,10 @@ from websocket.protocol import (
 )
 from websocket.batch_ack_manager import BatchAckManager, NackInfo
 from websocket.validator import EventValidator
-from websocket.command_result_parser import normalize_command_result_payload
+from websocket.command_result_components import (
+    CommandResultNormalizer,
+    CommandResultFutureResolver,
+)
 from config import ENABLE_DB_PERSISTENCE
 from auth.service import AuthService
 from auth.context import AuthContext, AuthType
@@ -46,6 +49,9 @@ except ImportError:
 
 from websocket.job_event_persistence import persist_job_event
 
+_result_normalizer = CommandResultNormalizer()
+_future_resolver = CommandResultFutureResolver()
+
 async def handle_command_result(
     ws: web.WebSocketResponse,
     data: dict,
@@ -60,24 +66,15 @@ async def handle_command_result(
             agent_info["metadata"]["last_seen"] = time.time()
             agent_info["metadata"]["last_response"] = data
             
-            # PR1: РќРѕСЂРјР°Р»РёР·СѓРµРј payload С‡РµСЂРµР· normalize_command_result_payload
-            raw_payload = data.get("payload")
-            normalized = normalize_command_result_payload(raw_payload)
-            
-            # Р“Р°СЂР°РЅС‚РёСЂРѕРІР°РЅРЅС‹Рµ РїРѕР»СЏ РїРѕСЃР»Рµ РЅРѕСЂРјР°Р»РёР·Р°С†РёРё
-            status = normalized["status"]  # "success" | "error" | "consent_required"
-            error_info = normalized["error"]  # Р’СЃРµРіРґР° dict
-            data_payload = normalized["data"]  # Р’СЃРµРіРґР° dict
-            meta_info = normalized["meta"]  # Р’СЃРµРіРґР° dict
-            is_malformed = normalized["is_malformed"]  # bool
-            
-            # Р”Р»СЏ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё СЃ legacy РєРѕРґРѕРј
-            payload = {"status": status, "error": error_info, "data": data_payload, "meta": meta_info}
-            payload_is_broken = is_malformed
+            normalized_result = _result_normalizer.normalize(data)
+            status = normalized_result.status
+            error_info = normalized_result.error_info
+            data_payload = normalized_result.data_payload
+            meta_info = normalized_result.meta_info
+            payload = normalized_result.payload
+            payload_is_broken = normalized_result.is_malformed
             meta = meta_info
-            
-            # РљР РРўРР§РќРћ: РџСЂРёРѕСЂРёС‚РµС‚РЅРѕ РёСЃРїРѕР»СЊР·СѓРµРј request_id РєР°Рє command_id
-            command_id = data.get("request_id") or meta.get("command_id")
+            command_id = normalized_result.command_id
             
             logger.debug(
                 f"[command_result] Processing: command_id={command_id} "
@@ -1265,16 +1262,8 @@ async def handle_command_result(
                 # РџСЂРёРјРµС‡Р°РЅРёРµ: РґР»СЏ error status РѕРїРµСЂР°С†РёСЏ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ СѓР¶Рµ РїРµСЂРµРІРµРґРµРЅР° РІ terminal
                 # С‡РµСЂРµР· mark_failed РІС‹С€Рµ. Р•СЃР»Рё СЌС‚РѕРіРѕ РЅРµ РїСЂРѕРёР·РѕС€Р»Рѕ - СЌС‚Рѕ СѓР¶Рµ Р·Р°Р»РѕРіРёСЂРѕРІР°РЅРѕ.
                 pending_futures = agent_info["metadata"].get("pending_command_futures", {})
-                future = pending_futures.get(command_id)
-                
-                if future and not future.done():
-                    future.set_result(data)
-                    del pending_futures[command_id]
-                    
-                    logger.info(
-                        f"[command_result] Future resolved: "
-                        f"command_id={command_id} status={status}"
-                    )
+                if _future_resolver.resolve(pending_futures, command_id, data):
+                    logger.info(f"[command_result] Future resolved: command_id={command_id} status={status}")
                 else:
                     logger.debug(
                         f"[command_result] No pending future for "

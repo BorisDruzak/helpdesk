@@ -23,7 +23,9 @@
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
 | `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities) |
 | `server/websocket/agent_command_result.py` | Полная логика `handle_command_result` (operations lifecycle / ticket events / idempotency) |
+| `server/websocket/command_result_components.py` | `CommandResultNormalizer` + `CommandResultFutureResolver` для decomposition command_result ветки |
 | `server/websocket/agent_outbox_ingest.py` | Полная логика `handle_outbox_item` (validate, persist, ACK/NACK) |
+| `server/websocket/outbox_ingest_components.py` | `OutboxEnvelopeValidator` + `OutboxAckDecisionService` для decomposition outbox ветки |
 | `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
@@ -90,7 +92,7 @@
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
 | `server/uploads/` | handlers |
-| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, password_service |
+| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service |
 | `server/playbook_handlers.py` | Старт playbook run |
 | `server/static_pages/` | handlers для admin, ticket, public_queue, CSS/JS |
 
@@ -131,7 +133,7 @@
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
-- **аутентификация, RBAC** — `auth/`, `docs/SECURITY_AND_AUTH.md`
+- **аутентификация, RBAC** — `auth/`, `auth/agent_token_service.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
 

@@ -1242,6 +1242,11 @@ class ConnectionRequest(Base):
     )
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
+    approved_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_token_delivered_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
 
     def __repr__(self) -> str:
         return f"<ConnectionRequest(id={self.id}, device_id={self.device_id!r}, status={self.status!r})>"

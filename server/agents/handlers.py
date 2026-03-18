@@ -4,7 +4,10 @@ HTTP обработчики для работы с агентами.
 
 from aiohttp import web
 from loguru import logger
+import time
 from .service import AgentService
+from app.db import get_session
+from app.repos.connection_requests_repo import ConnectionRequestsRepo
 
 
 async def handle_get_agents(request):
@@ -42,32 +45,25 @@ async def handle_get_pending_connections(request):
     Возвращает список агентов, которые пытались подключиться без токена или с невалидным токеном.
     """
     try:
-        state = request.app['state']
-        
-        # Очищаем старые попытки (старше 1 часа)
-        import time
-        current_time = time.time()
-        expired_devices = [
-            device_id for device_id, conn_data in state.pending_connections.items()
-            if current_time - conn_data.get("attempted_at", 0) > 3600
-        ]
-        for device_id in expired_devices:
-            del state.pending_connections[device_id]
-        
-        # Формируем список попыток подключения
+        async with get_session() as session:
+            repo = ConnectionRequestsRepo(session)
+            pending_rows = await repo.list_pending(only_active=True)
+
         pending_list = []
-        for device_id, conn_data in state.pending_connections.items():
-            pending_list.append({
-                "device_id": device_id,
-                "attempted_at": conn_data.get("attempted_at", 0),
-                "ip_address": conn_data.get("ip_address", ""),
-                "user_agent": conn_data.get("user_agent", ""),
-                "reason": conn_data.get("reason", "unknown"),
-                "age_seconds": round(current_time - conn_data.get("attempted_at", 0), 2)
-            })
-        
-        # Сортируем по времени попытки (новые первыми)
-        pending_list.sort(key=lambda x: x["attempted_at"], reverse=True)
+        now_ts = time.time()
+        for row in pending_rows:
+            metadata = row.request_metadata if isinstance(row.request_metadata, dict) else {}
+            attempted_ts = row.last_request_at.timestamp() if row.last_request_at else row.created_at.timestamp()
+            pending_list.append(
+                {
+                    "device_id": row.device_id,
+                    "attempted_at": attempted_ts,
+                    "ip_address": row.ip_address or "",
+                    "user_agent": metadata.get("user_agent", ""),
+                    "reason": metadata.get("reason", "pending"),
+                    "age_seconds": round(now_ts - attempted_ts, 2),
+                }
+            )
         
         return web.json_response({
             "status": "ok",

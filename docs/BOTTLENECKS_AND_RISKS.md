@@ -25,7 +25,8 @@
 
 ### 1.4 Consent и оркестратор
 
-- В оркестраторе есть закомментированный код, связанный с `pending_tool_calls` и consent; при включении нужно согласовать с текущей моделью consent в БД и с серверной логикой waiting_consent.
+- Consent lifecycle вынесен в `pc_agent/core/consent_service.py` (pending/create/approve/reject/expired через БД). Оркестратор оставлен как orchestration-layer.
+- Остаточный риск: часть execution-path всё ещё проходит через legacy-ветви `core/orchestrator.py`; дальнейшая цель — сузить его до policy + execution routing.
 
 ### 1.5 ModuleManager и handshake (низкий приоритет)
 
@@ -39,7 +40,10 @@
 
 - **`agent_handler.py`** — тонкий transport-loop (~110 строк): JSON, `AgentMessageRouter`, batch ACK, unregister.
 - Тяжёлая логика вынесена: `agent_handshake.py`, `agent_command_result.py`, `agent_outbox_ingest.py`, `job_event_persistence.py` (см. server/docs/CODEMAP.md).
-- **Остаётся риск сопровождения:** `agent_command_result.py` и `agent_outbox_ingest.py` по-прежнему крупные модули; точечные тесты и дальнейшее дробление по подсистемам при росте.
+- Дополнительно выделены внутренние компоненты decomposition:
+  - `command_result_components.py` (`CommandResultNormalizer`, `CommandResultFutureResolver`)
+  - `outbox_ingest_components.py` (`OutboxEnvelopeValidator`, `OutboxAckDecisionService`)
+- **Остаётся риск сопровождения:** `agent_command_result.py` и `agent_outbox_ingest.py` всё ещё крупные legacy-hotspot модули; следующие итерации — вынос lifecycle/persistence/publish веток в отдельные сервисы.
 
 ### 2.2 DeviceOutboxSender и dispatch
 
@@ -68,8 +72,8 @@
 | Файл | Содержание |
 |------|------------|
 | websocket/ui_handler.py | user_id check при подписке — отложено до появления user_id (см. Phase 3) |
-| state_manager.py | В production — DB-backed хранилище (см. Phase 3, BOTTLENECKS) |
-| auth/service.py | verify_token — legacy sync; предпочтителен async verify_agent_token/verify_ui_token |
+| state_manager.py | Runtime-only кэш/сессии; auth/connection-request source-of-truth вынесен в БД |
+| auth/service.py | verify_token — legacy sync, оставлен только для internal compatibility |
 | chat/service.py | owner_uuid — заполняется из connected_agents при создании сессии (Phase 3) |
 
 **Архивный код:** `server_old.py` помечен как ARCHIVED, не участвует в runtime. TODO в этом файле не входят в рабочий бэклог.

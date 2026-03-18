@@ -72,16 +72,36 @@ class ConnectionRequestsRepo:
         await self.session.flush()
         return req
 
-    async def touch_pending_request(self, device_id: str) -> bool:
+    async def touch_pending_request(
+        self,
+        device_id: str,
+        metadata_patch: Optional[dict] = None,
+    ) -> bool:
         """Обновляет last_request_at у существующего pending-запроса. Возвращает True если обновлён."""
         now = datetime.now(timezone.utc)
+        values = {"last_request_at": now}
+        if metadata_patch:
+            result = await self.session.execute(
+                select(ConnectionRequest.request_metadata)
+                .where(
+                    ConnectionRequest.device_id == device_id,
+                    ConnectionRequest.status == "pending",
+                )
+                .order_by(ConnectionRequest.created_at.desc())
+                .limit(1)
+            )
+            existing_metadata = result.scalar_one_or_none() or {}
+            merged_metadata = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+            merged_metadata.update(metadata_patch)
+            values["request_metadata"] = merged_metadata
+
         result = await self.session.execute(
             update(ConnectionRequest)
             .where(
                 ConnectionRequest.device_id == device_id,
                 ConnectionRequest.status == "pending",
             )
-            .values(last_request_at=now)
+            .values(**values)
         )
         await self.session.flush()
         return result.rowcount > 0
@@ -107,6 +127,52 @@ class ConnectionRequestsRepo:
             .values(status="approved", resolved_at=now)
         )
         await self.session.flush()
+
+    async def set_approval_token(self, device_id: str, token: str) -> bool:
+        """
+        Persists one-time approval token in latest approved request.
+        Returns True when token was stored.
+        """
+        result = await self.session.execute(
+            update(ConnectionRequest)
+            .where(
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "approved",
+            )
+            .values(
+                approved_token=token,
+                approved_token_delivered_at=None,
+            )
+        )
+        await self.session.flush()
+        return result.rowcount > 0
+
+    async def consume_approval_token(self, device_id: str) -> Optional[str]:
+        """
+        Returns token once and atomically marks it as delivered.
+        """
+        row = await self.session.execute(
+            select(ConnectionRequest)
+            .where(
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "approved",
+                ConnectionRequest.approved_token.isnot(None),
+                ConnectionRequest.approved_token_delivered_at.is_(None),
+            )
+            .order_by(ConnectionRequest.created_at.desc())
+            .limit(1)
+        )
+        req = row.scalar_one_or_none()
+        if not req:
+            return None
+        token = req.approved_token
+        await self.session.execute(
+            update(ConnectionRequest)
+            .where(ConnectionRequest.id == req.id)
+            .values(approved_token_delivered_at=datetime.now(timezone.utc))
+        )
+        await self.session.flush()
+        return token
 
     async def set_rejected(self, device_id: str) -> None:
         now = datetime.now(timezone.utc)

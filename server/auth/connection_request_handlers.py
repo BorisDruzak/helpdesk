@@ -22,6 +22,7 @@ from app.repos.connection_requests_repo import (
 from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
 from auth.service import AuthService
+from auth.connection_request_service import ConnectionRequestService
 
 
 def _get_client_ip(request: web.Request) -> str:
@@ -142,8 +143,8 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
             status=400,
         )
 
-    state = request.app["state"]
-    token_once = state.approved_connection_tokens.pop(device_id, None)
+    connection_request_service = ConnectionRequestService()
+    token_once = await connection_request_service.consume_approved_token_once(device_id=device_id)
     if token_once:
         return web.json_response({
             "status": "approved",
@@ -179,7 +180,6 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
 @require_auth("admin")
 async def handle_admin_connection_policy_get(request: web.Request) -> web.Response:
     """GET /api/admin/connection_policy (auth: admin)."""
-    state = request.app["state"]
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
         policy = await repo.get_policy()
@@ -252,6 +252,7 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
 
     state = request.app["state"]
     auth_service = AuthService(state)
+    connection_request_service = ConnectionRequestService()
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
         pending = await repo.get_pending_by_device_id(device_id)
@@ -273,7 +274,7 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
         await repo.set_approved(device_id)
         await session.commit()
 
-    state.approved_connection_tokens[device_id] = token
+    await connection_request_service.save_approved_token_once(device_id=device_id, token=token)
     logger.info(f"Connection request approved: device_id={device_id[:8]}...")
     return web.json_response({
         "status": "ok",
