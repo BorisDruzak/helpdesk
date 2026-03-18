@@ -167,11 +167,13 @@ async def handle_admin_run_tool(request):
                 )
 
                 if not wait_for_result and command_result.get("status") == "accepted":
+                    operation_id = command_result.get("operation_id")
                     return web.json_response({
                         "status": "accepted",
                         "ticket_id": ticket_id,
                         "call_id": call_id,
-                        "operation_id": command_result.get("operation_id"),
+                        "operation_id": operation_id,
+                        "poll_url": f"/api/operations/{operation_id}" if operation_id else None,
                         "device_id": command_result.get("device_id"),
                     }, status=202)
                 

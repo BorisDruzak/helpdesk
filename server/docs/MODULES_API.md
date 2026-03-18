@@ -138,6 +138,18 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 
 **Response (404):** Module not found
 
+### GET /api/modules/ping
+
+Лёгкий endpoint для preflight-проверки доступности module API префикса
+из агента перед установкой/загрузкой модулей.
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok"
+}
+```
+
 ### GET /api/modules
 
 Список загруженных модулей.

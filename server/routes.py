@@ -177,6 +177,7 @@ from chat.handlers import (
     handle_chat_events
 )
 from modules.handlers import (
+    handle_modules_ping,
     handle_install_module_package,
     handle_list_installed_modules,
     handle_activate_module,
@@ -448,6 +449,7 @@ def setup_routes(app: web.Application) -> None:
         # Modules API
         # ============================================================================
         # New HTTP download endpoints
+        web.get('/api/modules/ping', handle_modules_ping),
         web.post('/api/modules/upload', handle_upload_module),
         web.post('/api/modules/create', handle_create_module),
         web.post('/api/modules/bulk_install', handle_bulk_install_modules),

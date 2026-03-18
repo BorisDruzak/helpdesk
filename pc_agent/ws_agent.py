@@ -199,19 +199,35 @@ class WSAgent:
         Быстрый preflight из агента:
         - /health (доступность сервера)
         - /modules/catalog (диагностика цепочки модулей и публичной раздачи)
+        - /api/modules/ping (доступность module API префикса)
         """
         base = (api_url or "").rstrip("/")
         if not base:
             return
         timeout = aiohttp.ClientTimeout(total=4)
-        endpoints = [f"{base}/health", f"{base}/modules/catalog"]
+        modules_ping_endpoint = (
+            f"{base}/modules/ping"
+            if base.endswith("/api")
+            else f"{base}/api/modules/ping"
+        )
+        endpoints = [
+            ("health", f"{base}/health"),
+            ("modules_catalog", f"{base}/modules/catalog"),
+            ("modules_ping", modules_ping_endpoint),
+        ]
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            for endpoint in endpoints:
+            for endpoint_name, endpoint in endpoints:
                 try:
                     async with session.get(endpoint) as response:
                         logger.info(f"[connectivity] {endpoint} -> HTTP {response.status}")
                 except Exception as exc:
-                    logger.warning(f"[connectivity] {endpoint} unreachable: {exc}")
+                    if endpoint_name == "modules_ping":
+                        logger.warning(
+                            "[connectivity] module API prefix unreachable "
+                            f"({endpoint}): {exc}"
+                        )
+                    else:
+                        logger.warning(f"[connectivity] {endpoint} unreachable: {exc}")
     
     async def initialize(self):
         """

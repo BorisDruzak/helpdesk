@@ -181,6 +181,7 @@ async def handle_tools_run(request):
         call_id = new_call_id()
         import uuid
         operation_id = str(uuid.uuid4())
+        poll_url = f"/api/operations/{operation_id}"
         
         # Если указан preset_id, то params должны быть пустыми
         # (агент сам определит параметры пресета)
@@ -221,6 +222,7 @@ async def handle_tools_run(request):
             return web.json_response({
                 "status": "waiting_consent",
                 "operation_id": operation_id,
+                "poll_url": poll_url,
                 "ticket_id": ticket_id,
                 "device_id": device_id,
                 "message": "Operation requires consent approval"
@@ -268,6 +270,7 @@ async def handle_tools_run(request):
             return web.json_response({
                 "status": "accepted",
                 "operation_id": operation_id,
+                "poll_url": poll_url,
                 "ticket_id": ticket_id,
                 "device_id": device_id
             }, status=202)

@@ -1,4 +1,4 @@
-﻿"""
+"""
 HTTP РѕР±СЂР°Р±РѕС‚С‡РёРєРё РґР»СЏ modules API (СѓРїСЂР°РІР»РµРЅРёРµ РґРёРЅР°РјРёС‡РµСЃРєРёРјРё РјРѕРґСѓР»СЏРјРё).
 """
 
@@ -31,6 +31,11 @@ from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from modules.reconcile import set_desired_installed, set_desired_absent
+
+
+async def handle_modules_ping(_request: web.Request) -> web.Response:
+    """GET /api/modules/ping for module-prefix reachability checks."""
+    return web.json_response({"status": "ok"})
 
 
 def _flatten_validation_errors(validation_json: Optional[dict]) -> list[str]:

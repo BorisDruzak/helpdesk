@@ -19,8 +19,12 @@
 ### 2.1 WebSocket
 | Файл | Назначение |
 |------|------------|
-| `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-only loop (decode/route/flush/close) |
+| `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter` |
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
+| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities) |
+| `server/websocket/agent_command_result.py` | Полная логика `handle_command_result` (operations lifecycle / ticket events / idempotency) |
+| `server/websocket/agent_outbox_ingest.py` | Полная логика `handle_outbox_item` (validate, persist, ACK/NACK) |
+| `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
 | `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id |
@@ -115,11 +119,11 @@
 
 Используйте поиск по документу или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
 
-- **handshake** — `websocket/agent_services.py`, `websocket/agent_handler.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
-- **outbox_ack, outbox_nack** — `websocket/agent_handler.py`, `websocket/protocol.py`
+- **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
+- **outbox_ack, outbox_nack** — `websocket/agent_outbox_ingest.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
 - **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`)
-- **command_result** — `websocket/agent_services.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
+- **command_result** — `websocket/agent_command_result.py`, `websocket/agent_services.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos
