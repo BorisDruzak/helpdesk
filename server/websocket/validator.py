@@ -162,7 +162,7 @@ class EventValidator:
         Валидирует событие устройства (без привязки к тикету).
         
         Проверяет:
-        1. Наличие device_seq (опционально, но рекомендуется)
+        1. Наличие device_seq (обязательно для Protocol V3 device_event)
         
         Args:
             device_id: ID устройства
@@ -173,14 +173,19 @@ class EventValidator:
         Returns:
             ValidationResult с результатом валидации
         """
-        # Для device events device_seq опционален, но предупреждаем если отсутствует
+        # Protocol V3 invariant: device_event <=> device_seq IS NOT NULL.
         if device_seq is None:
             logger.warning(
                 f"[Validator] Device event without device_seq: "
                 f"device_id={device_id} event_type={event_type}"
             )
-        
-        # Device events всегда валидны (нет strict binding)
+            return ValidationResult.failure(
+                error_code="VALIDATION_ERROR",
+                error_message="Missing device_seq for device event",
+                retryable=False,
+            )
+
+        # Device events valid (no ticket/device binding checks here).
         return ValidationResult.success()
     
     def validate_structure(

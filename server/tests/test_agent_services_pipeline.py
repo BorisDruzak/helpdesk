@@ -15,8 +15,10 @@ from websocket.contexts import AgentConnectionContext
 from websocket.outbox_ingest_components import (
     EnvelopeValidationResult,
     OutboxAckDecisionService,
+    OutboxPersistenceService,
     OutboxPersistenceOutcome,
 )
+from websocket.validator import EventValidator
 
 
 class _BatchAckManagerStub:
@@ -147,3 +149,34 @@ async def test_command_result_event_publisher_updates_runtime_cache():
     await publisher.publish_after_lifecycle(normalized, ctx, outcome)
 
     assert getattr(state, "_recent_operation_updates")["req-cache"]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_outbox_persistence_rejects_device_event_without_device_seq():
+    service = OutboxPersistenceService()
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    message = {
+        "type": "outbox_item",
+        "trace_id": "tr-no-seq",
+        "payload": {
+            "outbox_id": "ob-no-seq",
+            "item_type": "job_event",
+            "event": {"event": "tools_changed"},
+        },
+    }
+    envelope = EnvelopeValidationResult(ok=True, outbox_id="ob-no-seq", trace_id="tr-no-seq")
+    outcome = await service.persist(
+        message=message,
+        ctx=ctx,
+        event_validator=EventValidator(),
+        envelope=envelope,
+    )
+
+    assert outcome.decision == "nack"
+    assert outcome.error_code == "VALIDATION_ERROR"
+    assert "device_seq" in (outcome.error_message or "")

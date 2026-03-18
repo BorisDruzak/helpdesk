@@ -123,7 +123,25 @@ class OutboxPersistenceService:
         ticket_id = event.get("ticket_id")
         event_type = event.get("event", "unknown")
         agent_seq = payload.get("agent_seq")
+        device_seq = payload.get("device_seq")
         event_id = payload.get("event_id")
+        if not ticket_id:
+            device_validation = await event_validator.validate_device_event(
+                device_id=ctx.agent_id,
+                device_seq=device_seq,
+                event_type=event_type,
+                payload=event,
+            )
+            if not device_validation.valid:
+                return OutboxPersistenceOutcome(
+                    should_continue=True,
+                    decision="nack",
+                    outbox_id=envelope.outbox_id,
+                    trace_id=envelope.trace_id,
+                    retryable=device_validation.retryable,
+                    error_code=device_validation.error_code or "VALIDATION_ERROR",
+                    error_message=device_validation.error_message or "Device event validation failed",
+                )
         if not ENABLE_DB_PERSISTENCE:
             return OutboxPersistenceOutcome(
                 should_continue=True,
@@ -141,7 +159,7 @@ class OutboxPersistenceService:
                     device_events = DeviceEventsRepo(session)
                     inserted_id = await device_events.add_event(
                         device_id=ctx.agent_id,
-                        device_seq=payload.get("device_seq") or 0,
+                        device_seq=device_seq,
                         event_type=event_type,
                         payload=event,
                         trace_id=envelope.trace_id,
