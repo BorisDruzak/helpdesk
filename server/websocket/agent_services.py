@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Optional
 from loguru import logger
 
 from app.db import get_session
+from app.repos.operations_repo import OperationsRepo
 from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
 from websocket.batch_ack_manager import NackInfo
@@ -129,7 +130,7 @@ class CommandAckService:
 class CommandResultService:
     """Normalizes and persists command_result lifecycle transitions."""
 
-    def __init__(self, legacy_handler: Callable[..., Awaitable[None]]) -> None:
+    def __init__(self, legacy_handler: Optional[Callable[..., Awaitable[None]]] = None) -> None:
         self._legacy_handler = legacy_handler
         self._normalizer = CommandResultNormalizer()
         self._lifecycle = OperationLifecycleService()
@@ -141,11 +142,16 @@ class CommandResultService:
         # 1) normalize
         normalized = self._normalizer.normalize(message)
         # 2) lifecycle update
-        lifecycle_outcome = await self._lifecycle.handle(self._legacy_handler, message, ctx, normalized)
+        lifecycle_outcome = await self._lifecycle.handle(
+            legacy_handler=self._legacy_handler,
+            message=message,
+            ctx=ctx,
+            normalized=normalized,
+        )
         # 3) future resolve (sync wait path)
         self._future_resolver.resolve_from_context(normalized.command_id, message, ctx)
         # 4) artifact/result post-process
-        await self._artifact_handler.post_process(normalized, ctx)
+        await self._artifact_handler.post_process(normalized, ctx, lifecycle_outcome)
         # 5) publish side effects
         await self._event_publisher.publish_after_lifecycle(normalized, ctx, lifecycle_outcome)
 
@@ -155,22 +161,128 @@ class OperationLifecycleService:
 
     async def handle(
         self,
-        legacy_handler: Callable[..., Awaitable[None]],
+        legacy_handler: Optional[Callable[..., Awaitable[None]]],
         message: dict[str, Any],
         ctx: AgentConnectionContext,
         normalized: Any,
     ) -> CommandResultLifecycleOutcome:
-        await legacy_handler(
-            ws=ctx.ws,
-            data=message,
-            state=ctx.state,
-            agent_id=ctx.agent_id,
-        )
-        return CommandResultLifecycleOutcome(
-            processed=True,
-            command_id=normalized.command_id,
-            status=normalized.status,
-        )
+        if not ctx.agent_id:
+            return CommandResultLifecycleOutcome(
+                processed=False,
+                command_id=normalized.command_id,
+                status=normalized.lifecycle_status,
+            )
+        agent_info = ctx.state.get_agent(ctx.agent_id)
+        if agent_info:
+            agent_info["metadata"]["last_seen"] = time.time()
+            agent_info["metadata"]["last_response"] = message
+        if not normalized.command_id:
+            return CommandResultLifecycleOutcome(
+                processed=False,
+                command_id=None,
+                status=normalized.lifecycle_status,
+            )
+        if not (DB_AVAILABLE and ENABLE_DB_PERSISTENCE):
+            if legacy_handler is not None:
+                await legacy_handler(ws=ctx.ws, data=message, state=ctx.state, agent_id=ctx.agent_id)
+                return CommandResultLifecycleOutcome(
+                    processed=True,
+                    command_id=normalized.command_id,
+                    status=normalized.lifecycle_status,
+                )
+            return CommandResultLifecycleOutcome(
+                processed=False,
+                command_id=normalized.command_id,
+                status=normalized.lifecycle_status,
+            )
+        try:
+            async with get_session() as session:
+                from app.repos import DeviceOutboxRepo
+                from app.services.operation_service import OperationService
+
+                outbox_repo = DeviceOutboxRepo(session)
+                op_service = OperationService(session, publisher=None)
+                op_repo = OperationsRepo(session)
+                operation_id = normalized.command_id
+                operation = await op_repo.get_by_operation_id(operation_id)
+                lifecycle_status = normalized.lifecycle_status
+
+                expected_statuses = ["queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"]
+                processed = True
+
+                if lifecycle_status == "queued":
+                    await op_repo.update_status(operation_id, "queued", expected_statuses=["waiting_consent"])
+                elif lifecycle_status == "sent":
+                    await op_service.mark_sent(operation_id, expected_statuses=["queued", "waiting_consent"])
+                elif lifecycle_status == "accepted":
+                    await op_service.mark_accepted(operation_id, expected_statuses=["sent", "queued"])
+                elif lifecycle_status == "running":
+                    await op_service.mark_running(operation_id, expected_statuses=["accepted", "sent", "queued"])
+                elif lifecycle_status == "waiting_consent":
+                    await op_service.mark_waiting_consent(
+                        operation_id,
+                        expected_statuses=["accepted", "running", "sent", "queued"],
+                    )
+                    await outbox_repo.mark_as_delivered(operation_id)
+                elif lifecycle_status == "succeeded":
+                    result_summary = None
+                    observations = normalized.data_payload.get("observations")
+                    if isinstance(observations, dict):
+                        result_summary = str(observations)[:500]
+                    await op_service.mark_succeeded(
+                        operation_id=operation_id,
+                        result_summary=result_summary,
+                        expected_statuses=expected_statuses,
+                    )
+                    await outbox_repo.mark_as_delivered(operation_id)
+                elif lifecycle_status == "failed":
+                    error_code = normalized.error_info.get("code", "UNKNOWN_ERROR")
+                    error_message = normalized.error_info.get("message", "Unknown error")
+                    await op_service.mark_failed(
+                        operation_id=operation_id,
+                        error_code=error_code,
+                        error_message=error_message,
+                        expected_statuses=expected_statuses,
+                    )
+                    await outbox_repo.mark_as_delivered(operation_id)
+                elif lifecycle_status in {"canceled", "cancel_requested"}:
+                    if lifecycle_status == "cancel_requested":
+                        await op_service.mark_cancel_requested(operation_id, expected_statuses=["queued", "sent", "accepted", "running", "waiting_consent"])
+                    else:
+                        await op_service.mark_canceled(operation_id, expected_statuses=["cancel_requested", "running", "accepted", "waiting_consent"])
+                        await outbox_repo.mark_as_delivered(operation_id)
+                else:
+                    processed = False
+
+                await session.commit()
+                if not processed and legacy_handler is not None:
+                    await legacy_handler(ws=ctx.ws, data=message, state=ctx.state, agent_id=ctx.agent_id)
+                    processed = True
+                return CommandResultLifecycleOutcome(
+                    processed=processed,
+                    command_id=normalized.command_id,
+                    status=lifecycle_status,
+                    operation_id=operation_id,
+                    operation_kind=getattr(operation, "kind", None) if operation else None,
+                    ticket_id=getattr(operation, "ticket_id", None) if operation else None,
+                    trace_id=getattr(operation, "trace_id", None) if operation else None,
+                    failure_code=normalized.error_info.get("code"),
+                    failure_message=normalized.error_info.get("message"),
+                )
+        except Exception as exc:
+            logger.error(f"[command_result] lifecycle pipeline failed: {exc}", exc_info=True)
+            if legacy_handler is not None:
+                await legacy_handler(ws=ctx.ws, data=message, state=ctx.state, agent_id=ctx.agent_id)
+                return CommandResultLifecycleOutcome(
+                    processed=True,
+                    command_id=normalized.command_id,
+                    status=normalized.lifecycle_status,
+                )
+            return CommandResultLifecycleOutcome(
+                processed=False,
+                command_id=normalized.command_id,
+                status=normalized.lifecycle_status,
+            )
 
 
 class OutboxIngestService:
@@ -178,7 +290,7 @@ class OutboxIngestService:
 
     def __init__(
         self,
-        legacy_handler: Callable[..., Awaitable[bool]],
+        legacy_handler: Optional[Callable[..., Awaitable[bool]]],
         batch_ack_manager: Any,
         event_validator: Any,
     ) -> None:
@@ -216,14 +328,17 @@ class OutboxIngestService:
             return True
         # 4) persistence
         persistence_outcome = await self._persistence.persist(
-            legacy_handler=self._legacy_handler,
             message=message,
             ctx=ctx,
-            batch_ack_manager=self._batch_ack_manager,
             event_validator=self._event_validator,
             envelope=envelope_check,
         )
-        # 5) ack/nack decision lives in legacy persistence path for valid items.
+        # 5) ack/nack decision
+        await self._ack_decision.apply_final_decision(
+            batch_ack_manager=self._batch_ack_manager,
+            ctx=ctx,
+            outcome=persistence_outcome,
+        )
         # 6) publish side effects
         await self._event_publish.publish_after_commit(ctx=ctx, outcome=persistence_outcome)
         return persistence_outcome.should_continue
@@ -360,6 +475,29 @@ class OutboxAckDecisionService:
             outbox_id=envelope_check.outbox_id,
             trace_id=envelope_check.trace_id,
         )
+
+    async def apply_final_decision(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, outcome: Any) -> None:
+        if not ctx.agent_id or not outcome.outbox_id or not outcome.trace_id:
+            return
+        if outcome.decision == "nack":
+            batch_ack_manager.add_nack(
+                device_id=ctx.agent_id,
+                outbox_id=outcome.outbox_id,
+                trace_id=outcome.trace_id,
+                nack_info=NackInfo(
+                    retryable=bool(outcome.retryable),
+                    error_code=outcome.error_code or "SERVER_ERROR",
+                    error_message=outcome.error_message or "Outbox processing failed",
+                    retry_after_sec=30 if outcome.retryable else None,
+                ),
+            )
+        else:
+            batch_ack_manager.add_ack(
+                device_id=ctx.agent_id,
+                outbox_id=outcome.outbox_id,
+                trace_id=outcome.trace_id,
+            )
+        await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
 
 
 class OutboxEventPublishService(OutboxEventPublishComponent):

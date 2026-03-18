@@ -17,7 +17,7 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
     
     Returns:
         dict с ключами:
-            - status: "success" | "error" | "consent_required" (гарантированно один из трёх)
+            - status: normalized lifecycle-compatible status
             - error: dict с code и message (всегда dict, пустой если нет ошибки)
             - data: dict (всегда dict, пустой если нет данных)
             - meta: dict (всегда dict, пустой если нет meta)
@@ -25,7 +25,7 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
     
     Invariants:
         - Всегда возвращает dict с указанными ключами
-        - status всегда один из: "success", "error", "consent_required"
+        - status всегда один из поддерживаемых pipeline-статусов
         - Входной status "partial" (частичный успех, например upload не удался) нормализуется в "success"
         - Любой другой неизвестный status → "error" + is_malformed=True
         - None или не-dict payload → "error" + is_malformed=True
@@ -56,15 +56,30 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
         }
         return result
     
-    # Нормализовать status: success | error | consent_required | partial (partial → success для хранения)
+    # Нормализовать status.
     status = raw_payload.get("status", "unknown")
-    if status not in ["success", "error", "consent_required", "partial"]:
+    allowed_statuses = {
+        "success",
+        "error",
+        "consent_required",
+        "partial",
+        "queued",
+        "sent",
+        "accepted",
+        "running",
+        "waiting_consent",
+        "succeeded",
+        "failed",
+        "canceled",
+        "cancel_requested",
+    }
+    if status not in allowed_statuses:
         # КРИТИЧНО: Не только "unknown", но ЛЮБАЯ неизвестная строка
         result["is_malformed"] = True
         result["status"] = "error"
         result["error"] = {
             "code": "MALFORMED_RESULT",
-            "message": f"Invalid or missing status field: {status!r}. Expected: success, error, consent_required, or partial"
+                "message": f"Invalid or missing status field: {status!r}. Expected one of {sorted(allowed_statuses)}"
         }
         # Сохраняем остальные поля если есть
         result["data"] = raw_payload.get("data", {}) if isinstance(raw_payload.get("data"), dict) else {}

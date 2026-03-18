@@ -39,11 +39,9 @@
 ### 2.1 WebSocket pipeline (обновлено)
 
 - **`agent_handler.py`** — тонкий transport-loop (~110 строк): JSON, `AgentMessageRouter`, batch ACK, unregister.
-- Тяжёлая логика вынесена: `agent_handshake.py`, `agent_command_result.py`, `agent_outbox_ingest.py`, `job_event_persistence.py` (см. server/docs/CODEMAP.md).
-- Дополнительно выделены внутренние компоненты decomposition:
-  - `command_result_components.py` (`CommandResultNormalizer`, `CommandResultFutureResolver`)
-  - `outbox_ingest_components.py` (`OutboxEnvelopeValidator`, `OutboxAckDecisionService`)
-- **Остаётся риск сопровождения:** `agent_command_result.py` и `agent_outbox_ingest.py` всё ещё крупные legacy-hotspot модули; следующие итерации — вынос lifecycle/persistence/publish веток в отдельные сервисы.
+- Бизнес-логика WS-пайплайна перенесена в `agent_services.py` + component-модули (`command_result_components.py`, `outbox_ingest_components.py`).
+- `agent_command_result.py` и `agent_outbox_ingest.py` оставлены как thin compatibility wrappers (deprecated-internal), не как runtime hotspot.
+- `CommandResultService` теперь выполняет lifecycle/future/artifact/event шаги через отдельные компоненты, а `OutboxIngestService` — validate/guard/dedupe/persist/ack/publish.
 
 ### 2.2 DeviceOutboxSender и dispatch
 
@@ -64,8 +62,8 @@
 
 ### 2.5 Коды ошибок outbox_nack
 
-- В документации протокола перечислены коды UNAUTHORIZED, RATE_LIMIT и др. На сервере при невалидном handshake соединение закрывается с кодом 4003, без outbox_nack. В outbox_nack реально используются UNKNOWN_TICKET, DEVICE_MISMATCH, VALIDATION_ERROR, SERVER_ERROR. Коды UNAUTHORIZED и RATE_LIMIT в коде не возвращаются.
-- **Риск:** агент или мониторинг могут ожидать эти коды; при необходимости их стоит добавить в контракт и в код.
+- В outbox pipeline сервер возвращает typed NACK для `UNAUTHORIZED`, `RATE_LIMITED`, `VALIDATION_ERROR`, `SERVER_ERROR`; duplicate events ACK-аются без повторной записи.
+- При невалидном handshake соединение по-прежнему закрывается с кодом 4003 (без outbox_nack), это отдельный pre-handshake path.
 
 ### 2.6 TODO в коде (выдержка)
 

@@ -17,9 +17,7 @@ from websocket.agent_services import (
     HandshakeService,
     OutboxIngestService,
 )
-from websocket.agent_command_result import handle_command_result
 from websocket.agent_handshake import handle_handshake
-from websocket.agent_outbox_ingest import handle_outbox_item
 
 
 async def websocket_handler(request):
@@ -38,9 +36,9 @@ async def websocket_handler(request):
     router = AgentMessageRouter(
         handshake_service=HandshakeService(handle_handshake, dispatch_service=dispatch_service),
         command_ack_service=CommandAckService(),
-        command_result_service=CommandResultService(handle_command_result),
+        command_result_service=CommandResultService(),
         outbox_ingest_service=OutboxIngestService(
-            handle_outbox_item,
+            None,
             batch_ack_manager=batch_ack_manager,
             event_validator=event_validator,
         ),

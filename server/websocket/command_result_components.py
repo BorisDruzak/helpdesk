@@ -16,6 +16,7 @@ from websocket.command_result_parser import normalize_command_result_payload
 class NormalizedCommandResult:
     command_id: Optional[str]
     status: str
+    lifecycle_status: str
     error_info: dict[str, Any]
     data_payload: dict[str, Any]
     meta_info: dict[str, Any]
@@ -29,9 +30,18 @@ class CommandResultNormalizer:
         normalized = normalize_command_result_payload(raw_payload)
         meta_info = normalized["meta"]
         command_id = message.get("request_id") or meta_info.get("command_id")
+        status = normalized["status"]
+        lifecycle_status = status
+        if status == "success":
+            lifecycle_status = "succeeded"
+        elif status == "error":
+            lifecycle_status = "failed"
+        elif status == "consent_required":
+            lifecycle_status = "waiting_consent"
         return NormalizedCommandResult(
             command_id=command_id,
-            status=normalized["status"],
+            status=status,
+            lifecycle_status=lifecycle_status,
             error_info=normalized["error"],
             data_payload=normalized["data"],
             meta_info=meta_info,
@@ -76,6 +86,12 @@ class CommandResultLifecycleOutcome:
     processed: bool
     command_id: Optional[str]
     status: str
+    operation_id: Optional[str] = None
+    operation_kind: Optional[str] = None
+    ticket_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
 
 
 class CommandResultArtifactHandler:
@@ -83,7 +99,12 @@ class CommandResultArtifactHandler:
     Handles payload artifacts independently from lifecycle updates.
     """
 
-    async def post_process(self, normalized: NormalizedCommandResult, ctx: Any) -> None:
+    async def post_process(
+        self,
+        normalized: NormalizedCommandResult,
+        ctx: Any,
+        lifecycle_outcome: CommandResultLifecycleOutcome,
+    ) -> None:
         artifacts = normalized.data_payload.get("artifacts")
         if not isinstance(artifacts, list) or not artifacts:
             return
@@ -101,6 +122,12 @@ class CommandResultArtifactHandler:
             if len(cache) > 500:
                 for key in list(cache.keys())[:200]:
                     cache.pop(key, None)
+        if lifecycle_outcome.operation_id:
+            logger.info(
+                "[command_result] captured artifacts: operation_id={} count={}",
+                lifecycle_outcome.operation_id,
+                len(artifacts),
+            )
 
 
 class CommandResultEventPublisher:
@@ -132,3 +159,18 @@ class CommandResultEventPublisher:
         if len(updates) > 1000:
             for key in list(updates.keys())[:400]:
                 updates.pop(key, None)
+        ui_publisher = getattr(state, "ui_publisher", None)
+        if ui_publisher is not None and lifecycle_outcome.operation_id:
+            try:
+                from app.db import get_session
+                from app.repos.operations_repo import OperationsRepo
+
+                async with get_session() as session:
+                    op_repo = OperationsRepo(session)
+                    operation = await op_repo.get_by_operation_id(lifecycle_outcome.operation_id)
+                    if operation:
+                        await ui_publisher.push_operation_updated(operation)
+            except Exception as exc:
+                logger.warning(
+                    f"[command_result] failed to publish operation_updated: operation_id={lifecycle_outcome.operation_id} error={exc}"
+                )
