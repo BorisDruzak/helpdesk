@@ -253,19 +253,18 @@ async def handle_tools_run(request):
                 "tool_status": tool_status
             })
         else:
-            # Production: async mode - запускаем в фоне
-            # Operation будет создана в send_ws_command
-            asyncio.create_task(
-                tool_service.run_tool(
-                    device_id=device_id,
-                    ticket_id=ticket_id,
-                    tool_name=tool_name,
-                    params=params_with_operation,
-                    call_id=call_id,
-                    auth_context=auth_context  # Передаем AuthContext
-                )
+            # Production: async mode - только enqueue, без ожидания command_result.
+            # Это снижает количество долгоживущих корутин под высокой нагрузкой.
+            await tool_service.run_tool(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                tool_name=tool_name,
+                params=params_with_operation,
+                call_id=call_id,
+                auth_context=auth_context,  # Передаем AuthContext
+                wait_for_result=False,
             )
-            
+
             return web.json_response({
                 "status": "accepted",
                 "operation_id": operation_id,

@@ -311,7 +311,8 @@ class ToolService:
         params: Dict,
         call_id: str,
         timeout: float = None,
-        auth_context: Optional[object] = None  # AuthContext type hint
+        auth_context: Optional[object] = None,  # AuthContext type hint
+        wait_for_result: bool = True,
     ) -> Dict:
         """
         Запускает инструмент на агенте.
@@ -442,7 +443,8 @@ class ToolService:
                 params=command_params,
                 auth_context=auth_context,  # КРИТИЧНО: используем auth_context вместо actor_role
                 timeout=timeout,
-                trace_id=trace_id  # КРИТИЧНО: передаём trace_id для корреляции
+                trace_id=trace_id,  # КРИТИЧНО: передаём trace_id для корреляции
+                wait_for_result=wait_for_result,
             )
             
             return result

@@ -19,10 +19,12 @@
 ### 2.1 WebSocket
 | Файл | Назначение |
 |------|------------|
-| `server/websocket/agent_handler.py` | WS агентов `/ws`: thin-dispatch loop + handlers `handle_handshake/handle_command_result/handle_outbox_item` |
+| `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-only loop (decode/route/flush/close) |
+| `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
+| `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
 | `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id |
-| `server/websocket/device_outbox_sender.py` | Доставка из device_outbox на агент |
+| `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, reconcile) |
 | `server/websocket/validator.py` | Валидация событий, device binding |
 | `server/websocket/modules_sync.py` | Синхронизация модулей с UI/агентом |
 | `server/websocket/ui_publisher.py` | Публикация событий в UI |
@@ -42,6 +44,8 @@
 |------|------------|
 | `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, отправка команды агенту |
 | `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService` |
+| `server/app/services/operation_service.py` | Ветка consent: `approve_consent()` переводит operation `waiting_consent -> queued` и enqueue `run_tool` в `device_outbox` (исполнение после явного approve) |
+| `server/websocket/protocol.py` | Транспорт: `send_ws_command(..., wait_for_result=...)` enqueue в `device_outbox` + опционально ожидание `command_result` |
 
 ### 2.3 БД и репозитории
 | Файл | Назначение |
@@ -111,11 +115,11 @@
 
 Используйте поиск по документу или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
 
-- **handshake** — `websocket/agent_handler.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
+- **handshake** — `websocket/agent_services.py`, `websocket/agent_handler.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
 - **outbox_ack, outbox_nack** — `websocket/agent_handler.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
-- **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`
-- **command_result** — `websocket/agent_handler.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
+- **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`)
+- **command_result** — `websocket/agent_services.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos

@@ -20,6 +20,7 @@ import os
 import argparse
 import atexit
 import queue
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
@@ -58,6 +59,7 @@ from core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
 from pc_agent.version import AGENT_VERSION
 from pc_agent.core.single_instance import SingleInstanceLock
 from pc_agent.auth.connection_request import run_connection_request_flow
+from pc_agent.auth.gui_auth_state_machine import GuiAuthStateMachine
 from pc_agent.auth.rejected_flag import connection_rejected_flag_path
 from pc_agent.auth.token_source import load_auth_token
 
@@ -181,6 +183,35 @@ class WSAgent:
         # Protocol V3: Current ticket_id и job_id контекст
         self._current_ticket_id: Optional[str] = None
         self._current_job_id: Optional[str] = None
+
+    def _validate_server_config(self, ws_url: str, api_url: str) -> None:
+        """Предупреждает о потенциальной misconfig target-host."""
+        ws_host = urlparse(ws_url).hostname or ""
+        api_host = urlparse(api_url).hostname or ""
+        if ws_host in {"localhost", "127.0.0.1", "::1"} or api_host in {"localhost", "127.0.0.1", "::1"}:
+            logger.warning(
+                "[config] server.ws_url/api_url указывает на localhost. "
+                "Если ожидается удалённый сервер — проверьте settings.yaml и env overrides."
+            )
+
+    async def _check_server_reachability(self, api_url: str) -> None:
+        """
+        Быстрый preflight из агента:
+        - /health (доступность сервера)
+        - /modules/catalog (диагностика цепочки модулей и публичной раздачи)
+        """
+        base = (api_url or "").rstrip("/")
+        if not base:
+            return
+        timeout = aiohttp.ClientTimeout(total=4)
+        endpoints = [f"{base}/health", f"{base}/modules/catalog"]
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for endpoint in endpoints:
+                try:
+                    async with session.get(endpoint) as response:
+                        logger.info(f"[connectivity] {endpoint} -> HTTP {response.status}")
+                except Exception as exc:
+                    logger.warning(f"[connectivity] {endpoint} unreachable: {exc}")
     
     async def initialize(self):
         """
@@ -226,6 +257,8 @@ class WSAgent:
 
             # HTTP клиент для REST вызовов
             self.http = AioHttpClient(cfg.server.api_url, default_timeout=10)
+            self._validate_server_config(cfg.server.ws_url, cfg.server.api_url)
+            await self._check_server_reachability(cfg.server.api_url)
             
             # Инициализируем глобальный FileUploader (для модуля screen и др.)
             get_uploader(identity_manager=self.identity_manager)
@@ -2774,6 +2807,7 @@ async def main_async(
         # Если GUI включен, сначала запускаем GUI и ждем авторизации
         # Затем запускаем агента, который будет использовать уже сохраненный токен
         gui_task = None
+        auth_state_machine = None
         logger.info(f"🔍 Проверка enable_gui в main_async: {enable_gui}")
         if enable_gui:
             ui_config = get_config().ui
@@ -2802,6 +2836,7 @@ async def main_async(
                 
                 # Создаем событие для завершения авторизации (токен получен — одобрение или ввод вручную)
                 gui_auth_complete = asyncio.Event()
+                auth_state_machine = GuiAuthStateMachine(agent)
                 
                 # Обертываем run_gui: при отсутствии токена GUI сразу покажет «Ожидании подтверждения администратором»
                 async def run_gui_with_auth():
@@ -2818,47 +2853,22 @@ async def main_async(
                 # Даем GUI время показать окно и диалог «Ожидании подтверждения администратором»
                 await asyncio.sleep(1.0)
                 
-                # В фоне отправляем запрос на подключение; при одобрении токен сохранится и GUI его подхватит
-                flag_path = agent._connection_rejected_flag_path()
-                if not agent.auth_token and not flag_path.exists():
-                    async def do_connection_flow():
-                        try:
-                            ok, rejected = await agent.request_connection_flow(wait_for_approval_seconds=600)
-                            if ok:
-                                gui_auth_complete.set()
-                            elif rejected:
-                                try:
-                                    flag_path.parent.mkdir(parents=True, exist_ok=True)
-                                    flag_path.write_text("rejected", encoding="utf-8")
-                                except Exception as e:
-                                    logger.warning(f"Не удалось записать флаг отклонения: {e}")
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as e:
-                            logger.debug(f"Запрос подключения завершился с ошибкой: {e}")
-                    asyncio.create_task(do_connection_flow(), name="connection_flow")
-                elif flag_path.exists():
+                # Явная state machine для переходов auth GUI->request->token.
+                if auth_state_machine.should_request_connection():
+                    auth_state_machine.start_connection_flow(gui_auth_complete)
+                elif agent._connection_rejected_flag_path().exists():
                     logger.warning("Подключение ранее отклонено; в GUI доступен ввод токена вручную или сброс через scripts/clear_local_agent_tokens.py")
                 
                 # Ждем, пока GUI завершит авторизацию (одобрение или ввод токена)
                 logger.info("⏳ Ожидаю завершения авторизации в GUI...")
-                try:
-                    await asyncio.wait_for(gui_auth_complete.wait(), timeout=620)
-                    logger.info("✅ GUI авторизация завершена")
-                except asyncio.TimeoutError:
-                    logger.warning("⏱️ Тайм-аут ожидания авторизации в GUI")
-                    logger.info("💡 Диалог «Ожидании подтверждения администратором» должен быть виден; при необходимости введите токен вручную")
+                await auth_state_machine.wait_for_gui_auth(gui_auth_complete, timeout_seconds=620)
                 
                 # Токен хранится только в БД — опрашиваем БД, не identity.json
-                if agent.db_manager and agent.identity_manager.uuid:
-                    for _ in range(10):
-                        token_from_db = await agent.db_manager.get_auth_token(agent.identity_manager.uuid)
-                        if token_from_db:
-                            logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
-                            break
-                        await asyncio.sleep(0.1)
-                    else:
-                        logger.warning("⚠️ Токен не найден в БД после ожидания GUI авторизации")
+                token_from_db_after_gui = await auth_state_machine.load_token_from_db(retries=10, delay=0.1)
+                if token_from_db_after_gui:
+                    logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
+                else:
+                    logger.warning("⚠️ Токен не найден в БД после ожидания GUI авторизации")
             else:
                 logger.warning(f"⚠️ GUI не включен в конфиге: ui_config={ui_config}, enabled={ui_config.enabled if ui_config else 'None'}")
         
@@ -2920,6 +2930,11 @@ async def main_async(
         logger.exception(e)
     finally:
         # Очистка
+        if auth_state_machine:
+            try:
+                await auth_state_machine.cleanup()
+            except Exception as e:
+                logger.debug(f"Ошибка cleanup auth_state_machine: {e}")
         try:
             await asyncio.wait_for(agent.cleanup(), timeout=8.0)
         except asyncio.TimeoutError:

@@ -201,7 +201,8 @@ async def send_ws_command(
     actor_role: Optional[str] = None,
     auth_context: Optional[object] = None,  # AuthContext type hint
     timeout: float = None,
-    trace_id: Optional[str] = None
+    trace_id: Optional[str] = None,
+    wait_for_result: bool = True,
 ) -> dict:
     """
     Универсальная функция для отправки команд агенту через WebSocket.
@@ -224,6 +225,7 @@ async def send_ws_command(
         auth_context: AuthContext с actor_role (приоритет над actor_role параметром)
         timeout: Таймаут ожидания ответа в секундах
         trace_id: Optional trace ID for correlation
+        wait_for_result: If False, return immediately after enqueue
     
     Returns:
         dict: Ответ от агента (command_result)
@@ -391,23 +393,44 @@ async def send_ws_command(
                 f"command={command} command_id={command_id} outbox_id={outbox_id} "
                 f"operation_id={operation.operation_id}"
             )
+            dispatch = getattr(state, "device_dispatch_service", None)
+            if dispatch is not None:
+                try:
+                    await dispatch.enqueue_device(device_id)
+                except Exception as dispatch_exc:
+                    logger.debug(f"[send_ws_command] dispatch enqueue skipped: {dispatch_exc}")
     except Exception as e:
         logger.error(f"[send_ws_command] Failed to enqueue command: {e}")
         raise ValueError(f"Failed to enqueue command: {e}")
     
+    if not wait_for_result:
+        logger.info(
+            f"[send_ws_command] Enqueued without waiting: "
+            f"command_id={command_id} device_id={device_id} command={command}"
+        )
+        return {
+            "status": "accepted",
+            "command_id": command_id,
+            "request_id": request_id,
+            "operation_id": command_id,
+            "device_id": device_id,
+            "trace_id": trace_id,
+            "wait_for_result": False,
+        }
+
     # Create Future for waiting on response
     future = asyncio.get_event_loop().create_future()
-    
+
     # Store future in agent metadata (keyed by command_id for Phase C)
     if "pending_command_futures" not in agent_info["metadata"]:
         agent_info["metadata"]["pending_command_futures"] = {}
     agent_info["metadata"]["pending_command_futures"][command_id] = future
-    
+
     logger.info(
         f"[send_ws_command] Waiting for command_result: command_id={command_id} "
         f"timeout={timeout}s"
     )
-    
+
     try:
         # Wait for agent's response
         response = await asyncio.wait_for(future, timeout=timeout)
@@ -425,7 +448,7 @@ async def send_ws_command(
         if command_id in agent_info["metadata"].get("pending_command_futures", {}):
             del agent_info["metadata"]["pending_command_futures"][command_id]
         raise
-    except Exception as e:
+    except Exception:
         # Remove future from pending on any error
         if command_id in agent_info["metadata"].get("pending_command_futures", {}):
             del agent_info["metadata"]["pending_command_futures"][command_id]
@@ -544,6 +567,12 @@ async def enqueue_command_async(
                 f"command={command} command_id={command_id} outbox_id={outbox_id} "
                 f"operation_id={command_id}"
             )
+            dispatch = getattr(state, "device_dispatch_service", None)
+            if dispatch is not None:
+                try:
+                    await dispatch.enqueue_device(device_id)
+                except Exception as dispatch_exc:
+                    logger.debug(f"[enqueue_command_async] dispatch enqueue skipped: {dispatch_exc}")
     except Exception as e:
         logger.error(f"[enqueue_command_async] Failed to enqueue command: {e}")
         raise ValueError(f"Failed to enqueue command: {e}")

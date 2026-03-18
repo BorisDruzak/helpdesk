@@ -65,6 +65,7 @@
 - `UNKNOWN_TICKET` — тикет не найден (non-retryable).
 - `DEVICE_MISMATCH` — тикет привязан к другому устройству (non-retryable).
 - `VALIDATION_ERROR` — ошибка валидации (non-retryable).
+- `SERVER_ERROR` — внутренняя ошибка валидации/обработки (retryable).
 
 ---
 
@@ -92,13 +93,26 @@ SERVER_CAPABILITIES = [
 
 Коды `UNAUTHORIZED`, `RATE_LIMIT` в коде сервера в outbox_nack **не возвращаются**; при необходимости их можно добавить в будущем.
 
+### 9. Пути запуска `run_tool` (инвариантная карта)
+
+В текущей реализации есть два легитимных пути, которые сходятся в `device_outbox`:
+
+1. **Прямой запуск из API/UI**: `ToolExecutionService.run_tool` создаёт `tool_call_started` (идемпотентно по `(ticket_id, operation_id, event_type)`), затем вызывает `send_ws_command`.
+2. **Через consent approve**: `OperationService.approve_consent()` enqueue команды `run_tool` после одобрения уже созданной операции.
+
+Оба пути должны сохранять общий инвариант: `operation_id` является первичной корреляцией для lifecycle и command_result.
+
+Практическое замечание по нагрузке: transport-функция `send_ws_command` поддерживает `wait_for_result=False` для async API-сценариев (enqueue без удержания корутины до `command_result`).
+
 ---
 
 ## Сильные и слабые стороны (сервер)
 
 **Сильные:** строгая проверка protocol_version и capabilities; device_id только из токена (БД); device binding для тикетов; дедупликация по (device_id, ticket_id, agent_seq) и (device_id, device_seq); tool_call_started до отправки run_tool; нормализация command_result и защита terminal состояний (COMMAND_RESULT_LIFECYCLE); единый run_tool backend-фасад (`ToolExecutionService`) для API/админки/smoke.
 
-**Слабые/ограничения:** монолитный agent_handler; один цикл DeviceOutboxSender; синхронное ожидание в send_ws_command по таймауту. `send_ws_command` теперь транспортный слой (enqueue + wait) без run_tool policy/consent-веток. Подробнее: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md).
+**Слабые/ограничения:** state остается single-process runtime-реестром; `send_ws_command` по-прежнему синхронно ждёт `command_result` по timeout; multi-process coordination для dispatch пока не реализован.  
+С версии цикла 2026-03-18 `/ws` работает как transport-only loop с `AgentMessageRouter` и сервисами (`HandshakeService`, `CommandAckService`, `CommandResultService`, `OutboxIngestService`, `AgentCommandService`).  
+`DeviceOutboxSender` поддерживает режимы `DEVICE_DISPATCH_MODE=poll|sharded` (default: `sharded`), где `sharded` использует per-device queue + shard workers + reconcile sweep без изменения wire-контракта.
 
 ---
 

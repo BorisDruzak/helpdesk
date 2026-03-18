@@ -8,7 +8,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration; Scheduler RPC + runtime loop |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI |
@@ -53,6 +53,7 @@
 |------|------------|
 | `pc_agent/auth/token_source.py` | Источник токена: `AUTH_TOKEN` → `auth_tokens` → optional GUI callback |
 | `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus |
+| `pc_agent/auth/gui_auth_state_machine.py` | Явные состояния GUI-авторизации (`NoToken -> RequestSent -> Polling -> TokenReady/WsConnecting`) |
 | `pc_agent/auth/rejected_flag.py` | Путь к локальному флагу `connection_rejected.flag` |
 
 ### 2.4 UI bridge (core ↔ GUI)

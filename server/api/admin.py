@@ -63,6 +63,7 @@ async def handle_admin_run_tool(request):
         mode = data.get("mode", "system_ticket")
         ticket_id = data.get("ticket_id")
         raw_command = data.get("raw_command")
+        wait_for_result = not (request.query.get("async", "0") == "1" or bool(data.get("async", False)))
         
         validation_errors = {}
         
@@ -162,7 +163,17 @@ async def handle_admin_run_tool(request):
                     call_id=call_id,
                     timeout=60,
                     auth_context=auth_context,
+                    wait_for_result=wait_for_result,
                 )
+
+                if not wait_for_result and command_result.get("status") == "accepted":
+                    return web.json_response({
+                        "status": "accepted",
+                        "ticket_id": ticket_id,
+                        "call_id": call_id,
+                        "operation_id": command_result.get("operation_id"),
+                        "device_id": command_result.get("device_id"),
+                    }, status=202)
                 
                 # ToolService.run_tool при успехе возвращает ответ send_ws_command (есть payload), при ошибке — dict с status/error
                 payload = command_result.get("payload") or {}

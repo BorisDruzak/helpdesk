@@ -23,6 +23,16 @@ from websocket.command_result_parser import normalize_command_result_payload
 from config import ENABLE_DB_PERSISTENCE
 from auth.service import AuthService
 from auth.context import AuthContext, AuthType
+from websocket.contexts import AgentConnectionContext, EnvelopeContext
+from websocket.agent_services import (
+    AgentLoopSafetyService,
+    AgentCommandService,
+    AgentMessageRouter,
+    CommandAckService,
+    CommandResultService,
+    HandshakeService,
+    OutboxIngestService,
+)
 
 # Import database components (lazy import to handle missing dependencies)
 try:
@@ -137,6 +147,7 @@ async def handle_handshake(
         bool(token),
         token[:12] + "..." if token and len(token) >= 12 else (token or "")
     )
+    loop_safety_service = AgentLoopSafetyService()
     
     # РР·РІР»РµРєР°РµРј device_id РёР· payload РґР»СЏ РѕС‚СЃР»РµР¶РёРІР°РЅРёСЏ РїРѕРїС‹С‚РѕРє РїРѕРґРєР»СЋС‡РµРЅРёСЏ
     # РџСЂРѕРІРµСЂСЏРµРј РІ СЂР°Р·РЅС‹С… РјРµСЃС‚Р°С…: РєРѕСЂРµРЅСЊ СЃРѕРѕР±С‰РµРЅРёСЏ, payload, meta
@@ -2295,421 +2306,88 @@ async def handle_outbox_item(
 
 
 async def websocket_handler(request):
-    """
-    WebSocket РѕР±СЂР°Р±РѕС‚С‡РёРє РґР»СЏ relay-Р°СЂС…РёС‚РµРєС‚СѓСЂС‹ СЃРµСЂРІРµСЂ-Р°РіРµРЅС‚.
-    
-    РЎРµСЂРІРµСЂ РІС‹СЃС‚СѓРїР°РµС‚ РІ СЂРѕР»Рё СЂРµС‚СЂР°РЅСЃР»СЏС‚РѕСЂР° РєРѕРјР°РЅРґ РјРµР¶РґСѓ РІРµР±-РёРЅС‚РµСЂС„РµР№СЃРѕРј Рё Р°РіРµРЅС‚Р°РјРё.
-    Р’СЃСЏ Р»РѕРіРёРєР° СЃР±РѕСЂР° РґР°РЅРЅС‹С… РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ РЅР° СЃС‚РѕСЂРѕРЅРµ Р°РіРµРЅС‚Р° (ws_agent.py).
-    """
+    """Transport-only WebSocket loop for agent connections."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    
-    state = request.app['state']
-    
-    agent_id = None
-    device_id = None
-    authenticated = False
-    
-    # Phase B: Batch ACK Manager and Validator
+
+    state = request.app["state"]
     batch_ack_manager = BatchAckManager()
     event_validator = EventValidator()
-    
-    logger.info("рџџў РќРѕРІРѕРµ WebSocket СЃРѕРµРґРёРЅРµРЅРёРµ")
-    
+
+    connection_ctx = AgentConnectionContext(ws=ws, request=request, state=state)
+    dispatch_service = getattr(state, "device_dispatch_service", None)
+
+    router = AgentMessageRouter(
+        handshake_service=HandshakeService(handle_handshake, dispatch_service=dispatch_service),
+        command_ack_service=CommandAckService(),
+        command_result_service=CommandResultService(handle_command_result),
+        outbox_ingest_service=OutboxIngestService(
+            handle_outbox_item,
+            batch_ack_manager=batch_ack_manager,
+            event_validator=event_validator,
+        ),
+        agent_command_service=AgentCommandService(),
+    )
+
+    logger.info("🟢 New agent websocket connection")
+
     try:
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
+                data = {}
+                msg_type = None
                 try:
                     data = json.loads(msg.data)
-                    msg_type = data.get("type")
-                    
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    # a) type == "handshake"
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    if msg_type == "handshake":
-                        close_ws, new_agent_id, new_device_id, new_authenticated = await handle_handshake(
-                            ws=ws,
-                            data=data,
-                            request=request,
-                            state=state,
-                        )
-                        if close_ws is not None:
-                            return close_ws
-                        if new_agent_id is not None:
-                            agent_id = new_agent_id
-                        if new_device_id is not None:
-                            device_id = new_device_id
-                        authenticated = new_authenticated
-                    elif msg_type == "pong":
-                        # РћР±РЅРѕРІР»СЏРµРј СЃС‚Р°С‚СѓСЃ Р°РіРµРЅС‚Р° РїСЂРё РїРѕР»СѓС‡РµРЅРёРё pong
-                        if agent_id:
-                            agent_info = state.get_agent(agent_id)
-                            if agent_info:
-                                agent_info["metadata"]["last_seen"] = time.time()
-                                agent_info["metadata"]["status"] = "online"
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    # b.5) type == "command_ack" - Operations System integration
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    elif msg_type == "command_ack":
-                        # Agent acknowledges command receipt
-                        if agent_id:
-                            agent_info = state.get_agent(agent_id)
-                            if agent_info:
-                                agent_info["metadata"]["last_seen"] = time.time()
-                                
-                                payload = data.get("payload", {})
-                                # РљР РРўРР§РќРћ: operation_id = request_id (РµРґРёРЅС‹Р№ UUID)
-                                operation_id = data.get("request_id")
-                                ack_status = payload.get("status")  # "accepted" РёР»Рё "rejected"
-                                
-                                if not operation_id:
-                                    logger.warning(
-                                        f"[command_ack] Missing operation_id (request_id) "
-                                        f"from agent {agent_id}"
-                                    )
-                                    continue
-                                
-                                logger.info(
-                                    f"[command_ack] RX from agent {agent_id}: "
-                                    f"operation_id={operation_id} status={ack_status}"
-                                )
-                                
-                                # Update operation status based on ack_status
-                                if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
-                                    try:
-                                        async with get_session() as session:
-                                            from app.services import OperationService
-                                            # РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·СѓРµРј UiPublisher РёР· state РґР»СЏ push РѕР±РЅРѕРІР»РµРЅРёР№
-                                            ui_publisher = state.ui_publisher if hasattr(state, 'ui_publisher') else None
-                                            op_service = OperationService(session, publisher=ui_publisher)
-                                            
-                                            if ack_status == "accepted":
-                                                # Agent accepted the command
-                                                success = await op_service.mark_accepted(
-                                                    operation_id=operation_id,
-                                                    expected_statuses=["sent", "queued"]
-                                                )
-                                                
-                                                if success:
-                                                    logger.info(
-                                                        f"[command_ack] Operation marked as accepted: "
-                                                        f"operation_id={operation_id}"
-                                                    )
-                                                else:
-                                                    logger.warning(
-                                                        f"[command_ack] Failed to mark operation as accepted: "
-                                                        f"operation_id={operation_id} (status mismatch)"
-                                                    )
-                                                
-                                            elif ack_status == "rejected":
-                                                # Agent rejected the command (protocol-level error)
-                                                error_code = payload.get("error_code", "REJECTED")
-                                                error_message = payload.get("error_message", "Command rejected by agent")
-                                                
-                                                success = await op_service.mark_failed(
-                                                    operation_id=operation_id,
-                                                    error_code=error_code,
-                                                    error_message=error_message,
-                                                    expected_statuses=["sent", "queued"]
-                                                )
-                                                
-                                                if success:
-                                                    logger.warning(
-                                                        f"[command_ack] Operation marked as failed (rejected): "
-                                                        f"operation_id={operation_id} error_code={error_code}"
-                                                    )
-                                                else:
-                                                    logger.warning(
-                                                        f"[command_ack] Failed to mark operation as failed: "
-                                                        f"operation_id={operation_id} (status mismatch)"
-                                                    )
-                                            else:
-                                                logger.warning(
-                                                    f"[command_ack] Unknown ack_status: {ack_status} "
-                                                    f"for operation_id={operation_id}"
-                                                )
-                                            
-                                            await session.commit()
-                                            
-                                    except Exception as e:
-                                        logger.error(
-                                            f"[command_ack] Failed to update operation status: {e}",
-                                            exc_info=True
-                                        )
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    # c) type == "command_result"
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    elif msg_type == "command_result":
-                        await handle_command_result(
-                            ws=ws,
-                            data=data,
-                            state=state,
-                            agent_id=agent_id,
-                        )
-                    elif msg_type == "command":
-                        # Р­С‚Рѕ РєРѕРјР°РЅРґР° РѕС‚ Р°РіРµРЅС‚Р° Рє СЃРµСЂРІРµСЂСѓ
-                        if agent_id:
-                            agent_info = state.get_agent(agent_id)
-                            if agent_info:
-                                agent_info["metadata"]["last_seen"] = time.time()
-                                
-                                req_id = data.get("request_id")
-                                payload = data.get("payload", {})
-                                command = payload.get("command")
-                                params = payload.get("params", {})
-                                
-                                logger.info(f"[SERVER] RX command from agent {agent_id}: command={command} request_id={req_id}")
-                                
-                                # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                                # РћР±СЂР°Р±РѕС‚РєР° РєРѕРјР°РЅРґС‹ chat_raise РѕС‚ Р°РіРµРЅС‚Р°
-                                # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                                if command == "chat_raise":
-                                    title = params.get("title", "Agent Support Request")
-                                    reason = params.get("reason", "agent_initiated")
-                                    severity = params.get("severity", "warning")
-                                    context = params.get("context", {})
-                                    
-                                    # Р“РµРЅРµСЂРёСЂСѓРµРј IDs
-                                    chat_job_id = str(uuid.uuid4())
-                                    ticket_id = str(uuid.uuid4())  # Phase V3: create ticket_id
-                                    
-                                    # РЎРѕР·РґР°РµРј ChatSession
-                                    session_data = {
-                                        "chat_job_id": chat_job_id,
-                                        "ticket_id": ticket_id,  # Phase V3: link ticket
-                                        "device_id": agent_id,  # Р°РіРµРЅС‚, РєРѕС‚РѕСЂС‹Р№ РёРЅРёС†РёРёСЂРѕРІР°Р»
-                                        "owner_uuid": agent_info["metadata"].get("user", "unknown"),
-                                        "created_by": "agent",
-                                        "status": "active",
-                                        "created_at": time.time(),
-                                        "subscribers": set(),
-                                        "events": []
-                                    }
-                                    state.create_chat_session(chat_job_id, session_data)
-                                    
-                                    # Phase V3: Persist ticket to Postgres for validation
-                                    if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
-                                        try:
-                                            async with get_session() as db_session:
-                                                # РљР РРўРР§РќРћ: РџСЂРѕРІРµСЂСЏРµРј, С‡С‚Рѕ TicketEventsRepo РґРѕСЃС‚СѓРїРµРЅ
-                                                if not DB_AVAILABLE:
-                                                    logger.warning(
-                                                        f"[chat_raise] DB not available, skipping ticket creation"
-                                                    )
-                                                else:
-                                                    ticket_repo = TicketEventsRepo(db_session)
-                                                    created = await ticket_repo.create_ticket(
-                                                        ticket_id=ticket_id,
-                                                        device_id=agent_id,
-                                                        title=title,
-                                                        description=f"Agent-initiated: {reason} (severity: {severity})",
-                                                        status="new",
-                                                        requester_id=agent_id,
-                                                    )
-                                                    # РРјСЏ Р·Р°СЏРІРєРё: РЅРѕРјРµСЂ (T-000002) + С‚РµРєСЃС‚ РёР· Р·Р°СЏРІРєРё
-                                                    code = getattr(created, "ticket_code", None) or ""
-                                                    if code:
-                                                        snippet = (title or getattr(created, "description", "") or "")[:80].strip()
-                                                        new_title = f"{code} {snippet}".strip() if snippet else code
-                                                        if new_title:
-                                                            await ticket_repo.update_ticket(ticket_id, title=new_title)
-                                                    await db_session.commit()
-                                                    logger.info(f"вњ… [V3] Ticket created for chat_raise: ticket_id={ticket_id}")
-                                        except Exception as e:
-                                            logger.opt(exception=True).error(
-                                                "вќЊ [V3] Failed to create ticket for chat_raise: {}",
-                                                e,
-                                            )
-                                    
-                                    # Р’РђР–РќРћ: РќРµРјРµРґР»РµРЅРЅРѕ РѕС‚РїСЂР°РІР»СЏРµРј РѕС‚РІРµС‚ Р°РіРµРЅС‚Сѓ РџР•Р Р•Р” Р·Р°РїСѓСЃРєРѕРј РґР»РёС‚РµР»СЊРЅС‹С… РѕРїРµСЂР°С†РёР№
-                                    # Р­С‚Рѕ РїСЂРµРґРѕС‚РІСЂР°С‰Р°РµС‚ С‚Р°Р№РјР°СѓС‚ РЅР° СЃС‚РѕСЂРѕРЅРµ Р°РіРµРЅС‚Р°
-                                    response_envelope = {
-                                        "type": "command_result",
-                                        "request_id": req_id,
-                                        "device_id": agent_id,
-                                        "payload": {
-                                            "status": "success",
-                                            "data": {
-                                                "observations": {
-                                                    "job_id": chat_job_id,
-                                                    "ticket_id": ticket_id,  # Phase V3: return ticket_id
-                                                    "message": "Chat session created"
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    await ws.send_json(response_envelope)
-                                    logger.success(f"[chat_raise] agent_id={agent_id} job_id={chat_job_id} в†’ success response sent IMMEDIATELY")
-                                    
-                                    # PUSH invite РІ РІРµР±-UI (РїРѕРґРґРµСЂР¶РєР°) - РќР• Р±Р»РѕРєРёСЂСѓРµС‚
-                                    invite_event = {
-                                        "event": "chat_invite",
-                                        "job_id": chat_job_id,
-                                        "ticket_id": ticket_id,  # Phase V3: include ticket_id
-                                        "device_id": agent_id,
-                                        "from": "agent",
-                                        "title": title,
-                                        "reason": reason,
-                                        "severity": severity,
-                                        "context": context,
-                                        "ts": time.time()
-                                    }
-                                    await push_chat_event_to_ui(state, chat_job_id, invite_event)
-                                    logger.info(f"[chat_raise] invite pushed to UI for job_id={chat_job_id}")
-                                    
-                                    # Р—Р°РїСѓСЃРєР°РµРј start_job Рё ui_notify Р°СЃРёРЅС…СЂРѕРЅРЅРѕ РІ background (РЅРµ Р¶РґРµРј РѕС‚РІРµС‚Р°)
-                                    async def _background_notify():
-                                        """Р¤РѕРЅРѕРІР°СЏ Р·Р°РґР°С‡Р° РґР»СЏ РѕС‚РїСЂР°РІРєРё start_job Рё ui_notify"""
-                                        try:
-                                            # РЎС‚Р°СЂС‚СѓРµРј support_chat РЅР° Р°РіРµРЅС‚Рµ
-                                            try:
-                                                await send_ws_command(
-                                                    state=state,
-                                                    device_id=agent_id,
-                                                    command="start_job",
-                                                    params={
-                                                        "job_type": "support_chat",
-                                                        "params": {
-                                                            "job_id": chat_job_id,
-                                                            "ticket_id": ticket_id  # Phase V3: send ticket_id
-                                                        }
-                                                    },
-                                                    actor_role="agent"
-                                                )
-                                                logger.info(f"[chat_raise] start_job sent to agent {agent_id}")
-                                            except Exception as e:
-                                                logger.opt(exception=True).error(
-                                                    "[chat_raise] Failed to send start_job to agent: {}",
-                                                    e,
-                                                )
-                                            
-                                            # PUSH invite РІ Р»РѕРєР°Р»СЊРЅС‹Р№ GUI Р°РіРµРЅС‚Р° С‡РµСЂРµР· ui_notify
-                                            try:
-                                                await send_ws_command(
-                                                    state=state,
-                                                    device_id=agent_id,
-                                                    command="ui_notify",
-                                                    params={"event": invite_event},
-                                                    actor_role="agent"
-                                                )
-                                                logger.info(f"[chat_raise] ui_notify sent to agent {agent_id}")
-                                            except Exception as e:
-                                                logger.opt(exception=True).error(
-                                                    "[chat_raise] Failed to send ui_notify to agent: {}",
-                                                    e,
-                                                )
-                                        except Exception as e:
-                                            logger.opt(exception=True).error(
-                                                "[chat_raise] Background notify failed: {}",
-                                                e,
-                                            )
-                                    
-                                    # Р—Р°РїСѓСЃРєР°РµРј РІ background, РЅРµ Р¶РґРµРј Р·Р°РІРµСЂС€РµРЅРёСЏ
-                                    asyncio.create_task(_background_notify())
-                                
-                                # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                                # РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР° РѕС‚ Р°РіРµРЅС‚Р°
-                                # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                                else:
-                                    logger.warning(f"[SERVER] Unknown command from agent {agent_id}: {command}")
-                                    
-                                    # РћС‚РїСЂР°РІР»СЏРµРј РѕС€РёР±РєСѓ Р°РіРµРЅС‚Сѓ
-                                    error_envelope = {
-                                        "type": "command_result",
-                                        "request_id": req_id,
-                                        "device_id": agent_id,
-                                        "payload": {
-                                            "status": "error",
-                                            "error": {
-                                                "code": "UNKNOWN_COMMAND",
-                                                "message": f"Unknown command: {command}"
-                                            }
-                                        }
-                                    }
-                                    
-                                    await ws.send_json(error_envelope)
-                    
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    # e) type == "outbox_item" - V3 Protocol with Postgres Ingest
-                    # в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
-                    elif msg_type == "outbox_item":
-                        outbox_should_continue = await handle_outbox_item(
-                            ws=ws,
-                            data=data,
-                            state=state,
-                            agent_id=agent_id,
-                            batch_ack_manager=batch_ack_manager,
-                            event_validator=event_validator,
-                        )
-                        if outbox_should_continue:
-                            continue
-                    else:
-                        # РЎС‚Р°СЂС‹Р№ С„РѕСЂРјР°С‚ Р±РµР· type - Р»РѕРіРёСЂСѓРµРј Рё РёРіРЅРѕСЂРёСЂСѓРµРј
-                        if msg_type is None:
-                            logger.warning(f"[SERVER] Received message without type from agent {agent_id}, ignoring")
-                        else:
-                            logger.warning(f"[SERVER] Unknown message type '{msg_type}' from agent {agent_id}, ignoring")
-                    
-                    # Phase B: Flush batch ACK/NACK РїРѕСЃР»Рµ РѕР±СЂР°Р±РѕС‚РєРё РєР°Р¶РґРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ
-                    if agent_id and batch_ack_manager.has_pending(agent_id):
-                        await batch_ack_manager.flush(ws, agent_id)
-                
+                    envelope = EnvelopeContext.from_message(data)
+                    msg_type = envelope.message_type
+
+                    route_result = await router.route(data, connection_ctx, envelope)
+                    if route_result is ws:
+                        return ws
+                    if route_result is None and msg_type not in {
+                        "handshake",
+                        "pong",
+                        "command_ack",
+                        "command_result",
+                        "command",
+                        "outbox_item",
+                    }:
+                        await loop_safety_service.handle_unknown_message_type(msg_type, connection_ctx)
+                    if route_result == "__continue__":
+                        continue
+
+                    if connection_ctx.agent_id and batch_ack_manager.has_pending(connection_ctx.agent_id):
+                        await batch_ack_manager.flush(ws, connection_ctx.agent_id)
+
                 except json.JSONDecodeError:
-                    logger.warning(f"вљ пёЏ  РџРѕР»СѓС‡РµРЅРѕ РЅРµ-JSON СЃРѕРѕР±С‰РµРЅРёРµ: {msg.data}")
+                    logger.warning(f"⚠️ Received non-JSON message: {msg.data}")
                 except Exception as e:
-                    logger.opt(exception=True).error(
-                        f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё СЃРѕРѕР±С‰РµРЅРёСЏ: {e!r}"
-                    )
-                    # РљР РРўРР§РќРћ: Р•СЃР»Рё СЌС‚Рѕ outbox_item Рё РјС‹ Р·РЅР°РµРј outbox_id, РѕС‚РїСЂР°РІР»СЏРµРј NACK
-                    # Р­С‚Рѕ РіР°СЂР°РЅС‚РёСЂСѓРµС‚, С‡С‚Рѕ Р°РіРµРЅС‚ РЅРµ Р±СѓРґРµС‚ Р¶РґР°С‚СЊ ACK Р±РµСЃРєРѕРЅРµС‡РЅРѕ
-                    if msg_type == "outbox_item" and agent_id:
+                    logger.opt(exception=True).error(f"❌ Message processing error: {e!r}")
+                    if msg_type == "outbox_item" and connection_ctx.agent_id:
                         try:
-                            # РџС‹С‚Р°РµРјСЃСЏ РёР·РІР»РµС‡СЊ outbox_id Рё trace_id РёР· РґР°РЅРЅС‹С…
-                            payload = data.get("payload", {}) if isinstance(data, dict) else {}
-                            outbox_id = payload.get("outbox_id") if isinstance(payload, dict) else None
-                            trace_id = data.get("trace_id") if isinstance(data, dict) else None
-                            
-                            if outbox_id and trace_id:
-                                agent_info = state.get_agent(agent_id)
-                                if agent_info:
-                                    agent_device_id = agent_info["metadata"].get("device_id", agent_id)
-                                    batch_ack_manager.add_nack(
-                                        device_id=agent_id,
-                                        outbox_id=str(outbox_id),
-                                        trace_id=trace_id,
-                                        nack_info=NackInfo(
-                                            retryable=True,  # Retryable, С‚Р°Рє РєР°Рє СЌС‚Рѕ РјРѕР¶РµС‚ Р±С‹С‚СЊ РІСЂРµРјРµРЅРЅР°СЏ РѕС€РёР±РєР°
-                                            error_code="SERVER_ERROR",
-                                            error_message=f"Internal server error during processing: {str(e)}",
-                                            retry_after_sec=30
-                                        )
-                                    )
-                                    # Flush NACK РЅРµРјРµРґР»РµРЅРЅРѕ
-                                    if batch_ack_manager.has_pending(agent_id):
-                                        await batch_ack_manager.flush(ws, agent_id)
+                            await loop_safety_service.handle_outbox_processing_exception(
+                                batch_ack_manager=batch_ack_manager,
+                                data=data,
+                                agent_id=connection_ctx.agent_id,
+                                error=e,
+                                ws=ws,
+                            )
                         except Exception as nack_error:
                             logger.opt(exception=True).error(
-                                f"вќЊ РћС€РёР±РєР° РїСЂРё РѕС‚РїСЂР°РІРєРµ NACK РґР»СЏ outbox_item: {nack_error!r}"
+                                f"❌ Failed to send NACK for outbox_item: {nack_error!r}"
                             )
-                    # РќРµ РІР°Р»РёРј СЃРѕРµРґРёРЅРµРЅРёРµ РїСЂРё РѕС€РёР±РєРµ РѕР±СЂР°Р±РѕС‚РєРё
-            
             elif msg.type == web.WSMsgType.ERROR:
-                logger.error(
-                    f"вќЊ РћС€РёР±РєР° WebSocket: {ws.exception()!r}"
-                )
+                logger.error(f"❌ WebSocket error: {ws.exception()!r}")
                 break
-    
     finally:
-        # РћС‚РєР»СЋС‡РµРЅРёРµ Р°РіРµРЅС‚Р° - РїСЂРѕСЃС‚Рѕ СѓРґР°Р»СЏРµРј РёР· СЃРїРёСЃРєР° (РІС‹С…РѕРґ РёР· handler = СЃРѕРµРґРёРЅРµРЅРёРµ Р·Р°РєСЂС‹С‚Рѕ)
-        if agent_id:
-            agent_info = state.get_agent(agent_id)
+        if connection_ctx.agent_id:
+            agent_info = state.get_agent(connection_ctx.agent_id)
             if agent_info:
                 agent_info["metadata"]["status"] = "offline"
-            state.unregister_agent(agent_id)
+            state.unregister_agent(connection_ctx.agent_id)
             logger.info(
-                f"[WS handler] Exiting handler for agent_id={agent_id}, unregistering (connection closed)"
+                f"[WS handler] Exiting handler for agent_id={connection_ctx.agent_id}, unregistering (connection closed)"
             )
-            logger.warning(f"рџ”ґ РђРіРµРЅС‚ РѕС‚РєР»СЋС‡РµРЅ: {agent_id}")
-    
+            logger.warning(f"🔴 Agent disconnected: {connection_ctx.agent_id}")
+
     return ws

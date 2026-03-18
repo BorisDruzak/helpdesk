@@ -2,8 +2,10 @@
 Конфигурация сервера и константы.
 """
 
+import json
 import os
 from pathlib import Path
+from loguru import logger
 
 # Загрузка .env из текущей директории (server/) при запуске сервера
 try:
@@ -76,11 +78,44 @@ SERVER_PUBLIC_BASE_URL = os.getenv(
 # Users Configuration
 # ============================================================================
 
-# Хранилище пользователей (логин: пароль)
-USERS = {
-    'admin': 'admin123',
-    'user': '12345'
+def _parse_users_from_env() -> dict[str, str]:
+    """
+    Загружает UI пользователей из JSON env.
+
+    Формат:
+      UI_USERS_JSON='{"admin":"secret","support":"secret2"}'
+    """
+    raw = os.getenv("UI_USERS_JSON", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        logger.warning(f"Invalid UI_USERS_JSON, fallback to defaults: {exc}")
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("UI_USERS_JSON must be a JSON object {login:password}")
+        return {}
+    users: dict[str, str] = {}
+    for login, password in parsed.items():
+        if not isinstance(login, str) or not login.strip():
+            continue
+        if not isinstance(password, str) or not password:
+            continue
+        users[login.strip()] = password
+    return users
+
+
+# Хранилище пользователей (логин: пароль).
+# Для production задавайте UI_USERS_JSON, дефолты только для локальной разработки.
+USERS = _parse_users_from_env() or {
+    "admin": os.getenv("UI_ADMIN_PASSWORD", "admin123"),
+    "user": os.getenv("UI_USER_PASSWORD", "12345"),
 }
+if USERS.get("admin") == "admin123":
+    logger.warning(
+        "Using default admin password from config; set UI_USERS_JSON or UI_ADMIN_PASSWORD in production."
+    )
 
 # ============================================================================
 # Limits and Constraints
@@ -101,6 +136,13 @@ WS_COMMAND_TIMEOUT = 60.0
 # Лимиты конкурентности send_ws_command (очередь не переполняется, при исчерпании — 429)
 WS_COMMAND_MAX_INFLIGHT_GLOBAL = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_GLOBAL", "200"))
 WS_COMMAND_MAX_INFLIGHT_PER_DEVICE = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE", "10"))
+# Internal dispatch runtime mode for server->agent outbox delivery:
+# - poll: legacy poll-all sender loop
+# - sharded: per-device queue + shard workers + reconcile sweep
+DEVICE_DISPATCH_MODE = (os.getenv("DEVICE_DISPATCH_MODE", "sharded") or "sharded").strip().lower()
+DEVICE_DISPATCH_SHARDS = int(os.getenv("DEVICE_DISPATCH_SHARDS", "4"))
+DEVICE_DISPATCH_FETCH_LIMIT = int(os.getenv("DEVICE_DISPATCH_FETCH_LIMIT", "50"))
+DEVICE_DISPATCH_RECONCILE_SECONDS = int(os.getenv("DEVICE_DISPATCH_RECONCILE_SECONDS", "30"))
 
 # Таймаут для tool execution (секунды)
 TOOL_EXECUTION_TIMEOUT = 120.0
