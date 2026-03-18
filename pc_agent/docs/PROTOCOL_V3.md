@@ -332,7 +332,8 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
 **Статусы:**
 - `success` — команда выполнена успешно
 - `error` — ошибка при выполнении команды
-- `partial` — частичный результат (для долгих операций)
+- `consent_required` — требуется подтверждение пользователя
+- `partial` — legacy/частичный результат (сервер нормализует в terminal lifecycle)
 
 ### RPC Request/Response (rpc_request, rpc_response)
 
@@ -536,11 +537,11 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 
 ### Слабые стороны и ограничения
 
-- **handle_ack асинхронный без ожидания:** на агенте `handle_ack()` запускает `_handle_ack_async()` через create_task и не ждёт завершения; при очень быстром повторном claim теоретически возможна гонка.
+- **ACK/NACK под экстремальной нагрузкой:** обработка ACK сериализована `ack_lock` в sender, но при очень высокой интенсивности остаются риски задержек из-за contention по БД/lease.
 - **Command in_progress:** агент использует `seen_commands` + process-local `_running_commands`; дубликат с тем же `command_id` ждёт текущий Future, stale `in_progress` (TTL) разрешает controlled retry.
 - **Scheduler MVP ограничен:** только `run_tool` и fixed schedules (`minutely|hourly|daily|weekly`), без cron/timestamp и без произвольных видов задач.
-- **Один цикл DeviceOutboxSender на сервере:** один poll по всем устройствам (интервал 1 с, лимит команд за раз); при большой нагрузке может стать узким местом.
-- **Синхронное ожидание send_ws_command:** ожидание Future по таймауту (WS_COMMAND_TIMEOUT) держит корутину; при большом числе одновременных run_tool растёт число висящих задач.
+- **Server dispatch scalability:** на сервере доступен `sharded` runtime (per-device queue + shard workers), но межпроцессное масштабирование dispatch всё ещё отдельный этап.
+- **Ожидание send_ws_command:** синхронный режим по-прежнему используется частью API, но transport поддерживает `wait_for_result=False` для async enqueue без долгого удержания корутины.
 - **Коды UNAUTHORIZED/RATE_LIMIT в NACK:** в документации перечислены, в коде сервера при handshake используется закрытие с кодом 4003 без отдельного кода UNAUTHORIZED; RATE_LIMIT не возвращается в outbox_nack.
 
 Подробнее об узких местах и рисках: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) (в корне проекта).

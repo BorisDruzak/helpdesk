@@ -4,6 +4,8 @@
 
 Этот документ описывает инварианты и гарантии обработки `command_result` в системе операций сервера. Цель: обеспечить надежность и предсказуемость жизненного цикла операций.
 
+> Обновление цикла 2026-03-18: обработка `command_result` вынесена из transport-loop в `CommandResultService`, а `command_ack` — в `CommandAckService`. Wire-семантика не меняется: те же типы сообщений, те же transition guards и тот же invariant `tool_call_started`.
+
 ## Инварианты
 
 ### Инвариант 1: Любой command_result завершает операцию
@@ -247,8 +249,14 @@ HTTP endpoint `/api/tools/run` при `status=consent_required`:
 
 ```python
 OPERATION_WATCHDOG_INTERVAL = 30  # Интервал проверки watchdog (секунды)
-DEFAULT_OPERATION_TIMEOUT = 300   # Таймаут операции по умолчанию (секунды)
+OPERATION_DELIVERY_TIMEOUT = 30   # queued -> sent/accepted
+OPERATION_EXECUTION_TIMEOUT = 180 # accepted/running -> finished
+OPERATION_ACCEPTED_TIMEOUT = 60   # accepted -> running
 ```
+
+Дополнительно для transport-слоя `send_ws_command` поддерживает `wait_for_result=False`:
+- в этом режиме сервер делает enqueue в `device_outbox` и возвращает `accepted` без удержания корутины до `command_result`;
+- lifecycle операции и outbox при этом остаются теми же.
 
 ## Мониторинг
 
@@ -270,3 +278,4 @@ DEFAULT_OPERATION_TIMEOUT = 300   # Таймаут операции по умо�
 | Версия | Дата | Изменения |
 |--------|------|-----------|
 | 1.0 | 2025-01-14 | Первая версия документа |
+| 1.1 | 2026-03-18 | Актуализированы таймауты `config.py` и добавлен async transport-режим `wait_for_result=False` |
