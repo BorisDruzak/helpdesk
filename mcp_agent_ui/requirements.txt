@@ -1,0 +1,3 @@
+# MCP server for pc_agent UI Bridge API
+mcp>=1.0.0
+httpx>=0.25.0

@@ -134,7 +134,7 @@ server/
 │       └── job_events_repo.py
 │
 ├── websocket/                # WebSocket обработчики
-│   ├── agent_handler.py      # WebSocket handler для агентов (handshake, outbox_item, command_result)
+│   ├── agent_handler.py      # WS агентов: transport-loop; логика в agent_handshake / agent_outbox_ingest / agent_command_result
 │   ├── ui_handler.py         # WebSocket handler для UI (chat, subscribe)
 │   ├── protocol.py           # Протокол (send_outbox_ack, send_outbox_nack, send_ws_command)
 │   ├── validator.py          # EventValidator для device binding
@@ -405,24 +405,14 @@ Protocol V3 — современный протокол WebSocket для общ�
 
 ### 1. WebSocket Handlers
 
-#### `websocket/agent_handler.py`
+#### Пайплайн WebSocket для агентов (`/ws`)
 
-Обработчик WebSocket для агентов.
+- **`websocket/agent_handler.py`** — только transport-loop: `websocket_handler`, `AgentMessageRouter`, batch ACK.
+- **`websocket/agent_handshake.py`** — handshake, регистрация агента, toolset hash / `list_tools` при необходимости.
+- **`websocket/agent_outbox_ingest.py`** — `outbox_item`, валидация, ACK/NACK, сохранение событий.
+- **`websocket/agent_command_result.py`** — `command_result`, операции, playbook hooks.
 
-**Основные функции:**
-- `websocket_handler(request)` — главный обработчик WebSocket соединения
-
-**Обрабатывает:**
-- `handshake` — аутентификация и регистрация агента
-- `outbox_item` — получение событий от агента (ticket events, device events)
-- `command_result` — получение результатов выполнения команд
-
-**Ключевые особенности:**
-- Batch ACK через `BatchAckManager`
-- Device binding validation через `EventValidator`
-- Persistence в PostgreSQL через repositories
-- Device registry upsert при handshake
-- Toolset hash sync (автоматическая отправка `list_tools` при изменении)
+**Ключевые особенности:** Batch ACK (`BatchAckManager`), device binding (`EventValidator`), PostgreSQL через repos. Подробнее — `docs/CODEMAP.md`.
 
 #### `websocket/ui_handler.py`
 

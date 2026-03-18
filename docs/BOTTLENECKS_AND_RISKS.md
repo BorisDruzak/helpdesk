@@ -2,7 +2,7 @@
 
 Документ фиксирует текущие узкие места, технический долг и потенциальные риски агента и сервера. Рекомендуется учитывать при планировании доработок и рефакторинга.
 
-**Дата обновления:** 2026-02-26
+**Дата обновления:** 2026-03-18
 
 ---
 
@@ -35,20 +35,22 @@
 
 ## 2. Сервер (server)
 
-### 2.1 WebSocket handler
+### 2.1 WebSocket pipeline (обновлено)
 
-- **agent_handler.py** — очень большой монолитный обработчик: handshake, command_result, outbox_item, batch ACK, device/ticket events в одном цикле. Сложно сопровождать и тестировать по частям.
-- **Рекомендация:** вынести обработку handshake, outbox_item и command_result в отдельные модули/функции с явными контрактами.
+- **`agent_handler.py`** — тонкий transport-loop (~110 строк): JSON, `AgentMessageRouter`, batch ACK, unregister.
+- Тяжёлая логика вынесена: `agent_handshake.py`, `agent_command_result.py`, `agent_outbox_ingest.py`, `job_event_persistence.py` (см. server/docs/CODEMAP.md).
+- **Остаётся риск сопровождения:** `agent_command_result.py` и `agent_outbox_ingest.py` по-прежнему крупные модули; точечные тесты и дальнейшее дробление по подсистемам при росте.
 
-### 2.2 DeviceOutboxSender
+### 2.2 DeviceOutboxSender и dispatch
 
-- Один общий цикл опроса: раз в 1 с запрашиваются pending команды по всем устройствам (лимит 100 команд за раз). При большом числе устройств и высокой частоте run_tool может стать узким местом.
-- **Рекомендация:** при росте нагрузки рассмотреть разделение по устройствам (отдельные очереди/воркеры) или увеличение частоты опроса с сохранением лимитов.
+- **По умолчанию** `DEVICE_DISPATCH_MODE=sharded`: очередь готовности по устройству, воркеры по шардам, reconcile (см. `device_outbox_sender.py`). Режим **`poll`** — legacy (единый цикл опроса по устройствам).
+- **Узкое место при росте:** весь dispatch в **одном процессе** aiohttp; горизонтальное масштабирование нескольких инстансов без общей очереди/блокировок в БД — отдельный эпик (см. docs/IMPLEMENTATION_PLAN_THIN_HANDLER_OUTBOX_ASYNC.md, B2).
 
-### 2.3 send_ws_command и таймауты
+### 2.3 send_ws_command, HTTP run_tool и таймауты
 
-- Синхронное ожидание `command_result` через Future с таймаутом `WS_COMMAND_TIMEOUT` (60 с) держит корутину. При большом числе одновременных вызовов run_tool растёт число висящих корутин и потребление ресурсов.
-- **Рекомендация:** ограничение concurrency (семафор) на стороне HTTP/run_tool или переход на асинхронный ответ (polling/WebSocket) для длительных операций.
+- Транспорт поддерживает `wait_for_result=False`. **Async-режим** для `POST /api/tools/run` (и admin): ответ **202** + `poll_url` на операцию — см. server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md.
+- **Синхронный путь** (`wait=1` / dev) по-прежнему держит корутину до `command_result` (таймаут `WS_COMMAND_TIMEOUT`). При массовом синхронном вызове — нагрузка на event loop; семафоры `WS_COMMAND_MAX_INFLIGHT_*` ограничивают очередь (при переполнении — отказ).
+- **Рекомендация:** в production для длительных операций использовать async + poll; при необходимости — явный пул воркеров или ограничение параллельных sync-вызовов на уровне API-шлюза.
 
 ### 2.4 Два пути run_tool
 
@@ -84,9 +86,10 @@
 
 - В handshake в payload уходят и `modules` (enabled_modules из конфига), и `modules_inventory` (установленные пакеты с версиями). Синхронизация device_modules на сервере идёт по **modules_inventory**. В документации протокола это не везде явно разделено — обновлено в pc_agent/docs/PROTOCOL_V3.md.
 
-### 3.3 SERVER_PUBLIC_BASE_URL
+### 3.3 SERVER_PUBLIC_BASE_URL и preflight
 
 - URL для скачивания модулей агентом строится из `SERVER_PUBLIC_BASE_URL` (server/config.py). Текущий дефолт в коде: `http://192.168.100.17:{SERVER_PORT}`. В **production** обязательно задавать `SERVER_PUBLIC_BASE_URL` явно через env; дефолт считается только dev-safe. Если агент на другой машине, URL должен быть доступен с хоста агента. Неверная настройка ведёт к ошибкам вида MODULE_DOWNLOAD_FAILED. Описано в server/docs/MODULES_API.md.
+- При старте агент дополнительно проверяет префикс module API (`GET /api/modules/ping` и см. MODULES_API.md).
 
 ---
 
@@ -100,7 +103,7 @@
 ### 4.2 Слабые стороны (кратко)
 
 - Агент: асинхронный handle_ack без ожидания; дубль выполнения при in_progress и падении; scheduler — заглушки.
-- Сервер: монолитный handler; один цикл DeviceOutboxSender; синхронное ожидание в send_ws_command; не все коды NACK из спецификации реализованы.
+- Сервер: крупные модули command_result/outbox_ingest; dispatch в одном процессе; синхронный run_tool по-прежнему держит корутину; не все коды NACK из спецификации реализованы; multi-instance outbox — впереди.
 
 Подробнее: pc_agent/docs/PROTOCOL_V3.md и server/docs/PROTOCOL_V3.md.
 
@@ -121,5 +124,6 @@
 - [server/docs/COMMAND_RESULT_LIFECYCLE.md](../server/docs/COMMAND_RESULT_LIFECYCLE.md) — инварианты обработки command_result.
 - [server/docs/TOOL_CALL_STARTED_INVARIANT.md](../server/docs/TOOL_CALL_STARTED_INVARIANT.md) — создание tool_call_started до отправки run_tool.
 - [server/docs/SECURITY_AND_AUTH.md](../server/docs/SECURITY_AND_AUTH.md) — безопасность и аутентификация.
-- [server/docs/MODULES_API.md](../server/docs/MODULES_API.md) — API модулей, SERVER_PUBLIC_BASE_URL.
+- [server/docs/MODULES_API.md](../server/docs/MODULES_API.md) — API модулей, SERVER_PUBLIC_BASE_URL, `/api/modules/ping`.
+- [server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md](../server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md) — async submit + poll операций.
 - [pc_agent/docs/MODULES.md](../pc_agent/docs/MODULES.md) — модули агента, реальный API ModuleManager.

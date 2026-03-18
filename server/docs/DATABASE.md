@@ -32,7 +32,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
 | **tickets** | Тикет поддержки, привязан к устройству. | `TicketEventsRepo`: создание/получение/обновление тикета, список тикетов. API: создание тикета, получение тикета, закрытие. |
-| **ticket_events** | События тикета: сообщения чата, command lifecycle (tool_call_started, tool_call_result и т.д.). Упорядочивание по `agent_seq` в рамках тикета. | `TicketEventsRepo`: добавление событий, replay по тикету, дедупликация по `(device_id, ticket_id, agent_seq)`. Проверка доступа к артефактам: `ticket_contains_artifact()`. WebSocket agent_handler при сохранении событий от агента и сервера. |
+| **ticket_events** | События тикета: сообщения чата, command lifecycle (tool_call_started, tool_call_result и т.д.). Упорядочивание по `agent_seq` в рамках тикета. | `TicketEventsRepo`: добавление событий, replay по тикету, дедупликация по `(device_id, ticket_id, agent_seq)`. Проверка доступа к артефактам: `ticket_contains_artifact()`. Пайплайн WS агента (`agent_outbox_ingest`, `agent_command_result`) при сохранении событий от агента и сервера. |
 
 **tickets:** `ticket_id` (PK), `ticket_code` (UNIQUE, формат T-000001, миграция 031), `device_id`, `title`, `description`, `status`, `created_at`, `updated_at`; расширенные поля (миграция 018); `ticket_type`, `priority`, `impact`, `urgency`, `importance`, `urgency_reason`, `importance_reason`, `requester_id`, `assignee_id`, `queue_id`, `category_id`, `service_id`, `subcategory_id`, `resolved_at`, `closed_at`, `sla_policy_id`, таймеры FRT/Resolution, `tags` (JSONB), `custom_fields` (JSONB), `external_ref`, `resolution_code`, `root_cause`, `reopen_count`, `parent_ticket_id`. Stage 10.2 (миграция 032): `manual_rank` (BIGINT NULL), `manual_rank_updated_at`, `manual_rank_updated_by` — ручной порядок в очереди. Stage 10.6 (миграция 038): статусы хранятся в snake_case (`new`, `triaged`, `in_progress`, `waiting_on_user`, `waiting_on_vendor`, `resolved`, `closed`), `custom_fields.priority_class` и `custom_fields.requester_profile` используются для единой рабочей очереди и карточки инициатора.  
 **ticket_events:** `id` (PK), `ticket_id`, `device_id`, `agent_seq` (nullable для server-originated), `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, ticket_id, agent_seq)` WHERE `agent_seq IS NOT NULL`.
@@ -65,7 +65,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_events** | События устройства без привязки к тикету (tools_changed, метрики и т.д.). Упорядочивание по `device_seq` в рамках устройства. | `DeviceEventsRepo`: добавление событий, replay по device_id. WebSocket agent_handler при сохранении device events от агента. |
+| **device_events** | События устройства без привязки к тикету (tools_changed, метрики и т.д.). Упорядочивание по `device_seq` в рамках устройства. | `DeviceEventsRepo`: добавление событий, replay по device_id. Пайплайн WS агента при сохранении device events от агента. |
 
 **device_events:** `id` (PK), `device_id`, `device_seq`, `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, device_seq)`.
 
@@ -75,7 +75,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_outbox** | Серверная outbox: команды к агентам до доставки по WebSocket. Жизненный цикл: pending → sent → delivered/failed. | `DeviceOutboxRepo`: вставка команды, выборка pending по device_id, обновление status/sent_at/delivered_at. Отправка команд агенту в websocket/agent_handler и device_outbox sender loop. |
+| **device_outbox** | Серверная outbox: команды к агентам до доставки по WebSocket. Жизненный цикл: pending → sent → delivered/failed. | `DeviceOutboxRepo`: вставка команды, выборка pending по device_id, обновление status/sent_at/delivered_at. Отправка команд агенту через outbox sender (`device_outbox_sender`) и доставка по WS. |
 | **operations** | Материализованное состояние операций (run_tool, cancel и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.). Связь с consent_decisions. Tools API, WebSocket, отмена операций. |
 
 **device_outbox:** `id` (PK), `device_id`, `command_id`, `command`, `params` (JSONB), `status`, `request_id`, `trace_id`, `operation_id`, `actor_role`, `retry_count`, `max_retries`, `created_at`, `sent_at`, `delivered_at`, `failed_at`, `error_code`, `error_message`.  

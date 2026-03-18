@@ -121,7 +121,7 @@
 - **Репозиторий:** `app/repos/playbook_repo.py` — PlaybookRepo: get_version_with_steps, create_run, create_step_run, get_step_run_by_operation_id, update_step_run_terminal, finish_run.
 - **Движок:** `app/services/playbook_engine.py` — start_run (создаёт run, первый шаг, operation, enqueue run_tool с require_online=False), advance_after_terminal (по operation_id обновляет step_run, при успехе или continue_on_error переходит к следующему шагу или завершает run).
 - **API:** POST `/api/playbooks/runs` — тело: `playbook_version_id`, `device_id` [, `trigger_type`, `context_json` ]; ответ 202: `{ "playbook_run_id", "status": "running" }`. Обработчик: `playbook_handlers.handle_start_playbook_run`.
-- **Хук:** в `websocket/agent_handler.py` после mark_succeeded и после mark_failed вызывается `advance_after_terminal(session, state, operation_id, "succeeded"|"failed", payload)`; при привязке operation_id к playbook_step_run выполняется продвижение (следующий шаг или завершение run).
+- **Хук:** в `websocket/agent_command_result.py` после mark_succeeded и после mark_failed вызывается `advance_after_terminal(session, state, operation_id, "succeeded"|"failed", payload)`; при привязке operation_id к playbook_step_run выполняется продвижение (следующий шаг или завершение run).
 
 ### 6.2 Поведение
 
