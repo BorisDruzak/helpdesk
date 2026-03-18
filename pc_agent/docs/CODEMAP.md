@@ -8,7 +8,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI |
@@ -47,6 +47,13 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/network/uploader.py` | Загрузка файлов/артефактов на сервер |
+
+### 2.3.1 Аутентификация и bootstrap подключения
+| Файл | Назначение |
+|------|------------|
+| `pc_agent/auth/token_source.py` | Источник токена: `AUTH_TOKEN` → `auth_tokens` → optional GUI callback |
+| `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus |
+| `pc_agent/auth/rejected_flag.py` | Путь к локальному флагу `connection_rejected.flag` |
 
 ### 2.4 UI bridge (core ↔ GUI)
 | Файл | Назначение |

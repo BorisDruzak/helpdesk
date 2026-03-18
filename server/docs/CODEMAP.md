@@ -19,7 +19,7 @@
 ### 2.1 WebSocket
 | Файл | Назначение |
 |------|------------|
-| `server/websocket/agent_handler.py` | WS агентов `/ws`: handshake, outbox, command_result |
+| `server/websocket/agent_handler.py` | WS агентов `/ws`: thin-dispatch loop + handlers `handle_handshake/handle_command_result/handle_outbox_item` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
 | `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id |
 | `server/websocket/device_outbox_sender.py` | Доставка из device_outbox на агент |
@@ -36,6 +36,12 @@
 | `server/api/operations.py` | Lifecycle операций, consent/cancel |
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
+
+### 2.2.1 Tools / единый путь run_tool
+| Файл | Назначение |
+|------|------------|
+| `server/tools/service.py` | Канонический вход `ToolService.run_tool`: pre-start event `tool_call_started`, отправка команды агенту |
+| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolService` |
 
 ### 2.3 БД и репозитории
 | Файл | Назначение |

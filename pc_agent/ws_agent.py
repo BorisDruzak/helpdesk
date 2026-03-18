@@ -57,6 +57,9 @@ from ui_bridge.settings_service import AgentSettingsService
 from core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
 from pc_agent.version import AGENT_VERSION
 from pc_agent.core.single_instance import SingleInstanceLock
+from pc_agent.auth.connection_request import run_connection_request_flow
+from pc_agent.auth.rejected_flag import connection_rejected_flag_path
+from pc_agent.auth.token_source import load_auth_token
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1701,72 +1704,48 @@ class WSAgent:
         Returns:
             True если токен найден, False если нужно запросить у пользователя
         """
-        # 1. Проверяем токен в ENV переменной
-        env_token = os.getenv("AUTH_TOKEN")
-        if env_token:
-            logger.info("✅ Токен найден в переменной окружения AUTH_TOKEN")
-            self.auth_token = env_token
-            self.identity_manager.token = env_token
-            # Сохраняем в БД агента
-            if self.db_manager:
-                try:
-                    await self.db_manager.save_auth_token(env_token, self.identity_manager.uuid)
-                    logger.info("✅ Токен из ENV сохранен в БД агента")
-                except Exception as e:
-                    logger.warning(f"⚠️ Не удалось сохранить токен в БД: {e}")
-            return True
-        
-        # 2. Проверяем токен в БД агента (основной источник)
-        try:
-            if self.db_manager:
-                token = await self.db_manager.get_auth_token(self.identity_manager.uuid)
-                if token:
-                    logger.info("✅ Токен найден в БД агента")
-                    self.auth_token = token
-                    self.identity_manager.token = token  # Синхронизируем в память
-                    return True
-        except Exception as e:
-            logger.debug(f"Не удалось проверить токен в БД: {e}")
-        
-        # 4. Если токен не найден, но GUI включен - ожидаем авторизации через GUI
-        # GUI покажет диалог авторизации ДО запуска агента, поэтому здесь просто проверяем
-        # и ждем, если нужно
-        try:
-            from PySide6.QtWidgets import QApplication
+        async def _wait_token_from_gui_if_enabled() -> Optional[str]:
+            # GUI покажет диалог авторизации ДО запуска агента, поэтому здесь только короткое ожидание.
+            try:
+                from PySide6.QtWidgets import QApplication
+            except ImportError:
+                return None
+
             app = QApplication.instance()
-            if app is not None:
-                logger.info("🖥️ GUI включен, проверяю авторизацию через GUI...")
-                # GUI должен был уже провести авторизацию ДО запуска агента
-                # Проверяем БД агента (GUI сохраняет токен в БД)
-                max_wait = 50  # Максимум 5 секунд
-                waited = 0
-                while waited < max_wait:
-                    await asyncio.sleep(0.1)
-                    waited += 1
-                    # Проверяем БД агента (GUI должен был сохранить токен)
-                    try:
-                        if self.db_manager:
-                            token = await self.db_manager.get_auth_token(self.identity_manager.uuid)
-                            if token:
-                                logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
-                                self.auth_token = token
-                                self.identity_manager.token = token
-                                return True
-                    except Exception as e:
-                        logger.debug(f"Ошибка проверки токена в БД: {e}")
-                
-                # Если токен все еще не найден после ожидания
-                logger.warning("⚠️ GUI включен, но токен не найден после ожидания")
-                logger.info("💡 Возможно, авторизация еще не завершена или была отменена")
-                # Не блокируем подключение - агент попытается подключиться к серверу
-                # Сервер зарегистрирует попытку подключения для админа
-                logger.info("💡 Агент попытается подключиться к серверу для регистрации попытки")
-                return False
-        except ImportError:
-            # PySide6 не установлен
-            pass
-        
-        # 4. Токен не найден - логируем информацию
+            if app is None:
+                return None
+
+            logger.info("🖥️ GUI включен, проверяю авторизацию через GUI...")
+            max_wait = 50  # Максимум 5 секунд
+            waited = 0
+            while waited < max_wait:
+                await asyncio.sleep(0.1)
+                waited += 1
+                try:
+                    if self.db_manager:
+                        token = await self.db_manager.get_auth_token(self.identity_manager.uuid)
+                        if token:
+                            logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
+                            return token
+                except Exception as e:
+                    logger.debug(f"Ошибка проверки токена в БД: {e}")
+
+            logger.warning("⚠️ GUI включен, но токен не найден после ожидания")
+            logger.info("💡 Возможно, авторизация еще не завершена или была отменена")
+            logger.info("💡 Агент попытается подключиться к серверу для регистрации попытки")
+            return None
+
+        token = await load_auth_token(
+            db_manager=self.db_manager,
+            identity_manager=self.identity_manager,
+            gui_wait_callback=_wait_token_from_gui_if_enabled,
+        )
+        if token:
+            self.auth_token = token
+            self.identity_manager.token = token
+            return True
+
+        # Токен не найден - логируем информацию
         # НЕ запрашиваем ввод здесь - агент должен подключиться к серверу сначала
         # Сервер зарегистрирует попытку подключения в pending_connections
         logger.info("💡 Токен не найден")
@@ -1776,8 +1755,7 @@ class WSAgent:
     
     def _connection_rejected_flag_path(self) -> Path:
         """Путь к файлу-флагу «подключение отклонено» (не отправлять запросы повторно)."""
-        root = self._data_root or Path(".")
-        return Path(root) / "connection_rejected.flag"
+        return connection_rejected_flag_path(self._data_root)
 
     async def request_connection_flow(self, wait_for_approval_seconds: int = 600) -> Tuple[bool, bool]:
         """
@@ -1790,143 +1768,19 @@ class WSAgent:
             (False, True) — явно отклонено администратором (нужно записать флаг).
             (False, False) — ошибка или таймаут ожидания (флаг не ставить).
         """
-        api_url = (get_config().server.api_url or "").rstrip("/")
-        if not api_url:
-            logger.error("request_connection_flow: server.api_url не задан")
-            return (False, False)
-        device_id = self.device_id or self.identity_manager.uuid
-        if not device_id:
-            logger.error("request_connection_flow: device_id отсутствует")
-            return (False, False)
-
-        import socket
         hostname = socket.gethostname() if hasattr(socket, "gethostname") else None
-
-        async with ClientSession() as session:
-            try:
-                resp = await session.post(
-                    f"{api_url}/connection_request",
-                    json={
-                        "device_id": device_id,
-                        "hostname": hostname,
-                        "metadata": {},
-                    },
-                    timeout=aiohttp.ClientTimeout(total=15),
-                )
-            except Exception as e:
-                logger.error(f"Ошибка запроса подключения: {e}")
-                return (False, False)
-
-            if resp.status == 403:
-                data = await resp.json() if resp.content_type == "application/json" else {}
-                logger.warning(f"Администратор отклонил подключение: {data.get('message', '')}")
-                if self.event_bus:
-                    await self.event_bus.publish({
-                        "event_type": "connection_rejected",
-                        "data": {"message": "Администратор отклонил подключение"},
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    })
-                return (False, True)
-
-            if resp.status != 200:
-                logger.error(f"Сервер вернул {resp.status} при запросе подключения")
-                return (False, False)
-
-            data = await resp.json()
-            status = data.get("status")
-
-            if status == "approved":
-                token = data.get("token")
-                if not token:
-                    logger.error("Нет токена в ответе approved")
-                    return (False, False)
-                self.auth_token = token
-                self.identity_manager.token = token
-                if self.db_manager:
-                    try:
-                        await self.db_manager.save_auth_token(token, device_id)
-                    except Exception as e:
-                        logger.warning(f"Не удалось сохранить токен в БД: {e}")
-                logger.info("✅ Токен получен по запросу подключения (accept_all)")
-                if self.event_bus:
-                    await self.event_bus.publish({
-                        "event_type": "connection_approved",
-                        "data": {},
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    })
-                return (True, False)
-
-            if status == "pending":
-                if self.event_bus:
-                    await self.event_bus.publish({
-                        "event_type": "connection_request_pending",
-                        "data": {"message": "Дождитесь авторизации от Администратора"},
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    })
-                logger.info("Запрос на подключение в ожидании; ожидаю одобрения/отклонения администратором...")
-                # Ожидаем одобрения/отклонения: каждые 5 сек обновляем запрос (POST) и опрашиваем статус (GET)
-                # — чтобы в админке запрос отображался только пока агент активен
-                poll_interval = 5
-                deadline = time.monotonic() + wait_for_approval_seconds
-                while time.monotonic() < deadline:
-                    await asyncio.sleep(poll_interval)
-                    # Heartbeat: POST обновляет last_request_at на сервере (запрос остаётся в списке админки)
-                    try:
-                        await session.post(
-                            f"{api_url}/connection_request",
-                            json={
-                                "device_id": device_id,
-                                "hostname": hostname,
-                                "metadata": {},
-                            },
-                            timeout=aiohttp.ClientTimeout(total=5),
-                        )
-                    except Exception as e:
-                        logger.debug(f"Ошибка heartbeat connection_request: {e}")
-                    try:
-                        status_resp = await session.get(
-                            f"{api_url}/connection_request/status",
-                            params={"device_id": device_id},
-                            timeout=aiohttp.ClientTimeout(total=10),
-                        )
-                    except Exception as e:
-                        logger.warning(f"Ошибка опроса статуса: {e}")
-                        continue
-                    if status_resp.status != 200:
-                        continue
-                    status_data = await status_resp.json()
-                    st = status_data.get("status")
-                    if st == "approved":
-                        token = status_data.get("token")
-                        if token:
-                            self.auth_token = token
-                            self.identity_manager.token = token
-                            if self.db_manager:
-                                try:
-                                    await self.db_manager.save_auth_token(token, device_id)
-                                except Exception as e:
-                                    logger.warning(f"Не удалось сохранить токен в БД: {e}")
-                            logger.info("✅ Токен получен по опросу (одобрено администратором)")
-                            if self.event_bus:
-                                await self.event_bus.publish({
-                                    "event_type": "connection_approved",
-                                    "data": {},
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-                            return (True, False)
-                    elif st == "rejected":
-                        logger.warning("Администратор отклонил подключение")
-                        if self.event_bus:
-                            await self.event_bus.publish({
-                                "event_type": "connection_rejected",
-                                "data": {"message": "Администратор отклонил подключение"},
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-                        return (False, True)
-                logger.warning("Таймаут ожидания одобрения администратором")
-                return (False, False)
-
-        return (False, False)
+        ok, rejected = await run_connection_request_flow(
+            api_url=get_config().server.api_url or "",
+            device_id=self.device_id or self.identity_manager.uuid,
+            hostname=hostname,
+            db_manager=self.db_manager,
+            identity_manager=self.identity_manager,
+            event_bus=self.event_bus,
+            wait_seconds=wait_for_approval_seconds,
+        )
+        if ok and self.identity_manager and self.identity_manager.token:
+            self.auth_token = self.identity_manager.token
+        return (ok, rejected)
 
     async def _request_token_from_console(self) -> bool:
         """

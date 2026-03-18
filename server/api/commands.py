@@ -3,9 +3,11 @@ API обработчики для команд агента.
 """
 
 import asyncio
+import uuid
 from aiohttp import web
 from loguru import logger
 from websocket.protocol import send_ws_command
+from tools.service import ToolService
 
 
 async def handle_send_command(request):
@@ -324,17 +326,15 @@ async def handle_smoke_run(request):
                 "list_tools": tools_payload
             }, status=409)
         
-        # Шаг 2: run_tool
-        agent_params = {
-            "tool": tool,
-            "params": params
-        }
-        run_res = await send_ws_command(
-            state=state,
+        # Шаг 2: run_tool через ToolService (единая точка входа)
+        tool_service = ToolService(state)
+        run_res = await tool_service.run_tool(
             device_id=device_id,
-            command="run_tool",
-            params=agent_params,
-            actor_role=actor_role
+            ticket_id=str(uuid.uuid4()),
+            tool_name=tool,
+            params=dict(params) if isinstance(params, dict) else {},
+            call_id=str(uuid.uuid4()),
+            auth_context=None,
         )
         
         return web.json_response({

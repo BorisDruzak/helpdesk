@@ -4,11 +4,13 @@ Verification pipeline for module activation.
 """
 import asyncio
 import time
+import uuid
 from typing import Optional, Dict, List, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.repos import DeviceModulesRepo, ToolsetSnapshotsRepo
+from tools.service import ToolService
 
 
 async def run_smoke_for_module_tools(
@@ -21,22 +23,22 @@ async def run_smoke_for_module_tools(
     Выполняет реальный run_tool smoke для каждого инструмента из списка.
     Возвращает список результатов: {tool, success, error_code?, duration_ms, device_id}.
     """
-    from websocket.protocol import send_ws_command
-
     results = []
+    tool_service = ToolService(state)
     for t in module_tools:
         tool_name = t.get("tool") or t.get("name")
         if not tool_name:
             continue
         start = time.perf_counter()
         try:
-            response = await send_ws_command(
-                state=state,
+            response = await tool_service.run_tool(
                 device_id=device_id,
-                command="run_tool",
-                params={"tool_name": tool_name, "params": {}},
-                actor_role="admin",
-                timeout=timeout_per_tool,
+                ticket_id=str(uuid.uuid4()),
+                tool_name=tool_name,
+                params={},
+                call_id=str(uuid.uuid4()),
+                timeout=float(timeout_per_tool),
+                auth_context=None,
             )
             duration_ms = int((time.perf_counter() - start) * 1000)
             payload = response.get("payload") or {}
