@@ -34,6 +34,7 @@
    - Если локальная рабочая копия `dirty`, скрипт по умолчанию должен останавливаться; сначала commit/stash, потом deploy.
    - Флаг `--allow-local-dirty` использовать только осознанно, когда нужно выложить именно последний commit, а незакоммиченные локальные правки не должны попадать на Linux.
    - Не копировать файлы вручную прямо в `/var/chat_bot/pc_client/...`; это делает Linux working copy `dirty` и ломает следующий Git-deploy.
+   - Для стандартного полного server-flow предпочитать `python scripts/release_server_to_remote.py`: он делает verify → deploy → start server → smoke → stop server.
 8. Сервер запускать на Linux только через `python scripts/manage_remote_stack.py start server`.
 9. После запуска выполнять `python scripts/manage_remote_stack.py smoke server`, а если менялся веб, дополнительно проверять GUI через MCP по `http://192.168.100.17:8666/admin`.
 10. После проверок останавливать сервер на Linux через `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
@@ -97,6 +98,31 @@
 
 - Для браузерных проверок использовать **только**: `http://192.168.100.17:8666/admin`.
 - Не использовать `127.0.0.1` или другие адреса без явного запроса пользователя.
+
+## Скрипты и когда использовать
+
+- `python scripts/release_server_to_remote.py`
+  Использовать для стандартного проверенного server-flow без ручной путаницы: локальная verify, Git-deploy на Linux, запуск сервера, smoke-check и остановка сервера в конце.
+- `python scripts/release_server_to_remote.py --leave-running`
+  Использовать, если после штатного deploy/проверки сервер нужно оставить поднятым для следующего шага.
+- `python scripts/release_server_to_remote.py --skip-smoke`
+  Использовать только если smoke сознательно заменён другим сценарием проверки.
+- `python scripts/release_server_to_remote.py --skip-verify`
+  Использовать редко, только если локальная verify уже была прогнана в этом же состоянии и повтор не нужен.
+- `python scripts/deploy_workspace_to_remote.py`
+  Использовать, когда нужно только обновить код в `/var/chat_bot/pc_client` без запуска и остановки сервера.
+- `python scripts/deploy_workspace_to_remote.py --allow-local-dirty`
+  Использовать только осознанно: на Linux уйдёт последний commit, а незакоммиченные локальные правки останутся только на Windows.
+- `python scripts/manage_remote_stack.py start server`
+  Использовать, когда код на Linux уже обновлён и нужен только запуск сервера.
+- `python scripts/manage_remote_stack.py smoke server`
+  Использовать, когда сервер уже запущен и нужен отдельный smoke-check.
+- `python scripts/manage_remote_stack.py stop server`
+  Использовать после проверок, если сервер не нужно оставлять запущенным.
+- `python scripts/manage_remote_stack.py logs server`
+  Использовать для чтения логов и разбора падений без ad-hoc SSH-команд.
+- Если менялся веб-интерфейс сервера, после `release_server_to_remote.py` или после ручного `start + smoke` обязательно дополнительно проверить GUI через MCP по `http://192.168.100.17:8666/admin`.
+- Не собирать вручную цепочки из `git push`, `ssh`, `git pull`, `run_server.py` и `stop_server.py`, если задача укладывается в штатные скрипты выше.
 
 ## Миграции PostgreSQL
 
