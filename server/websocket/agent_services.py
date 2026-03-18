@@ -12,8 +12,19 @@ from app.db import get_session
 from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
 from websocket.batch_ack_manager import NackInfo
-from websocket.command_result_components import CommandResultNormalizer, CommandResultFutureResolver
-from websocket.outbox_ingest_components import OutboxEnvelopeValidator as OutboxEnvelopeValidatorComponent
+from websocket.command_result_components import (
+    CommandResultNormalizer,
+    CommandResultFutureResolver,
+    CommandResultArtifactHandler,
+    CommandResultEventPublisher,
+    CommandResultLifecycleOutcome,
+)
+from websocket.outbox_ingest_components import (
+    OutboxEnvelopeValidator as OutboxEnvelopeValidatorComponent,
+    OutboxAckDecisionService as OutboxAckDecisionComponent,
+    OutboxPersistenceService as OutboxPersistenceComponent,
+    OutboxEventPublishService as OutboxEventPublishComponent,
+)
 
 from .contexts import AgentConnectionContext, EnvelopeContext
 
@@ -127,10 +138,16 @@ class CommandResultService:
         self._artifact_handler = CommandResultArtifactHandler()
 
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> None:
+        # 1) normalize
         normalized = self._normalizer.normalize(message)
-        await self._artifact_handler.pre_handle(normalized, ctx)
-        await self._lifecycle.handle(self._legacy_handler, message, ctx)
-        await self._event_publisher.post_handle(normalized, ctx)
+        # 2) lifecycle update
+        lifecycle_outcome = await self._lifecycle.handle(self._legacy_handler, message, ctx, normalized)
+        # 3) future resolve (sync wait path)
+        self._future_resolver.resolve_from_context(normalized.command_id, message, ctx)
+        # 4) artifact/result post-process
+        await self._artifact_handler.post_process(normalized, ctx)
+        # 5) publish side effects
+        await self._event_publisher.publish_after_lifecycle(normalized, ctx, lifecycle_outcome)
 
 
 class OperationLifecycleService:
@@ -141,23 +158,19 @@ class OperationLifecycleService:
         legacy_handler: Callable[..., Awaitable[None]],
         message: dict[str, Any],
         ctx: AgentConnectionContext,
-    ) -> None:
+        normalized: Any,
+    ) -> CommandResultLifecycleOutcome:
         await legacy_handler(
             ws=ctx.ws,
             data=message,
             state=ctx.state,
             agent_id=ctx.agent_id,
         )
-
-
-class CommandResultEventPublisher:
-    async def post_handle(self, normalized: Any, ctx: AgentConnectionContext) -> None:
-        _ = (normalized, ctx)
-
-
-class CommandResultArtifactHandler:
-    async def pre_handle(self, normalized: Any, ctx: AgentConnectionContext) -> None:
-        _ = (normalized, ctx)
+        return CommandResultLifecycleOutcome(
+            processed=True,
+            command_id=normalized.command_id,
+            status=normalized.status,
+        )
 
 
 class OutboxIngestService:
@@ -180,8 +193,7 @@ class OutboxIngestService:
         self._event_publish = OutboxEventPublishService()
 
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> bool:
-        if await self._apply_post_handshake_guards(message, ctx):
-            return True
+        # 1) envelope validate
         envelope_check = self._validator.validate(message)
         if not envelope_check.ok:
             return await self._ack_decision.reject_invalid_envelope(
@@ -189,16 +201,32 @@ class OutboxIngestService:
                 ctx=ctx,
                 envelope_check=envelope_check,
             )
-        if self._dedupe.is_duplicate(ctx, envelope_check.outbox_id):
+        # 2) post-handshake guards
+        if await self._apply_post_handshake_guards(message, ctx):
             return True
-        return await self._legacy_handler(
-            ws=ctx.ws,
-            data=message,
-            state=ctx.state,
-            agent_id=ctx.agent_id,
+        # 3) dedupe check
+        if self._dedupe.is_duplicate(ctx, envelope_check.outbox_id):
+            self._ack_decision.ack_duplicate(
+                batch_ack_manager=self._batch_ack_manager,
+                ctx=ctx,
+                envelope_check=envelope_check,
+            )
+            if ctx.agent_id and self._batch_ack_manager.has_pending(ctx.agent_id):
+                await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+            return True
+        # 4) persistence
+        persistence_outcome = await self._persistence.persist(
+            legacy_handler=self._legacy_handler,
+            message=message,
+            ctx=ctx,
             batch_ack_manager=self._batch_ack_manager,
             event_validator=self._event_validator,
+            envelope=envelope_check,
         )
+        # 5) ack/nack decision lives in legacy persistence path for valid items.
+        # 6) publish side effects
+        await self._event_publish.publish_after_commit(ctx=ctx, outcome=persistence_outcome)
+        return persistence_outcome.should_continue
 
     async def _apply_post_handshake_guards(
         self,
@@ -302,31 +330,40 @@ class OutboxDedupService:
         return False
 
 
-class OutboxPersistenceService:
-    pass
+class OutboxPersistenceService(OutboxPersistenceComponent):
+    """Adapter over persistence component."""
 
 
 class OutboxAckDecisionService:
+    def __init__(self) -> None:
+        self._component = OutboxAckDecisionComponent()
+
     async def reject_invalid_envelope(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, envelope_check: Any) -> bool:
         if not ctx.agent_id or not envelope_check.trace_id:
             return True
-        batch_ack_manager.add_nack(
+        self._component.add_validation_nack(
+            batch_ack_manager=batch_ack_manager,
             device_id=ctx.agent_id,
             outbox_id=envelope_check.outbox_id or "unknown",
             trace_id=envelope_check.trace_id,
-            nack_info=NackInfo(
-                retryable=False,
-                error_code="VALIDATION_ERROR",
-                error_message=envelope_check.error_message or "Invalid outbox envelope",
-                retry_after_sec=None,
-            ),
+            error=envelope_check.error_message or "Invalid outbox envelope",
         )
         await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
         return True
 
+    def ack_duplicate(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, envelope_check: Any) -> None:
+        if not ctx.agent_id or not envelope_check.outbox_id or not envelope_check.trace_id:
+            return
+        self._component.add_duplicate_ack(
+            batch_ack_manager=batch_ack_manager,
+            device_id=ctx.agent_id,
+            outbox_id=envelope_check.outbox_id,
+            trace_id=envelope_check.trace_id,
+        )
 
-class OutboxEventPublishService:
-    pass
+
+class OutboxEventPublishService(OutboxEventPublishComponent):
+    """Adapter over post-commit side-effect publisher."""
 
 
 class AgentCommandService:

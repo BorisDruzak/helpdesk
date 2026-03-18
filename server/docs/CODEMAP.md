@@ -146,6 +146,22 @@
 - **UI → Server:** `/ws_ui`, ui_hello → run_tool/API → операции и события в UI.
 - **Helpdesk ticket flow:** создание тикета → routing/SLA → попытка auto-assign → статус `new` или `triaged` ("В очереди у оператора"); лимит оператора считается только по `in_progress`; `resolved` закрывается только после подтверждения requester, а его ответ из `waiting_on_user` возвращает тикет в очередь оператора.
 
+### 4.1 Internal WS pipelines
+
+- **`command_result` pipeline (`AgentMessageRouter` → `CommandResultService`)**
+  - normalize (`CommandResultNormalizer`)
+  - lifecycle update (`OperationLifecycleService`)
+  - sync wait future resolve (`CommandResultFutureResolver`)
+  - artifact/result post-processing (`CommandResultArtifactHandler`)
+  - side effects publish (`CommandResultEventPublisher`)
+- **`outbox_item` pipeline (`AgentMessageRouter` → `OutboxIngestService`)**
+  - envelope validate (`OutboxEnvelopeValidator`)
+  - post-handshake guard (`OutboxGuardService`)
+  - dedupe check (`OutboxDedupService`)
+  - persistence (`OutboxPersistenceService`)
+  - ack/nack decision (`OutboxAckDecisionService`)
+  - publish after persistence (`OutboxEventPublishService`)
+
 ---
 
 ## 5. БД и миграции
