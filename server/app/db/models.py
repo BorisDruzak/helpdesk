@@ -796,6 +796,49 @@ class DeviceOutbox(Base):
         )
 
 
+class DispatchReadyDevice(Base):
+    """
+    Cross-instance coordination queue for device dispatch readiness.
+
+    One row per device_id. Workers claim leases before drain to avoid
+    parallel sends from multiple server instances.
+    """
+
+    __tablename__ = "dispatch_ready_devices"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    shard_key: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    lease_until: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_dispatch_ready_shard_next_attempt", "shard_key", "next_attempt_at"),
+        Index("ix_dispatch_ready_lease_until", "lease_until"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DispatchReadyDevice(device_id={self.device_id!r}, shard_key={self.shard_key}, "
+            f"lease_owner={self.lease_owner!r}, lease_until={self.lease_until})>"
+        )
+
+
 class Operation(Base):
     """
     Operation model for tracking end-to-end command/tool execution lifecycle.

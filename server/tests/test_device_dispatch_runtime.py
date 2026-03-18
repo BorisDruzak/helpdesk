@@ -39,6 +39,9 @@ async def test_shard_dispatcher_keeps_same_device_in_same_shard():
         pass
 
     dispatcher = ShardDispatcher(_DummyState(), shards=4, fetch_limit=10, reconcile_seconds=30)
-    shard_ids = [abs(hash("stable-device")) % dispatcher.shards for _ in range(5)]
+    shard_ids = [
+        dispatcher.services[0]._device_to_shard("stable-device")
+        for _ in range(5)
+    ]
     assert len(set(shard_ids)) == 1
     assert len(dispatcher.services) == 4

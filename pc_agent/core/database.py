@@ -24,7 +24,7 @@ from loguru import logger
 # ВЕРСИОНИРОВАНИЕ (замечание 1.1)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DB_SCHEMA_VERSION = 8  # Версия структуры БД, меняется при изменении таблиц (v8: добавлена таблица auth_tokens)
+DB_SCHEMA_VERSION = 9  # v9: controlled retry metadata for seen_commands
 PROTOCOL_VERSION = "ws_ticket_v3"  # Версия протокола WebSocket
 
 # Лимиты (замечание 8.2)
@@ -236,7 +236,9 @@ class DatabaseManager:
                 status TEXT NOT NULL,  -- 'success' | 'error' | 'in_progress'
                 result_json TEXT,      -- JSON payload (status + data), не весь tool_response
                 completed_at INTEGER NOT NULL,
-                started_at INTEGER      -- Для статуса in_progress
+                started_at INTEGER,      -- Для статуса in_progress
+                stale_retry_count INTEGER NOT NULL DEFAULT 0,
+                owner_instance_id TEXT
             )
         """)
         
@@ -559,7 +561,9 @@ class DatabaseManager:
                     status TEXT NOT NULL,
                     result_json TEXT,
                     completed_at INTEGER NOT NULL,
-                    started_at INTEGER
+                    started_at INTEGER,
+                    stale_retry_count INTEGER NOT NULL DEFAULT 0,
+                    owner_instance_id TEXT
                 )
             """)
             await db.execute("CREATE INDEX idx_seen_commands_completed_at ON seen_commands(completed_at)")
@@ -625,6 +629,26 @@ class DatabaseManager:
             logger.info("Таблица auth_tokens создана")
         
         logger.success("Миграция v7 → v8 завершена")
+
+    async def _migrate_v8_to_v9(self, db: aiosqlite.Connection) -> None:
+        """Миграция v8 → v9: Добавляем controlled retry metadata в seen_commands."""
+        logger.info("Начинаю миграцию v8 → v9...")
+
+        cursor = await db.execute("PRAGMA table_info(seen_commands)")
+        columns = await cursor.fetchall()
+        column_names = {col[1] for col in columns}
+
+        if "stale_retry_count" not in column_names:
+            await db.execute(
+                "ALTER TABLE seen_commands ADD COLUMN stale_retry_count INTEGER NOT NULL DEFAULT 0"
+            )
+            logger.info("Колонка stale_retry_count добавлена в seen_commands")
+
+        if "owner_instance_id" not in column_names:
+            await db.execute("ALTER TABLE seen_commands ADD COLUMN owner_instance_id TEXT")
+            logger.info("Колонка owner_instance_id добавлена в seen_commands")
+
+        logger.success("Миграция v8 → v9 завершена")
     
     async def _migrate_schema(
         self, 
@@ -654,6 +678,10 @@ class DatabaseManager:
         # V7 → V8: Добавляем auth_tokens для хранения токена авторизации
         if from_version < 8 and to_version >= 8:
             await self._migrate_v7_to_v8(db)
+
+        # V8 → V9: controlled retry metadata в seen_commands
+        if from_version < 9 and to_version >= 9:
+            await self._migrate_v8_to_v9(db)
         
         logger.success(f"Миграция на v{to_version} завершена")
     
@@ -1927,7 +1955,13 @@ class DatabaseManager:
     # SEEN_COMMANDS - Идемпотентность команд (Protocol V3)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    async def mark_command_started(self, command_id: str) -> None:
+    async def mark_command_started(
+        self,
+        command_id: str,
+        *,
+        owner_instance_id: Optional[str] = None,
+        stale_retry: bool = False,
+    ) -> None:
         """
         Помечает команду как начатую (для отслеживания in_progress).
         
@@ -1939,11 +1973,29 @@ class DatabaseManager:
             await db.execute(
                 """
                 INSERT OR IGNORE INTO seen_commands 
-                (command_id, status, completed_at, started_at)
-                VALUES (?, 'in_progress', ?, ?)
+                (command_id, status, completed_at, started_at, stale_retry_count, owner_instance_id)
+                VALUES (?, 'in_progress', ?, ?, 0, ?)
                 """,
-                (command_id, int(time.time()), int(time.time()))
+                (command_id, int(time.time()), int(time.time()), owner_instance_id)
             )
+            if stale_retry:
+                await db.execute(
+                    """
+                    UPDATE seen_commands
+                    SET status='in_progress',
+                        started_at=?,
+                        completed_at=?,
+                        stale_retry_count=COALESCE(stale_retry_count, 0) + 1,
+                        owner_instance_id=?
+                    WHERE command_id=?
+                    """,
+                    (
+                        int(time.time()),
+                        int(time.time()),
+                        owner_instance_id,
+                        command_id,
+                    ),
+                )
             await db.commit()
     
     async def mark_command_seen(
@@ -1989,10 +2041,17 @@ class DatabaseManager:
                 await db.execute(
                     """
                     INSERT OR REPLACE INTO seen_commands 
-                    (command_id, status, result_json, completed_at)
-                    VALUES (?, ?, ?, ?)
+                    (command_id, status, result_json, completed_at, started_at, stale_retry_count, owner_instance_id)
+                    VALUES (?, ?, ?, ?, ?, 0, ?)
                     """,
-                    (command_id, status, result_json, int(time.time()))
+                    (
+                        command_id,
+                        status,
+                        result_json,
+                        int(time.time()),
+                        int(time.time()),
+                        None,
+                    )
                 )
                 await db.commit()
                 return True
@@ -2013,7 +2072,12 @@ class DatabaseManager:
         async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
             await db.execute("PRAGMA busy_timeout=5000")
             cursor = await db.execute(
-                "SELECT status, result_json, completed_at, started_at FROM seen_commands WHERE command_id = ?",
+                """
+                SELECT status, result_json, completed_at, started_at,
+                       COALESCE(stale_retry_count, 0), owner_instance_id
+                FROM seen_commands
+                WHERE command_id = ?
+                """,
                 (command_id,)
             )
             row = await cursor.fetchone()
@@ -2022,7 +2086,9 @@ class DatabaseManager:
                     "status": row[0],
                     "result_json": row[1],
                     "completed_at": row[2],
-                    "started_at": row[3]
+                    "started_at": row[3],
+                    "stale_retry_count": row[4],
+                    "owner_instance_id": row[5],
                 }
             return None
     

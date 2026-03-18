@@ -9,6 +9,7 @@ Supports two internal dispatch modes:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from app.db import get_session
 from app.repos import DeviceOutboxRepo
 from config import (
     DEVICE_DISPATCH_FETCH_LIMIT,
+    DEVICE_DISPATCH_LEASE_SECONDS,
     DEVICE_DISPATCH_MODE,
     DEVICE_DISPATCH_RECONCILE_SECONDS,
     DEVICE_DISPATCH_SHARDS,
@@ -58,11 +60,21 @@ class DeviceReadyQueue:
 class DeviceDispatchService:
     """Push-first, per-device sequential dispatcher."""
 
-    def __init__(self, state_manager, shard_id: int, shard_count: int, fetch_limit: int) -> None:
+    def __init__(
+        self,
+        state_manager,
+        shard_id: int,
+        shard_count: int,
+        fetch_limit: int,
+        lease_seconds: int,
+        instance_id: str,
+    ) -> None:
         self.state = state_manager
         self.shard_id = shard_id
         self.shard_count = shard_count
         self.fetch_limit = fetch_limit
+        self.lease_seconds = max(5, lease_seconds)
+        self.instance_id = instance_id
         self._queue = DeviceReadyQueue()
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -88,6 +100,14 @@ class DeviceDispatchService:
     async def enqueue_device(self, device_id: str) -> None:
         if self._device_to_shard(device_id) != self.shard_id:
             return
+        # Persist wakeup in DB so other instances can coordinate on the same queue.
+        async with get_session() as session:
+            repo = DeviceOutboxRepo(session)
+            await repo.upsert_dispatch_ready_device(
+                device_id=device_id,
+                shard_key=self.shard_id,
+            )
+            await session.commit()
         await self._queue.enqueue(device_id)
         queue_len = await self._queue.size()
         if queue_len >= 100:
@@ -109,12 +129,27 @@ class DeviceDispatchService:
                 logger.error(f"[DeviceDispatchService] drain failed: device_id={device_id} error={exc}", exc_info=True)
 
     def _device_to_shard(self, device_id: str) -> int:
-        return abs(hash(device_id)) % self.shard_count
+        digest = hashlib.sha1(device_id.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
+        return value % max(1, self.shard_count)
 
     async def _drain_device(self, device_id: str) -> None:
         if not self.state.is_agent_online(device_id):
             return
         started_at = datetime.now(timezone.utc)
+        # Cross-instance coordination: claim device lease before draining.
+        async with get_session() as session:
+            repo = DeviceOutboxRepo(session)
+            claimed = await repo.claim_dispatch_ready_device(
+                device_id=device_id,
+                shard_key=self.shard_id,
+                lease_owner=self.instance_id,
+                lease_for_seconds=self.lease_seconds,
+            )
+            await session.commit()
+        if not claimed:
+            return
+
         while self._running:
             async with get_session() as session:
                 repo = DeviceOutboxRepo(session)
@@ -125,10 +160,17 @@ class DeviceDispatchService:
                         f"[DeviceDispatchService] drained device_id={device_id} shard={self.shard_id} "
                         f"elapsed_ms={elapsed_ms}"
                     )
+                    await repo.release_dispatch_ready_device(device_id)
+                    await session.commit()
                     return
 
                 agent_info = self.state.get_agent(device_id)
                 if not agent_info:
+                    await repo.reschedule_dispatch_ready_device(
+                        device_id=device_id,
+                        lease_owner=self.instance_id,
+                    )
+                    await session.commit()
                     return
                 ws = agent_info["ws"]
                 metadata = agent_info.get("metadata", {})
@@ -153,7 +195,16 @@ class DeviceDispatchService:
 
                 has_more = await repo.has_pending_for_device(device_id=device_id)
                 if not has_more:
+                    await repo.release_dispatch_ready_device(device_id)
+                    await session.commit()
                     return
+                await repo.reschedule_dispatch_ready_device(
+                    device_id=device_id,
+                    lease_owner=self.instance_id,
+                )
+                await session.commit()
+                await self._queue.enqueue(device_id)
+                return
 
 
 class DispatchReconciler:
@@ -212,12 +263,15 @@ class ShardDispatcher:
         self.shards = max(1, shards)
         self.fetch_limit = max(1, fetch_limit)
         self.reconcile_seconds = max(5, reconcile_seconds)
+        self.instance_id = f"server-{uuid.uuid4()}"
         self.services = [
             DeviceDispatchService(
                 state_manager=state_manager,
                 shard_id=shard_id,
                 shard_count=self.shards,
                 fetch_limit=self.fetch_limit,
+                lease_seconds=DEVICE_DISPATCH_LEASE_SECONDS,
+                instance_id=self.instance_id,
             )
             for shard_id in range(self.shards)
         ]
@@ -234,7 +288,9 @@ class ShardDispatcher:
             await service.stop()
 
     async def enqueue_device(self, device_id: str) -> None:
-        shard_id = abs(hash(device_id)) % self.shards
+        digest = hashlib.sha1(device_id.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
+        shard_id = value % max(1, self.shards)
         await self.services[shard_id].enqueue_device(device_id)
 
     async def on_agent_online(self, device_id: str) -> None:
@@ -250,7 +306,12 @@ class ShardDispatcher:
                     shard_count=self.shards,
                 )
                 for device_id in device_ids:
-                    await self.services[shard_id].enqueue_device(device_id)
+                    await repo.upsert_dispatch_ready_device(
+                        device_id=device_id,
+                        shard_key=shard_id,
+                    )
+                    await self.services[shard_id]._queue.enqueue(device_id)
+            await session.commit()
 
 
 class PollingDeviceOutboxSender:

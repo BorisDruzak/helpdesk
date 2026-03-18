@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections import deque
 from typing import Any, Awaitable, Callable, Optional
 
 from loguru import logger
 
 from app.db import get_session
-from config import ENABLE_DB_PERSISTENCE
+from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
+from websocket.batch_ack_manager import NackInfo
 
 from .contexts import AgentConnectionContext, EnvelopeContext
 
@@ -140,6 +142,8 @@ class OutboxIngestService:
         self._event_validator = event_validator
 
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> bool:
+        if await self._apply_post_handshake_guards(message, ctx):
+            return True
         return await self._legacy_handler(
             ws=ctx.ws,
             data=message,
@@ -148,6 +152,68 @@ class OutboxIngestService:
             batch_ack_manager=self._batch_ack_manager,
             event_validator=self._event_validator,
         )
+
+    async def _apply_post_handshake_guards(
+        self,
+        message: dict[str, Any],
+        ctx: AgentConnectionContext,
+    ) -> bool:
+        """
+        Apply post-handshake message-level guards that return typed outbox_nack.
+        """
+        if not ctx.agent_id:
+            return False
+        payload = message.get("payload") if isinstance(message, dict) else None
+        if not isinstance(payload, dict):
+            return False
+        outbox_id = payload.get("outbox_id")
+        trace_id = message.get("trace_id")
+        if not outbox_id or not trace_id:
+            return False
+
+        # 1) UNAUTHORIZED (message-level, post-handshake).
+        actor_role = ((message.get("meta") or {}).get("actor_role") or "agent").lower()
+        if actor_role not in {"agent", "system"}:
+            self._batch_ack_manager.add_nack(
+                device_id=ctx.agent_id,
+                outbox_id=str(outbox_id),
+                trace_id=trace_id,
+                nack_info=NackInfo(
+                    retryable=False,
+                    error_code="UNAUTHORIZED",
+                    error_message=f"actor_role '{actor_role}' is not allowed for outbox_item",
+                    retry_after_sec=None,
+                ),
+            )
+            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+            return True
+
+        # 2) RATE_LIMITED (message-level, post-handshake).
+        # Sliding 1-second window per agent connection.
+        rate_state = getattr(ctx.state, "_outbox_ingest_rate_state", None)
+        if rate_state is None:
+            rate_state = {}
+            setattr(ctx.state, "_outbox_ingest_rate_state", rate_state)
+        window = rate_state.setdefault(ctx.agent_id, deque())
+        now = time.monotonic()
+        while window and (now - window[0]) > 1.0:
+            window.popleft()
+        window.append(now)
+        if len(window) > OUTBOX_INGEST_RATE_LIMIT_PER_SEC:
+            self._batch_ack_manager.add_nack(
+                device_id=ctx.agent_id,
+                outbox_id=str(outbox_id),
+                trace_id=trace_id,
+                nack_info=NackInfo(
+                    retryable=True,
+                    error_code="RATE_LIMITED",
+                    error_message="Outbox ingest rate limit exceeded",
+                    retry_after_sec=1,
+                ),
+            )
+            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+            return True
+        return False
 
 
 class AgentCommandService:

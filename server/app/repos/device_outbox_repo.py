@@ -1,14 +1,15 @@
 """
 Repository for device_outbox table operations.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
 from typing import List, Optional
 
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from app.db.models import DeviceOutbox, Operation
+from app.db.models import DeviceOutbox, DispatchReadyDevice, Operation
 
 
 class DeviceOutboxRepo:
@@ -138,6 +139,166 @@ class DeviceOutboxRepo:
         )
         
         return list(commands)
+
+    async def get_pending_commands_for_device(
+        self,
+        device_id: str,
+        limit: int = 50,
+    ) -> List[DeviceOutbox]:
+        """
+        Device-targeted pending commands for dispatch drain loop.
+        """
+        return await self.get_pending_commands(device_id=device_id, limit=limit)
+
+    async def has_pending_for_device(self, device_id: str) -> bool:
+        """
+        Fast check for reconnect path and post-drain continuation.
+        """
+        stmt = (
+            select(DeviceOutbox.id)
+            .where(
+                and_(
+                    DeviceOutbox.device_id == device_id,
+                    DeviceOutbox.status == "pending",
+                )
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def list_devices_with_pending(
+        self,
+        limit: int = 100,
+        shard_id: int = 0,
+        shard_count: int = 1,
+    ) -> List[str]:
+        """
+        List unique device IDs that currently have pending commands.
+
+        Sharding is applied in Python with stable hash(device_id) % shard_count.
+        """
+        # Fetch some buffer to compensate for post-query sharding filter.
+        fetch_limit = max(limit * 4, limit)
+        stmt = (
+            select(DeviceOutbox.device_id)
+            .where(DeviceOutbox.status == "pending")
+            .distinct()
+            .limit(fetch_limit)
+        )
+        result = await self.session.execute(stmt)
+        device_ids = [row[0] for row in result.all() if row[0]]
+
+        if shard_count > 1:
+            device_ids = [d for d in device_ids if self._stable_shard(d, shard_count) == shard_id]
+        return device_ids[:limit]
+
+    @staticmethod
+    def _stable_shard(device_id: str, shard_count: int) -> int:
+        digest = hashlib.sha1(device_id.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
+        return value % max(1, shard_count)
+
+    async def upsert_dispatch_ready_device(
+        self,
+        *,
+        device_id: str,
+        shard_key: int,
+        next_attempt_at: Optional[datetime] = None,
+    ) -> None:
+        """
+        Mark device as ready for dispatch in DB-coordinated queue.
+        """
+        now = datetime.now(timezone.utc)
+        if next_attempt_at is None:
+            next_attempt_at = now
+
+        existing = await self.session.get(DispatchReadyDevice, device_id)
+        if existing is None:
+            self.session.add(
+                DispatchReadyDevice(
+                    device_id=device_id,
+                    shard_key=shard_key,
+                    next_attempt_at=next_attempt_at,
+                    lease_owner=None,
+                    lease_until=None,
+                    updated_at=now,
+                )
+            )
+            return
+
+        existing.shard_key = shard_key
+        existing.next_attempt_at = next_attempt_at
+        existing.updated_at = now
+
+    async def claim_dispatch_ready_device(
+        self,
+        *,
+        device_id: str,
+        shard_key: int,
+        lease_owner: str,
+        lease_for_seconds: int,
+    ) -> bool:
+        """
+        Try to acquire lease for one ready device.
+        """
+        now = datetime.now(timezone.utc)
+        lease_until = now + timedelta(seconds=max(1, lease_for_seconds))
+
+        stmt = (
+            update(DispatchReadyDevice)
+            .where(
+                and_(
+                    DispatchReadyDevice.device_id == device_id,
+                    DispatchReadyDevice.shard_key == shard_key,
+                    DispatchReadyDevice.next_attempt_at <= now,
+                    or_(
+                        DispatchReadyDevice.lease_until.is_(None),
+                        DispatchReadyDevice.lease_until <= now,
+                        DispatchReadyDevice.lease_owner == lease_owner,
+                    ),
+                )
+            )
+            .values(
+                lease_owner=lease_owner,
+                lease_until=lease_until,
+                updated_at=now,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0
+
+    async def release_dispatch_ready_device(self, device_id: str) -> None:
+        """
+        Remove ready marker when queue is fully drained.
+        """
+        await self.session.execute(
+            delete(DispatchReadyDevice).where(DispatchReadyDevice.device_id == device_id)
+        )
+
+    async def reschedule_dispatch_ready_device(
+        self,
+        *,
+        device_id: str,
+        lease_owner: str,
+        next_attempt_at: Optional[datetime] = None,
+    ) -> None:
+        """
+        Requeue device and release lease for next worker iteration.
+        """
+        now = datetime.now(timezone.utc)
+        if next_attempt_at is None:
+            next_attempt_at = now
+        await self.session.execute(
+            update(DispatchReadyDevice)
+            .where(DispatchReadyDevice.device_id == device_id)
+            .values(
+                lease_owner=None,
+                lease_until=None,
+                next_attempt_at=next_attempt_at,
+                updated_at=now,
+            )
+        )
     
     async def mark_as_sent(
         self,

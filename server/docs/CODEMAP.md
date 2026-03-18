@@ -28,7 +28,7 @@
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
 | `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id |
-| `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, reconcile) |
+| `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, DB lease claim, reconcile) |
 | `server/websocket/validator.py` | Валидация событий, device binding |
 | `server/websocket/modules_sync.py` | Синхронизация модулей с UI/агентом |
 | `server/websocket/ui_publisher.py` | Публикация событий в UI |

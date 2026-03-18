@@ -1199,11 +1199,39 @@ class WSAgent:
                             started_at = cached_result.get("started_at") or 0
                             age_sec = time.time() - started_at if started_at else float("inf")
                             if age_sec > IN_PROGRESS_STALE_SEC:
+                                stale_retry_count = int(cached_result.get("stale_retry_count") or 0)
+                                if stale_retry_count >= 1:
+                                    logger.warning(
+                                        f"⚠️  Команда {command_id} stale in_progress (age={age_sec:.0f}s), "
+                                        "но controlled retry уже использован"
+                                    )
+                                    await self.send_envelope(
+                                        ws, "command_result", request_id,
+                                        {
+                                            "status": "error",
+                                            "error": {
+                                                "code": "COMMAND_IN_PROGRESS",
+                                                "message": "Command is still in progress on another attempt",
+                                                "retryable": True,
+                                            },
+                                            "data": {},
+                                            "meta": {},
+                                        },
+                                        trace_id=envelope.get("trace_id"),
+                                        ticket_id=envelope.get("ticket_id"),
+                                        job_id=envelope.get("job_id"),
+                                        actor_role=envelope.get("meta", {}).get("actor_role", "agent"),
+                                    )
+                                    return
                                 logger.warning(
-                                    f"⚠️  Команда {command_id} в статусе in_progress дольше "
-                                    f"{IN_PROGRESS_STALE_SEC}s (age={age_sec:.0f}s), выполняем повторно"
+                                    f"⚠️  Команда {command_id} in_progress stale "
+                                    f"(age={age_sec:.0f}s), запускаем controlled retry"
                                 )
-                                # Продолжаем выполнение ниже
+                                await self.db_manager.mark_command_started(
+                                    command_id,
+                                    owner_instance_id=self._session_id,
+                                    stale_retry=True,
+                                )
                             elif command_id in self._running_commands:
                                 # Тот же command_id уже выполняется — ждём результат первой задачи
                                 future = self._running_commands[command_id]
@@ -1236,7 +1264,11 @@ class WSAgent:
                                     ws, "command_result", request_id,
                                     {
                                         "status": "error",
-                                        "error": {"message": "Command still in progress, retry later"},
+                                        "error": {
+                                            "code": "COMMAND_IN_PROGRESS",
+                                            "message": "Command still in progress, retry later",
+                                            "retryable": True,
+                                        },
                                         "data": {},
                                         "meta": {},
                                     },
@@ -1248,7 +1280,10 @@ class WSAgent:
                                 return
                     
                     # Помечаем команду как начатую
-                    await self.db_manager.mark_command_started(command_id)
+                    await self.db_manager.mark_command_started(
+                        command_id,
+                        owner_instance_id=self._session_id,
+                    )
                 
                 # КРИТИЧНО: Отправляем command_ack ПОСЛЕ seen_commands проверки и минимальной валидации,
                 # НО ДО PolicyEngine/Consent (это бизнес-решения, не протокольные reject)

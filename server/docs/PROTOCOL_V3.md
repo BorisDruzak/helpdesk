@@ -86,12 +86,20 @@ SERVER_CAPABILITIES = [
 
 ## Коды ошибок outbox_nack (уточнение)
 
-В полной спецификации (агент) перечислены коды UNAUTHORIZED, RATE_LIMIT и др. **На практике сервер при handshake** при невалидном протоколе/токене **закрывает соединение с кодом 4003**, не отправляя outbox_nack. В **outbox_nack** реально используются:
+В полной спецификации (агент) перечислены коды UNAUTHORIZED, RATE_LIMITED и др.  
+Разделение по фазам:
+
+- **Handshake/auth до установленной сессии**: сервер закрывает соединение кодом **4003** (без `outbox_nack`).
+- **Post-handshake ingest/runtime**: сервер использует типизированный `outbox_nack`.
+
+После успешного handshake в `outbox_nack` используются:
 
 - `UNKNOWN_TICKET`, `DEVICE_MISMATCH`, `VALIDATION_ERROR` (non-retryable)
-- `SERVER_ERROR` (retryable) — при исключениях в валидации
+- `UNAUTHORIZED` (non-retryable) — message-level reject в валидной сессии
+- `RATE_LIMITED` (retryable) — превышение лимита ingest
+- `SERVER_ERROR` (retryable) — при исключениях в обработке/валидации
 
-Коды `UNAUTHORIZED`, `RATE_LIMIT` в коде сервера в outbox_nack **не возвращаются**; при необходимости их можно добавить в будущем.
+Wire-contract Protocol V3 при этом не меняется: формат envelope/ACK/NACK остаётся прежним.
 
 ### 9. Пути запуска `run_tool` (инвариантная карта)
 
@@ -110,9 +118,9 @@ SERVER_CAPABILITIES = [
 
 **Сильные:** строгая проверка protocol_version и capabilities; device_id только из токена (БД); device binding для тикетов; дедупликация по (device_id, ticket_id, agent_seq) и (device_id, device_seq); tool_call_started до отправки run_tool; нормализация command_result и защита terminal состояний (COMMAND_RESULT_LIFECYCLE); единый run_tool backend-фасад (`ToolExecutionService`) для API/админки/smoke.
 
-**Слабые/ограничения:** state остается single-process runtime-реестром; `send_ws_command` по-прежнему синхронно ждёт `command_result` по timeout; multi-process coordination для dispatch пока не реализован.  
+**Слабые/ограничения:** state остается single-process runtime-реестром; `send_ws_command` по-прежнему синхронно ждёт `command_result` по timeout.  
 С версии цикла 2026-03-18 `/ws` работает как transport-only loop с `AgentMessageRouter` и сервисами (`HandshakeService`, `CommandAckService`, `CommandResultService`, `OutboxIngestService`, `AgentCommandService`).  
-`DeviceOutboxSender` поддерживает режимы `DEVICE_DISPATCH_MODE=poll|sharded` (default: `sharded`), где `sharded` использует per-device queue + shard workers + reconcile sweep без изменения wire-контракта.
+`DeviceOutboxSender` поддерживает режимы `DEVICE_DISPATCH_MODE=poll|sharded` (default: `sharded`), где `sharded` использует per-device queue + shard workers + reconcile sweep без изменения wire-контракта. Для multi-instance используется DB-coordination (`dispatch_ready_devices`, lease claim per `device_id`).
 
 ---
 

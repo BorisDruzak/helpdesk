@@ -136,6 +136,9 @@ WS_COMMAND_TIMEOUT = 60.0
 # Лимиты конкурентности send_ws_command (очередь не переполняется, при исчерпании — 429)
 WS_COMMAND_MAX_INFLIGHT_GLOBAL = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_GLOBAL", "200"))
 WS_COMMAND_MAX_INFLIGHT_PER_DEVICE = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE", "10"))
+WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
+    os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
+)
 # Internal dispatch runtime mode for server->agent outbox delivery:
 # - poll: legacy poll-all sender loop
 # - sharded: per-device queue + shard workers + reconcile sweep
@@ -143,6 +146,10 @@ DEVICE_DISPATCH_MODE = (os.getenv("DEVICE_DISPATCH_MODE", "sharded") or "sharded
 DEVICE_DISPATCH_SHARDS = int(os.getenv("DEVICE_DISPATCH_SHARDS", "4"))
 DEVICE_DISPATCH_FETCH_LIMIT = int(os.getenv("DEVICE_DISPATCH_FETCH_LIMIT", "50"))
 DEVICE_DISPATCH_RECONCILE_SECONDS = int(os.getenv("DEVICE_DISPATCH_RECONCILE_SECONDS", "30"))
+DEVICE_DISPATCH_LEASE_SECONDS = int(os.getenv("DEVICE_DISPATCH_LEASE_SECONDS", "30"))
+
+# Protocol V3 ingest guardrails (post-handshake only)
+OUTBOX_INGEST_RATE_LIMIT_PER_SEC = int(os.getenv("OUTBOX_INGEST_RATE_LIMIT_PER_SEC", "150"))
 
 # Таймаут для tool execution (секунды)
 TOOL_EXECUTION_TIMEOUT = 120.0

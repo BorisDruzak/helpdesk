@@ -14,6 +14,7 @@ from config import (
     WS_COMMAND_TIMEOUT,
     WS_COMMAND_MAX_INFLIGHT_GLOBAL,
     WS_COMMAND_MAX_INFLIGHT_PER_DEVICE,
+    WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL,
 )
 
 
@@ -267,19 +268,32 @@ async def send_ws_command(
     if not getattr(state, "_ws_command_global_semaphore", None):
         state._ws_command_global_semaphore = asyncio.Semaphore(WS_COMMAND_MAX_INFLIGHT_GLOBAL)
         state._ws_command_per_device_semaphores = {}
+        state._ws_command_per_device_run_tool_semaphores = {}
         state._ws_command_semaphore_lock = asyncio.Lock()
     async with state._ws_command_semaphore_lock:
         if device_id not in state._ws_command_per_device_semaphores:
             state._ws_command_per_device_semaphores[device_id] = asyncio.Semaphore(WS_COMMAND_MAX_INFLIGHT_PER_DEVICE)
+        if device_id not in state._ws_command_per_device_run_tool_semaphores:
+            state._ws_command_per_device_run_tool_semaphores[device_id] = asyncio.Semaphore(
+                WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL
+            )
     device_sem = state._ws_command_per_device_semaphores[device_id]
+    run_tool_sem = state._ws_command_per_device_run_tool_semaphores[device_id]
     global_sem = state._ws_command_global_semaphore
-    acquired_global = acquired_device = False
+    acquired_global = acquired_device = acquired_run_tool = False
     try:
         await asyncio.wait_for(global_sem.acquire(), timeout=2.0)
         acquired_global = True
         await asyncio.wait_for(device_sem.acquire(), timeout=2.0)
         acquired_device = True
+        if command == "run_tool":
+            await asyncio.wait_for(run_tool_sem.acquire(), timeout=2.0)
+            acquired_run_tool = True
     except asyncio.TimeoutError:
+        if acquired_run_tool:
+            run_tool_sem.release()
+        if acquired_device:
+            device_sem.release()
         if acquired_global:
             global_sem.release()
         logger.warning(
@@ -454,6 +468,8 @@ async def send_ws_command(
             del agent_info["metadata"]["pending_command_futures"][command_id]
         raise
     finally:
+        if acquired_run_tool:
+            run_tool_sem.release()
         if acquired_global:
             global_sem.release()
         if acquired_device:

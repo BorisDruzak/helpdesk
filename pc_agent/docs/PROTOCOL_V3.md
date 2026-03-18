@@ -376,7 +376,9 @@ RPC-вызовы для выполнения методов (альтернат�
 
 **Политика:**
 - Если команда уже выполнена (status=success), возвращается кэшированный результат
-- Если команда была начата (status=in_progress), выполняется повторно
+- Если команда в `in_progress` и уже выполняется в текущем процессе, дубликат ждёт тот же Future
+- Если команда в `in_progress` и запись свежая (младше `IN_PROGRESS_STALE_SEC`), агент возвращает `command_result.error.code=COMMAND_IN_PROGRESS` с `retryable=true` (без повторного запуска)
+- Если `in_progress` stale (старше `IN_PROGRESS_STALE_SEC`), разрешается ровно один controlled retry (с обновлением `started_at`/`owner_instance_id`)
 - Политика "не затирать success" — успешные результаты не перезаписываются
 
 **Пример кэшированного ответа:**
@@ -455,7 +457,7 @@ RPC-вызовы для выполнения методов (альтернат�
 
 ### Версия схемы БД
 
-Текущая версия: `8`
+Текущая версия: `9`
 
 **История изменений:**
 - v1 → v2: Добавлен outbox pattern
@@ -464,6 +466,7 @@ RPC-вызовы для выполнения методов (альтернат�
 - v4 → v5: Добавлена таблица seen_commands для идемпотентности
 - v5 → v6–v7: Дополнительные таблицы (ticket_state, scheduled_tasks, seen_messages и др.)
 - v7 → v8: Добавлена таблица auth_tokens для хранения токена авторизации
+- v8 → v9: В `seen_commands` добавлены `stale_retry_count` и `owner_instance_id` для controlled retry
 
 ### Миграции
 
@@ -542,7 +545,7 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 - **Scheduler MVP ограничен:** только `run_tool` и fixed schedules (`minutely|hourly|daily|weekly`), без cron/timestamp и без произвольных видов задач.
 - **Server dispatch scalability:** на сервере доступен `sharded` runtime (per-device queue + shard workers), но межпроцессное масштабирование dispatch всё ещё отдельный этап.
 - **Ожидание send_ws_command:** синхронный режим по-прежнему используется частью API, но transport поддерживает `wait_for_result=False` для async enqueue без долгого удержания корутины.
-- **Коды UNAUTHORIZED/RATE_LIMIT в NACK:** в документации перечислены, в коде сервера при handshake используется закрытие с кодом 4003 без отдельного кода UNAUTHORIZED; RATE_LIMIT не возвращается в outbox_nack.
+- **Коды UNAUTHORIZED/RATE_LIMITED в NACK:** до handshake auth failure по-прежнему закрывает соединение кодом 4003; post-handshake message-level reject возвращается через `outbox_nack` (`UNAUTHORIZED`, `RATE_LIMITED`).
 
 Подробнее об узких местах и рисках: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) (в корне проекта).
 
