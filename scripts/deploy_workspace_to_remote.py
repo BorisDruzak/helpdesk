@@ -24,6 +24,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--remote-host", default=DEFAULT_REMOTE_HOST)
     parser.add_argument("--remote-worktree", default=DEFAULT_REMOTE_WORKTREE)
     parser.add_argument("--branch")
+    parser.add_argument(
+        "--allow-local-dirty",
+        action="store_true",
+        help=(
+            "Deploy only the last committed Git revision even if the local workspace has "
+            "uncommitted changes. Those local changes will stay only on Windows."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -67,6 +75,40 @@ def detect_branch(workspace: Path, env: dict[str, str]) -> str:
     return branch
 
 
+def get_local_dirty_entries(
+    workspace: Path,
+    env: dict[str, str],
+    *,
+    git_binary: str,
+) -> list[str]:
+    completed = subprocess.run(
+        [git_binary, "status", "--short", "--untracked-files=normal"],
+        cwd=workspace,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return [line.rstrip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def build_local_dirty_message(entries: list[str]) -> str:
+    preview_limit = 20
+    preview_lines = entries[:preview_limit]
+    preview = "\n".join(f"  {line}" for line in preview_lines)
+    if len(entries) > preview_limit:
+        preview = f"{preview}\n  ... and {len(entries) - preview_limit} more"
+    return (
+        "Local workspace has uncommitted changes.\n"
+        "`python scripts/deploy_workspace_to_remote.py` deploys only committed Git state via "
+        "push/pull, so these changes would NOT be copied to the Linux working copy:\n"
+        f"{preview}\n"
+        "Commit or stash them first. If you intentionally want to deploy only the last "
+        "committed revision, rerun with `--allow-local-dirty`."
+    )
+
+
 def build_remote_command(remote_worktree: str, branch: str) -> str:
     safe_worktree = remote_worktree.replace('"', '\\"')
     safe_branch = branch.replace('"', '\\"')
@@ -88,6 +130,15 @@ def main() -> None:
     env = git_env()
     git_binary = str(DEFAULT_GIT if DEFAULT_GIT.exists() else "git")
     ssh_binary = str(DEFAULT_SSH if DEFAULT_SSH.exists() else "ssh")
+    dirty_entries = get_local_dirty_entries(args.workspace, env, git_binary=git_binary)
+
+    if dirty_entries and not args.allow_local_dirty:
+        raise SystemExit(build_local_dirty_message(dirty_entries))
+    if dirty_entries:
+        print(
+            "WARNING: local workspace is dirty; deploying only the last committed Git revision "
+            "because `--allow-local-dirty` was set."
+        )
 
     branch = args.branch or detect_branch(args.workspace, env)
     print(f"Deploy branch: {branch}")
