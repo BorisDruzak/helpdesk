@@ -27,6 +27,7 @@ pc_agent/build/
 pc_agent/dist/
 .venvs/
 .local-agent/
+src/venv/
 .env
 *.env
 db_config.json
