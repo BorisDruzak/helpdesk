@@ -3795,7 +3795,7 @@
                     body: JSON.stringify({ module_name: moduleName, version: version, actor_role: 'admin' })
                 });
                 const data = await response.json();
-                if (response.status === 202 && data.status === 'accepted') {
+                if ((response.status === 202 && data.status === 'accepted') || (response.ok && data.status === 'ok')) {
                     alert('Переустановка запущена.');
                     setTimeout(() => loadDeviceDetailsModules(deviceId), 2000);
                 } else alert('Ошибка: ' + (data.error || 'Неизвестно'));
@@ -4424,4 +4424,3 @@
                 return response;
             });
         };
-

@@ -355,6 +355,90 @@ async def test_install_module_returns_conflict_when_archive_missing(test_client,
 
 
 @pytest.mark.asyncio
+async def test_install_builtin_module_is_noop(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(Device(
+            device_id=device_id,
+            protocol_version='ws_ticket_v3',
+            agent_version='1.0.0',
+            hostname='builtin-host',
+            os='linux',
+            capabilities={},
+            device_metadata={},
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            last_handshake_at=datetime.now(timezone.utc),
+        ))
+        await session.commit()
+
+    issued_commands = []
+
+    async def fake_enqueue_command_async(**kwargs):
+        issued_commands.append(kwargs["command"])
+        return f'op-{len(issued_commands)}'
+
+    with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
+         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
+        response = await test_client.post(f'/api/devices/{device_id}/modules/install', json={
+            'module_name': 'screen',
+            'version': '1.0.0',
+        })
+
+    assert response.status == 202, await response.text()
+    data = await response.json()
+    assert data['status'] == 'accepted'
+    assert data['builtin'] is True
+    assert str(data['operation_id']).startswith('builtin:')
+    assert issued_commands == []
+
+
+@pytest.mark.asyncio
+async def test_bulk_install_builtin_module_is_noop(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(Device(
+            device_id=device_id,
+            protocol_version='ws_ticket_v3',
+            agent_version='1.0.0',
+            hostname='builtin-bulk-host',
+            os='linux',
+            capabilities={},
+            device_metadata={},
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            last_handshake_at=datetime.now(timezone.utc),
+        ))
+        await session.commit()
+
+    issued_commands = []
+
+    async def fake_enqueue_command_async(**kwargs):
+        issued_commands.append(kwargs["command"])
+        return f'op-{len(issued_commands)}'
+
+    with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
+         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
+        response = await test_client.post('/api/modules/bulk_install', json={
+            'module_name': 'screen',
+            'version': '1.0.0',
+            'device_ids': [device_id],
+        })
+
+    assert response.status == 202, await response.text()
+    data = await response.json()
+    assert data['status'] == 'accepted'
+    assert data['builtin'] is True
+    assert data['operations'] == []
+    assert data['skipped'][0]['device_id'] == device_id
+    assert issued_commands == []
+
+
+@pytest.mark.asyncio
 async def test_remove_last_version_marks_desired_absent(test_client, test_engine):
     device_id = str(uuid.uuid4())
     module_name = f"remove_{uuid.uuid4().hex[:8]}"

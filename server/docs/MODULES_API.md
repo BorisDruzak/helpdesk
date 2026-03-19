@@ -109,6 +109,8 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 
 Массовая установка модуля на несколько устройств. Для каждого device_id команда install_module_package ставится в outbox: онлайн-агенты получают команду сразу (на агенте сначала выполняется smoke-проверка, затем установка), офлайн — при подключении из очереди.
 
+Исключение: builtin-модули агента (`system`, `screen`) через этот endpoint как пакет не ставятся. Сервер возвращает `202 Accepted` с `builtin=true`, пустым `operations` и списком `skipped`, потому что такие модули уже входят в сборку агента.
+
 **Request:** `application/json`
 - `module_name`: Имя модуля (обязательно)
 - `version`: Версия модуля (обязательно)
@@ -226,6 +228,8 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 ### POST /api/devices/{device_id}/modules/install
 
 Устанавливает модуль на устройство (enqueue install_module_package через device_outbox).
+
+Исключение: builtin-модули агента (`system`, `screen`) не ставятся как server-managed ZIP. Для них endpoint возвращает `202 Accepted` c `builtin=true`, а агент не получает `install_module_package`.
 
 **Request:**
 ```json

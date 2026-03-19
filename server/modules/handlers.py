@@ -18,7 +18,7 @@ from typing import Optional
 from aiohttp import web
 from loguru import logger
 from websocket.protocol import send_ws_command, enqueue_command_async
-from config import MODULES_STORAGE_DIR, MAX_MODULE_SIZE, SERVER_PUBLIC_BASE_URL
+from config import AGENT_BUILTIN_MODULES, MODULES_STORAGE_DIR, MAX_MODULE_SIZE, SERVER_PUBLIC_BASE_URL
 from utils.module_storage import save_module_zip_from_stream, save_module_zip_bytes, load_module_zip, stream_module_zip
 from utils.module_preflight import apply_smoke_validation, preflight_module_zip
 from utils.module_builder import build_module_package, DEFAULT_RISK_LEVEL
@@ -88,6 +88,19 @@ def _module_file_missing_payload(module_name: str, version: str, storage_path: s
         "error": f"Module file missing on server: {module_name}/{version}",
         "hint": "Re-upload the module package to the server registry before installing it on a device.",
         "storage_path": storage_path,
+    }
+
+
+def _builtin_module_install_payload(module_name: str, version: str) -> dict:
+    return {
+        "status": "ok",
+        "builtin": True,
+        "module_name": module_name,
+        "version": version,
+        "message": (
+            f"Module {module_name}/{version} is bundled with the agent and does not "
+            "require server-side installation."
+        ),
     }
 
 
@@ -235,7 +248,7 @@ async def handle_install_module_package(request):
                 "status": "error",
                 "error": "Missing version"
             }, status=400)
-        
+
         if not file_field:
             return web.json_response({
                 "status": "error",
@@ -1486,6 +1499,16 @@ async def handle_install_module(request):
         
         # Phase 4: Policy check РґР»СЏ install_module_package
         # install_module_package - СЃРёСЃС‚РµРјРЅР°СЏ РѕРїРµСЂР°С†РёСЏ, С‚СЂРµР±СѓРµС‚ admin РёР»Рё system СЂРѕР»СЊ
+        if module_name.lower() in AGENT_BUILTIN_MODULES:
+            logger.info(
+                f"[handle_install_module] Builtin module install skipped: "
+                f"device_id={device_id} module={module_name}/{version}"
+            )
+            payload = _builtin_module_install_payload(module_name, version)
+            payload["status"] = "accepted"
+            payload["operation_id"] = f"builtin:{device_id}:{module_name}:{version}"
+            return web.json_response(payload, status=202)
+
         install_metadata = ToolMetadata(
             risk_level="system_write",  # install_module_package - СЃРёСЃС‚РµРјРЅР°СЏ РѕРїРµСЂР°С†РёСЏ
             requires_consent=False,
@@ -1697,6 +1720,24 @@ async def handle_bulk_install_modules(request):
                 "status": "error",
                 "error": "device_ids must be a non-empty array",
             }, status=400)
+
+        if module_name.lower() in AGENT_BUILTIN_MODULES:
+            skipped = []
+            for device_id in device_ids:
+                if isinstance(device_id, str) and device_id.strip():
+                    skipped.append({
+                        "device_id": device_id.strip(),
+                        "reason": f"builtin module {module_name!r} is already bundled with the agent",
+                    })
+            logger.info(
+                f"[handle_bulk_install_modules] Builtin module install skipped: "
+                f"module={module_name}/{version} devices={len(skipped)}"
+            )
+            payload = _builtin_module_install_payload(module_name, version)
+            payload["status"] = "accepted"
+            payload["operations"] = []
+            payload["skipped"] = skipped
+            return web.json_response(payload, status=202)
 
         actor_role = auth_context.actor_role
         install_metadata = ToolMetadata(

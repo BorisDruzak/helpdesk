@@ -41,7 +41,7 @@ from core.identity import IdentityManager
 from core.module_manager import ModuleManager
 from core.job_manager import JobManager
 from core.recording_controller import get_recording_controller
-from pc_agent.config.config_loader import get_config
+from pc_agent.config.config_loader import CORE_ENABLED_MODULES, get_config
 from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
 from utils.toolset_hash import compute_toolset_hash
 import inspect
@@ -83,6 +83,7 @@ class _MojibakeFixingLogger:
 
 
 logger = _MojibakeFixingLogger(_logger)
+BUILTIN_PACKAGE_INSTALL_MODULES = {name.lower() for name in CORE_ENABLED_MODULES}
 
 
 class AgentOrchestrator:
@@ -1809,6 +1810,25 @@ class AgentOrchestrator:
                     meta=meta
                 )
             
+            if name.lower() in BUILTIN_PACKAGE_INSTALL_MODULES:
+                logger.info(
+                    f"Builtin module package install skipped: {name}/{version} "
+                    f"(already bundled with agent)"
+                )
+                return ok(
+                    data=ToolData(observations={
+                        "module_name": name,
+                        "module_version": version,
+                        "skipped": True,
+                        "reason": "builtin_module",
+                        "message": (
+                            f"Module {name}/{version} is bundled with the agent and "
+                            "does not require package installation."
+                        ),
+                    }),
+                    meta=meta,
+                )
+
             zip_bytes = None
             
             # 3) Download or decode: РїРѕР»СѓС‡РµРЅРёРµ ZIP С„Р°Р№Р»Р°
