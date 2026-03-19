@@ -221,7 +221,7 @@ async def test_rollback_updates_desired_state(test_client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_bulk_install_sets_desired_state_and_followup_sync(test_client, test_engine):
+async def test_bulk_install_sets_desired_state_and_followup_sync(test_client, test_engine, tmp_path):
     device_id = str(uuid.uuid4())
     module_name = f"bulk_{uuid.uuid4().hex[:8]}"
     zip_bytes, manifest_summary = build_module_package(
@@ -271,7 +271,11 @@ async def test_bulk_install_sets_desired_state_and_followup_sync(test_client, te
         return f'op-{len(issued_commands)}'
 
     with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
-         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
+         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)), \
+         patch('modules.handlers.MODULES_STORAGE_DIR', tmp_path):
+        module_path = tmp_path / module_name / '2.0.0' / 'module.zip'
+        module_path.parent.mkdir(parents=True, exist_ok=True)
+        module_path.write_bytes(zip_bytes)
         response = await test_client.post('/api/modules/bulk_install', json={
             'module_name': module_name,
             'version': '2.0.0',
@@ -296,6 +300,58 @@ async def test_bulk_install_sets_desired_state_and_followup_sync(test_client, te
         assert desired.state == 'installed'
         assert desired.desired_version == '2.0.0'
         assert desired.reason == 'manual'
+
+
+@pytest.mark.asyncio
+async def test_install_module_returns_conflict_when_archive_missing(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    module_name = f"missing_{uuid.uuid4().hex[:8]}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(Device(
+            device_id=device_id,
+            protocol_version='ws_ticket_v3',
+            agent_version='1.0.0',
+            hostname='missing-host',
+            os='linux',
+            capabilities={},
+            device_metadata={},
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            last_handshake_at=datetime.now(timezone.utc),
+        ))
+        session.add(Module(
+            module_name=module_name,
+            version='1.0.0',
+            sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+            size=1234,
+            storage_path=f'{module_name}/1.0.0/module.zip',
+            uploaded_by='support',
+            manifest_json={'module_name': module_name, 'module_version': '1.0.0', 'platforms': ['linux']},
+            validation_json={'validation_status': 'passed'},
+            manifest_summary={'tools': []},
+        ))
+        await session.commit()
+
+    issued_commands = []
+
+    async def fake_enqueue_command_async(**kwargs):
+        issued_commands.append(kwargs["command"])
+        return f'op-{len(issued_commands)}'
+
+    with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
+         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
+        response = await test_client.post(f'/api/devices/{device_id}/modules/install', json={
+            'module_name': module_name,
+            'version': '1.0.0',
+        })
+
+    assert response.status == 409, await response.text()
+    data = await response.json()
+    assert data['status'] == 'error'
+    assert data['error_code'] == 'MODULE_FILE_MISSING'
+    assert issued_commands == []
 
 
 @pytest.mark.asyncio

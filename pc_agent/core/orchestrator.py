@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from time import perf_counter
-from loguru import logger
+from loguru import logger as _logger
 import hashlib
 try:
     import aiohttp
@@ -52,6 +52,37 @@ try:
     from pydantic import ValidationError
 except ImportError:
     ValidationError = None
+
+
+def _decode_mojibake_once(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    if not any(marker in text for marker in ("Ð", "Ñ", "â", "€", "™")):
+        return text
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return text
+
+
+class _MojibakeFixingLogger:
+    def __init__(self, base_logger):
+        self._base_logger = base_logger
+
+    def __getattr__(self, name):
+        attr = getattr(self._base_logger, name)
+        if not callable(attr):
+            return attr
+
+        def wrapper(*args, **kwargs):
+            if args and isinstance(args[0], str):
+                args = (_decode_mojibake_once(args[0]), *args[1:])
+            return attr(*args, **kwargs)
+
+        return wrapper
+
+
+logger = _MojibakeFixingLogger(_logger)
 
 
 class AgentOrchestrator:
@@ -1802,6 +1833,7 @@ class AgentOrchestrator:
                     logger.info(f"СЂСџвЂњВ¦ РњРѕРґСѓР»СЊ '{name}' РІРµСЂСЃРёРё '{version}' СЃРєР°С‡Р°РЅ РїРѕ HTTP")
                 except Exception as e:
                     error_msg = f"РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ РјРѕРґСѓР»СЏ: {str(e)}"
+                    error_msg = f"Module download failed: {str(e)}"
                     logger.error(error_msg)
                     return fail(
                         code="MODULE_DOWNLOAD_FAILED",
@@ -1816,6 +1848,7 @@ class AgentOrchestrator:
                     logger.info(f"СЂСџвЂњВ¦ РњРѕРґСѓР»СЊ '{name}' РІРµСЂСЃРёРё '{version}' РїРѕР»СѓС‡РµРЅ С‡РµСЂРµР· base64")
                 except Exception as e:
                     error_msg = f"РћС€РёР±РєР° РґРµРєРѕРґРёСЂРѕРІР°РЅРёСЏ base64: {str(e)}"
+                    error_msg = f"Base64 decode failed: {str(e)}"
                     logger.error(error_msg)
                     return fail(
                         code="INSTALL_FAILED",
@@ -2047,13 +2080,31 @@ class AgentOrchestrator:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(download_url, headers=headers) as response:
+                    error_details = ""
+                    if response.status != 200:
+                        try:
+                            error_payload = await response.json(content_type=None)
+                        except Exception:
+                            error_payload = None
+                        if isinstance(error_payload, dict):
+                            parts = []
+                            if error_payload.get("error_code"):
+                                parts.append(str(error_payload["error_code"]))
+                            if error_payload.get("error"):
+                                parts.append(str(error_payload["error"]))
+                            if error_payload.get("hint"):
+                                parts.append(str(error_payload["hint"]))
+                            if parts:
+                                error_details = " [" + " | ".join(parts) + "]"
                     if response.status == 401:
                         raise aiohttp.ClientError(
                             f"Download failed: Authentication required (HTTP 401). "
-                            f"Token may be missing or invalid."
+                            f"Token may be missing or invalid.{error_details}"
                         )
                     if response.status != 200:
-                        raise aiohttp.ClientError(f"Download failed: HTTP {response.status}")
+                        raise aiohttp.ClientError(
+                            f"Download failed: HTTP {response.status}{error_details}"
+                        )
                     
                     # РџСЂРѕРІРµСЂРєР° СЂР°Р·РјРµСЂР° (РµСЃР»Рё СѓРєР°Р·Р°РЅ)
                     if expected_size:
@@ -4157,5 +4208,3 @@ if __name__ == "__main__":
     
     # Р—Р°РїСѓСЃРєР°РµРј С‚РµСЃС‚РёСЂРѕРІР°РЅРёРµ
     asyncio.run(test_orchestrator())
-
-

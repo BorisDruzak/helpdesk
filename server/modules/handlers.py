@@ -77,6 +77,20 @@ def _extract_active_version_from_observations(observations: dict) -> Optional[st
     return None
 
 
+def _module_archive_path(module: object) -> Path:
+    return MODULES_STORAGE_DIR / str(getattr(module, "storage_path", "")).strip()
+
+
+def _module_file_missing_payload(module_name: str, version: str, storage_path: str) -> dict:
+    return {
+        "status": "error",
+        "error_code": "MODULE_FILE_MISSING",
+        "error": f"Module file missing on server: {module_name}/{version}",
+        "hint": "Re-upload the module package to the server registry before installing it on a device.",
+        "storage_path": storage_path,
+    }
+
+
 async def _enqueue_module_followup_sync(
     *,
     state,
@@ -1076,13 +1090,16 @@ async def handle_download_module(request):
                 }, status=404)
             
             # РџСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёСЏ С„Р°Р№Р»Р° РЅР° РґРёСЃРєРµ
-            full_path = MODULES_STORAGE_DIR / module.storage_path
+            full_path = _module_archive_path(module)
             if not full_path.exists():
-                logger.error(f"Module file not found on disk: {full_path}")
-                return web.json_response({
-                    "status": "error",
-                    "error": "Module file not found"
-                }, status=404)
+                logger.error(
+                    f"[DownloadModule] Module archive missing on disk: "
+                    f"module={module_name}/{version} storage_path={module.storage_path} full_path={full_path}"
+                )
+                return web.json_response(
+                    _module_file_missing_payload(module_name, version, module.storage_path),
+                    status=409,
+                )
             
             # РџСЂРѕРІРµСЂРєР° If-None-Match (ETag)
             if_none_match = request.headers.get("If-None-Match", "").strip('"')
@@ -1508,6 +1525,17 @@ async def handle_install_module(request):
                     "hint": "Upload the module to the server registry before installing it on a device."
                 }, status=404)
 
+            full_path = _module_archive_path(module)
+            if not full_path.exists():
+                logger.error(
+                    f"[handle_install_module] Module archive missing on disk: "
+                    f"module={module_name}/{version} storage_path={module.storage_path} full_path={full_path}"
+                )
+                return web.json_response(
+                    _module_file_missing_payload(module_name, version, module.storage_path),
+                    status=409,
+                )
+
             manifest_json = get_module_manifest(module)
             mod_platforms = manifest_json.get("platforms") or ["any"]
             if isinstance(mod_platforms, list) and mod_platforms and "any" not in [str(p).lower() for p in mod_platforms]:
@@ -1705,6 +1733,16 @@ async def handle_bulk_install_modules(request):
                     "status": "error",
                     "error": f"Module {module_name}/{version} not found",
                 }, status=404)
+            full_path = _module_archive_path(module)
+            if not full_path.exists():
+                logger.error(
+                    f"[handle_bulk_install_modules] Module archive missing on disk: "
+                    f"module={module_name}/{version} storage_path={module.storage_path} full_path={full_path}"
+                )
+                return web.json_response(
+                    _module_file_missing_payload(module_name, version, module.storage_path),
+                    status=409,
+                )
             manifest_json = get_module_manifest(module)
             mod_platforms = manifest_json.get("platforms") or ["any"]
             check_platforms = isinstance(mod_platforms, list) and "any" not in [str(p).lower() for p in mod_platforms]
@@ -2545,4 +2583,3 @@ async def handle_trigger_reconcile(request):
         logger.error(f"вќЊ РћС€РёР±РєР° trigger_reconcile: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
-

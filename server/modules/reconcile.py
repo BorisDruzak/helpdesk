@@ -20,7 +20,7 @@ from app.db import get_session
 from app.repos import DeviceDesiredModulesRepo, DeviceModulesRepo, ModulesRepo
 from app.repos.devices_repo import DevicesRepo
 from websocket.protocol import enqueue_command_async
-from config import SERVER_PUBLIC_BASE_URL
+from config import SERVER_PUBLIC_BASE_URL, MODULES_STORAGE_DIR
 from utils.module_manifest import get_module_manifest
 
 
@@ -97,6 +97,16 @@ async def reconcile_device(
                     continue
 
                 # Проверяем совместимость ОС
+                full_path = MODULES_STORAGE_DIR / module.storage_path
+                if not full_path.exists():
+                    logger.error(
+                        f"[reconcile] module archive missing on disk, skip: "
+                        f"device={device_id} module={module_name}/{desired_version} "
+                        f"storage_path={module.storage_path} full_path={full_path}"
+                    )
+                    stats["skipped"] += 1
+                    continue
+
                 manifest = get_module_manifest(module)
                 mod_platforms = manifest.get("platforms") or ["any"]
                 if (

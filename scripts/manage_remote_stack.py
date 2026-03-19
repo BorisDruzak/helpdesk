@@ -19,6 +19,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("action", choices=["start", "stop", "restart", "status", "smoke", "logs"])
     parser.add_argument("target", choices=["server", "agent", "all"])
     parser.add_argument("--lines", type=int, default=80, help="Used by logs")
+    parser.add_argument(
+        "--follow",
+        action="store_true",
+        help="Used by logs: follow journal output until interrupted",
+    )
     parser.add_argument("--remote", default=DEFAULT_REMOTE)
     return parser.parse_args()
 
@@ -40,7 +45,7 @@ def systemd_run(unit: str, description: str, command: str) -> str:
     )
 
 
-def remote_command(action: str, target: str, lines: int) -> str:
+def remote_command(action: str, target: str, lines: int, follow: bool) -> str:
     if action == "status":
         if target == "server":
             return "systemctl --user status pc-client-server --no-pager || true"
@@ -52,13 +57,14 @@ def remote_command(action: str, target: str, lines: int) -> str:
         )
 
     if action == "logs":
+        follow_flag = " -f" if follow else ""
         if target == "server":
-            return f"journalctl --user -u pc-client-server -n {lines} --no-pager || true"
+            return f"journalctl --user -u pc-client-server -n {lines}{follow_flag} --no-pager || true"
         if target == "agent":
-            return f"journalctl --user -u pc-client-agent -n {lines} --no-pager || true"
+            return f"journalctl --user -u pc-client-agent -n {lines}{follow_flag} --no-pager || true"
         return (
-            f"journalctl --user -u pc-client-server -n {lines} --no-pager || true; "
-            f"journalctl --user -u pc-client-agent -n {lines} --no-pager || true"
+            f"journalctl --user -u pc-client-server -n {lines}{follow_flag} --no-pager || true; "
+            f"journalctl --user -u pc-client-agent -n {lines}{follow_flag} --no-pager || true"
         )
 
     if action == "smoke":
@@ -153,7 +159,11 @@ def remote_command(action: str, target: str, lines: int) -> str:
 
 def main() -> None:
     args = parse_args()
-    command = [*ssh_base_command(), args.remote, remote_command(args.action, args.target, args.lines)]
+    command = [
+        *ssh_base_command(),
+        args.remote,
+        remote_command(args.action, args.target, args.lines, args.follow),
+    ]
     subprocess.run(command, check=True)
 
 
