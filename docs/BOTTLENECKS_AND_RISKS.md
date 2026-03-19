@@ -32,6 +32,16 @@
 
 - В типичном пути `module_manager` создаётся при инициализации оркестратора (orchestrator.py). Риск (edge-case): если оркестратор создан без module_manager, `modules_inventory` в handshake будет пустым — возможны предупреждения в логах и рассинхрон с сервером по модулям.
 
+### 1.6 Ошибка «Версия БД 9 > версия кода 8» (troubleshooting)
+
+- Сообщение означает: SQLite БД агента (например в `~/.local/share/pcclient-agent`) уже имеет `PRAGMA user_version = 9`, а **запущенный код** агента собран из дерева, где в `pc_agent/core/database.py` задано `DB_SCHEMA_VERSION = 8` (старая копия).
+- **Типичная причина:** агент на Linux запущен не из актуального deploy-дерева, а из старой копии (например `/var/chat_bot/pc_client_pre_git_20260317_210237`). В трейсбеке при этом виден путь к `ws_agent.py` из этой старой директории.
+- **Решение:** всегда запускать агент из канонического пути деплоя `/var/chat_bot/pc_client`:  
+  `cd /var/chat_bot/pc_client && /var/chat_bot/pc_client/pc_agent/venv/bin/python scripts/run_agent.py`  
+  или через проектный скрипт: `python scripts/manage_remote_stack.py start agent`.  
+  Не запускать из резервных/бэкап-директорий (`pc_client_pre_git_*` и т.п.).
+- В текущем репозитории `DB_SCHEMA_VERSION = 9`; после деплоя актуального кода в `/var/chat_bot/pc_client` и запуска агента из этой директории ошибка исчезает.
+
 ---
 
 ## 2. Сервер (server)

@@ -17,7 +17,7 @@ createdb -U chatbot pc_support_test
 
 2. Убедитесь, что переменная окружения `TEST_DATABASE_URL` указывает на тестовую БД:
 ```bash
-export TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_support_test"
+export TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test"
 ```
 
 ## Запуск тестов
@@ -29,7 +29,7 @@ pytest tests/ -v
 
 Или с явным указанием БД:
 ```bash
-TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_support_test" pytest tests/ -v
+TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test" pytest tests/ -v
 ```
 
 ## Структура тестов
@@ -83,9 +83,8 @@ EOF
 
 **Проверка прав:**
 ```bash
-PGPASSWORD=chatbot psql -h 127.0.0.1 -p 5432 -U chatbot -d pc_support_test -c "SELECT has_schema_privilege('chatbot', 'public', 'CREATE') as can_create;"
+PGPASSWORD=chatbot psql -h 192.168.100.17 -p 5432 -U chatbot -d pc_support_test -c "SELECT has_schema_privilege('chatbot', 'public', 'CREATE') as can_create;"
 # Должно вернуть: can_create = t (true)
 ```
 
 Подробные результаты тестирования см. в [TEST_RESULTS.md](TEST_RESULTS.md).
-

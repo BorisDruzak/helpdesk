@@ -26,7 +26,7 @@ from app.db.engine import get_engine, get_session, init_db
 # Test database URL
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_support_test"
+    "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test"
 )
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
@@ -41,7 +41,6 @@ def verify_test_database():
         raise RuntimeError(
             f"TEST_DATABASE_URL must point to pc_support_test, got: {db_name}"
         )
-
 
 @pytest.fixture(scope="session")
 def run_migrations():
@@ -66,12 +65,15 @@ def run_migrations():
     if script_path.exists():
         alembic_cfg.set_main_option("script_location", str(script_path))
     
-    # upgrade head (sync command)
-    command.upgrade(alembic_cfg, "head")
+    # Alembic env.py prefers DATABASE_URL from process environment.
+    # create_app/server import can preload server/.env with the production URL,
+    # so pin DATABASE_URL to the test DSN for the whole migration run.
+    with patch.dict(os.environ, {"DATABASE_URL": TEST_DATABASE_URL}):
+        command.upgrade(alembic_cfg, "head")
 
 
 @pytest.fixture
-async def test_engine():
+def test_engine():
     """Создает тестовый engine для патчинга get_session."""
     verify_test_database()
     
@@ -83,14 +85,27 @@ async def test_engine():
         max_overflow=10,
     )
     yield engine
-    await engine.dispose()
+    asyncio.run(engine.dispose())
 
 
 @pytest.fixture(autouse=True)
-async def cleanup_db(run_migrations, test_engine):
-    """Очищает данные перед каждым тестом."""
+def ensure_db_ready(request):
+    """Ensure migrations are applied before DB-backed tests run."""
+    if request.node.get_closest_marker("no_db"):
+        return
+
     verify_test_database()
-    
+    request.getfixturevalue("run_migrations")
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_db(request, test_engine):
+    """Clean test data before each DB-backed test."""
+    if request.node.get_closest_marker("no_db"):
+        return
+
+    verify_test_database()
+
     async with test_engine.begin() as conn:
         # Один statement TRUNCATE с RESTART IDENTITY CASCADE
         # RESTART IDENTITY критично - иначе автоинкремент id "уплывает"

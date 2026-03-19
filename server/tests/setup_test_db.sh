@@ -6,7 +6,7 @@ set -e
 DB_NAME="pc_support_test"
 DB_USER="${DB_USER:-chatbot}"
 DB_PASSWORD="${DB_PASSWORD:-chatbot}"
-DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_HOST="${DB_HOST:-192.168.100.17}"
 DB_PORT="${DB_PORT:-5432}"
 
 echo "Creating test database: $DB_NAME"
@@ -41,4 +41,3 @@ echo "⚠️  Если тесты все еще не работают, выда�
 echo "   sudo -u postgres psql -d $DB_NAME -c \"GRANT CREATE ON SCHEMA public TO $DB_USER;\""
 echo ""
 echo "Run migrations with: TEST_DATABASE_URL=postgresql+asyncpg://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME pytest server/tests/"
-

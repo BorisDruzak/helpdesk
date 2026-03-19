@@ -5,20 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from websocket.agent_services import CommandResultService, OutboxIngestService
+from websocket.agent_services import (
+    CommandResultService,
+    OutboxAckDecisionService,
+    OutboxIngestService,
+)
 from websocket.command_result_components import (
     CommandResultEventPublisher,
     CommandResultLifecycleOutcome,
     CommandResultNormalizer,
 )
 from websocket.contexts import AgentConnectionContext
-from websocket.outbox_ingest_components import (
-    EnvelopeValidationResult,
-    OutboxAckDecisionService,
-    OutboxPersistenceService,
-    OutboxPersistenceOutcome,
-)
+from websocket.outbox_ingest_components import EnvelopeValidationResult, OutboxPersistenceService, OutboxPersistenceOutcome
 from websocket.validator import EventValidator
+
+
+pytestmark = pytest.mark.no_db
 
 
 class _BatchAckManagerStub:
@@ -67,14 +69,19 @@ async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
     service = OutboxIngestService(
         legacy_handler=None,
         batch_ack_manager=batch,
-        event_validator=SimpleNamespace(),
+        event_validator=EventValidator(),
     )
     state = SimpleNamespace()
     ctx = AgentConnectionContext(ws=SimpleNamespace(), request=SimpleNamespace(), state=state, agent_id="dev-1")
     msg = {
         "type": "outbox_item",
         "trace_id": "tr-1",
-        "payload": {"outbox_id": "ob-1", "item_type": "job_event", "event": {}},
+        "payload": {
+            "outbox_id": "ob-1",
+            "item_type": "job_event",
+            "device_seq": 101,
+            "event": {"event": "tools_changed"},
+        },
         "meta": {"actor_role": "agent"},
     }
 

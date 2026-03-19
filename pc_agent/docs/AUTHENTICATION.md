@@ -71,7 +71,7 @@ python ws_agent.py --no-gui
     "hostname": "my-pc",
     "os": "Linux",
     "agent_version": "3.0.0",
-    "db_schema_version": 8,
+    "db_schema_version": 9,
     "toolset_hash": "a1b2c3d4e5f6",
     "tools_count": 10,
     "modules": ["system", "screen"],

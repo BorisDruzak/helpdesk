@@ -3,6 +3,7 @@
         let selectedTool = null;
         let currentEditorTab = 'form';
         let appInitialized = false;
+        let authSessionInvalid = false;
         
         // Auth header for API calls (admin uses admin_auth_token from localStorage)
         function getAuthHeaders(includeContentType) {
@@ -27,6 +28,9 @@
         
         // Initialize (will be called after successful login)
         function initializeApp() {
+            if (authSessionInvalid) {
+                return;
+            }
             if (appInitialized) {
                 return; // Prevent double initialization
             }
@@ -44,6 +48,9 @@
         
         // Polling
         function startPolling() {
+            if (authSessionInvalid) {
+                return;
+            }
             // Poll every 3 seconds
             pollInterval = setInterval(() => {
                 loadAgents();
@@ -61,6 +68,9 @@
         
         // Load Agents
         async function loadAgents() {
+            if (authSessionInvalid) {
+                return;
+            }
             try {
                 const response = await fetch('/api/agents', { headers: getAuthHeaders() });
                 const data = await response.json();
@@ -119,6 +129,9 @@
         
         // Load Tickets
         async function loadTickets() {
+            if (authSessionInvalid) {
+                return;
+            }
             try {
                 const response = await fetch('/api/tickets', { headers: getAuthHeaders() });
                 const data = await response.json();
@@ -589,6 +602,9 @@
 
         // Pending Connections Functions
         async function loadPendingConnections() {
+            if (authSessionInvalid) {
+                return;
+            }
             const loadingEl = document.getElementById('pendingConnectionsLoading');
             const listEl = document.getElementById('pendingConnectionsList');
             const emptyEl = document.getElementById('pendingConnectionsEmpty');
@@ -754,6 +770,7 @@
         let queuePollTimer = null;
         let queueWs = null;
         let queueReconnectAttempts = 0;
+        let queueReconnectTimer = null;
         const QUEUE_WS_RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000];
         let queueDebounceReloadTimer = null;
         const QUEUE_DEBOUNCE_RELOAD_MS = 400;
@@ -1813,6 +1830,9 @@
         }
 
         function queueStartPolling() {
+            if (authSessionInvalid) {
+                return;
+            }
             queueStopPolling();
             const interval = queueState.wsConnected ? QUEUE_POLL_INTERVAL_WS_ACTIVE_MS : QUEUE_POLL_INTERVAL_MS;
             queuePollTimer = setInterval(() => {
@@ -1870,6 +1890,7 @@
         }
 
         function queueWsConnect() {
+            if (authSessionInvalid) return;
             if (queueWs && (queueWs.readyState === WebSocket.OPEN || queueWs.readyState === WebSocket.CONNECTING)) return;
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
             const url = proto + '//' + location.host + '/ws_ui';
@@ -1882,12 +1903,16 @@
             queueWs.onopen = () => {
                 queueReconnectAttempts = 0;
                 const token = localStorage.getItem('admin_auth_token');
-                if (!token) { queueWs.close(); return; }
+                if (!token || authSessionInvalid) { queueWs.close(); return; }
                 queueWs.send(JSON.stringify({ type: 'ui_hello', token: token }));
             };
             queueWs.onmessage = (ev) => {
                 try {
                     const data = JSON.parse(ev.data);
+                    if (data.type === 'error' && (data.error === 'Invalid token' || data.error === 'Token required')) {
+                        handleAuthFailure('Сессия панели истекла. Войдите заново.');
+                        return;
+                    }
                     if (data.type === 'ui_hello_ack') {
                         queueSetRealtimeIndicator(true);
                         queueWsUpdateSubscriptions();
@@ -1901,15 +1926,25 @@
                     }
                 } catch (e) { console.warn('queue ws message', e); }
             };
-            queueWs.onclose = () => {
+            queueWs.onclose = (event) => {
                 queueWs = null;
                 queueState.subscribedTicketIds.clear();
                 queueSetRealtimeIndicator(false);
+                if (authSessionInvalid) {
+                    return;
+                }
+                if (event && event.code === 4003) {
+                    handleAuthFailure('Сессия панели истекла. Войдите заново.');
+                    return;
+                }
                 const tab = document.getElementById('tab-queue');
                 if (tab && tab.classList.contains('active')) {
                     const delay = QUEUE_WS_RECONNECT_BACKOFF_MS[Math.min(queueReconnectAttempts, QUEUE_WS_RECONNECT_BACKOFF_MS.length - 1)];
                     queueReconnectAttempts++;
-                    setTimeout(queueWsConnect, delay);
+                    queueReconnectTimer = setTimeout(() => {
+                        queueReconnectTimer = null;
+                        queueWsConnect();
+                    }, delay);
                 }
             };
             queueWs.onerror = () => { queueWs.close(); };
@@ -4138,6 +4173,65 @@
 
         const AUTH_TOKEN_KEY = 'admin_auth_token';
         const USER_LOGIN_KEY = 'admin_user_login';
+
+        function cancelQueueReconnectTimer() {
+            if (queueReconnectTimer) {
+                clearTimeout(queueReconnectTimer);
+                queueReconnectTimer = null;
+            }
+        }
+
+        function closeQueueWs() {
+            cancelQueueReconnectTimer();
+            if (queueWs) {
+                const ws = queueWs;
+                queueWs = null;
+                try {
+                    ws.onclose = null;
+                    ws.onerror = null;
+                    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                        ws.close();
+                    }
+                } catch (e) {
+                    console.warn('queue ws close', e);
+                }
+            }
+            queueState.subscribedTicketIds.clear();
+            queueSetRealtimeIndicator(false);
+        }
+
+        function resetAuthSessionState() {
+            authSessionInvalid = false;
+            cancelQueueReconnectTimer();
+        }
+
+        function handleAuthFailure(message) {
+            if (authSessionInvalid) {
+                return;
+            }
+            authSessionInvalid = true;
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem(USER_LOGIN_KEY);
+            localStorage.removeItem('admin_actor_role');
+            if (typeof stopPolling === 'function') {
+                stopPolling();
+            }
+            if (typeof queueStopPolling === 'function') {
+                queueStopPolling();
+            }
+            if (queueDebounceReloadTimer) {
+                clearTimeout(queueDebounceReloadTimer);
+                queueDebounceReloadTimer = null;
+            }
+            appInitialized = false;
+            closeQueueWs();
+            showLogin();
+            const errorDiv = document.getElementById('loginError');
+            if (errorDiv) {
+                errorDiv.textContent = message || 'Сессия истекла. Войдите заново.';
+                errorDiv.style.display = 'block';
+            }
+        }
         
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', () => {
@@ -4161,16 +4255,14 @@
                 
                 if (response.ok || response.status === 404) {
                     // Token is valid (404 is ok for empty agents list)
+                    resetAuthSessionState();
                     showMainContent(token);
                     // Initialize app if not already initialized
                     if (typeof initializeApp === 'function') {
                         initializeApp();
                     }
                 } else if (response.status === 401) {
-                    // Token invalid, show login
-                    localStorage.removeItem(AUTH_TOKEN_KEY);
-                    localStorage.removeItem(USER_LOGIN_KEY);
-                    showLogin();
+                    handleAuthFailure('Сессия панели истекла. Войдите заново.');
                 } else {
                     showLogin();
                 }
@@ -4250,6 +4342,7 @@
                     localStorage.setItem(AUTH_TOKEN_KEY, data.token);
                     localStorage.setItem(USER_LOGIN_KEY, data.user_login);
                     if (data.actor_role) localStorage.setItem('admin_actor_role', data.actor_role);
+                    resetAuthSessionState();
                     
                     // Show main content
                     showMainContent(data.token);
@@ -4270,12 +4363,17 @@
         
         // Handle logout
         function handleLogout() {
+            resetAuthSessionState();
             localStorage.removeItem(AUTH_TOKEN_KEY);
             localStorage.removeItem(USER_LOGIN_KEY);
             localStorage.removeItem('admin_actor_role');
             if (typeof stopPolling === 'function') {
                 stopPolling();
             }
+            if (typeof queueStopPolling === 'function') {
+                queueStopPolling();
+            }
+            closeQueueWs();
             appInitialized = false;
             showLogin();
         }
@@ -4306,7 +4404,24 @@
                 }
             }
             
-            return originalFetch.apply(this, args);
+            const requestUrl = typeof args[0] === 'string'
+                ? args[0]
+                : (args[0] && typeof args[0].url === 'string' ? args[0].url : '');
+            
+            return originalFetch.apply(this, args).then((response) => {
+                if (
+                    response
+                    && response.status === 401
+                    && token
+                    && !authSessionInvalid
+                    && requestUrl
+                    && requestUrl.indexOf('/api/') !== -1
+                    && requestUrl.indexOf('/api/ui_login') === -1
+                    && requestUrl.indexOf('/api/login') === -1
+                ) {
+                    handleAuthFailure('Сессия панели истекла. Войдите заново.');
+                }
+                return response;
+            });
         };
-
 

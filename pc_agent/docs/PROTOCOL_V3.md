@@ -130,7 +130,7 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
     "hostname": "hostname",
     "os": "Linux",
     "agent_version": "3.0.0",
-    "db_schema_version": 8,
+    "db_schema_version": 9,
     "tools_version": "tools_v1",
     "toolset_hash": "a1b2c3d4e5f6",
     "tools_count": 10,

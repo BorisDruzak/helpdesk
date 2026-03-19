@@ -34,6 +34,5 @@ echo "✅ Permissions granted"
 echo ""
 echo "You can now run tests:"
 echo "  cd server"
-echo "  TEST_DATABASE_URL='postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_support_test' pytest tests/ -v"
-
+echo "  TEST_DATABASE_URL='postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test' pytest tests/ -v"
 
