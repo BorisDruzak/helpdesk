@@ -24,6 +24,7 @@ from pathlib import Path
 from config import (
     SERVER_HOST,
     SERVER_PORT,
+    SERVER_DATA_ROOT,
     UPLOAD_DIR,
     LOG_LEVEL,
     LOG_FORMAT,
@@ -357,6 +358,7 @@ def main():
         format=LOG_FORMAT
     )
     
+    logger.info(f"📁 Server data root: {SERVER_DATA_ROOT.absolute()}")
     # Создаём папку для загрузок, если её нет
     logger.info(f"📁 Папка загрузок: {UPLOAD_DIR.absolute()}")
     
@@ -412,4 +414,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

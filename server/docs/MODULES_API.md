@@ -10,6 +10,8 @@
 3. При установке команда `install_module_package` содержит `download_url` вместо `package_b64`
 4. Агент скачивает ZIP по HTTP, проверяет SHA256 и устанавливает
 
+Серверное файловое хранилище модулей, артефактов и agent builds живёт вне Git-дерева, в `PC_CLIENT_SERVER_DATA_ROOT` (по умолчанию: Linux `~/.local/share/pcclient-server`, Windows `%LOCALAPPDATA%\PCClientServer\data`). При старте сервер один раз мигрирует данные из старых каталогов `server/uploads`, `server/data/modules_storage`, `server/data/agent_builds`, если новые директории ещё пусты.
+
 ### Развёртывание: SERVER_PUBLIC_BASE_URL
 
 URL для скачивания модулей строится на сервере из `SERVER_PUBLIC_BASE_URL` (см. `server/config.py`). Текущий дефолт в коде: `http://192.168.100.17:{SERVER_PORT}`. **Если агент работает на другой машине**, этот URL должен быть доступен с хоста агента (IP или hostname сервера). В **production** обязательно задавать `SERVER_PUBLIC_BASE_URL` явно через env; дефолт считается только dev-safe. При установке модуля на удалённый агент без настройки вы получите ошибку вида `MODULE_DOWNLOAD_FAILED: Cannot connect to host ... [Неверный формат сетевого имени]`.
@@ -29,6 +31,8 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 3. Если модуля на агенте нет — ищет модуль на сервере в реестре `modules` (берётся последняя по дате загрузки версия).
 4. Если модуль есть на сервере — проверяет совместимость ОС устройства с `platforms` из manifest модуля; при несовместимости или неизвестной ОС возвращает ошибку.
 5. Если всё ок — отправляет агенту команду `install_module_package` (через тот же механизм, что и ручная установка), ждёт успешного завершения (таймаут 90 с), затем выполняет запрошенный run_tool.
+
+Исключение: builtin-модули агента (`system`, `screen`) не требуют server-side установки. Для `screen.collect` и `screen.record` сервер не должен пытаться скачивать ZIP с `/api/modules/.../download`, даже если в server registry есть старые записи о пакетах.
 
 Если модуля нет на сервере, возвращается ошибка с кодом `MODULE_NOT_ON_SERVER`. Ошибки установки (таймаут, отказ агента) возвращаются с кодами `MODULE_INSTALL_TIMEOUT`, `MODULE_INSTALL_FAILED` и т.п.
 

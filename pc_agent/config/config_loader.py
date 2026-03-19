@@ -17,6 +17,19 @@ from loguru import logger
 _CONFIG_DIR = Path(__file__).resolve().parent
 DEFAULT_SETTINGS_TEMPLATE = _CONFIG_DIR / "settings.default.yaml"
 _config_base: Optional[Path] = None  # data_root при вызове init_config(); для разрешения относительных путей
+CORE_ENABLED_MODULES = ("system", "screen")
+
+
+def _normalize_enabled_modules(module_names: List[str] | None) -> List[str]:
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for module_name in [*CORE_ENABLED_MODULES, *(module_names or [])]:
+        name = str(module_name or "").strip()
+        if not name or name in seen:
+            continue
+        normalized.append(name)
+        seen.add(name)
+    return normalized
 
 
 class ServerConfig(BaseModel):
@@ -86,6 +99,11 @@ class Settings(BaseModel):
     ui: UiConfig = Field(default_factory=UiConfig, description="Конфигурация UI")
     modules: ModulesConfig = Field(default_factory=ModulesConfig, description="Конфигурация модулей")
 
+    @field_validator("enabled_modules", mode="before")
+    @classmethod
+    def normalize_enabled_modules(cls, value):
+        return _normalize_enabled_modules(value)
+
 
 class ConfigLoader:
     """
@@ -137,7 +155,10 @@ class ConfigLoader:
             raise FileNotFoundError(f"Файл конфигурации не найден: {self.config_path}")
         with open(self.config_path, "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
-        self._config = Settings(**config_data)
+        self._config = Settings(**(config_data or {}))
+        self._config = self._config.model_copy(
+            update={"enabled_modules": _normalize_enabled_modules(self._config.enabled_modules)}
+        )
         # Переопределение из env (для E2E: локальный сервер без правки settings.yaml)
         ws_url = os.environ.get("PC_AGENT_WS_URL", "").strip()
         api_url = os.environ.get("PC_AGENT_API_URL", "").strip()
@@ -248,4 +269,3 @@ def init_config(data_root: Path, config_override: Optional[Path] = None) -> Sett
 def get_config_base() -> Optional[Path]:
     """Возвращает data_root, заданный при init_config(), или None. Используется для разрешения относительных путей (identity.json и т.д.)."""
     return _config_base
-

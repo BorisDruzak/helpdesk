@@ -4,6 +4,7 @@
 
 import json
 import os
+import shutil
 from pathlib import Path
 from loguru import logger
 
@@ -42,20 +43,79 @@ ENABLE_DB_PERSISTENCE = os.getenv("ENABLE_DB_PERSISTENCE", "true").lower() == "t
 # File Paths
 # ============================================================================
 
-# Папка для загружаемых файлов (скриншоты, логи)
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+SERVER_DIR = Path(__file__).resolve().parent
+WORKSPACE_DIR = SERVER_DIR.parent
 
-# Modules storage directory (relative to server root)
-MODULES_STORAGE_DIR = Path("data/modules_storage")
-MODULES_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _resolve_server_data_root() -> Path:
+    raw = os.getenv("PC_CLIENT_SERVER_DATA_ROOT", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA", "").strip()
+        if base:
+            return (Path(base) / "PCClientServer" / "data").resolve()
+        return (Path.home() / "AppData" / "Local" / "PCClientServer" / "data").resolve()
+    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+    if xdg:
+        return (Path(xdg).expanduser() / "pcclient-server").resolve()
+    return (Path.home() / ".local" / "share" / "pcclient-server").resolve()
+
+
+def _iter_legacy_dir_candidates(relative_path: str):
+    seen: set[Path] = set()
+    rel = Path(relative_path)
+    for base in (SERVER_DIR, WORKSPACE_DIR, Path.cwd().resolve()):
+        candidate = (base / rel).resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        yield candidate
+
+
+def _prepare_runtime_dir(relative_path: str, *, legacy_relative_paths: tuple[str, ...]) -> Path:
+    target = (SERVER_DATA_ROOT / relative_path).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    if any(target.iterdir()):
+        return target
+    for legacy_relative_path in legacy_relative_paths:
+        for candidate in _iter_legacy_dir_candidates(legacy_relative_path):
+            if candidate == target or not candidate.exists() or not candidate.is_dir():
+                continue
+            if not any(candidate.iterdir()):
+                continue
+            shutil.copytree(candidate, target, dirs_exist_ok=True)
+            logger.warning(
+                f"Migrated runtime data from legacy path: {candidate} -> {target}. "
+                f"Set PC_CLIENT_SERVER_DATA_ROOT to control the storage location."
+            )
+            return target
+    return target
+
+
+SERVER_DATA_ROOT = _resolve_server_data_root()
+SERVER_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+# Папка для загружаемых файлов (скриншоты, логи)
+UPLOAD_DIR = _prepare_runtime_dir(
+    "uploads",
+    legacy_relative_paths=("uploads",),
+)
+
+# Modules storage directory
+MODULES_STORAGE_DIR = _prepare_runtime_dir(
+    "modules_storage",
+    legacy_relative_paths=("data/modules_storage", "modules_storage"),
+)
 
 # Maximum module ZIP size (100MB, no longer limited by JSON)
 MAX_MODULE_SIZE = 100 * 1024 * 1024
 
 # Agent builds storage directory (remote self-update packages)
-AGENT_BUILDS_STORAGE_DIR = Path("data/agent_builds")
-AGENT_BUILDS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+AGENT_BUILDS_STORAGE_DIR = _prepare_runtime_dir(
+    "agent_builds",
+    legacy_relative_paths=("data/agent_builds", "agent_builds"),
+)
 
 # Maximum agent build ZIP size (300MB)
 MAX_AGENT_BUILD_SIZE = 300 * 1024 * 1024
@@ -73,6 +133,12 @@ SERVER_PUBLIC_BASE_URL = os.getenv(
     "SERVER_PUBLIC_BASE_URL",
     f"http://192.168.100.17:{SERVER_PORT}"
 )
+
+AGENT_BUILTIN_MODULES = {
+    module.strip().lower()
+    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen").split(",")
+    if module.strip()
+}
 
 # ============================================================================
 # Users Configuration

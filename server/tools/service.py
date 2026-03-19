@@ -13,6 +13,7 @@ from config import (
     TOOL_EXECUTION_TIMEOUT,
     ENABLE_DB_PERSISTENCE,
     SERVER_PUBLIC_BASE_URL,
+    AGENT_BUILTIN_MODULES,
 )
 
 # Lazy import для избежания circular dependency
@@ -196,6 +197,12 @@ class ToolService:
         if "." not in tool_name:
             return None
         module_name = tool_name.split(".", 1)[0]
+        if module_name.lower() in AGENT_BUILTIN_MODULES:
+            logger.debug(
+                f"[ensure_module] {tool_name!r} belongs to builtin module {module_name!r}, "
+                f"skip auto-install"
+            )
+            return None
         if not DB_AVAILABLE:
             return None
         # Если инструмент уже зарегистрирован в toolset snapshot агента — не переустанавливать.
