@@ -122,7 +122,7 @@ class CommandAckService:
                         f"[command_ack] Unknown ack_status={ack_status} operation_id={operation_id}"
                     )
 
-                await session.commit()
+                # Коммит выполняет get_session() при выходе; второй commit() не нужен.
         except Exception as exc:
             logger.error(f"[command_ack] Failed to update operation status: {exc}", exc_info=True)
 
@@ -254,7 +254,12 @@ class OperationLifecycleService:
                 else:
                     processed = False
 
-                await session.commit()
+                # Снимок скаляров до выхода из get_session(): после commit/expiry повторный доступ к ORM
+                # может вызвать implicit lazy-load → greenlet_spawn / await_only (SQLAlchemy async).
+                operation_kind_out = operation.kind if operation else None
+                ticket_id_out = operation.ticket_id if operation else None
+                trace_id_out = operation.trace_id if operation else None
+
                 if not processed and legacy_handler is not None:
                     await legacy_handler(ws=ctx.ws, data=message, state=ctx.state, agent_id=ctx.agent_id)
                     processed = True
@@ -263,9 +268,9 @@ class OperationLifecycleService:
                     command_id=normalized.command_id,
                     status=lifecycle_status,
                     operation_id=operation_id,
-                    operation_kind=getattr(operation, "kind", None) if operation else None,
-                    ticket_id=getattr(operation, "ticket_id", None) if operation else None,
-                    trace_id=getattr(operation, "trace_id", None) if operation else None,
+                    operation_kind=operation_kind_out,
+                    ticket_id=ticket_id_out,
+                    trace_id=trace_id_out,
                     failure_code=normalized.error_info.get("code"),
                     failure_message=normalized.error_info.get("message"),
                 )
