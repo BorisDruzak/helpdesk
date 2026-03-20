@@ -74,13 +74,34 @@
     function statusLabel(s) { return s ? (STATUS_LABELS[s] || s) : '—'; }
     function priorityLabel(p) { return p ? ((PRIORITY_LABELS[p] || p) + ' (' + p + ')') : '—'; }
     function boolLabel(v) { return v ? 'Да' : 'Нет'; }
+    function parseServerDate(ts) {
+        if (!ts) return null;
+        if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? null : ts;
+        const raw = String(ts).trim();
+        if (!raw) return null;
+        let normalized = raw;
+        // Python often sends 6-digit micros; JS Date supports up to milliseconds.
+        normalized = normalized.replace(/\.(\d{3})\d+([+-]\d{2}:\d{2}|Z)$/i, '.$1$2');
+        const d = new Date(normalized);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
     function formatTime(ts) {
-        if (!ts) return '';
-        try { return new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch { return String(ts); }
+        const d = parseServerDate(ts);
+        if (!d) return String(ts || '');
+        return d.toLocaleString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
     }
     function formatSla(iso) {
         if (!iso) return '—';
-        try { return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return iso; }
+        const d = parseServerDate(iso);
+        if (!d) return String(iso);
+        return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
     function escapeHtml(str) {
         if (!str) return '';
@@ -429,15 +450,26 @@
             return null;
         }
         if (type === 'chat_message') {
-            const fromRole = payload.from_role || payload.from || payload.sender_role || 'unknown';
+            const fromRole = String(
+                payload.from_role
+                || payload.sender_role
+                || payload.from
+                || payload.actor_role
+                || payload.role
+                || ''
+            ).toLowerCase();
+            const direction = String(payload.direction || '').toLowerCase();
             const text = payload.text || '';
             const vis = payload.visibility || 'public';
-            const isRequester = fromRole === 'user' || fromRole === 'agent';
-            const isStaff = fromRole === 'support' || fromRole === 'admin';
+            const requesterRoles = new Set(['user', 'agent', 'requester', 'device']);
+            const staffRoles = new Set(['support', 'admin', 'operator', 'manager']);
+            const isRequester = requesterRoles.has(fromRole) || direction === 'from_agent' || direction === 'from_device';
+            const isStaff = staffRoles.has(fromRole);
+            const profileName = meta.requester_display_name || payload.requester_display_name || payload.profile_name || payload.sender_display_name;
             const senderResolved = isRequester
-                ? (meta.requester_display_name || 'Пользователь')
-                : (payload.actor_id || payload.sender_display_name || meta.assignee_id || (fromRole === 'support' ? 'Поддержка' : fromRole === 'admin' ? 'Админ' : 'Агент'));
-            const avatar = isRequester ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : '?');
+                ? (profileName || 'Пользователь')
+                : (payload.sender_display_name || payload.actor_id || meta.assignee_id || (staffRoles.has(fromRole) ? 'Поддержка' : 'Система'));
+            const avatar = isRequester ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : 'T');
             const internalBadge = vis === 'internal' ? '<span class="ti-badge-internal">Внутр.</span>' : '';
             const attachments = payload.attachments || [];
             const attachmentRefs = payload.attachment_refs || [];

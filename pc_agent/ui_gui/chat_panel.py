@@ -964,9 +964,18 @@ class ChatPanel(QWidget):
         if value is None:
             return ""
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value)).strftime("%Y-%m-%d %H:%M:%S")
+            return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
         if isinstance(value, str):
-            return value
+            raw = value.strip()
+            if not raw:
+                return ""
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone()
+                return dt.strftime("%d.%m.%Y %H:%M:%S")
+            except ValueError:
+                return raw
         return str(value)
 
     @staticmethod
