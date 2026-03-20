@@ -1,7 +1,7 @@
 """Job-event persistence helper for websocket command flow."""
 
 """
-WebSocket РѕР±СЂР°Р±РѕС‚С‡РёРє РґР»СЏ Р°РіРµРЅС‚РѕРІ.
+WebSocket обработчик для агентов.
 """
 
 import asyncio

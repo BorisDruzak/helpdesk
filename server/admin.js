@@ -200,7 +200,7 @@
                 const agentStatusText = agentOnline ? '🟢 В сети' : '🔴 Не в сети';
                 
                 row.innerHTML = `
-                    <td><a href="/ticket.html?ticket_id=${ticket.ticket_id}" class="ticket-link">${ticket.ticket_id}</a></td>
+                    <td><a href="#" onclick="queueOpenWorkbench('${ticket.ticket_id}'); return false;" class="ticket-link">${ticket.ticket_id}</a></td>
                     <td>${ticket.device_id || '—'}</td>
                     <td><span class="agent-status ${agentStatusClass}" style="font-size: 11px; padding: 3px 8px;">${agentStatusText}</span></td>
                     <td>${ticket.user_display_name || '—'}</td>
@@ -779,6 +779,9 @@
         let pendingAgentUpdateDeviceId = null;
         let agentUpdatesBulkRows = [];
         let agentUpdatesBulkStatus = {};
+        let workbenchTicketId = null;
+        let pendingCanaryOperationId = null;
+        let confirmedCanaryOperationId = null;
 
         function setPendingAgentUpdateOperation(opId, deviceId) {
             pendingAgentUpdateOperationId = opId;
@@ -815,6 +818,12 @@
                 agentUpdatesBulkStatus[opId] = { status: status, error_message: errMsg };
                 renderAgentUpdatesBulkResult();
             }
+            if (pendingCanaryOperationId && opId === pendingCanaryOperationId && status === 'succeeded') {
+                const canaryConfirmedEl = document.getElementById('agentUpdatesCanaryConfirmed');
+                if (canaryConfirmedEl) canaryConfirmedEl.checked = true;
+                confirmedCanaryOperationId = opId;
+                pendingCanaryOperationId = null;
+            }
         }
 
         function renderAgentUpdatesBulkResult() {
@@ -825,7 +834,7 @@
                 const entry = agentUpdatesBulkStatus[r.operation_id];
                 const status = entry ? entry.status : 'pending';
                 const err = entry ? entry.error_message : '';
-                const buildStr = r.build ? (r.build.target + ' / ' + r.build.version) : '—';
+                const buildStr = r.build ? (r.build.target + ' / ' + r.build.version) : ((r.target || '—') + ' / ' + (r.channel || '—'));
                 let statusHtml = '<span class="badge badge-secondary">Ожидание...</span>';
                 if (status === 'succeeded') statusHtml = '<span class="badge badge-success">Успех</span>';
                 else if (status === 'failed') statusHtml = '<span class="badge badge-danger">Ошибка</span> ' + escapeHtml(err);
@@ -1046,15 +1055,15 @@
                     <div class="queue-actions-inline">
                         ${takeSelfBtn}
                         <button type="button" class="btn btn-sm btn-primary" onclick="queueActionOpenManage('${t.ticket_id}')" title="Статус, назначение, профиль инициатора">Управление</button>
-                        <a href="/ticket.html?ticket_id=${t.ticket_id}" class="btn btn-sm">Открыть</a>
+                        <button type="button" class="btn btn-sm" onclick="queueOpenWorkbench('${t.ticket_id}')">Открыть</button>
                     </div>
-                ` : '<a href="/ticket.html?ticket_id=' + t.ticket_id + '" class="btn btn-sm">Открыть</a>';
+                ` : '<button type="button" class="btn btn-sm" onclick="queueOpenWorkbench(\'' + t.ticket_id + '\')">Открыть</button>';
                 const closedAttr = isClosed(t) ? ' data-queue-closed="1"' : '';
                 return `<tr data-ticket-id="${t.ticket_id}" data-queue-id="${t.queue_id || ''}"${closedAttr}>
                     <td class="col-select">${canWrite ? `<input type="checkbox" class="queue-row-cb" value="${t.ticket_id}" data-closed="${isClosed(t) ? '1' : '0'}">` : ''}</td>
                     <td class="col-drag">${canWrite ? '<span class="queue-drag-handle" draggable="true" title="Перетащите для изменения порядка">⋮⋮</span>' : ''}</td>
                     <td class="col-pin"><button type="button" class="pin-btn ${isPinned ? 'pinned' : ''}" data-ticket-id="${t.ticket_id}" title="${isPinned ? 'Открепить' : 'Закрепить'}">${isPinned ? '📌' : '📄'}</button></td>
-                    <td class="col-ticket"><a href="/ticket.html?ticket_id=${t.ticket_id}">${code}</a></td>
+                    <td class="col-ticket"><a href="#" onclick="queueOpenWorkbench('${t.ticket_id}'); return false;">${code}</a></td>
                     <td class="col-title" title="${(t.title || '').replace(/"/g, '&quot;')}">${(t.title || '-').slice(0, 40)}${(t.title || '').length > 40 ? '…' : ''}</td>
                     <td class="col-queue">${t.queue_code || t.queue_id || '-'}</td>
                     <td class="col-status"><span class="badge-status status-${statusClass}">${queueStatusLabel(t.status)}</span>${markerHtml}</td>
@@ -1151,6 +1160,22 @@
                     }
                 });
             });
+        }
+
+        function queueOpenWorkbench(ticketId) {
+            const id = String(ticketId || '').trim();
+            if (!id) return;
+            workbenchTicketId = id;
+            const label = document.getElementById('workbenchTicketLabel');
+            const empty = document.getElementById('workbenchEmptyState');
+            const frame = document.getElementById('workbenchFrame');
+            if (label) label.textContent = 'Тикет: ' + id;
+            if (empty) empty.style.display = 'none';
+            if (frame) {
+                frame.style.display = 'block';
+                frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(id);
+            }
+            switchTab('workbench');
         }
 
         async function queueOrderServerMoveToPosition(ticketId, fromIdx, toIdx) {
@@ -1979,6 +2004,7 @@
                     switchTab(tabName);
                 });
             });
+            initWorkbenchTab();
         });
 
         function switchTab(tabName) {
@@ -2027,7 +2053,29 @@
                 loadUsersTab();
             } else if (tabName === 'agent-updates') {
                 loadAgentUpdatesTab();
+            } else if (tabName === 'workbench') {
+                const frame = document.getElementById('workbenchFrame');
+                const empty = document.getElementById('workbenchEmptyState');
+                if (frame && workbenchTicketId) {
+                    frame.style.display = 'block';
+                    if (!frame.src || frame.src.indexOf('ticket_id=' + encodeURIComponent(workbenchTicketId)) === -1) {
+                        frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(workbenchTicketId);
+                    }
+                } else if (empty) {
+                    empty.style.display = 'block';
+                }
             }
+        }
+
+        function initWorkbenchTab() {
+            const backBtn = document.getElementById('workbenchBackToQueueBtn');
+            if (backBtn) backBtn.addEventListener('click', function() { switchTab('queue'); });
+            const refreshBtn = document.getElementById('workbenchRefreshBtn');
+            if (refreshBtn) refreshBtn.addEventListener('click', function() {
+                const frame = document.getElementById('workbenchFrame');
+                if (!frame || !workbenchTicketId) return;
+                frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(workbenchTicketId) + '&_ts=' + Date.now();
+            });
         }
 
         // ============================================
@@ -2234,9 +2282,19 @@
             const bulkDevicesEl = document.getElementById('agentUpdatesBulkDevices');
             const channelEl = document.getElementById('agentUpdatesBulkChannel');
             const versionEl = document.getElementById('agentUpdatesBulkVersion');
+            const rolloutModeEl = document.getElementById('agentUpdatesRolloutMode');
+            const requireCanaryEl = document.getElementById('agentUpdatesRequireCanaryConfirm');
+            const canaryConfirmedEl = document.getElementById('agentUpdatesCanaryConfirmed');
             const resultEl = document.getElementById('agentUpdatesBulkResult');
             const resultContent = document.getElementById('agentUpdatesBulkResultContent');
             const body = { channel: (channelEl && channelEl.value) || 'stable' };
+            const rolloutMode = (rolloutModeEl && rolloutModeEl.value) || 'bulk';
+            body.rollout_mode = rolloutMode;
+            body.require_canary_confirmed = !!(requireCanaryEl && requireCanaryEl.checked);
+            body.canary_confirmed = !!(canaryConfirmedEl && canaryConfirmedEl.checked);
+            if (pendingCanaryOperationId || confirmedCanaryOperationId) {
+                body.canary_operation_id = pendingCanaryOperationId || confirmedCanaryOperationId;
+            }
             const v = (versionEl && versionEl.value) ? String(versionEl.value).trim() : '';
             if (v) body.version = v;
             if (!bulkAllEl || !bulkAllEl.checked) {
@@ -2244,6 +2302,15 @@
                 body.device_ids = selected.length ? selected : null;
             } else {
                 body.device_ids = null;
+            }
+            if (rolloutMode === 'canary') {
+                const canaryDeviceIds = body.device_ids && body.device_ids.length ? body.device_ids : [];
+                if (canaryDeviceIds.length === 0) {
+                    resultEl.style.display = 'block';
+                    resultContent.innerHTML = '<p class="error-message">Для canary выберите одно устройство (снимите галочку «Все онлайн»).</p>';
+                    return;
+                }
+                body.device_ids = [canaryDeviceIds[0]];
             }
             if (resultEl) { resultEl.style.display = 'block'; resultContent.innerHTML = 'Отправка запроса...'; }
             try {
@@ -2259,6 +2326,7 @@
                 }
                 const ops = data.operations || [];
                 const errs = data.errors || [];
+                const skipped = data.skipped || [];
                 setBulkPendingOperations(ops);
                 if (ops.length === 0 && errs.length === 0) {
                     resultContent.innerHTML = '<p class="muted">Нет устройств для обновления (выберите устройства или «Все онлайн»).</p>';
@@ -2266,7 +2334,18 @@
                 }
                 let msg = ops.length ? 'Запущено обновлений: ' + ops.length + '.' : '';
                 if (errs.length) msg += ' Ошибки: ' + errs.length + ' (' + errs.map(function(e) { return e.device_id ? (e.device_id.slice(0, 8) + '...') : ''; }).join(', ') + ').';
+                if (skipped.length) msg += ' Пропущено: ' + skipped.length + '.';
                 resultContent.innerHTML = '<p>' + msg + ' Ожидание результатов...</p>';
+                if (skipped.length) {
+                    resultContent.innerHTML += '<div style="margin-top:8px;">' + skipped.map(function(item) {
+                        return '<div><code>' + escapeHtml((item.device_id || '').slice(0, 8)) + '...</code> — <span class="muted">' + escapeHtml(item.reason || item.error_code || 'skipped') + '</span></div>';
+                    }).join('') + '</div>';
+                }
+                if (rolloutMode === 'canary' && ops.length > 0 && canaryConfirmedEl) {
+                    canaryConfirmedEl.checked = false;
+                    confirmedCanaryOperationId = null;
+                    pendingCanaryOperationId = ops[0].operation_id || null;
+                }
                 agentUpdatesBulkRows = ops;
                 agentUpdatesBulkStatus = {};
                 renderAgentUpdatesBulkResult();

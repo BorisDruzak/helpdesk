@@ -57,7 +57,7 @@ class ModuleManager:
     
     def __init__(self, data_dir: str, temp_dir: str):
         """
-        РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ ModuleManager.
+        Инициализация ModuleManager.
         
         Args:
             data_dir: Директория для хранения данных (здесь будет modules_store)
@@ -186,7 +186,7 @@ class ModuleManager:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in manifest.json: {e}")
             
-            # РР·РІР»РµРєР°РµРј module_name Рё module_version (РѕР±СЏР·Р°С‚РµР»СЊРЅС‹)
+            # Извлекаем module_name и module_version (обязательны)
             module_name = manifest.get("module_name")
             module_version = manifest.get("module_version")
             
@@ -220,7 +220,7 @@ class ModuleManager:
             target_path = self.store_root / module_name / module_version
             sha_file = target_path / ".sha256"
             
-            # РРґРµРјРїРѕС‚РµРЅС‚РЅРѕСЃС‚СЊ РїРѕ SHA (Р­С‚Р°Рї 5): same name+version+same sha -> success/no-op
+            # Идемпотентность по SHA (Этап 5): same name+version+same sha -> success/no-op
             if target_path.exists():
                 if sha_file.exists():
                     try:
@@ -258,7 +258,7 @@ class ModuleManager:
             _safe_mkdir(target_path.parent)
             
             # Перемещаем tmp_dir в целевой путь (атомарно насколько возможно)
-            # РСЃРїРѕР»СЊР·СѓРµРј rename РґР»СЏ Р°С‚РѕРјР°СЂРЅРѕСЃС‚Рё, РµСЃР»Рё РІРѕР·РјРѕР¶РЅРѕ
+            # Используем rename для атомарности, если возможно
             try:
                 tmp_dir.rename(target_path)
             except OSError:
@@ -288,7 +288,7 @@ class ModuleManager:
         Активирует указанную версию модуля.
         
         Args:
-            module_name: РРјСЏ РјРѕРґСѓР»СЏ
+            module_name: Имя модуля
             module_version: Версия модуля для активации
         
         Returns:
@@ -322,7 +322,7 @@ class ModuleManager:
         Деактивирует модуль, удаляя current.json.
         
         Args:
-            module_name: РРјСЏ РјРѕРґСѓР»СЏ РґР»СЏ РґРµР°РєС‚РёРІР°С†РёРё
+            module_name: Имя модуля для деактивации
         """
         current_json_path = self.store_root / module_name / "current.json"
         if current_json_path.exists():
@@ -333,7 +333,7 @@ class ModuleManager:
         Откатывает модуль на предыдущую версию.
         
         Args:
-            module_name: РРјСЏ РјРѕРґСѓР»СЏ РґР»СЏ РѕС‚РєР°С‚Р°
+            module_name: Имя модуля для отката
         
         Returns:
             Path к предыдущей версии модуля или None, если откат невозможен
@@ -377,7 +377,7 @@ class ModuleManager:
         Получает путь к активной версии модуля.
         
         Args:
-            module_name: РРјСЏ РјРѕРґСѓР»СЏ
+            module_name: Имя модуля
         
         Returns:
             Path к активной версии или None, если активная версия не установлена

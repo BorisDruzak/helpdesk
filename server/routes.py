@@ -470,7 +470,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/devices/{device_id}/modules/desired_diff', handle_get_desired_diff),
         web.post('/api/devices/{device_id}/modules/reconcile', handle_trigger_reconcile),
         
-        # Legacy endpoints (for backward compatibility)
+        # Compatibility endpoints for older clients (planned for removal after migration window)
         web.post('/api/install_module_package', handle_install_module_package),
         web.post('/api/list_installed_modules', handle_list_installed_modules),
         web.post('/api/activate_module', handle_activate_module),

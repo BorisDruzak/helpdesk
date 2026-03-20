@@ -20,11 +20,11 @@ async def handle_command_result(
     agent_id: Optional[str],
 ) -> None:
     """
-    Deprecated internal adapter.
+    Compatibility adapter for transitional pipeline.
 
     Kept for one compatibility cycle; production pipeline uses
     `CommandResultService` directly from `agent_handler.py`.
     """
-    logger.debug("[agent_command_result] deprecated wrapper invoked")
+    logger.debug("[agent_command_result] compatibility adapter invoked")
     ctx = AgentConnectionContext(ws=ws, request=None, state=state, agent_id=agent_id)
     await _SERVICE.handle(data, ctx)

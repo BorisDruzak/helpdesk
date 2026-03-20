@@ -28,7 +28,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self, host: str, port: int, auth_token: Optional[str] = None, parent=None):
         """
-        РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РіР»Р°РІРЅРѕРіРѕ РѕРєРЅР°.
+        Инициализация главного окна.
         
         Args:
             host: Хост UI API сервера
@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         if not isinstance(text, str) or not text:
             return text
         # Typical UTF-8/CP1251 mojibake marker set.
-        if not any(ch in text for ch in ("Р", "С", "Ѓ", "Ћ", "™", "ќ", "Ђ", "„", "№")):
+        if not any(ch in text for ch in ("Р", "С", "Ѓ", "Ћ", "™", "ќ", "Ђ", "№")):
             return text
         try:
             fixed = text.encode("cp1251").decode("utf-8")
@@ -627,7 +627,7 @@ class MainWindow(QMainWindow):
         в качестве session_key при обработке consent_required.
         
         Args:
-            job_id: РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ job С‚РµРєСѓС‰РµРіРѕ С‡Р°С‚Р°
+            job_id: Идентификатор job текущего чата
         """
         self.current_chat_job_id = job_id
         logger.info(f"Текущий chat job_id установлен: {job_id}")
@@ -687,7 +687,7 @@ class MainWindow(QMainWindow):
         Args:
             event: Словарь с данными события
         """
-        # ====== РРќРўР•Р“Р РђР¦РРЇ Р›РћРљРђР›Р¬РќР«РҐ РЎРћР‘Р«РўРР™ Р’ ACTIONS FEED ======
+        # ====== ИНТЕГРАЦИЯ ЛОКАЛЬНЫХ СОБЫТИЙ В ACTIONS FEED ======
         # Проксируем определенные типы событий в ChatPanel для отображения в ленте действий
         event_type = event.get("event_type", "")
         
@@ -732,7 +732,7 @@ class MainWindow(QMainWindow):
                 
                 logger.debug(f"Локальное событие {event_type} добавлено в actions feed тикета {ticket_id[:8]}...")
         
-        # ====== РЎРўРђР РђРЇ РћР‘Р РђР‘РћРўРљРђ РЎРћР‘Р«РўРР™ ======
+        # ====== СТАРАЯ ОБРАБОТКА СОБЫТИЙ ======
         
         # Обработка chat_invite - автоматическое открытие чата (deprecated)
         if event.get("event") == "chat_invite":

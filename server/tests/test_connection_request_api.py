@@ -55,6 +55,20 @@ async def test_connection_request_accept_all(test_client, test_engine):
     data = await r.json()
     assert data.get("status") == "approved"
     assert "token" in data
+
+
+@pytest.mark.asyncio
+async def test_connection_request_defaults_to_accept_all_when_policy_missing(test_client):
+    """Fresh environment without explicit policy should auto-approve in P0."""
+    device_id = str(uuid.uuid4())
+    r = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "agent_version": "1.0.0", "os_type": "windows"},
+    )
+    assert r.status == 200
+    data = await r.json()
+    assert data.get("status") == "approved"
+    assert isinstance(data.get("token"), str) and data.get("token")
     assert data.get("device_id") == device_id
 
 

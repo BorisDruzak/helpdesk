@@ -354,7 +354,13 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
 
     if not state.is_agent_online(device_id):
         return web.json_response(
-            {"status": "error", "error": "Agent is offline", "error_code": "AGENT_OFFLINE"},
+            {
+                "status": "error",
+                "error": "Agent is offline",
+                "error_code": "AGENT_OFFLINE",
+                "device_id": device_id,
+                "operation": None,
+            },
             status=409,
         )
 
@@ -444,7 +450,13 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "status": "accepted",
+            "device_id": device_id,
             "operation_id": op_id,
+            "operation": {
+                "operation_id": op_id,
+                "kind": "agent_update",
+                "status": "queued",
+            },
             "build": {"target": build.target, "channel": build.channel, "version": build.version},
         },
         status=202,
@@ -455,7 +467,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
     """
     POST /api/agents/update_bulk
 
-    Массовое обновление агентов: по списку device_id или всем онлайн.
+    Массовое обновление агентов: по списку device_id или всем известным устройствам.
     Target подбирается автоматически по os_type устройства (Windows → windows_amd64, Linux → linux_alt_x86_64 и т.д.).
 
     Body:
@@ -465,7 +477,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
       - restart_delay_sec: int (optional)
 
     Returns:
-      200: { status, operations: [ { device_id, operation_id, build } ], errors: [ { device_id, error } ] }
+      200: { status, rollout_mode, operations: [...], skipped: [...], errors: [...] }
     """
     auth_context: AuthContext = request.get("auth_context")
     if not auth_context:
@@ -494,21 +506,91 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
     channel = _safe_str(data.get("channel")).lower() or "stable"
     version = _safe_str(data.get("version")) or None
     restart_delay_sec = data.get("restart_delay_sec")
+    rollout_mode = _safe_str(data.get("rollout_mode")).lower() or "bulk"
+    require_canary_confirmed = bool(data.get("require_canary_confirmed", False))
+    canary_confirmed = bool(data.get("canary_confirmed", False))
+    canary_operation_id = _safe_str(data.get("canary_operation_id")) or None
+
+    if rollout_mode not in {"canary", "bulk"}:
+        return web.json_response(
+            {"status": "error", "error": "rollout_mode must be 'canary' or 'bulk'"},
+            status=400,
+        )
+    if rollout_mode == "bulk" and require_canary_confirmed and not canary_confirmed:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Canary confirmation required before bulk rollout",
+                "error_code": "CANARY_REQUIRED",
+            },
+            status=409,
+        )
+    if rollout_mode == "bulk" and require_canary_confirmed:
+        if not canary_operation_id:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "canary_operation_id is required for bulk rollout confirmation",
+                    "error_code": "CANARY_OPERATION_REQUIRED",
+                },
+                status=409,
+            )
+        from app.repos.operations_repo import OperationsRepo
+        from app.repos.device_outbox_repo import DeviceOutboxRepo
+        async with get_session() as canary_session:
+            canary_op_repo = OperationsRepo(canary_session)
+            canary_outbox_repo = DeviceOutboxRepo(canary_session)
+            canary_operation = await canary_op_repo.get_by_operation_id(canary_operation_id)
+            if not canary_operation or canary_operation.kind != "agent_update" or canary_operation.status != "succeeded":
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Canary operation is not succeeded",
+                        "error_code": "CANARY_NOT_SUCCEEDED",
+                        "canary_operation_id": canary_operation_id,
+                    },
+                    status=409,
+                )
+            canary_outbox = await canary_outbox_repo.get_by_command_id(canary_operation_id)
+            canary_params = canary_outbox.params if (canary_outbox and isinstance(canary_outbox.params, dict)) else {}
+            if version and canary_params.get("version") != version:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Canary version does not match requested bulk version",
+                        "error_code": "CANARY_BUILD_MISMATCH",
+                    },
+                    status=409,
+                )
+            if channel and canary_params.get("channel") != channel:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Canary channel does not match requested bulk channel",
+                        "error_code": "CANARY_BUILD_MISMATCH",
+                    },
+                    status=409,
+                )
 
     state = request.app["state"]
     from agents.service import AgentService
 
+    from app.repos import DevicesRepo
     agent_service = AgentService(state)
-    agents_list = agent_service.get_agents_list()
+    online_agents = {a.get("device_id"): a for a in agent_service.get_agents_list() if a.get("device_id")}
+
+    async with get_session() as session:
+        devices_repo = DevicesRepo(session)
+        all_devices = await devices_repo.list_all()
+        known_devices = {d.device_id: d for d in all_devices}
 
     if device_ids_raw is not None and isinstance(device_ids_raw, list) and len(device_ids_raw) > 0:
-        device_ids_set = {str(d).strip() for d in device_ids_raw if d}
-        device_ids = [d for d in device_ids_set if d]
-        agents_list = [a for a in agents_list if a.get("device_id") in device_ids_set]
+        device_ids = [str(d).strip() for d in device_ids_raw if str(d).strip()]
     else:
-        device_ids = [a.get("device_id") for a in agents_list if a.get("device_id")]
+        device_ids = list(known_devices.keys())
 
     operations_result = []
+    skipped_result = []
     errors_result = []
 
     async with get_session() as session:
@@ -516,16 +598,33 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
         ui_publisher = state.ui_publisher if hasattr(state, "ui_publisher") else None
         op_service = OperationService(session, publisher=ui_publisher)
 
-        for agent in agents_list:
-            device_id = agent.get("device_id")
-            if not device_id:
+        for device_id in device_ids:
+            device_db = known_devices.get(device_id)
+            if not device_db:
+                errors_result.append(
+                    {"device_id": device_id, "error": "Unknown device_id", "error_code": "DEVICE_NOT_FOUND"}
+                )
                 continue
-            os_type = agent.get("os_type") or agent.get("os")
+
+            online_agent = online_agents.get(device_id)
+            if not online_agent:
+                skipped_result.append(
+                    {
+                        "device_id": device_id,
+                        "reason": "agent_offline",
+                        "error_code": "AGENT_OFFLINE",
+                    }
+                )
+                continue
+
+            device_meta = device_db.device_metadata if isinstance(device_db.device_metadata, dict) else {}
+            os_type = online_agent.get("os_type") or online_agent.get("os") or device_db.os or device_meta.get("os_type")
             target = _os_type_to_target(os_type)
             if not target:
                 errors_result.append({
                     "device_id": device_id,
                     "error": f"Unknown os_type: {os_type!r}, cannot select build target",
+                    "error_code": "TARGET_SELECTION_FAILED",
                 })
                 continue
 
@@ -534,6 +633,8 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 errors_result.append({
                     "device_id": device_id,
                     "error": f"No build for target={target} channel={channel}" + (f" version={version}" if version else " (latest)"),
+                    "error_code": "BUILD_NOT_FOUND",
+                    "target": target,
                 })
                 continue
 
@@ -577,6 +678,8 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
             operations_result.append({
                 "device_id": device_id,
                 "operation_id": op_id,
+                "target": build.target,
+                "channel": build.channel,
                 "build": {"target": build.target, "channel": build.channel, "version": build.version},
             })
 
@@ -584,7 +687,9 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
 
     return web.json_response({
         "status": "ok",
+        "rollout_mode": rollout_mode,
         "operations": operations_result,
+        "skipped": skipped_result,
         "errors": errors_result,
     })
 

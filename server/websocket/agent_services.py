@@ -229,11 +229,25 @@ class OperationLifecycleService:
                     observations = normalized.data_payload.get("observations")
                     if isinstance(observations, dict):
                         result_summary = str(observations)[:500]
-                    await op_service.mark_succeeded(
-                        operation_id=operation_id,
-                        result_summary=result_summary,
-                        expected_statuses=expected_statuses,
-                    )
+                    if operation and operation.kind == "agent_update":
+                        # P0 contract: update operation becomes terminal only after
+                        # reconnect-handshake confirmation of applied version.
+                        await op_service.mark_running(
+                            operation_id=operation_id,
+                            expected_statuses=expected_statuses,
+                        )
+                        await op_repo.update_status(
+                            operation_id=operation_id,
+                            new_status="running",
+                            expected_statuses=["running"],
+                            result_summary=(result_summary or "scheduled")[:500],
+                        )
+                    else:
+                        await op_service.mark_succeeded(
+                            operation_id=operation_id,
+                            result_summary=result_summary,
+                            expected_statuses=expected_statuses,
+                        )
                     await outbox_repo.mark_as_delivered(operation_id)
                 elif lifecycle_status == "failed":
                     error_code = normalized.error_info.get("code", "UNKNOWN_ERROR")

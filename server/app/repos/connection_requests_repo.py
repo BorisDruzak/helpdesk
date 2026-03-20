@@ -27,7 +27,8 @@ class ConnectionRequestsRepo:
         val = row.scalar_one_or_none()
         if val in (POLICY_REJECT_ALL, POLICY_ACCEPT_ALL, POLICY_MANUAL):
             return val
-        return POLICY_MANUAL
+        # P0 default: new environment auto-approves provisioning.
+        return POLICY_ACCEPT_ALL
 
     async def set_policy(self, policy: str) -> None:
         if policy not in (POLICY_REJECT_ALL, POLICY_ACCEPT_ALL, POLICY_MANUAL):
@@ -189,6 +190,15 @@ class ConnectionRequestsRepo:
     async def get_status(self, device_id: str) -> Optional[str]:
         result = await self.session.execute(
             select(ConnectionRequest.status)
+            .where(ConnectionRequest.device_id == device_id)
+            .order_by(ConnectionRequest.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_latest_by_device_id(self, device_id: str) -> Optional[ConnectionRequest]:
+        result = await self.session.execute(
+            select(ConnectionRequest)
             .where(ConnectionRequest.device_id == device_id)
             .order_by(ConnectionRequest.created_at.desc())
             .limit(1)

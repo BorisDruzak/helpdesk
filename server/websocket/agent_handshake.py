@@ -1,7 +1,7 @@
 """Handshake handler extracted from agent websocket legacy module."""
 
 """
-WebSocket РѕР±СЂР°Р±РѕС‚С‡РёРє РґР»СЏ Р°РіРµРЅС‚РѕРІ.
+WebSocket обработчик для агентов.
 """
 
 import asyncio
@@ -45,6 +45,53 @@ try:
 except ImportError:
     DB_AVAILABLE = False
 
+
+async def _confirm_update_operation_from_handshake(
+    *,
+    session: Any,
+    state: Any,
+    device_id: str,
+    applied_update_version: Optional[str],
+    last_update_operation_id: Optional[str],
+) -> None:
+    if not applied_update_version or not last_update_operation_id:
+        return
+    from app.repos.operations_repo import OperationsRepo
+    from app.repos.device_outbox_repo import DeviceOutboxRepo
+    from app.services.operation_service import OperationService
+
+    op_repo = OperationsRepo(session)
+    outbox_repo = DeviceOutboxRepo(session)
+    operation = await op_repo.get_by_operation_id(last_update_operation_id)
+    if not operation:
+        return
+    if operation.device_id != device_id or operation.kind != "agent_update":
+        return
+
+    outbox_entry = await outbox_repo.get_by_command_id(last_update_operation_id)
+    expected_version = None
+    if outbox_entry and isinstance(outbox_entry.params, dict):
+        expected_version = outbox_entry.params.get("version")
+
+    op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
+    if expected_version and expected_version != applied_update_version:
+        await op_service.mark_failed(
+            operation_id=last_update_operation_id,
+            error_code="UPDATE_VERSION_MISMATCH",
+            error_message=(
+                f"Handshake returned applied version {applied_update_version}, "
+                f"expected {expected_version}"
+            ),
+            expected_statuses=["running", "accepted", "sent", "queued"],
+        )
+        return
+
+    await op_service.mark_succeeded(
+        operation_id=last_update_operation_id,
+        result_summary=f"confirmed_by_handshake:{applied_update_version}",
+        expected_statuses=["running", "accepted", "sent", "queued"],
+    )
+
 async def handle_handshake(
     ws: web.WebSocketResponse,
     data: dict,
@@ -52,21 +99,21 @@ async def handle_handshake(
     state: Any,
 ) -> Tuple[Optional[web.WebSocketResponse], Optional[str], Optional[str], bool]:
     """
-    РћР±СЂР°Р±РѕС‚РєР° handshake (Protocol V3).
-    Р’РѕР·РІСЂР°С‰Р°РµС‚ (ws РґР»СЏ return РїСЂРё Р·Р°РєСЂС‹С‚РёРё, agent_id, device_id, authenticated) РёР»Рё (None, aid, did, True) РїСЂРё СѓСЃРїРµС…Рµ.
-    Р›РѕРіРёРєР° СЂРµР°Р»РёР·РѕРІР°РЅР° РІ РѕСЃРЅРѕРІРЅРѕРј С†РёРєР»Рµ РЅРёР¶Рµ (Р±Р»РѕРє if msg_type == "handshake"); РїСЂРё СЂРµС„Р°РєС‚РѕСЂРёРЅРіРµ РїРµСЂРµРЅРµСЃС‚Рё СЃСЋРґР°.
+    Обработка handshake (Protocol V3).
+    Возвращает (ws для return при закрытии, agent_id, device_id, authenticated) или (None, aid, did, True) при успехе.
+    Логика реализована в основном цикле ниже (блок if msg_type == "handshake"); при рефакторинге перенести сюда.
     """
     agent_id = None
     device_id = None
     authenticated = False
 
-    # Phase E: РЎС‚СЂРѕРіР°СЏ РІР°Р»РёРґР°С†РёСЏ protocol_version
+    # Phase E: Строгая валидация protocol_version
     protocol_version = data.get("protocol_version")
     
-    # РљР РРўРР§РќРћ: С‚СЂРµР±СѓРµРј ws_ticket_v3 (Phase E)
+    # КРИТИЧНО: требуем ws_ticket_v3 (Phase E)
     if protocol_version != "ws_ticket_v3":
         logger.error(
-            f"рџ”ґ Invalid protocol_version: {protocol_version}, "
+            f"🔴 Invalid protocol_version: {protocol_version}, "
             f"expected ws_ticket_v3"
         )
         await ws.close(
@@ -75,7 +122,7 @@ async def handle_handshake(
         )
         return (ws, agent_id, device_id, authenticated)
     
-    # Phase E: РџСЂРѕРІРµСЂСЏРµРј РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ capabilities
+    # Phase E: Проверяем обязательные capabilities
     meta = data.get("meta", {})
     capabilities = meta.get("capabilities", [])
     required_capabilities = {
@@ -87,7 +134,7 @@ async def handle_handshake(
     
     if missing_capabilities:
         logger.error(
-            f"рџ”ґ Missing required capabilities: {missing_capabilities}"
+            f"🔴 Missing required capabilities: {missing_capabilities}"
         )
         await ws.close(
             code=4003,
@@ -95,7 +142,7 @@ async def handle_handshake(
         )
         return (ws, agent_id, device_id, authenticated)
     
-    # Phase 3: РџСЂРѕРІРµСЂСЏРµРј С‚РѕРєРµРЅ РґР»СЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё С‡РµСЂРµР· Р‘Р”
+    # Phase 3: Проверяем токен для аутентификации через БД
     token = data.get("token")
     logger.debug(
         f"Handshake: token received=%s prefix=%s",
@@ -104,8 +151,8 @@ async def handle_handshake(
     )
     loop_safety_service = AgentLoopSafetyService()
     
-    # РР·РІР»РµРєР°РµРј device_id РёР· payload РґР»СЏ РѕС‚СЃР»РµР¶РёРІР°РЅРёСЏ РїРѕРїС‹С‚РѕРє РїРѕРґРєР»СЋС‡РµРЅРёСЏ
-    # РџСЂРѕРІРµСЂСЏРµРј РІ СЂР°Р·РЅС‹С… РјРµСЃС‚Р°С…: РєРѕСЂРµРЅСЊ СЃРѕРѕР±С‰РµРЅРёСЏ, payload, meta
+    # Извлекаем device_id из payload для отслеживания попыток подключения
+    # Проверяем в разных местах: корень сообщения, payload, meta
     payload_device_id = (
         data.get("device_id") or 
         data.get("payload", {}).get("device_id") or
@@ -115,7 +162,7 @@ async def handle_handshake(
     
     connection_request_service = ConnectionRequestService()
     if not token:
-        logger.warning("рџ”ґ РџРѕРїС‹С‚РєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ Р±РµР· С‚РѕРєРµРЅР°")
+        logger.warning("🔴 Попытка подключения без токена")
         # Persist pending attempt in DB for admin visibility.
         if payload_device_id:
             await connection_request_service.record_unauthorized_attempt(
@@ -128,12 +175,12 @@ async def handle_handshake(
         await ws.close(code=4003, message=b"Token required")
         return (ws, agent_id, device_id, authenticated)
     
-    # РџСЂРѕРІРµСЂСЏРµРј С‚РѕРєРµРЅ С‡РµСЂРµР· AuthService (Р‘Р”)
+    # Проверяем токен через AuthService (БД)
     token_service = AgentTokenService()
     token_info = await token_service.verify_agent_token(token)
     
     if not token_info:
-        logger.warning(f"рџ”ґ РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ Р°РіРµРЅС‚Р°: {token[:8]}...")
+        logger.warning(f"🔴 Невалидный токен агента: {token[:8]}...")
         # Persist pending attempt with invalid token reason.
         if payload_device_id:
             await connection_request_service.record_unauthorized_attempt(
@@ -146,11 +193,11 @@ async def handle_handshake(
         await ws.close(code=4003, message=b"Invalid token")
         return (ws, agent_id, device_id, authenticated)
     
-    # РљР РРўРР§РќРћ: device_id Р±РµСЂРµС‚СЃСЏ РёР· С‚РѕРєРµРЅР°, РЅРµ РёР· payload
+    # КРИТИЧНО: device_id берется из токена, не из payload
     device_id = token_info["device_id"]
     agent_id = device_id
     
-    # РЎРѕР·РґР°РµРј AuthContext РґР»СЏ СЌС‚РѕРіРѕ СЃРѕРµРґРёРЅРµРЅРёСЏ
+    # Создаем AuthContext для этого соединения
     auth_context = AuthContext(
         actor_id=device_id,
         actor_role="agent",
@@ -158,30 +205,30 @@ async def handle_handshake(
         token=token
     )
     
-    # РўРѕРєРµРЅ РІР°Р»РёРґРµРЅ - СЂР°Р·СЂРµС€Р°РµРј СЂР°Р±РѕС‚Сѓ
+    # Токен валиден - разрешаем работу
     authenticated = True
     
-    # РџСЂРѕРІРµСЂСЏРµРј, С‡С‚Рѕ device_id РёР· payload СЃРѕРІРїР°РґР°РµС‚ СЃ С‚РѕРєРµРЅРѕРј (РµСЃР»Рё СѓРєР°Р·Р°РЅ)
+    # Проверяем, что device_id из payload совпадает с токеном (если указан)
     payload_device_id = data.get("device_id")
     if payload_device_id and payload_device_id != device_id:
         logger.warning(
-            f"рџ”ґ Device ID mismatch: token={device_id}, payload={payload_device_id}. "
+            f"🔴 Device ID mismatch: token={device_id}, payload={payload_device_id}. "
             f"Using device_id from token."
         )
     
-    # Р РµРіРёСЃС‚СЂРёСЂСѓРµРј Р°РіРµРЅС‚Р°
+    # Регистрируем агента
     metadata = {
         "device_id": device_id,
         "agent_version": data.get("agent_version", "unknown"),
         "modules": data.get("modules", []),
-        "protocol_version": protocol_version,  # Phase E: СЃРѕС…СЂР°РЅСЏРµРј
-        "capabilities": capabilities,  # Phase E: СЃРѕС…СЂР°РЅСЏРµРј
+        "protocol_version": protocol_version,  # Phase E: сохраняем
+        "capabilities": capabilities,  # Phase E: сохраняем
         "connected_at": time.time(),
         "last_seen": time.time(),
         "status": "online",
-        "pending_futures": {},  # Dict[str, asyncio.Future] РґР»СЏ РїР°СЂР°Р»Р»РµР»СЊРЅС‹С… Р·Р°РїСЂРѕСЃРѕРІ
-        "auth_context": auth_context,  # Phase 3: СЃРѕС…СЂР°РЅСЏРµРј AuthContext
-        "token": token,  # Р”Р»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё (deprecated)
+        "pending_futures": {},  # Dict[str, asyncio.Future] для параллельных запросов
+        "auth_context": auth_context,  # Phase 3: сохраняем AuthContext
+        "token": token,  # Для обратной совместимости (deprecated)
         "ws": ws
     }
     payload_pre = data.get("payload", {}) or data.get("meta", {})
@@ -192,10 +239,10 @@ async def handle_handshake(
         metadata["last_update_operation_id"] = payload_pre["last_update_operation_id"]
     state.register_agent(agent_id, ws, metadata)
     
-    logger.success(f"вњ… РђРіРµРЅС‚ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ: {device_id}")
+    logger.success(f"✅ Агент зарегистрирован: {device_id}")
     logger.info(f"   Protocol: {protocol_version}")
     logger.info(f"   Capabilities: {capabilities}")
-    logger.info(f"   РњРѕРґСѓР»Рё: {data.get('modules', [])}")
+    logger.info(f"   Модули: {data.get('modules', [])}")
     
     # Device Registry: upsert device and check toolset_hash
     desired_revision = 0
@@ -209,7 +256,7 @@ async def handle_handshake(
                 devices_repo = DevicesRepo(session)
                 config_repo = DeviceConfigRepo(session)
                 
-                # Р§РёС‚Р°РµРј os, toolset_hash, tools_count РёР· payload (Р°РіРµРЅС‚ С€Р»С‘С‚ РІ payload)
+                # Читаем os, toolset_hash, tools_count из payload (агент шлёт в payload)
                 payload = data.get("payload", {})
                 agent_toolset_hash = payload.get("toolset_hash") or meta.get("toolset_hash")
                 agent_version = payload.get("agent_version") or data.get("agent_version", "unknown")
@@ -237,6 +284,13 @@ async def handle_handshake(
                     tools_version=tools_version,
                     toolset_hash=agent_toolset_hash,
                     metadata=metadata_db
+                )
+                await _confirm_update_operation_from_handshake(
+                    session=session,
+                    state=state,
+                    device_id=device_id,
+                    applied_update_version=payload.get("applied_update_version"),
+                    last_update_operation_id=payload.get("last_update_operation_id"),
                 )
                 
                 # Get or create config
@@ -276,7 +330,7 @@ async def handle_handshake(
                         f"[handshake] Toolset hash unchanged: {agent_toolset_hash}"
                     )
                 
-                # Process modules_inventory if present (payload СѓР¶Рµ РїРѕР»СѓС‡РµРЅ РІС‹С€Рµ)
+                # Process modules_inventory if present (payload уже получен выше)
                 modules_inventory = payload.get("modules_inventory")
                 if isinstance(modules_inventory, list):
                     from websocket.modules_sync import sync_modules_inventory
@@ -315,8 +369,8 @@ async def handle_handshake(
     if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             async with get_session() as session:
-                # РљР РРўРР§РќРћ: Р»РѕРєР°Р»СЊРЅС‹Р№ РёРјРїРѕСЂС‚ вЂ” РІ СЌС‚РѕР№ Р¶Рµ С„СѓРЅРєС†РёРё РµСЃС‚СЊ РґСЂСѓРіРёРµ РёРјРїРѕСЂС‚С‹ TicketEventsRepo,
-                # РёР·-Р·Р° С‡РµРіРѕ РёРјСЏ СЃС‡РёС‚Р°РµС‚СЃСЏ Р»РѕРєР°Р»СЊРЅС‹Рј Рё РІ РґР°РЅРЅРѕР№ РІРµС‚РєРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РЅРµ РѕРїСЂРµРґРµР»РµРЅРѕ
+                # КРИТИЧНО: локальный импорт — в этой же функции есть другие импорты TicketEventsRepo,
+                # из-за чего имя считается локальным и в данной ветке может быть не определено
                 from app.repos import TicketEventsRepo as _TicketEventsRepo
                 if not DB_AVAILABLE:
                     logger.warning(
@@ -334,22 +388,22 @@ async def handle_handshake(
                 f"[handshake] Failed to fetch open tickets: {e}"
             )
     
-    # Phase E: РћС‚РїСЂР°РІР»СЏРµРј handshake_ack СЃ server_capabilities Рё desired_revision
+    # Phase E: Отправляем handshake_ack с server_capabilities и desired_revision
     from config import SERVER_CAPABILITIES
     
     handshake_ack = {
         "type": "handshake_ack",
         "request_id": data.get("request_id"),
         "device_id": device_id,
-        "protocol_version": "ws_ticket_v3",  # Phase E: РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ
+        "protocol_version": "ws_ticket_v3",  # Phase E: обязательно
         "trace_id": data.get("trace_id") or str(uuid.uuid4()),
         "payload": {
             "status": "success",
             "message": "Handshake accepted",
-            "server_version": "3.0.0",  # Phase E: РІРµСЂСЃРёСЏ СЃРµСЂРІРµСЂР°
+            "server_version": "3.0.0",  # Phase E: версия сервера
             "open_tickets": open_tickets,  # Phase D: Send open tickets
             "desired_revision": desired_revision,  # Device config revision
-            "server_capabilities": SERVER_CAPABILITIES  # РР· config.py
+            "server_capabilities": SERVER_CAPABILITIES  # Из config.py
         },
         "meta": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -357,20 +411,20 @@ async def handle_handshake(
         }
     }
     await ws.send_json(handshake_ack)
-    logger.debug(f"рџ“¤ РћС‚РїСЂР°РІР»РµРЅ handshake_ack Р°РіРµРЅС‚Сѓ {device_id}")
+    logger.debug(f"📤 Отправлен handshake_ack агенту {device_id}")
     if open_tickets:
         logger.debug(
-            f"рџ“¤ РћС‚РїСЂР°РІР»РµРЅРѕ {len(open_tickets)} РѕС‚РєСЂС‹С‚С‹С… С‚РёРєРµС‚РѕРІ "
+            f"📤 Отправлено {len(open_tickets)} открытых тикетов "
             f"РІ handshake_ack"
         )
     
-    # Enqueue list_tools if needed (СЃ debounce: РЅРµ СЃС‚Р°РІРёРј, РµСЃР»Рё СѓР¶Рµ РµСЃС‚СЊ pending list_tools)
+    # Enqueue list_tools if needed (с debounce: не ставим, если уже есть pending list_tools)
     if should_request_toolset and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             from websocket.protocol import enqueue_command_async
             from app.repos import DevicesRepo, OperationsRepo
             
-            # Р—Р°С‰РёС‚Р° РѕС‚ С€С‚РѕСЂРјР°: РЅРµ enqueue list_tools, РµСЃР»Рё СѓР¶Рµ РµСЃС‚СЊ РѕР¶РёРґР°СЋС‰Р°СЏ РѕРїРµСЂР°С†РёСЏ
+            # Защита от шторма: не enqueue list_tools, если уже есть ожидающая операция
             async with get_session() as session:
                 op_repo = OperationsRepo(session)
                 if await op_repo.has_pending_list_tools(device_id):
@@ -382,7 +436,7 @@ async def handle_handshake(
             if not should_request_toolset:
                 pass  # skip enqueue below
             else:
-                # Enqueue list_tools command (СЃРѕР·РґР°РµС‚ РѕРїРµСЂР°С†РёСЋ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё)
+                # Enqueue list_tools command (создает операцию автоматически)
                 command_id = await enqueue_command_async(
                 state=state,
                 device_id=device_id,
@@ -409,8 +463,8 @@ async def handle_handshake(
                 exc_info=True
             )
 
-# в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
+# в"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓ
 # b) type == "pong"
-# в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ
+# в"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓв"Ѓ
 
     return (None, agent_id, device_id, authenticated)

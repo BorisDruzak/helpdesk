@@ -215,14 +215,14 @@ async def send_ws_command(
     but persistence ensures commands survive server restarts.
     
     КРИТИЧНО: actor_role берется из auth_context, не из параметра.
-    Параметр actor_role оставлен для обратной совместимости (deprecated).
+    Параметр actor_role сохраняется только для совместимости; новый код должен передавать auth_context.
     
     Args:
         state: StateManager instance
         device_id: ID устройства агента
         command: Имя команды
         params: Параметры команды
-        actor_role: Роль актора (DEPRECATED: используйте auth_context)
+        actor_role: Роль актора (compatibility only; use auth_context in new code)
         auth_context: AuthContext с actor_role (приоритет над actor_role параметром)
         timeout: Таймаут ожидания ответа в секундах
         trace_id: Optional trace ID for correlation

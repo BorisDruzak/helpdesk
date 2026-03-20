@@ -178,9 +178,9 @@ class AuthService:
     
     def generate_token(self, uuid_str: str, login: str) -> str:
         """
-        Legacy method for backward compatibility.
+        Compatibility method for older integrations.
         
-        DEPRECATED: Use generate_agent_token() instead.
+        Prefer generate_agent_token() for new code.
         This method still works but uses legacy in-process storage.
         
         Args:
@@ -264,9 +264,9 @@ class AuthService:
     
     def verify_token(self, token: str) -> Optional[dict]:
         """
-        Legacy method for backward compatibility.
+        Compatibility method for older integrations.
         
-        DEPRECATED: Use verify_agent_token() or verify_ui_token() instead.
+        Prefer verify_agent_token() or verify_ui_token() for new code.
         This method checks legacy in-process storage only.
         
         Args:
@@ -318,9 +318,9 @@ class AuthService:
     
     def revoke_token(self, token: str) -> None:
         """
-        Legacy method for backward compatibility.
+        Compatibility method for older integrations.
         
-        DEPRECATED: Use revoke_agent_token() or revoke_ui_token() instead.
+        Prefer revoke_agent_token() or revoke_ui_token() for new code.
         
         Args:
             token: Токен для отзыва

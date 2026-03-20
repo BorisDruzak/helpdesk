@@ -118,6 +118,7 @@
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
 - **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
 - **аутентификация, токен** — `core/identity.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
+- **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`
 - **SQLite, миграции схемы** — `core/database.py` (DB_SCHEMA_VERSION), `docs/DATABASE.md`

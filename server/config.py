@@ -206,7 +206,7 @@ WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
     os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
 )
 # Internal dispatch runtime mode for server->agent outbox delivery:
-# - poll: legacy poll-all sender loop
+# - poll: compatibility/rollback poll-all sender loop
 # - sharded: per-device queue + shard workers + reconcile sweep
 DEVICE_DISPATCH_MODE = (os.getenv("DEVICE_DISPATCH_MODE", "sharded") or "sharded").strip().lower()
 DEVICE_DISPATCH_SHARDS = int(os.getenv("DEVICE_DISPATCH_SHARDS", "4"))

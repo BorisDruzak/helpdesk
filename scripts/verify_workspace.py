@@ -104,11 +104,10 @@ def run_py_compile(workspace: Path, files: list[Path]) -> list[str]:
                 [sys.executable, str(helper_path), *batch],
                 cwd=workspace,
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
+                text=False,
             )
             if result.returncode != 0:
-                output = (result.stdout + "\n" + result.stderr).strip()
+                output = _combined_output(result)
                 failures.extend([line for line in output.splitlines() if line.strip()])
     finally:
         helper_path.unlink(missing_ok=True)
@@ -118,6 +117,21 @@ def run_py_compile(workspace: Path, files: list[Path]) -> list[str]:
 def batched(items: list[str], size: int) -> Iterable[list[str]]:
     for index in range(0, len(items), size):
         yield items[index:index + size]
+
+
+def _decode_output(raw: bytes | None) -> str:
+    if not raw:
+        return ""
+    for encoding in ("utf-8", "cp1251", sys.getdefaultencoding()):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _combined_output(result: subprocess.CompletedProcess[bytes]) -> str:
+    return (_decode_output(result.stdout) + "\n" + _decode_output(result.stderr)).strip()
 
 
 def which(name: str) -> str | None:
@@ -146,11 +160,10 @@ def run_node_syntax(workspace: Path, files: list[Path]) -> list[str]:
             [node, "-c", str(path)],
             cwd=workspace,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
+            text=False,
         )
         if result.returncode != 0:
-            output = (result.stdout + "\n" + result.stderr).strip()
+            output = _combined_output(result)
             failures.append(f"{path}: {output}")
     return failures
 
@@ -163,12 +176,11 @@ def run_smoke(workspace: Path, base_url: str) -> list[str]:
         cwd=workspace,
         env=env,
         capture_output=True,
-        text=True,
-        encoding="utf-8",
+        text=False,
     )
     if result.returncode == 0:
         return []
-    output = (result.stdout + "\n" + result.stderr).strip()
+    output = _combined_output(result)
     return [line for line in output.splitlines() if line.strip()]
 
 
@@ -177,12 +189,11 @@ def run_docs_drift(workspace: Path) -> list[str]:
         [sys.executable, str(workspace / "scripts" / "docs_drift_check.py")],
         cwd=workspace,
         capture_output=True,
-        text=True,
-        encoding="utf-8",
+        text=False,
     )
     if result.returncode == 0:
         return []
-    output = (result.stdout + "\n" + result.stderr).strip()
+    output = _combined_output(result)
     return [line for line in output.splitlines() if line.strip()]
 
 

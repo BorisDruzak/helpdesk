@@ -1,5 +1,5 @@
 """
-HTTP РѕР±СЂР°Р±РѕС‚С‡РёРєРё РґР»СЏ modules API (СѓРїСЂР°РІР»РµРЅРёРµ РґРёРЅР°РјРёС‡РµСЃРєРёРјРё РјРѕРґСѓР»СЏРјРё).
+HTTP обработчики для modules API (управление динамическими модулями).
 """
 
 import asyncio
@@ -185,28 +185,28 @@ async def handle_install_module_package(request):
     """
     Legacy endpoint: POST /api/install_module_package
     
-    Р”Р»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё:
-    1. Р•СЃР»Рё РјРѕРґСѓР»СЊ СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅ (РїРѕ sha256) в†’ РёСЃРїРѕР»СЊР·СѓРµС‚ download_url
-    2. РРЅР°С‡Рµ в†’ СЃРѕС…СЂР°РЅСЏРµС‚ РЅР° РґРёСЃРє, Р·Р°С‚РµРј РёСЃРїРѕР»СЊР·СѓРµС‚ download_url
-    3. Fallback: РµСЃР»Рё download_url РЅРµ СЂР°Р±РѕС‚Р°РµС‚, РёСЃРїРѕР»СЊР·СѓРµС‚ package_b64
+    Для обратной совместимости:
+    1. Если модуль уже загружен (по sha256) → использует download_url
+    2. Иначе → сохраняет на диск, затем использует download_url
+    3. Fallback: если download_url не работает, использует package_b64
     
-    РљР РРўРР§РќРћ: Р”РѕР»Р¶РµРЅ РІРѕР·РІСЂР°С‰Р°С‚СЊ operation_id РґР»СЏ РµРґРёРЅРѕРѕР±СЂР°Р·РёСЏ СЃ РЅРѕРІС‹Рј API.
-    РЎРѕС…СЂР°РЅСЏРµС‚ СЃС‚Р°СЂС‹Рµ РїРѕР»СЏ РІ response РґР»СЏ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё СЃРѕ СЃС‚Р°СЂС‹РјРё РєР»РёРµРЅС‚Р°РјРё.
+    КРИТИЧНО: Должен возвращать operation_id для единообразия с новым API.
+    Сохраняет старые поля в response для совместимости со старыми клиентами.
     
-    РџРѕР»СЏ С„РѕСЂРјС‹:
-    - device_id: string (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - name: string (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ) - РёРјСЏ РјРѕРґСѓР»СЏ
-    - version: string (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ) - РІРµСЂСЃРёСЏ РјРѕРґСѓР»СЏ
+    Поля формы:
+    - device_id: string (обязательно)
+    - name: string (обязательно) - имя модуля
+    - version: string (обязательно) - версия модуля
     - actor_role: string (optional, default "admin")
-    - sha256: string (optional) - РѕР¶РёРґР°РµРјС‹Р№ С…СЌС€ РґР»СЏ РїСЂРѕРІРµСЂРєРё
-    - file: Р±РёРЅР°СЂРЅС‹Р№ ZIP (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ) - Р°СЂС…РёРІ РјРѕРґСѓР»СЏ
+    - sha256: string (optional) - ожидаемый хэш для проверки
+    - file: бинарный ZIP (обязательно) - архив модуля
     """
     try:
         state = request.app['state']
         
         logger.info("[SERVER] install_module_package (legacy) RX")
         
-        # Р§РёС‚Р°РµРј multipart/form-data
+        # Читаем multipart/form-data
         reader = await request.multipart()
         
         device_id = None
@@ -230,7 +230,7 @@ async def handle_install_module_package(request):
             elif field.name == "file":
                 file_field = field
         
-        # РџСЂРѕРІРµСЂРєР° РѕР±СЏР·Р°С‚РµР»СЊРЅС‹С… РїРѕР»РµР№
+        # Проверка обязательных полей
         if not device_id:
             return web.json_response({
                 "status": "error",
@@ -257,7 +257,7 @@ async def handle_install_module_package(request):
         
         logger.info(f"[SERVER] install_module_package (legacy) RX device_id={device_id} name={name} version={version}")
         
-        # РџСЂРѕРІРµСЂРєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ Р°РіРµРЅС‚Р°
+        # Проверка подключения агента
         if not state.is_agent_online(device_id):
             logger.warning(f"[SERVER] install_module_package agent {device_id} not connected")
             return web.json_response({
@@ -265,7 +265,7 @@ async def handle_install_module_package(request):
                 "error": f"Agent {device_id} not connected"
             }, status=404)
         
-        # РЎРѕР·РґР°РµРј async iterator РґР»СЏ stream
+        # Создаем async iterator для stream
         async def file_stream():
             while True:
                 chunk = await file_field.read_chunk()
@@ -273,7 +273,7 @@ async def handle_install_module_package(request):
                     break
                 yield chunk
         
-        # РЎРѕС…СЂР°РЅСЏРµРј РЅР° РґРёСЃРє (streaming + sha256)
+        # Сохраняем на диск (streaming + sha256)
         storage_path, computed_sha256, size = await save_module_zip_from_stream(
             stream=file_stream(),
             module_name=name,
@@ -284,7 +284,7 @@ async def handle_install_module_package(request):
         
         logger.info(f"[SERVER] computed sha256={computed_sha256}")
         
-        # РџСЂРѕРІРµСЂРєР° РѕР¶РёРґР°РµРјРѕРіРѕ С…СЌС€Р°, РµСЃР»Рё Р±С‹Р» РїРµСЂРµРґР°РЅ
+        # Проверка ожидаемого хэша, если был передан
         if expected_sha256 and expected_sha256 != computed_sha256:
             logger.error(f"[SERVER] install_module_package HASH_MISMATCH expected={expected_sha256} computed={computed_sha256}")
             return web.json_response({
@@ -294,13 +294,13 @@ async def handle_install_module_package(request):
                 "computed_sha256": computed_sha256
             }, status=400)
         
-        # РџСЂРѕРІРµСЂСЏРµРј, РµСЃС‚СЊ Р»Рё РјРѕРґСѓР»СЊ РІ Р‘Р” (РїРѕ sha256)
+        # Проверяем, есть ли модуль в БД (по sha256)
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
             existing_module = await modules_repo.get_module_by_sha256(computed_sha256)
             
             if not existing_module:
-                # РЎРѕР·РґР°РµРј РЅРѕРІСѓСЋ Р·Р°РїРёСЃСЊ РІ Р‘Р”
+                # Создаем новую запись в БД
                 await modules_repo.create_module(
                     module_name=name,
                     version=version,
@@ -315,10 +315,10 @@ async def handle_install_module_package(request):
             else:
                 logger.info(f"Module already exists: {existing_module.module_name}/{existing_module.version}")
         
-        # РџРѕСЃС‚СЂРѕРёС‚СЊ download_url РЅР° РѕСЃРЅРѕРІРµ SERVER_PUBLIC_BASE_URL
+        # Построить download_url на основе SERVER_PUBLIC_BASE_URL
         download_url = f"{SERVER_PUBLIC_BASE_URL}/api/modules/{name}/{version}/download"
         
-        # Enqueue install_module_package С‡РµСЂРµР· enqueue_command_async (fire-and-forget)
+        # Enqueue install_module_package через enqueue_command_async (fire-and-forget)
         command_id = await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -329,16 +329,16 @@ async def handle_install_module_package(request):
                 "download_url": download_url,
                 "sha256": computed_sha256,
                 "size": size,
-                "package_b64": None  # РћРїС†РёРѕРЅР°Р»СЊРЅРѕ, РґР»СЏ fallback
+                "package_b64": None  # Опционально, для fallback
             },
             actor_role=actor_role
         )
         
-        # Р’РѕР·РІСЂР°С‰Р°РµРј СЂРµР·СѓР»СЊС‚Р°С‚ СЃ operation_id (РќРћР’РћР• РїРѕР»Рµ) Рё СЃС‚Р°СЂС‹РјРё РїРѕР»СЏРјРё РґР»СЏ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё
+        # Возвращаем результат с operation_id (НОВОЕ поле) и старыми полями для совместимости
         return web.json_response({
             "status": "success",
-            "operation_id": command_id,  # РќРћР’РћР• РїРѕР»Рµ
-            "request_id": command_id,  # РЎС‚Р°СЂРѕРµ РїРѕР»Рµ (РґР»СЏ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё)
+            "operation_id": command_id,  # НОВОЕ поле
+            "request_id": command_id,  # Старое поле (для совместимости)
             "sha256": computed_sha256,
             "bytes_len": size
         })
@@ -350,7 +350,7 @@ async def handle_install_module_package(request):
             "error": str(e)
         }, status=404)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё install_module_package: {e}")
+        logger.error(f"❌ Ошибка обработки install_module_package: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -360,7 +360,7 @@ async def handle_install_module_package(request):
 
 async def handle_list_installed_modules(request):
     """
-    API СЌРЅРґРїРѕРёРЅС‚ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ СЃРїРёСЃРєР° СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹С… РјРѕРґСѓР»РµР№: POST /api/list_installed_modules
+    API эндпоинт для получения списка установленных модулей: POST /api/list_installed_modules
     
     POST JSON:
     { "device_id": "...", "actor_role": "admin" }
@@ -382,7 +382,7 @@ async def handle_list_installed_modules(request):
         
         res = await send_ws_command(state=state, device_id=device_id, command="list_installed_modules", params={}, actor_role=actor_role)
         
-        # Р’РѕР·РІСЂР°С‰Р°РµРј payload РёР· command_result
+        # Возвращаем payload из command_result
         if isinstance(res, dict) and "payload" in res:
             return web.json_response(res["payload"])
         else:
@@ -395,13 +395,13 @@ async def handle_list_installed_modules(request):
             "error": str(e)
         }, status=404)
     except asyncio.TimeoutError:
-        logger.error(f"вЏ±пёЏ  РўР°Р№РјР°СѓС‚ РєРѕРјР°РЅРґС‹ list_installed_modules")
+        logger.error(f"⏱️  Таймаут команды list_installed_modules")
         return web.json_response({
             "status": "error",
             "error": "Command timeout"
         }, status=504)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё list_installed_modules: {e}")
+        logger.error(f"❌ Ошибка обработки list_installed_modules: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -411,7 +411,7 @@ async def handle_list_installed_modules(request):
 
 async def handle_activate_module(request):
     """
-    API СЌРЅРґРїРѕРёРЅС‚ РґР»СЏ Р°РєС‚РёРІР°С†РёРё РјРѕРґСѓР»СЏ: POST /api/activate_module
+    API эндпоинт для активации модуля: POST /api/activate_module
     
     POST JSON:
     { "device_id": "...", "name": "hello", "version": "0.1.0", "actor_role": "admin" }
@@ -448,7 +448,7 @@ async def handle_activate_module(request):
         params = {"name": name, "version": version}
         res = await send_ws_command(state=state, device_id=device_id, command="activate_module", params=params, actor_role=actor_role)
         
-        # Р’РѕР·РІСЂР°С‰Р°РµРј РїРѕР»РЅС‹Р№ СЂРµР·СѓР»СЊС‚Р°С‚
+        # Возвращаем полный результат
         if isinstance(res, dict) and "payload" in res:
             return web.json_response(res["payload"])
         else:
@@ -461,13 +461,13 @@ async def handle_activate_module(request):
             "error": str(e)
         }, status=404)
     except asyncio.TimeoutError:
-        logger.error(f"вЏ±пёЏ  РўР°Р№РјР°СѓС‚ РєРѕРјР°РЅРґС‹ activate_module")
+        logger.error(f"⏱️  Таймаут команды activate_module")
         return web.json_response({
             "status": "error",
             "error": "Command timeout"
         }, status=504)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё activate_module: {e}")
+        logger.error(f"❌ Ошибка обработки activate_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -477,7 +477,7 @@ async def handle_activate_module(request):
 
 async def handle_rollback_module(request):
     """
-    API СЌРЅРґРїРѕРёРЅС‚ РґР»СЏ РѕС‚РєР°С‚Р° РјРѕРґСѓР»СЏ: POST /api/rollback_module
+    API эндпоинт для отката модуля: POST /api/rollback_module
     
     POST JSON:
     { "device_id": "...", "name": "hello", "actor_role": "admin" }
@@ -560,13 +560,13 @@ async def handle_rollback_module(request):
             "error": str(e)
         }, status=404)
     except asyncio.TimeoutError:
-        logger.error(f"вЏ±пёЏ  РўР°Р№РјР°СѓС‚ РєРѕРјР°РЅРґС‹ rollback_module")
+        logger.error(f"⏱️  Таймаут команды rollback_module")
         return web.json_response({
             "status": "error",
             "error": "Command timeout"
         }, status=504)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё rollback_module: {e}")
+        logger.error(f"❌ Ошибка обработки rollback_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -576,7 +576,7 @@ async def handle_rollback_module(request):
 
 async def handle_deactivate_module(request):
     """
-    API СЌРЅРґРїРѕРёРЅС‚ РґР»СЏ РґРµР°РєС‚РёРІР°С†РёРё РјРѕРґСѓР»СЏ: POST /api/deactivate_module
+    API эндпоинт для деактивации модуля: POST /api/deactivate_module
     
     POST JSON:
     { "device_id": "...", "name": "hello", "actor_role": "admin" }
@@ -606,7 +606,7 @@ async def handle_deactivate_module(request):
         params = {"name": name}
         res = await send_ws_command(state=state, device_id=device_id, command="deactivate_module", params=params, actor_role=actor_role)
         
-        # Р’РѕР·РІСЂР°С‰Р°РµРј РїРѕР»РЅС‹Р№ СЂРµР·СѓР»СЊС‚Р°С‚
+        # Возвращаем полный результат
         if isinstance(res, dict) and "payload" in res:
             return web.json_response(res["payload"])
         else:
@@ -619,13 +619,13 @@ async def handle_deactivate_module(request):
             "error": str(e)
         }, status=404)
     except asyncio.TimeoutError:
-        logger.error(f"вЏ±пёЏ  РўР°Р№РјР°СѓС‚ РєРѕРјР°РЅРґС‹ deactivate_module")
+        logger.error(f"⏱️  Таймаут команды deactivate_module")
         return web.json_response({
             "status": "error",
             "error": "Command timeout"
         }, status=504)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё deactivate_module: {e}")
+        logger.error(f"❌ Ошибка обработки deactivate_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -635,8 +635,8 @@ async def handle_deactivate_module(request):
 
 async def handle_smoke_install_and_run(request):
     """
-    РЈСЃС‚Р°СЂРµРІС€РёР№ СЌРЅРґРїРѕРёРЅС‚: РЅР° Р°РіРµРЅС‚Рµ РЅРµС‚ РєРѕРјР°РЅРґС‹ smoke_install_and_run.
-    РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ: POST /api/devices/{device_id}/modules/install Рё run_tool РґР»СЏ smoke.
+    Устаревший эндпоинт: на агенте нет команды smoke_install_and_run.
+    Использовать: POST /api/devices/{device_id}/modules/install и run_tool для smoke.
     """
     return web.json_response({
         "status": "error",
@@ -651,16 +651,16 @@ async def handle_upload_module(request):
     """
     POST /api/modules/upload
     
-    Р—Р°РіСЂСѓР¶Р°РµС‚ РјРѕРґСѓР»СЊ РЅР° СЃРµСЂРІРµСЂ (СЃРѕС…СЂР°РЅСЏРµС‚ ZIP РЅР° РґРёСЃРє Рё РІ Р‘Р”).
+    Загружает модуль на сервер (сохраняет ZIP на диск и в БД).
     
-    РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·СѓРµС‚ РїРѕС‚РѕРєРѕРІСѓСЋ Р·Р°РїРёСЃСЊ РёР· multipart stream, РЅРµ РґРµСЂР¶РёС‚ РІРµСЃСЊ ZIP РІ РїР°РјСЏС‚Рё.
+    КРИТИЧНО: Использует потоковую запись из multipart stream, не держит весь ZIP в памяти.
     
     Multipart fields:
-    - file: ZIP С„Р°Р№Р» (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ, streaming read)
-    - module_name: string (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - version: string (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
+    - file: ZIP файл (обязательно, streaming read)
+    - module_name: string (обязательно)
+    - version: string (обязательно)
     - actor_role: string (optional, default "admin")
-    - overwrite: string (optional, "true"/"false", default "false") - СЂР°Р·СЂРµС€РёС‚СЊ РїРµСЂРµР·Р°Р»РёРІ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ (module_name, version)
+    - overwrite: string (optional, "true"/"false", default "false") - разрешить перезалив существующего (module_name, version)
     
     Returns:
         200 OK: {
@@ -680,7 +680,7 @@ async def handle_upload_module(request):
         }
     """
     try:
-        # Р§РёС‚Р°РµРј multipart/form-data
+        # Читаем multipart/form-data
         reader = await request.multipart()
         
         module_name = None
@@ -689,8 +689,8 @@ async def handle_upload_module(request):
         overwrite = False
         file_field = None
         
-        # РљР РРўРР§РќРћ: РќСѓР¶РЅРѕ С‡РёС‚Р°С‚СЊ С„Р°Р№Р» РїСЂСЏРјРѕ РІ С†РёРєР»Рµ, Р° РЅРµ СЃРѕС…СЂР°РЅСЏС‚СЊ field РґР»СЏ С‡С‚РµРЅРёСЏ РїРѕСЃР»Рµ
-        # Р’ aiohttp multipart field РЅРµР»СЊР·СЏ С‡РёС‚Р°С‚СЊ РїРѕСЃР»Рµ Р·Р°РІРµСЂС€РµРЅРёСЏ С†РёРєР»Р° async for
+        # КРИТИЧНО: Нужно читать файл прямо в цикле, а не сохранять field для чтения после
+        # В aiohttp multipart field нельзя читать после завершения цикла async for
         file_chunks = []
         
         async for field in reader:
@@ -704,7 +704,7 @@ async def handle_upload_module(request):
                 overwrite_str = (await field.read()).decode('utf-8').strip()
                 overwrite = overwrite_str.lower() == "true"
             elif field.name == "file":
-                # РљР РРўРР§РќРћ: Р§РёС‚Р°РµРј С„Р°Р№Р» РїСЂСЏРјРѕ Р·РґРµСЃСЊ, РІ С†РёРєР»Рµ!
+                # КРИТИЧНО: Читаем файл прямо здесь, в цикле!
                 file_field = field
                 while True:
                     chunk = await field.read_chunk()
@@ -712,7 +712,7 @@ async def handle_upload_module(request):
                         break
                     file_chunks.append(chunk)
         
-        # РџСЂРѕРІРµСЂРєР° РѕР±СЏР·Р°С‚РµР»СЊРЅС‹С… РїРѕР»РµР№
+        # Проверка обязательных полей
         if not module_name:
             return web.json_response({
                 "status": "error",
@@ -846,7 +846,7 @@ async def handle_upload_module(request):
             "error": str(e)
         }, status=400)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё upload_module: {e}")
+        logger.error(f"❌ Ошибка обработки upload_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -858,20 +858,20 @@ async def handle_create_module(request):
     """
     POST /api/modules/create
 
-    РЎРѕР·РґР°С‘С‚ РјРѕРґСѓР»СЊ РёР· В«С‚РѕР»СЊРєРѕ РєРѕРґР° С„СѓРЅРєС†РёРёВ»: РїРѕРґСЃС‚Р°РІР»СЏРµС‚ РєРѕРґ РІ РµРґРёРЅС‹Р№ С€Р°Р±Р»РѕРЅ,
-    СЃРѕР±РёСЂР°РµС‚ manifest.json + module.py, РїСЂРѕРіРѕРЅСЏРµС‚ preflight Рё smoke, СЃРѕС…СЂР°РЅСЏРµС‚ ZIP Рё Р·Р°РїРёСЃСЊ РІ Р‘Р”.
-    Р”РѕСЃС‚СѓРїРЅРѕ РёР· РІРµР±-С„РѕСЂРјС‹ Рё РёР· API (СѓСЃС‚Р°РЅРѕРІРєР° С‡РµСЂРµР· С‚РµСЂРјРёРЅР°Р» Р±РµР· РІРµР±-РїР°РЅРµР»Рё).
+    Создаёт модуль из «только кода функции»: подставляет код в единый шаблон,
+    собирает manifest.json + module.py, прогоняет preflight и smoke, сохраняет ZIP и запись в БД.
+    Доступно из веб-формы и из API (установка через терминал без веб-панели).
 
     JSON body:
-    - module_name (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - version (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - tool_name (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - description (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - user_function_body (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ, С‚РµР»Рѕ async-С„СѓРЅРєС†РёРё)
-    - risk_level (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ: safe_readonly | safe_write | dangerous, default safe_readonly)
-    - overwrite (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ, default false)
+    - module_name (обязательно)
+    - version (обязательно)
+    - tool_name (обязательно)
+    - description (обязательно)
+    - user_function_body (обязательно, тело async-функции)
+    - risk_level (опционально: safe_readonly | safe_write | dangerous, default safe_readonly)
+    - overwrite (опционально, default false)
 
-    Returns: РєР°Рє POST /api/modules/upload (200 + status/success, 400 СЃ preflight_errors, 409 conflict).
+    Returns: как POST /api/modules/upload (200 + status/success, 400 с preflight_errors, 409 conflict).
     """
     try:
         auth_context: AuthContext = request.get("auth_context")
@@ -1053,14 +1053,14 @@ async def handle_download_module(request):
     """
     GET /api/modules/{module_name}/{version}/download
     
-    РЎРєР°С‡РёРІР°РµС‚ ZIP РјРѕРґСѓР»СЏ (streaming).
+    Скачивает ZIP модуля (streaming).
     
-    Phase 6: РўСЂРµР±СѓРµС‚ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё С‡РµСЂРµР· Authorization header (Bearer token).
-    Query param ?token= РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ РєР°Рє fallback (СЃ warning РІ Р»РѕРіР°С…).
-    Р’СЃРµ СЃРєР°С‡РёРІР°РЅРёСЏ Р»РѕРіРёСЂСѓСЋС‚СЃСЏ РІ download_audit РґР»СЏ Р°СѓРґРёС‚Р°.
+    Phase 6: Требует аутентификации через Authorization header (Bearer token).
+    Query param ?token= поддерживается как fallback (с warning в логах).
+    Все скачивания логируются в download_audit для аудита.
     
-    РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·СѓРµС‚ aiohttp.web.FileResponse (СЃР°РјС‹Р№ Р±С‹СЃС‚СЂС‹Р№) РёР»Рё StreamResponse.
-    Р”РѕР±Р°РІР»СЏРµС‚ ETag (sha256) Рё Cache-Control РґР»СЏ РєРѕСЂСЂРµРєС‚РЅРѕРіРѕ РєРµС€РёСЂРѕРІР°РЅРёСЏ.
+    КРИТИЧНО: Использует aiohttp.web.FileResponse (самый быстрый) или StreamResponse.
+    Добавляет ETag (sha256) и Cache-Control для корректного кеширования.
     
     Returns:
         200 OK: ZIP file (streaming, application/zip)
@@ -1068,17 +1068,17 @@ async def handle_download_module(request):
             - Content-Type: application/zip
             - Content-Disposition: attachment; filename="{module_name}-{version}.zip"
             - Content-Length: size
-            - ETag: "{sha256}"  # Р”Р»СЏ conditional requests
-            - Cache-Control: no-store  # РџРѕРєР° РЅРµ РёСЃРїРѕР»СЊР·СѓРµРј РєРµС€ (РјРѕР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ РЅР° public, max-age=...)
+            - ETag: "{sha256}"  # Для conditional requests
+            - Cache-Control: no-store  # Пока не используем кеш (можно изменить на public, max-age=...)
         401: Authentication required
         404: Module not found
-        304: Not Modified (РµСЃР»Рё If-None-Match header СЃРѕРІРїР°РґР°РµС‚ СЃ ETag)
+        304: Not Modified (если If-None-Match header совпадает с ETag)
     """
     try:
-        # Phase 6: РџРѕР»СѓС‡Р°РµРј AuthContext РёР· middleware (СѓР¶Рµ РїСЂРѕРІРµСЂРµРЅ)
+        # Phase 6: Получаем AuthContext из middleware (уже проверен)
         auth_context: AuthContext = request.get('auth_context')
         if not auth_context:
-            # Р­С‚Рѕ РЅРµ РґРѕР»Р¶РЅРѕ РїСЂРѕРёР·РѕР№С‚Рё, РµСЃР»Рё middleware СЂР°Р±РѕС‚Р°РµС‚ РїСЂР°РІРёР»СЊРЅРѕ
+            # Это не должно произойти, если middleware работает правильно
             logger.error(
                 f"[DownloadModule] AuthContext not found in request: module={request.match_info.get('module_name')}, "
                 f"version={request.match_info.get('version')}"
@@ -1102,7 +1102,7 @@ async def handle_download_module(request):
                     "error": "Module not found"
                 }, status=404)
             
-            # РџСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёСЏ С„Р°Р№Р»Р° РЅР° РґРёСЃРєРµ
+            # Проверка существования файла на диске
             full_path = _module_archive_path(module)
             if not full_path.exists():
                 logger.error(
@@ -1114,25 +1114,25 @@ async def handle_download_module(request):
                     status=409,
                 )
             
-            # РџСЂРѕРІРµСЂРєР° If-None-Match (ETag)
+            # Проверка If-None-Match (ETag)
             if_none_match = request.headers.get("If-None-Match", "").strip('"')
             if if_none_match == module.sha256:
                 return web.Response(status=304)  # Not Modified
             
-            # Phase 6: Audit logging - Р»РѕРіРёСЂСѓРµРј СЃРєР°С‡РёРІР°РЅРёРµ
+            # Phase 6: Audit logging - логируем скачивание
             try:
-                # РџРѕР»СѓС‡Р°РµРј С‚РѕРєРµРЅ РёР· auth_context
+                # Получаем токен из auth_context
                 token = auth_context.token
                 if token:
-                    # РҐРµС€РёСЂСѓРµРј С‚РѕРєРµРЅ РґР»СЏ Р±РµР·РѕРїР°СЃРЅРѕСЃС‚Рё
+                    # Хешируем токен для безопасности
                     token_hash = AuthTokensRepo.hash_token(token)
                     token_prefix = AuthTokensRepo.get_token_prefix(token)
                     
-                    # РџРѕР»СѓС‡Р°РµРј IP Р°РґСЂРµСЃ Рё user agent
+                    # Получаем IP адрес и user agent
                     ip_address = request.remote
                     user_agent = request.headers.get("User-Agent")
                     
-                    # РЎРѕР·РґР°РµРј Р·Р°РїРёСЃСЊ РІ audit log
+                    # Создаем запись в audit log
                     audit_record = DownloadAudit(
                         token_hash=token_hash,
                         token_prefix=token_prefix,
@@ -1150,12 +1150,12 @@ async def handle_download_module(request):
                         f"actor_role={auth_context.actor_role}, token_prefix={token_prefix}"
                     )
             except Exception as audit_error:
-                # РќРµ РїСЂРµСЂС‹РІР°РµРј СЃРєР°С‡РёРІР°РЅРёРµ РїСЂРё РѕС€РёР±РєРµ Р°СѓРґРёС‚Р°, РЅРѕ Р»РѕРіРёСЂСѓРµРј
+                # Не прерываем скачивание при ошибке аудита, но логируем
                 logger.error(f"[DownloadModule] Audit logging failed: {audit_error}")
                 logger.exception(audit_error)
             
-            # РСЃРїРѕР»СЊР·СѓРµРј FileResponse РґР»СЏ СЌС„С„РµРєС‚РёРІРЅРѕР№ РѕС‚РґР°С‡Рё С„Р°Р№Р»Р°
-            # РљР РРўРР§РќРћ: FileResponse РїСЂРёРЅРёРјР°РµС‚ str РёР»Рё Path, РЅРѕ Р»СѓС‡С€Рµ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ str
+            # Используем FileResponse для эффективной отдачи файла
+            # КРИТИЧНО: FileResponse принимает str или Path, но лучше использовать str
             response = web.FileResponse(
                 str(full_path),
                 headers={
@@ -1169,7 +1169,7 @@ async def handle_download_module(request):
             return response
     
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё download_module: {e}")
+        logger.error(f"❌ Ошибка обработки download_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -1237,8 +1237,8 @@ async def handle_delete_module(request):
     """
     DELETE /api/modules/{module_name}/{version}
 
-    РЈРґР°Р»СЏРµС‚ РјРѕРґСѓР»СЊ СЃ СЃРµСЂРІРµСЂР°: Р·Р°РїРёСЃСЊ РёР· Р‘Р” Рё С„Р°Р№Р» СЃ РґРёСЃРєР°.
-    РўСЂРµР±СѓРµС‚ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё Рё СЂРѕР»СЊ admin.
+    Удаляет модуль с сервера: запись из БД и файл с диска.
+    Требует аутентификации и роль admin.
 
     Returns:
         200 OK: { "status": "ok", "module_name": "...", "version": "..." }
@@ -1299,7 +1299,7 @@ async def handle_delete_module(request):
         else:
             logger.warning(f"Module file already missing on disk: {full_path}")
 
-        # РЈРґР°Р»СЏРµРј РїСѓСЃС‚С‹Рµ РґРёСЂРµРєС‚РѕСЂРёРё (module_name/version/)
+        # Удаляем пустые директории (module_name/version/)
         try:
             parent = full_path.parent
             if parent.exists() and not any(parent.iterdir()):
@@ -1318,7 +1318,7 @@ async def handle_delete_module(request):
         })
 
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё delete_module: {e}")
+        logger.error(f"❌ Ошибка обработки delete_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -1441,7 +1441,7 @@ async def handle_install_module(request):
     """
     POST /api/devices/{device_id}/modules/install
     
-    РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјРѕРґСѓР»СЊ РЅР° СѓСЃС‚СЂРѕР№СЃС‚РІРѕ (enqueue install_module_package).
+    Устанавливает модуль на устройство (enqueue install_module_package).
     
     JSON body:
     {
@@ -1457,7 +1457,7 @@ async def handle_install_module(request):
         }
     """
     try:
-        # Phase 2: РџРѕР»СѓС‡Р°РµРј actor_role РёР· AuthContext, РЅРµ РёР· JSON body
+        # Phase 2: Получаем actor_role из AuthContext, не из JSON body
         auth_context: AuthContext = request.get('auth_context')
         if not auth_context:
             return web.json_response({
@@ -1472,10 +1472,10 @@ async def handle_install_module(request):
         data = await request.json()
         module_name = data.get("module_name")
         version = data.get("version")
-        # РћРїС†РёРѕРЅР°Р»СЊРЅРѕ: Р·Р°РјРµРЅРёС‚СЊ СЃСѓС‰РµСЃС‚РІСѓСЋС‰СѓСЋ РІРµСЂСЃРёСЋ РїСЂРё РґСЂСѓРіРѕРј SHA (РїРµСЂРµРґР°С‘С‚СЃСЏ Р°РіРµРЅС‚Сѓ РєР°Рє replace_if_different_sha)
+        # Опционально: заменить существующую версию при другом SHA (передаётся агенту как replace_if_different_sha)
         replace_if_exists = data.get("replace_if_exists") or data.get("replace_if_different_sha") or False
         
-        # РљР РРўРР§РќРћ: РРіРЅРѕСЂРёСЂСѓРµРј actor_role РёР· JSON body СЃ warning
+        # КРИТИЧНО: Игнорируем actor_role из JSON body с warning
         if "actor_role" in data:
             logger.warning(
                 f"[handle_install_module] actor_role in JSON body ignored: "
@@ -1497,8 +1497,8 @@ async def handle_install_module(request):
                 "error": "Missing version"
             }, status=400)
         
-        # Phase 4: Policy check РґР»СЏ install_module_package
-        # install_module_package - СЃРёСЃС‚РµРјРЅР°СЏ РѕРїРµСЂР°С†РёСЏ, С‚СЂРµР±СѓРµС‚ admin РёР»Рё system СЂРѕР»СЊ
+        # Phase 4: Policy check для install_module_package
+        # install_module_package - системная операция, требует admin или system роль
         if module_name.lower() in AGENT_BUILTIN_MODULES:
             logger.info(
                 f"[handle_install_module] Builtin module install skipped: "
@@ -1510,9 +1510,9 @@ async def handle_install_module(request):
             return web.json_response(payload, status=202)
 
         install_metadata = ToolMetadata(
-            risk_level="system_write",  # install_module_package - СЃРёСЃС‚РµРјРЅР°СЏ РѕРїРµСЂР°С†РёСЏ
+            risk_level="system_write",  # install_module_package - системная операция
             requires_consent=False,
-            allow_roles=None  # PolicyEngine СЂРµС€Р°РµС‚ РїРѕ risk_level
+            allow_roles=None  # PolicyEngine решает по risk_level
         )
         
         policy_engine = PolicyEngine()
@@ -1522,7 +1522,7 @@ async def handle_install_module(request):
             metadata=install_metadata
         )
         
-        # Р•СЃР»Рё policy Р·Р°РїСЂРµС‰Р°РµС‚ в†’ 403, РѕРїРµСЂР°С†РёСЏ РЅРµ СЃРѕР·РґР°РµС‚СЃСЏ
+        # Если policy запрещает → 403, операция не создается
         if not policy_decision.allow:
             logger.warning(
                 f"[handle_install_module] Policy violation: install_module_package "
@@ -1535,7 +1535,7 @@ async def handle_install_module(request):
                 "required_role": policy_decision.required_role
             }, status=403)
         
-        # Р’Р°Р»РёРґР°С†РёСЏ: module_name, version РґРѕР»Р¶РЅС‹ СЃСѓС‰РµСЃС‚РІРѕРІР°С‚СЊ РІ modules; РїСЂРѕРІРµСЂРєР° РћРЎ СѓСЃС‚СЂРѕР№СЃС‚РІР°
+        # Валидация: module_name, version должны существовать в modules; проверка ОС устройства
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
             module = await modules_repo.get_module(module_name, version)
@@ -1596,7 +1596,7 @@ async def handle_install_module(request):
 
             download_url = f"{SERVER_PUBLIC_BASE_URL}/api/modules/{module_name}/{version}/download"
             
-            # РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ kind="module_install" РґР»СЏ РѕРїРµСЂР°С†РёР№
+            # КРИТИЧНО: Использовать kind="module_install" для операций
             from app.services.operation_service import OperationService
             from websocket.ui_publisher import UiPublisherImpl
             
@@ -1608,7 +1608,7 @@ async def handle_install_module(request):
             await op_service.enqueue_operation(
                 operation_id=operation_id,
                 device_id=device_id,
-                kind="module_install",  # NEW: СЃРїРµС†РёР°Р»СЊРЅС‹Р№ kind РґР»СЏ РјРѕРґСѓР»СЊРЅС‹С… РѕРїРµСЂР°С†РёР№
+                kind="module_install",  # NEW: специальный kind для модульных операций
                 actor_role=actor_role,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
@@ -1616,14 +1616,14 @@ async def handle_install_module(request):
             )
             await session.commit()
             
-            # Enqueue install_module_package С‡РµСЂРµР· enqueue_command_async (fire-and-forget)
+            # Enqueue install_module_package через enqueue_command_async (fire-and-forget)
             params_install = {
                 "module_name": module_name,
                 "module_version": version,
                 "download_url": download_url,
                 "sha256": module.sha256,
                 "size": module.size,
-                "package_b64": None,  # РћРїС†РёРѕРЅР°Р»СЊРЅРѕ, РґР»СЏ fallback
+                "package_b64": None,  # Опционально, для fallback
             }
             if replace_if_exists:
                 params_install["replace_if_different_sha"] = True
@@ -1633,10 +1633,10 @@ async def handle_install_module(request):
                 command="install_module_package",
                 params=params_install,
                 actor_role=actor_role,
-                operation_id=operation_id  # РЎРІСЏР·Р°С‚СЊ СЃ operation
+                operation_id=operation_id  # Связать с operation
             )
 
-            # Р—Р°РїРёСЃС‹РІР°РµРј desired state: С…РѕС‚РёРј СЌС‚РѕС‚ РјРѕРґСѓР»СЊ РЅР° СЌС‚РѕРј СѓСЃС‚СЂРѕР№СЃС‚РІРµ
+            # Записываем desired state: хотим этот модуль на этом устройстве
             try:
                 await set_desired_installed(
                     device_id=device_id,
@@ -1669,7 +1669,7 @@ async def handle_install_module(request):
             "error": str(e)
         }, status=404)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё install_module: {e}")
+        logger.error(f"❌ Ошибка обработки install_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -1681,16 +1681,16 @@ async def handle_bulk_install_modules(request):
     """
     POST /api/modules/bulk_install
 
-    РњР°СЃСЃРѕРІР°СЏ СѓСЃС‚Р°РЅРѕРІРєР° РјРѕРґСѓР»СЏ РЅР° РЅРµСЃРєРѕР»СЊРєРѕ СѓСЃС‚СЂРѕР№СЃС‚РІ.
-    Р”Р»СЏ РєР°Р¶РґРѕРіРѕ device_id СЃС‚Р°РІРёС‚СЃСЏ РєРѕРјР°РЅРґР° install_module_package РІ outbox:
-    РѕРЅР»Р°Р№РЅ-Р°РіРµРЅС‚С‹ РїРѕР»СѓС‡Р°СЋС‚ РєРѕРјР°РЅРґСѓ СЃСЂР°Р·Сѓ, РѕС„Р»Р°Р№РЅ вЂ” РїСЂРё РїРѕРґРєР»СЋС‡РµРЅРёРё РёР· РѕС‡РµСЂРµРґРё.
-    РќР° РєР°Р¶РґРѕРј Р°РіРµРЅС‚Рµ РїСЂРё СѓСЃС‚Р°РЅРѕРІРєРµ СЃРЅР°С‡Р°Р»Р° РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ smoke-РїСЂРѕРІРµСЂРєР°, Р·Р°С‚РµРј СѓСЃС‚Р°РЅРѕРІРєР°.
+    Массовая установка модуля на несколько устройств.
+    Для каждого device_id ставится команда install_module_package в outbox:
+    онлайн-агенты получают команду сразу, офлайн — при подключении из очереди.
+    На каждом агенте при установке сначала выполняется smoke-проверка, затем установка.
 
     JSON body:
-    - module_name (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - version (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)
-    - device_ids (РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ, РјР°СЃСЃРёРІ UUID СѓСЃС‚СЂРѕР№СЃС‚РІ)
-    - replace_if_exists (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ, default false)
+    - module_name (обязательно)
+    - version (обязательно)
+    - device_ids (обязательно, массив UUID устройств)
+    - replace_if_exists (опционально, default false)
 
     Returns:
         202 Accepted: { "status": "accepted", "operations": [ { "device_id", "operation_id" } ] }
@@ -1884,7 +1884,7 @@ async def handle_activate_module_new(request):
     """
     POST /api/devices/{device_id}/modules/activate
     
-    РђРєС‚РёРІРёСЂСѓРµС‚ РјРѕРґСѓР»СЊ РЅР° СѓСЃС‚СЂРѕР№СЃС‚РІРµ (enqueue activate_module).
+    Активирует модуль на устройстве (enqueue activate_module).
     
     JSON body:
     {
@@ -1920,7 +1920,7 @@ async def handle_activate_module_new(request):
                 "error": "Missing version"
             }, status=400)
         
-        # РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ kind="module_activate" РґР»СЏ РѕРїРµСЂР°С†РёР№
+        # КРИТИЧНО: Использовать kind="module_activate" для операций
         from app.services.operation_service import OperationService
         from websocket.ui_publisher import UiPublisherImpl
         
@@ -1933,7 +1933,7 @@ async def handle_activate_module_new(request):
             await op_service.enqueue_operation(
                 operation_id=operation_id,
                 device_id=device_id,
-                kind="module_activate",  # NEW: СЃРїРµС†РёР°Р»СЊРЅС‹Р№ kind РґР»СЏ РјРѕРґСѓР»СЊРЅС‹С… РѕРїРµСЂР°С†РёР№
+                kind="module_activate",  # NEW: специальный kind для модульных операций
                 actor_role=actor_role,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
@@ -1941,7 +1941,7 @@ async def handle_activate_module_new(request):
             )
             await session.commit()
         
-        # Enqueue activate_module С‡РµСЂРµР· enqueue_command_async (fire-and-forget)
+        # Enqueue activate_module через enqueue_command_async (fire-and-forget)
         await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -1951,7 +1951,7 @@ async def handle_activate_module_new(request):
                 "version": version
             },
             actor_role=actor_role,
-            operation_id=operation_id  # РЎРІСЏР·Р°С‚СЊ СЃ operation
+            operation_id=operation_id  # Связать с operation
         )
         await _enqueue_module_followup_sync(
             state=state,
@@ -1972,7 +1972,7 @@ async def handle_activate_module_new(request):
             "error": str(e)
         }, status=404)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё activate_module_new: {e}")
+        logger.error(f"❌ Ошибка обработки activate_module_new: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -1984,7 +1984,7 @@ async def handle_deactivate_module_new(request):
     """
     POST /api/devices/{device_id}/modules/deactivate
     
-    Р”РµР°РєС‚РёРІРёСЂСѓРµС‚ РјРѕРґСѓР»СЊ РЅР° СѓСЃС‚СЂРѕР№СЃС‚РІРµ (enqueue deactivate_module).
+    Деактивирует модуль на устройстве (enqueue deactivate_module).
     
     JSON body:
     {
@@ -2012,7 +2012,7 @@ async def handle_deactivate_module_new(request):
                 "error": "Missing module_name"
             }, status=400)
         
-        # РљР РРўРР§РќРћ: РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ kind="module_deactivate" РґР»СЏ РѕРїРµСЂР°С†РёР№
+        # КРИТИЧНО: Использовать kind="module_deactivate" для операций
         from app.services.operation_service import OperationService
         from websocket.ui_publisher import UiPublisherImpl
         
@@ -2025,7 +2025,7 @@ async def handle_deactivate_module_new(request):
             await op_service.enqueue_operation(
                 operation_id=operation_id,
                 device_id=device_id,
-                kind="module_deactivate",  # NEW: СЃРїРµС†РёР°Р»СЊРЅС‹Р№ kind РґР»СЏ РјРѕРґСѓР»СЊРЅС‹С… РѕРїРµСЂР°С†РёР№
+                kind="module_deactivate",  # NEW: специальный kind для модульных операций
                 actor_role=actor_role,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
@@ -2033,7 +2033,7 @@ async def handle_deactivate_module_new(request):
             )
             await session.commit()
         
-        # Enqueue deactivate_module С‡РµСЂРµР· enqueue_command_async (fire-and-forget)
+        # Enqueue deactivate_module через enqueue_command_async (fire-and-forget)
         await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -2042,7 +2042,7 @@ async def handle_deactivate_module_new(request):
                 "name": module_name
             },
             actor_role=actor_role,
-            operation_id=operation_id  # РЎРІСЏР·Р°С‚СЊ СЃ operation
+            operation_id=operation_id  # Связать с operation
         )
         await _enqueue_module_followup_sync(
             state=state,
@@ -2063,7 +2063,7 @@ async def handle_deactivate_module_new(request):
             "error": str(e)
         }, status=404)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё deactivate_module_new: {e}")
+        logger.error(f"❌ Ошибка обработки deactivate_module_new: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -2075,11 +2075,11 @@ async def handle_sync_modules(request):
     """
     POST /api/devices/{device_id}/modules/sync
     
-    РџСЂРёРЅСѓРґРёС‚РµР»СЊРЅР°СЏ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РјРѕРґСѓР»РµР№:
-    1. Enqueue list_installed_modules (РґР»СЏ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё device_modules)
-    2. Enqueue list_tools (РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ device_toolset_snapshots)
+    Принудительная синхронизация модулей:
+    1. Enqueue list_installed_modules (для синхронизации device_modules)
+    2. Enqueue list_tools (для обновления device_toolset_snapshots)
     
-    РљР РРўРР§РќРћ: Sync Modules РґРѕР»Р¶РЅР° РѕР±РЅРѕРІР»СЏС‚СЊ Рё modules inventory, Рё toolset snapshot.
+    КРИТИЧНО: Sync Modules должна обновлять и modules inventory, и toolset snapshot.
     
     Returns:
         202 Accepted: {
@@ -2096,7 +2096,7 @@ async def handle_sync_modules(request):
         
         from websocket.protocol import enqueue_command_async
         
-        # 1. Enqueue list_installed_modules (РґР»СЏ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё device_modules)
+        # 1. Enqueue list_installed_modules (для синхронизации device_modules)
         modules_op_id = await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -2106,7 +2106,7 @@ async def handle_sync_modules(request):
             trace_id=None
         )
         
-        # 2. Enqueue list_tools (РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ device_toolset_snapshots)
+        # 2. Enqueue list_tools (для обновления device_toolset_snapshots)
         toolset_op_id = await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -2136,7 +2136,7 @@ async def handle_sync_modules(request):
             "error": str(e)
         }, status=404)
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё sync_modules: {e}")
+        logger.error(f"❌ Ошибка обработки sync_modules: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -2150,7 +2150,7 @@ async def handle_remove_module_version(request):
     
     JSON: {"module_name": "...", "version": "..."}
     Returns: {"status": "accepted", "operation_id": "..."}
-    РџРµСЂРµРґ enqueue: capability/version check вЂ” РјРѕРґСѓР»СЊ СЃ С‚Р°РєРѕР№ РІРµСЂСЃРёРµР№ РµСЃС‚СЊ РІ device_modules.
+    Перед enqueue: capability/version check — модуль с такой версией есть в device_modules.
     """
     try:
         device_id = request.match_info["device_id"]
@@ -2172,9 +2172,9 @@ async def handle_remove_module_version(request):
         from app.repos import DeviceModulesRepo
         module_versions = []
 
-        # РџСЂРё force=True РЅРµ РїСЂРѕРІРµСЂСЏРµРј inventory вЂ” СЃСЂР°Р·Сѓ СЃС‚Р°РІРёРј РєРѕРјР°РЅРґСѓ remove_module_version Р°РіРµРЅС‚Сѓ
+        # При force=True не проверяем inventory — сразу ставим команду remove_module_version агенту
         if not force:
-            # Capability/version check: РјРѕРґСѓР»СЊ СЃ РІРµСЂСЃРёРµР№ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІ device_modules (РїРѕ snapshot/inventory)
+            # Capability/version check: модуль с версией должен быть в device_modules (по snapshot/inventory)
             async with get_session() as session:
                 dev_mod_repo = DeviceModulesRepo(session)
                 installed = await dev_mod_repo.get_device_modules(device_id, active_only=False)
@@ -2199,7 +2199,7 @@ async def handle_remove_module_version(request):
             await op_service.enqueue_operation(
                 operation_id=operation_id,
                 device_id=device_id,
-                kind="module_remove_version",  # NEW: СЃРїРµС†РёР°Р»СЊРЅС‹Р№ kind РґР»СЏ РјРѕРґСѓР»СЊРЅС‹С… РѕРїРµСЂР°С†РёР№
+                kind="module_remove_version",  # NEW: специальный kind для модульных операций
                 actor_role="admin",
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
@@ -2215,7 +2215,7 @@ async def handle_remove_module_version(request):
             params={"name": module_name, "version": version},
             actor_role="admin",
             trace_id=None,
-            operation_id=operation_id,  # РЎРІСЏР·Р°С‚СЊ СЃ operation
+            operation_id=operation_id,  # Связать с operation
             require_online=False,
         )
         if len(module_versions) <= 1:
@@ -2244,7 +2244,7 @@ async def handle_remove_module_version(request):
         }, status=202)
     
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё remove_module_version: {e}")
+        logger.error(f"❌ Ошибка обработки remove_module_version: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -2258,8 +2258,8 @@ async def handle_remove_module(request):
     
     JSON: {"module_name": "...", "version": "..." (optional), "force": false}
     Returns: {"status": "accepted", "operation_id": "..."}
-    РџРµСЂРµРґ СѓРґР°Р»РµРЅРёРµРј Р°РіРµРЅС‚ С‚СЂРµР±СѓРµС‚ РґРµР°РєС‚РёРІР°С†РёСЋ: СЃРЅР°С‡Р°Р»Р° РІ РѕС‡РµСЂРµРґСЊ СЃС‚Р°РІРёС‚СЃСЏ deactivate_module,
-    Р·Р°С‚РµРј remove_module (Р°РіРµРЅС‚ РѕР±СЂР°Р±РѕС‚Р°РµС‚ РїРѕ РїРѕСЂСЏРґРєСѓ).
+    Перед удалением агент требует деактивацию: сначала в очередь ставится deactivate_module,
+    затем remove_module (агент обработает по порядку).
     """
     try:
         device_id = request.match_info["device_id"]
@@ -2279,9 +2279,9 @@ async def handle_remove_module(request):
         from websocket.ui_publisher import UiPublisherImpl
         from app.repos import DeviceModulesRepo
 
-        # РџСЂРё force=True РЅРµ РїСЂРѕРІРµСЂСЏРµРј inventory вЂ” СЃСЂР°Р·Сѓ СЃС‚Р°РІРёРј РєРѕРјР°РЅРґС‹ Р°РіРµРЅС‚Сѓ
+        # При force=True не проверяем inventory — сразу ставим команды агенту
         if not force:
-            # Capability check: РјРѕРґСѓР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІ device_modules
+            # Capability check: модуль должен быть в device_modules
             async with get_session() as session:
                 dev_mod_repo = DeviceModulesRepo(session)
                 installed = await dev_mod_repo.get_device_modules(device_id, active_only=False)
@@ -2310,8 +2310,8 @@ async def handle_remove_module(request):
             )
             await session.commit()
         
-        # РђРіРµРЅС‚ РЅРµ СѓРґР°Р»СЏРµС‚ Р°РєС‚РёРІРЅС‹Р№ РјРѕРґСѓР»СЊ: "Deactivate first". РЎС‚Р°РІРёРј РІ РѕС‡РµСЂРµРґСЊ СЃРЅР°С‡Р°Р»Р°
-        # deactivate_module, Р·Р°С‚РµРј remove_module вЂ” Р°РіРµРЅС‚ РѕР±СЂР°Р±РѕС‚Р°РµС‚ РїРѕ РїРѕСЂСЏРґРєСѓ.
+        # Агент не удаляет активный модуль: "Deactivate first". Ставим в очередь сначала
+        # deactivate_module, затем remove_module — агент обработает по порядку.
         await enqueue_command_async(
             state=state,
             device_id=device_id,
@@ -2332,7 +2332,7 @@ async def handle_remove_module(request):
             require_online=False,
         )
 
-        # Р—Р°РїРёСЃС‹РІР°РµРј desired state: С…РѕС‚РёРј РѕС‚СЃСѓС‚СЃС‚РІРёРµ СЌС‚РѕРіРѕ РјРѕРґСѓР»СЏ
+        # Записываем desired state: хотим отсутствие этого модуля
         try:
             await set_desired_absent(
                 device_id=device_id,
@@ -2355,7 +2355,7 @@ async def handle_remove_module(request):
         }, status=202)
     
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё remove_module: {e}")
+        logger.error(f"❌ Ошибка обработки remove_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -2401,7 +2401,7 @@ async def handle_verify_module(request):
             })
     
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё verify_module: {e}")
+        logger.error(f"❌ Ошибка обработки verify_module: {e}")
         logger.exception(e)
         return web.json_response({
             "status": "error",
@@ -2529,8 +2529,8 @@ async def handle_get_desired_diff(request):
     """
     GET /api/devices/{device_id}/modules/desired_diff
 
-    Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂР°Р·РЅРёС†Сѓ РјРµР¶РґСѓ desired state Рё actual state РґР»СЏ СѓСЃС‚СЂРѕР№СЃС‚РІР°.
-    РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РґР»СЏ admin-СЃС‚СЂР°РЅРёС†С‹ РЅР°Р±Р»СЋРґР°РµРјРѕСЃС‚Рё Рё drift detection.
+    Возвращает разницу между desired state и actual state для устройства.
+    Используется для admin-страницы наблюдаемости и drift detection.
     """
     try:
         device_id = request.match_info["device_id"]
@@ -2596,7 +2596,7 @@ async def handle_get_desired_diff(request):
         })
 
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° desired_diff: {e}")
+        logger.error(f"❌ Ошибка desired_diff: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
@@ -2605,7 +2605,7 @@ async def handle_trigger_reconcile(request):
     """
     POST /api/devices/{device_id}/modules/reconcile
 
-    Р—Р°РїСѓСЃРєР°РµС‚ РЅРµРјРµРґР»РµРЅРЅС‹Р№ reconcile РґР»СЏ СѓСЃС‚СЂРѕР№СЃС‚РІР°.
+    Запускает немедленный reconcile для устройства.
     """
     try:
         device_id = request.match_info["device_id"]
@@ -2621,6 +2621,6 @@ async def handle_trigger_reconcile(request):
         })
 
     except Exception as e:
-        logger.error(f"вќЊ РћС€РёР±РєР° trigger_reconcile: {e}")
+        logger.error(f"❌ Ошибка trigger_reconcile: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)

@@ -2083,28 +2083,28 @@ class WSAgent:
 
     async def _request_token_from_console(self) -> bool:
         """
-        Запрашивает токен через консоль (когда GUI отключен).
-        Используется после Invalid token: выводит приглашение и читает ввод в отдельном потоке.
+        Legacy name: now runs automatic reprovision flow.
+        Используется после Invalid token: очищает локальный токен и
+        запускает стандартный connection_request flow без ручного ввода.
         Returns:
-            True если токен введён и сохранён, False если пустой ввод или отмена.
+            True если новый токен получен и сохранён, False в остальных случаях.
         """
-        prompt = "Введите токен (или Enter для выхода): "
-        try:
-            # input() блокирующий — выполняем в пуле потоков, чтобы не блокировать event loop
-            token = await asyncio.to_thread(lambda: input(prompt).strip())
-        except (EOFError, KeyboardInterrupt):
-            logger.warning("Ввод токена прерван")
-            return False
-        if not token:
-            return False
-        self.auth_token = token
-        self.identity_manager.token = token
+        self.identity_manager.clear_token()
         if self.db_manager:
             try:
-                await self.db_manager.save_auth_token(token, self.identity_manager.uuid)
-                logger.info("✅ Токен сохранён в БД агента")
+                await self.db_manager.clear_auth_token(self.identity_manager.uuid)
             except Exception as e:
-                logger.warning(f"⚠️ Не удалось сохранить токен в БД: {e}")
+                logger.warning(f"⚠️ Не удалось очистить токен в БД: {e}")
+
+        await self._publish_connection_state("reprovision_required", "повторный provisioning после invalid token")
+        ok, rejected = await self.request_connection_flow()
+        if rejected:
+            logger.error("❌ Reprovision отклонён администратором")
+            return False
+        if not ok:
+            logger.error("❌ Reprovision неуспешен")
+            return False
+        logger.info("✅ Reprovision завершен, токен обновлён")
         return True
     
     async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> str | None:

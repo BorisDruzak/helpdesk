@@ -45,6 +45,12 @@
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="workbench">
+                        <span class="icon">🧰</span>
+                        <span>Ticket Workbench</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
                     <a href="#" class="tab-link" data-tab="devices">
                         <span class="icon">💻</span>
                         <span>Устройства</span>
@@ -254,6 +260,24 @@
                             <button type="button" class="btn btn-secondary" id="queueManageModalClose">Закрыть</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="tab-workbench" class="tab-content">
+                <div class="page-header">
+                    <h1>Ticket Workbench</h1>
+                    <div class="header-actions">
+                        <span id="workbenchTicketLabel" class="muted">Тикет не выбран</span>
+                        <button type="button" class="btn btn-secondary" id="workbenchBackToQueueBtn">К очереди</button>
+                        <button type="button" class="btn btn-primary" id="workbenchRefreshBtn">Обновить</button>
+                    </div>
+                </div>
+                <div class="section">
+                    <div id="workbenchEmptyState" class="empty-state">
+                        <div class="empty-state-icon">🧭</div>
+                        <p>Выберите тикет из очереди и откройте его в workbench.</p>
+                    </div>
+                    <iframe id="workbenchFrame" title="Ticket Workbench" style="display:none; width:100%; min-height:78vh; border:1px solid #e5e5e7; border-radius:10px; background:#fff;"></iframe>
                 </div>
             </div>
 
@@ -885,6 +909,13 @@
                         <div class="form-group">
                             <label><input type="checkbox" id="agentUpdatesBulkAllOnline" checked> Все онлайн-агенты</label>
                         </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesRolloutMode">Режим rollout</label>
+                            <select id="agentUpdatesRolloutMode">
+                                <option value="bulk">bulk</option>
+                                <option value="canary">canary</option>
+                            </select>
+                        </div>
                         <div class="form-group" id="agentUpdatesBulkDevicesWrap" style="display: none;">
                             <label>Устройства (если не «все»)</label>
                             <select id="agentUpdatesBulkDevices" multiple style="min-height: 100px; width: 100%; max-width: 400px;"></select>
@@ -900,6 +931,12 @@
                         <div class="form-group">
                             <label for="agentUpdatesBulkVersion">Версия (пусто = последняя)</label>
                             <input type="text" id="agentUpdatesBulkVersion" placeholder="например 3.1.0" style="width: 120px;">
+                        </div>
+                        <div class="form-group">
+                            <label><input type="checkbox" id="agentUpdatesRequireCanaryConfirm" checked> Требовать canary-подтверждение перед bulk</label>
+                        </div>
+                        <div class="form-group">
+                            <label><input type="checkbox" id="agentUpdatesCanaryConfirmed"> Canary подтверждён</label>
                         </div>
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary" id="agentUpdatesBulkBtn">Запустить массовое обновление</button>

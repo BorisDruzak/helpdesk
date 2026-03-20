@@ -20,12 +20,12 @@ async def handle_outbox_item(
     event_validator: Any,
 ) -> bool:
     """
-    Deprecated internal adapter.
+    Compatibility adapter for transitional pipeline.
 
     Kept for one compatibility cycle; production pipeline uses
     `OutboxIngestService` directly from `agent_handler.py`.
     """
-    logger.debug("[agent_outbox_ingest] deprecated wrapper invoked")
+    logger.debug("[agent_outbox_ingest] compatibility adapter invoked")
     service = OutboxIngestService(
         legacy_handler=None,
         batch_ack_manager=batch_ack_manager,

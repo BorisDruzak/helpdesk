@@ -437,6 +437,16 @@ class DeviceOutboxRepo:
             )
         
         return True
+
+    async def get_by_command_id(self, command_id: str) -> Optional[DeviceOutbox]:
+        stmt = (
+            select(DeviceOutbox)
+            .where(DeviceOutbox.command_id == command_id)
+            .order_by(DeviceOutbox.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
     
     async def get_command_by_id(
         self,
