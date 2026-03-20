@@ -48,7 +48,11 @@ class SseClient:
             except Exception as e:
                 logger.debug(f"Ошибка закрытия SSE session: {e}")
     
-    async def run(self, on_event_cb: Callable[[dict], None]):
+    async def run(
+        self,
+        on_event_cb: Callable[[dict], None],
+        on_connection_change: Optional[Callable[[bool], None]] = None,
+    ):
         """
         Запускает вечный цикл подключения с авто-reconnect.
         
@@ -58,6 +62,7 @@ class SseClient:
         self._running = True
         
         while self._running:
+            connection_notified = False
             try:
                 # Создаем новую сессию для каждого подключения
                 self._session = aiohttp.ClientSession()
@@ -72,10 +77,15 @@ class SseClient:
                     self._response = response
                     if response.status != 200:
                         logger.error(f"Ошибка подключения к SSE: HTTP {response.status}")
+                        if on_connection_change:
+                            on_connection_change(False)
                         await asyncio.sleep(5)
                         continue
                     
                     logger.success("SSE соединение установлено")
+                    if on_connection_change:
+                        on_connection_change(True)
+                        connection_notified = True
                     
                     # Буфер для накопления данных
                     buffer = b""
@@ -119,6 +129,8 @@ class SseClient:
             except Exception as e:
                 logger.error(f"Неожиданная ошибка в SSE клиенте: {e}")
             finally:
+                if on_connection_change and connection_notified:
+                    on_connection_change(False)
                 try:
                     await self._close_transport()
                 except asyncio.CancelledError:

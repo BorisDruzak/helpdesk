@@ -48,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--smoke-url", help="Optional base URL for scripts/smoke_test.py")
+    parser.add_argument("--skip-docs-drift", action="store_true", help="Skip docs/CODEMAP drift check")
     return parser.parse_args()
 
 
@@ -171,6 +172,20 @@ def run_smoke(workspace: Path, base_url: str) -> list[str]:
     return [line for line in output.splitlines() if line.strip()]
 
 
+def run_docs_drift(workspace: Path) -> list[str]:
+    result = subprocess.run(
+        [sys.executable, str(workspace / "scripts" / "docs_drift_check.py")],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode == 0:
+        return []
+    output = (result.stdout + "\n" + result.stderr).strip()
+    return [line for line in output.splitlines() if line.strip()]
+
+
 def main() -> None:
     args = parse_args()
     files = list(iter_files(args.workspace))
@@ -180,6 +195,8 @@ def main() -> None:
     failures.extend(run_py_compile(args.workspace, files))
     node_results = run_node_syntax(args.workspace, files)
     failures.extend([item for item in node_results if "skipped" not in item])
+    if not args.skip_docs_drift:
+        failures.extend(run_docs_drift(args.workspace))
 
     if args.smoke_url:
         failures.extend(run_smoke(args.workspace, args.smoke_url))

@@ -4,6 +4,22 @@
 
 ---
 
+## 0. Операционный старт
+
+- Если задача начинается с diff, сначала выполните `python scripts/diff_context.py`.
+- Если тема пересекает сервер и агент или неясно, где вход, откройте `docs/QUICK_LOOKUP.md`.
+- Для точечного поиска по агенту используйте `python scripts/agent_find.py "<ключевое слово>" --dir pc_agent`.
+
+| Сценарий | Открыть сначала | Затем |
+|------|------------------|-------|
+| Handshake / outbox / ACK | `pc_agent/ws_agent.py` | `pc_agent/core/sender.py`, `pc_agent/docs/PROTOCOL_V3.md` |
+| `run_tool` / команды | `pc_agent/core/orchestrator.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
+| Auth / bootstrap | `pc_agent/auth/token_source.py` | `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
+| GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py` | `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_bridge/api_server.py` |
+| Модули / registry | `pc_agent/core/module_manager.py` | `pc_agent/core/loader.py`, `pc_agent/docs/MODULES.md` |
+
+---
+
 ## 1. Точки входа
 
 | Файл | Назначение |
@@ -91,7 +107,7 @@
 
 ## 3. Быстрый поиск (ключевое слово → файлы)
 
-Используйте поиск по документу или `scripts/agent_find.py <ключевое_слово> --dir pc_agent`. Ниже — куда смотреть в первую очередь.
+Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir pc_agent`. Ниже — куда смотреть в первую очередь.
 
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
@@ -130,7 +146,9 @@
 
 ## 7. Когда обновлять этот CODEMAP
 
-При изменениях, затрагивающих структуру кода агента, этот файл **нужно** обновить (см. правило в `.cursor/rules/codemap.mdc`):
+Каноническая карта агента — этот файл: `pc_agent/docs/CODEMAP.md` (других CODEMAP для дерева `pc_agent/` нет).
+
+При изменениях, затрагивающих структуру кода агента, его **нужно** обновить (сводка критериев — `.cursor/rules/codemap.mdc`):
 
 - добавление/удаление/перенос ключевых модулей или точек входа в `pc_agent/`;
 - новые или переименованные ключевые файлы в core/, modules/, ui_gui/, ui_bridge/;

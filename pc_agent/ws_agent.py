@@ -194,6 +194,23 @@ class WSAgent:
                 "Если ожидается удалённый сервер — проверьте settings.yaml и env overrides."
             )
 
+    async def _publish_connection_state(self, state: str, detail: str = "") -> None:
+        if not self.event_bus:
+            return
+        try:
+            await self.event_bus.publish(
+                {
+                    "event_type": "connection_state",
+                    "data": {
+                        "state": state,
+                        "detail": detail,
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+        except Exception as exc:
+            logger.debug(f"[ui_bridge] connection_state publish skipped: {exc}")
+
     async def _check_server_reachability(self, api_url: str) -> None:
         """
         Быстрый preflight из агента:
@@ -643,8 +660,10 @@ class WSAgent:
                         except asyncio.CancelledError:
                             pass
                     # Останавливаем сам сервер
-                    await self.ui_api_server.stop()
+                    await asyncio.wait_for(self.ui_api_server.stop(), timeout=2.0)
                     logger.info("✅ UI API сервер остановлен")
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ UI API сервер не остановился за 2 секунды")
                 except Exception as e:
                     logger.warning(f"⚠️ Ошибка при остановке UI API сервера: {e}")
                 finally:
@@ -965,6 +984,7 @@ class WSAgent:
             # Handshake ACK
             if msg_type == "handshake_ack":
                 logger.info("✅ Получен handshake_ack от сервера")
+                await self._publish_connection_state("connected", "WS подключён")
                 return
             
             # Protocol V3: outbox_ack (предпочтительный)
@@ -2168,6 +2188,7 @@ class WSAgent:
             flag_path = self._connection_rejected_flag_path()
             if flag_path.exists():
                 logger.warning("Подключение ранее было отклонено администратором. Новые запросы не отправляются.")
+                await self._publish_connection_state("rejected", "подключение отклонено")
                 if self.event_bus:
                     await self.event_bus.publish({
                         "event_type": "connection_rejected",
@@ -2202,10 +2223,12 @@ class WSAgent:
                 while True:
                     should_exit = False
                     try:
+                        await self._publish_connection_state("connecting", "подключение к серверу")
                         logger.info(f"🔄 Подключаюсь к серверу: {get_config().server.ws_url}")
                         
                         async with session.ws_connect(get_config().server.ws_url) as ws:
                             logger.success("✅ Подключено к серверу")
+                            await self._publish_connection_state("authorizing", "ожидание handshake_ack")
                             
                             # Сохраняем ссылку на WebSocket для использования в chat_raise и других методах
                             self._agent_ws = ws
@@ -2343,6 +2366,7 @@ class WSAgent:
                                     error_msg = close_message.decode('utf-8', errors='ignore') if close_message else "Invalid token"
                                     logger.error(f"🔴 Ошибка аутентификации при handshake: {error_msg}")
                                     logger.warning("🔑 Токен невалиден или отсутствует. Требуется ввести новый токен.")
+                                    await self._publish_connection_state("auth_required", "невалидный токен")
                                     
                                     # НЕ очищаем токен сразу - возможно, GUI еще работает или пользователь вставил токен вручную
                                     # Очищаем токен только если GUI не включен или если авторизация через GUI не удалась
@@ -2385,6 +2409,7 @@ class WSAgent:
                                 else:
                                     msg_text = close_message.decode('utf-8', errors='ignore') if close_message else "Unknown"
                                     logger.warning(f"🔌 Соединение закрыто сервером: code={close_code}, message={msg_text}")
+                                    await self._publish_connection_state("disconnected", msg_text)
                                     break
                             
                             # Ждем ответ handshake_ack (опционально, не блокируем если нет)
@@ -2450,6 +2475,7 @@ class WSAgent:
                                             error_msg = close_message.decode('utf-8', errors='ignore') if close_message else "Invalid token"
                                             logger.error(f"🔴 Ошибка аутентификации: {error_msg}")
                                             logger.warning("🔑 Токен невалиден или отсутствует. Требуется ввести новый токен.")
+                                            await self._publish_connection_state("auth_required", "невалидный токен")
                                             
                                             # Очищаем токен
                                             self.identity_manager.clear_token()
@@ -2478,10 +2504,12 @@ class WSAgent:
                                         else:
                                             msg_text = close_message.decode('utf-8', errors='ignore') if close_message else "Unknown"
                                             logger.warning(f"🔌 Соединение закрыто сервером: code={close_code}, message={msg_text}")
+                                            await self._publish_connection_state("disconnected", msg_text)
                                         break
                                         
                                     elif msg.type == WSMsgType.ERROR:
                                         logger.error(f"❌ Ошибка WebSocket: {ws.exception()}")
+                                        await self._publish_connection_state("disconnected", "ошибка websocket")
                                         break
                             except asyncio.CancelledError:
                                 logger.info("🛑 Получен сигнал отмены, завершаю работу...")
@@ -2496,6 +2524,7 @@ class WSAgent:
                                         error_msg = close_message.decode('utf-8', errors='ignore') if close_message else "Invalid token"
                                         logger.error(f"🔴 Ошибка аутентификации (при чтении): {error_msg}")
                                         logger.warning("🔑 Токен невалиден или отсутствует. Требуется ввести новый токен.")
+                                        await self._publish_connection_state("auth_required", "невалидный токен")
                                         
                                         # Очищаем токен
                                         self.identity_manager.clear_token()
@@ -2523,8 +2552,10 @@ class WSAgent:
                                             should_exit = True
                                     else:
                                         logger.error(f"❌ Ошибка при чтении сообщений: {read_error}")
+                                        await self._publish_connection_state("disconnected", "ошибка чтения")
                                 else:
                                     logger.error(f"❌ Неожиданная ошибка при чтении: {read_error}")
+                                    await self._publish_connection_state("disconnected", "ошибка чтения")
                             finally:
                                 # Если соединение было закрыто до начала чтения - проверяем код закрытия
                                 if not first_msg_processed and ws.closed:
@@ -2535,6 +2566,7 @@ class WSAgent:
                                         error_msg = close_message.decode('utf-8', errors='ignore') if close_message else "Invalid token"
                                         logger.error(f"🔴 Ошибка аутентификации при handshake: {error_msg}")
                                         logger.warning("🔑 Токен невалиден или отсутствует. Требуется ввести новый токен.")
+                                        await self._publish_connection_state("auth_required", "невалидный токен")
                                         
                                         # Очищаем токен
                                         self.identity_manager.clear_token()
@@ -2588,6 +2620,7 @@ class WSAgent:
                                 logger.info("⏳ Переподключение с новым токеном...")
                             else:
                                 logger.warning("❌ Потеря связи с сервером")
+                                await self._publish_connection_state("disconnected", "соединение потеряно")
                 
                     except asyncio.CancelledError:
                         logger.info("🛑 Получен сигнал отмены в цикле подключения")
@@ -2595,6 +2628,7 @@ class WSAgent:
                     except aiohttp.ClientConnectorError as e:
                         logger.error(f"❌ Ошибка подключения к серверу: {e}")
                         logger.info(f"   Проверьте, что сервер запущен на {get_config().server.ws_url}")
+                        await self._publish_connection_state("disconnected", "сервер недоступен")
                     except aiohttp.WSServerHandshakeError as e:
                         # Ошибка при handshake - возможно проблема с токеном
                         error_msg = str(e)
@@ -2604,6 +2638,7 @@ class WSAgent:
                         if status == 4003 or "4003" in error_msg or (isinstance(message, bytes) and b"Invalid token" in message or b"Token required" in message):
                             logger.error("🔴 Сервер отклонил подключение: невалидный токен")
                             logger.warning("🔑 Требуется ввести новый токен.")
+                            await self._publish_connection_state("auth_required", "невалидный токен")
                             
                             # Очищаем токен
                             self.identity_manager.clear_token()
@@ -2636,9 +2671,11 @@ class WSAgent:
                         else:
                             logger.error(f"❌ Ошибка handshake: {e}")
                             logger.info(f"   Status: {status}, Message: {message}")
+                            await self._publish_connection_state("disconnected", "ошибка handshake")
                     except Exception as e:
                         logger.error(f"❌ Неожиданная ошибка подключения: {e}")
                         logger.exception(e)
+                        await self._publish_connection_state("disconnected", "ошибка подключения")
                     
                     # Проверяем, нужно ли завершить работу
                     if should_exit:

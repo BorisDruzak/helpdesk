@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from navigation_catalog import QUICK_LOOKUP_PATH, find_topics_for_query, repo_path
+
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -232,6 +234,19 @@ def codemap_mentions(pattern: str) -> list[str]:
     return hints
 
 
+def topic_hints(pattern: str, *, max_topics: int) -> list[str]:
+    hints: list[str] = []
+    topics = find_topics_for_query(pattern, limit=max_topics)
+    for topic in topics:
+        first_files = ", ".join(topic.first_files[:3])
+        docs = ", ".join(topic.related_docs[:3])
+        hints.append(f"topic: {topic.title} -> open {first_files}")
+        hints.append(f"topic-docs: {docs}")
+    if topics:
+        hints.append(f"see quick lookup: {repo_path(QUICK_LOOKUP_PATH)}")
+    return hints
+
+
 def format_match(
     filepath: str,
     line_number: int,
@@ -263,12 +278,22 @@ def main() -> int:
     parser.add_argument("--case-sensitive", action="store_true", help="Включить чувствительность к регистру")
     parser.add_argument("--absolute-paths", action="store_true", help="Печатать абсолютные пути")
     parser.add_argument("--no-codemap", action="store_true", help="Не показывать подсказки по CODEMAP")
+    parser.add_argument("--topics-only", action="store_true", help="Показать только подсказки по темам и документам")
+    parser.add_argument("--max-topics", type=int, default=3, help="Сколько тематических подсказок печатать")
     args = parser.parse_args()
 
     search_root = REPO_ROOT / args.dir if args.dir else REPO_ROOT
     if not search_root.is_dir():
         print(f"Каталог не найден: {search_root}", file=sys.stderr)
         return 1
+
+    hints = topic_hints(args.pattern, max_topics=max(0, args.max_topics))
+    if args.topics_only:
+        if not hints:
+            return 1
+        for hint in hints:
+            print(f"hint: {hint}")
+        return 0
 
     extensions = normalize_extensions(args.ext)
     rg_path = get_working_rg_path()
@@ -312,6 +337,8 @@ def main() -> int:
     if matches and not args.no_codemap:
         for hint in codemap_mentions(args.pattern):
             print(f"hint: {hint}")
+    for hint in hints:
+        print(f"hint: {hint}")
 
     return 0 if matches else 1
 

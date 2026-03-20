@@ -514,8 +514,8 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
     if not server_ready:
         logger.warning("⚠️ UI API сервер не стал доступен, но продолжаю попытки подключения SSE")
     
-    # Обновляем статус подключения
-    window.set_connected(True)
+    window.set_bridge_connected(False)
+    window.set_connection_state("connecting", "ожидание сервера")
     
     # Создаем событие для ожидания закрытия окна
     window_closed = asyncio.Event()
@@ -527,14 +527,17 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         def on_event(event: dict):
             # Передаем событие в Qt контекст через сигнал
             event_handler.event_received.emit(event)
+
+        def on_connection_change(connected: bool):
+            window.set_bridge_connected(connected)
         
         try:
-            await sse_client.run(on_event)
+            await sse_client.run(on_event, on_connection_change=on_connection_change)
         except asyncio.CancelledError:
             logger.info("SSE клиент отменен")
         except Exception as e:
             logger.error(f"Ошибка в SSE клиенте: {e}")
-            window.set_connected(False)
+            window.set_bridge_connected(False)
     
     sse_task_obj = asyncio.create_task(sse_task())
     

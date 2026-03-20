@@ -52,11 +52,15 @@ class MainWindow(QMainWindow):
         self.current_chat_job_id: Optional[str] = None
         self._settings_form_loaded: bool = False
         self._settings_snapshot: Optional[Dict[str, Any]] = None
+        self._bridge_connected: bool = False
+        self._server_connection_state: str = "starting"
+        self._server_connection_detail: str = ""
         
         self.setWindowTitle("PC Agent")
         self.setMinimumSize(800, 600)
         
         self._setup_ui()
+        self._render_connection_status()
 
     @staticmethod
     def _repair_text(text: str) -> str:
@@ -126,7 +130,7 @@ class MainWindow(QMainWindow):
         settings_layout.setContentsMargins(16, 16, 16, 16)
         settings_layout.setSpacing(12)
 
-        device_group = QGroupBox("РРЅС„РѕСЂРјР°С†РёСЏ РѕР± СѓСЃС‚СЂРѕР№СЃС‚РІРµ")
+        device_group = QGroupBox("Информация об устройстве")
         device_layout = QFormLayout(device_group)
         device_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         uuid_layout = QHBoxLayout()
@@ -157,7 +161,7 @@ class MainWindow(QMainWindow):
         self.reconnect_spin.setRange(1, 3600)
         server_form.addRow("API URL:", self.api_url_input)
         server_form.addRow("WS URL:", self.ws_url_input)
-        server_form.addRow("РРЅС‚РµСЂРІР°Р» reconnect (СЃ):", self.reconnect_spin)
+        server_form.addRow("Интервал reconnect (с):", self.reconnect_spin)
         settings_layout.addWidget(server_group)
 
         paths_group = QGroupBox("Пути (относительно data_root)")
@@ -239,8 +243,10 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_label = QLabel("Отключено")
-        self.status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet(
+            "padding: 6px 12px; border-radius: 999px; background: #e2e8f0; color: #475569; font-weight: 700;"
+        )
         self.status_bar.addWidget(self.status_label)
 
         self._repair_widget_texts(self)
@@ -369,7 +375,7 @@ class MainWindow(QMainWindow):
         if self._is_settings_dirty():
             self._set_settings_status("Есть несохранённые изменения.", error=False)
         else:
-            self._set_settings_status("РР·РјРµРЅРµРЅРёР№ РЅРµС‚.", error=False)
+            self._set_settings_status("Изменений нет.", error=False)
 
     async def _async_ui_request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         url = self._settings_api_url(path)
@@ -626,19 +632,53 @@ class MainWindow(QMainWindow):
         self.current_chat_job_id = job_id
         logger.info(f"Текущий chat job_id установлен: {job_id}")
     
-    def set_connected(self, connected: bool):
-        """
-        Обновляет статус подключения.
-        
-        Args:
-            connected: Подключен ли клиент
-        """
-        if connected:
-            self.status_label.setText(self._repair_text("Подключено"))
-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+    def _render_connection_status(self) -> None:
+        if not self._bridge_connected:
+            text = "GUI ↔ агент: нет связи"
+            bg = "#fee2e2"
+            fg = "#b42318"
+        elif self._server_connection_state == "connected":
+            text = "Сервер: подключено"
+            bg = "#dcfce7"
+            fg = "#166534"
+        elif self._server_connection_state in {"connecting", "authorizing", "starting"}:
+            text = "Сервер: подключение..."
+            bg = "#fef3c7"
+            fg = "#b45309"
+        elif self._server_connection_state == "auth_required":
+            text = "Сервер: нужен токен"
+            bg = "#fee2e2"
+            fg = "#b42318"
+        elif self._server_connection_state == "rejected":
+            text = "Сервер: доступ отклонён"
+            bg = "#fee2e2"
+            fg = "#b42318"
         else:
-            self.status_label.setText(self._repair_text("Отключено"))
-            self.status_label.setStyleSheet("color: red; font-weight: bold;")
+            text = "Сервер: отключено"
+            bg = "#e2e8f0"
+            fg = "#475569"
+
+        if self._server_connection_detail:
+            text = f"{text} • {self._server_connection_detail}"
+
+        self.status_label.setText(self._repair_text(text))
+        self.status_label.setStyleSheet(
+            f"padding: 6px 12px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
+        )
+
+    def set_bridge_connected(self, connected: bool) -> None:
+        self._bridge_connected = connected
+        if not connected:
+            self._server_connection_detail = ""
+        self._render_connection_status()
+
+    def set_connection_state(self, state: str, detail: str = "") -> None:
+        self._server_connection_state = (state or "disconnected").strip().lower()
+        self._server_connection_detail = detail.strip()
+        self._render_connection_status()
+
+    def set_connected(self, connected: bool):
+        self.set_connection_state("connected" if connected else "disconnected")
     
     def handle_event(self, event: dict):
         """
@@ -712,6 +752,16 @@ class MainWindow(QMainWindow):
         
         event_type = event.get("event_type", "unknown")
         data = event.get("data", {})
+
+        if event_type == "connection_state":
+            self.set_connection_state(
+                str(data.get("state") or "disconnected"),
+                str(data.get("detail") or ""),
+            )
+            return
+        if event_type == "connection_rejected":
+            self.set_connection_state("rejected", "подключение отклонено")
+            return
         
         # Этап 4: скриншот/запись — минимизация окна и STOP-кнопка
         if event_type == "prepare_screen_capture":

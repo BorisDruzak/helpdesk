@@ -432,12 +432,12 @@
             const fromRole = payload.from_role || payload.from || payload.sender_role || 'unknown';
             const text = payload.text || '';
             const vis = payload.visibility || 'public';
-            const isUser = fromRole === 'user';
-            const isStaff = fromRole === 'support' || fromRole === 'admin' || fromRole === 'agent';
-            const senderName = isUser
+            const isRequester = fromRole === 'user' || fromRole === 'agent';
+            const isStaff = fromRole === 'support' || fromRole === 'admin';
+            const senderResolved = isRequester
                 ? (meta.requester_display_name || 'Пользователь')
                 : (payload.actor_id || payload.sender_display_name || meta.assignee_id || (fromRole === 'support' ? 'Поддержка' : fromRole === 'admin' ? 'Админ' : 'Агент'));
-            const avatar = isUser ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : fromRole === 'agent' ? 'G' : '?');
+            const avatar = isRequester ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : '?');
             const internalBadge = vis === 'internal' ? '<span class="ti-badge-internal">Внутр.</span>' : '';
             const attachments = payload.attachments || [];
             const attachmentRefs = payload.attachment_refs || [];
@@ -446,10 +446,10 @@
             return {
                 id,
                 type: 'chat',
-                html: `<div class="timeline-item ${isUser ? 'from-user' : ''} ${isStaff ? 'from-staff' : ''}" data-event-id="${escapeHtml(String(id))}">
+                html: `<div class="timeline-item ${isRequester ? 'from-user' : ''} ${isStaff ? 'from-staff' : ''}" data-event-id="${escapeHtml(String(id))}">
   <div class="ti-avatar">${escapeHtml(avatar)}</div>
   <div class="ti-body">
-    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(senderName)}</span></div>
+    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(senderResolved)}</span></div>
     <div class="ti-bubble">${escapeHtml(text)}</div>
     ${attachmentsHtml}
     <div class="ti-time">${escapeHtml(formatTime(ts))}</div>

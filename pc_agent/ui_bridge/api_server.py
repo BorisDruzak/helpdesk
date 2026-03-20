@@ -62,6 +62,10 @@ class UiApiServer:
         self.app = web.Application()
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
+        self._active_sse_tasks: Set[asyncio.Task] = set()
+        self._active_sse_transports: Set[Any] = set()
+        self._shutdown_timeout = 0.75
+        self._stopping = False
         
         # Регистрируем маршруты
         self._setup_routes()
@@ -121,6 +125,9 @@ class UiApiServer:
         Держит соединение открытым и отправляет события в формате:
         data: <json>\n\n
         """
+        if self._stopping:
+            raise web.HTTPServiceUnavailable(text="UI bridge is shutting down")
+
         response = StreamResponse()
         response.headers["Content-Type"] = "text/event-stream"
         response.headers["Cache-Control"] = "no-cache"
@@ -128,6 +135,12 @@ class UiApiServer:
         response.headers["Access-Control-Allow-Origin"] = "*"
         
         await response.prepare(request)
+        transport = request.transport
+        handler_task = asyncio.current_task()
+        if transport is not None:
+            self._active_sse_transports.add(transport)
+        if handler_task is not None:
+            self._active_sse_tasks.add(handler_task)
         
         # Подписываемся на события
         queue = self.event_bus.subscribe()
@@ -167,11 +180,18 @@ class UiApiServer:
                 logger.error(f"Ошибка в SSE обработчике: {e}")
         finally:
             await self.event_bus.unsubscribe(queue)
-            try:
-                await response.write_eof()
-            except Exception as eof_err:
-                if "closing" not in str(eof_err).lower() and "closed" not in str(eof_err).lower():
-                    logger.warning(f"SSE write_eof: {eof_err}")
+            if transport is not None:
+                self._active_sse_transports.discard(transport)
+            if handler_task is not None:
+                self._active_sse_tasks.discard(handler_task)
+
+            transport_is_open = bool(transport) and not transport.is_closing()
+            if not self._stopping and transport_is_open:
+                try:
+                    await response.write_eof()
+                except Exception as eof_err:
+                    if "closing" not in str(eof_err).lower() and "closed" not in str(eof_err).lower():
+                        logger.warning(f"SSE write_eof: {eof_err}")
             logger.info("SSE соединение завершено")
         
         return response
@@ -570,7 +590,8 @@ class UiApiServer:
     async def start(self):
         """Запускает HTTP сервер."""
         try:
-            self.runner = web.AppRunner(self.app)
+            self._stopping = False
+            self.runner = web.AppRunner(self.app, shutdown_timeout=self._shutdown_timeout)
             await self.runner.setup()
             
             self.site = web.TCPSite(self.runner, self.host, self.port)
@@ -607,16 +628,48 @@ class UiApiServer:
     
     async def stop(self):
         """Останавливает HTTP сервер."""
+        self._stopping = True
         try:
             # Разблокируем SSE/long-poll обработчики (иначе они ждут до 30 сек по таймауту)
             await self.event_bus.notify_shutdown()
+            await self._close_active_sse_connections()
             if self.site:
-                await self.site.stop()
+                await asyncio.wait_for(self.site.stop(), timeout=self._shutdown_timeout)
                 logger.info("🛑 UI API сервер остановлен")
             
             if self.runner:
-                await self.runner.cleanup()
+                await asyncio.wait_for(self.runner.cleanup(), timeout=self._shutdown_timeout)
                 logger.info("🧹 UI API сервер очищен")
-                
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Остановка UI API сервера превысила таймаут")
         except Exception as e:
             logger.error(f"❌ Ошибка остановки UI API сервера: {e}")
+        finally:
+            self.site = None
+            self.runner = None
+
+    async def _close_active_sse_connections(self) -> None:
+        """Прерывает активные SSE stream'ы до cleanup aiohttp, чтобы shutdown не зависал."""
+        transports = list(self._active_sse_transports)
+        for transport in transports:
+            try:
+                if transport is not None and not transport.is_closing():
+                    transport.close()
+            except Exception as e:
+                logger.debug(f"Ошибка закрытия SSE transport: {e}")
+
+        pending_tasks = [task for task in self._active_sse_tasks if not task.done()]
+        for task in pending_tasks:
+            task.cancel()
+
+        if pending_tasks:
+            done, still_pending = await asyncio.wait(pending_tasks, timeout=self._shutdown_timeout)
+            for task in done:
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.debug(f"SSE handler завершился с ошибкой: {e}")
+            if still_pending:
+                logger.debug(f"Остались активные SSE handler'ы при shutdown: {len(still_pending)}")

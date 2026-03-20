@@ -4,6 +4,22 @@
 
 ---
 
+## 0. Операционный старт
+
+- Если задача начинается с diff, сначала выполните `python scripts/diff_context.py`.
+- Если тема затрагивает сервер и агент или формулировка пока широкая, откройте `docs/QUICK_LOOKUP.md`.
+- Для точечного поиска по серверу используйте `python scripts/agent_find.py "<ключевое слово>" --dir server`.
+
+| Сценарий | Открыть сначала | Затем |
+|------|------------------|-------|
+| Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
+| `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
+| Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
+| Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
+| Admin / ticket UI | `server/admin.js` или `server/ticket.js` | `server/static_pages/`, browser check на `http://192.168.100.17:8666/admin` |
+
+---
+
 ## 1. Точки входа
 
 | Файл | Назначение |
@@ -119,7 +135,7 @@
 
 ## 3. Быстрый поиск (ключевое слово → файлы)
 
-Используйте поиск по документу или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
+Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
 
 - **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
 - **outbox_ack, outbox_nack** — `websocket/agent_services.py`, `websocket/outbox_ingest_components.py`, `websocket/protocol.py`
@@ -186,7 +202,9 @@
 
 ## 8. Когда обновлять этот CODEMAP
 
-При изменениях, затрагивающих структуру кода сервера, этот файл **нужно** обновить (см. правило в `.cursor/rules/codemap.mdc`):
+Каноническая карта сервера — этот файл: `server/docs/CODEMAP.md` (других CODEMAP для дерева `server/` нет).
+
+При изменениях, затрагивающих структуру кода сервера, его **нужно** обновить (сводка критериев — `.cursor/rules/codemap.mdc`):
 
 - добавление/удаление/перенос маршрутов (routes) или ключевых обработчиков;
 - новые или переименованные ключевые каталоги/файлы в `server/`;
