@@ -947,7 +947,7 @@ class ChatPanel(QWidget):
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
-            raw = value.strip()
+            raw = self._normalize_iso_ts(value)
             if not raw:
                 return 0.0
             try:
@@ -955,7 +955,7 @@ class ChatPanel(QWidget):
             except ValueError:
                 pass
             try:
-                return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+                return datetime.fromisoformat(raw).timestamp()
             except ValueError:
                 return 0.0
         return 0.0
@@ -966,17 +966,37 @@ class ChatPanel(QWidget):
         if isinstance(value, (int, float)):
             return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
         if isinstance(value, str):
-            raw = value.strip()
+            raw = self._normalize_iso_ts(value)
             if not raw:
                 return ""
             try:
-                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                dt = datetime.fromisoformat(raw)
                 if dt.tzinfo is not None:
                     dt = dt.astimezone()
                 return dt.strftime("%d.%m.%Y %H:%M:%S")
             except ValueError:
                 return raw
         return str(value)
+
+    @staticmethod
+    def _normalize_iso_ts(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return ""
+        normalized = raw.replace("Z", "+00:00")
+        if "." in normalized:
+            dot_idx = normalized.find(".")
+            tz_idx = len(normalized)
+            plus_idx = normalized.find("+", dot_idx)
+            minus_idx = normalized.find("-", dot_idx)
+            if plus_idx != -1:
+                tz_idx = min(tz_idx, plus_idx)
+            if minus_idx != -1:
+                tz_idx = min(tz_idx, minus_idx)
+            frac = normalized[dot_idx + 1:tz_idx]
+            if frac.isdigit() and len(frac) > 6:
+                normalized = f"{normalized[:dot_idx + 1]}{frac[:6]}{normalized[tz_idx:]}"
+        return normalized
 
     @staticmethod
     def _escape_html(s: str) -> str:
