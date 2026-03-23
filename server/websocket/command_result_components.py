@@ -4,6 +4,7 @@ Focused components for command_result pipeline decomposition.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -135,6 +136,127 @@ class CommandResultEventPublisher:
     Publishes operation/result side effects after lifecycle processing.
     """
 
+    async def _load_operation_artifacts(
+        self,
+        session: Any,
+        operation_id: str,
+        normalized_artifacts: list[Any],
+    ) -> list[dict[str, Any]]:
+        from sqlalchemy import select
+
+        from app.db.models import Artifact
+
+        merged: dict[str, dict[str, Any]] = {}
+        for item in normalized_artifacts:
+            if not isinstance(item, dict):
+                continue
+            artifact_id = item.get("artifact_id")
+            if artifact_id:
+                merged[str(artifact_id)] = dict(item)
+
+        rows = (
+            await session.execute(
+                select(Artifact)
+                .where(Artifact.operation_id == operation_id)
+                .order_by(Artifact.created_at.asc())
+            )
+        ).scalars().all()
+        for row in rows:
+            payload = {
+                "artifact_id": row.artifact_id,
+                "name": row.original_name,
+                "original_name": row.original_name,
+                "kind": row.kind,
+                "mime_type": row.mime_type,
+                "size": row.size_bytes,
+                "url": f"/api/artifacts/{row.artifact_id}/download",
+            }
+            if row.artifact_id in merged:
+                merged[row.artifact_id] = {**payload, **merged[row.artifact_id]}
+            else:
+                merged[row.artifact_id] = payload
+        return list(merged.values())
+
+    def _build_tool_call_result_payload(
+        self,
+        *,
+        normalized: NormalizedCommandResult,
+        lifecycle_outcome: CommandResultLifecycleOutcome,
+        operation: Any,
+        artifacts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        tool_name = operation.tool_name or normalized.meta_info.get("tool_name") or "tool"
+        observations = normalized.data_payload.get("observations")
+        result = normalized.data_payload.get("result")
+        call_id = (
+            normalized.meta_info.get("call_id")
+            or normalized.data_payload.get("call_id")
+            or normalized.payload.get("meta", {}).get("call_id")
+        )
+        payload: dict[str, Any] = {
+            "type": "tool_call_result",
+            "tool_name": tool_name,
+            "operation_id": operation.operation_id,
+            "call_id": call_id,
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "artifacts": artifacts,
+        }
+        if lifecycle_outcome.status == "succeeded":
+            payload["status"] = "success"
+            payload["summary"] = (
+                operation.result_summary
+                or normalized.meta_info.get("summary")
+                or f"Tool {tool_name} executed successfully"
+            )
+            if result is not None:
+                payload["result"] = result
+            if observations is not None:
+                payload["observations"] = observations
+        elif lifecycle_outcome.status == "failed":
+            error_info = normalized.error_info if isinstance(normalized.error_info, dict) else {}
+            error_message = error_info.get("message") or operation.error_message or "Unknown error"
+            payload["status"] = "error"
+            payload["summary"] = f"Tool {tool_name} failed: {error_message}"
+            payload["error"] = error_info or {"message": error_message}
+            if observations is not None:
+                payload["observations"] = observations
+        elif lifecycle_outcome.status == "canceled":
+            payload["status"] = "canceled"
+            payload["summary"] = f"Tool {tool_name} canceled"
+        elif lifecycle_outcome.status == "timed_out":
+            payload["status"] = "error"
+            payload["summary"] = f"Tool {tool_name} timed out"
+            payload["error"] = {"code": "timeout", "message": operation.error_message or "Operation timed out"}
+        else:
+            payload["status"] = lifecycle_outcome.status
+            payload["summary"] = operation.result_summary or f"Tool {tool_name} finished with status {lifecycle_outcome.status}"
+        return payload
+
+    async def _get_existing_result_event(
+        self,
+        session: Any,
+        *,
+        ticket_id: str,
+        operation_id: str,
+    ) -> Optional[tuple[int, Any]]:
+        from sqlalchemy import select
+
+        from app.db.models import TicketEvent
+
+        row = await session.execute(
+            select(TicketEvent.id, TicketEvent.created_at)
+            .where(
+                TicketEvent.ticket_id == ticket_id,
+                TicketEvent.operation_id == operation_id,
+                TicketEvent.event_type == "tool_call_result",
+            )
+            .limit(1)
+        )
+        result = row.first()
+        if result is None:
+            return None
+        return (int(result[0]), result[1])
+
     async def publish_after_lifecycle(
         self,
         normalized: NormalizedCommandResult,
@@ -160,15 +282,73 @@ class CommandResultEventPublisher:
             for key in list(updates.keys())[:400]:
                 updates.pop(key, None)
         ui_publisher = getattr(state, "ui_publisher", None)
-        if ui_publisher is not None and lifecycle_outcome.operation_id:
+        if lifecycle_outcome.operation_id:
             try:
                 from app.db import get_session
+                from app.repos.ticket_events_repo import TicketEventsRepo
                 from app.repos.operations_repo import OperationsRepo
+                from websocket.ui_handler import push_ticket_event_committed
 
                 async with get_session() as session:
                     op_repo = OperationsRepo(session)
                     operation = await op_repo.get_by_operation_id(lifecycle_outcome.operation_id)
-                    if operation:
+                    result_event: Optional[tuple[int, Any]] = None
+                    if (
+                        operation
+                        and operation.ticket_id
+                        and operation.kind == "tool_call"
+                        and lifecycle_outcome.status in {"succeeded", "failed", "canceled", "timed_out"}
+                    ):
+                        ticket_repo = TicketEventsRepo(session)
+                        artifacts = await self._load_operation_artifacts(
+                            session,
+                            operation.operation_id,
+                            normalized.data_payload.get("artifacts")
+                            if isinstance(normalized.data_payload.get("artifacts"), list)
+                            else [],
+                        )
+                        payload = self._build_tool_call_result_payload(
+                            normalized=normalized,
+                            lifecycle_outcome=lifecycle_outcome,
+                            operation=operation,
+                            artifacts=artifacts,
+                        )
+                        result_event = await ticket_repo.add_event(
+                            ticket_id=operation.ticket_id,
+                            device_id=operation.device_id,
+                            agent_seq=None,
+                            event_type="tool_call_result",
+                            payload=payload,
+                            trace_id=operation.trace_id,
+                            operation_id=operation.operation_id,
+                        )
+                        if result_event is None:
+                            result_event = await self._get_existing_result_event(
+                                session,
+                                ticket_id=operation.ticket_id,
+                                operation_id=operation.operation_id,
+                            )
+                        if result_event and operation.result_event_id != result_event[0]:
+                            await op_repo.update_status(
+                                operation_id=operation.operation_id,
+                                new_status=operation.status,
+                                expected_statuses=[operation.status],
+                                result_summary=operation.result_summary,
+                                result_event_id=result_event[0],
+                            )
+                        await session.commit()
+                        if result_event:
+                            await push_ticket_event_committed(
+                                state,
+                                operation.ticket_id,
+                                result_event[0],
+                                "tool_call_result",
+                                operation.operation_id,
+                                None,
+                                result_event[1],
+                                payload,
+                            )
+                    if operation and ui_publisher is not None:
                         await ui_publisher.push_operation_updated(operation)
             except Exception as exc:
                 logger.warning(

@@ -8,7 +8,8 @@ Tests for connection request API (device authorization flow).
 """
 import uuid
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
+from app.db.models import ConnectionRequest
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
@@ -55,6 +56,43 @@ async def test_connection_request_accept_all(test_client, test_engine):
     data = await r.json()
     assert data.get("status") == "approved"
     assert "token" in data
+
+
+@pytest.mark.asyncio
+async def test_connection_request_accept_all_resolves_existing_pending(test_client, test_engine):
+    """Auto-approve must not leave stale pending requests behind."""
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+    pending = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "pending-pc"},
+    )
+    assert pending.status == 200
+    pending_payload = await pending.json()
+    assert pending_payload.get("status") == "pending"
+
+    await _set_policy(test_engine, "accept_all")
+    approved = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "pending-pc"},
+    )
+    assert approved.status == 200
+    approved_payload = await approved.json()
+    assert approved_payload.get("status") == "approved"
+    assert approved_payload.get("token")
+
+    async with test_engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                select(ConnectionRequest.status, ConnectionRequest.resolved_at)
+                .where(ConnectionRequest.device_id == device_id)
+                .order_by(ConnectionRequest.created_at.desc())
+            )
+        ).all()
+
+    assert rows
+    assert all(row.status != "pending" for row in rows)
+    assert any(row.status == "approved" and row.resolved_at is not None for row in rows)
 
 
 @pytest.mark.asyncio

@@ -59,6 +59,7 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
                 title="Lifecycle test",
                 description="desc",
                 status="in_progress",
+                assignee_id="support-test",
                 created_at=now - timedelta(minutes=10),
                 updated_at=now,
             )
@@ -68,9 +69,19 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
                 ticket_id=ticket_id,
                 device_id=device_id,
                 agent_seq=None,
-                event_type="ticket_status_changed",
-                payload={"status_before": "new", "status_after": "in_progress", "actor_id": "support-test"},
+                event_type="status_changed",
+                payload={"old_value": "new", "new_value": "in_progress", "actor_id": "support-test"},
                 created_at=now - timedelta(minutes=5),
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="assignee_changed",
+                payload={"new_value": "support-test", "actor_id": "system"},
+                created_at=now - timedelta(minutes=6),
             )
         )
         session.add(
@@ -105,6 +116,9 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     assert lifecycle["status"] == "ok"
     assert lifecycle["ticket"]["ticket_id"] == ticket_id
     assert lifecycle["ticket"]["device_id"] == device_id
+    assert lifecycle["ticket"]["assignee_id"] == "support-test"
+    assert lifecycle["milestones"]["assigned"] is not None
+    assert lifecycle["milestones"]["in_progress"] is not None
     assert isinstance(lifecycle["timeline"], list)
     assert isinstance(lifecycle.get("milestone_rail"), list)
     assert lifecycle["timeline"] and lifecycle["timeline"][0].get("links")

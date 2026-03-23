@@ -84,6 +84,26 @@ def _lifecycle_event_icon(kind: str) -> str:
     return "📌"
 
 
+def _ticket_status_from_payload(payload: dict[str, Any]) -> str:
+    return str(
+        payload.get("status_after")
+        or payload.get("to_status")
+        or payload.get("new_value")
+        or payload.get("status")
+        or ""
+    ).strip().lower()
+
+
+def _ticket_assignee_from_payload(payload: dict[str, Any]) -> str:
+    return str(
+        payload.get("assignee_id")
+        or payload.get("new_value")
+        or payload.get("after")
+        or payload.get("to")
+        or ""
+    ).strip()
+
+
 def _lifecycle_links(
     *,
     ticket_id: str,
@@ -474,6 +494,19 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     )
                 )
             ) or 0
+            stale_pending_rows = (
+                await session.execute(
+                    select(ConnectionRequest)
+                    .where(
+                        and_(
+                            ConnectionRequest.status == "pending",
+                            ConnectionRequest.last_request_at < (now - timedelta(seconds=pending_stuck_sec)),
+                        )
+                    )
+                    .order_by(ConnectionRequest.last_request_at.asc())
+                    .limit(10)
+                )
+            ).scalars().all()
             watchdog_states = {
                 "operation_watchdog": bool(getattr(request.app.get("operation_watchdog"), "_running", False)),
                 "ticket_sla_watchdog": bool(getattr(request.app.get("ticket_sla_watchdog"), "_running", False)),
@@ -481,11 +514,11 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             }
             alerts.extend(
                 _build_alerts_from_metrics(
-                    stale_count=int(stale_count),
-                    stale_sec=stale_sec,
-                    old_pending=int(old_pending),
-                    invalid_recent=int(invalid_recent),
-                    invalid_burst_count=invalid_burst_count,
+                        stale_count=int(stale_count),
+                        stale_sec=stale_sec,
+                        old_pending=int(old_pending),
+                        invalid_recent=int(invalid_recent),
+                        invalid_burst_count=invalid_burst_count,
                     invalid_burst_window_sec=invalid_burst_window_sec,
                     update_waiting_confirm=int(update_waiting_confirm),
                     queued_stuck=int(queued_stuck),
@@ -493,9 +526,23 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     in_progress_stuck=int(in_progress_stuck),
                     outbox_backlog=int(outbox_backlog),
                     outbox_backlog_warn=outbox_backlog_warn,
-                    watchdog_states=watchdog_states,
+                        watchdog_states=watchdog_states,
+                    )
                 )
-            )
+            if stale_pending_rows:
+                for alert in alerts:
+                    if alert["kind"] == "connection_request_stuck_pending":
+                        alert["details"]["samples"] = [
+                            {
+                                "device_id": row.device_id,
+                                "created_at": _iso(row.created_at),
+                                "last_request_at": _iso(row.last_request_at),
+                                "hostname": row.hostname,
+                                "ip_address": row.ip_address,
+                            }
+                            for row in stale_pending_rows
+                        ]
+                        break
 
             overview = {
                 "service_health": {
@@ -659,14 +706,19 @@ async def handle_tech_agent_timeline(request: web.Request) -> web.Response:
 async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
     ticket_ref = request.match_info["ticket_id"]
     title_map = {
-        "ticket_created": "Тикет создан",
+        "ticket_created": "Создан",
         "ticket_assigned": "Назначен исполнитель",
         "assigned": "Назначен исполнитель",
+        "assignee_changed": "Назначен исполнитель",
         "ticket_status_changed": "Изменен статус",
         "status_changed": "Изменен статус",
+        "routing_applied": "Routing applied",
+        "queue_changed": "Queue changed",
         "sla_breached": "SLA нарушен",
         "sla_reminder_sent": "SLA напоминание",
         "chat_message": "Сообщение в чате",
+        "tool_call_started": "Tool call started",
+        "tool_call_result": "Tool call result",
     }
     async with get_session() as session:
         ticket = await session.scalar(
@@ -698,7 +750,11 @@ async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
         timeline = []
         for ev in events:
             payload = ev.payload if isinstance(ev.payload, dict) else {}
-            status_after = payload.get("status_after")
+            status_after = (
+                payload.get("status_after")
+                or payload.get("to_status")
+                or payload.get("new_value")
+            )
             actor_label = payload.get("actor_label") or payload.get("actor_id") or payload.get("role") or "Система"
             op_id = ev.operation_id or payload.get("operation_id")
             dev_id = ev.device_id or ticket.device_id
@@ -718,16 +774,67 @@ async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
                     "details": payload,
                 }
             )
-            if ev.event_type in ("ticket_assigned", "assigned") and not milestones["assigned"]:
-                milestones["assigned"] = _iso(ev.created_at)
+            if ev.event_type in ("ticket_assigned", "assigned", "assignee_changed") and not milestones["assigned"]:
+                assigned_to = _ticket_assignee_from_payload(payload)
+                if assigned_to:
+                    milestones["assigned"] = _iso(ev.created_at)
             if ev.event_type in ("ticket_status_changed", "status_changed"):
-                after = (payload.get("status_after") or "").lower()
-                if after == "in_progress" and not milestones["in_progress"]:
+                after = _ticket_status_from_payload(payload)
+                if after in ("triaged", "in_progress") and not milestones["in_progress"]:
                     milestones["in_progress"] = _iso(ev.created_at)
                 if after == "waiting_on_user" and not milestones["waiting_user"]:
                     milestones["waiting_user"] = _iso(ev.created_at)
-                if after == "waiting_on_vendor" and not milestones["waiting_external"]:
+                if after in ("waiting_on_vendor", "waiting_external") and not milestones["waiting_external"]:
                     milestones["waiting_external"] = _iso(ev.created_at)
+
+        if ticket.assignee_id and not milestones["assigned"]:
+            assignee_event = next(
+                (
+                    ev
+                    for ev in events
+                    if ev.event_type == "assignee_changed"
+                    and _ticket_assignee_from_payload(ev.payload if isinstance(ev.payload, dict) else {})
+                ),
+                None,
+            )
+            if assignee_event:
+                milestones["assigned"] = _iso(assignee_event.created_at)
+        if ticket.status in ("triaged", "in_progress") and not milestones["in_progress"]:
+            status_event = next(
+                (
+                    ev
+                    for ev in events
+                    if ev.event_type in ("ticket_status_changed", "status_changed")
+                    and _ticket_status_from_payload(ev.payload if isinstance(ev.payload, dict) else {}) in ("triaged", "in_progress")
+                ),
+                None,
+            )
+            if status_event:
+                milestones["in_progress"] = _iso(status_event.created_at)
+        if ticket.status == "waiting_on_user" and not milestones["waiting_user"]:
+            wait_event = next(
+                (
+                    ev
+                    for ev in events
+                    if ev.event_type in ("ticket_status_changed", "status_changed")
+                    and _ticket_status_from_payload(ev.payload if isinstance(ev.payload, dict) else {}) == "waiting_on_user"
+                ),
+                None,
+            )
+            if wait_event:
+                milestones["waiting_user"] = _iso(wait_event.created_at)
+        if ticket.status in ("waiting_on_vendor", "waiting_external") and not milestones["waiting_external"]:
+            wait_external_event = next(
+                (
+                    ev
+                    for ev in events
+                    if ev.event_type in ("ticket_status_changed", "status_changed")
+                    and _ticket_status_from_payload(ev.payload if isinstance(ev.payload, dict) else {}) in ("waiting_on_vendor", "waiting_external")
+                ),
+                None,
+            )
+            if wait_external_event:
+                milestones["waiting_external"] = _iso(wait_external_event.created_at)
 
         sla_marks = {
             "first_response_due": _iso(ticket.first_response_due_at),
@@ -749,10 +856,14 @@ async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
                     "title": ticket.title,
                     "status": ticket.status,
                     "device_id": ticket.device_id,
+                    "assignee_id": ticket.assignee_id,
+                    "queue_id": ticket.queue_id,
                 },
                 "current_state": {
                     "status": ticket.status,
                     "updated_at": _iso(ticket.updated_at),
+                    "assignee_id": ticket.assignee_id,
+                    "queue_id": ticket.queue_id,
                 },
                 "milestones": milestones,
                 "milestone_rail": _milestone_rail(milestones),

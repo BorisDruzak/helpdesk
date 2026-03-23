@@ -142,6 +142,17 @@
 - При успехе создаётся запись в `agent_tokens` (hash + prefix), клиенту возвращается сырой токен и `device_id`. Срок действия по умолчанию — 180 дней.
 - При превышении лимита активных токенов (2 на device_id) — **429** и сообщение «Token limit exceeded. Please revoke old tokens first.»
 
+### 5.1.1 Agent provisioning: `POST /api/connection_request`
+
+- Используется no-token bootstrap-потоком агента, когда локального токена ещё нет или он был очищен после `401 / Invalid token`.
+- Политика берётся из `server_config.connection_policy` (`reject_all`, `accept_all`, `manual`). Если политика явно не задана, P0-режимом по умолчанию считается `accept_all`.
+- При `accept_all` сервер:
+  - выпускает новый agent token;
+  - возвращает его прямо в ответе `{"status":"approved","token":...}`;
+  - обязательно закрывает все существующие `pending` записи в `connection_requests` для этого `device_id`, чтобы не копились ложные stale-request алерты в техпанели.
+- При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а токен выдаётся только после ручного approve оператором.
+- При `reject_all` токен не выдаётся, а агент получает `403 CONNECTION_REJECTED`.
+
 ### 5.2 UI token: POST /api/ui_login
 
 - **Тело:** `{"login": "...", "password": "..."}`.

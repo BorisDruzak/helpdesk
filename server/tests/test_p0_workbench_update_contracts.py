@@ -6,9 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import AgentBuild, Device
+from app.db.models import AgentBuild, Artifact, Device, Operation, Ticket, TicketEvent
 from app.db.engine import async_sessionmaker
 from app.repos.operations_repo import OperationsRepo
 from tests.conftest import TEST_UI_ADMIN_TOKEN
@@ -301,3 +302,106 @@ async def test_agent_update_marked_succeeded_only_after_handshake_confirm(test_c
         assert operation is not None
         assert operation.status == "succeeded"
         assert operation.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_tool_call_command_result_creates_ticket_event_and_links_artifacts(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    ticket_id = str(uuid.uuid4())
+    operation_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    await _insert_device(device_id, os_name="Windows")
+
+    async with get_session() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-900001",
+                device_id=device_id,
+                title="screen test",
+                description="screen test",
+                status="in_progress",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="screen.collect",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="running",
+                queued_at=now,
+                sent_at=now,
+                accepted_at=now,
+                started_at=now,
+            )
+        )
+        session.add(
+            Artifact(
+                artifact_id=str(uuid.uuid4()),
+                storage_path="screens/test.png",
+                original_name="screenshot_test.png",
+                mime_type="image/png",
+                size_bytes=1234,
+                sha256=("ab" * 32),
+                kind="screenshot",
+                device_id=device_id,
+                ticket_id=ticket_id,
+                operation_id=operation_id,
+                created_at=now,
+            )
+        )
+        await session.commit()
+
+    command_result_service = CommandResultService()
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=test_client.app["state"],
+        agent_id=device_id,
+    )
+    await command_result_service.handle(
+        {
+            "type": "command_result",
+            "request_id": operation_id,
+            "payload": {
+                "status": "success",
+                "data": {
+                    "observations": {"resolution": "1920x1080"},
+                    "artifacts": [{"artifact_id": "artifact-from-agent", "kind": "screenshot"}],
+                },
+                "error": {},
+                "meta": {},
+            },
+        },
+        ctx,
+    )
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        op_repo = OperationsRepo(session)
+        operation = await op_repo.get_by_operation_id(operation_id)
+        assert operation is not None
+        assert operation.status == "succeeded"
+        assert operation.result_event_id is not None
+
+        events = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.operation_id == operation_id,
+                    TicketEvent.event_type == "tool_call_result",
+                )
+            )
+        ).scalars().all()
+        assert len(events) == 1
+        payload = events[0].payload
+        assert payload["status"] == "success"
+        assert payload["tool_name"] == "screen.collect"
+        assert operation.result_event_id == events[0].id
+        assert any(item.get("original_name") == "screenshot_test.png" for item in payload.get("artifacts", []))

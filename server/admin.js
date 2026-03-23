@@ -2180,11 +2180,31 @@
                 host.innerHTML = '<div class="tech-alert-item severity-info"><strong>Нет активных алертов</strong><span>Система в норме.</span></div>';
                 return;
             }
+            function renderAlertDetails(details) {
+                if (!details || typeof details !== 'object') return '';
+                if (Array.isArray(details.samples) && details.samples.length) {
+                    return '<div class="tech-alert-details">' + details.samples.map((sample) => {
+                        const parts = [];
+                        if (sample.device_id) parts.push(`<code>${escapeHtml(sample.device_id)}</code>`);
+                        if (sample.hostname) parts.push(escapeHtml(sample.hostname));
+                        if (sample.ip_address) parts.push(escapeHtml(sample.ip_address));
+                        if (sample.last_request_at) parts.push('last ' + escapeHtml(formatTechLifecycleTime(sample.last_request_at)));
+                        return `<div>${parts.join(' · ')}</div>`;
+                    }).join('') + '</div>';
+                }
+                const entries = Object.entries(details).filter(([key]) => key !== 'samples');
+                if (!entries.length) return '';
+                return '<div class="tech-alert-details">' + entries.map(([key, value]) => {
+                    const rendered = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                    return `<div><strong>${escapeHtml(key)}:</strong> ${escapeHtml(rendered)}</div>`;
+                }).join('') + '</div>';
+            }
             host.innerHTML = alerts.map(a => {
                 const link = a.link ? ` <a href="${escapeHtml(a.link)}" target="_blank" rel="noopener noreferrer">перейти</a>` : '';
                 return `<div class="tech-alert-item severity-${(a.severity || 'info')}">
                     <strong>[${(a.severity || 'info').toUpperCase()}] ${escapeHtml(a.summary || a.kind || '')}</strong>
                     <span>${escapeHtml(a.kind || '')} ${a.entity_id ? `(${escapeHtml(a.entity_id)})` : ''}${link}</span>
+                    ${renderAlertDetails(a.details)}
                 </div>`;
             }).join('');
         }
@@ -2217,6 +2237,8 @@
                         <span><strong>Код:</strong> ${esc(t.ticket_code)}</span>
                         <span><strong>ID:</strong> <code>${esc(t.ticket_id)}</code></span>
                         ${t.device_id ? `<span><strong>Устройство:</strong> <code>${esc(t.device_id)}</code></span>` : ''}
+                        ${t.assignee_id ? `<span><strong>Исполнитель:</strong> ${esc(t.assignee_id)}</span>` : '<span><strong>Исполнитель:</strong> —</span>'}
+                        ${t.queue_id != null ? `<span><strong>Очередь:</strong> ${esc(t.queue_id)}</span>` : ''}
                         <span class="status-pill">${esc(t.status || '')}</span>
                     </div>
                 </div>`;
@@ -2281,6 +2303,7 @@
                         <div class="tl-title">${e.icon || ''} ${esc(e.title || e.kind || '')}</div>
                         <div class="tl-actor">Актор: ${esc(e.actor_label || '')}</div>
                         ${e.status_after ? `<div class="tl-actor">Статус → ${esc(e.status_after)}</div>` : ''}
+                        ${e.operation_id ? `<div class="tl-actor">Операция: <code>${esc(e.operation_id)}</code></div>` : ''}
                         ${links ? `<div class="tl-links">${links}</div>` : ''}
                     </div>`;
                 }

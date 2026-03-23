@@ -8,6 +8,21 @@
 
 ## Инварианты
 
+### Инвариант 0: terminal `tool_call` публикует `tool_call_result` в ticket_events
+
+Для операций `kind=tool_call` сервер обязан не только обновить `operations`, но и записать
+server-originated событие `ticket_events.event_type = "tool_call_result"` с тем же `operation_id`.
+
+Гарантии:
+
+1. `tool_call_result` создаётся/дедуплицируется по `(ticket_id, operation_id, event_type)`.
+2. В payload попадают `status`, `summary`, `tool_name`, `operation_id`, а также `artifacts[]`,
+   объединённые из `command_result.data.artifacts` и таблицы `artifacts`.
+3. `operations.result_event_id` должен ссылаться на это событие.
+
+Эта связка нужна, чтобы ticket timeline, `ticket.html` и скачивание артефактов показывали
+не только факт запуска (`tool_call_started`), но и фактический результат выполнения.
+
 ### Инвариант 1: Любой command_result завершает операцию
 
 При получении `command_result` (success, error или consent_required) сервер **обязан**:

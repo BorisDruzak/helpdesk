@@ -94,6 +94,8 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                     {"status": "error", "error": str(e)},
                     status=429,
                 )
+            await repo.set_approved(device_id)
+            await session.commit()
             logger.info(f"Connection request auto-approved (policy=accept_all): device_id={device_id[:8]}...")
             await write_agent_runtime_audit(
                 device_id=device_id,
