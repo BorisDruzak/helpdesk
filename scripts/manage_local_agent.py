@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -20,6 +22,8 @@ REQUIREMENTS = WORKSPACE / "pc_agent" / "requirements.txt"
 INSTANCE_ROOT = WORKSPACE / ".local-agent" / "instances"
 DEFAULT_WS_URL = "ws://192.168.100.17:8666/ws"
 DEFAULT_API_URL = "http://192.168.100.17:8666/api"
+DEFAULT_UI_PORT = 8765
+DEFAULT_RELEASE_BUILD_ROOT = WORKSPACE / "pc_agent" / "dist"
 
 
 def _configure_stdio() -> None:
@@ -74,6 +78,14 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, check: bool = Tru
     return subprocess.run(cmd, cwd=WORKSPACE, env=env, check=check)
 
 
+def _read_agent_version() -> str:
+    version_py = (WORKSPACE / "pc_agent" / "version.py").read_text(encoding="utf-8")
+    match = re.search(r'AGENT_VERSION\s*=\s*"([^"]+)"', version_py)
+    if not match:
+        raise SystemExit("Could not parse AGENT_VERSION from pc_agent/version.py")
+    return match.group(1)
+
+
 def _venv_exists() -> bool:
     return VENV_PYTHON.exists()
 
@@ -123,6 +135,64 @@ def _build_env(ws_url: str, api_url: str, auth_token: str | None, ui_port: int |
     return env
 
 
+def _choose_ui_port(preferred: int = DEFAULT_UI_PORT) -> int:
+    port = preferred
+    while port < preferred + 100:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                port += 1
+                continue
+            return port
+    raise SystemExit("No free local UI port available in the expected range")
+
+
+def _seed_release_install(name: str, build_root: Path) -> str:
+    layout = _ensure_instance_layout(name)
+    install_root = layout["install_root"]
+    launcher_src = build_root / "launcher.exe"
+    agent_dir = build_root / "pc_agent"
+    if not launcher_src.exists():
+        raise SystemExit(
+            f"Launcher build not found: {launcher_src}. "
+            "Build it first with pc_agent/build_windows_release.py or build_windows_release_v2.py"
+        )
+    if not (agent_dir / "pc_agent.exe").exists():
+        raise SystemExit(
+            f"Agent build not found: {agent_dir / 'pc_agent.exe'}. "
+            "Build it first with pc_agent/build_windows_release.py or build_windows_release_v2.py"
+        )
+
+    version = _read_agent_version()
+    version_dir = install_root / "versions" / version
+    current_path = install_root / "current.json"
+    launcher_dst = install_root / "launcher.exe"
+
+    if current_path.exists() and launcher_dst.exists() and version_dir.exists():
+        return version
+
+    install_root.mkdir(parents=True, exist_ok=True)
+    (install_root / "versions").mkdir(parents=True, exist_ok=True)
+    if version_dir.exists():
+        shutil.rmtree(version_dir, ignore_errors=True)
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(launcher_src, launcher_dst)
+    for item in agent_dir.iterdir():
+        dst = version_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dst, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dst)
+    current_path.write_text(
+        json.dumps({"version": version, "previous": version}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return version
+
+
 def _verify(name: str, ws_url: str, api_url: str, auth_token: str | None, ui_port: int | None = None) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
@@ -150,6 +220,8 @@ def _start(
     auth_token: str | None,
     foreground: bool,
     ui_port: int | None = None,
+    use_launcher: bool = False,
+    build_root: Path = DEFAULT_RELEASE_BUILD_ROOT,
 ) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
@@ -158,23 +230,37 @@ def _start(
         raise SystemExit(f"Instance '{name}' is already running with PID {current['pid']}")
 
     layout = _ensure_instance_layout(name)
+    resolved_ui_port = ui_port if ui_port is not None else _choose_ui_port()
     env = _build_env(ws_url, api_url, auth_token, ui_port)
+    env["PC_AGENT_UI_PORT"] = str(resolved_ui_port)
     if not gui and not auth_token:
         print("[manage_local_agent] warning: headless start without --auth-token usually exits after token prompt")
-    cmd = [
-        str(VENV_PYTHON),
-        "-m",
-        "pc_agent.ws_agent",
-        "--data-dir",
-        str(layout["data_dir"]),
-        "--install-root",
-        str(layout["install_root"]),
-    ]
-    if gui:
-        cmd.append("--gui")
+    start_mode = "launcher" if use_launcher else "source"
+    seeded_version = None
+    if use_launcher:
+        seeded_version = _seed_release_install(name, build_root)
+        cmd = [
+            str(layout["install_root"] / "launcher.exe"),
+            "--data-dir",
+            str(layout["data_dir"]),
+            "--install-root",
+            str(layout["install_root"]),
+        ]
+    else:
+        cmd = [
+            str(VENV_PYTHON),
+            "-m",
+            "pc_agent.ws_agent",
+            "--data-dir",
+            str(layout["data_dir"]),
+            "--install-root",
+            str(layout["install_root"]),
+        ]
+        if gui:
+            cmd.append("--gui")
 
     if foreground:
-        print(f"[manage_local_agent] start foreground instance '{name}'")
+        print(f"[manage_local_agent] start foreground instance '{name}' mode={start_mode}")
         return _run(cmd, env=env).returncode
 
     layout["launcher_log"].parent.mkdir(parents=True, exist_ok=True)
@@ -202,6 +288,10 @@ def _start(
         "gui": gui,
         "ws_url": ws_url,
         "api_url": api_url,
+        "ui_port": resolved_ui_port,
+        "start_mode": start_mode,
+        "seeded_version": seeded_version,
+        "build_root": str(build_root) if use_launcher else None,
         "workspace": str(WORKSPACE),
         "venv_python": str(VENV_PYTHON),
         "data_dir": str(layout["data_dir"]),
@@ -209,7 +299,10 @@ def _start(
         "launcher_log": str(layout["launcher_log"]),
     }
     _save_instance(name, payload)
-    print(f"[manage_local_agent] started '{name}' pid={proc.pid}")
+    print(
+        f"[manage_local_agent] started '{name}' pid={proc.pid} "
+        f"mode={start_mode} ui_port={resolved_ui_port}"
+    )
     return 0
 
 
@@ -268,8 +361,9 @@ def _status(name: str | None) -> int:
         pid = int(payload.get("pid") or 0)
         running = _pid_is_running(pid) if pid else False
         state = "running" if running else "stopped"
-        mode = "gui" if payload.get("gui") else "headless"
-        print(f"{item}: {state}, pid={pid}, mode={mode}, ws={payload.get('ws_url')}")
+        ui_mode = "gui" if payload.get("gui") else "headless"
+        start_mode = payload.get("start_mode") or "source"
+        print(f"{item}: {state}, pid={pid}, mode={ui_mode}/{start_mode}, ws={payload.get('ws_url')}")
     return 0
 
 
@@ -295,6 +389,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--api-url", default=DEFAULT_API_URL)
     start.add_argument("--auth-token", default=None)
     start.add_argument("--ui-port", type=int, default=None, metavar="PORT", help="UI API port (default 8765; use if port is busy)")
+    start.add_argument("--launcher", action="store_true", help="Run the built Windows launcher.exe instead of source ws_agent")
+    start.add_argument("--build-root", default=str(DEFAULT_RELEASE_BUILD_ROOT), help="Path to built launcher.exe and pc_agent/ directory")
 
     stop = subparsers.add_parser("stop", help="Stop a named local agent instance")
     stop.add_argument("name")
@@ -318,7 +414,17 @@ def main() -> int:
     if args.command == "verify":
         return _verify(args.name, args.ws_url, args.api_url, args.auth_token, getattr(args, "ui_port", None))
     if args.command == "start":
-        return _start(args.name, args.gui, args.ws_url, args.api_url, args.auth_token, args.foreground, getattr(args, "ui_port", None))
+        return _start(
+            args.name,
+            args.gui,
+            args.ws_url,
+            args.api_url,
+            args.auth_token,
+            args.foreground,
+            getattr(args, "ui_port", None),
+            getattr(args, "launcher", False),
+            Path(args.build_root),
+        )
     if args.command == "stop":
         return _stop(args.name)
     if args.command == "status":

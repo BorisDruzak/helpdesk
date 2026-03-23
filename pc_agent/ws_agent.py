@@ -184,6 +184,32 @@ class WSAgent:
         self._current_ticket_id: Optional[str] = None
         self._current_job_id: Optional[str] = None
 
+    def _get_latest_applied_update_confirmation(self) -> Optional[Dict[str, str]]:
+        """Returns the latest successful launcher-applied update for handshake confirmation."""
+        try:
+            data_root = self._data_root or runtime_paths.resolve_data_root()
+            history_path = Path(data_root) / "updates" / "update_history.json"
+            if not history_path.exists():
+                return None
+            history_raw = jsonlib.loads(history_path.read_text(encoding="utf-8"))
+            if not isinstance(history_raw, list):
+                return None
+            successful = [
+                item for item in history_raw
+                if isinstance(item, dict) and item.get("success") is True and item.get("version") and item.get("operation_id")
+            ]
+            if not successful:
+                return None
+            successful.sort(key=lambda item: item.get("at") or "", reverse=True)
+            latest = successful[0]
+            return {
+                "applied_update_version": str(latest["version"]),
+                "last_update_operation_id": str(latest["operation_id"]),
+            }
+        except Exception as exc:
+            logger.debug(f"[update] latest applied update confirmation unavailable: {exc}")
+            return None
+
     def _validate_server_config(self, ws_url: str, api_url: str) -> None:
         """Предупреждает о потенциальной misconfig target-host."""
         ws_host = urlparse(ws_url).hostname or ""
@@ -2237,6 +2263,7 @@ class WSAgent:
                             handshake_data = self.identity_manager.get_handshake_data()
                             handshake_request_id = str(uuid.uuid4())
                             handshake_trace_id = str(uuid.uuid4())
+                            latest_update_confirmation = self._get_latest_applied_update_confirmation()
                             
                             # Получить tools_list через orchestrator для toolset_hash
                             try:
@@ -2343,6 +2370,14 @@ class WSAgent:
                             }
                             
                             # Сохраняем trace_id для последующей корреляции
+                            if latest_update_confirmation:
+                                handshake_message["payload"].update(latest_update_confirmation)
+                                logger.info(
+                                    "[update] Including applied update confirmation in handshake: "
+                                    f"version={latest_update_confirmation['applied_update_version']} "
+                                    f"operation_id={latest_update_confirmation['last_update_operation_id'][:8]}..."
+                                )
+
                             self._current_trace_id = handshake_trace_id
 
                             await ws.send_json(handshake_message)
@@ -2879,6 +2914,26 @@ async def main_async(
     # Событие для остановки
     stop_event = asyncio.Event()
     
+    async def sync_agent_token_from_db(*, retries: int = 1, delay: float = 0.0, log_reason: str) -> Optional[str]:
+        token_from_db_local = None
+        try:
+            if agent.db_manager and agent.identity_manager.uuid:
+                for attempt in range(max(1, retries)):
+                    token_from_db_local = await agent.db_manager.get_auth_token(agent.identity_manager.uuid)
+                    if token_from_db_local:
+                        break
+                    if delay > 0 and attempt + 1 < max(1, retries):
+                        await asyncio.sleep(delay)
+        except Exception as e:
+            logger.debug(f"Не удалось загрузить токен из БД ({log_reason}): {e}")
+            return None
+        if token_from_db_local:
+            if agent.auth_token != token_from_db_local:
+                logger.info(f"✅ Токен загружен из БД ({log_reason})")
+            agent.auth_token = token_from_db_local
+            agent.identity_manager.token = token_from_db_local
+        return token_from_db_local
+
     try:
         # Инициализация
         await agent.initialize()
@@ -2940,9 +2995,15 @@ async def main_async(
                 
                 # Даем GUI время показать окно и диалог «Ожидании подтверждения администратором»
                 await asyncio.sleep(1.0)
+
+                # GUI может уже открыть основное окно по токену из БД, поэтому сначала
+                # синхронизируем токен в агенте и только потом решаем, нужен ли request flow.
+                await sync_agent_token_from_db(log_reason="before gui auth decision")
                 
                 # Явная state machine для переходов auth GUI->request->token.
-                if auth_state_machine.should_request_connection():
+                if gui_auth_complete.is_set():
+                    logger.info("GUI уже завершил авторизацию до запуска request_connection_flow")
+                elif auth_state_machine.should_request_connection():
                     auth_state_machine.start_connection_flow(gui_auth_complete)
                 elif agent._connection_rejected_flag_path().exists():
                     logger.warning("Подключение ранее отклонено; в GUI доступен ввод токена вручную или сброс через scripts/clear_local_agent_tokens.py")
@@ -2952,7 +3013,11 @@ async def main_async(
                 await auth_state_machine.wait_for_gui_auth(gui_auth_complete, timeout_seconds=620)
                 
                 # Токен хранится только в БД — опрашиваем БД, не identity.json
-                token_from_db_after_gui = await auth_state_machine.load_token_from_db(retries=10, delay=0.1)
+                token_from_db_after_gui = await sync_agent_token_from_db(
+                    retries=10,
+                    delay=0.1,
+                    log_reason="after gui auth wait",
+                )
                 if token_from_db_after_gui:
                     logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
                 else:
@@ -2962,17 +3027,8 @@ async def main_async(
         
         # Теперь запускаем агента (токен должен быть уже сохранен GUI в БД)
         # Загружаем токен из БД агента — identity.json токен не хранит (основной источник — storage.db)
-        token_from_db = None
-        try:
-            if agent.db_manager and agent.identity_manager.uuid:
-                token_from_db = await agent.db_manager.get_auth_token(agent.identity_manager.uuid)
-        except Exception as e:
-            logger.debug(f"Не удалось загрузить токен из БД перед запуском агента: {e}")
-        if token_from_db:
-            logger.info("✅ Токен загружен из БД перед запуском агента")
-            agent.auth_token = token_from_db
-            agent.identity_manager.token = token_from_db
-        elif enable_gui and gui_task:
+        token_from_db = await sync_agent_token_from_db(log_reason="before agent.run")
+        if not token_from_db and enable_gui and gui_task:
             logger.warning("⚠️ Токен не найден в БД перед запуском агента")
             logger.info("💡 Агент при run() попытается загрузить токен из БД в authenticate()")
         

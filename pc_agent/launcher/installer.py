@@ -205,6 +205,10 @@ def apply_update(
             "success": False,
             "at": datetime.now(timezone.utc).isoformat(),
             "reason": "verify_failed",
+            "operation_id": payload.get("operation_id"),
+            "requested_by": payload.get("requested_by"),
+            "target": payload.get("target"),
+            "channel": payload.get("channel"),
         })
         history_path.parent.mkdir(parents=True, exist_ok=True)
         history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -239,6 +243,10 @@ def apply_update(
         "version": version,
         "success": True,
         "at": datetime.now(timezone.utc).isoformat(),
+        "operation_id": payload.get("operation_id"),
+        "requested_by": payload.get("requested_by"),
+        "target": payload.get("target"),
+        "channel": payload.get("channel"),
     })
     history_path.parent.mkdir(parents=True, exist_ok=True)
     history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")

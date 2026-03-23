@@ -134,7 +134,9 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
     "tools_version": "tools_v1",
     "toolset_hash": "a1b2c3d4e5f6",
     "tools_count": 10,
-    "modules": ["system", "screen", "input"]
+    "modules": ["system", "screen", "input"],
+    "applied_update_version": "3.0.1",
+    "last_update_operation_id": "7620e79d-1bdd-496c-9112-28b1d0caf281"
   },
   "meta": {
     "timestamp": "2026-01-08T21:10:57.027006+00:00",
@@ -143,6 +145,12 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
   }
 }
 ```
+
+Если launcher успешно применил self-update, агент добавляет в следующий `handshake`:
+- `payload.applied_update_version` — версия, которую launcher реально активировал;
+- `payload.last_update_operation_id` — `operation_id` из `pending_update.json`, сохранённый launcher в `data_root/updates/update_history.json`.
+
+Сервер использует эти поля как post-restart confirmation и только после этого переводит `agent_update` в `succeeded`.
 
 **От сервера к агенту (handshake_ack):**
 ```json
@@ -556,5 +564,4 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 - [WSOutboxFlusher документация](SENDER.md) — детали отправки событий
 - [AgentOrchestrator документация](ORCHESTRATOR.md) — обработка команд
 - [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) — узкие места и риски проекта
-
 
