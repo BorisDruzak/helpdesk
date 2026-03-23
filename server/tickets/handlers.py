@@ -39,6 +39,7 @@ from tickets.queue_position_service import QueuePositionService
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
+    enrich_chat_payload_with_requester_name,
     get_requester_display_name,
     merge_requester_custom_fields,
     normalize_requester_profile,
@@ -140,15 +141,18 @@ async def _get_ticket_or_response(
     return ticket, None, ticket_repo, auth_context
 
 
-def _serialize_event_raw(event: Any) -> Dict[str, Any]:
+def _serialize_event_raw(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     ts = getattr(event, "created_at", None)
+    payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
+    if ticket is not None and getattr(event, "event_type", None) == "chat_message":
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
     return {
         "id": getattr(event, "id", None),
         "ticket_id": getattr(event, "ticket_id", None),
         "device_id": getattr(event, "device_id", None),
         "agent_seq": getattr(event, "agent_seq", None),
         "event_type": getattr(event, "event_type", None),
-        "payload": serialize_datetime_recursive(getattr(event, "payload", None) or {}),
+        "payload": payload,
         "trace_id": getattr(event, "trace_id", None),
         "event_id": getattr(event, "event_id", None),
         "operation_id": getattr(event, "operation_id", None),
@@ -170,8 +174,10 @@ def _serialize_event_for_agent(event: Any) -> Dict[str, Any]:
     return data
 
 
-def _serialize_message(event: Any) -> Dict[str, Any]:
+def _serialize_message(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
+    if ticket is not None:
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
     sender_role = payload.get("sender_role") or payload.get("from") or "user"
     return {
         "message_id": payload.get("message_id"),
@@ -554,7 +560,7 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         return _json_ok(
             ticket=ticket_data,
             session={"ticket_id": ticket.ticket_id, "actor_role": auth_context.actor_role},
-            messages=[_serialize_message(event) for event in messages],
+            messages=[_serialize_message(event, ticket=ticket) for event in messages],
             events=[_serialize_event_for_agent(event) for event in visible_events],
             agent_online=False,
         )
@@ -569,7 +575,7 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
         visible_events = list(events)
         if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
             visible_events = [event for event in events if _event_visible_to_requester(event)]
-        raw_events = [_serialize_event_raw(event) for event in visible_events]
+        raw_events = [_serialize_event_raw(event, ticket=ticket) for event in visible_events]
         history = [item for item in raw_events if item["event_type"] in HISTORY_EVENT_TYPES]
         ticket_data = await _ticket_payload(session, ticket)
         last_event_id = raw_events[-1]["id"] if raw_events else 0
@@ -715,6 +721,7 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             "text": text,
             "visibility": visibility,
         }
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
         if attachment_refs:
             payload["attachment_refs"] = attachment_refs
             payload["attachments"] = attachments

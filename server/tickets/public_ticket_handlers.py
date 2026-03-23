@@ -33,6 +33,7 @@ from tickets.ola_service import start_ola_for_ticket
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
+    enrich_chat_payload_with_requester_name,
     merge_requester_custom_fields,
     normalize_requester_profile,
     normalize_ticket_priority_inputs,
@@ -219,14 +220,14 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 device_id=placeholder_device_id,
                 agent_seq=None,
                 event_type="chat_message",
-                payload={
+                payload=enrich_chat_payload_with_requester_name(ticket, {
                     "message_id": initial_message_id,
                     "sender_role": "user",
                     "from": "user",
                     "is_initial": True,
                     "text": description,
                     "visibility": "public",
-                },
+                }),
                 trace_id=str(uuid.uuid4()),
                 event_id=initial_message_id,
             )

@@ -41,7 +41,7 @@
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
 | `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
-| `server/websocket/outbox_ingest_components.py` | Компоненты outbox pipeline: envelope validator, persistence, ACK/NACK decision, post-commit publish |
+| `server/websocket/outbox_ingest_components.py` | Компоненты outbox pipeline: envelope validator, persistence c requester-name enrichment для `chat_message`, ACK/NACK decision, post-commit publish |
 | `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
@@ -176,7 +176,7 @@
   - envelope validate (`OutboxEnvelopeValidator`)
   - post-handshake guard (`OutboxGuardService`)
   - dedupe check (`OutboxDedupService`)
-  - persistence (`OutboxPersistenceService`)
+  - persistence (`OutboxPersistenceService`, включая enrichment `sender_display_name`/`requester_display_name` для requester-originated `chat_message`)
   - ack/nack decision (`OutboxAckDecisionService`)
   - publish after persistence (`OutboxEventPublishService`)
 

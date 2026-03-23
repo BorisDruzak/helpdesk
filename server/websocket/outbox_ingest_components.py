@@ -10,6 +10,7 @@ from typing import Any, Optional
 from loguru import logger
 
 from websocket.batch_ack_manager import NackInfo
+from tickets.statuses import enrich_chat_payload_with_requester_name
 
 
 @dataclass
@@ -197,6 +198,10 @@ class OutboxPersistenceService:
                         error_message=validation.error_message or "Ticket event validation failed",
                     )
                 ticket_events = TicketEventsRepo(session)
+                if event_type == "chat_message":
+                    ticket = await ticket_events.get_ticket(ticket_id)
+                    if ticket is not None:
+                        event = enrich_chat_payload_with_requester_name(ticket, event)
                 inserted = await ticket_events.add_event(
                     ticket_id=ticket_id,
                     device_id=ctx.agent_id,

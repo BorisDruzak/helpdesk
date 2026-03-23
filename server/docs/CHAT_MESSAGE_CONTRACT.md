@@ -569,6 +569,8 @@ Server validation for every ref:
 Saved `chat_message` payload contains normalized fields:
 - `attachment_refs`: string[]
 - `attachments`: array of descriptors
+- `sender_display_name`: optional display name for requester-originated messages
+- `requester_display_name`: optional requester profile name mirrored for UI rendering
 
 Normalized attachment descriptor format:
 

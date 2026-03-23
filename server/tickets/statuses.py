@@ -265,3 +265,28 @@ def get_requester_display_name(ticket: Any) -> Optional[str]:
             return user_display_name
     requester_id = str(getattr(ticket, "requester_id", "") or "").strip()
     return requester_id or None
+
+
+REQUESTER_MESSAGE_ROLES = {"user", "agent", "requester", "device"}
+
+
+def enrich_chat_payload_with_requester_name(ticket: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    sender_role = str(
+        payload.get("from_role")
+        or payload.get("sender_role")
+        or payload.get("from")
+        or payload.get("actor_role")
+        or payload.get("role")
+        or ""
+    ).strip().lower()
+    if sender_role not in REQUESTER_MESSAGE_ROLES:
+        return payload
+    requester_name = get_requester_display_name(ticket)
+    if not requester_name:
+        return payload
+    enriched = dict(payload)
+    enriched.setdefault("sender_display_name", requester_name)
+    enriched.setdefault("requester_display_name", requester_name)
+    return enriched
