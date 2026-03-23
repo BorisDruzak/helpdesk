@@ -1310,6 +1310,34 @@ class UiUserAudit(Base):
     )
 
 
+class AgentRuntimeAudit(Base):
+    """Append-only audit trail for agent auth/update/runtime lifecycle."""
+    __tablename__ = "agent_runtime_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, server_default="info")
+    source: Mapped[str] = mapped_column(String(64), nullable=False, server_default="server")
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    details_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_agent_runtime_audit_device_created", "device_id", "created_at"),
+        Index("ix_agent_runtime_audit_event_created", "event_type", "created_at"),
+        Index("ix_agent_runtime_audit_severity_created", "severity", "created_at"),
+        Index("ix_agent_runtime_audit_created_at", "created_at"),
+    )
+
+
 class AuthSession(Base):
     """
     Auth session model for Phase 2 (session-based authentication).

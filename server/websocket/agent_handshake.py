@@ -36,6 +36,7 @@ from websocket.agent_services import (
     HandshakeService,
     OutboxIngestService,
 )
+from tech.runtime_audit import write_agent_runtime_audit
 
 # Import database components (lazy import to handle missing dependencies)
 try:
@@ -84,12 +85,28 @@ async def _confirm_update_operation_from_handshake(
             ),
             expected_statuses=["running", "accepted", "sent", "queued"],
         )
+        await write_agent_runtime_audit(
+            device_id=device_id,
+            event_type="update_failed",
+            severity="warning",
+            source="handshake",
+            operation_id=last_update_operation_id,
+            details_json={"reason": "version_mismatch", "expected": expected_version, "actual": applied_update_version},
+        )
         return
 
     await op_service.mark_succeeded(
         operation_id=last_update_operation_id,
         result_summary=f"confirmed_by_handshake:{applied_update_version}",
         expected_statuses=["running", "accepted", "sent", "queued"],
+    )
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="update_handshake_confirmed",
+        severity="info",
+        source="handshake",
+        operation_id=last_update_operation_id,
+        details_json={"applied_update_version": applied_update_version},
     )
 
 async def handle_handshake(
@@ -171,6 +188,13 @@ async def handle_handshake(
                 user_agent=request.headers.get("User-Agent", ""),
                 reason="no_token",
             )
+            await write_agent_runtime_audit(
+                device_id=payload_device_id,
+                event_type="invalid_token",
+                severity="warning",
+                source="handshake",
+                details_json={"reason": "no_token"},
+            )
             logger.info(f"[handshake] Unauthorized attempt persisted: device_id={payload_device_id[:8]}... reason=no_token")
         await ws.close(code=4003, message=b"Token required")
         return (ws, agent_id, device_id, authenticated)
@@ -188,6 +212,13 @@ async def handle_handshake(
                 ip_address=request.remote,
                 user_agent=request.headers.get("User-Agent", ""),
                 reason="invalid_token",
+            )
+            await write_agent_runtime_audit(
+                device_id=payload_device_id,
+                event_type="invalid_token",
+                severity="warning",
+                source="handshake",
+                details_json={"reason": "invalid_token"},
             )
             logger.info(f"[handshake] Unauthorized attempt persisted: device_id={payload_device_id[:8]}... reason=invalid_token")
         await ws.close(code=4003, message=b"Invalid token")
@@ -240,6 +271,14 @@ async def handle_handshake(
     state.register_agent(agent_id, ws, metadata)
     
     logger.success(f"✅ Агент зарегистрирован: {device_id}")
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="handshake_ok",
+        severity="info",
+        source="handshake",
+        actor_id=device_id,
+        actor_role="agent",
+    )
     logger.info(f"   Protocol: {protocol_version}")
     logger.info(f"   Capabilities: {capabilities}")
     logger.info(f"   Модули: {data.get('modules', [])}")

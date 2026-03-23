@@ -115,6 +115,7 @@ class UiUsersRepo:
         user.last_login_at = datetime.now(timezone.utc)
         user.failed_attempts = 0
         user.locked_until = None
+        await self._audit(user_login, "login_success", user_login, {})
         await self.session.commit()
 
     async def increment_failed_attempts(
@@ -135,6 +136,12 @@ class UiUsersRepo:
         if user.failed_attempts >= max_attempts:
             user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
             locked = True
+        await self._audit(
+            user_login,
+            "login_failed",
+            user_login,
+            {"failed_attempts": user.failed_attempts, "locked": locked},
+        )
         await self.session.commit()
         return locked
 

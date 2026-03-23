@@ -60,6 +60,7 @@
 | `server/api/operations.py` | Lifecycle операций, consent/cancel |
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
+| `server/tech/handlers.py` | Read-only техпанель `/api/admin/tech/*`: overview/alerts, аудит агентов/пользователей, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), stuck operations |
 
 ### 2.2.1 Tools / единый путь run_tool
 | Файл | Назначение |
@@ -153,6 +154,7 @@
 - **аутентификация, RBAC** — `auth/`, `auth/agent_token_service.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
+- **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*`
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary` и `update_summary`)
 
 ---

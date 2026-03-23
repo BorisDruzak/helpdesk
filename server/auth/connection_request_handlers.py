@@ -23,6 +23,7 @@ from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
 from auth.service import AuthService
 from auth.connection_request_service import ConnectionRequestService
+from tech.runtime_audit import write_agent_runtime_audit
 
 
 def _get_client_ip(request: web.Request) -> str:
@@ -94,6 +95,13 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                     status=429,
                 )
             logger.info(f"Connection request auto-approved (policy=accept_all): device_id={device_id[:8]}...")
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="connection_request_approved",
+                severity="info",
+                source="connection_request",
+                details_json={"policy": "accept_all"},
+            )
             return web.json_response({
                 "status": "approved",
                 "token": token,
@@ -116,6 +124,12 @@ async def handle_connection_request(request: web.Request) -> web.Response:
             metadata=metadata,
         )
         await session.commit()
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="connection_request_created",
+        severity="info",
+        source="connection_request",
+    )
     logger.info(f"Connection request created (pending): device_id={device_id[:8]}...")
     return web.json_response({
         "status": "pending",
@@ -275,6 +289,14 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
         await session.commit()
 
     await connection_request_service.save_approved_token_once(device_id=device_id, token=token)
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="connection_request_approved",
+        severity="info",
+        source="connection_request_admin",
+        actor_id=request["auth_context"].actor_id if request.get("auth_context") else None,
+        actor_role=request["auth_context"].actor_role if request.get("auth_context") else None,
+    )
     logger.info(f"Connection request approved: device_id={device_id[:8]}...")
     return web.json_response({
         "status": "ok",
@@ -312,6 +334,14 @@ async def handle_admin_connection_request_reject(request: web.Request) -> web.Re
         await session.commit()
 
     logger.info(f"Connection request rejected: device_id={device_id[:8]}...")
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="connection_request_rejected",
+        severity="warning",
+        source="connection_request_admin",
+        actor_id=request["auth_context"].actor_id if request.get("auth_context") else None,
+        actor_role=request["auth_context"].actor_role if request.get("auth_context") else None,
+    )
     return web.json_response({
         "status": "ok",
         "message": "Rejected",

@@ -205,6 +205,16 @@ from modules.handlers import (
     handle_trigger_reconcile
 )
 from jobs.handlers import handle_get_job_events, handle_start_job
+from tech.handlers import (
+    handle_tech_overview,
+    handle_tech_alerts,
+    handle_tech_agents_audit,
+    handle_tech_agent_timeline,
+    handle_tech_ticket_lifecycle,
+    handle_tech_users_audit,
+    handle_tech_admin_config_audit,
+    handle_tech_operations_stuck,
+)
 
 
 async def handle_health(_request: web.Request) -> web.Response:
@@ -417,6 +427,15 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/admin/tickets/queues/{queue_id}/ola_targets', handle_admin_ola_targets_get),
         web.put('/api/admin/tickets/queues/{queue_id}/ola_targets', handle_admin_ola_targets_put),
         web.get('/api/admin/tickets/audit', handle_admin_audit_list),
+        # Tech observability panel (read-only)
+        web.get('/api/admin/tech/overview', handle_tech_overview),
+        web.get('/api/admin/tech/alerts', handle_tech_alerts),
+        web.get('/api/admin/tech/agents/audit', handle_tech_agents_audit),
+        web.get('/api/admin/tech/agents/{device_id}/timeline', handle_tech_agent_timeline),
+        web.get('/api/admin/tech/tickets/{ticket_id}/lifecycle', handle_tech_ticket_lifecycle),
+        web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
+        web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),
+        web.get('/api/admin/tech/operations/stuck', handle_tech_operations_stuck),
         
         # ============================================================================
         # Uploads API

@@ -2005,6 +2005,7 @@
                 });
             });
             initWorkbenchTab();
+            initTechTab();
         });
 
         function switchTab(tabName) {
@@ -2053,6 +2054,8 @@
                 loadUsersTab();
             } else if (tabName === 'agent-updates') {
                 loadAgentUpdatesTab();
+            } else if (tabName === 'tech') {
+                loadTechPanel();
             } else if (tabName === 'workbench') {
                 const frame = document.getElementById('workbenchFrame');
                 const empty = document.getElementById('workbenchEmptyState');
@@ -2065,6 +2068,10 @@
                     empty.style.display = 'block';
                 }
             }
+            if (tabName !== 'tech' && techPollTimer) {
+                clearInterval(techPollTimer);
+                techPollTimer = null;
+            }
         }
 
         function initWorkbenchTab() {
@@ -2076,6 +2083,249 @@
                 if (!frame || !workbenchTicketId) return;
                 frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(workbenchTicketId) + '&_ts=' + Date.now();
             });
+        }
+
+        let techPollTimer = null;
+
+        function initTechTab() {
+            const refreshBtn = document.getElementById('techRefreshBtn');
+            if (refreshBtn) refreshBtn.addEventListener('click', () => loadTechPanel(true));
+            const lifecycleBtn = document.getElementById('techLoadLifecycleBtn');
+            if (lifecycleBtn) lifecycleBtn.addEventListener('click', () => loadTechLifecycle());
+            const tabTech = document.getElementById('tab-tech');
+            if (tabTech) {
+                tabTech.addEventListener('click', function(e) {
+                    const a = e.target.closest('a.tech-lifecycle-jump');
+                    if (!a) return;
+                    e.preventDefault();
+                    const did = a.getAttribute('data-device-id');
+                    if (did && typeof switchTab === 'function') {
+                        switchTab('devices');
+                        if (typeof setDeviceHash === 'function') setDeviceHash(did);
+                        if (typeof devicesApplyHash === 'function') devicesApplyHash();
+                    }
+                });
+            }
+        }
+
+        async function loadTechPanel(force) {
+            const isActive = document.getElementById('tab-tech')?.classList.contains('active');
+            if (!isActive && !force) return;
+            const headers = getAuthHeaders();
+            try {
+                const [overviewRes, alertsRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
+                    fetch('/api/admin/tech/overview', { headers }),
+                    fetch('/api/admin/tech/alerts', { headers }),
+                    fetch('/api/admin/tech/agents/audit?limit=50', { headers }),
+                    fetch('/api/admin/tech/users/audit?limit=50', { headers }),
+                    fetch('/api/admin/tech/operations/stuck', { headers }),
+                ]);
+                const overviewData = await overviewRes.json();
+                const alertsData = await alertsRes.json();
+                const agentsData = await agentsAuditRes.json();
+                const usersData = await usersAuditRes.json();
+                const stuckData = await stuckOpsRes.json();
+                const setJson = (id, value) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = JSON.stringify(value, null, 2);
+                };
+                setJson('techOverviewJson', overviewData.overview || overviewData);
+                setJson('techAlertsJson', alertsData.alerts || alertsData);
+                setJson('techAgentsAuditJson', agentsData.events || agentsData);
+                setJson('techUsersAuditJson', usersData.events || usersData);
+                setJson('techStuckOpsJson', stuckData.operations || stuckData);
+                renderTechOverviewCards(overviewData.overview || {});
+                renderTechAlerts(alertsData.alerts || []);
+            } catch (e) {
+                const el = document.getElementById('techOverviewJson');
+                if (el) el.textContent = 'Ошибка загрузки техпанели: ' + (e.message || e);
+            }
+            if (techPollTimer) clearInterval(techPollTimer);
+            techPollTimer = setInterval(() => {
+                const active = document.getElementById('tab-tech')?.classList.contains('active');
+                if (active) loadTechPanel(false);
+            }, 10000);
+        }
+
+        function renderTechOverviewCards(overview) {
+            const host = document.getElementById('techOverviewCards');
+            if (!host) return;
+            const pg = overview.postgres_health || {};
+            const agent = overview.agent_health || {};
+            const ops = overview.operations_health || {};
+            const upd = overview.update_health || {};
+            const svc = overview.service_health || {};
+            const toStatusClass = (value) => {
+                if (value === 'ok' || value === 0 || value === false) return 'health-green';
+                if (value === 'down' || value === true) return 'health-red';
+                return 'health-yellow';
+            };
+            const cards = [
+                { title: 'PostgreSQL latency', value: (pg.latency_ms != null ? `${pg.latency_ms} ms` : 'n/a'), cls: (pg.reachable ? (pg.latency_ms > 250 ? 'health-yellow' : 'health-green') : 'health-red') },
+                { title: 'Agents online/offline', value: `${agent.online_count ?? 0} / ${agent.offline_count ?? 0}`, cls: (agent.offline_count > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Reprovision (нет токена)', value: `${agent.reprovision_required_count ?? 0}`, cls: ((agent.reprovision_required_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Stale devices', value: `${agent.stale_count ?? 0}`, cls: ((agent.stale_count ?? 0) > 0 ? 'health-red' : 'health-green') },
+                { title: 'WS UI подключений', value: `${svc.ui_ws_connections ?? 0}`, cls: 'health-green' },
+                { title: 'Pending updates', value: `${upd.in_progress ?? 0}`, cls: ((upd.awaiting_handshake_confirm ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Queued stuck', value: `${ops.queued_stuck ?? 0}`, cls: ((ops.queued_stuck ?? 0) > 0 ? 'health-red' : 'health-green') },
+                { title: 'Operation watchdog', value: `${svc.operation_watchdog ?? 'unknown'}`, cls: toStatusClass(svc.operation_watchdog) },
+            ];
+            host.innerHTML = cards.map(c => `<div class="tech-card ${c.cls}"><h4>${c.title}</h4><div class="tech-value">${c.value}</div></div>`).join('');
+        }
+
+        function renderTechAlerts(alerts) {
+            const host = document.getElementById('techAlertsList');
+            if (!host) return;
+            if (!alerts || alerts.length === 0) {
+                host.innerHTML = '<div class="tech-alert-item severity-info"><strong>Нет активных алертов</strong><span>Система в норме.</span></div>';
+                return;
+            }
+            host.innerHTML = alerts.map(a => {
+                const link = a.link ? ` <a href="${escapeHtml(a.link)}" target="_blank" rel="noopener noreferrer">перейти</a>` : '';
+                return `<div class="tech-alert-item severity-${(a.severity || 'info')}">
+                    <strong>[${(a.severity || 'info').toUpperCase()}] ${escapeHtml(a.summary || a.kind || '')}</strong>
+                    <span>${escapeHtml(a.kind || '')} ${a.entity_id ? `(${escapeHtml(a.entity_id)})` : ''}${link}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function formatTechLifecycleTime(iso) {
+            if (!iso) return '—';
+            try { return new Date(iso).toLocaleString('ru-RU'); } catch (e) { return iso; }
+        }
+
+        function renderTechLifecycleVisual(data) {
+            const shell = document.getElementById('techLifecycleVisual');
+            if (!shell) return;
+            if (!data || data.status !== 'ok') {
+                shell.style.display = 'none';
+                shell.innerHTML = '';
+                return;
+            }
+            shell.style.display = 'block';
+            const t = data.ticket || {};
+            const esc = (v) => escapeHtml(String(v == null ? '' : v));
+            const rail = data.milestone_rail || [];
+            const slaLane = data.sla_lane || [];
+            const timeline = data.timeline || [];
+            const ops = data.related_operations || [];
+
+            const head = `
+                <div class="tech-lifecycle-ticket-head">
+                    <h3>${esc(t.title || 'Тикет')}</h3>
+                    <div class="tech-lifecycle-meta">
+                        <span><strong>Код:</strong> ${esc(t.ticket_code)}</span>
+                        <span><strong>ID:</strong> <code>${esc(t.ticket_id)}</code></span>
+                        ${t.device_id ? `<span><strong>Устройство:</strong> <code>${esc(t.device_id)}</code></span>` : ''}
+                        <span class="status-pill">${esc(t.status || '')}</span>
+                    </div>
+                </div>`;
+
+            const milestonesHtml = '<div class="tech-milestones-rail" role="list">' + rail.map(m => {
+                const cls = m.reached ? 'tech-ms-reached' : 'tech-ms-pending';
+                const tip = m.at ? esc(formatTechLifecycleTime(m.at)) : 'Ещё не зафиксировано';
+                return `<div class="tech-milestone-chip ${cls}" role="listitem" title="${tip}">
+                    <span class="tech-ms-icon">${m.icon || ''}</span>
+                    <span class="tech-ms-label">${esc(m.label)}</span>
+                    ${m.at ? `<span class="tech-ms-time">${esc(formatTechLifecycleTime(m.at))}</span>` : '<span class="tech-ms-time">—</span>'}
+                </div>`;
+            }).join('') + '</div>';
+
+            const slaHtml = slaLane.length
+                ? `<div class="tech-sla-lane" role="region" aria-label="SLA">${slaLane.map(s => `<span class="tech-sla-item">${s.icon || ''} <strong>${esc(s.label)}</strong> ${esc(formatTechLifecycleTime(s.at))}</span>`).join('')}</div>`
+                : '';
+
+            function linkRender(link) {
+                if (!link || !link.href) return '';
+                const dm = (link.href || '').match(/#device-(.+)$/);
+                if (link.rel === 'device' && dm) {
+                    return `<a href="#" class="tech-lifecycle-jump" data-jump="device" data-device-id="${esc(dm[1])}">${esc(link.label)}</a>`;
+                }
+                return `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label)}</a>`;
+            }
+
+            const sortedMilestones = rail.filter(m => m.at).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+            let lastPhaseKey = null;
+            const feed = [];
+            timeline.forEach(e => feed.push({ sortAt: e.at, type: 'event', payload: e }));
+            slaLane.forEach(s => feed.push({ sortAt: s.at, type: 'sla', payload: s }));
+            feed.sort((a, b) => new Date(a.sortAt) - new Date(b.sortAt));
+
+            let timelineHtml = '<div class="tech-timeline" role="list">';
+            for (const item of feed) {
+                let phaseKey = '_start';
+                let phaseLabel = 'События';
+                const tms = new Date(item.sortAt).getTime();
+                for (const m of sortedMilestones) {
+                    if (new Date(m.at).getTime() <= tms) {
+                        phaseKey = m.key;
+                        phaseLabel = `${m.icon || ''} ${m.label}`.trim();
+                    }
+                }
+                if (sortedMilestones.length && phaseKey !== lastPhaseKey) {
+                    timelineHtml += `<div class="tech-timeline-phase">${esc(phaseLabel)}</div>`;
+                    lastPhaseKey = phaseKey;
+                }
+
+                if (item.type === 'sla') {
+                    const s = item.payload;
+                    timelineHtml += `<div class="tech-timeline-item tech-tl-sla" role="listitem">
+                        <div class="tl-time">${esc(formatTechLifecycleTime(s.at))}</div>
+                        <div class="tl-title">${s.icon || ''} ${esc(s.label)}</div>
+                    </div>`;
+                } else {
+                    const e = item.payload;
+                    const links = (e.links || []).map(linkRender).filter(Boolean).join(' · ');
+                    timelineHtml += `<div class="tech-timeline-item" role="listitem">
+                        <div class="tl-time">${esc(formatTechLifecycleTime(e.at))}</div>
+                        <div class="tl-title">${e.icon || ''} ${esc(e.title || e.kind || '')}</div>
+                        <div class="tl-actor">Актор: ${esc(e.actor_label || '')}</div>
+                        ${e.status_after ? `<div class="tl-actor">Статус → ${esc(e.status_after)}</div>` : ''}
+                        ${links ? `<div class="tl-links">${links}</div>` : ''}
+                    </div>`;
+                }
+            }
+            timelineHtml += '</div>';
+
+            const opsHtml = ops.length ? `<div class="tech-related-ops"><h4>Связанные операции</h4><div class="tech-ops-grid">` +
+                ops.map(op => {
+                    const lns = (op.links || []).map(linkRender).filter(Boolean).join(' · ');
+                    return `<div class="tech-op-card">
+                        <div class="op-kind">${op.icon || ''} ${esc(op.kind)} · <code>${esc(op.operation_id)}</code></div>
+                        <div>${esc(op.status)} · ${esc(formatTechLifecycleTime(op.queued_at))}</div>
+                        ${lns ? `<div class="tl-links" style="margin-top:6px;">${lns}</div>` : ''}
+                    </div>`;
+                }).join('') + '</div></div>' : '';
+
+            shell.innerHTML = head + milestonesHtml + slaHtml + timelineHtml + opsHtml;
+        }
+
+        async function loadTechLifecycle() {
+            const ticketId = (document.getElementById('techTicketIdInput')?.value || '').trim();
+            const output = document.getElementById('techLifecycleJson');
+            const shell = document.getElementById('techLifecycleVisual');
+            if (!output && !shell) return;
+            if (!ticketId) {
+                if (output) output.textContent = 'Укажите ticket_id';
+                if (shell) { shell.style.display = 'none'; shell.innerHTML = ''; }
+                return;
+            }
+            try {
+                const r = await fetch('/api/admin/tech/tickets/' + encodeURIComponent(ticketId) + '/lifecycle', {
+                    headers: getAuthHeaders(),
+                });
+                const data = await r.json();
+                if (output) output.textContent = JSON.stringify(data, null, 2);
+                renderTechLifecycleVisual(data);
+                if (r.ok) {
+                    const d = document.getElementById('techLifecycleRawDetails');
+                    if (d) d.open = false;
+                }
+            } catch (e) {
+                const msg = 'Ошибка загрузки lifecycle: ' + (e.message || e);
+                if (output) output.textContent = msg;
+                renderTechLifecycleVisual(null);
+            }
         }
 
         // ============================================

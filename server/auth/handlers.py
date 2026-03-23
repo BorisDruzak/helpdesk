@@ -7,6 +7,7 @@ from aiohttp import web
 from loguru import logger
 from .service import AuthService
 from .connection_request_service import ConnectionRequestService
+from tech.runtime_audit import write_agent_runtime_audit
 
 
 async def handle_login(request):
@@ -245,6 +246,13 @@ async def handle_revoke_device_token(request):
             
             if success:
                 logger.info(f"✅ Токен аннулирован для device_id={device_id[:8]}..., hash={token_hash[:16]}...")
+                await write_agent_runtime_audit(
+                    device_id=device_id,
+                    event_type="token_revoked",
+                    severity="warning",
+                    source="auth_handlers",
+                    details_json={"token_hash_prefix": token_hash[:12]},
+                )
                 return web.json_response({
                     "status": "success",
                     "message": "Token revoked successfully"

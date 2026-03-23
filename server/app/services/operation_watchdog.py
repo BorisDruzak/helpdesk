@@ -12,6 +12,7 @@ from app.db import get_session
 from app.services.operation_service import OperationService
 from app.repos.operations_repo import OperationsRepo
 import config
+from tech.runtime_audit import write_agent_runtime_audit
 
 
 class OperationWatchdog:
@@ -98,6 +99,16 @@ class OperationWatchdog:
                                     f"old_status={operation.status} "
                                     f"new_status={updated_op.status} "
                                     f"overdue={int(overdue)}s"
+                                )
+                                await write_agent_runtime_audit(
+                                    device_id=operation.device_id,
+                                    event_type="operation_timed_out",
+                                    severity="warning",
+                                    source="operation_watchdog",
+                                    operation_id=operation.operation_id,
+                                    ticket_id=operation.ticket_id,
+                                    actor_role="system",
+                                    details_json={"status_before": operation.status, "overdue_seconds": int(overdue)},
                                 )
                                 
                                 # PR3: Обновить device_outbox при timeout

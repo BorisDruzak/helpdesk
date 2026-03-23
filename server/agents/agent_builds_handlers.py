@@ -21,6 +21,7 @@ from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from websocket.protocol import enqueue_command_async
+from tech.runtime_audit import write_agent_runtime_audit
 
 # Маппинг ОС (из handshake metadata os_type) в target билда для массового обновления
 OS_TYPE_TO_TARGET = {
@@ -447,6 +448,16 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
 
         await session.commit()
 
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="update_requested",
+        severity="info",
+        source="agent_update_api",
+        operation_id=op_id,
+        actor_id=auth_context.actor_id,
+        actor_role=auth_context.actor_role,
+        details_json={"target": build.target, "channel": build.channel, "version": build.version},
+    )
     return web.json_response(
         {
             "status": "accepted",

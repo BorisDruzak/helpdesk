@@ -790,3 +790,48 @@
         /* Консоль на странице устройства: успех / ошибка */
         .device-module-console .device-console-ok { color: #7ee87e; }
         .device-module-console .device-console-err { color: #f48771; }
+        .tech-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+        .tech-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
+        .tech-card h4 { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+        .tech-card .tech-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
+        .tech-card.health-green { border-color: #b7e4c7; background: #ecfdf3; }
+        .tech-card.health-yellow { border-color: #ffe08a; background: #fff8e1; }
+        .tech-card.health-red { border-color: #f7b0b0; background: #fff1f1; }
+        .tech-alerts-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+        .tech-alert-item { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 8px 10px; background: #fff; }
+        .tech-alert-item strong { display: block; margin-bottom: 2px; }
+        .tech-alert-item.severity-critical { border-left-color: var(--danger); }
+        .tech-alert-item.severity-warning { border-left-color: var(--warning); }
+        .tech-alert-item.severity-info { border-left-color: var(--info); }
+
+        /* Tech panel: ticket lifecycle visual */
+        .tech-lifecycle-visual { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface); }
+        .tech-lifecycle-ticket-head { margin-bottom: 12px; }
+        .tech-lifecycle-ticket-head h3 { font-size: 18px; margin-bottom: 4px; }
+        .tech-lifecycle-meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+        .tech-lifecycle-meta .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e8f0fe; color: #174ea6; font-weight: 600; font-size: 12px; }
+        .tech-milestones-rail { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+        .tech-milestone-chip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 120px; background: #fafafa; }
+        .tech-milestone-chip.tech-ms-reached { border-color: #b7e4c7; background: #ecfdf3; }
+        .tech-milestone-chip.tech-ms-pending { opacity: 0.72; }
+        .tech-ms-icon { margin-right: 4px; }
+        .tech-ms-label { font-weight: 600; font-size: 12px; display: block; }
+        .tech-ms-time { font-size: 11px; color: var(--muted); }
+        .tech-sla-lane { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 14px; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 10px; }
+        .tech-sla-item strong { color: var(--text); font-weight: 600; margin-right: 4px; }
+        .tech-timeline-phase { margin: 16px 0 8px; font-size: 13px; font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+        .tech-timeline { position: relative; margin-left: 8px; padding-left: 20px; border-left: 2px solid var(--border); }
+        .tech-timeline-item { position: relative; margin-bottom: 14px; padding-bottom: 4px; }
+        .tech-timeline-item::before { content: ''; position: absolute; left: -26px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
+        .tech-timeline-item.tech-tl-sla::before { background: var(--warning); }
+        .tech-timeline-item .tl-time { font-size: 11px; color: var(--muted); }
+        .tech-timeline-item .tl-title { font-weight: 600; margin: 2px 0; }
+        .tech-timeline-item .tl-actor { font-size: 12px; color: var(--muted); }
+        .tech-timeline-item .tl-links { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; }
+        .tech-timeline-item .tl-links a { color: var(--primary); }
+        .tech-related-ops { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+        .tech-related-ops h4 { font-size: 14px; margin-bottom: 8px; }
+        .tech-ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+        .tech-op-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; background: #fafafa; }
+        .tech-op-card .op-kind { font-weight: 600; }
+        .tech-lifecycle-raw summary { cursor: pointer; color: var(--muted); font-size: 13px; }

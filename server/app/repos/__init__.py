@@ -20,6 +20,7 @@ from app.repos.problems_repo import ProblemsRepo
 from app.repos.change_links_repo import ChangeLinksRepo
 from app.repos.playbook_repo import PlaybookRepo
 from app.repos.device_desired_modules_repo import DeviceDesiredModulesRepo
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 
 __all__ = [
     "JobEventsRepo",
@@ -41,5 +42,6 @@ __all__ = [
     "ChangeLinksRepo",
     "PlaybookRepo",
     "DeviceDesiredModulesRepo",
+    "AgentRuntimeAuditRepo",
 ]
 

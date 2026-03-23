@@ -74,6 +74,12 @@
                         <span>Обновление агентов</span>
                     </a>
                 </li>
+                <li class="sidebar-menu-item">
+                    <a href="#" class="tab-link" data-tab="tech">
+                        <span class="icon">🩺</span>
+                        <span>Техпанель</span>
+                    </a>
+                </li>
             </ul>
         </div>
 
@@ -863,6 +869,51 @@
                 </div>
             </div> <!-- End of Users Tab -->
 
+            <!-- Tech Observability Tab -->
+            <div id="tab-tech" class="tab-content">
+                <div class="page-header">
+                    <h1>Техпанель наблюдаемости</h1>
+                    <div class="header-actions">
+                        <button type="button" class="btn btn-primary" id="techRefreshBtn">Обновить</button>
+                    </div>
+                </div>
+                <div class="section">
+                    <h2>Обзор системы</h2>
+                    <div id="techOverviewCards" class="tech-cards"></div>
+                    <pre id="techOverviewJson" style="white-space: pre-wrap; display:none;"></pre>
+                </div>
+                <div class="section">
+                    <h2>Активные алерты</h2>
+                    <div id="techAlertsList" class="tech-alerts-list"></div>
+                    <pre id="techAlertsJson" style="white-space: pre-wrap; display:none;"></pre>
+                </div>
+                <div class="section">
+                    <h2>Жизненный путь тикета</h2>
+                    <div class="form-group">
+                        <label for="techTicketIdInput">Ticket ID</label>
+                        <input type="text" id="techTicketIdInput" placeholder="uuid тикета">
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="techLoadLifecycleBtn">Показать lifecycle</button>
+                    <div id="techLifecycleVisual" class="tech-lifecycle-visual" style="display:none;" aria-live="polite"></div>
+                    <details id="techLifecycleRawDetails" class="tech-lifecycle-raw" style="margin-top:10px;">
+                        <summary>Сырой JSON (отладка)</summary>
+                        <pre id="techLifecycleJson" style="white-space: pre-wrap;"></pre>
+                    </details>
+                </div>
+                <div class="section">
+                    <h2>Аудит агентов</h2>
+                    <pre id="techAgentsAuditJson" style="white-space: pre-wrap;">Загрузка...</pre>
+                </div>
+                <div class="section">
+                    <h2>Аудит пользователей</h2>
+                    <pre id="techUsersAuditJson" style="white-space: pre-wrap;">Загрузка...</pre>
+                </div>
+                <div class="section">
+                    <h2>Застрявшие операции</h2>
+                    <pre id="techStuckOpsJson" style="white-space: pre-wrap;">Загрузка...</pre>
+                </div>
+            </div>
+
             <!-- Agent Updates Tab -->
             <div id="tab-agent-updates" class="tab-content">
                 <div class="page-header">
@@ -1019,6 +1070,6 @@
     </div> <!-- End of app-layout -->
     </div> <!-- End of mainContent -->
 
-    <script src="/admin.js?v=4"></script>
+    <script src="/admin.js?v=5"></script>
 </body>
 </html>

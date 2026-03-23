@@ -5,6 +5,7 @@ import json
 from aiohttp import web
 from loguru import logger
 
+from tech.runtime_audit import write_agent_runtime_audit
 from websocket.batch_ack_manager import BatchAckManager
 from websocket.contexts import AgentConnectionContext, EnvelopeContext
 from websocket.validator import EventValidator
@@ -18,6 +19,30 @@ from websocket.agent_services import (
     OutboxIngestService,
 )
 from websocket.agent_handshake import handle_handshake
+
+
+async def _handle_agent_disconnect(state, connection_ctx: AgentConnectionContext) -> None:
+    if not connection_ctx.agent_id:
+        return
+
+    device_id = connection_ctx.agent_id
+    agent_info = state.get_agent(device_id)
+    if agent_info:
+        agent_info["metadata"]["status"] = "offline"
+    state.unregister_agent(device_id)
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="agent_offline",
+        severity="info",
+        source="websocket_handler",
+        actor_id=device_id,
+        actor_role="agent",
+        details_json={"reason": "connection_closed"},
+    )
+    logger.info(
+        f"[WS handler] Exiting handler for agent_id={device_id}, unregistering (connection closed)"
+    )
+    logger.warning(f"🔴 Agent disconnected: {device_id}")
 
 
 async def websocket_handler(request):
@@ -96,14 +121,6 @@ async def websocket_handler(request):
                 logger.error(f"❌ WebSocket error: {ws.exception()!r}")
                 break
     finally:
-        if connection_ctx.agent_id:
-            agent_info = state.get_agent(connection_ctx.agent_id)
-            if agent_info:
-                agent_info["metadata"]["status"] = "offline"
-            state.unregister_agent(connection_ctx.agent_id)
-            logger.info(
-                f"[WS handler] Exiting handler for agent_id={connection_ctx.agent_id}, unregistering (connection closed)"
-            )
-            logger.warning(f"🔴 Agent disconnected: {connection_ctx.agent_id}")
+        await _handle_agent_disconnect(state, connection_ctx)
 
     return ws
