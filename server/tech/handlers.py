@@ -63,6 +63,18 @@ def _pool_status_safe(bind: Any) -> Optional[str]:
         return None
 
 
+def _active_agent_token_exists_for_connection_request(now: datetime):
+    return exists(
+        select(AgentToken.token_hash).where(
+            and_(
+                AgentToken.device_id == ConnectionRequest.device_id,
+                AgentToken.revoked_at.is_(None),
+                or_(AgentToken.expires_at.is_(None), AgentToken.expires_at > now),
+            )
+        )
+    )
+
+
 def _lifecycle_event_icon(kind: str) -> str:
     k = (kind or "").lower()
     if k in ("ticket_created",):
@@ -345,8 +357,12 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     )
                 )
             ) or 0
+            unresolved_pending_filter = and_(
+                ConnectionRequest.status == "pending",
+                ~_active_agent_token_exists_for_connection_request(now),
+            )
             pending_conn = await session.scalar(
-                select(func.count()).select_from(ConnectionRequest).where(ConnectionRequest.status == "pending")
+                select(func.count()).select_from(ConnectionRequest).where(unresolved_pending_filter)
             ) or 0
             invalid_recent = await session.scalar(
                 select(func.count()).select_from(TicketEvent).where(
@@ -489,7 +505,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             old_pending = await session.scalar(
                 select(func.count()).select_from(ConnectionRequest).where(
                     and_(
-                        ConnectionRequest.status == "pending",
+                        unresolved_pending_filter,
                         ConnectionRequest.last_request_at < (now - timedelta(seconds=pending_stuck_sec)),
                     )
                 )
@@ -499,7 +515,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     select(ConnectionRequest)
                     .where(
                         and_(
-                            ConnectionRequest.status == "pending",
+                            unresolved_pending_filter,
                             ConnectionRequest.last_request_at < (now - timedelta(seconds=pending_stuck_sec)),
                         )
                     )

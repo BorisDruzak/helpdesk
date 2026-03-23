@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 from app.db import get_session
-from app.db.models import Device, Ticket, TicketEvent, Operation, AgentRuntimeAudit
+from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent
 
 
 ADMIN_TOKEN = "test-ui-admin-token"
@@ -132,3 +132,58 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     audit_body = await audit_resp.json()
     assert audit_body["status"] == "ok"
     assert any(item["event_type"] == "handshake_ok" for item in audit_body["events"])
+
+
+@pytest.mark.asyncio
+async def test_tech_overview_ignores_stale_pending_for_devices_with_active_token(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-000000000777"
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.0.0",
+                hostname="stale-but-active",
+                os="windows",
+                capabilities=[],
+                tools_version="t1",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now,
+            )
+        )
+        await session.flush()
+        session.add(
+            AgentToken(
+                token_hash="a" * 64,
+                token_prefix="aaaaaaaa",
+                device_id=device_id,
+                created_at=now - timedelta(hours=1),
+                expires_at=now + timedelta(days=30),
+                revoked_at=None,
+            )
+        )
+        from app.db.models import ConnectionRequest
+        session.add(
+            ConnectionRequest(
+                device_id=device_id,
+                status="pending",
+                hostname="stale-but-active",
+                ip_address="10.0.0.5",
+                created_at=now - timedelta(hours=2),
+                last_request_at=now - timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    overview_resp = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    assert overview_resp.status == 200
+    body = await overview_resp.json()
+    overview = body["overview"]
+    assert overview["agent_health"]["pending_connection_requests"] == 0
+    assert not any(
+        alert["kind"] == "connection_request_stuck_pending"
+        for alert in overview["alerts"]
+    )
