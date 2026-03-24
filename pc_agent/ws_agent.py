@@ -64,6 +64,20 @@ from pc_agent.auth.rejected_flag import connection_rejected_flag_path
 from pc_agent.auth.token_source import load_auth_token
 
 
+def _configure_utf8_stdio() -> None:
+    """Force UTF-8 for console streams to avoid mojibake on Windows."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🔧 PROTOCOL V3 КОНСТАНТЫ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3090,6 +3104,7 @@ def main():
     """
     Главная функция. Сначала парсим --data-dir/--install-root, инициализируем конфиг от data_root, затем запускаем агент или verify.
     """
+    _configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="PC Agent WebSocket Client")
     parser.add_argument("--data-dir", type=str, default=None, help="Корень данных (БД, логи, модули). По умолчанию: по ОС (LOCALAPPDATA/XDG)")
     parser.add_argument("--install-root", type=str, default=None, help="Корень установки (для launcher; опционально)")

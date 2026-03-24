@@ -450,7 +450,7 @@
             return null;
         }
         if (type === 'chat_message') {
-            const fromRole = String(
+            const rawRole = String(
                 payload.from_role
                 || payload.sender_role
                 || payload.from
@@ -458,17 +458,33 @@
                 || payload.role
                 || ''
             ).toLowerCase();
+            const roleAliases = {
+                customer: 'user',
+                client: 'user',
+                requester_user: 'user',
+                end_user: 'user',
+                requester: 'user',
+                operator: 'support',
+                moderator: 'support',
+                auditor: 'support',
+            };
+            const fromRole = roleAliases[rawRole] || rawRole;
             const direction = String(payload.direction || '').toLowerCase();
             const text = payload.text || '';
             const vis = payload.visibility || 'public';
-            const requesterRoles = new Set(['user', 'agent', 'requester', 'device']);
-            const staffRoles = new Set(['support', 'admin', 'operator', 'manager']);
-            const isRequester = requesterRoles.has(fromRole) || direction === 'from_agent' || direction === 'from_device';
-            const isStaff = staffRoles.has(fromRole);
+            const requesterRoles = new Set(['user', 'agent', 'device']);
+            const staffRoles = new Set(['support', 'admin', 'manager']);
+            const explicitRequesterDirection = new Set(['from_user', 'from_requester', 'requester_to_support']);
+            const explicitStaffDirection = new Set(['from_support', 'from_admin', 'from_operator']);
+            const requesterDisplay = String(payload.requester_display_name || '').trim();
+            const senderDisplay = String(payload.sender_display_name || '').trim();
+            const requesterByDisplayName = Boolean(requesterDisplay && senderDisplay && requesterDisplay === senderDisplay);
+            const isRequester = requesterRoles.has(fromRole) || explicitRequesterDirection.has(direction) || requesterByDisplayName;
+            const isStaff = staffRoles.has(fromRole) || explicitStaffDirection.has(direction);
             const profileName = meta.requester_display_name || payload.requester_display_name || payload.profile_name || payload.sender_display_name;
             const senderResolved = isRequester
                 ? (profileName || 'Пользователь')
-                : (payload.sender_display_name || payload.actor_id || meta.assignee_id || (staffRoles.has(fromRole) ? 'Поддержка' : 'Система'));
+                : (payload.sender_display_name || payload.actor_id || (isStaff ? 'Поддержка' : 'Система'));
             const avatar = isRequester ? 'U' : (fromRole === 'support' ? 'S' : fromRole === 'admin' ? 'A' : 'T');
             const internalBadge = vis === 'internal' ? '<span class="ti-badge-internal">Внутр.</span>' : '';
             const attachments = payload.attachments || [];

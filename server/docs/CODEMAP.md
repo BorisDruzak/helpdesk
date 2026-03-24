@@ -24,7 +24,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler |
+| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
 

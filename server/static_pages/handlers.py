@@ -7,7 +7,11 @@ BASE_DIR = Path(__file__).parent.parent
 
 
 # Запрет кэширования админки, чтобы после деплоя всегда подгружалась новая версия.
-_NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate"}
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 def _html_file_response(path: Path) -> web.FileResponse:
@@ -16,6 +20,16 @@ def _html_file_response(path: Path) -> web.FileResponse:
         path,
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
+
+
+def _static_text_response(path: Path, content_type: str, *, no_cache: bool = False) -> web.FileResponse:
+    response = web.FileResponse(
+        path,
+        headers={"Content-Type": content_type},
+    )
+    if no_cache:
+        response.headers.update(_NO_CACHE_HEADERS)
+    return response
 
 
 async def handle_index(request):
@@ -52,11 +66,15 @@ async def handle_admin_js(request):
 
 
 async def handle_ticket_page(request):
-    return _html_file_response(BASE_DIR / "ticket.html")
+    r = _html_file_response(BASE_DIR / "ticket.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_ticket_page_by_id(request):
-    return _html_file_response(BASE_DIR / "ticket.html")
+    r = _html_file_response(BASE_DIR / "ticket.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_chat_debug(request):
@@ -79,57 +97,45 @@ async def handle_ws_ui_test(request):
 
 
 async def handle_modules_page(request):
-    return _html_file_response(BASE_DIR / "modules.html")
+    r = _html_file_response(BASE_DIR / "modules.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_public_queue_page(request):
     """Stage 10.2: публичная страница очереди (без авторизации)."""
-    return _html_file_response(BASE_DIR / "public_queue.html")
+    r = _html_file_response(BASE_DIR / "public_queue.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_public_queue_css(request):
-    return web.FileResponse(
-        BASE_DIR / "public_queue.css",
-        headers={"Content-Type": "text/css; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "public_queue.css", "text/css; charset=utf-8", no_cache=True)
 
 
 async def handle_public_queue_js(request):
-    return web.FileResponse(
-        BASE_DIR / "public_queue.js",
-        headers={"Content-Type": "application/javascript; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "public_queue.js", "application/javascript; charset=utf-8", no_cache=True)
 
 
 async def handle_help_page(request):
-    return _html_file_response(BASE_DIR / "help.html")
+    r = _html_file_response(BASE_DIR / "help.html")
+    r.headers.update(_NO_CACHE_HEADERS)
+    return r
 
 
 async def handle_help_css(request):
-    return web.FileResponse(
-        BASE_DIR / "help.css",
-        headers={"Content-Type": "text/css; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "help.css", "text/css; charset=utf-8", no_cache=True)
 
 
 async def handle_help_js(request):
-    return web.FileResponse(
-        BASE_DIR / "help.js",
-        headers={"Content-Type": "application/javascript; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "help.js", "application/javascript; charset=utf-8", no_cache=True)
 
 
 async def handle_ticket_css(request):
     """Stage 10.4: стили страницы тикета (chat-first)."""
-    return web.FileResponse(
-        BASE_DIR / "ticket.css",
-        headers={"Content-Type": "text/css; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "ticket.css", "text/css; charset=utf-8", no_cache=True)
 
 
 async def handle_ticket_js(request):
     """Stage 10.4: скрипт страницы тикета (chat-first, slash-команды, WS)."""
-    return web.FileResponse(
-        BASE_DIR / "ticket.js",
-        headers={"Content-Type": "application/javascript; charset=utf-8"},
-    )
+    return _static_text_response(BASE_DIR / "ticket.js", "application/javascript; charset=utf-8", no_cache=True)

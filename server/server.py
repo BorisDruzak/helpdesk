@@ -50,6 +50,20 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 
 
+def _configure_utf8_stdio() -> None:
+    """Force UTF-8 for console streams to avoid mojibake on Windows."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 async def housekeeping_cleanup_task(app: web.Application):
     """
     Phase G2: Периодический cleanup runtime cache.
@@ -350,6 +364,7 @@ def create_app() -> web.Application:
 
 def main():
     """Главная точка входа приложения."""
+    _configure_utf8_stdio()
     # Настраиваем логирование
     logger.remove()  # Удаляем стандартный обработчик
     logger.add(
