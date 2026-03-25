@@ -11,12 +11,16 @@ from app.db.models import (
     Device,
     AgentToken,
     DeviceOutbox,
+    DispatchReadyDevice,
     Operation,
     DeviceModule,
     DeviceDesiredModule,
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceEvent,
+    ConnectionRequest,
+    AgentRuntimeAudit,
+    PlaybookRun,
 )
 
 
@@ -362,7 +366,8 @@ class DevicesRepo:
     async def delete_device(self, device_id: str) -> bool:
         """
         Удаляет устройство из БД и все связанные записи (токены, outbox, операции,
-        модули, конфиг, снапшоты, события). Порядок удаления учитывает FK.
+        модули, конфиг, снапшоты, runtime-аудит, provisioning-запросы). Порядок
+        удаления учитывает FK.
         
         Returns:
             True если устройство найдено и удалено, False если не найдено.
@@ -372,12 +377,16 @@ class DevicesRepo:
             return False
         await self.session.execute(delete(AgentToken).where(AgentToken.device_id == device_id))
         await self.session.execute(delete(DeviceOutbox).where(DeviceOutbox.device_id == device_id))
+        await self.session.execute(delete(DispatchReadyDevice).where(DispatchReadyDevice.device_id == device_id))
         await self.session.execute(delete(Operation).where(Operation.device_id == device_id))
         await self.session.execute(delete(DeviceModule).where(DeviceModule.device_id == device_id))
         await self.session.execute(delete(DeviceDesiredModule).where(DeviceDesiredModule.device_id == device_id))
         await self.session.execute(delete(DeviceConfig).where(DeviceConfig.device_id == device_id))
         await self.session.execute(delete(DeviceToolsetSnapshot).where(DeviceToolsetSnapshot.device_id == device_id))
         await self.session.execute(delete(DeviceEvent).where(DeviceEvent.device_id == device_id))
+        await self.session.execute(delete(ConnectionRequest).where(ConnectionRequest.device_id == device_id))
+        await self.session.execute(delete(AgentRuntimeAudit).where(AgentRuntimeAudit.device_id == device_id))
+        await self.session.execute(delete(PlaybookRun).where(PlaybookRun.device_id == device_id))
         await self.session.execute(delete(Device).where(Device.device_id == device_id))
         await self.session.flush()
         logger.info(f"[DevicesRepo] Deleted device and related data: device_id={device_id}")

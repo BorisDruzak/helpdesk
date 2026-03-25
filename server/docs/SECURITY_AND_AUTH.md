@@ -51,6 +51,7 @@
 
 - **Agent:** `POST /api/devices/{device_id}/tokens/revoke` с телом `{"token_hash": "..."}`. Отзыв по hash (сырой токен клиентом не передаётся).
 - **Список токенов устройства:** `GET /api/devices/{device_id}/tokens` (требует аутентификации). Возвращает список записей с `token_hash`, `token_prefix`, датами, флагом `is_active`.
+- **Удаление устройства:** `DELETE /api/devices/{device_id}` доступен только роли `admin`. Перед удалением сервер best-effort закрывает live WebSocket-сессию агента и очищает runtime-кэши, после чего удаляет связанные записи устройства из БД.
 
 ---
 
@@ -113,6 +114,7 @@
 
 - Роль и идентификатор актора берутся только из `request['auth_context']`.
 - Декоратор `require_auth(*allowed_roles)` проверяет наличие `auth_context` и вхождение `actor_role` в `allowed_roles`. При отсутствии контекста — 401, при недопустимой роли — 403 (`error_code: "FORBIDDEN"`).
+- Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут удалять устройства из реестра.
 
 ### 4.4 Тикетная система (Этапы 3–8) — RBAC
 

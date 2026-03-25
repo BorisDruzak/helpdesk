@@ -9,6 +9,7 @@ import time
 from .service import AgentService
 from app.db import get_session
 from app.repos.connection_requests_repo import ConnectionRequestsRepo
+from auth.middleware import require_auth
 
 
 def _serialize_provisioning_state(
@@ -433,6 +434,41 @@ async def handle_device_check(request):
         }, status=500)
 
 
+async def _disconnect_device_runtime_session(state, device_id: str) -> bool:
+    """Best-effort cleanup for an online agent session before DB deletion."""
+    if not state:
+        return False
+
+    agent_info = state.get_agent(device_id) if hasattr(state, "get_agent") else None
+    if not agent_info:
+        return False
+
+    ws = agent_info.get("ws") if isinstance(agent_info, dict) else None
+    if hasattr(state, "unregister_agent"):
+        state.unregister_agent(device_id)
+
+    # Per-device semaphores are runtime-only caches created lazily by protocol helpers.
+    for attr_name in (
+        "_ws_command_per_device_semaphores",
+        "_ws_command_per_device_run_tool_semaphores",
+    ):
+        cache = getattr(state, attr_name, None)
+        if isinstance(cache, dict):
+            cache.pop(device_id, None)
+
+    if ws is not None:
+        try:
+            if not getattr(ws, "closed", False):
+                await ws.close(code=4001, message="Device deleted by admin".encode("utf-8"))
+        except Exception as exc:
+            logger.warning(
+                f"[handle_delete_device] Failed to close live agent websocket: "
+                f"device_id={device_id} error={exc}"
+            )
+    return True
+
+
+@require_auth("admin")
 async def handle_delete_device(request):
     """
     DELETE /api/devices/{device_id}
@@ -445,9 +481,19 @@ async def handle_delete_device(request):
         from app.repos import DevicesRepo
 
         device_id = request.match_info["device_id"]
+        auth_context = request["auth_context"]
+        state = request.app.get("state")
 
         async with get_session() as session:
             devices_repo = DevicesRepo(session)
+            existing_device = await devices_repo.get_by_device_id(device_id)
+            if not existing_device:
+                return web.json_response({
+                    "status": "error",
+                    "error": "Устройство не найдено"
+                }, status=404)
+
+            was_online = await _disconnect_device_runtime_session(state, device_id)
             deleted = await devices_repo.delete_device(device_id)
             await session.commit()
 
@@ -457,9 +503,17 @@ async def handle_delete_device(request):
                 "error": "Устройство не найдено"
             }, status=404)
 
+        logger.info(
+            f"[handle_delete_device] Device deleted by admin: "
+            f"device_id={device_id} actor_id={auth_context.actor_id} "
+            f"actor_role={auth_context.actor_role} was_online={was_online}"
+        )
+
         return web.json_response({
             "status": "ok",
-            "message": "Устройство удалено из БД"
+            "message": "Устройство удалено из БД",
+            "device_id": device_id,
+            "was_online": was_online,
         })
     except Exception as e:
         logger.error(f"❌ Ошибка удаления устройства: {e}")
@@ -468,4 +522,3 @@ async def handle_delete_device(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-

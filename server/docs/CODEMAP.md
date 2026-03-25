@@ -84,6 +84,7 @@
 | `server/app/repos/device_modules_repo.py` | Установленные модули на устройстве |
 | `server/app/repos/device_desired_modules_repo.py` | Желаемое состояние модулей |
 | `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа; проверка, ротация, controlled rebind токена агента |
+| `server/app/repos/devices_repo.py` | Реестр устройств: handshake upsert, last_seen/toolset update, каскадное удаление устройства и связанных runtime/provisioning записей |
 | `server/app/repos/connection_requests_repo.py` | Запросы на подключение устройств, политика (reject_all/accept_all/manual) |
 | Остальные repos | artifacts, notifications, playbook, tickets, agents, jobs, ui_users и др. — см. `server/app/repos/`. |
 
@@ -103,7 +104,7 @@
 | Каталог/файл | Назначение |
 |--------------|------------|
 | `server/tickets/` | handlers, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др. |
-| `server/agents/` | handlers, agent_builds_handlers, service |
+| `server/agents/` | handlers, agent_builds_handlers, service; `handlers.py` также даёт admin-only удаление устройства с очисткой live runtime-сессии |
 | `server/modules/` | handlers, service, reconcile, verification |
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |
 | `server/chat/` | handlers, service |
