@@ -2089,6 +2089,10 @@
         let techSelectedDeviceId = null;
         let techDevicesCache = [];
         let techSelectedModules = [];
+        let techAgentActionState = {
+            deviceId: null,
+            text: '',
+        };
 
         function techStatusClass(kind) {
             if (kind === 'ok') return 'ok';
@@ -2166,6 +2170,100 @@
             if (!value || (typeof value === 'object' && !Object.keys(value).length)) return '—';
             const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
             return text.length > 220 ? text.slice(0, 220) + '…' : text;
+        }
+
+        function techActionLabel(action) {
+            const map = {
+                get_status: 'Статус агента',
+                get_history: 'История агента',
+                list_tasks: 'Список задач',
+                refresh_toolset: 'Обновить набор инструментов',
+                sync_modules: 'Синхронизировать модули',
+                reconcile: 'Сверить состояние модулей',
+                verify_module: 'Проверить модуль',
+            };
+            return map[action] || action;
+        }
+
+        function techDetailLabel(key) {
+            const map = {
+                actor_id: 'Кто выполнил',
+                actor_role: 'Роль',
+                reason: 'Причина',
+                error: 'Ошибка',
+                error_code: 'Код ошибки',
+                error_message: 'Текст ошибки',
+                protocol_version: 'Версия протокола',
+                hostname: 'Хост',
+                ip_address: 'IP-адрес',
+                stale_count: 'Количество неактивных',
+                threshold_seconds: 'Порог, сек',
+                pending_stale_count: 'Зависших заявок',
+                last_request_at: 'Последний запрос',
+                token_prefix: 'Префикс токена',
+                user_login: 'Пользователь',
+                event_type: 'Тип события',
+                module_name: 'Модуль',
+                version: 'Версия',
+                status: 'Статус',
+                state: 'Состояние',
+                count: 'Количество',
+                connection_id: 'Подключение',
+                line: 'Строка',
+                source: 'Источник',
+            };
+            return map[key] || key.replace(/_/g, ' ');
+        }
+
+        function techFormatDetailValue(key, value) {
+            if (value == null || value === '') return '—';
+            if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+            if (typeof value === 'number') return String(value);
+            if (typeof value === 'string') {
+                if (/_at$/.test(key) || key === 'timestamp') {
+                    return techFormatDate(value);
+                }
+                return value;
+            }
+            return JSON.stringify(value);
+        }
+
+        function techRenderDetails(details) {
+            if (!details || typeof details !== 'object') {
+                return '<span class="muted">—</span>';
+            }
+            const entries = Object.entries(details).filter(([key, value]) => key !== 'samples' && value != null && value !== '');
+            if (!entries.length) {
+                return '<span class="muted">—</span>';
+            }
+            return entries.map(([key, value]) => `<div><strong>${escapeHtml(techDetailLabel(key))}:</strong> ${escapeHtml(techFormatDetailValue(key, value))}</div>`).join('');
+        }
+
+        function techHumanizeActionError(action, message) {
+            const label = techActionLabel(action);
+            const raw = String(message || '').trim();
+            if (!raw) return `Не удалось выполнить команду «${label}».`;
+            if (/not connected/i.test(raw)) {
+                return `Агент сейчас не подключен к серверу. Команду «${label}» выполнить нельзя.`;
+            }
+            if (/timed? out|timeout/i.test(raw)) {
+                return `Агент не ответил вовремя на команду «${label}».`;
+            }
+            if (/unknown action/i.test(raw)) {
+                return `Сервер не знает команду «${label}».`;
+            }
+            return raw;
+        }
+
+        function techSetActionState(deviceId, text) {
+            techAgentActionState = {
+                deviceId: deviceId || null,
+                text: text || '',
+            };
+            const resultBox = document.getElementById('techAgentActionResult');
+            if (resultBox && techSelectedDeviceId === deviceId) {
+                resultBox.textContent = text || 'Нажмите одну из кнопок выше, чтобы получить живой ответ от агента.';
+            }
         }
 
         function initTechTab() {
@@ -2344,10 +2442,7 @@
             }
             host.innerHTML = alerts.map(item => {
                 const details = item.details && typeof item.details === 'object'
-                    ? Object.entries(item.details)
-                        .filter(([key]) => key !== 'samples')
-                        .map(([key, value]) => `<div><strong>${escapeHtml(key)}:</strong> ${escapeHtml(typeof value === 'object' ? JSON.stringify(value) : String(value))}</div>`)
-                        .join('')
+                    ? techRenderDetails(item.details)
                     : '';
                 const samples = Array.isArray(item.details?.samples) && item.details.samples.length
                     ? '<div class="tech-alert-details">' + item.details.samples.map(sample => {
@@ -2355,7 +2450,7 @@
                         if (sample.device_id) parts.push(`<code>${escapeHtml(sample.device_id)}</code>`);
                         if (sample.hostname) parts.push(escapeHtml(sample.hostname));
                         if (sample.ip_address) parts.push(escapeHtml(sample.ip_address));
-                        if (sample.last_request_at) parts.push(escapeHtml(techFormatDate(sample.last_request_at)));
+                        if (sample.last_request_at) parts.push(`последний запрос ${escapeHtml(techFormatDate(sample.last_request_at))}`);
                         return `<div>${parts.join(' · ')}</div>`;
                     }).join('') + '</div>'
                     : '';
@@ -2442,14 +2537,14 @@
                             <td><code>${escapeHtml(row.device_id || '—')}</code></td>
                             <td>${escapeHtml(row.event_label || row.event_type || '—')}</td>
                             <td>${techPill(row.severity_label || row.severity || '—', row.severity === 'error' || row.severity === 'critical' ? 'bad' : (row.severity === 'warning' ? 'warn' : 'ok'))}</td>
-                            <td><div class="tech-json-preview">${escapeHtml(techJsonPreview(row.details_json))}</div></td>
+                            <td><div class="tech-json-preview">${techRenderDetails(row.details_json)}</div></td>
                         </tr>`
                         : `<tr>
                             <td>${escapeHtml(techFormatDate(row.created_at))}</td>
                             <td>${escapeHtml(row.user_login || '—')}</td>
                             <td>${escapeHtml(row.action_label || row.action || '—')}</td>
                             <td>${escapeHtml(row.actor_id || '—')}</td>
-                            <td><div class="tech-json-preview">${escapeHtml(techJsonPreview(row.details_json))}</div></td>
+                            <td><div class="tech-json-preview">${techRenderDetails(row.details_json)}</div></td>
                         </tr>`
                     ).join('')}
                 </tbody>
@@ -2548,6 +2643,9 @@
             const authTimeline = timelineData.auth_timeline || [];
             const handshakeTimeline = timelineData.handshake_timeline || [];
             const updateTimeline = timelineData.update_timeline || [];
+            const actionText = techAgentActionState.deviceId === device.device_id && techAgentActionState.text
+                ? techAgentActionState.text
+                : 'Нажмите одну из кнопок выше, чтобы получить живой ответ от агента.';
 
             shell.innerHTML = `
                 <div class="tech-agent-detail">
@@ -2566,21 +2664,21 @@
                     </div>
 
                     <div class="tech-actions-bar">
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_status">get_status</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_history">get_history</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="list_tasks">list_tasks</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="refresh_toolset">refresh toolset</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="sync_modules">sync modules</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="reconcile">reconcile</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_status">Статус</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_history">История</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="list_tasks">Задачи</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="refresh_toolset">Обновить toolset</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="sync_modules">Синхронизировать модули</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="reconcile">Сверить состояние</button>
                     </div>
 
                     <div class="tech-kpi-grid">
                         <div class="tech-kpi-card"><label>Последний контакт</label><value>${escapeHtml(techFormatDate(device.last_seen_at))}</value></div>
                         <div class="tech-kpi-card"><label>Возраст handshake</label><value>${escapeHtml(current.last_handshake_age_sec != null ? `${Math.floor(current.last_handshake_age_sec / 60)} мин` : '—')}</value></div>
-                        <div class="tech-kpi-card"><label>Toolset hash</label><value>${escapeHtml(toolsetData?.toolset_hash || device.toolset_hash || '—')}</value></div>
+                        <div class="tech-kpi-card"><label>Хеш toolset</label><value>${escapeHtml(toolsetData?.toolset_hash || device.toolset_hash || '—')}</value></div>
                         <div class="tech-kpi-card"><label>Инструментов</label><value>${escapeHtml(String(toolsetData?.tool_count ?? device.tools_count ?? 0))}</value></div>
-                        <div class="tech-kpi-card"><label>Pending consents</label><value>${escapeHtml(String(current.pending_consents_count ?? 0))}</value></div>
-                        <div class="tech-kpi-card"><label>Outbox backlog</label><value>${escapeHtml(String((outboxCounts.pending || 0) + (outboxCounts.sent || 0)))}</value></div>
+                        <div class="tech-kpi-card"><label>Ожидают подтверждения</label><value>${escapeHtml(String(current.pending_consents_count ?? 0))}</value></div>
+                        <div class="tech-kpi-card"><label>Очередь outbox</label><value>${escapeHtml(String((outboxCounts.pending || 0) + (outboxCounts.sent || 0)))}</value></div>
                     </div>
 
                     ${issueSummary.length ? `<div class="tech-mini-panel"><h4>Что требует внимания сейчас</h4><ul class="tech-issue-list">${issueSummary.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
@@ -2595,10 +2693,10 @@
                         <h4>Модульная диагностика</h4>
                         ${desiredDiff.length ? `<div class="tech-inline-list" style="margin-bottom: 10px;">
                             ${desiredData.summary ? techPill(`OK: ${desiredData.summary.ok || 0}`, 'ok') : ''}
-                            ${desiredData.summary?.missing ? techPill(`missing: ${desiredData.summary.missing}`, 'bad') : ''}
-                            ${desiredData.summary?.version_mismatch ? techPill(`version mismatch: ${desiredData.summary.version_mismatch}`, 'warn') : ''}
-                            ${desiredData.summary?.not_removed ? techPill(`not removed: ${desiredData.summary.not_removed}`, 'warn') : ''}
-                        </div>` : '<div class="tech-empty-note" style="margin-bottom:10px;">Desired state не заполнен.</div>'}
+                            ${desiredData.summary?.missing ? techPill(`Отсутствуют: ${desiredData.summary.missing}`, 'bad') : ''}
+                            ${desiredData.summary?.version_mismatch ? techPill(`Версия не совпадает: ${desiredData.summary.version_mismatch}`, 'warn') : ''}
+                            ${desiredData.summary?.not_removed ? techPill(`Не удалены: ${desiredData.summary.not_removed}`, 'warn') : ''}
+                        </div>` : '<div class="tech-empty-note" style="margin-bottom:10px;">Желаемое состояние модулей не заполнено.</div>'}
                         <div class="tech-table-wrap">
                             <table class="tech-table">
                                 <thead><tr><th>Модуль</th><th>Desired</th><th>Actual</th><th>Drift</th><th>Действие</th></tr></thead>
@@ -2613,7 +2711,7 @@
                                             <td>${escapeHtml(diff ? `${diff.desired_state || '—'} ${diff.desired_version || ''}`.trim() : '—')}</td>
                                             <td>${escapeHtml(`${mod.state || '—'} · tools: ${tools.length}`)}</td>
                                             <td>${techPill(driftLabel, driftKind)}</td>
-                                            <td><button type="button" class="btn btn-secondary btn-sm" data-tech-action="verify_module" data-module-name="${escapeHtml(mod.module_name)}" data-module-version="${escapeHtml(mod.version || '')}">verify</button></td>
+                                            <td><button type="button" class="btn btn-secondary btn-sm" data-tech-action="verify_module" data-module-name="${escapeHtml(mod.module_name)}" data-module-version="${escapeHtml(mod.version || '')}">Проверить</button></td>
                                         </tr>`;
                                     }).join('') || '<tr><td colspan="5" class="muted">Модулей нет.</td></tr>'}
                                 </tbody>
@@ -2638,9 +2736,9 @@
                         <div class="tech-mini-panel">
                             <h4>Состояние outbox</h4>
                             <div class="tech-inline-list" style="margin-bottom: 10px;">
-                                ${techPill(`pending: ${outboxCounts.pending || 0}`, (outboxCounts.pending || 0) ? 'warn' : 'ok')}
-                                ${techPill(`sent: ${outboxCounts.sent || 0}`, (outboxCounts.sent || 0) ? 'warn' : 'ok')}
-                                ${techPill(`failed: ${outboxCounts.failed || 0}`, (outboxCounts.failed || 0) ? 'bad' : 'ok')}
+                                ${techPill(`Ожидают: ${outboxCounts.pending || 0}`, (outboxCounts.pending || 0) ? 'warn' : 'ok')}
+                                ${techPill(`Отправлены: ${outboxCounts.sent || 0}`, (outboxCounts.sent || 0) ? 'warn' : 'ok')}
+                                ${techPill(`Ошибки: ${outboxCounts.failed || 0}`, (outboxCounts.failed || 0) ? 'bad' : 'ok')}
                             </div>
                             ${timelineData.outbox_summary?.recent?.length ? `<div class="tech-table-wrap"><table class="tech-table">
                                 <thead><tr><th>Команда</th><th>Статус</th><th>Время</th></tr></thead>
@@ -2677,7 +2775,7 @@
 
                     <div class="tech-mini-panel">
                         <h4>Результат последней диагностической команды</h4>
-                        <pre id="techAgentActionResult" class="tech-result-box">Нажмите одну из кнопок выше, чтобы получить живой ответ от агента.</pre>
+                        <pre id="techAgentActionResult" class="tech-result-box">${escapeHtml(actionText)}</pre>
                     </div>
                 </div>`;
         }
@@ -2705,8 +2803,7 @@
         }
 
         async function runTechAgentAction(deviceId, action) {
-            const resultBox = document.getElementById('techAgentActionResult');
-            if (resultBox) resultBox.textContent = `Выполняю ${action}...`;
+            techSetActionState(deviceId, `Выполняю команду «${techActionLabel(action)}»...`);
             try {
                 const response = await fetch(`/api/admin/tech/agents/${encodeURIComponent(deviceId)}/actions`, {
                     method: 'POST',
@@ -2715,18 +2812,20 @@
                 });
                 const data = await responseToJson(response);
                 if (!response.ok || data.status !== 'ok') {
-                    throw new Error(data.error || 'Не удалось выполнить действие');
+                    throw new Error(techHumanizeActionError(action, data.error || ''));
                 }
-                if (resultBox) resultBox.textContent = JSON.stringify(data.result || {}, null, 2);
+                const payload = data.result == null
+                    ? `Команда «${techActionLabel(action)}» выполнена успешно.`
+                    : `Команда «${techActionLabel(action)}» выполнена успешно.\n\n${JSON.stringify(data.result, null, 2)}`;
+                techSetActionState(deviceId, payload);
                 setTimeout(() => loadTechAgentDetail(deviceId), 1500);
             } catch (e) {
-                if (resultBox) resultBox.textContent = 'Ошибка: ' + (e.message || e);
+                techSetActionState(deviceId, 'Ошибка: ' + techHumanizeActionError(action, e.message || e));
             }
         }
 
         async function runTechModuleAction(deviceId, action, payload) {
-            const resultBox = document.getElementById('techAgentActionResult');
-            if (resultBox) resultBox.textContent = `Выполняю ${action}...`;
+            techSetActionState(deviceId, `Выполняю команду «${techActionLabel(action)}»...`);
             try {
                 let url = '';
                 let body = {};
@@ -2749,10 +2848,13 @@
                 if (!response.ok || (data.status !== 'ok' && data.status !== 'accepted')) {
                     throw new Error(data.error || 'Команда завершилась с ошибкой');
                 }
-                if (resultBox) resultBox.textContent = JSON.stringify(data, null, 2);
+                techSetActionState(
+                    deviceId,
+                    `Команда «${techActionLabel(action)}» отправлена.\n\n${JSON.stringify(data, null, 2)}`
+                );
                 setTimeout(() => loadTechAgentDetail(deviceId), 1500);
             } catch (e) {
-                if (resultBox) resultBox.textContent = 'Ошибка: ' + (e.message || e);
+                techSetActionState(deviceId, `Ошибка: ${e.message || e}`);
             }
         }
 
