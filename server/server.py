@@ -19,6 +19,7 @@ import sys
 from aiohttp import web
 from loguru import logger
 from pathlib import Path
+from tech.log_buffer import capture_loguru_message
 
 # Import configuration and core modules
 from config import (
@@ -372,6 +373,7 @@ def main():
         level=LOG_LEVEL,
         format=LOG_FORMAT
     )
+    logger.add(capture_loguru_message, level="WARNING")
     
     logger.info(f"📁 Server data root: {SERVER_DATA_ROOT.absolute()}")
     # Создаём папку для загрузок, если её нет

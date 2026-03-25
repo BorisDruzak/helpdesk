@@ -3,7 +3,8 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 from app.db import get_session
-from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent
+from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent, UiUserAudit
+from tech.log_buffer import append_log_record
 
 
 ADMIN_TOKEN = "test-ui-admin-token"
@@ -133,6 +134,18 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     assert audit_body["status"] == "ok"
     assert any(item["event_type"] == "handshake_ok" for item in audit_body["events"])
 
+    timeline_resp = await test_client.get(
+        f"/api/admin/tech/agents/{device_id}/timeline",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert timeline_resp.status == 200
+    timeline_body = await timeline_resp.json()
+    assert timeline_body["status"] == "ok"
+    assert timeline_body["current_state"]["online"] is False
+    assert isinstance(timeline_body["handshake_timeline"], list)
+    assert isinstance(timeline_body["recent_operations"], list)
+    assert "outbox_summary" in timeline_body
+
 
 @pytest.mark.asyncio
 async def test_tech_overview_ignores_stale_pending_for_devices_with_active_token(test_client):
@@ -187,3 +200,101 @@ async def test_tech_overview_ignores_stale_pending_for_devices_with_active_token
         alert["kind"] == "connection_request_stuck_pending"
         for alert in overview["alerts"]
     )
+
+
+@pytest.mark.asyncio
+async def test_tech_audit_and_logs_are_localized(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-000000000901"
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.2.3",
+                hostname="audit-host",
+                os="windows",
+                capabilities=[],
+                tools_version="t1",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now,
+            )
+        )
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                event_type="invalid_token",
+                severity="error",
+                source="test",
+                details_json={"reason": "invalid_token"},
+                created_at=now,
+            )
+        )
+        session.add(
+            UiUserAudit(
+                user_login="support-test",
+                action="login_failed",
+                actor_id="support-test",
+                details_json={"failed_attempts": 2},
+                created_at=now,
+            )
+        )
+        await session.commit()
+
+    append_log_record(
+        level="warning",
+        message="Device warning surfaced in tech panel",
+        timestamp=now,
+        module="tests.tech",
+        function="test_tech_audit_and_logs_are_localized",
+        line=123,
+    )
+
+    agents_resp = await test_client.get("/api/admin/tech/agents/audit?limit=10", headers=_auth(ADMIN_TOKEN))
+    users_resp = await test_client.get("/api/admin/tech/users/audit?limit=10", headers=_auth(ADMIN_TOKEN))
+    logs_resp = await test_client.get("/api/admin/tech/logs?limit=10", headers=_auth(ADMIN_TOKEN))
+
+    agents_body = await agents_resp.json()
+    users_body = await users_resp.json()
+    logs_body = await logs_resp.json()
+
+    assert agents_resp.status == 200
+    assert users_resp.status == 200
+    assert logs_resp.status == 200
+    assert any(item["event_label"] == "Неверный токен" and item["severity_label"] == "Ошибка" for item in agents_body["events"])
+    assert any(item["action_label"] == "Неудачная попытка входа" for item in users_body["events"])
+    assert any(item["level_label"] == "Предупреждение" and "Device warning surfaced" in item["message"] for item in logs_body["logs"])
+
+
+@pytest.mark.asyncio
+async def test_tech_agent_action_list_tasks_uses_rpc(monkeypatch, test_client):
+    captured = {}
+
+    async def fake_send_ws_rpc_request(**kwargs):
+        captured.update(kwargs)
+        return {
+            "payload": {
+                "status": "success",
+                "data": {
+                    "tasks": [{"task_id": "task-1", "kind": "run_tool"}],
+                    "count": 1,
+                },
+            }
+        }
+
+    monkeypatch.setattr("tech.handlers.send_ws_rpc_request", fake_send_ws_rpc_request)
+
+    response = await test_client.post(
+        "/api/admin/tech/agents/00000000-0000-0000-0000-000000000999/actions",
+        headers=_auth(ADMIN_TOKEN),
+        json={"action": "list_tasks"},
+    )
+
+    body = await response.json()
+    assert response.status == 200
+    assert body["status"] == "ok"
+    assert body["action"] == "list_tasks"
+    assert body["result"]["data"]["count"] == 1
+    assert captured["method"] == "list_tasks"

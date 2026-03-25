@@ -875,20 +875,71 @@
             <!-- Tech Observability Tab -->
             <div id="tab-tech" class="tab-content">
                 <div class="page-header">
-                    <h1>Техпанель наблюдаемости</h1>
+                    <h1>Техпанель сервера</h1>
                     <div class="header-actions">
                         <button type="button" class="btn btn-primary" id="techRefreshBtn">Обновить</button>
                     </div>
                 </div>
                 <div class="section">
-                    <h2>Обзор системы</h2>
+                    <h2>Общий обзор</h2>
                     <div id="techOverviewCards" class="tech-cards"></div>
-                    <pre id="techOverviewJson" style="white-space: pre-wrap; display:none;"></pre>
                 </div>
                 <div class="section">
-                    <h2>Активные алерты</h2>
-                    <div id="techAlertsList" class="tech-alerts-list"></div>
-                    <pre id="techAlertsJson" style="white-space: pre-wrap; display:none;"></pre>
+                    <div class="tech-split-grid">
+                        <div>
+                            <h2>Алерты и проблемы</h2>
+                            <div id="techAlertsList" class="tech-alerts-list"></div>
+                        </div>
+                        <div>
+                            <h2>Логи ошибок и предупреждений</h2>
+                            <div id="techProblemLogsTable"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="tech-section-head">
+                        <div>
+                            <h2>Агенты</h2>
+                            <p class="muted" style="margin-top: 6px;">Главная таблица состояния устройств и быстрая диагностика выбранного агента.</p>
+                        </div>
+                    </div>
+                    <div class="tech-agents-layout">
+                        <div class="tech-agents-table-wrap">
+                            <table class="tech-table">
+                                <thead>
+                                    <tr>
+                                        <th>Устройство</th>
+                                        <th>Статус</th>
+                                        <th>Последний контакт</th>
+                                        <th>Возраст handshake</th>
+                                        <th>Токен / привязка</th>
+                                        <th>Обновление</th>
+                                        <th>Проблемы</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="techAgentsTableBody">
+                                    <tr><td colspan="7" class="muted">Загрузка...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="techAgentDetailShell" class="tech-agent-detail-shell">
+                            <div class="empty-state">
+                                <p>Выберите устройство слева, чтобы открыть карточку агента.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <h2>Аудит агентов</h2>
+                    <div id="techAgentsAuditTable"></div>
+                </div>
+                <div class="section">
+                    <h2>Аудит пользователей</h2>
+                    <div id="techUsersAuditTable"></div>
+                </div>
+                <div class="section">
+                    <h2>Застрявшие операции</h2>
+                    <div id="techStuckOpsTable"></div>
                 </div>
                 <div class="section">
                     <h2>Жизненный путь тикета</h2>
@@ -902,18 +953,6 @@
                         <summary>Сырой JSON (отладка)</summary>
                         <pre id="techLifecycleJson" style="white-space: pre-wrap;"></pre>
                     </details>
-                </div>
-                <div class="section">
-                    <h2>Аудит агентов</h2>
-                    <pre id="techAgentsAuditJson" style="white-space: pre-wrap;">Загрузка...</pre>
-                </div>
-                <div class="section">
-                    <h2>Аудит пользователей</h2>
-                    <pre id="techUsersAuditJson" style="white-space: pre-wrap;">Загрузка...</pre>
-                </div>
-                <div class="section">
-                    <h2>Застрявшие операции</h2>
-                    <pre id="techStuckOpsJson" style="white-space: pre-wrap;">Загрузка...</pre>
                 </div>
             </div>
 

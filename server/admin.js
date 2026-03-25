@@ -2086,6 +2086,87 @@
         }
 
         let techPollTimer = null;
+        let techSelectedDeviceId = null;
+        let techDevicesCache = [];
+        let techSelectedModules = [];
+
+        function techStatusClass(kind) {
+            if (kind === 'ok') return 'ok';
+            if (kind === 'warn') return 'warn';
+            if (kind === 'bad') return 'bad';
+            return 'neutral';
+        }
+
+        function techPill(label, kind) {
+            return `<span class="tech-pill ${techStatusClass(kind)}">${escapeHtml(label || '—')}</span>`;
+        }
+
+        function techFormatDate(iso) {
+            if (!iso) return '—';
+            try { return new Date(iso).toLocaleString('ru-RU'); } catch (e) { return iso; }
+        }
+
+        function techFormatRelative(iso) {
+            if (!iso) return '—';
+            const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+            if (diffSec < 60) return `${diffSec} сек назад`;
+            if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин назад`;
+            if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч назад`;
+            return `${Math.floor(diffSec / 86400)} дн назад`;
+        }
+
+        function techIsStale(lastSeenAt, thresholdSec = 300) {
+            if (!lastSeenAt) return true;
+            return ((Date.now() - new Date(lastSeenAt).getTime()) / 1000) > thresholdSec;
+        }
+
+        function techProvisioningLabel(summary) {
+            const state = summary?.provisioning_state || '';
+            const map = {
+                active: 'Токен активен',
+                unprovisioned: 'Ждёт токен',
+                token_revoked: 'Токен отозван',
+                reprovision_required: 'Нужна перепривязка',
+            };
+            return map[state] || 'Неизвестно';
+        }
+
+        function techProvisioningKind(summary) {
+            const state = summary?.provisioning_state || '';
+            if (state === 'active') return 'ok';
+            if (state === 'unprovisioned') return 'warn';
+            return 'bad';
+        }
+
+        function techUpdateLabel(summary) {
+            const status = String(summary?.last_update_operation_status || '').trim().toLowerCase();
+            const map = {
+                queued: 'В очереди',
+                sent: 'Команда отправлена',
+                accepted: 'Агент принял',
+                running: 'Обновление идёт',
+                success: 'Успешно',
+                failed: 'Ошибка',
+                timed_out: 'Таймаут',
+                canceled: 'Отменено',
+            };
+            if (!status) return 'Не запускалось';
+            return map[status] || status;
+        }
+
+        function techUpdateKind(summary) {
+            const status = String(summary?.last_update_operation_status || '').trim().toLowerCase();
+            if (!status) return 'neutral';
+            if (status === 'success') return 'ok';
+            if (status === 'queued' || status === 'sent' || status === 'accepted' || status === 'running') return 'warn';
+            return 'bad';
+        }
+
+        function techJsonPreview(value) {
+            if (!value || (typeof value === 'object' && !Object.keys(value).length)) return '—';
+            const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+            return text.length > 220 ? text.slice(0, 220) + '…' : text;
+        }
 
         function initTechTab() {
             const refreshBtn = document.getElementById('techRefreshBtn');
@@ -2096,13 +2177,26 @@
             if (tabTech) {
                 tabTech.addEventListener('click', function(e) {
                     const a = e.target.closest('a.tech-lifecycle-jump');
-                    if (!a) return;
-                    e.preventDefault();
-                    const did = a.getAttribute('data-device-id');
-                    if (did && typeof switchTab === 'function') {
-                        switchTab('devices');
-                        if (typeof setDeviceHash === 'function') setDeviceHash(did);
-                        if (typeof devicesApplyHash === 'function') devicesApplyHash();
+                    if (a) {
+                        e.preventDefault();
+                        const did = a.getAttribute('data-device-id');
+                        if (did && typeof switchTab === 'function') {
+                            switchTab('devices');
+                            if (typeof setDeviceHash === 'function') setDeviceHash(did);
+                            if (typeof devicesApplyHash === 'function') devicesApplyHash();
+                        }
+                        return;
+                    }
+                    const row = e.target.closest('tr[data-tech-device-id]');
+                    if (row) {
+                        e.preventDefault();
+                        selectTechAgent(row.getAttribute('data-tech-device-id'));
+                        return;
+                    }
+                    const actionBtn = e.target.closest('button[data-tech-action]');
+                    if (actionBtn) {
+                        e.preventDefault();
+                        handleTechActionButton(actionBtn);
                     }
                 });
             }
@@ -2113,32 +2207,43 @@
             if (!isActive && !force) return;
             const headers = getAuthHeaders();
             try {
-                const [overviewRes, alertsRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
+                const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
                     fetch('/api/admin/tech/overview', { headers }),
                     fetch('/api/admin/tech/alerts', { headers }),
+                    fetch('/api/admin/tech/logs?limit=50', { headers }),
+                    fetch('/api/devices', { headers }),
                     fetch('/api/admin/tech/agents/audit?limit=50', { headers }),
                     fetch('/api/admin/tech/users/audit?limit=50', { headers }),
                     fetch('/api/admin/tech/operations/stuck', { headers }),
                 ]);
-                const overviewData = await overviewRes.json();
-                const alertsData = await alertsRes.json();
-                const agentsData = await agentsAuditRes.json();
-                const usersData = await usersAuditRes.json();
-                const stuckData = await stuckOpsRes.json();
-                const setJson = (id, value) => {
-                    const el = document.getElementById(id);
-                    if (el) el.textContent = JSON.stringify(value, null, 2);
-                };
-                setJson('techOverviewJson', overviewData.overview || overviewData);
-                setJson('techAlertsJson', alertsData.alerts || alertsData);
-                setJson('techAgentsAuditJson', agentsData.events || agentsData);
-                setJson('techUsersAuditJson', usersData.events || usersData);
-                setJson('techStuckOpsJson', stuckData.operations || stuckData);
-                renderTechOverviewCards(overviewData.overview || {});
-                renderTechAlerts(alertsData.alerts || []);
+                const overviewData = await responseToJson(overviewRes);
+                const alertsData = await responseToJson(alertsRes);
+                const logsData = await responseToJson(logsRes);
+                const devicesData = await responseToJson(devicesRes);
+                const agentsData = await responseToJson(agentsAuditRes);
+                const usersData = await responseToJson(usersAuditRes);
+                const stuckData = await responseToJson(stuckOpsRes);
+                const overview = overviewData.overview || {};
+                renderTechOverviewCards(overview);
+                renderTechAlerts(alertsData.alerts || overview.alerts || []);
+                renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
+                techDevicesCache = devicesData.devices || [];
+                renderTechAgentsTable(techDevicesCache);
+                renderTechAuditTable('techAgentsAuditTable', agentsData.events || [], 'agent');
+                renderTechAuditTable('techUsersAuditTable', usersData.events || [], 'user');
+                renderTechStuckOpsTable(stuckData.operations || []);
+                if (!techSelectedDeviceId && techDevicesCache.length) {
+                    const preferred = techDevicesCache.find(item => item.online) || techDevicesCache[0];
+                    techSelectedDeviceId = preferred.device_id;
+                } else if (techSelectedDeviceId && !techDevicesCache.some(item => item.device_id === techSelectedDeviceId)) {
+                    techSelectedDeviceId = techDevicesCache[0]?.device_id || null;
+                }
+                if (techSelectedDeviceId) {
+                    loadTechAgentDetail(techSelectedDeviceId);
+                }
             } catch (e) {
-                const el = document.getElementById('techOverviewJson');
-                if (el) el.textContent = 'Ошибка загрузки техпанели: ' + (e.message || e);
+                const shell = document.getElementById('techAgentDetailShell');
+                if (shell) shell.innerHTML = `<div class="tech-agent-detail"><div class="error-message">Ошибка загрузки техпанели: ${escapeHtml(e.message || String(e))}</div></div>`;
             }
             if (techPollTimer) clearInterval(techPollTimer);
             techPollTimer = setInterval(() => {
@@ -2207,6 +2312,448 @@
                     ${renderAlertDetails(a.details)}
                 </div>`;
             }).join('');
+        }
+
+        function renderTechOverviewCards(overview) {
+            const host = document.getElementById('techOverviewCards');
+            if (!host) return;
+            const pg = overview.postgres_health || {};
+            const agent = overview.agent_health || {};
+            const ops = overview.operations_health || {};
+            const upd = overview.update_health || {};
+            const svc = overview.service_health || {};
+            const cards = [
+                { title: 'PostgreSQL', value: pg.reachable ? `${pg.latency_ms ?? '—'} мс` : 'Недоступно', cls: (!pg.reachable ? 'health-red' : (Number(pg.latency_ms || 0) > 250 ? 'health-yellow' : 'health-green')) },
+                { title: 'Агенты в сети', value: `${agent.online_count ?? 0} / ${agent.offline_count ?? 0}`, cls: ((agent.offline_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Нужна перепривязка', value: `${agent.reprovision_required_count ?? 0}`, cls: ((agent.reprovision_required_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Неактивные агенты', value: `${agent.stale_count ?? 0}`, cls: ((agent.stale_count ?? 0) > 0 ? 'health-red' : 'health-green') },
+                { title: 'Подключения UI', value: `${svc.ui_ws_connections ?? 0}`, cls: 'health-green' },
+                { title: 'Обновления', value: `${upd.in_progress ?? 0}`, cls: ((upd.awaiting_handshake_confirm ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Застрявшие операции', value: `${(ops.queued_stuck ?? 0) + (ops.sent_stuck ?? 0) + (ops.in_progress_stuck ?? 0)}`, cls: (((ops.queued_stuck ?? 0) + (ops.sent_stuck ?? 0) + (ops.in_progress_stuck ?? 0)) > 0 ? 'health-red' : 'health-green') },
+                { title: 'Watchdog операций', value: `${svc.operation_watchdog ?? 'unknown'}`, cls: (svc.operation_watchdog === 'ok' ? 'health-green' : 'health-red') },
+            ];
+            host.innerHTML = cards.map(c => `<div class="tech-card ${c.cls}"><h4>${escapeHtml(c.title)}</h4><div class="tech-value">${escapeHtml(String(c.value))}</div></div>`).join('');
+        }
+
+        function renderTechAlerts(alerts) {
+            const host = document.getElementById('techAlertsList');
+            if (!host) return;
+            if (!alerts || alerts.length === 0) {
+                host.innerHTML = '<div class="tech-alert-item severity-info"><strong>Активных алертов нет</strong><span>Система выглядит стабильно.</span></div>';
+                return;
+            }
+            host.innerHTML = alerts.map(item => {
+                const details = item.details && typeof item.details === 'object'
+                    ? Object.entries(item.details)
+                        .filter(([key]) => key !== 'samples')
+                        .map(([key, value]) => `<div><strong>${escapeHtml(key)}:</strong> ${escapeHtml(typeof value === 'object' ? JSON.stringify(value) : String(value))}</div>`)
+                        .join('')
+                    : '';
+                const samples = Array.isArray(item.details?.samples) && item.details.samples.length
+                    ? '<div class="tech-alert-details">' + item.details.samples.map(sample => {
+                        const parts = [];
+                        if (sample.device_id) parts.push(`<code>${escapeHtml(sample.device_id)}</code>`);
+                        if (sample.hostname) parts.push(escapeHtml(sample.hostname));
+                        if (sample.ip_address) parts.push(escapeHtml(sample.ip_address));
+                        if (sample.last_request_at) parts.push(escapeHtml(techFormatDate(sample.last_request_at)));
+                        return `<div>${parts.join(' · ')}</div>`;
+                    }).join('') + '</div>'
+                    : '';
+                const link = item.link ? ` <a href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">открыть</a>` : '';
+                return `<div class="tech-alert-item severity-${escapeHtml(item.severity || 'info')}">
+                    <strong>${escapeHtml(item.summary || 'Без описания')}</strong>
+                    <span>${escapeHtml(item.kind || '')}${item.entity_id ? ` · ${escapeHtml(item.entity_id)}` : ''}${link}</span>
+                    ${details ? `<div class="tech-alert-details">${details}</div>` : ''}
+                    ${samples}
+                </div>`;
+            }).join('');
+        }
+
+        function renderTechProblemLogs(logs) {
+            const host = document.getElementById('techProblemLogsTable');
+            if (!host) return;
+            if (!logs || !logs.length) {
+                host.innerHTML = '<div class="tech-table-wrap"><div class="tech-agent-detail"><div class="tech-empty-note">Пока нет warning/error логов в буфере.</div></div></div>';
+                return;
+            }
+            host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                <thead><tr><th>Время</th><th>Уровень</th><th>Сообщение</th><th>Источник</th></tr></thead>
+                <tbody>
+                    ${logs.map(log => `<tr>
+                        <td>${escapeHtml(techFormatDate(log.timestamp))}</td>
+                        <td><span class="tech-log-level ${escapeHtml(log.level_class || log.level || '')}">${escapeHtml(log.level_label || log.level || '—')}</span></td>
+                        <td>${escapeHtml(log.message || '—')}</td>
+                        <td>${escapeHtml([log.module, log.function, log.line ? `строка ${log.line}` : ''].filter(Boolean).join(' · ') || 'server')}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>`;
+        }
+
+        function renderTechAgentsTable(devices) {
+            const body = document.getElementById('techAgentsTableBody');
+            if (!body) return;
+            if (!devices || !devices.length) {
+                body.innerHTML = '<tr><td colspan="7" class="muted">Устройства не найдены.</td></tr>';
+                return;
+            }
+            const sorted = devices.slice().sort((a, b) => {
+                if (!!a.online !== !!b.online) return a.online ? -1 : 1;
+                return new Date(b.last_seen_at || 0) - new Date(a.last_seen_at || 0);
+            });
+            body.innerHTML = sorted.map(device => {
+                const stale = techIsStale(device.last_seen_at);
+                const selected = techSelectedDeviceId === device.device_id ? 'tech-row-selected' : '';
+                const problems = [];
+                if (stale) problems.push('неактивен');
+                if (device.provisioning_summary?.reprovision_required) problems.push('перепривязка');
+                if (techUpdateKind(device.update_summary) === 'bad') problems.push('ошибка обновления');
+                return `<tr class="tech-row-clickable ${selected}" data-tech-device-id="${escapeHtml(device.device_id)}">
+                    <td>
+                        <span class="tech-device-title">${escapeHtml(device.hostname || device.device_id)}</span>
+                        <div class="tech-device-meta"><code>${escapeHtml(device.device_id)}</code></div>
+                        <div class="tech-device-meta">${escapeHtml(device.agent_version || 'версия неизвестна')} · ${escapeHtml(device.os || 'ОС неизвестна')}</div>
+                    </td>
+                    <td>${techPill(device.online ? 'В сети' : 'Офлайн', device.online ? (stale ? 'warn' : 'ok') : 'bad')}</td>
+                    <td><div>${escapeHtml(techFormatDate(device.last_seen_at))}</div><div class="tech-device-meta">${escapeHtml(techFormatRelative(device.last_seen_at))}</div></td>
+                    <td><div>${escapeHtml(techFormatRelative(device.last_handshake_at))}</div><div class="tech-device-meta">${escapeHtml(techFormatDate(device.last_handshake_at))}</div></td>
+                    <td>${techPill(techProvisioningLabel(device.provisioning_summary), techProvisioningKind(device.provisioning_summary))}</td>
+                    <td>${techPill(techUpdateLabel(device.update_summary), techUpdateKind(device.update_summary))}</td>
+                    <td>${problems.length ? escapeHtml(problems.join(', ')) : '<span class="muted">нет</span>'}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderTechAuditTable(hostId, rows, mode) {
+            const host = document.getElementById(hostId);
+            if (!host) return;
+            if (!rows || !rows.length) {
+                host.innerHTML = '<div class="tech-table-wrap"><div class="tech-agent-detail"><div class="tech-empty-note">Записей пока нет.</div></div></div>';
+                return;
+            }
+            const headers = mode === 'agent'
+                ? '<tr><th>Время</th><th>Устройство</th><th>Событие</th><th>Уровень</th><th>Контекст</th></tr>'
+                : '<tr><th>Время</th><th>Пользователь</th><th>Событие</th><th>Кто выполнил</th><th>Контекст</th></tr>';
+            host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                <thead>${headers}</thead>
+                <tbody>
+                    ${rows.map(row => mode === 'agent'
+                        ? `<tr>
+                            <td>${escapeHtml(techFormatDate(row.created_at))}</td>
+                            <td><code>${escapeHtml(row.device_id || '—')}</code></td>
+                            <td>${escapeHtml(row.event_label || row.event_type || '—')}</td>
+                            <td>${techPill(row.severity_label || row.severity || '—', row.severity === 'error' || row.severity === 'critical' ? 'bad' : (row.severity === 'warning' ? 'warn' : 'ok'))}</td>
+                            <td><div class="tech-json-preview">${escapeHtml(techJsonPreview(row.details_json))}</div></td>
+                        </tr>`
+                        : `<tr>
+                            <td>${escapeHtml(techFormatDate(row.created_at))}</td>
+                            <td>${escapeHtml(row.user_login || '—')}</td>
+                            <td>${escapeHtml(row.action_label || row.action || '—')}</td>
+                            <td>${escapeHtml(row.actor_id || '—')}</td>
+                            <td><div class="tech-json-preview">${escapeHtml(techJsonPreview(row.details_json))}</div></td>
+                        </tr>`
+                    ).join('')}
+                </tbody>
+            </table></div>`;
+        }
+
+        function renderTechStuckOpsTable(rows) {
+            const host = document.getElementById('techStuckOpsTable');
+            if (!host) return;
+            if (!rows || !rows.length) {
+                host.innerHTML = '<div class="tech-table-wrap"><div class="tech-agent-detail"><div class="tech-empty-note">Застрявших операций нет.</div></div></div>';
+                return;
+            }
+            host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                <thead><tr><th>Операция</th><th>Устройство</th><th>Тип</th><th>Статус</th><th>Когда стартовала</th><th>Дедлайн</th></tr></thead>
+                <tbody>
+                    ${rows.map(row => `<tr>
+                        <td><code>${escapeHtml((row.operation_id || '').slice(0, 8))}</code></td>
+                        <td><code>${escapeHtml(row.device_id || '—')}</code></td>
+                        <td>${escapeHtml(row.kind || '—')}</td>
+                        <td>${escapeHtml(row.status || '—')}</td>
+                        <td>${escapeHtml(techFormatDate(row.started_at || row.sent_at || row.queued_at))}</td>
+                        <td>${escapeHtml(techFormatDate(row.deadline_at))}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>`;
+        }
+
+        function selectTechAgent(deviceId) {
+            if (!deviceId) return;
+            techSelectedDeviceId = deviceId;
+            renderTechAgentsTable(techDevicesCache);
+            loadTechAgentDetail(deviceId);
+        }
+
+        async function loadTechAgentDetail(deviceId) {
+            const shell = document.getElementById('techAgentDetailShell');
+            if (!shell || !deviceId) return;
+            shell.innerHTML = '<div class="tech-agent-detail"><div class="loading">Загрузка карточки агента...</div></div>';
+            try {
+                const headers = getAuthHeaders();
+                const [deviceRes, timelineRes, toolsetRes, debugRes, desiredRes, logsRes] = await Promise.all([
+                    fetch(`/api/devices/${encodeURIComponent(deviceId)}`, { headers }),
+                    fetch(`/api/admin/tech/agents/${encodeURIComponent(deviceId)}/timeline`, { headers }),
+                    fetch(`/api/devices/${encodeURIComponent(deviceId)}/toolset`, { headers }),
+                    fetch(`/api/devices/${encodeURIComponent(deviceId)}/modules/debug`, { headers }),
+                    fetch(`/api/devices/${encodeURIComponent(deviceId)}/modules/desired_diff`, { headers }),
+                    fetch(`/api/admin/tech/logs?limit=20&contains=${encodeURIComponent(deviceId)}`, { headers }),
+                ]);
+                const deviceData = await responseToJson(deviceRes);
+                const timelineData = await responseToJson(timelineRes);
+                const toolsetData = await responseToJson(toolsetRes);
+                const debugData = await responseToJson(debugRes);
+                const desiredData = await responseToJson(desiredRes);
+                const logsData = await responseToJson(logsRes);
+                renderTechAgentDetail(
+                    deviceData.device || {},
+                    timelineData,
+                    toolsetData.status === 'ok' ? toolsetData : null,
+                    debugData.status === 'ok' ? debugData : null,
+                    desiredData.status === 'ok' ? desiredData : null,
+                    logsData.logs || timelineData.problem_logs || []
+                );
+            } catch (e) {
+                shell.innerHTML = `<div class="tech-agent-detail"><div class="error-message">Не удалось загрузить карточку агента: ${escapeHtml(e.message || String(e))}</div></div>`;
+            }
+        }
+
+        function techRenderTimelineList(title, rows) {
+            if (!rows || !rows.length) {
+                return `<div class="tech-mini-panel"><h4>${escapeHtml(title)}</h4><div class="tech-empty-note">Событий пока нет.</div></div>`;
+            }
+            return `<div class="tech-mini-panel">
+                <h4>${escapeHtml(title)}</h4>
+                <div class="tech-timeline" role="list">
+                    ${rows.slice(0, 8).map(row => `<div class="tech-timeline-item" role="listitem">
+                        <div class="tl-time">${escapeHtml(techFormatDate(row.created_at || row.at))}</div>
+                        <div class="tl-title">${escapeHtml(row.event_label || row.event_type || 'Событие')}</div>
+                        <div class="tl-actor">${escapeHtml(row.severity_label || row.severity || '')}${row.source ? ' · ' + escapeHtml(row.source) : ''}</div>
+                    </div>`).join('')}
+                </div>
+            </div>`;
+        }
+
+        function renderTechAgentDetail(device, timelineData, toolsetData, debugData, desiredData, logs) {
+            const shell = document.getElementById('techAgentDetailShell');
+            if (!shell) return;
+            const current = timelineData.current_state || {};
+            techSelectedModules = (debugData?.device_modules || []).slice();
+            const outboxCounts = timelineData.outbox_summary?.counts || {};
+            const issueSummary = timelineData.issue_summary || [];
+            const toolsByModule = toolsetData?.tools_by_module || {};
+            const desiredDiff = desiredData?.diff || [];
+            const mismatches = debugData?.mismatches || [];
+            const recentOps = timelineData.recent_operations || debugData?.recent_operations || [];
+            const authTimeline = timelineData.auth_timeline || [];
+            const handshakeTimeline = timelineData.handshake_timeline || [];
+            const updateTimeline = timelineData.update_timeline || [];
+
+            shell.innerHTML = `
+                <div class="tech-agent-detail">
+                    <div class="tech-agent-head">
+                        <div>
+                            <h3>${escapeHtml(device.hostname || device.device_id || 'Агент')}</h3>
+                            <div class="tech-agent-subtitle">
+                                <code>${escapeHtml(device.device_id || '—')}</code> · ${escapeHtml(device.agent_version || 'версия неизвестна')} · ${escapeHtml(device.os || 'ОС неизвестна')}
+                            </div>
+                        </div>
+                        <div class="tech-inline-list">
+                            ${techPill(current.online ? 'В сети' : 'Офлайн', current.online ? (current.stale ? 'warn' : 'ok') : 'bad')}
+                            ${techPill(techProvisioningLabel(device.provisioning_summary), techProvisioningKind(device.provisioning_summary))}
+                            ${techPill(techUpdateLabel(device.update_summary), techUpdateKind(device.update_summary))}
+                        </div>
+                    </div>
+
+                    <div class="tech-actions-bar">
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_status">get_status</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="get_history">get_history</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="list_tasks">list_tasks</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="refresh_toolset">refresh toolset</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="sync_modules">sync modules</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-action="reconcile">reconcile</button>
+                    </div>
+
+                    <div class="tech-kpi-grid">
+                        <div class="tech-kpi-card"><label>Последний контакт</label><value>${escapeHtml(techFormatDate(device.last_seen_at))}</value></div>
+                        <div class="tech-kpi-card"><label>Возраст handshake</label><value>${escapeHtml(current.last_handshake_age_sec != null ? `${Math.floor(current.last_handshake_age_sec / 60)} мин` : '—')}</value></div>
+                        <div class="tech-kpi-card"><label>Toolset hash</label><value>${escapeHtml(toolsetData?.toolset_hash || device.toolset_hash || '—')}</value></div>
+                        <div class="tech-kpi-card"><label>Инструментов</label><value>${escapeHtml(String(toolsetData?.tool_count ?? device.tools_count ?? 0))}</value></div>
+                        <div class="tech-kpi-card"><label>Pending consents</label><value>${escapeHtml(String(current.pending_consents_count ?? 0))}</value></div>
+                        <div class="tech-kpi-card"><label>Outbox backlog</label><value>${escapeHtml(String((outboxCounts.pending || 0) + (outboxCounts.sent || 0)))}</value></div>
+                    </div>
+
+                    ${issueSummary.length ? `<div class="tech-mini-panel"><h4>Что требует внимания сейчас</h4><ul class="tech-issue-list">${issueSummary.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
+
+                    <div class="tech-mini-grid">
+                        ${techRenderTimelineList('Лента авторизации', authTimeline)}
+                        ${techRenderTimelineList('Лента handshake', handshakeTimeline)}
+                        ${techRenderTimelineList('Лента обновления', updateTimeline)}
+                    </div>
+
+                    <div class="tech-mini-panel">
+                        <h4>Модульная диагностика</h4>
+                        ${desiredDiff.length ? `<div class="tech-inline-list" style="margin-bottom: 10px;">
+                            ${desiredData.summary ? techPill(`OK: ${desiredData.summary.ok || 0}`, 'ok') : ''}
+                            ${desiredData.summary?.missing ? techPill(`missing: ${desiredData.summary.missing}`, 'bad') : ''}
+                            ${desiredData.summary?.version_mismatch ? techPill(`version mismatch: ${desiredData.summary.version_mismatch}`, 'warn') : ''}
+                            ${desiredData.summary?.not_removed ? techPill(`not removed: ${desiredData.summary.not_removed}`, 'warn') : ''}
+                        </div>` : '<div class="tech-empty-note" style="margin-bottom:10px;">Desired state не заполнен.</div>'}
+                        <div class="tech-table-wrap">
+                            <table class="tech-table">
+                                <thead><tr><th>Модуль</th><th>Desired</th><th>Actual</th><th>Drift</th><th>Действие</th></tr></thead>
+                                <tbody>
+                                    ${(debugData?.device_modules || []).map(mod => {
+                                        const diff = desiredDiff.find(item => item.module_name === mod.module_name);
+                                        const tools = toolsByModule[mod.module_name] || [];
+                                        const driftLabel = diff?.diff_status || (tools.length ? 'ok' : 'no_tools');
+                                        const driftKind = driftLabel === 'ok' ? 'ok' : (driftLabel === 'missing' ? 'bad' : 'warn');
+                                        return `<tr>
+                                            <td><strong>${escapeHtml(mod.module_name)}</strong><br><span class="tech-device-meta">${escapeHtml(mod.version || '—')}</span></td>
+                                            <td>${escapeHtml(diff ? `${diff.desired_state || '—'} ${diff.desired_version || ''}`.trim() : '—')}</td>
+                                            <td>${escapeHtml(`${mod.state || '—'} · tools: ${tools.length}`)}</td>
+                                            <td>${techPill(driftLabel, driftKind)}</td>
+                                            <td><button type="button" class="btn btn-secondary btn-sm" data-tech-action="verify_module" data-module-name="${escapeHtml(mod.module_name)}" data-module-version="${escapeHtml(mod.version || '')}">verify</button></td>
+                                        </tr>`;
+                                    }).join('') || '<tr><td colspan="5" class="muted">Модулей нет.</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                        ${mismatches.length ? `<div class="tech-json-preview" style="margin-top:10px;">${escapeHtml(JSON.stringify(mismatches, null, 2))}</div>` : ''}
+                    </div>
+
+                    <div class="tech-mini-grid">
+                        <div class="tech-mini-panel">
+                            <h4>Последние операции</h4>
+                            ${recentOps.length ? `<div class="tech-table-wrap"><table class="tech-table">
+                                <thead><tr><th>Операция</th><th>Тип</th><th>Статус</th><th>Ошибка</th></tr></thead>
+                                <tbody>${recentOps.slice(0, 8).map(op => `<tr>
+                                    <td><code>${escapeHtml((op.operation_id || '').slice(0, 8))}</code></td>
+                                    <td>${escapeHtml(op.kind || '—')}</td>
+                                    <td>${escapeHtml(op.status_label || op.status || '—')}</td>
+                                    <td>${escapeHtml(op.error_code || op.error_message || '—')}</td>
+                                </tr>`).join('')}</tbody>
+                            </table></div>` : '<div class="tech-empty-note">Операций пока нет.</div>'}
+                        </div>
+                        <div class="tech-mini-panel">
+                            <h4>Состояние outbox</h4>
+                            <div class="tech-inline-list" style="margin-bottom: 10px;">
+                                ${techPill(`pending: ${outboxCounts.pending || 0}`, (outboxCounts.pending || 0) ? 'warn' : 'ok')}
+                                ${techPill(`sent: ${outboxCounts.sent || 0}`, (outboxCounts.sent || 0) ? 'warn' : 'ok')}
+                                ${techPill(`failed: ${outboxCounts.failed || 0}`, (outboxCounts.failed || 0) ? 'bad' : 'ok')}
+                            </div>
+                            ${timelineData.outbox_summary?.recent?.length ? `<div class="tech-table-wrap"><table class="tech-table">
+                                <thead><tr><th>Команда</th><th>Статус</th><th>Время</th></tr></thead>
+                                <tbody>${timelineData.outbox_summary.recent.slice(0, 8).map(row => `<tr>
+                                    <td>${escapeHtml(row.command || '—')}</td>
+                                    <td>${escapeHtml(row.status_label || row.status || '—')}</td>
+                                    <td>${escapeHtml(techFormatDate(row.created_at))}</td>
+                                </tr>`).join('')}</tbody>
+                            </table></div>` : '<div class="tech-empty-note">Записей outbox нет.</div>'}
+                        </div>
+                    </div>
+
+                    <div class="tech-mini-grid">
+                        <div class="tech-mini-panel">
+                            <h4>Последние ошибки и предупреждения</h4>
+                            ${timelineData.last_errors?.length ? `<div class="tech-timeline">${timelineData.last_errors.map(row => `<div class="tech-timeline-item">
+                                <div class="tl-time">${escapeHtml(techFormatDate(row.created_at))}</div>
+                                <div class="tl-title">${escapeHtml(row.event_label || row.event_type || 'Событие')}</div>
+                                <div class="tl-actor">${escapeHtml(row.severity_label || row.severity || '')}</div>
+                            </div>`).join('')}</div>` : '<div class="tech-empty-note">Критичных событий не найдено.</div>'}
+                        </div>
+                        <div class="tech-mini-panel">
+                            <h4>Проблемные логи по агенту</h4>
+                            ${logs.length ? `<div class="tech-table-wrap"><table class="tech-table">
+                                <thead><tr><th>Время</th><th>Уровень</th><th>Сообщение</th></tr></thead>
+                                <tbody>${logs.slice(0, 8).map(log => `<tr>
+                                    <td>${escapeHtml(techFormatDate(log.timestamp))}</td>
+                                    <td>${escapeHtml(log.level_label || log.level || '—')}</td>
+                                    <td>${escapeHtml(log.message || '—')}</td>
+                                </tr>`).join('')}</tbody>
+                            </table></div>` : '<div class="tech-empty-note">Логи по этому агенту в буфере не найдены.</div>'}
+                        </div>
+                    </div>
+
+                    <div class="tech-mini-panel">
+                        <h4>Результат последней диагностической команды</h4>
+                        <pre id="techAgentActionResult" class="tech-result-box">Нажмите одну из кнопок выше, чтобы получить живой ответ от агента.</pre>
+                    </div>
+                </div>`;
+        }
+
+        async function handleTechActionButton(button) {
+            const action = button.getAttribute('data-tech-action');
+            const deviceId = techSelectedDeviceId;
+            if (!action || !deviceId) return;
+            if (action === 'sync_modules') {
+                await runTechModuleAction(deviceId, 'sync_modules');
+                return;
+            }
+            if (action === 'reconcile') {
+                await runTechModuleAction(deviceId, 'reconcile');
+                return;
+            }
+            if (action === 'verify_module') {
+                await runTechModuleAction(deviceId, 'verify_module', {
+                    module_name: button.getAttribute('data-module-name'),
+                    version: button.getAttribute('data-module-version'),
+                });
+                return;
+            }
+            await runTechAgentAction(deviceId, action);
+        }
+
+        async function runTechAgentAction(deviceId, action) {
+            const resultBox = document.getElementById('techAgentActionResult');
+            if (resultBox) resultBox.textContent = `Выполняю ${action}...`;
+            try {
+                const response = await fetch(`/api/admin/tech/agents/${encodeURIComponent(deviceId)}/actions`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ action, limit: 20 }),
+                });
+                const data = await responseToJson(response);
+                if (!response.ok || data.status !== 'ok') {
+                    throw new Error(data.error || 'Не удалось выполнить действие');
+                }
+                if (resultBox) resultBox.textContent = JSON.stringify(data.result || {}, null, 2);
+                setTimeout(() => loadTechAgentDetail(deviceId), 1500);
+            } catch (e) {
+                if (resultBox) resultBox.textContent = 'Ошибка: ' + (e.message || e);
+            }
+        }
+
+        async function runTechModuleAction(deviceId, action, payload) {
+            const resultBox = document.getElementById('techAgentActionResult');
+            if (resultBox) resultBox.textContent = `Выполняю ${action}...`;
+            try {
+                let url = '';
+                let body = {};
+                if (action === 'sync_modules') {
+                    url = `/api/devices/${encodeURIComponent(deviceId)}/modules/sync`;
+                } else if (action === 'reconcile') {
+                    url = `/api/devices/${encodeURIComponent(deviceId)}/modules/reconcile`;
+                } else if (action === 'verify_module') {
+                    url = `/api/devices/${encodeURIComponent(deviceId)}/modules/verify`;
+                    body = payload || {};
+                } else {
+                    throw new Error('Неизвестное модульное действие');
+                }
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(body),
+                });
+                const data = await responseToJson(response);
+                if (!response.ok || (data.status !== 'ok' && data.status !== 'accepted')) {
+                    throw new Error(data.error || 'Команда завершилась с ошибкой');
+                }
+                if (resultBox) resultBox.textContent = JSON.stringify(data, null, 2);
+                setTimeout(() => loadTechAgentDetail(deviceId), 1500);
+            } catch (e) {
+                if (resultBox) resultBox.textContent = 'Ошибка: ' + (e.message || e);
+            }
         }
 
         function formatTechLifecycleTime(iso) {

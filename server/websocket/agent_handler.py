@@ -17,6 +17,7 @@ from websocket.agent_services import (
     CommandResultService,
     HandshakeService,
     OutboxIngestService,
+    RpcResponseService,
 )
 from websocket.agent_handshake import handle_handshake
 
@@ -62,6 +63,7 @@ async def websocket_handler(request):
         handshake_service=HandshakeService(handle_handshake, dispatch_service=dispatch_service),
         command_ack_service=CommandAckService(),
         command_result_service=CommandResultService(),
+        rpc_response_service=RpcResponseService(),
         outbox_ingest_service=OutboxIngestService(
             None,
             batch_ack_manager=batch_ack_manager,
@@ -90,6 +92,7 @@ async def websocket_handler(request):
                         "pong",
                         "command_ack",
                         "command_result",
+                        "rpc_response",
                         "command",
                         "outbox_item",
                     }:

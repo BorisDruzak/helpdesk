@@ -835,3 +835,49 @@
         .tech-op-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; background: #fafafa; }
         .tech-op-card .op-kind { font-weight: 600; }
         .tech-lifecycle-raw summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+        .tech-split-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: start; }
+        .tech-section-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+        .tech-agents-layout { display: grid; grid-template-columns: minmax(520px, 1.3fr) minmax(420px, 1fr); gap: 16px; align-items: start; }
+        .tech-agents-table-wrap, .tech-agent-detail-shell, .tech-table-wrap { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+        .tech-agent-detail-shell { min-height: 280px; }
+        .tech-table { width: 100%; border-collapse: collapse; }
+        .tech-table th, .tech-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; font-size: 13px; }
+        .tech-table th { background: #f6f8fb; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+        .tech-table tbody tr:last-child td { border-bottom: none; }
+        .tech-table tbody tr.tech-row-clickable { cursor: pointer; }
+        .tech-table tbody tr.tech-row-clickable:hover { background: #f8fbff; }
+        .tech-table tbody tr.tech-row-selected { background: #eef5ff; }
+        .tech-device-title { font-weight: 700; display: block; }
+        .tech-device-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+        .tech-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .tech-pill.ok { background: #e7f7ee; color: #0f6a35; }
+        .tech-pill.warn { background: #fff3d6; color: #8a5a00; }
+        .tech-pill.bad { background: #ffe3e3; color: #b42318; }
+        .tech-pill.neutral { background: #eef2f7; color: #42526b; }
+        .tech-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 14px; }
+        .tech-kpi-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fbfcfe; }
+        .tech-kpi-card label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+        .tech-kpi-card value { display: block; font-size: 18px; font-weight: 700; line-height: 1.2; }
+        .tech-agent-detail { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+        .tech-agent-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+        .tech-agent-head h3 { margin: 0; font-size: 20px; }
+        .tech-agent-subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+        .tech-actions-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tech-issue-list { margin: 0; padding-left: 18px; color: #8a2d1e; }
+        .tech-mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .tech-mini-panel { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: #fff; }
+        .tech-mini-panel h4 { margin-bottom: 8px; font-size: 14px; }
+        .tech-inline-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tech-inline-item { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: #fafbfc; font-size: 12px; }
+        .tech-json-preview { font-family: Consolas, Monaco, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+        .tech-result-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #0f172a; color: #d7e3ff; max-height: 280px; overflow: auto; font-family: Consolas, Monaco, monospace; font-size: 12px; white-space: pre-wrap; }
+        .tech-empty-note { color: var(--muted); font-size: 13px; }
+        .tech-log-level { font-weight: 700; }
+        .tech-log-level.warning { color: #8a5a00; }
+        .tech-log-level.error, .tech-log-level.critical { color: #b42318; }
+        .tech-subsection-title { font-size: 14px; margin: 0 0 8px; }
+
+        @media (max-width: 1280px) {
+            .tech-split-grid,
+            .tech-agents-layout { grid-template-columns: 1fr; }
+        }

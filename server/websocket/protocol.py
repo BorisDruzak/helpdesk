@@ -23,6 +23,118 @@ class WsCommandQueueFullError(Exception):
     error_code = "WS_COMMAND_QUEUE_FULL"
 
 
+async def send_ws_rpc_request(
+    state,
+    device_id: str,
+    method: str,
+    params: dict,
+    *,
+    actor_role: str = "admin",
+    timeout: float = 30.0,
+    trace_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    ticket_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+) -> dict:
+    """Send a Protocol V3 rpc_request to an online agent and wait for rpc_response."""
+    agent_info = state.get_agent(device_id)
+    if not agent_info:
+        connected_ids = list(state.connected_agents.keys()) if hasattr(state, "connected_agents") else []
+        logger.warning(
+            f"[send_ws_rpc_request] Agent {device_id} not in connected_agents; "
+            f"current connected_agents ({len(connected_ids)}): {connected_ids}"
+        )
+        raise ValueError(f"Agent {device_id} not connected")
+
+    ws = agent_info.get("ws")
+    if ws is None or getattr(ws, "closed", False):
+        raise ValueError(f"Agent {device_id} websocket is not available")
+
+    if not getattr(state, "_ws_command_global_semaphore", None):
+        state._ws_command_global_semaphore = asyncio.Semaphore(WS_COMMAND_MAX_INFLIGHT_GLOBAL)
+        state._ws_command_per_device_semaphores = {}
+        state._ws_command_per_device_run_tool_semaphores = {}
+        state._ws_command_semaphore_lock = asyncio.Lock()
+    async with state._ws_command_semaphore_lock:
+        if device_id not in state._ws_command_per_device_semaphores:
+            state._ws_command_per_device_semaphores[device_id] = asyncio.Semaphore(WS_COMMAND_MAX_INFLIGHT_PER_DEVICE)
+    device_sem = state._ws_command_per_device_semaphores[device_id]
+    global_sem = state._ws_command_global_semaphore
+
+    acquired_global = acquired_device = False
+    try:
+        await asyncio.wait_for(global_sem.acquire(), timeout=2.0)
+        acquired_global = True
+        await asyncio.wait_for(device_sem.acquire(), timeout=2.0)
+        acquired_device = True
+    except asyncio.TimeoutError:
+        if acquired_device:
+            device_sem.release()
+        if acquired_global:
+            global_sem.release()
+        logger.warning(
+            f"[send_ws_rpc_request] Queue full: device_id={device_id} method={method}"
+        )
+        raise WsCommandQueueFullError("WS RPC queue full")
+
+    request_id = str(uuid.uuid4())
+    trace_value = trace_id or str(uuid.uuid4())
+    future = asyncio.get_event_loop().create_future()
+    metadata = agent_info.setdefault("metadata", {})
+    pending_map = metadata.setdefault("pending_rpc_futures", {})
+    pending_map[request_id] = future
+
+    envelope = {
+        "type": "rpc_request",
+        "request_id": request_id,
+        "device_id": device_id,
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": trace_value,
+        "payload": {
+            "method": method,
+            "params": params if isinstance(params, dict) else {},
+        },
+        "meta": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "actor_role": actor_role or "admin",
+        },
+    }
+    if idempotency_key:
+        envelope["idempotency_key"] = idempotency_key
+    if ticket_id:
+        envelope["ticket_id"] = ticket_id
+    if job_id:
+        envelope["job_id"] = job_id
+
+    logger.info(
+        f"[send_ws_rpc_request] TX rpc_request: device_id={device_id} "
+        f"method={method} request_id={request_id}"
+    )
+    try:
+        await ws.send_json(envelope)
+        response = await asyncio.wait_for(future, timeout=timeout)
+        logger.info(
+            f"[send_ws_rpc_request] RX rpc_response: device_id={device_id} "
+            f"method={method} request_id={request_id}"
+        )
+        return response
+    except asyncio.TimeoutError:
+        logger.error(
+            f"[send_ws_rpc_request] Timeout waiting for rpc_response: "
+            f"device_id={device_id} method={method} request_id={request_id}"
+        )
+        pending_map.pop(request_id, None)
+        raise
+    except Exception:
+        pending_map.pop(request_id, None)
+        raise
+    finally:
+        if acquired_global:
+            global_sem.release()
+        if acquired_device:
+            device_sem.release()
+
+
 async def send_outbox_ack(
     ws: web.WebSocketResponse,
     outbox_ids: List[str],

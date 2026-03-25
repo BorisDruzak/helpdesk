@@ -210,9 +210,11 @@ from tech.handlers import (
     handle_tech_alerts,
     handle_tech_agents_audit,
     handle_tech_agent_timeline,
+    handle_tech_agent_action,
     handle_tech_ticket_lifecycle,
     handle_tech_users_audit,
     handle_tech_admin_config_audit,
+    handle_tech_logs,
     handle_tech_operations_stuck,
 )
 
@@ -430,8 +432,10 @@ def setup_routes(app: web.Application) -> None:
         # Tech observability panel (read-only)
         web.get('/api/admin/tech/overview', handle_tech_overview),
         web.get('/api/admin/tech/alerts', handle_tech_alerts),
+        web.get('/api/admin/tech/logs', handle_tech_logs),
         web.get('/api/admin/tech/agents/audit', handle_tech_agents_audit),
         web.get('/api/admin/tech/agents/{device_id}/timeline', handle_tech_agent_timeline),
+        web.post('/api/admin/tech/agents/{device_id}/actions', handle_tech_agent_action),
         web.get('/api/admin/tech/tickets/{ticket_id}/lifecycle', handle_tech_ticket_lifecycle),
         web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),

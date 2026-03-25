@@ -654,6 +654,35 @@ class AgentCommandService:
         asyncio.create_task(_background_notify())
 
 
+class RpcResponseService:
+    """Resolves pending rpc_request futures when agent sends rpc_response."""
+
+    async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> None:
+        if not ctx.agent_id:
+            return
+        agent_info = ctx.state.get_agent(ctx.agent_id)
+        if not agent_info:
+            return
+
+        agent_info["metadata"]["last_seen"] = time.time()
+        agent_info["metadata"]["status"] = "online"
+        request_id = message.get("request_id")
+        if not request_id:
+            logger.warning(f"[rpc_response] Missing request_id from agent {ctx.agent_id}")
+            return
+
+        pending = agent_info["metadata"].get("pending_rpc_futures", {})
+        future = pending.pop(request_id, None)
+        if future is None:
+            logger.warning(
+                f"[rpc_response] No pending future for request_id={request_id} "
+                f"from agent {ctx.agent_id}"
+            )
+            return
+        if not future.done():
+            future.set_result(message)
+
+
 class AgentMessageRouter:
     """Routes incoming messages by envelope type to dedicated services."""
 
@@ -662,12 +691,14 @@ class AgentMessageRouter:
         handshake_service: HandshakeService,
         command_ack_service: CommandAckService,
         command_result_service: CommandResultService,
+        rpc_response_service: RpcResponseService,
         outbox_ingest_service: OutboxIngestService,
         agent_command_service: AgentCommandService,
     ) -> None:
         self._handshake_service = handshake_service
         self._command_ack_service = command_ack_service
         self._command_result_service = command_result_service
+        self._rpc_response_service = rpc_response_service
         self._outbox_ingest_service = outbox_ingest_service
         self._agent_command_service = agent_command_service
 
@@ -693,6 +724,9 @@ class AgentMessageRouter:
             return None
         if msg_type == "command_result":
             await self._command_result_service.handle(message, ctx)
+            return None
+        if msg_type == "rpc_response":
+            await self._rpc_response_service.handle(message, ctx)
             return None
         if msg_type == "command":
             await self._agent_command_service.handle(message, ctx)

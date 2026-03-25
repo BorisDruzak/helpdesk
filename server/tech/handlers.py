@@ -1,6 +1,7 @@
 """Read-only observability endpoints for admin tech panel."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
@@ -30,6 +31,8 @@ from config import (
     OPERATION_ACCEPTED_TIMEOUT,
     OPERATION_EXECUTION_TIMEOUT,
 )
+from tech.log_buffer import list_log_records
+from websocket.protocol import send_ws_command, send_ws_rpc_request
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -73,6 +76,245 @@ def _active_agent_token_exists_for_connection_request(now: datetime):
             )
         )
     )
+
+
+def _seconds_since(dt: Optional[datetime], *, now: Optional[datetime] = None) -> Optional[int]:
+    if not dt:
+        return None
+    current = now or datetime.now(timezone.utc)
+    return max(0, int((current - dt).total_seconds()))
+
+
+def _label_provisioning_state(state: Optional[str]) -> str:
+    mapping = {
+        "active": "Токен активен",
+        "unprovisioned": "Ожидает выдачи токена",
+        "token_revoked": "Токен отозван",
+        "reprovision_required": "Нужна перепривязка",
+    }
+    return mapping.get(state or "", state or "Неизвестно")
+
+
+def _label_update_state(update_summary: dict[str, Any]) -> str:
+    status = str(update_summary.get("last_update_operation_status") or "").strip().lower()
+    if not status:
+        return "Обновлений не запускалось"
+    mapping = {
+        "queued": "Обновление в очереди",
+        "sent": "Команда обновления отправлена",
+        "accepted": "Агент принял обновление",
+        "running": "Идёт обновление",
+        "success": "Обновление завершено успешно",
+        "failed": "Обновление завершилось ошибкой",
+        "timed_out": "Обновление зависло по таймауту",
+        "canceled": "Обновление отменено",
+    }
+    return mapping.get(status, f"Статус обновления: {status}")
+
+
+def _label_audit_event(event_type: Optional[str]) -> str:
+    mapping = {
+        "handshake_ok": "Handshake успешен",
+        "invalid_token": "Неверный токен",
+        "token_revoked": "Токен отозван",
+        "agent_offline": "Агент отключился",
+        "connection_request_created": "Запрос на подключение создан",
+        "connection_request_approved": "Запрос на подключение одобрен",
+        "connection_request_rejected": "Запрос на подключение отклонён",
+        "update_requested": "Запрошено обновление агента",
+        "update_failed": "Обновление завершилось ошибкой",
+        "update_handshake_confirmed": "Обновление подтверждено handshake",
+        "user_created": "Пользователь создан",
+        "user_updated": "Пользователь обновлён",
+        "password_changed": "Пароль изменён",
+        "user_deactivated": "Пользователь деактивирован",
+        "login_success": "Успешный вход",
+        "login_failed": "Неудачная попытка входа",
+    }
+    key = str(event_type or "").strip()
+    if key in mapping:
+        return mapping[key]
+    if not key:
+        return "Событие"
+    return key.replace("_", " ").capitalize()
+
+
+def _severity_badge(severity: Optional[str]) -> dict[str, str]:
+    value = str(severity or "info").strip().lower()
+    mapping = {
+        "info": {"label": "Инфо", "class_name": "info"},
+        "warning": {"label": "Предупреждение", "class_name": "warning"},
+        "error": {"label": "Ошибка", "class_name": "error"},
+        "critical": {"label": "Критично", "class_name": "critical"},
+    }
+    return mapping.get(value, {"label": value or "Инфо", "class_name": value or "info"})
+
+
+def _serialize_problem_log(item: dict[str, Any]) -> dict[str, Any]:
+    badge = _severity_badge(item.get("level"))
+    return {
+        "timestamp": item.get("timestamp"),
+        "level": str(item.get("level") or "").lower(),
+        "level_label": badge["label"],
+        "level_class": badge["class_name"],
+        "message": item.get("message") or "",
+        "module": item.get("module") or "",
+        "function": item.get("function") or "",
+        "file_path": item.get("file_path") or "",
+        "line": item.get("line") or 0,
+    }
+
+
+def _serialize_agent_audit_row(item: AgentRuntimeAudit) -> dict[str, Any]:
+    badge = _severity_badge(item.severity)
+    return {
+        "id": item.id,
+        "device_id": item.device_id,
+        "event_type": item.event_type,
+        "event_label": _label_audit_event(item.event_type),
+        "severity": item.severity,
+        "severity_label": badge["label"],
+        "severity_class": badge["class_name"],
+        "source": item.source,
+        "operation_id": item.operation_id,
+        "ticket_id": item.ticket_id,
+        "actor_id": item.actor_id,
+        "actor_role": item.actor_role,
+        "details_json": item.details_json or {},
+        "created_at": _iso(item.created_at),
+    }
+
+
+def _serialize_user_audit_row(row: UiUserAudit) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "user_login": row.user_login,
+        "action": row.action,
+        "action_label": _label_audit_event(row.action),
+        "actor_id": row.actor_id,
+        "details_json": row.details_json or {},
+        "created_at": _iso(row.created_at),
+    }
+
+
+def _label_operation_status(status: Optional[str]) -> str:
+    mapping = {
+        "queued": "В очереди",
+        "sent": "Отправлено агенту",
+        "accepted": "Принято агентом",
+        "running": "Выполняется",
+        "waiting_consent": "Ждёт подтверждения",
+        "cancel_requested": "Запрошена отмена",
+        "succeeded": "Успешно",
+        "success": "Успешно",
+        "failed": "Ошибка",
+        "timed_out": "Таймаут",
+        "canceled": "Отменено",
+    }
+    key = str(status or "").strip().lower()
+    return mapping.get(key, key or "Неизвестно")
+
+
+def _label_outbox_status(status: Optional[str]) -> str:
+    mapping = {
+        "pending": "Ожидает отправки",
+        "sent": "Отправлено",
+        "delivered": "Доставлено",
+        "failed": "Ошибка доставки",
+    }
+    key = str(status or "").strip().lower()
+    return mapping.get(key, key or "Неизвестно")
+
+
+def _serialize_operation_row(op: Operation) -> dict[str, Any]:
+    return {
+        "operation_id": op.operation_id,
+        "device_id": op.device_id,
+        "ticket_id": op.ticket_id,
+        "kind": op.kind,
+        "status": op.status,
+        "status_label": _label_operation_status(op.status),
+        "actor_role": op.actor_role,
+        "tool_name": op.tool_name,
+        "command_name": op.command_name,
+        "error_code": op.error_code,
+        "error_message": op.error_message,
+        "result_summary": op.result_summary,
+        "queued_at": _iso(op.queued_at),
+        "sent_at": _iso(op.sent_at),
+        "started_at": _iso(op.started_at),
+        "finished_at": _iso(op.finished_at),
+        "deadline_at": _iso(op.deadline_at),
+    }
+
+
+def _serialize_outbox_row(row: DeviceOutbox) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "command_id": row.command_id,
+        "command": row.command,
+        "status": row.status,
+        "status_label": _label_outbox_status(row.status),
+        "operation_id": row.operation_id,
+        "retry_count": int(row.retry_count or 0),
+        "max_retries": int(row.max_retries or 0),
+        "error_code": row.error_code,
+        "error_message": row.error_message,
+        "created_at": _iso(row.created_at),
+        "sent_at": _iso(row.sent_at),
+        "delivered_at": _iso(row.delivered_at),
+        "failed_at": _iso(row.failed_at),
+    }
+
+
+def _alert_summary_ru(kind: str, summary: str, details: Optional[dict[str, Any]] = None) -> str:
+    details = details or {}
+    if kind == "device_stale":
+        return f"Обнаружены неактивные агенты: {details.get('stale_count', 0)} шт."
+    if kind == "connection_request_stuck_pending":
+        return f"Есть зависшие запросы на подключение: {details.get('pending_stale_count', 0)} шт."
+    if kind == "invalid_token_burst":
+        return f"Всплеск ошибок токена: {summary.rsplit(':', 1)[-1].strip()}"
+    if kind == "update_waiting_handshake_confirm_too_long":
+        return summary.replace("updates are waiting too long", "обновлений слишком долго ждут подтверждения handshake")
+    if kind == "operation_queued_too_long":
+        return "Есть операции, слишком долго стоящие в очереди"
+    if kind == "operation_sent_too_long":
+        return "Есть операции, отправленные агенту слишком давно"
+    if kind == "operation_in_progress_too_long":
+        return "Есть операции, которые слишком долго выполняются"
+    if kind == "outbox_backlog_high":
+        return summary.replace("Outbox backlog is high", "Высокая очередь команд outbox")
+    if kind == "watchdog_not_running":
+        return summary.replace("is not running", "не запущен")
+    if kind == "postgres_slow":
+        return summary.replace("PostgreSQL latency is high", "Высокая задержка PostgreSQL")
+    return summary
+
+
+def _build_log_alerts(limit: int = 10) -> list[dict[str, Any]]:
+    records = list_log_records(levels=("warning", "error", "critical"), limit=limit)
+    alerts: list[dict[str, Any]] = []
+    for record in records:
+        badge = _severity_badge(record.get("level"))
+        location = ".".join(part for part in [record.get("module"), record.get("function")] if part)
+        summary = f"{badge['label']}: {record.get('message') or 'Проблема в логах'}"
+        details = {}
+        if location:
+            details["источник"] = location
+        if record.get("line"):
+            details["строка"] = record["line"]
+        alerts.append(
+            _alert(
+                severity=record.get("level") or "warning",
+                kind="runtime_log_problem",
+                entity_type="log",
+                entity_id=location or "server",
+                summary=summary,
+                details=details,
+            )
+        )
+    return alerts
 
 
 def _lifecycle_event_icon(kind: str) -> str:
@@ -240,7 +482,7 @@ def _build_alerts_from_metrics(
                 kind="device_stale",
                 entity_type="fleet",
                 entity_id="devices",
-                summary=f"{stale_count} stale devices detected",
+                summary=f"Обнаружены неактивные агенты: {stale_count} шт.",
                 details={"stale_count": stale_count, "threshold_seconds": stale_sec},
                 link="/admin#devices",
             )
@@ -252,7 +494,7 @@ def _build_alerts_from_metrics(
                 kind="connection_request_stuck_pending",
                 entity_type="connection_requests",
                 entity_id="pending",
-                summary=f"{old_pending} pending connection requests are stale",
+                summary=f"Есть зависшие запросы на подключение: {old_pending} шт.",
                 details={"pending_stale_count": old_pending},
                 link="/admin#devices",
             )
@@ -264,7 +506,7 @@ def _build_alerts_from_metrics(
                 kind="invalid_token_burst",
                 entity_type="auth",
                 entity_id="agents",
-                summary=f"Invalid token burst detected: {invalid_recent} events",
+                summary=f"Всплеск ошибок токена: {invalid_recent} событий",
                 details={"window_seconds": invalid_burst_window_sec},
             )
         )
@@ -275,16 +517,16 @@ def _build_alerts_from_metrics(
                 kind="update_waiting_handshake_confirm_too_long",
                 entity_type="operation",
                 entity_id="agent_update",
-                summary=f"{update_waiting_confirm} updates are waiting too long",
+                summary=f"Обновления слишком долго ждут подтверждения handshake: {update_waiting_confirm} шт.",
                 link="/admin#agent-updates",
             )
         )
     if queued_stuck > 0:
-        alerts.append(_alert(severity="warning", kind="operation_queued_too_long", entity_type="operation", entity_id="queued", summary=f"{queued_stuck} queued operations stuck"))
+        alerts.append(_alert(severity="warning", kind="operation_queued_too_long", entity_type="operation", entity_id="queued", summary=f"Операции слишком долго стоят в очереди: {queued_stuck} шт."))
     if sent_stuck > 0:
-        alerts.append(_alert(severity="warning", kind="operation_sent_too_long", entity_type="operation", entity_id="sent", summary=f"{sent_stuck} sent operations stuck"))
+        alerts.append(_alert(severity="warning", kind="operation_sent_too_long", entity_type="operation", entity_id="sent", summary=f"Операции слишком долго в статусе 'Отправлено': {sent_stuck} шт."))
     if in_progress_stuck > 0:
-        alerts.append(_alert(severity="warning", kind="operation_in_progress_too_long", entity_type="operation", entity_id="in_progress", summary=f"{in_progress_stuck} running operations exceeded deadline"))
+        alerts.append(_alert(severity="warning", kind="operation_in_progress_too_long", entity_type="operation", entity_id="in_progress", summary=f"Операции слишком долго выполняются: {in_progress_stuck} шт."))
     if outbox_backlog >= outbox_backlog_warn:
         alerts.append(
             _alert(
@@ -292,7 +534,7 @@ def _build_alerts_from_metrics(
                 kind="outbox_backlog_high",
                 entity_type="outbox",
                 entity_id="device_outbox",
-                summary=f"Outbox backlog is high: {outbox_backlog}",
+                summary=f"Высокая очередь команд outbox: {outbox_backlog}",
             )
         )
     for kind, running in watchdog_states.items():
@@ -303,7 +545,7 @@ def _build_alerts_from_metrics(
                     kind="watchdog_not_running",
                     entity_type="service",
                     entity_id=kind,
-                    summary=f"{kind} is not running",
+                    summary=f"Сервис контроля '{kind}' не запущен",
                 )
             )
     return alerts
@@ -343,7 +585,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                         kind="postgres_slow",
                         entity_type="postgres",
                         entity_id="primary",
-                        summary=f"PostgreSQL latency is high: {latency_ms:.1f} ms",
+                        summary=f"Высокая задержка PostgreSQL: {latency_ms:.1f} мс",
                         details={"latency_ms": latency_ms, "threshold_ms": slow_ms},
                     )
                 )
@@ -560,6 +802,12 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                         ]
                         break
 
+            problem_logs = [
+                _serialize_problem_log(item)
+                for item in list_log_records(levels=("warning", "error", "critical"), limit=20)
+            ]
+            alerts.extend(_build_log_alerts(limit=8))
+
             overview = {
                 "service_health": {
                     "api": "ok",
@@ -598,6 +846,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     "admin_changes_recent": int(admin_changes_recent),
                 },
                 "alerts": alerts,
+                "problem_logs": problem_logs,
             }
             return overview
     except SQLAlchemyError as exc:
@@ -608,7 +857,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                 kind="postgres_unreachable",
                 entity_type="postgres",
                 entity_id="primary",
-                summary="PostgreSQL probe failed",
+                summary="Проверка PostgreSQL завершилась ошибкой",
                 details={"error": str(exc)},
             )
         )
@@ -658,22 +907,7 @@ async def handle_tech_agents_audit(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "status": "ok",
-                "events": [
-                    {
-                        "id": i.id,
-                        "device_id": i.device_id,
-                        "event_type": i.event_type,
-                        "severity": i.severity,
-                        "source": i.source,
-                        "operation_id": i.operation_id,
-                        "ticket_id": i.ticket_id,
-                        "actor_id": i.actor_id,
-                        "actor_role": i.actor_role,
-                        "details_json": i.details_json or {},
-                        "created_at": _iso(i.created_at),
-                    }
-                    for i in items
-                ],
+                "events": [_serialize_agent_audit_row(i) for i in items],
             }
         )
 
@@ -681,14 +915,83 @@ async def handle_tech_agents_audit(request: web.Request) -> web.Response:
 @require_auth("admin", "support", "auditor")
 async def handle_tech_agent_timeline(request: web.Request) -> web.Response:
     device_id = request.match_info["device_id"]
+    now = datetime.now(timezone.utc)
+    stale_sec = _threshold("TECH_DEVICE_STALE_SECONDS", 300)
     async with get_session() as session:
         device = await session.scalar(select(Device).where(Device.device_id == device_id))
         if not device:
             return web.json_response({"status": "error", "error": "Device not found"}, status=404)
         repo = AgentRuntimeAuditRepo(session)
         events = await repo.list_feed(device_id=device_id, limit=200)
-        update_events = [e for e in events if e.event_type.startswith("update_")]
-        auth_events = [e for e in events if "token" in e.event_type or "handshake" in e.event_type]
+        serialized_events = [_serialize_agent_audit_row(e) for e in events]
+        update_events = [item for item in serialized_events if str(item.get("event_type") or "").startswith("update_")]
+        auth_events = [
+            item
+            for item in serialized_events
+            if "token" in str(item.get("event_type") or "") or str(item.get("event_type") or "").startswith("connection_request_")
+        ]
+        handshake_events = [
+            item
+            for item in serialized_events
+            if "handshake" in str(item.get("event_type") or "") or item.get("event_type") in {"agent_offline"}
+        ]
+        last_errors = [
+            item for item in serialized_events if str(item.get("severity") or "").lower() in {"warning", "error", "critical"}
+        ][:10]
+        recent_operations = (
+            await session.execute(
+                select(Operation).where(Operation.device_id == device_id).order_by(Operation.queued_at.desc()).limit(20)
+            )
+        ).scalars().all()
+        recent_outbox = (
+            await session.execute(
+                select(DeviceOutbox).where(DeviceOutbox.device_id == device_id).order_by(DeviceOutbox.created_at.desc()).limit(20)
+            )
+        ).scalars().all()
+        outbox_counts = {}
+        for status in ("pending", "sent", "failed", "delivered"):
+            outbox_counts[status] = int(
+                await session.scalar(
+                    select(func.count()).select_from(DeviceOutbox).where(
+                        and_(DeviceOutbox.device_id == device_id, DeviceOutbox.status == status)
+                    )
+                )
+                or 0
+            )
+        pending_consents_count = int(
+            await session.scalar(
+                select(func.count()).select_from(Operation).where(
+                    and_(Operation.device_id == device_id, Operation.status == "waiting_consent")
+                )
+            )
+            or 0
+        )
+        issue_summary: list[str] = []
+        if not request.app["state"].is_agent_online(device_id):
+            issue_summary.append("Агент сейчас офлайн.")
+        if device.last_seen_at and device.last_seen_at < (now - timedelta(seconds=stale_sec)):
+            issue_summary.append("Агент давно не выходил на связь.")
+        if outbox_counts["failed"] > 0:
+            issue_summary.append(f"Есть ошибки доставки команд: {outbox_counts['failed']} шт.")
+        if pending_consents_count > 0:
+            issue_summary.append(f"Есть команды, ожидающие подтверждения: {pending_consents_count} шт.")
+        problem_logs = [
+            _serialize_problem_log(item)
+            for item in list_log_records(
+                levels=("warning", "error", "critical"),
+                limit=20,
+                contains=device_id,
+            )
+        ]
+        if not problem_logs and device.hostname:
+            problem_logs = [
+                _serialize_problem_log(item)
+                for item in list_log_records(
+                    levels=("warning", "error", "critical"),
+                    limit=20,
+                    contains=device.hostname,
+                )
+            ]
         return web.json_response(
             {
                 "status": "ok",
@@ -702,18 +1005,25 @@ async def handle_tech_agent_timeline(request: web.Request) -> web.Response:
                 "current_state": {
                     "online": bool(request.app["state"].is_agent_online(device_id)),
                     "last_seen_at": _iso(device.last_seen_at),
+                    "last_seen_age_sec": _seconds_since(device.last_seen_at, now=now),
+                    "last_handshake_age_sec": _seconds_since(device.last_handshake_at, now=now),
+                    "stale": bool(device.last_seen_at and device.last_seen_at < (now - timedelta(seconds=stale_sec))),
+                    "pending_consents_count": pending_consents_count,
                 },
-                "events": [
-                    {
-                        "event_type": e.event_type,
-                        "severity": e.severity,
-                        "at": _iso(e.created_at),
-                        "details": e.details_json or {},
-                    }
-                    for e in events
-                ],
+                "events": serialized_events,
+                "auth_timeline": auth_events,
+                "handshake_timeline": handshake_events,
+                "update_timeline": update_events,
                 "auth_summary": {"events_count": len(auth_events)},
                 "update_summary": {"events_count": len(update_events)},
+                "recent_operations": [_serialize_operation_row(op) for op in recent_operations],
+                "outbox_summary": {
+                    "counts": outbox_counts,
+                    "recent": [_serialize_outbox_row(row) for row in recent_outbox],
+                },
+                "last_errors": last_errors,
+                "problem_logs": problem_logs,
+                "issue_summary": issue_summary,
             }
         )
 
@@ -917,19 +1227,84 @@ async def handle_tech_users_audit(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "status": "ok",
-                "events": [
-                    {
-                        "id": r.id,
-                        "user_login": r.user_login,
-                        "action": r.action,
-                        "actor_id": r.actor_id,
-                        "details_json": r.details_json or {},
-                        "created_at": _iso(r.created_at),
-                    }
-                    for r in rows
-                ],
+                "events": [_serialize_user_audit_row(r) for r in rows],
             }
         )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_logs(request: web.Request) -> web.Response:
+    limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
+    raw_levels = request.query.get("levels") or "warning,error,critical"
+    levels = [item.strip().lower() for item in raw_levels.split(",") if item.strip()]
+    contains = request.query.get("contains")
+    logs = [
+        _serialize_problem_log(item)
+        for item in list_log_records(levels=levels, limit=limit, contains=contains)
+    ]
+    return web.json_response({"status": "ok", "logs": logs})
+
+
+@require_auth("admin", "support")
+async def handle_tech_agent_action(request: web.Request) -> web.Response:
+    auth_context = request.get("auth_context")
+    device_id = request.match_info["device_id"]
+    data = await request.json()
+    action = str(data.get("action") or "").strip().lower()
+    actor_role = getattr(auth_context, "actor_role", None) or "admin"
+
+    try:
+        if action == "get_status":
+            response = await send_ws_command(
+                state=request.app["state"],
+                device_id=device_id,
+                command="get_status",
+                params={},
+                actor_role=actor_role,
+                timeout=30,
+            )
+        elif action == "get_history":
+            params: dict[str, Any] = {"limit": _parse_query_limit(data.get("limit"), default=20, cap=200)}
+            if data.get("module"):
+                params["module"] = str(data["module"]).strip()
+            response = await send_ws_command(
+                state=request.app["state"],
+                device_id=device_id,
+                command="get_history",
+                params=params,
+                actor_role=actor_role,
+                timeout=30,
+            )
+        elif action == "list_tasks":
+            response = await send_ws_rpc_request(
+                state=request.app["state"],
+                device_id=device_id,
+                method="list_tasks",
+                params={},
+                actor_role=actor_role,
+                timeout=30,
+            )
+        elif action == "refresh_toolset":
+            response = await send_ws_command(
+                state=request.app["state"],
+                device_id=device_id,
+                command="list_tools",
+                params={},
+                actor_role=actor_role,
+                timeout=30,
+            )
+        else:
+            return web.json_response(
+                {"status": "error", "error": f"Unsupported tech action: {action}"},
+                status=400,
+            )
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": str(exc)}, status=404)
+    except asyncio.TimeoutError:
+        return web.json_response({"status": "error", "error": "Таймаут ожидания ответа от агента"}, status=504)
+
+    payload = response.get("payload") if isinstance(response, dict) and "payload" in response else response
+    return web.json_response({"status": "ok", "action": action, "result": payload})
 
 
 @require_auth("admin", "support", "auditor")
