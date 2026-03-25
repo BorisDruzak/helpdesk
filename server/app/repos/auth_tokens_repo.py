@@ -527,6 +527,30 @@ class AuthTokensRepo:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def rebind_agent_token(self, token_hash: str, new_device_id: str) -> bool:
+        """
+        Rebind active token to another device_id.
+
+        Used only in controlled reprovision scenarios when an existing agent
+        receives a fresh token that was issued for a never-seen device_id.
+        """
+        stmt = (
+            update(AgentToken)
+            .where(AgentToken.token_hash == token_hash)
+            .where(AgentToken.revoked_at.is_(None))
+            .values(device_id=new_device_id)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+
+        if result.rowcount > 0:
+            logger.warning(
+                f"[AuthTokensRepo] Rebound agent token {token_hash[:16]}... "
+                f"to device_id={new_device_id}"
+            )
+            return True
+        return False
     
     async def revoke_agent_token_by_hash(self, token_hash: str) -> bool:
         """

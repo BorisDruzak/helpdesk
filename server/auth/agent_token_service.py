@@ -21,6 +21,8 @@ class AgentTokenService:
                 return None
             return {
                 "device_id": token_record.device_id,
+                "token_hash": token_record.token_hash,
+                "token_prefix": token_record.token_prefix,
                 "created_at": token_record.created_at.isoformat(),
                 "type": "agent",
             }

@@ -37,7 +37,7 @@
 |------|------------|
 | `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter` |
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
-| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities) |
+| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), включая controlled reprovision токена на уже известный `device_id` |
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
 | `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
@@ -83,7 +83,7 @@
 | `server/app/repos/modules_repo.py` | Модули в БД |
 | `server/app/repos/device_modules_repo.py` | Установленные модули на устройстве |
 | `server/app/repos/device_desired_modules_repo.py` | Желаемое состояние модулей |
-| `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа |
+| `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа; проверка, ротация, controlled rebind токена агента |
 | `server/app/repos/connection_requests_repo.py` | Запросы на подключение устройств, политика (reject_all/accept_all/manual) |
 | Остальные repos | artifacts, notifications, playbook, tickets, agents, jobs, ui_users и др. — см. `server/app/repos/`. |
 

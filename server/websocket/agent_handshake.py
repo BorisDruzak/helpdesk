@@ -109,6 +109,106 @@ async def _confirm_update_operation_from_handshake(
         details_json={"applied_update_version": applied_update_version},
     )
 
+
+def _is_provision_stub(device: Any) -> bool:
+    if not device:
+        return True
+    protocol_version = (getattr(device, "protocol_version", None) or "").strip().lower()
+    agent_version = (getattr(device, "agent_version", None) or "").strip().lower()
+    hostname = getattr(device, "hostname", None)
+    os_name = getattr(device, "os", None)
+    toolset_hash = getattr(device, "current_toolset_hash", None)
+    metadata = getattr(device, "device_metadata", None) or {}
+    if protocol_version not in ("", "pending"):
+        return False
+    if agent_version not in ("", "unknown"):
+        return False
+    if hostname or os_name or toolset_hash:
+        return False
+    return not bool(metadata)
+
+
+async def _resolve_handshake_device_id(
+    *,
+    token_info: dict[str, Any],
+    payload_device_id: Optional[str],
+) -> str:
+    token_device_id = token_info["device_id"]
+    if not payload_device_id or payload_device_id == token_device_id:
+        return token_device_id
+    if not DB_AVAILABLE or not ENABLE_DB_PERSISTENCE:
+        return token_device_id
+
+    cleanup_stub_device_id: Optional[str] = None
+    try:
+        async with get_session() as session:
+            from app.repos.auth_tokens_repo import AuthTokensRepo
+            from app.repos.devices_repo import DevicesRepo
+
+            devices_repo = DevicesRepo(session)
+            tokens_repo = AuthTokensRepo(session)
+
+            payload_device = await devices_repo.get_by_device_id(payload_device_id)
+            if not payload_device or _is_provision_stub(payload_device):
+                return token_device_id
+
+            token_device = await devices_repo.get_by_device_id(token_device_id)
+            if token_device and not _is_provision_stub(token_device):
+                return token_device_id
+
+            rebound = await tokens_repo.rebind_agent_token(
+                token_hash=token_info["token_hash"],
+                new_device_id=payload_device_id,
+            )
+            if not rebound:
+                return token_device_id
+
+            if token_device and _is_provision_stub(token_device):
+                cleanup_stub_device_id = token_device_id
+
+            logger.warning(
+                f"🔁 Rebound fresh agent token {token_info.get('token_prefix', '')} "
+                f"from device_id={token_device_id} to existing device_id={payload_device_id}"
+            )
+            await write_agent_runtime_audit(
+                device_id=payload_device_id,
+                event_type="token_rebound",
+                severity="warning",
+                source="handshake",
+                details_json={
+                    "from_device_id": token_device_id,
+                    "token_prefix": token_info.get("token_prefix"),
+                    "reason": "existing_payload_device_reused",
+                },
+            )
+    except Exception as e:
+        logger.warning(
+            f"⚠️ Failed to resolve handshake device binding: token_device_id={token_device_id} "
+            f"payload_device_id={payload_device_id} error={e}"
+        )
+        return token_device_id
+
+    if cleanup_stub_device_id:
+        try:
+            async with get_session() as cleanup_session:
+                from app.repos.auth_tokens_repo import AuthTokensRepo
+                from app.repos.devices_repo import DevicesRepo
+
+                cleanup_devices_repo = DevicesRepo(cleanup_session)
+                cleanup_tokens_repo = AuthTokensRepo(cleanup_session)
+                cleanup_device = await cleanup_devices_repo.get_by_device_id(cleanup_stub_device_id)
+                bound_tokens = await cleanup_tokens_repo.get_agent_tokens_by_device(cleanup_stub_device_id)
+                if cleanup_device and _is_provision_stub(cleanup_device) and not bound_tokens:
+                    await cleanup_session.delete(cleanup_device)
+                    await cleanup_session.flush()
+        except Exception as cleanup_error:
+            logger.warning(
+                f"[handshake] Failed to cleanup placeholder device after token rebound: "
+                f"device_id={cleanup_stub_device_id} error={cleanup_error}"
+            )
+
+    return payload_device_id
+
 async def handle_handshake(
     ws: web.WebSocketResponse,
     data: dict,
@@ -224,8 +324,14 @@ async def handle_handshake(
         await ws.close(code=4003, message=b"Invalid token")
         return (ws, agent_id, device_id, authenticated)
     
-    # КРИТИЧНО: device_id берется из токена, не из payload
-    device_id = token_info["device_id"]
+    # КРИТИЧНО: базовый source of truth — device_id из токена.
+    # Исключение: controlled reprovision. Если токен выдан на свежий/пустой UUID,
+    # а агент пришёл со своим уже известным payload device_id, мы перепривязываем
+    # сам токен к существующему устройству и дальше всё равно работаем через запись токена.
+    device_id = await _resolve_handshake_device_id(
+        token_info=token_info,
+        payload_device_id=payload_device_id,
+    )
     agent_id = device_id
     
     # Создаем AuthContext для этого соединения

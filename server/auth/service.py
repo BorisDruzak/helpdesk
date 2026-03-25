@@ -103,17 +103,21 @@ class AuthService:
             expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
         
         async with get_session() as session:
-            # Устройство должно существовать в devices до создания токена (FK agent_tokens.device_id)
-            devices_repo = DevicesRepo(session)
-            await devices_repo.ensure_device_exists(device_id)
             repo = AuthTokensRepo(session)
+            devices_repo = DevicesRepo(session)
             try:
+                # agent_tokens.device_id is linked to devices, so we keep a lightweight
+                # placeholder row until the first real handshake fills it with metadata.
+                await devices_repo.ensure_device_exists(device_id)
                 token, _ = await repo.create_agent_token(
                     token=raw_token,
                     device_id=device_id,
                     expires_at=expires_at
                 )
-                logger.info(f"[AuthService] Generated agent token: device_id={device_id}")
+                logger.info(
+                    f"[AuthService] Generated agent token: device_id={device_id}. "
+                    f"Placeholder device row is ready and will be enriched on first successful handshake."
+                )
                 return token
             except ValueError as e:
                 # Active token limit exceeded
