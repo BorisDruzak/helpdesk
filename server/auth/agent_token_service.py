@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.db import get_session
 from app.repos.auth_tokens_repo import AuthTokensRepo
+from app.repos.devices_repo import DevicesRepo
 
 
 class AgentTokenService:
@@ -16,8 +17,15 @@ class AgentTokenService:
     async def verify_agent_token(self, token: str) -> Optional[dict]:
         async with get_session() as session:
             repo = AuthTokensRepo(session)
+            devices_repo = DevicesRepo(session)
             token_record = await repo.verify_agent_token(token)
             if not token_record:
+                return None
+            device = await devices_repo.get_by_device_id(
+                token_record.device_id,
+                include_deleted=True,
+            )
+            if device and device.deleted_at is not None:
                 return None
             return {
                 "device_id": token_record.device_id,

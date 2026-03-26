@@ -15,6 +15,10 @@ from app.repos.ui_users_repo import UiUsersRepo
 from auth.password_service import verify_password
 
 
+class ArchivedDeviceError(Exception):
+    """Raised when token issuance/auth is attempted for an archived device."""
+
+
 class AuthService:
     """Сервис для работы с аутентификацией."""
     _LEGACY_TOKEN_STORE: dict[str, dict] = {}
@@ -106,6 +110,10 @@ class AuthService:
             repo = AuthTokensRepo(session)
             devices_repo = DevicesRepo(session)
             try:
+                existing_device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
+                if existing_device and existing_device.deleted_at is not None:
+                    raise ArchivedDeviceError("Device is archived and must be restored before reprovision.")
+
                 # agent_tokens.device_id is linked to devices, so we keep a lightweight
                 # placeholder row until the first real handshake fills it with metadata.
                 await devices_repo.ensure_device_exists(device_id)
@@ -219,9 +227,17 @@ class AuthService:
         """
         async with get_session() as session:
             repo = AuthTokensRepo(session)
+            devices_repo = DevicesRepo(session)
             token_record = await repo.verify_agent_token(token)
             
             if token_record:
+                device = await devices_repo.get_by_device_id(token_record.device_id, include_deleted=True)
+                if device and device.deleted_at is not None:
+                    logger.warning(
+                        f"[AuthService] Agent token rejected for archived device: "
+                        f"device_id={token_record.device_id}"
+                    )
+                    return None
                 return {
                     "device_id": token_record.device_id,
                     "created_at": token_record.created_at.isoformat(),

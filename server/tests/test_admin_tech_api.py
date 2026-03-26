@@ -1,4 +1,6 @@
-from datetime import datetime, timezone, timedelta
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -12,7 +14,7 @@ SUPPORT_TOKEN = "test-ui-support-token"
 USER_TOKEN = "test-ui-user:plain-user"
 
 
-def _auth(token: str) -> dict:
+def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -179,6 +181,7 @@ async def test_tech_overview_ignores_stale_pending_for_devices_with_active_token
             )
         )
         from app.db.models import ConnectionRequest
+
         session.add(
             ConnectionRequest(
                 device_id=device_id,
@@ -263,9 +266,108 @@ async def test_tech_audit_and_logs_are_localized(test_client):
     assert agents_resp.status == 200
     assert users_resp.status == 200
     assert logs_resp.status == 200
-    assert any(item["event_label"] == "Неверный токен" and item["severity_label"] == "Ошибка" for item in agents_body["events"])
+    assert any(
+        item["event_label"] == "Неверный токен" and item["severity_label"] == "Ошибка"
+        for item in agents_body["events"]
+    )
     assert any(item["action_label"] == "Неудачная попытка входа" for item in users_body["events"])
-    assert any(item["level_label"] == "Предупреждение" and "Device warning surfaced" in item["message"] for item in logs_body["logs"])
+    assert any(
+        item["level_label"] == "Предупреждение" and "Device warning surfaced" in item["message"]
+        for item in logs_body["logs"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_tech_direct_log_dismiss_removes_log_from_panel(test_client):
+    now = datetime.now(timezone.utc)
+    append_log_record(
+        level="warning",
+        message="Dismiss me from logs",
+        timestamp=now,
+        module="tests.tech",
+        function="test_tech_direct_log_dismiss_removes_log_from_panel",
+        line=77,
+    )
+
+    logs_before_resp = await test_client.get("/api/admin/tech/logs?limit=10", headers=_auth(ADMIN_TOKEN))
+    logs_before = await logs_before_resp.json()
+    target_log = next(item for item in logs_before["logs"] if item["message"] == "Dismiss me from logs")
+
+    dismiss_resp = await test_client.post(
+        "/api/admin/tech/dismiss",
+        headers=_auth(ADMIN_TOKEN),
+        json={"item_type": "log", "item_id": target_log["id"]},
+    )
+    logs_after_resp = await test_client.get("/api/admin/tech/logs?limit=10", headers=_auth(ADMIN_TOKEN))
+    logs_after = await logs_after_resp.json()
+
+    assert dismiss_resp.status == 200
+    assert all(item["id"] != target_log["id"] for item in logs_after["logs"])
+
+
+@pytest.mark.asyncio
+async def test_tech_dismiss_alert_also_removes_related_log(test_client):
+    now = datetime.now(timezone.utc)
+    append_log_record(
+        level="error",
+        message="Important runtime failure",
+        timestamp=now,
+        module="tests.tech",
+        function="test_tech_dismiss_alert_also_removes_related_log",
+        line=91,
+    )
+
+    overview_resp = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    logs_resp = await test_client.get("/api/admin/tech/logs?limit=10", headers=_auth(ADMIN_TOKEN))
+    overview = await overview_resp.json()
+    logs = await logs_resp.json()
+
+    target_log = next(item for item in logs["logs"] if item["message"] == "Important runtime failure")
+    target_alert = next(
+        item
+        for item in overview["overview"]["alerts"]
+        if item["kind"] == "runtime_log_problem" and item.get("related_log_id") == target_log["id"]
+    )
+
+    dismiss_resp = await test_client.post(
+        "/api/admin/tech/dismiss",
+        headers=_auth(ADMIN_TOKEN),
+        json={
+            "item_type": "alert",
+            "item_id": target_alert["id"],
+            "related_log_id": target_alert["related_log_id"],
+        },
+    )
+    overview_after_resp = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    logs_after_resp = await test_client.get("/api/admin/tech/logs?limit=10", headers=_auth(ADMIN_TOKEN))
+    overview_after = await overview_after_resp.json()
+    logs_after = await logs_after_resp.json()
+
+    assert dismiss_resp.status == 200
+    assert all(item["id"] != target_alert["id"] for item in overview_after["overview"]["alerts"])
+    assert all(item["id"] != target_log["id"] for item in logs_after["logs"])
+
+
+@pytest.mark.asyncio
+async def test_tech_noisy_websocket_disconnect_log_is_not_promoted_to_alert(test_client):
+    now = datetime.now(timezone.utc)
+    append_log_record(
+        level="warning",
+        message="UI websocket disconnected by peer",
+        timestamp=now,
+        module="ws_ui.transport",
+        function="close",
+        line=41,
+    )
+
+    overview_resp = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    overview = await overview_resp.json()
+
+    assert overview_resp.status == 200
+    assert not any(
+        item["kind"] == "runtime_log_problem" and "WebSocket" in item["summary"]
+        for item in overview["overview"]["alerts"]
+    )
 
 
 @pytest.mark.asyncio

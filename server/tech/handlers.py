@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
@@ -31,7 +33,8 @@ from config import (
     OPERATION_ACCEPTED_TIMEOUT,
     OPERATION_EXECUTION_TIMEOUT,
 )
-from tech.log_buffer import list_log_records
+from tech.dismiss_store import dismiss_alert, is_alert_dismissed
+from tech.log_buffer import list_log_records, remove_log_record
 from websocket.protocol import send_ws_command, send_ws_rpc_request
 
 
@@ -153,6 +156,7 @@ def _severity_badge(severity: Optional[str]) -> dict[str, str]:
 def _serialize_problem_log(item: dict[str, Any]) -> dict[str, Any]:
     badge = _severity_badge(item.get("level"))
     return {
+        "id": item.get("id"),
         "timestamp": item.get("timestamp"),
         "level": str(item.get("level") or "").lower(),
         "level_label": badge["label"],
@@ -163,6 +167,43 @@ def _serialize_problem_log(item: dict[str, Any]) -> dict[str, Any]:
         "file_path": item.get("file_path") or "",
         "line": item.get("line") or 0,
     }
+
+
+def _log_location_label(record: dict[str, Any]) -> str:
+    return ".".join(part for part in [record.get("module"), record.get("function")] if part)
+
+
+def _is_noisy_log_alert(record: dict[str, Any]) -> bool:
+    message = str(record.get("message") or "").strip().lower()
+    location = _log_location_label(record).lower()
+    noisy_patterns = (
+        "ui websocket disconnected",
+        "websocket disconnected",
+        "websocket connection closed",
+        "client disconnected",
+        "connection reset by peer",
+        "cannot write to closing transport",
+    )
+    if any(pattern in message for pattern in noisy_patterns):
+        return True
+    if "ws_ui" in location and ("disconnect" in message or "closed" in message):
+        return True
+    return False
+
+
+def _humanize_log_summary(record: dict[str, Any]) -> str:
+    level_label = _severity_badge(record.get("level"))["label"]
+    message = str(record.get("message") or "").strip()
+    lowered = message.lower()
+    if "ui websocket disconnected" in lowered or "websocket disconnected" in lowered:
+        return "UI-клиент закрыл WebSocket-соединение"
+    if "connection reset by peer" in lowered:
+        return "Удалённая сторона разорвала соединение"
+    if "invalid token" in lowered:
+        return "Обнаружен неверный токен агента"
+    if not message:
+        return f"{level_label}: проблема в логах"
+    return f"{level_label}: {message}"
 
 
 def _serialize_agent_audit_row(item: AgentRuntimeAudit) -> dict[str, Any]:
@@ -296,22 +337,26 @@ def _build_log_alerts(limit: int = 10) -> list[dict[str, Any]]:
     records = list_log_records(levels=("warning", "error", "critical"), limit=limit)
     alerts: list[dict[str, Any]] = []
     for record in records:
-        badge = _severity_badge(record.get("level"))
-        location = ".".join(part for part in [record.get("module"), record.get("function")] if part)
-        summary = f"{badge['label']}: {record.get('message') or 'Проблема в логах'}"
+        if _is_noisy_log_alert(record):
+            continue
+        location = _log_location_label(record)
+        summary = _humanize_log_summary(record)
         details = {}
         if location:
             details["источник"] = location
         if record.get("line"):
             details["строка"] = record["line"]
+        if record.get("module"):
+            details["модуль"] = record["module"]
         alerts.append(
             _alert(
                 severity=record.get("level") or "warning",
                 kind="runtime_log_problem",
                 entity_type="log",
-                entity_id=location or "server",
+                entity_id=str(record.get("id") or location or "server"),
                 summary=summary,
                 details=details,
+                related_log_id=str(record.get("id") or ""),
             )
         )
     return alerts
@@ -442,9 +487,26 @@ def _alert(
     summary: str,
     details: dict | None = None,
     link: str | None = None,
+    related_log_id: str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
-    aid = f"{kind}:{entity_type}:{entity_id}"
+    normalized_details = details or {}
+    payload = json.dumps(
+        {
+            "severity": severity,
+            "kind": kind,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "summary": summary,
+            "details": normalized_details,
+            "related_log_id": related_log_id,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    fingerprint = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+    aid = f"{kind}:{entity_type}:{entity_id}:{fingerprint}"
     return {
         "id": aid,
         "severity": severity,
@@ -452,9 +514,10 @@ def _alert(
         "entity_type": entity_type,
         "entity_id": entity_id,
         "summary": summary,
-        "details": details or {},
+        "details": normalized_details,
         "detected_at": now,
         "link": link,
+        "related_log_id": related_log_id,
     }
 
 
@@ -590,10 +653,13 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     )
                 )
 
-            total_devices = await session.scalar(select(func.count()).select_from(Device)) or 0
+            total_devices = await session.scalar(
+                select(func.count()).select_from(Device).where(Device.deleted_at.is_(None))
+            ) or 0
             stale_count = await session.scalar(
                 select(func.count()).select_from(Device).where(
                     and_(
+                        Device.deleted_at.is_(None),
                         Device.last_seen_at.isnot(None),
                         Device.last_seen_at < (now - timedelta(seconds=stale_sec)),
                     )
@@ -602,6 +668,14 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             unresolved_pending_filter = and_(
                 ConnectionRequest.status == "pending",
                 ~_active_agent_token_exists_for_connection_request(now),
+                exists(
+                    select(Device.device_id).where(
+                        and_(
+                            Device.device_id == ConnectionRequest.device_id,
+                            Device.deleted_at.is_(None),
+                        )
+                    )
+                ),
             )
             pending_conn = await session.scalar(
                 select(func.count()).select_from(ConnectionRequest).where(unresolved_pending_filter)
@@ -626,7 +700,15 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             ) or 0
             invalid_recent = max(int(invalid_recent), int(invalid_runtime_recent))
 
-            online_count = len(state.connected_agents)
+            connected_ids = list(state.connected_agents.keys())
+            if connected_ids:
+                online_count = await session.scalar(
+                    select(func.count()).select_from(Device).where(
+                        and_(Device.deleted_at.is_(None), Device.device_id.in_(connected_ids))
+                    )
+                ) or 0
+            else:
+                online_count = 0
             offline_count = max(int(total_devices) - int(online_count), 0)
 
             active_updates = await session.scalar(
@@ -807,6 +889,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                 for item in list_log_records(levels=("warning", "error", "critical"), limit=20)
             ]
             alerts.extend(_build_log_alerts(limit=8))
+            alerts = [item for item in alerts if not is_alert_dismissed(str(item.get("id") or ""))]
 
             overview = {
                 "service_health": {
@@ -1243,6 +1326,41 @@ async def handle_tech_logs(request: web.Request) -> web.Response:
         for item in list_log_records(levels=levels, limit=limit, contains=contains)
     ]
     return web.json_response({"status": "ok", "logs": logs})
+
+
+@require_auth("admin", "support")
+async def handle_tech_dismiss_item(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception:
+        return web.json_response({"status": "error", "error": "Invalid JSON"}, status=400)
+
+    item_type = str(payload.get("item_type") or "").strip().lower()
+    item_id = str(payload.get("item_id") or "").strip()
+    related_log_id = str(payload.get("related_log_id") or "").strip()
+    if item_type not in {"log", "alert"} or not item_id:
+        return web.json_response(
+            {"status": "error", "error": "item_type and item_id are required"},
+            status=400,
+        )
+
+    if item_type == "log":
+        removed = remove_log_record(item_id)
+        if not removed:
+            return web.json_response({"status": "error", "error": "Log item not found"}, status=404)
+        return web.json_response({"status": "ok", "item_type": item_type, "item_id": item_id})
+
+    dismiss_alert(item_id)
+    if related_log_id:
+        remove_log_record(related_log_id)
+    return web.json_response(
+        {
+            "status": "ok",
+            "item_type": item_type,
+            "item_id": item_id,
+            "related_log_id": related_log_id or None,
+        }
+    )
 
 
 @require_auth("admin", "support")

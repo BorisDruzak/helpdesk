@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.db import get_session
 from app.repos.connection_requests_repo import ConnectionRequestsRepo
+from app.repos.devices_repo import DevicesRepo
 
 
 class ConnectionRequestService:
@@ -29,6 +30,10 @@ class ConnectionRequestService:
         }
         async with get_session() as session:
             repo = ConnectionRequestsRepo(session)
+            devices_repo = DevicesRepo(session)
+            device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
+            if device and device.deleted_at is not None:
+                return
             existing = await repo.get_pending_by_device_id(device_id)
             if existing:
                 await repo.touch_pending_request(device_id, metadata_patch=metadata)

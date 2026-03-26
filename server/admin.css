@@ -803,6 +803,13 @@
         .tech-alert-item.severity-critical { border-left-color: var(--danger); }
         .tech-alert-item.severity-warning { border-left-color: var(--warning); }
         .tech-alert-item.severity-info { border-left-color: var(--info); }
+        .tech-alert-item[data-tech-menu-item], .tech-table tr[data-tech-menu-item] { cursor: pointer; }
+        .tech-alert-item[data-tech-menu-item]:hover { background: #f8fbff; }
+        .tech-table tr[data-tech-menu-item]:hover td { background: #f8fbff; }
+        .tech-context-menu { position: fixed; z-index: 2000; min-width: 180px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: #fff; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16); display: none; }
+        .tech-context-menu.open { display: block; }
+        .tech-context-action { width: 100%; border: none; background: transparent; text-align: left; padding: 10px 12px; border-radius: 8px; cursor: pointer; color: var(--danger); font-weight: 600; }
+        .tech-context-action:hover { background: #fff4f4; }
 
         /* Tech panel: ticket lifecycle visual */
         .tech-lifecycle-visual { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface); }

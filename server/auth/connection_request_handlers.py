@@ -21,7 +21,7 @@ from app.repos.connection_requests_repo import (
 )
 from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
-from auth.service import AuthService
+from auth.service import AuthService, ArchivedDeviceError
 from auth.connection_request_service import ConnectionRequestService
 from tech.runtime_audit import write_agent_runtime_audit
 
@@ -68,7 +68,18 @@ async def handle_connection_request(request: web.Request) -> web.Response:
     state = request.app["state"]
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
+        devices_repo = DevicesRepo(session)
         policy = await repo.get_policy()
+        device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
+        if device and device.deleted_at is not None:
+            return web.json_response(
+                {
+                    "status": "rejected",
+                    "message": "Устройство архивировано администратором",
+                    "error_code": "DEVICE_ARCHIVED",
+                },
+                status=409,
+            )
 
         if policy == POLICY_REJECT_ALL:
             logger.info(f"Connection request rejected (policy=reject_all): device_id={device_id[:8]}...")
@@ -87,6 +98,15 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 token = await auth_service.generate_agent_token(
                     device_id=device_id,
                     expires_hours=4320,
+                )
+            except ArchivedDeviceError:
+                return web.json_response(
+                    {
+                        "status": "rejected",
+                        "message": "Устройство архивировано администратором",
+                        "error_code": "DEVICE_ARCHIVED",
+                    },
+                    status=409,
                 )
             except ValueError as e:
                 logger.warning(f"Connection request accept_all token limit: {e}")
@@ -281,6 +301,11 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
             token = await auth_service.generate_agent_token(
                 device_id=device_id,
                 expires_hours=4320,
+            )
+        except ArchivedDeviceError:
+            return web.json_response(
+                {"status": "error", "error": "Устройство архивировано администратором"},
+                status=409,
             )
         except ValueError as e:
             return web.json_response(

@@ -22,6 +22,8 @@ sys.path.insert(0, str(server_dir))
 
 from server import create_app
 from app.db.engine import get_engine, get_session, init_db
+from tech.dismiss_store import clear_dismissed_alerts
+from tech.log_buffer import clear_log_records
 
 # Test database URL
 TEST_DATABASE_URL = os.getenv(
@@ -105,6 +107,8 @@ async def cleanup_db(request, test_engine):
         return
 
     verify_test_database()
+    clear_log_records()
+    clear_dismissed_alerts()
 
     async with test_engine.begin() as conn:
         # Один statement TRUNCATE с RESTART IDENTITY CASCADE
@@ -117,8 +121,13 @@ async def cleanup_db(request, test_engine):
                 device_events,
                 device_toolset_snapshots,
                 device_config,
+                dispatch_ready_devices,
                 devices,
+                agent_tokens,
                 connection_requests,
+                agent_runtime_audit,
+                ui_user_audit,
+                ticket_admin_audit,
                 ui_users,
                 tickets
             RESTART IDENTITY CASCADE

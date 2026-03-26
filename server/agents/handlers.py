@@ -249,6 +249,10 @@ async def handle_get_devices(request):
                     "modules": modules_list,
                     "provisioning_summary": provisioning_summary,
                     "update_summary": update_summary,
+                    "is_deleted": bool(device.deleted_at),
+                    "deleted_at": device.deleted_at.isoformat() if device.deleted_at else None,
+                    "deleted_by": device.deleted_by,
+                    "delete_reason": device.delete_reason,
                 })
             
             return web.json_response({
@@ -375,6 +379,10 @@ async def handle_get_device(request):
                     "last_update_operation_id": device_meta.get("last_update_operation_id"),
                     "provisioning_summary": provisioning_summary,
                     "update_summary": update_summary,
+                    "is_deleted": bool(device.deleted_at),
+                    "deleted_at": device.deleted_at.isoformat() if device.deleted_at else None,
+                    "deleted_by": device.deleted_by,
+                    "delete_reason": device.delete_reason,
                 }
             })
     except Exception as e:
@@ -473,8 +481,8 @@ async def handle_delete_device(request):
     """
     DELETE /api/devices/{device_id}
 
-    Удаляет устройство из БД и все связанные данные (токены, outbox, операции,
-    модули, конфиг, снапшоты). Тикеты не удаляются (device_id может остаться в них).
+    Мягко удаляет устройство: скрывает его из активных списков, отзывает токены,
+    останавливает live-сессию и сохраняет историю в БД.
     """
     try:
         from app.db import get_session
@@ -483,18 +491,41 @@ async def handle_delete_device(request):
         device_id = request.match_info["device_id"]
         auth_context = request["auth_context"]
         state = request.app.get("state")
+        payload = {}
+        try:
+            if request.can_read_body:
+                payload = await request.json()
+        except Exception:
+            payload = {}
+        delete_reason = str(payload.get("reason") or "").strip() or None
 
         async with get_session() as session:
             devices_repo = DevicesRepo(session)
-            existing_device = await devices_repo.get_by_device_id(device_id)
+            existing_device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
             if not existing_device:
                 return web.json_response({
                     "status": "error",
                     "error": "Устройство не найдено"
                 }, status=404)
 
+            if existing_device.deleted_at:
+                return web.json_response({
+                    "status": "ok",
+                    "message": "Устройство уже архивировано",
+                    "device_id": device_id,
+                    "was_online": False,
+                    "is_deleted": True,
+                    "deleted_at": existing_device.deleted_at.isoformat(),
+                    "deleted_by": existing_device.deleted_by,
+                    "delete_reason": existing_device.delete_reason,
+                })
+
             was_online = await _disconnect_device_runtime_session(state, device_id)
-            deleted = await devices_repo.delete_device(device_id)
+            deleted = await devices_repo.archive_device(
+                device_id,
+                deleted_by=auth_context.actor_id,
+                delete_reason=delete_reason,
+            )
             await session.commit()
 
         if not deleted:
@@ -504,16 +535,19 @@ async def handle_delete_device(request):
             }, status=404)
 
         logger.info(
-            f"[handle_delete_device] Device deleted by admin: "
+            f"[handle_delete_device] Device archived by admin: "
             f"device_id={device_id} actor_id={auth_context.actor_id} "
             f"actor_role={auth_context.actor_role} was_online={was_online}"
         )
 
         return web.json_response({
             "status": "ok",
-            "message": "Устройство удалено из БД",
+            "message": "Агент архивирован. История сохранена.",
             "device_id": device_id,
             "was_online": was_online,
+            "is_deleted": True,
+            "deleted_by": auth_context.actor_id,
+            "delete_reason": delete_reason,
         })
     except Exception as e:
         logger.error(f"❌ Ошибка удаления устройства: {e}")

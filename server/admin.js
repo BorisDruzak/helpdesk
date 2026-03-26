@@ -2093,6 +2093,11 @@
             deviceId: null,
             text: '',
         };
+        let techContextMenuState = {
+            itemType: null,
+            itemId: null,
+            relatedLogId: null,
+        };
 
         function techStatusClass(kind) {
             if (kind === 'ok') return 'ok';
@@ -2266,14 +2271,96 @@
             }
         }
 
+        function techEnsureContextMenu() {
+            let menu = document.getElementById('techContextMenu');
+            if (menu) return menu;
+            menu = document.createElement('div');
+            menu.id = 'techContextMenu';
+            menu.className = 'tech-context-menu';
+            menu.innerHTML = `
+                <button type="button" class="tech-context-action" data-tech-context-action="dismiss">Удалить из панели</button>
+            `;
+            document.body.appendChild(menu);
+            menu.addEventListener('click', async function(e) {
+                e.stopPropagation();
+                const action = e.target.closest('[data-tech-context-action]')?.getAttribute('data-tech-context-action');
+                if (action !== 'dismiss' || !techContextMenuState.itemType || !techContextMenuState.itemId) return;
+                try {
+                    await techDismissPanelItem(
+                        techContextMenuState.itemType,
+                        techContextMenuState.itemId,
+                        techContextMenuState.relatedLogId
+                    );
+                    techCloseContextMenu();
+                } catch (err) {
+                    alert((err && err.message) ? err.message : 'Не удалось удалить элемент из панели');
+                }
+            });
+            return menu;
+        }
+
+        function techCloseContextMenu() {
+            const menu = document.getElementById('techContextMenu');
+            if (menu) menu.classList.remove('open');
+            techContextMenuState = {
+                itemType: null,
+                itemId: null,
+                relatedLogId: null,
+            };
+        }
+
+        function techOpenContextMenu(target, itemType, itemId, relatedLogId) {
+            if (!target || !itemType || !itemId) return;
+            const menu = techEnsureContextMenu();
+            const rect = target.getBoundingClientRect();
+            menu.style.left = `${Math.min(rect.left + 12, window.innerWidth - 220)}px`;
+            menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 80)}px`;
+            menu.classList.add('open');
+            techContextMenuState = {
+                itemType,
+                itemId,
+                relatedLogId: relatedLogId || null,
+            };
+        }
+
+        async function techDismissPanelItem(itemType, itemId, relatedLogId) {
+            const response = await fetch('/api/admin/tech/dismiss', {
+                method: 'POST',
+                headers: getAuthHeaders(true),
+                body: JSON.stringify({
+                    item_type: itemType,
+                    item_id: itemId,
+                    related_log_id: relatedLogId || null,
+                }),
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Не удалось удалить элемент из панели');
+            }
+            await loadTechPanel(true);
+        }
+
         function initTechTab() {
             const refreshBtn = document.getElementById('techRefreshBtn');
             if (refreshBtn) refreshBtn.addEventListener('click', () => loadTechPanel(true));
             const lifecycleBtn = document.getElementById('techLoadLifecycleBtn');
             if (lifecycleBtn) lifecycleBtn.addEventListener('click', () => loadTechLifecycle());
+            techEnsureContextMenu();
             const tabTech = document.getElementById('tab-tech');
             if (tabTech) {
                 tabTech.addEventListener('click', function(e) {
+                    const dismissTarget = e.target.closest('[data-tech-menu-item]');
+                    if (dismissTarget && !e.target.closest('a')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        techOpenContextMenu(
+                            dismissTarget,
+                            dismissTarget.getAttribute('data-tech-item-type'),
+                            dismissTarget.getAttribute('data-tech-item-id'),
+                            dismissTarget.getAttribute('data-tech-related-log-id')
+                        );
+                        return;
+                    }
                     const a = e.target.closest('a.tech-lifecycle-jump');
                     if (a) {
                         e.preventDefault();
@@ -2298,6 +2385,13 @@
                     }
                 });
             }
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#techContextMenu')) {
+                    techCloseContextMenu();
+                }
+            });
+            window.addEventListener('resize', techCloseContextMenu);
+            window.addEventListener('scroll', techCloseContextMenu, true);
         }
 
         async function loadTechPanel(force) {
@@ -2380,7 +2474,7 @@
             const host = document.getElementById('techAlertsList');
             if (!host) return;
             if (!alerts || alerts.length === 0) {
-                host.innerHTML = '<div class="tech-alert-item severity-info"><strong>Нет активных алертов</strong><span>Система в норме.</span></div>';
+                host.innerHTML = '<div class="tech-alert-item severity-info"><strong>Нет активных алертов</strong><span>Система выглядит стабильно.</span></div>';
                 return;
             }
             function renderAlertDetails(details) {
@@ -2403,10 +2497,11 @@
                 }).join('') + '</div>';
             }
             host.innerHTML = alerts.map(a => {
-                const link = a.link ? ` <a href="${escapeHtml(a.link)}" target="_blank" rel="noopener noreferrer">перейти</a>` : '';
-                return `<div class="tech-alert-item severity-${(a.severity || 'info')}">
-                    <strong>[${(a.severity || 'info').toUpperCase()}] ${escapeHtml(a.summary || a.kind || '')}</strong>
-                    <span>${escapeHtml(a.kind || '')} ${a.entity_id ? `(${escapeHtml(a.entity_id)})` : ''}${link}</span>
+                const link = a.link ? ` <a class="tech-alert-link" href="${escapeHtml(a.link)}" target="_blank" rel="noopener noreferrer">открыть</a>` : '';
+                const severity = String(a.severity || 'info').toUpperCase();
+                return `<div class="tech-alert-item severity-${(a.severity || 'info')}" data-tech-menu-item="1" data-tech-item-type="alert" data-tech-item-id="${escapeHtml(a.id || '')}" data-tech-related-log-id="${escapeHtml(a.related_log_id || '')}">
+                    <strong>[${severity}] ${escapeHtml(a.summary || a.kind || '')}</strong>
+                    <span>${a.detected_at ? escapeHtml(techFormatDate(a.detected_at)) + ' · ' : ''}${escapeHtml(a.kind || '')}${a.entity_id ? ` · ${escapeHtml(a.entity_id)}` : ''}${link}</span>
                     ${renderAlertDetails(a.details)}
                 </div>`;
             }).join('');
@@ -2474,7 +2569,7 @@
             host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
                 <thead><tr><th>Время</th><th>Уровень</th><th>Сообщение</th><th>Источник</th></tr></thead>
                 <tbody>
-                    ${logs.map(log => `<tr>
+                    ${logs.map(log => `<tr data-tech-menu-item="1" data-tech-item-type="log" data-tech-item-id="${escapeHtml(log.id || '')}">
                         <td>${escapeHtml(techFormatDate(log.timestamp))}</td>
                         <td><span class="tech-log-level ${escapeHtml(log.level_class || log.level || '')}">${escapeHtml(log.level_label || log.level || '—')}</span></td>
                         <td>${escapeHtml(log.message || '—')}</td>
@@ -3591,7 +3686,12 @@
                 const d = data.device;
                 document.getElementById('agentHostname').textContent = d.hostname || '—';
                 document.getElementById('agentDeviceId').textContent = d.device_id || '—';
-                document.getElementById('agentOnline').innerHTML = d.online ? '<span style="color: green;">В сети</span>' : '<span style="color: #999;">Не в сети</span>';
+                if (d.is_deleted) {
+                    const archivedAt = d.deleted_at ? new Date(d.deleted_at).toLocaleString('ru-RU') : 'неизвестно';
+                    document.getElementById('agentOnline').innerHTML = '<span style="color: #b42318;">Архивирован</span> <span style="color: #666;">(' + archivedAt + ')</span>';
+                } else {
+                    document.getElementById('agentOnline').innerHTML = d.online ? '<span style="color: green;">В сети</span>' : '<span style="color: #999;">Не в сети</span>';
+                }
                 document.getElementById('agentOs').textContent = d.os || '—';
                 document.getElementById('agentVersion').textContent = d.agent_version || '—';
                 const appliedWrap = document.getElementById('agentAppliedUpdateWrap');
@@ -3844,7 +3944,7 @@
                                             <li><a href="#" class="device-action-modules" data-device-id="${did}">Список модулей</a></li>
                                             <li><a href="#" class="device-action-install" data-device-id="${did}">Установить модуль</a></li>
                                             <li><a href="#" class="device-action-tokens" data-device-id="${did}">Токены устройства</a></li>
-                                            <li><a href="#" class="device-action-delete" data-device-id="${did}">Удалить устройство</a></li>
+                                            <li><a href="#" class="device-action-delete" data-device-id="${did}">Архивировать агента</a></li>
                                         </ul>
                                     </div>
                                 </td>
@@ -3946,17 +4046,18 @@
         }
 
         async function deviceActionDelete(deviceId) {
-            if (!confirm('Удалить устройство ' + deviceId + ' из БД? Будут удалены токены, очередь команд и данные модулей. Тикеты не удаляются.')) return;
+            if (!confirm('Архивировать агента ' + deviceId + '? Агент исчезнет из активных списков, токены будут отозваны, текущие команды остановлены. История и тикеты сохранятся.')) return;
             try {
                 const r = await fetch('/api/devices/' + encodeURIComponent(deviceId), {
                     method: 'DELETE',
-                    headers: getAuthHeaders()
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({})
                 });
                 const data = await responseToJson(r);
                 if (r.ok && data.status === 'ok') {
                     clearDeviceHash();
                     loadDevicesList();
-                    alert('Устройство удалено.');
+                    alert(data.message || 'Агент архивирован.');
                 } else {
                     alert(data.error || 'Ошибка');
                 }
@@ -3986,13 +4087,14 @@
         async function devicesBulkDelete() {
             const ids = Array.from(document.querySelectorAll('.device-row-cb:checked')).map(cb => cb.getAttribute('data-device-id')).filter(Boolean);
             if (ids.length === 0) { alert('Выберите хотя бы одно устройство.'); return; }
-            if (!confirm('Удалить из БД выбранные устройства (' + ids.length + ')? Будут удалены токены, очередь команд и данные модулей.')) return;
+            if (!confirm('Архивировать выбранные агенты (' + ids.length + ')? Они исчезнут из активных списков, но история по ним сохранится.')) return;
             let ok = 0, fail = 0;
             for (const deviceId of ids) {
                 try {
                     const r = await fetch('/api/devices/' + encodeURIComponent(deviceId), {
                         method: 'DELETE',
-                        headers: getAuthHeaders()
+                        headers: getAuthHeaders(true),
+                        body: JSON.stringify({})
                     });
                     const data = await responseToJson(r);
                     if (r.ok && data.status === 'ok') ok++; else fail++;
@@ -4000,7 +4102,7 @@
             }
             clearDeviceHash();
             loadDevicesList();
-            alert('Удалено: ' + ok + '. Ошибок: ' + fail);
+            alert('Архивировано: ' + ok + '. Ошибок: ' + fail);
         }
 
         async function viewDeviceTokens(deviceId) {

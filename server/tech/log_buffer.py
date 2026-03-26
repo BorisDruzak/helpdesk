@@ -5,6 +5,7 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Iterable, Optional
+from uuid import uuid4
 
 _MAX_RECORDS = 500
 _RECORDS: deque[dict[str, Any]] = deque(maxlen=_MAX_RECORDS)
@@ -29,6 +30,7 @@ def append_log_record(
     """Append a log record to the ring buffer."""
     ts = timestamp or datetime.now(timezone.utc)
     record = {
+        "id": uuid4().hex,
         "timestamp": ts.isoformat(),
         "level": _coerce_level_name(level),
         "message": str(message or "").strip(),
@@ -40,6 +42,27 @@ def append_log_record(
     }
     with _LOCK:
         _RECORDS.append(record)
+
+
+def remove_log_record(log_id: str) -> bool:
+    """Remove one log record from the ring buffer."""
+    target = str(log_id or "").strip()
+    if not target:
+        return False
+
+    with _LOCK:
+        source = list(_RECORDS)
+        kept = [item for item in source if str(item.get("id") or "") != target]
+        if len(kept) == len(source):
+            return False
+        _RECORDS.clear()
+        _RECORDS.extend(kept)
+    return True
+
+
+def clear_log_records() -> None:
+    with _LOCK:
+        _RECORDS.clear()
 
 
 def capture_loguru_message(message: Any) -> None:

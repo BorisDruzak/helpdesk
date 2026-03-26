@@ -605,6 +605,12 @@ class Device(Base):
         TIMESTAMP(timezone=True),
         nullable=True
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    deleted_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    delete_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Agent metadata
     protocol_version: Mapped[str] = mapped_column(Text, nullable=False)
@@ -631,13 +637,18 @@ class Device(Base):
         Index("ix_devices_last_seen_at", "last_seen_at"),
         Index("ix_devices_agent_version", "agent_version"),
         Index("ix_devices_last_toolset_refresh_at", "last_toolset_refresh_at"),
+        Index("ix_devices_deleted_at", "deleted_at"),
     )
-    
+
     def __repr__(self) -> str:
         return (
             f"<Device(device_id={self.device_id!r}, agent_version={self.agent_version!r}, "
             f"toolset_hash={self.current_toolset_hash!r})>"
         )
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
 
 
 class DeviceConfig(Base):

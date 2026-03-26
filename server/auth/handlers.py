@@ -5,7 +5,7 @@ HTTP обработчики для аутентификации.
 from datetime import datetime, timezone
 from aiohttp import web
 from loguru import logger
-from .service import AuthService
+from .service import AuthService, ArchivedDeviceError
 from .connection_request_service import ConnectionRequestService
 from tech.runtime_audit import write_agent_runtime_audit
 
@@ -50,6 +50,11 @@ async def handle_login(request):
                 device_id=uuid_str,
                 expires_hours=4320  # 180 дней (180 * 24 = 4320 часов)
             )
+        except ArchivedDeviceError:
+            return web.json_response({
+                "status": "error",
+                "error": "Агент архивирован. Сначала восстановите его или используйте новое устройство."
+            }, status=409)
         except ValueError as e:
             # Active token limit exceeded
             logger.warning(f"⚠️  Token limit exceeded for device_id={uuid_str}: {e}")
@@ -270,4 +275,3 @@ async def handle_revoke_device_token(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-

@@ -51,7 +51,7 @@
 
 - **Agent:** `POST /api/devices/{device_id}/tokens/revoke` с телом `{"token_hash": "..."}`. Отзыв по hash (сырой токен клиентом не передаётся).
 - **Список токенов устройства:** `GET /api/devices/{device_id}/tokens` (требует аутентификации). Возвращает список записей с `token_hash`, `token_prefix`, датами, флагом `is_active`.
-- **Удаление устройства:** `DELETE /api/devices/{device_id}` доступен только роли `admin`. Перед удалением сервер best-effort закрывает live WebSocket-сессию агента и очищает runtime-кэши, после чего удаляет связанные записи устройства из БД.
+- **Архивирование устройства:** `DELETE /api/devices/{device_id}` доступен только роли `admin`. Сервер best-effort закрывает live WebSocket-сессию агента, очищает runtime-кэши, отзывает активные agent token, гасит pending connection request / outbox / активные operations и помечает устройство как архивное через `devices.deleted_at/deleted_by/delete_reason`. История аудита, событий, снапшотов и тикетов сохраняется.
 
 ---
 
@@ -114,7 +114,7 @@
 
 - Роль и идентификатор актора берутся только из `request['auth_context']`.
 - Декоратор `require_auth(*allowed_roles)` проверяет наличие `auth_context` и вхождение `actor_role` в `allowed_roles`. При отсутствии контекста — 401, при недопустимой роли — 403 (`error_code: "FORBIDDEN"`).
-- Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут удалять устройства из реестра.
+- Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут архивировать устройства в реестре.
 
 ### 4.4 Тикетная система (Этапы 3–8) — RBAC
 
@@ -145,7 +145,7 @@
 
 - **Тело:** `{"uuid": "<device_id>"}` (device_id в формате UUID).
 - Логин/пароль **не** используются. Валидация UUID обязательна.
-- При успехе сервер при необходимости создаёт placeholder-запись в `devices`, затем пишет запись в `agent_tokens` (hash + prefix), а клиенту возвращает сырой токен и `device_id`. Срок действия по умолчанию — 180 дней.
+- При успехе сервер при необходимости создаёт placeholder-запись в `devices`, затем пишет запись в `agent_tokens` (hash + prefix), а клиенту возвращает сырой токен и `device_id`. Срок действия по умолчанию — 180 дней. Для архивированного устройства выдача нового agent token запрещена до явного восстановления или выбора нового `device_id`.
 - Если такой токен потом вводит уже существующий агент, controlled reprovision на handshake должен перевести токен на уже известное устройство вместо создания нового дубля.
 - При превышении лимита активных токенов (2 на device_id) — **429** и сообщение «Token limit exceeded. Please revoke old tokens first.»
 

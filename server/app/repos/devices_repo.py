@@ -68,7 +68,7 @@ class DevicesRepo:
         stmt = select(Device).where(Device.device_id == device_id)
         result = await self.session.execute(stmt)
         device = result.scalar_one_or_none()
-        
+
         if device:
             # Update existing device
             device.protocol_version = protocol_version
@@ -84,6 +84,10 @@ class DevicesRepo:
             # Update toolset_hash if provided
             if toolset_hash is not None:
                 device.current_toolset_hash = toolset_hash
+
+            # Successful handshake revives only active devices. Deleted devices
+            # are blocked earlier in auth/token issuance flow and should never
+            # reach this branch in normal operation.
             
             logger.debug(
                 f"[DevicesRepo] Updated device: device_id={device_id} "
@@ -145,6 +149,9 @@ class DevicesRepo:
             tools_version=None,
             current_toolset_hash=None,
             device_metadata={},
+            deleted_at=None,
+            deleted_by=None,
+            delete_reason=None,
         )
         self.session.add(device)
         await self.session.flush()
@@ -284,7 +291,7 @@ class DevicesRepo:
         
         return False
     
-    async def get_by_device_id(self, device_id: str) -> Optional[Device]:
+    async def get_by_device_id(self, device_id: str, *, include_deleted: bool = True) -> Optional[Device]:
         """
         Get device by device_id.
         
@@ -295,6 +302,8 @@ class DevicesRepo:
             Optional[Device]: Device record or None if not found
         """
         stmt = select(Device).where(Device.device_id == device_id)
+        if not include_deleted:
+            stmt = stmt.where(Device.deleted_at.is_(None))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
     
@@ -351,7 +360,7 @@ class DevicesRepo:
         )
         return False
     
-    async def list_all(self):
+    async def list_all(self, *, include_deleted: bool = False):
         """
         Get all devices from database.
         
@@ -359,35 +368,111 @@ class DevicesRepo:
             List[Device]: List of all device records
         """
         from typing import List
-        stmt = select(Device).order_by(Device.last_seen_at.desc())
+        stmt = select(Device)
+        if not include_deleted:
+            stmt = stmt.where(Device.deleted_at.is_(None))
+        stmt = stmt.order_by(Device.last_seen_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def delete_device(self, device_id: str) -> bool:
+    async def archive_device(
+        self,
+        device_id: str,
+        *,
+        deleted_by: Optional[str],
+        delete_reason: Optional[str] = None,
+    ) -> bool:
         """
-        Удаляет устройство из БД и все связанные записи (токены, outbox, операции,
-        модули, конфиг, снапшоты, runtime-аудит, provisioning-запросы). Порядок
-        удаления учитывает FK.
+        Мягко удаляет устройство: архивирует запись устройства, отзывает токены,
+        гасит активные операции/outbox и сохраняет всю историю для аудита.
         
         Returns:
-            True если устройство найдено и удалено, False если не найдено.
+            True если устройство найдено и архивировано, False если не найдено.
         """
-        device = await self.get_by_device_id(device_id)
+        device = await self.get_by_device_id(device_id, include_deleted=True)
         if not device:
             return False
-        await self.session.execute(delete(AgentToken).where(AgentToken.device_id == device_id))
-        await self.session.execute(delete(DeviceOutbox).where(DeviceOutbox.device_id == device_id))
+
+        now = datetime.now(timezone.utc)
+        if device.deleted_at is not None:
+            return True
+
+        device.deleted_at = now
+        device.deleted_by = deleted_by
+        device.delete_reason = delete_reason or None
+
+        active_tokens = (
+            await self.session.execute(
+                select(AgentToken).where(
+                    AgentToken.device_id == device_id,
+                    AgentToken.revoked_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for token in active_tokens:
+            token.revoked_at = now
+
+        pending_requests = (
+            await self.session.execute(
+                select(ConnectionRequest).where(
+                    ConnectionRequest.device_id == device_id,
+                    ConnectionRequest.status == "pending",
+                )
+            )
+        ).scalars().all()
+        for row in pending_requests:
+            row.status = "rejected"
+            row.resolved_at = now
+            meta = row.request_metadata if isinstance(row.request_metadata, dict) else {}
+            meta = dict(meta)
+            meta["archived_by"] = deleted_by or ""
+            meta["archived_at"] = now.isoformat()
+            if delete_reason:
+                meta["archive_reason"] = delete_reason
+            row.request_metadata = meta
+
+        active_outbox_rows = (
+            await self.session.execute(
+                select(DeviceOutbox).where(
+                    DeviceOutbox.device_id == device_id,
+                    DeviceOutbox.status.in_(["pending", "sent"]),
+                )
+            )
+        ).scalars().all()
+        for row in active_outbox_rows:
+            row.status = "failed"
+            row.failed_at = row.failed_at or now
+            row.error_code = row.error_code or "DEVICE_ARCHIVED"
+            row.error_message = row.error_message or "Команда остановлена: агент архивирован"
+
+        active_operations = (
+            await self.session.execute(
+                select(Operation).where(
+                    Operation.device_id == device_id,
+                    Operation.status.in_(
+                        [
+                            "queued",
+                            "sent",
+                            "accepted",
+                            "running",
+                            "waiting_consent",
+                            "cancel_requested",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        for op in active_operations:
+            op.status_before_cancel = op.status
+            op.status = "canceled"
+            op.cancel_reason = "device_archived"
+            op.canceled_at = op.canceled_at or now
+            op.finished_at = op.finished_at or now
+            op.error_code = op.error_code or "DEVICE_ARCHIVED"
+            op.error_message = op.error_message or "Операция остановлена: агент архивирован"
+            op.result_summary = op.result_summary or "Операция отменена после архивирования агента"
+
         await self.session.execute(delete(DispatchReadyDevice).where(DispatchReadyDevice.device_id == device_id))
-        await self.session.execute(delete(Operation).where(Operation.device_id == device_id))
-        await self.session.execute(delete(DeviceModule).where(DeviceModule.device_id == device_id))
-        await self.session.execute(delete(DeviceDesiredModule).where(DeviceDesiredModule.device_id == device_id))
-        await self.session.execute(delete(DeviceConfig).where(DeviceConfig.device_id == device_id))
-        await self.session.execute(delete(DeviceToolsetSnapshot).where(DeviceToolsetSnapshot.device_id == device_id))
-        await self.session.execute(delete(DeviceEvent).where(DeviceEvent.device_id == device_id))
-        await self.session.execute(delete(ConnectionRequest).where(ConnectionRequest.device_id == device_id))
-        await self.session.execute(delete(AgentRuntimeAudit).where(AgentRuntimeAudit.device_id == device_id))
-        await self.session.execute(delete(PlaybookRun).where(PlaybookRun.device_id == device_id))
-        await self.session.execute(delete(Device).where(Device.device_id == device_id))
         await self.session.flush()
-        logger.info(f"[DevicesRepo] Deleted device and related data: device_id={device_id}")
+        logger.info(f"[DevicesRepo] Archived device and preserved history: device_id={device_id}")
         return True
