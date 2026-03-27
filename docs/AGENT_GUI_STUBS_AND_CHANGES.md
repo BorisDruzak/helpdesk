@@ -138,6 +138,11 @@ Scope: local desktop agent GUI (`pc_agent/ui_gui/*`), no server changes.
 - Primary action color moved closer to Telegram blue.
 - Surfaces, list rows, pinned/info blocks, and top window controls were restyled for a cleaner official look.
 
+4. Agent versioning:
+- Agent version is now explicitly bumped in `pc_agent/version.py`.
+- GUI window title shows the current version, e.g. `Maria Agent v3.0.2`.
+- The same `AGENT_VERSION` is already used in the WebSocket handshake, so the server sees the updated agent version after reconnect/restart.
+
 ## Implemented stubs (require server support later)
 
 ### Stub: reply to a specific message

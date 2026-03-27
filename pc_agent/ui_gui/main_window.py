@@ -17,6 +17,7 @@ from loguru import logger
 
 from .consent_dialog import ConsentDialog
 from .chat_panel import ChatPanel
+from pc_agent.version import AGENT_VERSION
 
 
 class MainWindow(QMainWindow):
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow):
         self._server_connection_state: str = "starting"
         self._server_connection_detail: str = ""
         
-        self.setWindowTitle("Maria Agent")
+        self.setWindowTitle(f"Maria Agent v{AGENT_VERSION}")
         self.setMinimumSize(1200, 760)
         self.resize(1320, 840)
         
@@ -109,7 +110,7 @@ class MainWindow(QMainWindow):
         top_bar.setContentsMargins(0, 0, 0, 0)
         top_bar.setSpacing(8)
 
-        self.title_label = QLabel("Maria Agent")
+        self.title_label = QLabel(f"Maria Agent v{AGENT_VERSION}")
         self.title_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #1d4f7a;")
         top_bar.addWidget(self.title_label)
         self.profile_top_status = QLabel("")
