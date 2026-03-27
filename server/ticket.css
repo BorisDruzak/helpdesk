@@ -313,6 +313,9 @@ body {
 .timeline-item.from-staff { flex-direction: row; justify-content: flex-start; }
 .timeline-item.from-user { flex-direction: row-reverse; justify-content: flex-start; }
 .timeline-item.system { justify-content: center; }
+.timeline-item.message-highlight .ti-bubble {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28);
+}
 .timeline-item .ti-avatar {
     width: 32px; height: 32px; border-radius: 50%;
     background: linear-gradient(135deg, #4a6fa5 0%, #3d5a80 100%);
@@ -327,7 +330,21 @@ body {
 .timeline-item.system .ti-body { margin-left: auto; margin-right: auto; }
 .timeline-item .ti-meta { font-size: 12px; color: #666; margin-bottom: 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .timeline-item.from-user .ti-meta { justify-content: flex-end; }
+.timeline-item .ti-meta-actions { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.timeline-item.from-user .ti-meta-actions { margin-left: 0; margin-right: auto; }
 .timeline-item .ti-badge-internal { background: #f0c040; color: #333; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.timeline-item .ti-reply-btn {
+    border: none;
+    background: transparent;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+}
+.timeline-item .ti-reply-btn:hover {
+    text-decoration: underline;
+}
 /* Пузырьки: пользователь справа (зелёный), поддержка слева (голубой), системные по центру (серый) */
 .timeline-item .ti-bubble {
     padding: 10px 14px; border-radius: 12px; word-break: break-word;
@@ -351,6 +368,36 @@ body {
 .timeline-item.system .ti-bubble.error { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 .timeline-item.system .ti-bubble.success { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 .timeline-item .ti-tool-result { margin-top: 8px; padding: 8px; background: #f3f4f6; border-radius: 8px; font-size: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.timeline-item .ti-reply-ref {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    background: rgba(255, 255, 255, 0.58);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.timeline-item .ti-reply-ref:hover {
+    border-color: rgba(37, 99, 235, 0.42);
+    background: rgba(255, 255, 255, 0.72);
+}
+.timeline-item .ti-reply-author {
+    font-size: 11px;
+    font-weight: 700;
+    color: #2563eb;
+}
+.timeline-item .ti-reply-preview {
+    font-size: 12px;
+    color: #475569;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 .ti-system-card {
     display: flex;
@@ -586,6 +633,48 @@ body {
     align-items: center;
     gap: 10px;
     margin-bottom: 8px;
+}
+.ticket-composer .composer-reply {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+}
+.ticket-composer .composer-reply-body {
+    flex: 1;
+    min-width: 0;
+}
+.ticket-composer .composer-reply-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #1d4ed8;
+}
+.ticket-composer .composer-reply-text {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ticket-composer .composer-reply-close {
+    border: none;
+    background: transparent;
+    color: #1d4ed8;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.ticket-composer .composer-reply-close:hover {
+    color: #1e40af;
 }
 .ticket-composer .composer-toggle {
     display: inline-flex;

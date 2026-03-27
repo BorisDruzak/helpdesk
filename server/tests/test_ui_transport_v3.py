@@ -381,23 +381,18 @@ async def test_message_read_creates_idempotent_event(test_client: TestClient, te
     device_id = "device-read-1"
     user_token = f"{TEST_UI_USER_PREFIX}{device_id}"
 
-    resp = await test_client.post(
-        "/api/tickets/create",
-        json={
-            "title": "Read test",
-            "description": "Initial message",
-            "device_id": device_id,
-            "user_display_name": "Requester",
-        },
-        headers={"Authorization": f"Bearer {user_token}"},
-    )
-    assert resp.status == 200, await resp.text()
-    create_data = await resp.json()
-    ticket_id = create_data["ticket"]["ticket_id"]
-
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
         events_repo = TicketEventsRepo(session)
+        ticket_id = "ticket-read-1"
+        await events_repo.create_ticket(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            title="Read test",
+            description="Initial message",
+            status="new",
+            requester_id=device_id,
+        )
         result = await events_repo.add_event(
             ticket_id=ticket_id,
             device_id=device_id,

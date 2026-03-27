@@ -85,8 +85,8 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/ui_gui/main_window.py` | Главное окно, настройки и вход в управление профилями инициатора |
-| `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, локальные профили инициатора, прочтение тикетов, in-chat подтверждения |
-| `pc_agent/ui_gui/server_api.py` | Обращение к серверу из GUI, отправка message metadata |
+| `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, карточки тикетов с unread badges, mark-read, локальные профили инициатора и in-chat подтверждения |
+| `pc_agent/ui_gui/server_api.py` | Обращение к серверу из GUI, отправка `reply_to`/message metadata и вызов `mark_ticket_read()` |
 | `pc_agent/ui_gui/sse_client.py` | SSE-клиент к ui_bridge |
 | `pc_agent/ui_gui/consent_dialog.py` | Диалог согласия на операцию |
 | `pc_agent/ui_gui/token_dialog.py` | Диалог токена |

@@ -57,6 +57,10 @@
     let queuesCache = [];
     let devicesCache = [];
     let pendingAttachments = [];
+    let replyTarget = null;
+    let messageIndex = new Map();
+    let lastMarkedReadEventId = 0;
+    let markReadTimer = null;
 
     function getToken() {
         const t = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -106,6 +110,178 @@
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function resolveSenderRole(payload) {
+        return String(
+            (payload && (payload.sender_role || payload.from_role || payload.from || payload.actor_role || payload.role)) || ''
+        ).trim().toLowerCase();
+    }
+
+    function normalizeReplyTarget(rawReply) {
+        if (!rawReply || typeof rawReply !== 'object') return null;
+        const normalized = {
+            parent_message_id: String(rawReply.parent_message_id || '').trim(),
+            preview: String(rawReply.preview || rawReply.target_preview || '').trim(),
+            sender_role: String(rawReply.sender_role || rawReply.from_role || '').trim().toLowerCase(),
+            sender_display_name: String(rawReply.sender_display_name || rawReply.sender || '').trim(),
+            ts: String(rawReply.ts || rawReply.target_ts || '').trim(),
+        };
+        if (!normalized.parent_message_id && !normalized.preview) return null;
+        return normalized;
+    }
+
+    function rememberMessageForReply(payload, ts, eventId) {
+        if (!payload || typeof payload !== 'object') return;
+        const messageId = String(payload.message_id || '').trim();
+        if (!messageId) return;
+        messageIndex.set(messageId, {
+            message_id: messageId,
+            preview: String(payload.text || '').trim(),
+            sender_role: resolveSenderRole(payload),
+            sender_display_name: String(payload.sender_display_name || payload.requester_display_name || '').trim(),
+            ts: String(payload.ts || ts || '').trim(),
+            event_id: Number(eventId || 0) || null,
+        });
+    }
+
+    function rememberMessageFromEvent(ev) {
+        if (!ev || (ev.event_type || ev.type) !== 'chat_message') return;
+        rememberMessageForReply(ev.payload || ev, ev.ts || ev.created_at, ev.id || ev.event_id);
+    }
+
+    function roleToReplyAuthor(role, fallbackName) {
+        if (fallbackName) return fallbackName;
+        if (role === 'user') return meta.requester_display_name || 'Пользователь';
+        if (role === 'support' || role === 'admin') return 'Поддержка';
+        if (role === 'agent') return 'Агент';
+        return 'Сообщение';
+    }
+
+    function resolveReplyReference(rawReply) {
+        const replyTo = normalizeReplyTarget(rawReply);
+        if (!replyTo) return null;
+        const referenced = replyTo.parent_message_id ? messageIndex.get(replyTo.parent_message_id) : null;
+        return {
+            parent_message_id: replyTo.parent_message_id || (referenced && referenced.message_id) || '',
+            preview: replyTo.preview || (referenced && referenced.preview) || '',
+            sender_role: replyTo.sender_role || (referenced && referenced.sender_role) || '',
+            sender_display_name: replyTo.sender_display_name || (referenced && referenced.sender_display_name) || '',
+            ts: replyTo.ts || (referenced && referenced.ts) || '',
+        };
+    }
+
+    function buildReplyReferenceHtml(rawReply) {
+        const replyTo = resolveReplyReference(rawReply);
+        if (!replyTo || !replyTo.preview) return '';
+        const author = roleToReplyAuthor(replyTo.sender_role, replyTo.sender_display_name);
+        const parentIdAttr = replyTo.parent_message_id ? ` data-parent-message-id="${escapeHtml(replyTo.parent_message_id)}"` : '';
+        return `<button type="button" class="ti-reply-ref"${parentIdAttr}>
+  <span class="ti-reply-author">${escapeHtml(author)}</span>
+  <span class="ti-reply-preview">${escapeHtml(replyTo.preview)}</span>
+</button>`;
+    }
+
+    function updateReplyBanner() {
+        const banner = el('replyBanner');
+        const textEl = el('replyBannerText');
+        if (!banner || !textEl) return;
+        if (!replyTarget || !replyTarget.preview) {
+            banner.classList.add('hidden');
+            textEl.textContent = '';
+            return;
+        }
+        const author = roleToReplyAuthor(replyTarget.sender_role, replyTarget.sender_display_name);
+        textEl.textContent = `${author}: ${replyTarget.preview}`;
+        banner.classList.remove('hidden');
+    }
+
+    function clearReplyTarget() {
+        replyTarget = null;
+        updateReplyBanner();
+    }
+
+    function setReplyTargetFromMessage(dataset) {
+        replyTarget = normalizeReplyTarget({
+            parent_message_id: dataset.messageId,
+            preview: dataset.preview,
+            sender_role: dataset.senderRole,
+            sender_display_name: dataset.senderName,
+            ts: dataset.ts,
+        });
+        updateReplyBanner();
+        const textarea = el('messageInput');
+        if (textarea) textarea.focus();
+    }
+
+    function scrollToMessage(messageId) {
+        if (!messageId) return;
+        const node = document.querySelector(`.timeline-item[data-message-id="${CSS.escape(messageId)}"]`);
+        if (!node) return;
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        node.classList.add('message-highlight');
+        window.setTimeout(() => node.classList.remove('message-highlight'), 1600);
+    }
+
+    function isRequesterVisibleEvent(ev) {
+        if (!ev) return false;
+        const type = ev.event_type || ev.type || '';
+        const payload = ev.payload || ev;
+        if (type === 'message_read') return false;
+        if (type === 'chat_message') {
+            return (payload.visibility || 'public') !== 'internal';
+        }
+        return ['tool_call_started', 'tool_call_result', 'status_changed', 'priority_changed', 'assignee_changed', 'queue_changed', 'device_changed'].includes(type);
+    }
+
+    function getLatestReadableEventId() {
+        let maxId = 0;
+        (events || []).forEach((ev) => {
+            const eventId = Number(ev.id || ev.event_id || 0);
+            if (!Number.isFinite(eventId) || eventId <= 0) return;
+            if (actorRole === 'user') {
+                if (!isRequesterVisibleEvent(ev)) return;
+            } else if (actorRole === 'auditor') {
+                return;
+            }
+            maxId = Math.max(maxId, eventId);
+        });
+        return maxId;
+    }
+
+    async function markTicketRead(eventId) {
+        if (!ticketId || !eventId || eventId <= lastMarkedReadEventId) return;
+        const r = await fetch('/api/tickets/' + ticketId + '/read', {
+            method: 'POST',
+            headers: authHeaders(true),
+            body: JSON.stringify({ last_read_event_id: eventId })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.status === 'error') {
+            throw new Error(data.error || ('Ошибка отметки прочтения: HTTP ' + r.status));
+        }
+        lastMarkedReadEventId = Math.max(lastMarkedReadEventId, Number(data.last_read_event_id || eventId) || 0);
+        if (!meta.chat_counters) meta.chat_counters = {};
+        if (actorRole === 'user') {
+            meta.chat_counters.requester_last_read_event_id = lastMarkedReadEventId;
+            meta.chat_counters.requester_unread_messages = 0;
+            meta.chat_counters.requester_unread_tool_calls = 0;
+        } else if (actorRole === 'support' || actorRole === 'admin') {
+            meta.chat_counters.support_last_read_event_id = lastMarkedReadEventId;
+            meta.chat_counters.support_unread_user_messages = 0;
+        }
+        syncActionStateMarker();
+    }
+
+    function scheduleMarkTicketRead() {
+        if (actorRole === 'auditor') return;
+        const latestEventId = getLatestReadableEventId();
+        if (!latestEventId || latestEventId <= lastMarkedReadEventId) return;
+        if (markReadTimer) window.clearTimeout(markReadTimer);
+        markReadTimer = window.setTimeout(() => {
+            markReadTimer = null;
+            void markTicketRead(latestEventId).catch((err) => console.warn('mark read', err));
+        }, 250);
     }
 
     /** Определяет тип медиа по mime/kind для артефакта (image или video). */
@@ -257,7 +433,17 @@
     function syncActionStateMarker() {
         const markerEl = el('sideActionState');
         if (!markerEl) return;
+        const counters = meta.chat_counters || {};
         const isWaiting = meta.status === 'waiting_on_user' || meta.status === 'waiting_on_vendor';
+        const pendingUserReplies = Number(counters.support_pending_user_messages || 0);
+        if (pendingUserReplies > 0 && (actorRole === 'support' || actorRole === 'admin')) {
+            markerEl.textContent = pendingUserReplies > 1
+                ? `Пользователь ждёт ответа: ${pendingUserReplies}`
+                : 'Есть новый ответ пользователя';
+            markerEl.className = 'ticket-state-marker needs-action';
+            markerEl.classList.remove('hidden');
+            return;
+        }
         if (meta.requires_operator_action) {
             markerEl.textContent = 'Требует действия оператора';
             markerEl.className = 'ticket-state-marker needs-action';
@@ -491,14 +677,20 @@
             const attachmentRefs = payload.attachment_refs || [];
             const artifactList = attachments.length ? attachments : attachmentRefs.map(ref => (typeof ref === 'string' ? { artifact_id: ref } : ref));
             const attachmentsHtml = artifactList.length ? buildArtifactsHtml(artifactList) : '';
+            const replyHtml = buildReplyReferenceHtml(payload.reply_to || (payload.metadata && payload.metadata.reply_to));
+            const messageId = String(payload.message_id || '');
+            const preview = String(text || '').slice(0, 280);
+            const replyActionHtml = actorRole !== 'auditor'
+                ? `<span class="ti-meta-actions"><button type="button" class="ti-reply-btn" data-message-id="${escapeHtml(messageId)}" data-preview="${escapeHtml(preview)}" data-sender-role="${escapeHtml(fromRole)}" data-sender-name="${escapeHtml(senderResolved)}" data-ts="${escapeHtml(String(payload.ts || ts || ''))}">Ответить</button></span>`
+                : '';
             return {
                 id,
                 type: 'chat',
-                html: `<div class="timeline-item ${isRequester ? 'from-user' : ''} ${isStaff ? 'from-staff' : ''}" data-event-id="${escapeHtml(String(id))}">
+                html: `<div class="timeline-item ${isRequester ? 'from-user' : ''} ${isStaff ? 'from-staff' : ''}" data-event-id="${escapeHtml(String(id))}" data-message-id="${escapeHtml(messageId)}">
   <div class="ti-avatar">${escapeHtml(avatar)}</div>
   <div class="ti-body">
-    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(senderResolved)}</span></div>
-    <div class="ti-bubble">${escapeHtml(text)}</div>
+    <div class="ti-meta">${internalBadge} <span class="ti-sender">${escapeHtml(senderResolved)}</span>${replyActionHtml}</div>
+    <div class="ti-bubble">${replyHtml}${escapeHtml(text)}</div>
     ${attachmentsHtml}
     <div class="ti-time">${escapeHtml(formatTime(ts))}</div>
   </div>
@@ -580,6 +772,7 @@
         if (id != null && seenEventIds.has(id)) return;
         if (id != null) seenEventIds.add(id);
         events.push(ev);
+        rememberMessageFromEvent(ev);
         const item = eventToItem(ev);
         if (!item) return;
         const timelineEl = el('timeline');
@@ -596,6 +789,31 @@
         if (ev.event_type === 'chat_message' && (ev.payload || {}).visibility !== 'internal') {
             const p = ev.payload || {};
             if (p.status) meta.status = p.status;
+            if (!meta.chat_counters) meta.chat_counters = {};
+            const senderRole = resolveSenderRole(p);
+            if (senderRole === 'user') {
+                meta.chat_counters.support_unread_user_messages = Number(meta.chat_counters.support_unread_user_messages || 0) + 1;
+                meta.chat_counters.support_pending_user_messages = Number(meta.chat_counters.support_pending_user_messages || 0) + 1;
+            } else if (senderRole === 'support' || senderRole === 'agent' || senderRole === 'admin') {
+                meta.chat_counters.requester_unread_messages = Number(meta.chat_counters.requester_unread_messages || 0) + 1;
+                meta.chat_counters.support_pending_user_messages = 0;
+            }
+        }
+        if (ev.event_type === 'tool_call_started') {
+            if (!meta.chat_counters) meta.chat_counters = {};
+            meta.chat_counters.requester_unread_tool_calls = Number(meta.chat_counters.requester_unread_tool_calls || 0) + 1;
+        }
+        if (ev.event_type === 'message_read' && ev.payload) {
+            if (!meta.chat_counters) meta.chat_counters = {};
+            const scope = String(ev.payload.read_scope || '').toLowerCase();
+            if (scope === 'requester') {
+                meta.chat_counters.requester_last_read_event_id = Number(ev.payload.last_read_event_id || meta.chat_counters.requester_last_read_event_id || 0);
+                meta.chat_counters.requester_unread_messages = 0;
+                meta.chat_counters.requester_unread_tool_calls = 0;
+            } else if (scope === 'staff') {
+                meta.chat_counters.support_last_read_event_id = Number(ev.payload.last_read_event_id || meta.chat_counters.support_last_read_event_id || 0);
+                meta.chat_counters.support_unread_user_messages = 0;
+            }
         }
         if (ev.event_type === 'status_changed' && ev.payload) meta.status = ev.payload.to_status || ev.payload.new_value || meta.status;
         if (ev.event_type === 'queue_changed' && ev.payload) {
@@ -624,6 +842,7 @@
         renderSidebar(opts.forceSidebarSync === true);
         renderHistory(events.filter((item) => ['status_changed', 'priority_changed', 'assignee_changed', 'queue_changed', 'requester_profile_changed', 'device_changed'].includes(item.event_type)));
         restoreTimelineScroll(timelineEl, scrollState, opts.forceScroll === true || opts.forceStick === true || (ev.event_type === 'chat_message' && (ev.payload || {}).from === 'user'));
+        scheduleMarkTicketRead();
     }
 
     function renderTimeline(evs, options) {
@@ -632,9 +851,11 @@
         const scrollState = getTimelineScrollState(container);
         container.innerHTML = '';
         seenEventIds = new Set();
+        messageIndex = new Map();
         (evs || []).forEach(ev => {
             const id = ev.id || ev.event_id;
             if (id != null) seenEventIds.add(id);
+            rememberMessageFromEvent(ev);
             const item = eventToItem(ev);
             if (!item) return;
             const wrap = document.createElement('div');
@@ -645,6 +866,7 @@
         if (container.children.length === 0) container.innerHTML = '<div class="empty">Нет сообщений.</div>';
         loadArtifactMedia(container);
         restoreTimelineScroll(container, scrollState, opts.forceScroll !== false);
+        scheduleMarkTicketRead();
     }
 
     function showSystemMessage(text, isError) {
@@ -761,8 +983,16 @@
             public_ticket_unbound: !!data.public_ticket_unbound,
             first_response_due_at: data.first_response_due_at,
             resolution_due_at: data.resolution_due_at,
+            chat_counters: data.chat_counters || (data.ticket && data.ticket.chat_counters) || {},
         };
         actorRole = data.actor_role || '';
+        if (actorRole === 'user') {
+            lastMarkedReadEventId = Number(meta.chat_counters?.requester_last_read_event_id || 0);
+        } else if (actorRole === 'support' || actorRole === 'admin') {
+            lastMarkedReadEventId = Number(meta.chat_counters?.support_last_read_event_id || 0);
+        } else {
+            lastMarkedReadEventId = 0;
+        }
         setTopbar(meta);
         renderSidebar(!isSidebarEditing());
         renderHistory(data.history || []);
@@ -823,18 +1053,23 @@
         }, POLL_FALLBACK_MS);
     }
 
-    async function sendMessage(text, visibility, attachmentRefs) {
+    async function sendMessage(text, visibility, attachmentRefs, replyTo) {
         const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
         const refs = Array.isArray(attachmentRefs) ? attachmentRefs.filter(Boolean) : [];
+        const normalizedReply = normalizeReplyTarget(replyTo);
+        const body = {
+            message_id: messageId,
+            text: (text || '').trim(),
+            visibility: visibility || 'public',
+            attachment_refs: refs
+        };
+        if (normalizedReply) {
+            body.reply_to = normalizedReply;
+        }
         const r = await fetch('/api/tickets/' + ticketId + '/message', {
             method: 'POST',
             headers: authHeaders(true),
-            body: JSON.stringify({
-                message_id: messageId,
-                text: (text || '').trim(),
-                visibility: visibility || 'public',
-                attachment_refs: refs
-            })
+            body: JSON.stringify(body)
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -1581,17 +1816,46 @@
         const textarea = el('messageInput');
         const sendBtn = el('sendButton');
         const internalCheck = el('internalToggle');
+        const replyCancelBtn = el('replyCancelBtn');
+
+        if (replyCancelBtn) {
+            replyCancelBtn.addEventListener('click', () => clearReplyTarget());
+        }
+
+        const timelineEl = el('timeline');
+        if (timelineEl) {
+            timelineEl.addEventListener('click', (event) => {
+                const replyBtn = event.target.closest('.ti-reply-btn');
+                if (replyBtn) {
+                    event.preventDefault();
+                    setReplyTargetFromMessage({
+                        messageId: replyBtn.getAttribute('data-message-id') || '',
+                        preview: replyBtn.getAttribute('data-preview') || '',
+                        senderRole: replyBtn.getAttribute('data-sender-role') || '',
+                        senderName: replyBtn.getAttribute('data-sender-name') || '',
+                        ts: replyBtn.getAttribute('data-ts') || '',
+                    });
+                    return;
+                }
+                const replyRef = event.target.closest('.ti-reply-ref');
+                if (replyRef) {
+                    event.preventDefault();
+                    scrollToMessage(replyRef.getAttribute('data-parent-message-id') || '');
+                }
+            });
+        }
 
         async function doSend() {
             const text = (textarea && textarea.value || '').trim();
             const attachmentRefs = pendingAttachments.map((item) => item.artifact_id).filter(Boolean);
             if (!text && attachmentRefs.length === 0) return;
             const visibility = (internalCheck && internalCheck.checked) ? 'internal' : 'public';
-            const ok = await sendMessage(text, visibility, attachmentRefs);
+            const ok = await sendMessage(text, visibility, attachmentRefs, replyTarget);
             if (!ok) return;
             if (textarea) textarea.value = '';
             pendingAttachments = [];
             renderPendingAttachments();
+            clearReplyTarget();
         }
 
         if (sendBtn) sendBtn.addEventListener('click', () => { void doSend(); });

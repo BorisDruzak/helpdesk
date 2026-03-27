@@ -60,6 +60,8 @@ HISTORY_EVENT_TYPES = {
     "device_changed",
 }
 
+PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
+
 
 def _json_ok(**payload: Any) -> web.Response:
     return web.json_response({"status": "ok", **payload})
@@ -109,6 +111,65 @@ def _message_role_from_auth(auth_context: AuthContext) -> str:
     return "user"
 
 
+def _read_scope_from_auth(auth_context: AuthContext) -> str:
+    return "staff" if auth_context.actor_role in {"admin", "support"} else "requester"
+
+
+def _extract_reply_to_from_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return None
+    raw_reply = payload.get("reply_to")
+    if not isinstance(raw_reply, dict):
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            if isinstance(metadata.get("reply_to"), dict):
+                raw_reply = metadata.get("reply_to")
+            elif isinstance(metadata.get(PINNED_STUB_META_KEY), dict):
+                raw_reply = metadata.get(PINNED_STUB_META_KEY)
+    if not isinstance(raw_reply, dict):
+        return None
+
+    parent_message_id = str(raw_reply.get("parent_message_id") or "").strip()
+    preview = str(raw_reply.get("preview") or raw_reply.get("target_preview") or "").strip()
+    sender_role = str(raw_reply.get("sender_role") or raw_reply.get("from_role") or "").strip().lower()
+    sender_display_name = str(raw_reply.get("sender_display_name") or raw_reply.get("sender") or "").strip()
+    ts = str(raw_reply.get("ts") or raw_reply.get("target_ts") or "").strip()
+    normalized: Dict[str, Any] = {}
+    if parent_message_id:
+        normalized["parent_message_id"] = parent_message_id
+    if preview:
+        normalized["preview"] = preview[:280]
+    if sender_role:
+        normalized["sender_role"] = sender_role
+    if sender_display_name:
+        normalized["sender_display_name"] = sender_display_name[:120]
+    if ts:
+        normalized["ts"] = ts
+    return normalized or None
+
+
+def _chat_counters_defaults() -> Dict[str, Any]:
+    return {
+        "requester_last_read_event_id": 0,
+        "support_last_read_event_id": 0,
+        "requester_unread_messages": 0,
+        "requester_unread_tool_calls": 0,
+        "requester_latest_unread_event_id": None,
+        "support_unread_user_messages": 0,
+        "support_pending_user_messages": 0,
+        "last_user_message_event_id": None,
+        "last_user_message_id": None,
+        "last_user_message_text": None,
+        "last_user_message_at": None,
+    }
+
+
+def _merge_ticket_with_chat_counters(ticket_data: Dict[str, Any], chat_counters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = dict(ticket_data)
+    merged["chat_counters"] = {**_chat_counters_defaults(), **(chat_counters or {})}
+    return merged
+
+
 def _allow_ticket_read(ticket: Any, auth_context: AuthContext) -> bool:
     if auth_context.actor_role in {"admin", "support", "auditor"}:
         return True
@@ -146,6 +207,9 @@ def _serialize_event_raw(event: Any, ticket: Any | None = None) -> Dict[str, Any
     payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
     if ticket is not None and getattr(event, "event_type", None) == "chat_message":
         payload = enrich_chat_payload_with_requester_name(ticket, payload)
+    reply_to = _extract_reply_to_from_payload(payload)
+    if reply_to:
+        payload["reply_to"] = reply_to
     return {
         "id": getattr(event, "id", None),
         "ticket_id": getattr(event, "ticket_id", None),
@@ -179,15 +243,19 @@ def _serialize_message(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     if ticket is not None:
         payload = enrich_chat_payload_with_requester_name(ticket, payload)
     sender_role = payload.get("sender_role") or payload.get("from") or "user"
+    reply_to = _extract_reply_to_from_payload(payload)
     return {
         "message_id": payload.get("message_id"),
         "from_role": sender_role,
         "text": payload.get("text") or "",
         "ts": getattr(event, "created_at", None).isoformat() if getattr(event, "created_at", None) else None,
         "agent_seq": getattr(event, "agent_seq", None),
+        "event_id": getattr(event, "id", None),
         "visibility": payload.get("visibility") or "public",
         "attachment_refs": payload.get("attachment_refs") or [],
         "attachments": payload.get("attachments") or [],
+        "metadata": payload.get("metadata") or {},
+        "reply_to": reply_to,
         "direction": "from_agent" if sender_role == "agent" else "to_agent",
     }
 
@@ -242,6 +310,57 @@ def _artifact_type(mime_type: Optional[str], kind: Optional[str]) -> str:
     return "file"
 
 
+async def _normalize_reply_to_for_ticket(
+    repo: TicketEventsRepo,
+    ticket_id: str,
+    raw_reply: Any,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw_reply, dict):
+        return None
+
+    parent_message_id = str(raw_reply.get("parent_message_id") or "").strip()
+    preview = str(raw_reply.get("preview") or raw_reply.get("target_preview") or "").strip()
+    sender_role = str(raw_reply.get("sender_role") or raw_reply.get("from_role") or "").strip().lower()
+    sender_display_name = str(raw_reply.get("sender_display_name") or raw_reply.get("sender") or "").strip()
+    ts = str(raw_reply.get("ts") or raw_reply.get("target_ts") or "").strip()
+
+    parent_event = None
+    if parent_message_id:
+        parent_event = await repo.get_chat_message_by_message_id(ticket_id, parent_message_id)
+        if parent_event is None:
+            raise ValueError("reply_to.parent_message_id not found in this ticket")
+
+    if parent_event is not None:
+        parent_payload = serialize_datetime_recursive(getattr(parent_event, "payload", None) or {})
+        preview = str(parent_payload.get("text") or preview or "").strip()
+        sender_role = str(parent_payload.get("sender_role") or parent_payload.get("from") or sender_role or "").strip().lower()
+        sender_display_name = str(
+            parent_payload.get("sender_display_name")
+            or parent_payload.get("requester_display_name")
+            or sender_display_name
+            or ""
+        ).strip()
+        parent_ts = getattr(parent_event, "created_at", None)
+        if parent_ts is not None:
+            ts = parent_ts.isoformat()
+
+    if not parent_message_id and not preview:
+        return None
+
+    normalized: Dict[str, Any] = {}
+    if parent_message_id:
+        normalized["parent_message_id"] = parent_message_id
+    if preview:
+        normalized["preview"] = preview[:280]
+    if sender_role:
+        normalized["sender_role"] = sender_role
+    if sender_display_name:
+        normalized["sender_display_name"] = sender_display_name[:120]
+    if ts:
+        normalized["ts"] = ts
+    return normalized or None
+
+
 async def _resolve_attachment_descriptors(
     artifacts_repo: ArtifactsRepo,
     ticket_id: str,
@@ -267,9 +386,22 @@ async def _resolve_attachment_descriptors(
     return descriptors
 
 
-async def _ticket_payload(session: Any, ticket: Any) -> Dict[str, Any]:
+async def _ticket_payload(
+    session: Any,
+    ticket: Any,
+    *,
+    chat_counters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None)])
-    return ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+    ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+    return _merge_ticket_with_chat_counters(ticket_data, chat_counters)
+
+
+async def _chat_counters_by_ticket_ids(repo: TicketEventsRepo, ticket_ids: Iterable[Optional[str]]) -> Dict[str, Dict[str, Any]]:
+    normalized = [str(ticket_id).strip() for ticket_id in ticket_ids if ticket_id]
+    if not normalized:
+        return {}
+    return await repo.get_ticket_chat_counters_batch(normalized)
 
 
 async def _push_ticket_event(
@@ -536,9 +668,13 @@ async def handle_tickets_list(request: web.Request) -> web.Response:
         repo = TicketEventsRepo(session)
         tickets = await repo.list_tickets(limit=limit, offset=offset, filters=filters)
         queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None) for ticket in tickets])
+        counters_map = await _chat_counters_by_ticket_ids(repo, [getattr(ticket, "ticket_id", None) for ticket in tickets])
         payload = [
             {
-                "ticket": ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None))),
+                "ticket": _merge_ticket_with_chat_counters(
+                    ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None))),
+                    counters_map.get(getattr(ticket, "ticket_id", None)),
+                ),
                 "session": {"ticket_id": ticket.ticket_id},
             }
             for ticket in tickets
@@ -556,7 +692,8 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
             visible_events = [event for event in events if _event_visible_to_requester(event)]
         messages = [event for event in visible_events if getattr(event, "event_type", None) == "chat_message"]
-        ticket_data = await _ticket_payload(session, ticket)
+        counters_map = await _chat_counters_by_ticket_ids(repo, [ticket.ticket_id])
+        ticket_data = await _ticket_payload(session, ticket, chat_counters=counters_map.get(ticket.ticket_id))
         return _json_ok(
             ticket=ticket_data,
             session={"ticket_id": ticket.ticket_id, "actor_role": auth_context.actor_role},
@@ -577,7 +714,8 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             visible_events = [event for event in events if _event_visible_to_requester(event)]
         raw_events = [_serialize_event_raw(event, ticket=ticket) for event in visible_events]
         history = [item for item in raw_events if item["event_type"] in HISTORY_EVENT_TYPES]
-        ticket_data = await _ticket_payload(session, ticket)
+        counters_map = await _chat_counters_by_ticket_ids(repo, [ticket.ticket_id])
+        ticket_data = await _ticket_payload(session, ticket, chat_counters=counters_map.get(ticket.ticket_id))
         last_event_id = raw_events[-1]["id"] if raw_events else 0
         worklogs = await repo.list_worklogs(ticket.ticket_id, limit=100, offset=0)
         worklog_total = await repo.get_worklog_total(ticket.ticket_id)
@@ -687,6 +825,7 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
 async def handle_ticket_send_message(request: web.Request) -> web.Response:
     data = await _read_json(request)
     text = str(data.get("text") or "").strip()
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     try:
         attachment_refs = _normalize_attachment_refs(data.get("attachment_refs"))
     except ValueError as exc:
@@ -714,6 +853,17 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
         if visibility == "internal" and not _is_staff(auth_context):
             visibility = "public"
         sender_role = _message_role_from_auth(auth_context)
+        raw_reply = None
+        if isinstance(data.get("reply_to"), dict):
+            raw_reply = data.get("reply_to")
+        elif isinstance(metadata.get("reply_to"), dict):
+            raw_reply = metadata.get("reply_to")
+        elif isinstance(metadata.get(PINNED_STUB_META_KEY), dict):
+            raw_reply = metadata.get(PINNED_STUB_META_KEY)
+        try:
+            reply_to = await _normalize_reply_to_for_ticket(repo, ticket.ticket_id, raw_reply)
+        except ValueError as exc:
+            return _validation_error({"reply_to": str(exc)})
         payload = {
             "message_id": message_id,
             "sender_role": sender_role,
@@ -721,6 +871,13 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             "text": text,
             "visibility": visibility,
         }
+        clean_metadata = dict(metadata)
+        clean_metadata.pop(PINNED_STUB_META_KEY, None)
+        if reply_to:
+            payload["reply_to"] = reply_to
+            clean_metadata["reply_to"] = reply_to
+        if clean_metadata:
+            payload["metadata"] = clean_metadata
         payload = enrich_chat_payload_with_requester_name(ticket, payload)
         if attachment_refs:
             payload["attachment_refs"] = attachment_refs
@@ -734,11 +891,28 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             trace_id=str(uuid.uuid4()),
             event_id=message_id,
         )
+        status_result = None
+        status_payload = None
+        if visibility == "public" and sender_role == "user" and getattr(ticket, "status", None) == "waiting_on_user":
+            workflow = TicketWorkflowService(session, repo)
+            transition = await workflow.apply_status_transition(
+                ticket_id=ticket.ticket_id,
+                from_status=ticket.status,
+                to_status="triaged",
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason="requester_reply",
+                source="requester_reply",
+            )
+            status_result = transition.get("event_result")
+            status_payload = transition.get("event_payload") or {}
         if visibility == "public" and sender_role in {"support", "agent"}:
             sla = TicketSlaService(session, repo)
             await sla.close_frt(ticket.ticket_id)
         await session.commit()
         await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
+        if status_result:
+            await _push_ticket_event(request, ticket.ticket_id, status_result, "status_changed", status_payload or {})
         return _json_ok(event_id=result[0] if result else None, message_id=message_id)
 
 
@@ -1202,11 +1376,53 @@ async def handle_ticket_bind_device(request: web.Request) -> web.Response:
 
 
 async def handle_ticket_mark_read(request: web.Request) -> web.Response:
+    data = await _read_json(request)
+    try:
+        last_read_event_id = int(data.get("last_read_event_id") or 0)
+    except (TypeError, ValueError):
+        return _validation_error({"last_read_event_id": "last_read_event_id must be a positive integer"})
+    if last_read_event_id <= 0:
+        return _validation_error({"last_read_event_id": "last_read_event_id must be a positive integer"})
+
     async with get_session() as session:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
         if error:
             return error
-        payload = {"actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role}
+        read_scope = _read_scope_from_auth(auth_context)
+        target_event = await repo.get_event_by_id(ticket.ticket_id, last_read_event_id)
+        if target_event is None:
+            return _validation_error({"last_read_event_id": "event not found in this ticket"})
+        if read_scope == "requester" and not _event_visible_to_requester(target_event):
+            return _validation_error({"last_read_event_id": "event is not visible to requester"})
+
+        current_cursor = await repo.get_latest_message_read_cursor(ticket.ticket_id, read_scope)
+        current_last_read_id = int(current_cursor.get("last_read_event_id") or 0)
+        if current_last_read_id >= last_read_event_id:
+            return _json_ok(
+                no_op=True,
+                last_read_event_id=current_last_read_id,
+                last_read_message_id=current_cursor.get("last_read_message_id"),
+                messages_read_count=0,
+                tool_calls_read_count=0,
+                message_preview=current_cursor.get("message_preview"),
+            )
+
+        summary = await repo.summarize_read_window(
+            ticket_id=ticket.ticket_id,
+            scope=read_scope,
+            from_event_id=current_last_read_id,
+            to_event_id=last_read_event_id,
+        )
+        payload = {
+            "actor_id": auth_context.actor_id,
+            "actor_role": auth_context.actor_role,
+            "read_scope": read_scope,
+            "last_read_event_id": last_read_event_id,
+            "last_read_message_id": summary.get("last_read_message_id"),
+            "messages_read_count": int(summary.get("messages_read_count") or 0),
+            "tool_calls_read_count": int(summary.get("tool_calls_read_count") or 0),
+            "message_preview": summary.get("message_preview"),
+        }
         result = await repo.add_event(
             ticket_id=ticket.ticket_id,
             device_id=ticket.device_id,
@@ -1214,10 +1430,19 @@ async def handle_ticket_mark_read(request: web.Request) -> web.Response:
             event_type="message_read",
             payload=payload,
             trace_id=str(uuid.uuid4()),
+            event_id=f"message_read:{read_scope}:{last_read_event_id}",
         )
         await session.commit()
         await _push_ticket_event(request, ticket.ticket_id, result, "message_read", payload)
-        return _json_ok(event_id=result[0] if result else None)
+        return _json_ok(
+            event_id=result[0] if result else None,
+            no_op=False,
+            last_read_event_id=last_read_event_id,
+            last_read_message_id=summary.get("last_read_message_id"),
+            messages_read_count=int(summary.get("messages_read_count") or 0),
+            tool_calls_read_count=int(summary.get("tool_calls_read_count") or 0),
+            message_preview=summary.get("message_preview"),
+        )
 
 
 async def handle_ticket_requester_profile(request: web.Request) -> web.Response:

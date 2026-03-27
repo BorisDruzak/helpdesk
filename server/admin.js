@@ -867,6 +867,23 @@
             return null;
         }
 
+        function queueUnreadSummary(ticket) {
+            const counters = ticket.chat_counters || {};
+            const unreadUser = Math.max(
+                Number(counters.support_unread_user_messages || 0),
+                Number(counters.support_pending_user_messages || 0),
+            );
+            if (!unreadUser) return '';
+            const preview = String(counters.last_user_message_text || '').trim();
+            const previewHtml = preview
+                ? `<div class="queue-last-user-preview" title="${escapeHtml(preview)}">${escapeHtml(preview.slice(0, 96))}</div>`
+                : '';
+            return `<div class="queue-ticket-badges">
+  <span class="queue-pill queue-pill-danger" title="Новые сообщения пользователя">${unreadUser}</span>
+  ${previewHtml}
+</div>`;
+        }
+
         function getQueueLayoutKey() {
             const actorId = queueState.actorId || localStorage.getItem('admin_user_login') || 'default';
             return QUEUE_LAYOUT_KEY + ':' + actorId;
@@ -1046,6 +1063,7 @@
                 const priorityClass = queuePriorityClass(t).toLowerCase();
                 const marker = queueActionMarker(t);
                 const markerHtml = marker ? `<div class="queue-action-marker ${marker.cls}">${marker.text}</div>` : '';
+                const unreadSummaryHtml = queueUnreadSummary(t);
                 const isPinned = pinnedSet.has(t.ticket_id);
                 const canTakeSelf = canWrite && !!queueState.actorId && !t.assignee_id && t.status === 'new';
                 const takeSelfBtn = canTakeSelf
@@ -1069,7 +1087,7 @@
                     <td class="col-status"><span class="badge-status status-${statusClass}">${queueStatusLabel(t.status)}</span>${markerHtml}</td>
                     <td class="col-priority"><span class="badge-priority priority-${priorityClass}">${queuePriorityLabel(t)}</span></td>
                     <td class="col-assignee">${t.assignee_id || '-'}</td>
-                    <td class="col-requester">${t.requester_display_name || t.requester_id || '-'}</td>
+                    <td class="col-requester">${t.requester_display_name || t.requester_id || '-'}${unreadSummaryHtml}</td>
                     <td class="col-created">${t.created_at ? new Date(t.created_at).toLocaleString() : '-'}</td>
                     <td class="col-age">${queueFormatAge(t.created_at)}</td>
                     <td class="col-actions">${actions}</td>

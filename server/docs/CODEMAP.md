@@ -127,8 +127,8 @@
 ### 2.7 UI (статика)
 | Файл | Назначение |
 |------|------------|
-| `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту) |
-| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Страница тикета: чат, описание заявки, привязка к агенту, подтверждение решения |
+| `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
+| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Страница тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read и подтверждение решения |
 | `server/public_queue.html`, `server/public_queue.js` | Публичная очередь со ссылками на requester-вход в тикет |
 | `server/help.html`, `server/help.js`, `server/help.css` | Публичная страница requester: создание тикета, вход по коду, чат |
 | `server/static_pages/` | Обработчики страниц и статики |

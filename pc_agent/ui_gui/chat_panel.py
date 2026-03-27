@@ -128,11 +128,14 @@ class MessageBubbleWidget(QFrame):
         ts_text: str,
         attachments: Optional[List[str]] = None,
         menu_text: Optional[str] = None,
+        reply_to: Optional[dict] = None,
+        message_context: Optional[dict] = None,
     ) -> None:
         super().__init__(panel)
         self._panel = panel
         self._menu_text = (menu_text or text or "").strip()
         self._interactive = bubble_role in {"self", "support"}
+        self._message_context = dict(message_context or {})
         self.setObjectName(f"bubble_{bubble_role}")
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
 
@@ -178,6 +181,27 @@ class MessageBubbleWidget(QFrame):
             sender_label.setStyleSheet(f"font-size: 11px; color: {muted}; font-weight: 600; border: none; background: transparent;")
             layout.addWidget(sender_label)
 
+        reply_info = self._panel._resolve_reply_reference(reply_to)
+        if reply_info:
+            reply_author = QLabel(reply_info.get("sender_display_name") or "Ответ")
+            reply_author.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            reply_author.setStyleSheet("font-size: 10px; font-weight: 700; color: #2563eb; border: none; background: transparent;")
+            reply_preview = QLabel(reply_info.get("preview") or "")
+            reply_preview.setWordWrap(True)
+            reply_preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            reply_preview.setStyleSheet("font-size: 11px; color: #475569; border: none; background: transparent;")
+            reply_wrap = QFrame()
+            reply_wrap.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            reply_wrap.setStyleSheet(
+                "background: rgba(255,255,255,0.55); border: 1px solid rgba(37, 99, 235, 0.18); border-radius: 10px;"
+            )
+            reply_layout = QVBoxLayout(reply_wrap)
+            reply_layout.setContentsMargins(8, 6, 8, 6)
+            reply_layout.setSpacing(2)
+            reply_layout.addWidget(reply_author)
+            reply_layout.addWidget(reply_preview)
+            layout.addWidget(reply_wrap)
+
         text_label = QLabel(text or "Вложение")
         text_label.setWordWrap(True)
         text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -205,8 +229,100 @@ class MessageBubbleWidget(QFrame):
         if not self._interactive or not self._menu_text:
             event.ignore()
             return
-        self._panel._open_message_context_menu(event.globalPos(), self._menu_text)
+        context = dict(self._message_context)
+        if not context.get("preview"):
+            context["preview"] = self._menu_text
+        self._panel._open_message_context_menu(event.globalPos(), context)
         event.accept()
+
+
+class TicketListItemWidget(QFrame):
+    """Compact ticket card with status tint and unread badges."""
+
+    def __init__(self, ticket: dict, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._ticket = ticket
+        self._selected = False
+        status = ticket.get("status") or "unknown"
+        self._status_fg, self._status_bg = ticket_status_colors(status)
+
+        self.setObjectName("TicketListCard")
+        self.setStyleSheet("QFrame#TicketListCard { border-radius: 16px; }")
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(12)
+
+        left = QVBoxLayout()
+        left.setSpacing(4)
+
+        code = ticket.get("ticket_code") or str(ticket.get("ticket_id") or "")[:8]
+        priority = ticket.get("priority_class") or ticket.get("priority") or "—"
+        requester = ticket.get("requester_display_name") or "Пользователь"
+        title = ticket.get("title") or "Без названия"
+        updated_at = ticket.get("updated_at") or ticket.get("created_at") or ""
+
+        top_label = QLabel(f"#{code}  •  {ticket_status_label(status)}  •  {priority}")
+        top_label.setStyleSheet("font-size: 12px; font-weight: 700; color: #0f172a; background: transparent; border: none;")
+        top_label.setWordWrap(True)
+        left.addWidget(top_label)
+
+        title_label = QLabel(title)
+        title_label.setWordWrap(True)
+        title_label.setStyleSheet("font-size: 13px; font-weight: 700; color: #0f172a; background: transparent; border: none;")
+        left.addWidget(title_label)
+
+        meta_label = QLabel(f"{requester} • {ChatPanel._format_ts_static(updated_at) or '—'}")
+        meta_label.setWordWrap(True)
+        meta_label.setStyleSheet("font-size: 11px; color: #475569; background: transparent; border: none;")
+        left.addWidget(meta_label)
+
+        root.addLayout(left, 1)
+
+        counters = ticket.get("chat_counters") or {}
+        badges_col = QVBoxLayout()
+        badges_col.setSpacing(6)
+        badges_col.setContentsMargins(0, 2, 0, 2)
+        unread_messages = int(counters.get("requester_unread_messages") or 0)
+        unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
+        if unread_messages > 0:
+            badges_col.addWidget(self._badge(str(unread_messages), "#dc2626"))
+        if unread_tools > 0:
+            badges_col.addWidget(self._badge(str(unread_tools), "#2563eb"))
+        if badges_col.count() == 0:
+            spacer = QLabel("")
+            spacer.setFixedWidth(8)
+            badges_col.addWidget(spacer)
+        root.addLayout(badges_col)
+
+        self._apply_style()
+
+    @staticmethod
+    def _badge(text: str, bg: str) -> QLabel:
+        badge = QLabel(text)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setMinimumSize(24, 24)
+        badge.setStyleSheet(
+            f"font-size: 11px; font-weight: 700; color: white; background: {bg}; border-radius: 12px; padding: 0 7px;"
+        )
+        return badge
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = bool(selected)
+        self._apply_style()
+
+    def _apply_style(self) -> None:
+        border = "#3390ec" if self._selected else self._status_fg
+        bg = self._status_bg if not self._selected else "#dff0ff"
+        self.setStyleSheet(
+            f"""
+            QFrame#TicketListCard {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: 16px;
+            }}
+            """
+        )
 
 
 class TicketCreateDialog(QDialog):
@@ -397,6 +513,8 @@ class ChatPanel(QWidget):
         self._resolution_prompt_open_for: Optional[str] = None
         self._pending_tasks: set[asyncio.Task] = set()
         self._is_closing = False
+        self._ticket_item_widgets: Dict[str, TicketListItemWidget] = {}
+        self._last_marked_read_event_id: Dict[str, int] = {}
 
         self._profiles_path = resolve_data_root() / "requester_profiles.json"
         self._profiles_data = self._load_profiles()
@@ -491,6 +609,7 @@ class ChatPanel(QWidget):
 
         self.tickets_list = QListWidget()
         self.tickets_list.itemDoubleClicked.connect(lambda *_: self._on_open_ticket())
+        self.tickets_list.itemSelectionChanged.connect(self._refresh_ticket_list_selection_styles)
         tickets_layout.addWidget(self.tickets_list)
 
         open_row = QHBoxLayout()
@@ -915,6 +1034,7 @@ class ChatPanel(QWidget):
         scroll_bar = self.tickets_list.verticalScrollBar()
         scroll_value = scroll_bar.value()
         self.tickets_list.clear()
+        self._ticket_item_widgets = {}
         filtered_tickets: List[dict] = []
         for row in self.tickets_cache:
             ticket = row.get("ticket", row)
@@ -935,31 +1055,82 @@ class ChatPanel(QWidget):
             return
 
         for ticket in filtered_tickets:
-            title = ticket.get("title") or "Без названия"
             status = ticket.get("status") or "unknown"
-            code = ticket.get("ticket_code") or ticket.get("ticket_id", "")[:8]
-            priority = ticket.get("priority_class") or ticket.get("priority") or "—"
-            requester = ticket.get("requester_display_name") or "Пользователь"
-            updated_at = self._format_ts(ticket.get("updated_at") or ticket.get("created_at"))
-            item = QListWidgetItem(
-                f"#{code} • {ticket_status_label(status)} • {priority}\n"
-                f"{title}\n{requester} • {updated_at}"
-            )
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, ticket.get("ticket_id"))
             item.setToolTip(
                 "\n".join(
                     [
                         f"Статус: {ticket_status_label(status)}",
-                        f"Приоритет: {priority}",
+                        f"Приоритет: {ticket.get('priority_class') or ticket.get('priority') or '—'}",
                         f"Очередь: {ticket.get('queue_code') or ticket.get('queue_id') or '—'}",
                         f"Исполнитель: {ticket.get('assignee_id') or 'Не назначен'}",
                     ]
                 )
             )
             self.tickets_list.addItem(item)
+            widget = TicketListItemWidget(ticket, self.tickets_list)
+            item.setSizeHint(widget.sizeHint())
+            self.tickets_list.setItemWidget(item, widget)
+            self._ticket_item_widgets[str(ticket.get("ticket_id") or "")] = widget
             if current_id and ticket.get("ticket_id") == current_id:
                 self.tickets_list.setCurrentItem(item)
+        self._refresh_ticket_list_selection_styles()
         QTimer.singleShot(0, lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())))
+
+    def _refresh_ticket_list_selection_styles(self) -> None:
+        for index in range(self.tickets_list.count()):
+            item = self.tickets_list.item(index)
+            if item is None:
+                continue
+            ticket_id = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            widget = self._ticket_item_widgets.get(ticket_id)
+            if widget is not None:
+                widget.set_selected(bool(item.isSelected()))
+
+    def _latest_requester_read_event_id(self, ticket: dict, messages: List[dict], events: List[dict]) -> int:
+        counters = ticket.get("chat_counters") or {}
+        unread_messages = int(counters.get("requester_unread_messages") or 0)
+        unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
+        if unread_messages <= 0 and unread_tools <= 0:
+            return 0
+
+        latest_event_id = 0
+        for message in messages:
+            event_id = message.get("event_id")
+            try:
+                latest_event_id = max(latest_event_id, int(event_id))
+            except (TypeError, ValueError):
+                pass
+        for event in events:
+            event_id = event.get("id") or event.get("event_id")
+            try:
+                latest_event_id = max(latest_event_id, int(event_id))
+            except (TypeError, ValueError):
+                pass
+        return latest_event_id
+
+    def _maybe_mark_ticket_read(self, ticket: dict, messages: List[dict], events: List[dict]) -> None:
+        ticket_id = str(ticket.get("ticket_id") or "")
+        if not ticket_id:
+            return
+        last_read_event_id = self._latest_requester_read_event_id(ticket, messages, events)
+        if last_read_event_id <= 0:
+            return
+        if last_read_event_id <= int(self._last_marked_read_event_id.get(ticket_id, 0)):
+            return
+        previous_value = int(self._last_marked_read_event_id.get(ticket_id, 0))
+        self._last_marked_read_event_id[ticket_id] = last_read_event_id
+        self._spawn_task(self._async_mark_ticket_read(ticket_id, last_read_event_id, previous_value))
+
+    async def _async_mark_ticket_read(self, ticket_id: str, last_read_event_id: int, previous_value: int) -> None:
+        try:
+            await self.ticket_client.mark_ticket_read(ticket_id, last_read_event_id)
+            await self._async_refresh_ticket_list()
+        except Exception as exc:
+            if not self._is_closing:
+                logger.warning(f"Не удалось отметить сообщения как прочитанные для {ticket_id}: {exc}")
+                self._last_marked_read_event_id[ticket_id] = previous_value
 
     async def _async_refresh_ticket_detail(self) -> None:
         if self._is_closing or not self.active_ticket_id:
@@ -982,10 +1153,21 @@ class ChatPanel(QWidget):
         title = ticket.get("title") or "Без названия"
         status = ticket.get("status") or "unknown"
         status_fg, status_bg = ticket_status_colors(status)
+        counters = ticket.get("chat_counters") or {}
+        unread_messages = int(counters.get("requester_unread_messages") or 0)
+        unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
+        status_suffix_parts: List[str] = []
+        if unread_messages > 0:
+            status_suffix_parts.append(f"сообщения: {unread_messages}")
+        if unread_tools > 0:
+            status_suffix_parts.append(f"вызовы: {unread_tools}")
+        status_suffix = ""
+        if status_suffix_parts:
+            status_suffix = " • Непрочитано " + ", ".join(status_suffix_parts)
         safe_code = self._escape_html(str(code))
         safe_title = self._escape_html(str(title))
         self.ticket_info_label.setText(f"Тикет <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}")
-        self.ticket_status_top.setText(f"Статус тикета: {ticket_status_label(status)}")
+        self.ticket_status_top.setText(f"Статус тикета: {ticket_status_label(status)}{status_suffix}")
         self.ticket_status_top.setStyleSheet(
             f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
         )
@@ -1001,6 +1183,11 @@ class ChatPanel(QWidget):
             or "Пользователь"
         )
         assignee_name = ticket.get("assignee_id") or "Поддержка"
+        message_index: Dict[str, dict] = {
+            str(msg.get("message_id") or ""): msg
+            for msg in messages
+            if str(msg.get("message_id") or "").strip()
+        }
 
         items: List[tuple[float, str, str]] = []
 
@@ -1009,6 +1196,17 @@ class ChatPanel(QWidget):
             text = (message.get("text") or "").strip()
             sender_kind = message_visual_role(message)
             sender = requester_name if sender_kind == "self" else assignee_name if sender_kind == "support" else "Система"
+            reply_to = self._resolve_reply_reference(
+                message.get("reply_to") or ((message.get("metadata") or {}).get("reply_to")),
+                message_index,
+            )
+            message_context = {
+                "message_id": message.get("message_id"),
+                "preview": text or " ".join(self._message_attachment_labels(message)),
+                "sender_role": message.get("from_role"),
+                "sender_display_name": requester_full_name if sender_kind == "self" else sender,
+                "ts": ts,
+            }
             items.append(
                 (
                     self._ts_sort_value(ts),
@@ -1020,6 +1218,8 @@ class ChatPanel(QWidget):
                         "attachments": self._message_attachment_labels(message),
                         "ts_text": self._format_ts(ts),
                         "menu_text": text or " ".join(self._message_attachment_labels(message)),
+                        "reply_to": reply_to,
+                        "message_context": message_context,
                     },
                 )
             )
@@ -1074,6 +1274,7 @@ class ChatPanel(QWidget):
         self._pending_ticket_snapshot = None
 
         self._restore_timeline_scroll(previous_value, stick_to_bottom)
+        self._maybe_mark_ticket_read(ticket, messages, events)
 
     def _build_ticket_meta_html(self, ticket: dict) -> str:
         requester = ticket.get("requester_display_name") or "Пользователь"
@@ -1116,12 +1317,44 @@ class ChatPanel(QWidget):
             labels = [f"📎 {ref}" for ref in attachment_refs[:5]]
         return labels
 
+    def _resolve_reply_reference(self, raw_reply: Optional[dict], message_index: Optional[Dict[str, dict]] = None) -> Optional[dict]:
+        if not isinstance(raw_reply, dict):
+            return None
+        parent_message_id = str(raw_reply.get("parent_message_id") or "").strip()
+        preview = str(raw_reply.get("preview") or raw_reply.get("target_preview") or "").strip()
+        sender_role = str(raw_reply.get("sender_role") or raw_reply.get("from_role") or "").strip().lower()
+        sender_display_name = str(raw_reply.get("sender_display_name") or raw_reply.get("sender") or "").strip()
+        ts = str(raw_reply.get("ts") or raw_reply.get("target_ts") or "").strip()
+        if message_index and parent_message_id and parent_message_id in message_index:
+            source = message_index[parent_message_id]
+            preview = preview or str(source.get("text") or "").strip()
+            sender_role = sender_role or str(source.get("from_role") or "").strip().lower()
+            sender_display_name = sender_display_name or str(source.get("sender_display_name") or "").strip()
+            ts = ts or str(source.get("ts") or "").strip()
+        if not preview and not parent_message_id:
+            return None
+        if not sender_display_name:
+            if sender_role in {"support", "admin"}:
+                sender_display_name = "Поддержка"
+            elif sender_role in {"user", "requester", "agent"}:
+                sender_display_name = "Вы"
+            else:
+                sender_display_name = "Сообщение"
+        return {
+            "parent_message_id": parent_message_id,
+            "preview": preview[:280],
+            "sender_role": sender_role,
+            "sender_display_name": sender_display_name,
+            "ts": ts,
+        }
+
     def _build_timeline_signature(self, ticket: dict, messages: List[dict], events: List[dict]) -> str:
         merged_events = list(events) + self.local_action_buffer.get(self.active_ticket_id, [])
         payload = {
             "ticket_id": ticket.get("ticket_id"),
             "ticket_status": ticket.get("status"),
             "ticket_updated_at": ticket.get("updated_at"),
+            "chat_counters": ticket.get("chat_counters") or {},
             "messages": [
                 {
                     "id": msg.get("message_id"),
@@ -1130,6 +1363,7 @@ class ChatPanel(QWidget):
                     "from_role": msg.get("from_role"),
                     "attachments": msg.get("attachments"),
                     "attachment_refs": msg.get("attachment_refs"),
+                    "reply_to": msg.get("reply_to") or ((msg.get("metadata") or {}).get("reply_to")),
                 }
                 for msg in messages
             ],
@@ -1205,6 +1439,8 @@ class ChatPanel(QWidget):
                 payload.get("ts_text", ""),
                 payload.get("attachments", []),
                 payload.get("menu_text", ""),
+                payload.get("reply_to"),
+                payload.get("message_context"),
             )
             alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
             self.timeline_layout.addWidget(self._create_timeline_row(bubble, alignment))
@@ -1254,6 +1490,25 @@ class ChatPanel(QWidget):
             return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
         if isinstance(value, str):
             raw = self._normalize_iso_ts(value)
+            if not raw:
+                return ""
+            try:
+                dt = datetime.fromisoformat(raw)
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone()
+                return dt.strftime("%d.%m.%Y %H:%M:%S")
+            except ValueError:
+                return raw
+        return str(value)
+
+    @staticmethod
+    def _format_ts_static(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
+        if isinstance(value, str):
+            raw = ChatPanel._normalize_iso_ts(value)
             if not raw:
                 return ""
             try:
@@ -1468,7 +1723,15 @@ class ChatPanel(QWidget):
         try:
             self.send_btn.setEnabled(False)
             metadata = None
+            reply_to = None
             if self._reply_target:
+                reply_to = {
+                    "parent_message_id": self._reply_target.get("message_id"),
+                    "preview": self._reply_target.get("preview", ""),
+                    "sender_role": self._reply_target.get("sender_role"),
+                    "sender_display_name": self._reply_target.get("sender_display_name"),
+                    "target_ts": self._reply_target.get("ts"),
+                }
                 metadata = {
                     PINNED_STUB_META_KEY: {
                         "source": "agent_gui_stub",
@@ -1476,7 +1739,13 @@ class ChatPanel(QWidget):
                         "target_ts": self._reply_target.get("ts"),
                     }
                 }
-            await self.ticket_client.send_message(self.active_ticket_id, text, from_role="user", metadata=metadata)
+            await self.ticket_client.send_message(
+                self.active_ticket_id,
+                text,
+                from_role="user",
+                metadata=metadata,
+                reply_to=reply_to,
+            )
             self.input_line.clear()
             self._clear_reply_stub()
             await self._async_refresh_ticket_detail()
@@ -1542,13 +1811,33 @@ class ChatPanel(QWidget):
             text = self.input_line.text().strip()
             if not text:
                 text = "Вложение" if len(refs) == 1 else f"Вложения ({len(refs)})"
+            reply_to = None
+            metadata = None
+            if self._reply_target:
+                reply_to = {
+                    "parent_message_id": self._reply_target.get("message_id"),
+                    "preview": self._reply_target.get("preview", ""),
+                    "sender_role": self._reply_target.get("sender_role"),
+                    "sender_display_name": self._reply_target.get("sender_display_name"),
+                    "target_ts": self._reply_target.get("ts"),
+                }
+                metadata = {
+                    PINNED_STUB_META_KEY: {
+                        "source": "agent_gui_stub",
+                        "target_preview": self._reply_target.get("preview", ""),
+                        "target_ts": self._reply_target.get("ts"),
+                    }
+                }
             await self.ticket_client.send_message(
                 self.active_ticket_id,
                 text,
                 from_role="user",
                 attachment_refs=refs,
+                metadata=metadata,
+                reply_to=reply_to,
             )
             self.input_line.clear()
+            self._clear_reply_stub()
             self.tool_status_label.setText(f"Отправлено вложений: {len(refs)}")
             await self._async_refresh_ticket_detail()
             self._restore_timeline_scroll(0, True)
@@ -1641,39 +1930,48 @@ class ChatPanel(QWidget):
         self.stacked.setCurrentWidget(self.chat_screen)
         self.input_line.setFocus()
 
-    def _open_message_context_menu(self, global_pos, message_text: str) -> None:
+    def _open_message_context_menu(self, global_pos, message_context: dict) -> None:
         menu = QMenu(self)
         copy_action = menu.addAction("Копировать текст")
-        reply_action = menu.addAction("Ответить (заглушка)")
+        reply_action = menu.addAction("Ответить")
         pin_action = menu.addAction("Закрепить сообщение")
         self._bubble_menu_open = True
         try:
             chosen = menu.exec(global_pos)
         finally:
             self._bubble_menu_open = False
+        preview = str(message_context.get("preview") or "").strip()
         if chosen == copy_action:
             from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(message_text)
+            QApplication.clipboard().setText(preview)
         elif chosen == reply_action:
-            self._set_reply_stub(message_text)
+            self._set_reply_target(message_context)
         elif chosen == pin_action:
-            self._pin_selected_message(message_text)
+            self._pin_selected_message(preview)
         if self._pending_ticket_snapshot:
             snapshot = self._pending_ticket_snapshot
             self._pending_ticket_snapshot = None
             QTimer.singleShot(0, lambda: self._update_ticket_detail_ui(*snapshot))
 
-    def _set_reply_stub(self, selected_text: str) -> None:
+    def _set_reply_target(self, message_context: dict) -> None:
         if not self.active_ticket_id:
             return
-        preview = (selected_text or "").strip()
+        preview = str(message_context.get("preview") or "").strip()
         if not preview:
             QMessageBox.information(self, "Ответ", "Сначала выделите текст сообщения для ответа.")
             return
         preview = preview[:180]
-        self._reply_target = {"preview": preview, "ts": datetime.now().isoformat()}
-        self.reply_stub_label.setText(f"Ответ (заглушка) на: {preview}")
+        self._reply_target = {
+            "message_id": str(message_context.get("message_id") or "").strip(),
+            "preview": preview,
+            "ts": message_context.get("ts") or datetime.now().isoformat(),
+            "sender_role": str(message_context.get("sender_role") or "").strip().lower(),
+            "sender_display_name": str(message_context.get("sender_display_name") or "").strip(),
+        }
+        author = self._reply_target.get("sender_display_name") or "сообщение"
+        self.reply_stub_label.setText(f"Ответ на {author}: {preview}")
         self.reply_stub_label.show()
+        self.input_line.setFocus()
 
     def _clear_reply_stub(self) -> None:
         self._reply_target = None

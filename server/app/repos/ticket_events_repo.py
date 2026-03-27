@@ -4,7 +4,7 @@ Repository for ticket_events table operations.
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, and_, or_, text, func, delete, case, update
+from sqlalchemy import bindparam, select, and_, or_, text, func, delete, case, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -459,6 +459,318 @@ class TicketEventsRepo:
         if row is None:
             return None
         return (row[0], row[1], row[2], row[3])
+
+    async def get_event_by_id(self, ticket_id: str, event_id: int) -> Optional[TicketEvent]:
+        """Get a specific ticket event by numeric id."""
+        stmt = select(TicketEvent).where(
+            TicketEvent.ticket_id == ticket_id,
+            TicketEvent.id == event_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_chat_message_by_message_id(self, ticket_id: str, message_id: str) -> Optional[TicketEvent]:
+        """Resolve a chat_message by payload.message_id within a ticket."""
+        stmt = select(TicketEvent).where(
+            TicketEvent.ticket_id == ticket_id,
+            TicketEvent.event_type == "chat_message",
+            TicketEvent.payload["message_id"].astext == message_id,
+        ).order_by(TicketEvent.id.desc()).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_message_read_cursor(self, ticket_id: str, scope: str) -> Dict[str, Any]:
+        """Return the latest persisted read cursor for requester or staff."""
+        if scope not in {"requester", "staff"}:
+            raise ValueError(f"Unsupported read scope: {scope}")
+
+        actor_roles = ["user"] if scope == "requester" else ["support", "admin"]
+        stmt = text(
+            """
+            SELECT
+                id,
+                COALESCE(NULLIF(payload->>'last_read_event_id', ''), '0')::bigint AS last_read_event_id,
+                NULLIF(payload->>'last_read_message_id', '') AS last_read_message_id,
+                NULLIF(payload->>'message_preview', '') AS message_preview,
+                COALESCE(NULLIF(payload->>'messages_read_count', ''), '0')::int AS messages_read_count,
+                COALESCE(NULLIF(payload->>'tool_calls_read_count', ''), '0')::int AS tool_calls_read_count
+            FROM ticket_events
+            WHERE ticket_id = :ticket_id
+              AND event_type = 'message_read'
+              AND COALESCE(payload->>'actor_role', '') IN :actor_roles
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).bindparams(bindparam("actor_roles", expanding=True))
+        result = await self.session.execute(
+            stmt,
+            {"ticket_id": ticket_id, "actor_roles": actor_roles},
+        )
+        row = result.first()
+        if row is None:
+            return {
+                "event_id": None,
+                "last_read_event_id": 0,
+                "last_read_message_id": None,
+                "message_preview": None,
+                "messages_read_count": 0,
+                "tool_calls_read_count": 0,
+            }
+        return {
+            "event_id": int(row[0]) if row[0] is not None else None,
+            "last_read_event_id": int(row[1] or 0),
+            "last_read_message_id": row[2],
+            "message_preview": row[3],
+            "messages_read_count": int(row[4] or 0),
+            "tool_calls_read_count": int(row[5] or 0),
+        }
+
+    async def summarize_read_window(
+        self,
+        ticket_id: str,
+        scope: str,
+        from_event_id: int,
+        to_event_id: int,
+    ) -> Dict[str, Any]:
+        """Summarize unread items that are being marked as read."""
+        if scope not in {"requester", "staff"}:
+            raise ValueError(f"Unsupported read scope: {scope}")
+
+        incoming_roles = ["support", "agent", "admin"] if scope == "requester" else ["user"]
+        summary_stmt = text(
+            """
+            SELECT
+                count(*) FILTER (
+                    WHERE event_type = 'chat_message'
+                      AND COALESCE(payload->>'visibility', 'public') = 'public'
+                      AND COALESCE(payload->>'sender_role', payload->>'from', '') IN :incoming_roles
+                ) AS messages_read_count,
+                count(*) FILTER (
+                    WHERE event_type = 'tool_call_started'
+                ) AS tool_calls_read_count
+            FROM ticket_events
+            WHERE ticket_id = :ticket_id
+              AND id > :from_event_id
+              AND id <= :to_event_id
+            """
+        ).bindparams(bindparam("incoming_roles", expanding=True))
+        summary_result = await self.session.execute(
+            summary_stmt,
+            {
+                "ticket_id": ticket_id,
+                "from_event_id": int(from_event_id),
+                "to_event_id": int(to_event_id),
+                "incoming_roles": incoming_roles,
+            },
+        )
+        summary_row = summary_result.first()
+        messages_read_count = int(summary_row[0] or 0) if summary_row else 0
+        tool_calls_read_count = int(summary_row[1] or 0) if summary_row else 0
+
+        latest_message_stmt = text(
+            """
+            SELECT
+                NULLIF(payload->>'message_id', '') AS message_id,
+                NULLIF(payload->>'text', '') AS text
+            FROM ticket_events
+            WHERE ticket_id = :ticket_id
+              AND id > :from_event_id
+              AND id <= :to_event_id
+              AND event_type = 'chat_message'
+              AND COALESCE(payload->>'visibility', 'public') = 'public'
+              AND COALESCE(payload->>'sender_role', payload->>'from', '') IN :incoming_roles
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).bindparams(bindparam("incoming_roles", expanding=True))
+        latest_message_result = await self.session.execute(
+            latest_message_stmt,
+            {
+                "ticket_id": ticket_id,
+                "from_event_id": int(from_event_id),
+                "to_event_id": int(to_event_id),
+                "incoming_roles": incoming_roles,
+            },
+        )
+        latest_message_row = latest_message_result.first()
+        return {
+            "messages_read_count": messages_read_count,
+            "tool_calls_read_count": tool_calls_read_count,
+            "last_read_message_id": latest_message_row[0] if latest_message_row else None,
+            "message_preview": latest_message_row[1] if latest_message_row else None,
+        }
+
+    async def get_ticket_chat_counters_batch(self, ticket_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Aggregate unread/pending counters for ticket lists and snapshots.
+
+        The counters are intentionally denormalized at query time so both UIs can
+        consume the same payload without storing a second source of truth.
+        """
+        normalized_ids = [str(ticket_id).strip() for ticket_id in ticket_ids if str(ticket_id).strip()]
+        if not normalized_ids:
+            return {}
+
+        counters_stmt = text(
+            """
+            WITH base AS (
+                SELECT ticket_id, id, event_type, payload, created_at
+                FROM ticket_events
+                WHERE ticket_id IN :ticket_ids
+            ),
+            tickets_set AS (
+                SELECT DISTINCT ticket_id FROM base
+            ),
+            requester_cursor AS (
+                SELECT DISTINCT ON (ticket_id)
+                    ticket_id,
+                    COALESCE(NULLIF(payload->>'last_read_event_id', ''), '0')::bigint AS last_read_event_id
+                FROM base
+                WHERE event_type = 'message_read'
+                  AND COALESCE(payload->>'actor_role', '') = 'user'
+                ORDER BY ticket_id, id DESC
+            ),
+            staff_cursor AS (
+                SELECT DISTINCT ON (ticket_id)
+                    ticket_id,
+                    COALESCE(NULLIF(payload->>'last_read_event_id', ''), '0')::bigint AS last_read_event_id
+                FROM base
+                WHERE event_type = 'message_read'
+                  AND COALESCE(payload->>'actor_role', '') IN ('support', 'admin')
+                ORDER BY ticket_id, id DESC
+            ),
+            staff_last_public_reply AS (
+                SELECT
+                    ticket_id,
+                    max(id) AS last_staff_message_id
+                FROM base
+                WHERE event_type = 'chat_message'
+                  AND COALESCE(payload->>'visibility', 'public') = 'public'
+                  AND COALESCE(payload->>'sender_role', payload->>'from', '') IN ('support', 'agent', 'admin')
+                GROUP BY ticket_id
+            ),
+            latest_user_message AS (
+                SELECT DISTINCT ON (ticket_id)
+                    ticket_id,
+                    id AS last_user_message_event_id,
+                    NULLIF(payload->>'message_id', '') AS last_user_message_id,
+                    NULLIF(payload->>'text', '') AS last_user_message_text,
+                    created_at AS last_user_message_at
+                FROM base
+                WHERE event_type = 'chat_message'
+                  AND COALESCE(payload->>'visibility', 'public') = 'public'
+                  AND COALESCE(payload->>'sender_role', payload->>'from', '') = 'user'
+                ORDER BY ticket_id, id DESC
+            ),
+            requester_counts AS (
+                SELECT
+                    b.ticket_id,
+                    count(*) FILTER (
+                        WHERE b.event_type = 'chat_message'
+                          AND COALESCE(b.payload->>'visibility', 'public') = 'public'
+                          AND COALESCE(b.payload->>'sender_role', b.payload->>'from', '') IN ('support', 'agent', 'admin')
+                          AND b.id > COALESCE(rc.last_read_event_id, 0)
+                    ) AS requester_unread_messages,
+                    count(*) FILTER (
+                        WHERE b.event_type = 'tool_call_started'
+                          AND b.id > COALESCE(rc.last_read_event_id, 0)
+                    ) AS requester_unread_tool_calls,
+                    max(b.id) FILTER (
+                        WHERE b.id > COALESCE(rc.last_read_event_id, 0)
+                          AND (
+                            (
+                                b.event_type = 'chat_message'
+                                AND COALESCE(b.payload->>'visibility', 'public') = 'public'
+                            )
+                            OR b.event_type IN (
+                                'tool_call_started',
+                                'tool_call_result',
+                                'status_changed',
+                                'priority_changed',
+                                'assignee_changed',
+                                'queue_changed',
+                                'device_changed'
+                            )
+                          )
+                    ) AS requester_latest_unread_event_id
+                FROM base b
+                LEFT JOIN requester_cursor rc ON rc.ticket_id = b.ticket_id
+                GROUP BY b.ticket_id, rc.last_read_event_id
+            ),
+            staff_counts AS (
+                SELECT
+                    b.ticket_id,
+                    count(*) FILTER (
+                        WHERE b.event_type = 'chat_message'
+                          AND COALESCE(b.payload->>'visibility', 'public') = 'public'
+                          AND COALESCE(b.payload->>'sender_role', b.payload->>'from', '') = 'user'
+                          AND b.id > COALESCE(sc.last_read_event_id, 0)
+                    ) AS support_unread_user_messages,
+                    count(*) FILTER (
+                        WHERE b.event_type = 'chat_message'
+                          AND COALESCE(b.payload->>'visibility', 'public') = 'public'
+                          AND COALESCE(b.payload->>'sender_role', b.payload->>'from', '') = 'user'
+                          AND b.id > COALESCE(sr.last_staff_message_id, 0)
+                    ) AS support_pending_user_messages
+                FROM base b
+                LEFT JOIN staff_cursor sc ON sc.ticket_id = b.ticket_id
+                LEFT JOIN staff_last_public_reply sr ON sr.ticket_id = b.ticket_id
+                GROUP BY b.ticket_id, sc.last_read_event_id, sr.last_staff_message_id
+            )
+            SELECT
+                t.ticket_id,
+                COALESCE(rc.last_read_event_id, 0) AS requester_last_read_event_id,
+                COALESCE(sc.last_read_event_id, 0) AS support_last_read_event_id,
+                COALESCE(rqc.requester_unread_messages, 0) AS requester_unread_messages,
+                COALESCE(rqc.requester_unread_tool_calls, 0) AS requester_unread_tool_calls,
+                rqc.requester_latest_unread_event_id AS requester_latest_unread_event_id,
+                COALESCE(stc.support_unread_user_messages, 0) AS support_unread_user_messages,
+                COALESCE(stc.support_pending_user_messages, 0) AS support_pending_user_messages,
+                lum.last_user_message_event_id AS last_user_message_event_id,
+                lum.last_user_message_id AS last_user_message_id,
+                lum.last_user_message_text AS last_user_message_text,
+                lum.last_user_message_at AS last_user_message_at
+            FROM tickets_set t
+            LEFT JOIN requester_cursor rc ON rc.ticket_id = t.ticket_id
+            LEFT JOIN staff_cursor sc ON sc.ticket_id = t.ticket_id
+            LEFT JOIN requester_counts rqc ON rqc.ticket_id = t.ticket_id
+            LEFT JOIN staff_counts stc ON stc.ticket_id = t.ticket_id
+            LEFT JOIN latest_user_message lum ON lum.ticket_id = t.ticket_id
+            """
+        ).bindparams(bindparam("ticket_ids", expanding=True))
+        result = await self.session.execute(counters_stmt, {"ticket_ids": normalized_ids})
+
+        counters: Dict[str, Dict[str, Any]] = {
+            ticket_id: {
+                "requester_last_read_event_id": 0,
+                "support_last_read_event_id": 0,
+                "requester_unread_messages": 0,
+                "requester_unread_tool_calls": 0,
+                "requester_latest_unread_event_id": None,
+                "support_unread_user_messages": 0,
+                "support_pending_user_messages": 0,
+                "last_user_message_event_id": None,
+                "last_user_message_id": None,
+                "last_user_message_text": None,
+                "last_user_message_at": None,
+            }
+            for ticket_id in normalized_ids
+        }
+        for row in result.fetchall():
+            counters[row[0]] = {
+                "requester_last_read_event_id": int(row[1] or 0),
+                "support_last_read_event_id": int(row[2] or 0),
+                "requester_unread_messages": int(row[3] or 0),
+                "requester_unread_tool_calls": int(row[4] or 0),
+                "requester_latest_unread_event_id": int(row[5]) if row[5] is not None else None,
+                "support_unread_user_messages": int(row[6] or 0),
+                "support_pending_user_messages": int(row[7] or 0),
+                "last_user_message_event_id": int(row[8]) if row[8] is not None else None,
+                "last_user_message_id": row[9],
+                "last_user_message_text": row[10],
+                "last_user_message_at": row[11].isoformat() if row[11] is not None else None,
+            }
+        return counters
     
     async def create_ticket(
         self,

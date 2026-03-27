@@ -591,3 +591,87 @@ Normalized attachment descriptor format:
 Both endpoints now return chat attachments consistently:
 - `GET /api/tickets/{ticket_id}` -> `messages[*].attachments` (empty array by default)
 - `GET /api/tickets/{ticket_id}/messages` -> `messages[*].attachments` (empty array by default)
+
+---
+
+## Update: 2026-03-27 (Reply, read cursors, chat counters)
+
+### `reply_to` in requester/support messages
+
+`POST /api/tickets/{ticket_id}/message` now also accepts structured reply metadata alongside legacy `metadata`:
+
+```json
+{
+  "message_id": "msg-uuid",
+  "from_role": "user",
+  "text": "Уточняю ответ",
+  "reply_to": {
+    "parent_message_id": "msg-parent",
+    "preview": "Предыдущее сообщение",
+    "sender_role": "support",
+    "sender_display_name": "Поддержка",
+    "target_ts": "2026-03-27T10:15:00Z"
+  },
+  "metadata": {
+    "agent_stub_reply_to_message": {
+      "source": "agent_gui_stub",
+      "target_preview": "Предыдущее сообщение",
+      "target_ts": "2026-03-27T10:15:00Z"
+    }
+  }
+}
+```
+
+Rules:
+- `reply_to.parent_message_id` is optional but preferred; when present it points to `payload.message_id` of the parent `chat_message`.
+- `reply_to.preview` is a short UI preview cached in payload for stable rendering even if the original message is not loaded.
+- Server normalizes reply data and returns it in message payloads for ticket UI, requester UI and agent GUI.
+- Serialized messages also expose `event_id` so clients can scroll to the parent message and advance read cursors.
+
+### Read cursor endpoint
+
+Requester/support clients can mark the visible chat window as read:
+
+```http
+POST /api/tickets/{ticket_id}/read
+```
+
+Request:
+
+```json
+{
+  "last_read_event_id": 1842
+}
+```
+
+Response shape:
+- `status: "ok"`
+- `ticket_id`
+- `last_read_event_id`
+- `last_read_message_id`
+- `read_scope`: `requester` or `staff`
+- `messages_read_count`
+- `tool_calls_read_count`
+- `no_op` when the cursor was already up to date
+
+Server persists this as `event_type="message_read"` and treats repeated calls with the same or older cursor as idempotent.
+
+### Chat counters in ticket payloads
+
+`GET /api/tickets`, `GET /api/tickets/{ticket_id}` and `GET /api/tickets/{ticket_id}/snapshot` now include `ticket.chat_counters` with precomputed queue/UI metrics:
+
+```json
+{
+  "chat_counters": {
+    "requester_unread_messages": 2,
+    "requester_unread_tool_calls": 1,
+    "support_pending_user_messages": 1,
+    "last_user_message_text": "Можно уточнить?"
+  }
+}
+```
+
+Intended usage:
+- `requester_unread_messages` / `requester_unread_tool_calls` — badge counters in requester/agent GUI.
+- `support_pending_user_messages` — operator queue indicator for unanswered requester messages.
+- `last_user_message_text` — compact preview in queue rows/cards.

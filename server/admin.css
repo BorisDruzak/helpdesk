@@ -725,6 +725,10 @@
         .queue-action-marker { margin-top: 4px; display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; }
         .queue-action-marker.needs-action { background: #fee2e2; color: #b91c1c; }
         .queue-action-marker.waiting { background: #fef3c7; color: #92400e; }
+        .queue-ticket-badges { margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .queue-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+        .queue-pill-danger { background: #dc2626; color: #fff; }
+        .queue-last-user-preview { font-size: 11px; color: var(--muted); max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .badge-breach { background: var(--danger); color: white; padding: 1px 6px; border-radius: 4px; font-size: 10px; }
         .queue-actions-inline { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
         .queue-actions-inline .btn { padding: 4px 8px; font-size: 11px; }

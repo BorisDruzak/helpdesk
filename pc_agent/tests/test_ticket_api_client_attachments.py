@@ -82,6 +82,43 @@ async def test_send_message_includes_attachment_refs(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_message_includes_reply_to(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(FakeResponse(status=200, payload={"status": "ok"}))
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.send_message(
+        ticket_id="ticket-1",
+        text="reply",
+        from_role="user",
+        message_id="msg-2",
+        reply_to={
+            "parent_message_id": "msg-1",
+            "preview": "Original message",
+            "sender_role": "support",
+        },
+    )
+
+    assert result["status"] == "ok"
+    call = fake_session.calls[0]
+    assert call["json"]["reply_to"] == {
+        "parent_message_id": "msg-1",
+        "preview": "Original message",
+        "sender_role": "support",
+    }
+
+
+@pytest.mark.asyncio
 async def test_mark_ticket_read_posts_last_read_event_id(monkeypatch):
     client = TicketApiClient(
         base_url="http://localhost:8666/api",

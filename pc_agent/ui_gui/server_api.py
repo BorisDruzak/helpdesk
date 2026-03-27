@@ -500,6 +500,7 @@ class TicketApiClient:
         message_id: Optional[str] = None,
         attachment_refs: Optional[list[str]] = None,
         metadata: Optional[dict] = None,
+        reply_to: Optional[dict] = None,
     ) -> dict:
         """
         Отправляет сообщение в тикет.
@@ -533,6 +534,8 @@ class TicketApiClient:
             payload["attachment_refs"] = attachment_refs
         if metadata:
             payload["metadata"] = metadata
+        if reply_to:
+            payload["reply_to"] = reply_to
         
         logger.debug(f"POST {url} с payload: {payload}")
         

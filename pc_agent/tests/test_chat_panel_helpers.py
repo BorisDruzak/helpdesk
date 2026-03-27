@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ui_gui.chat_panel import (  # noqa: E402
+    ChatPanel,
     can_user_confirm_close,
     message_visual_role,
     ticket_matches_query,
@@ -39,3 +40,24 @@ def test_can_user_confirm_close_only_for_resolved_ticket():
 def test_ticket_status_label_is_localized():
     assert ticket_status_label("waiting_on_user") == "Ждёт пользователя"
     assert ticket_status_label("closed") == "Закрыт"
+
+
+def test_resolve_reply_reference_prefers_message_index_and_fallback_author():
+    panel = ChatPanel.__new__(ChatPanel)
+    resolved = panel._resolve_reply_reference(
+        {"parent_message_id": "msg-1"},
+        {
+            "msg-1": {
+                "text": "Support answer",
+                "from_role": "support",
+            }
+        },
+    )
+
+    assert resolved == {
+        "parent_message_id": "msg-1",
+        "preview": "Support answer",
+        "sender_role": "support",
+        "sender_display_name": "Поддержка",
+        "ts": "",
+    }
