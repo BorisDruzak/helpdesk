@@ -56,8 +56,9 @@ class MainWindow(QMainWindow):
         self._server_connection_state: str = "starting"
         self._server_connection_detail: str = ""
         
-        self.setWindowTitle("PC Agent")
-        self.setMinimumSize(800, 600)
+        self.setWindowTitle("Maria Agent")
+        self.setMinimumSize(1200, 760)
+        self.resize(1320, 840)
         
         self._setup_ui()
         self._render_connection_status()
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
         """Настройка UI главного окна."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        central_widget.setStyleSheet("background: #f4f8fb;")
 
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -107,12 +109,21 @@ class MainWindow(QMainWindow):
         top_bar.setContentsMargins(0, 0, 0, 0)
         top_bar.setSpacing(8)
 
-        self.title_label = QLabel("PC Agent")
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #1f2937;")
+        self.title_label = QLabel("Maria Agent")
+        self.title_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #1d4f7a;")
         top_bar.addWidget(self.title_label)
+        self.profile_top_status = QLabel("")
+        self.profile_top_status.setStyleSheet(
+            "padding: 6px 10px; border-radius: 999px; background: #e8f3ff; color: #1b5f93; font-weight: 700;"
+        )
+        top_bar.addWidget(self.profile_top_status)
         top_bar.addStretch()
 
         self.settings_btn = QPushButton("Настройки")
+        self.settings_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #d6e5f3; border-radius: 14px; background: #ffffff; padding: 8px 14px; color: #1d4f7a; }"
+            "QPushButton:hover { background: #f0f7ff; }"
+        )
         self.settings_btn.clicked.connect(self._show_settings_dialog)
         top_bar.addWidget(self.settings_btn)
         layout.addLayout(top_bar)
@@ -120,6 +131,7 @@ class MainWindow(QMainWindow):
         self.chat_panel = ChatPanel(base_url=None, auth_token=self.auth_token)
         layout.addWidget(self.chat_panel)
         self.chat_panel.chatSessionChanged.connect(self._on_chat_session_changed)
+        self._render_profile_status()
 
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("Настройки")
@@ -245,7 +257,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel("")
         self.status_label.setStyleSheet(
-            "padding: 6px 12px; border-radius: 999px; background: #e2e8f0; color: #475569; font-weight: 700;"
+            "padding: 6px 12px; border-radius: 999px; background: #e8f3ff; color: #1b5f93; font-weight: 700;"
         )
         self.status_bar.addWidget(self.status_label)
 
@@ -272,6 +284,7 @@ class MainWindow(QMainWindow):
         self._settings_snapshot = None
         self._load_device_uuid()
         self.profile_summary_label.setText(self.chat_panel.current_requester_profile_summary())
+        self._render_profile_status()
         self._set_settings_status("Загрузка настроек...", error=False)
         QTimer.singleShot(0, lambda: asyncio.create_task(self._async_load_settings()))
         self.settings_dialog.exec()
@@ -279,6 +292,22 @@ class MainWindow(QMainWindow):
     def _on_manage_requester_profiles_clicked(self):
         self.chat_panel.open_profile_manager()
         self.profile_summary_label.setText(self.chat_panel.current_requester_profile_summary())
+        self._render_profile_status()
+
+    def _render_profile_status(self) -> None:
+        has_profile = bool(self.chat_panel.has_active_profile())
+        if has_profile:
+            text = f"Профиль: {self.chat_panel.current_requester_profile_summary()}"
+            bg = "#dcfce7"
+            fg = "#166534"
+        else:
+            text = "Профиль не выбран (обязательно)"
+            bg = "#fee2e2"
+            fg = "#b42318"
+        self.profile_top_status.setText(self._repair_text(text))
+        self.profile_top_status.setStyleSheet(
+            f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
+        )
 
     def _settings_api_url(self, path: str) -> str:
         return f"http://{self.host}:{self.port}{path}"

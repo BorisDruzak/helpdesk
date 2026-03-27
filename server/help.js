@@ -260,6 +260,7 @@
     async function init() {
         const params = new URLSearchParams(window.location.search || '');
         ticketId = params.get('ticket_id') || '';
+        const codeFromUrl = (params.get('code') || '').trim();
         if (ticketId) {
             publicToken = loadToken(ticketId);
             if (publicToken) {
@@ -267,6 +268,16 @@
                     await loadTicket();
                 } catch (err) {
                     setStatus(err.message || 'Ошибка загрузки тикета', true);
+                    showAuthMode();
+                }
+            } else if (codeFromUrl) {
+                showAuthMode();
+                el('authCodeInput').value = codeFromUrl;
+                setStatus('Авторизация по коду из ссылки...');
+                try {
+                    await authorizeByCode(codeFromUrl);
+                } catch (err) {
+                    setStatus(err.message || 'Ошибка авторизации', true);
                     showAuthMode();
                 }
             } else {

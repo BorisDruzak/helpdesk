@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import socket
 import uuid
 from datetime import datetime
@@ -12,6 +13,7 @@ from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -26,9 +28,11 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QScrollArea,
     QStackedWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -55,10 +59,12 @@ STATUS_COLORS = {
     "in_progress": ("#0f766e", "#ccfbf1"),
     "waiting_on_user": ("#b45309", "#fef3c7"),
     "waiting_on_vendor": ("#92400e", "#fde68a"),
-    "resolved": ("#047857", "#d1fae5"),
+    "resolved": ("#065f46", "#064e3b"),
     "closed": ("#475569", "#e2e8f0"),
     "unknown": ("#475569", "#e2e8f0"),
 }
+
+PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
 
 OUTGOING_MESSAGE_ROLES = {"user", "agent", "requester"}
 SUPPORT_MESSAGE_ROLES = {"support", "admin"}
@@ -108,6 +114,99 @@ def message_visual_role(message: dict) -> str:
     if role in SUPPORT_MESSAGE_ROLES:
         return "support"
     return "neutral"
+
+
+class MessageBubbleWidget(QFrame):
+    """Single message/event bubble in the messenger timeline."""
+
+    def __init__(
+        self,
+        panel: "ChatPanel",
+        bubble_role: str,
+        sender: str,
+        text: str,
+        ts_text: str,
+        attachments: Optional[List[str]] = None,
+        menu_text: Optional[str] = None,
+    ) -> None:
+        super().__init__(panel)
+        self._panel = panel
+        self._menu_text = (menu_text or text or "").strip()
+        self._interactive = bubble_role in {"self", "support"}
+        self.setObjectName(f"bubble_{bubble_role}")
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+
+        styles = {
+            "self": (
+                "#dbeafe",
+                "#93c5fd",
+                "#1e3a8a",
+                "#53708c",
+            ),
+            "support": (
+                "#dcfce7",
+                "#86efac",
+                "#14532d",
+                "#53708c",
+            ),
+            "event": (
+                "#f8fafc",
+                "#dbe2ea",
+                "#475569",
+                "#7b91a8",
+            ),
+        }
+        bg, border, fg, muted = styles.get(bubble_role, styles["event"])
+
+        self.setStyleSheet(
+            f"""
+            QFrame#{self.objectName()} {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: 18px;
+            }}
+            """
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 8)
+        layout.setSpacing(4)
+
+        if sender:
+            sender_label = QLabel(sender)
+            sender_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            sender_label.setStyleSheet(f"font-size: 11px; color: {muted}; font-weight: 600; border: none; background: transparent;")
+            layout.addWidget(sender_label)
+
+        text_label = QLabel(text or "Вложение")
+        text_label.setWordWrap(True)
+        text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        text_label.setStyleSheet(f"font-size: 13px; color: {fg}; border: none; background: transparent;")
+        layout.addWidget(text_label)
+
+        for attachment in attachments or []:
+            chip = QLabel(attachment)
+            chip.setWordWrap(True)
+            chip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            chip.setStyleSheet(
+                f"font-size: 12px; color: {fg}; "
+                "padding: 4px 8px; border-radius: 10px; border: none; "
+                "background: rgba(255,255,255,0.45);"
+            )
+            layout.addWidget(chip)
+
+        if ts_text:
+            time_label = QLabel(ts_text)
+            time_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            time_label.setStyleSheet(f"font-size: 11px; color: {muted}; border: none; background: transparent;")
+            layout.addWidget(time_label, alignment=Qt.AlignmentFlag.AlignRight if bubble_role == "support" else Qt.AlignmentFlag.AlignLeft)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        if not self._interactive or not self._menu_text:
+            event.ignore()
+            return
+        self._panel._open_message_context_menu(event.globalPos(), self._menu_text)
+        event.accept()
 
 
 class TicketCreateDialog(QDialog):
@@ -181,7 +280,6 @@ class TicketCreateDialog(QDialog):
         active_id = self.panel._profiles_data.get("active_profile_id")
         self.profile_selector.blockSignals(True)
         self.profile_selector.clear()
-        self.profile_selector.addItem("Без профиля", "__no_profile__")
         for profile in self.panel._profiles():
             title = profile.get("display_name") or profile.get("full_name") or "Без имени"
             self.profile_selector.addItem(title, profile.get("id"))
@@ -198,7 +296,7 @@ class TicketCreateDialog(QDialog):
 
     def _on_profile_changed(self, *_args) -> None:
         profile_id = self.profile_selector.currentData()
-        self.panel._profiles_data["active_profile_id"] = None if profile_id == "__no_profile__" else profile_id
+        self.panel._profiles_data["active_profile_id"] = profile_id
         self.panel._save_profiles()
         self.profile_summary.setText(self.panel.current_requester_profile_summary())
 
@@ -207,6 +305,9 @@ class TicketCreateDialog(QDialog):
         self._refresh_profiles()
 
     def _on_accept(self) -> None:
+        if not self.panel.has_active_profile():
+            QMessageBox.warning(self, "Профиль обязателен", "Выберите профиль инициатора.")
+            return
         if not self.description_input.toPlainText().strip():
             QMessageBox.warning(self, "Ошибка", "Опишите проблему")
             return
@@ -284,8 +385,14 @@ class ChatPanel(QWidget):
         self.tickets_cache: List[dict] = []
         self.local_action_buffer: Dict[str, List[dict]] = {}
         self._ticket_search_query = ""
+        self._show_open_tickets = True
+        self._show_closed_tickets = False
+        self._pinned_messages: Dict[str, List[dict]] = {}
+        self._reply_target: Optional[dict] = None
         self._last_timeline_html: Optional[str] = None
         self._pending_ticket_snapshot: Optional[tuple[dict, List[dict], List[dict]]] = None
+        self._bubble_menu_open = False
+        self._timeline_bubbles: List[MessageBubbleWidget] = []
         self._resolution_prompt_keys: set[str] = set()
         self._resolution_prompt_open_for: Optional[str] = None
         self._pending_tasks: set[asyncio.Task] = set()
@@ -306,21 +413,23 @@ class ChatPanel(QWidget):
     def _setup_ui(self) -> None:
         self.setStyleSheet(
             """
-            QWidget { font-size: 13px; color: #1f2937; }
-            QGroupBox { font-weight: 700; border: 1px solid #d9e7f4; border-radius: 20px; margin-top: 10px; background: #f7fbff; }
+            QWidget { font-size: 13px; color: #182533; background: #f4f8fb; }
+            QGroupBox { font-weight: 700; border: 1px solid #d6e5f3; border-radius: 20px; margin-top: 10px; background: #ffffff; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 2px 6px; }
             QListWidget { border: none; background: transparent; outline: none; padding: 2px; }
-            QListWidget::item { border: 1px solid #d9e7f4; border-radius: 22px; padding: 14px 16px; margin: 6px 4px; background: #ffffff; min-height: 34px; }
-            QListWidget::item:hover { background: #eef6ff; border-color: #93c5fd; }
-            QListWidget::item:selected { background: #cfe7ff; border-color: #2563eb; color: #0f172a; }
-            QPushButton { border: 1px solid #cfe0f1; border-radius: 15px; background: #f4f8fd; padding: 8px 14px; }
-            QPushButton:hover { background: #e6f0fb; }
-            QPushButton#PrimaryButton { background: #4f9cf9; color: white; border-color: #4f9cf9; font-weight: 700; }
-            QPushButton#PrimaryButton:hover { background: #3b8bf0; }
+            QListWidget::item { border: 1px solid #dce9f5; border-radius: 18px; padding: 14px 16px; margin: 6px 4px; background: #ffffff; min-height: 34px; }
+            QListWidget::item:hover { background: #f0f7ff; border-color: #8cc8ff; }
+            QListWidget::item:selected { background: #dff0ff; border-color: #3390ec; color: #102030; }
+            QPushButton { border: 1px solid #d6e5f3; border-radius: 15px; background: #ffffff; padding: 8px 14px; }
+            QPushButton:hover { background: #f0f7ff; }
+            QToolButton { border: 1px solid #d6e5f3; border-radius: 15px; background: #ffffff; padding: 8px 12px; font-size: 16px; }
+            QToolButton:hover { background: #f0f7ff; }
+            QPushButton#PrimaryButton { background: #3390ec; color: white; border-color: #3390ec; font-weight: 700; }
+            QPushButton#PrimaryButton:hover { background: #2586e6; }
             QPushButton#DangerButton { background: #fef2f2; color: #b42318; border-color: #fca5a5; font-weight: 700; }
             QPushButton#DangerButton:hover { background: #fee2e2; }
             QPushButton#DangerButton:disabled { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
-            QLineEdit, QTextEdit, QComboBox { border: 1px solid #d4e2f1; border-radius: 16px; background: #ffffff; padding: 8px 10px; }
+            QLineEdit, QTextEdit, QComboBox { border: 1px solid #d6e5f3; border-radius: 16px; background: #ffffff; padding: 8px 10px; selection-background-color: #3390ec; }
             """
         )
 
@@ -347,7 +456,7 @@ class ChatPanel(QWidget):
         self.profile_summary = QLabel("")
         self.profile_summary.setWordWrap(True)
         self.profile_summary.setStyleSheet(
-            "padding: 6px 8px; color: #334155; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px;"
+            "padding: 8px 10px; color: #2b3c4d; background: #ffffff; border: 1px solid #d6e5f3; border-radius: 12px;"
         )
         layout.addWidget(self.profile_summary)
 
@@ -360,11 +469,19 @@ class ChatPanel(QWidget):
         self.ticket_search_input = QLineEdit()
         self.ticket_search_input.setPlaceholderText("Поиск по коду, названию, статусу")
         self.ticket_search_input.textChanged.connect(self._on_ticket_search_changed)
+        self.filter_open_checkbox = QCheckBox("Открытые")
+        self.filter_open_checkbox.setChecked(True)
+        self.filter_open_checkbox.toggled.connect(self._on_ticket_filter_changed)
+        self.filter_closed_checkbox = QCheckBox("Закрытые")
+        self.filter_closed_checkbox.setChecked(False)
+        self.filter_closed_checkbox.toggled.connect(self._on_ticket_filter_changed)
         self.auto_refresh_label = QLabel("Автообновление каждые 3 секунды")
         self.auto_refresh_label.setStyleSheet("color: #64748b; padding-left: 6px;")
         actions_row.addWidget(self.create_ticket_btn)
         actions_row.addWidget(self.manage_profiles_btn)
         actions_row.addWidget(self.ticket_search_input, 1)
+        actions_row.addWidget(self.filter_open_checkbox)
+        actions_row.addWidget(self.filter_closed_checkbox)
         actions_row.addWidget(self.auto_refresh_label)
         actions_row.addStretch(1)
         layout.addLayout(actions_row)
@@ -394,7 +511,7 @@ class ChatPanel(QWidget):
 
         left_panel = QFrame()
         left_panel.setFrameShape(QFrame.Shape.StyledPanel)
-        left_panel.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;")
+        left_panel.setStyleSheet("background: #ffffff; border: 1px solid #d6e5f3; border-radius: 16px;")
         left_panel.setFixedWidth(280)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setSpacing(10)
@@ -405,27 +522,23 @@ class ChatPanel(QWidget):
 
         self.ticket_info_label = QLabel("Тикет не выбран")
         self.ticket_info_label.setWordWrap(True)
-        self.ticket_info_label.setStyleSheet("font-weight: 700; padding: 12px 14px; border-radius: 18px; background: #dbeafe;")
+        self.ticket_info_label.setTextFormat(Qt.TextFormat.RichText)
+        self.ticket_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self.ticket_info_label.linkActivated.connect(self._on_ticket_code_clicked)
+        self.ticket_info_label.setStyleSheet("font-weight: 700; padding: 12px 14px; border-radius: 18px; background: #e8f3ff; color: #16456b;")
         left_layout.addWidget(self.ticket_info_label)
-
-        self.ticket_status_label = QLabel("Статус: —")
-        self.ticket_status_label.setStyleSheet(
-            "font-weight: 700; padding: 8px 12px; border-radius: 999px; background: #e2e8f0; color: #475569;"
-        )
-        left_layout.addWidget(self.ticket_status_label)
 
         self.ticket_meta_label = QLabel("Откройте тикет в списке.")
         self.ticket_meta_label.setWordWrap(True)
-        self.ticket_meta_label.setStyleSheet(
-            "padding: 10px 12px; color: #334155; background: #fff; border: 1px solid #dbe2ea; border-radius: 16px; font-size: 12px;"
+        self.ticket_meta_label.setTextFormat(Qt.TextFormat.RichText)
+        self.ticket_meta_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
-        left_layout.addWidget(self.ticket_meta_label)
+        self.ticket_meta_label.setStyleSheet(
+            "padding: 10px 12px; color: #334155; background: #f9fcff; border: 1px solid #d6e5f3; border-radius: 16px; font-size: 12px;"
+        )
+        left_layout.addWidget(self.ticket_meta_label, 1)
         left_layout.addStretch(1)
-        self.close_ticket_btn = QPushButton("Подтвердить и закрыть")
-        self.close_ticket_btn.setObjectName("DangerButton")
-        self.close_ticket_btn.setEnabled(False)
-        self.close_ticket_btn.clicked.connect(self._on_close_ticket)
-        left_layout.addWidget(self.close_ticket_btn)
         main_layout.addWidget(left_panel)
 
         right_center = QWidget()
@@ -433,29 +546,119 @@ class ChatPanel(QWidget):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(8)
 
-        self.timeline_view = QTextEdit()
-        self.timeline_view.setReadOnly(True)
-        self.timeline_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.timeline_view.setPlaceholderText("Здесь будут сообщения и события тикета")
-        self.timeline_view.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        self.ticket_status_top = QLabel("Статус: —")
+        self.ticket_status_top.setStyleSheet(
+            "font-weight: 700; padding: 10px 14px; border-radius: 14px; background: #e8f3ff; color: #16456b;"
         )
-        self.timeline_view.setStyleSheet(
-            "QTextEdit { background: #eaf4ff; border: 1px solid #d8e7f6; border-radius: 22px; padding: 14px; font-size: 13px; }"
+        center_layout.addWidget(self.ticket_status_top)
+
+        self.top_pinned_info = QLabel("Код авторизации и ссылка тикета появятся здесь.")
+        self.top_pinned_info.setWordWrap(True)
+        self.top_pinned_info.setTextFormat(Qt.TextFormat.RichText)
+        self.top_pinned_info.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
         )
-        center_layout.addWidget(self.timeline_view, 1)
+        self.top_pinned_info.setOpenExternalLinks(True)
+        self.top_pinned_info.linkActivated.connect(self._on_top_info_link_activated)
+        self.top_pinned_info.setStyleSheet(
+            "padding: 10px 12px; border: 1px solid #b9dbfb; border-radius: 12px; background: #e8f3ff; color: #1b5f93;"
+        )
+        center_layout.addWidget(self.top_pinned_info)
+
+        self.pinned_messages_widget = QWidget()
+        pinned_row = QHBoxLayout(self.pinned_messages_widget)
+        pinned_row.setContentsMargins(8, 8, 8, 8)
+        pinned_row.setSpacing(8)
+        self.pinned_messages_label = QLabel("")
+        self.pinned_messages_label.setWordWrap(True)
+        self.pinned_messages_label.setStyleSheet(
+            "color: #1e3a8a;"
+        )
+        self.pinned_clear_btn = QPushButton("✕")
+        self.pinned_clear_btn.setFixedSize(28, 28)
+        self.pinned_clear_btn.clicked.connect(self._clear_pinned_messages_for_active_ticket)
+        pinned_row.addWidget(self.pinned_messages_label, 1)
+        pinned_row.addWidget(self.pinned_clear_btn)
+        self.pinned_messages_widget.setStyleSheet(
+            "border: 1px dashed #9dcdf7; border-radius: 12px; background: #f3f9ff;"
+        )
+        self.pinned_messages_widget.hide()
+        center_layout.addWidget(self.pinned_messages_widget)
+
+        self.reply_stub_label = QLabel("")
+        self.reply_stub_label.setWordWrap(True)
+        self.reply_stub_label.setStyleSheet(
+            "padding: 6px 10px; border-radius: 10px; background: #fff8e8; color: #8b5a11; border: 1px solid #f5cf71;"
+        )
+        self.reply_stub_label.hide()
+        center_layout.addWidget(self.reply_stub_label)
+
+        self.timeline_scroll = QScrollArea()
+        self.timeline_scroll.setWidgetResizable(True)
+        self.timeline_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.timeline_scroll.setStyleSheet(
+            """
+            QScrollArea { background: #edf6ff; border: 1px solid #d6e5f3; border-radius: 22px; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 0px;
+                margin: 8px 4px 8px 4px;
+                border-radius: 8px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(30, 64, 175, 120);
+                min-height: 40px;
+                border-radius: 8px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar:vertical:hover, QScrollBar:vertical:pressed { width: 10px; background: rgba(148, 163, 184, 70); }
+            """
+        )
+        self.timeline_container = QWidget()
+        self.timeline_layout = QVBoxLayout(self.timeline_container)
+        self.timeline_layout.setContentsMargins(14, 14, 14, 14)
+        self.timeline_layout.setSpacing(10)
+        self.timeline_scroll.setWidget(self.timeline_container)
+        center_layout.addWidget(self.timeline_scroll, 1)
 
         self.input_line = QLineEdit()
         self.input_line.setPlaceholderText("Сообщение в тикет")
         self.input_line.returnPressed.connect(self._on_send)
         center_layout.addWidget(self.input_line)
 
+        self.resolution_message_widget = QWidget()
+        resolution_layout = QHBoxLayout(self.resolution_message_widget)
+        resolution_layout.setContentsMargins(10, 8, 10, 8)
+        self.resolution_message_widget.setStyleSheet(
+            "background: #fff7ed; border: 1px solid #fdba74; border-radius: 12px;"
+        )
+        self.resolution_prompt_label = QLabel(
+            "Поддержка перевела тикет в статус 'Решён'. Подтвердить закрытие?"
+        )
+        self.resolution_confirm_btn = QPushButton("Подтвердить")
+        self.resolution_confirm_btn.clicked.connect(lambda: self._spawn_task(self._async_close_ticket()))
+        self.resolution_reject_btn = QPushButton("Отклонить")
+        self.resolution_reject_btn.clicked.connect(self._on_reject_resolution)
+        resolution_layout.addWidget(self.resolution_prompt_label, 1)
+        resolution_layout.addWidget(self.resolution_confirm_btn)
+        resolution_layout.addWidget(self.resolution_reject_btn)
+        self.resolution_message_widget.hide()
+        center_layout.addWidget(self.resolution_message_widget)
+
         actions = QHBoxLayout()
         self.send_btn = QPushButton("Отправить")
         self.send_btn.setObjectName("PrimaryButton")
         self.send_btn.clicked.connect(self._on_send)
-        self.attach_file_btn = QPushButton("Файл")
-        self.attach_file_btn.clicked.connect(self._on_attach_files)
+        self.attach_btn = QToolButton()
+        self.attach_btn.setText("📎")
+        self.attach_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.attach_btn.setToolTip("Прикрепить")
+        attach_menu = QMenu(self.attach_btn)
+        attach_menu.addAction("Прикрепить фото", self._on_attach_photo)
+        attach_menu.addAction("Прикрепить документ", self._on_attach_document)
+        attach_menu.addAction("Прикрепить любой файл", self._on_attach_any_file)
+        self.attach_btn.setMenu(attach_menu)
         self.media_btn = QPushButton("Скриншот / Видео")
         media_menu = QMenu(self.media_btn)
         media_menu.addAction("Сделать скриншот", self._on_send_screenshot)
@@ -463,12 +666,12 @@ class ChatPanel(QWidget):
         self.media_btn.setMenu(media_menu)
         self.tool_status_label = QLabel("")
         actions.addWidget(self.send_btn)
-        actions.addWidget(self.attach_file_btn)
+        actions.addWidget(self.attach_btn)
         actions.addWidget(self.media_btn)
         actions.addWidget(self.tool_status_label, 1)
         center_layout.addLayout(actions)
 
-        main_layout.addWidget(right_center, 1)
+        main_layout.addWidget(right_center, 3)
 
     def _profiles_dir_ready(self) -> None:
         self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
@@ -502,6 +705,16 @@ class ChatPanel(QWidget):
         self._ticket_search_query = text or ""
         self._update_tickets_list_ui()
 
+    def _on_ticket_filter_changed(self) -> None:
+        self._show_open_tickets = bool(self.filter_open_checkbox.isChecked())
+        self._show_closed_tickets = bool(self.filter_closed_checkbox.isChecked())
+        if not self._show_open_tickets and not self._show_closed_tickets:
+            self._show_open_tickets = True
+            self.filter_open_checkbox.blockSignals(True)
+            self.filter_open_checkbox.setChecked(True)
+            self.filter_open_checkbox.blockSignals(False)
+        self._update_tickets_list_ui()
+
     def _active_profile(self) -> Optional[dict]:
         active_id = self._profiles_data.get("active_profile_id")
         if not active_id:
@@ -522,6 +735,9 @@ class ChatPanel(QWidget):
         if profile.get("phone"):
             parts.append(profile["phone"])
         return " | ".join(parts)
+
+    def has_active_profile(self) -> bool:
+        return self._active_profile() is not None
 
     def open_profile_manager(self) -> None:
         dialog = QDialog(self)
@@ -702,6 +918,12 @@ class ChatPanel(QWidget):
         filtered_tickets: List[dict] = []
         for row in self.tickets_cache:
             ticket = row.get("ticket", row)
+            status = str(ticket.get("status") or "").strip().lower()
+            is_closed = status == "closed"
+            if is_closed and not self._show_closed_tickets:
+                continue
+            if (not is_closed) and not self._show_open_tickets:
+                continue
             if ticket_matches_query(ticket, self._ticket_search_query):
                 filtered_tickets.append(ticket)
 
@@ -760,14 +982,24 @@ class ChatPanel(QWidget):
         title = ticket.get("title") or "Без названия"
         status = ticket.get("status") or "unknown"
         status_fg, status_bg = ticket_status_colors(status)
-        self.ticket_info_label.setText(f"Тикет #{code}\n{title}")
-        self.ticket_status_label.setText(f"Статус: {ticket_status_label(status)}")
-        self.ticket_status_label.setStyleSheet(
-            f"font-weight: 700; padding: 8px 12px; border-radius: 999px; background: {status_bg}; color: {status_fg};"
+        safe_code = self._escape_html(str(code))
+        safe_title = self._escape_html(str(title))
+        self.ticket_info_label.setText(f"Тикет <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}")
+        self.ticket_status_top.setText(f"Статус тикета: {ticket_status_label(status)}")
+        self.ticket_status_top.setStyleSheet(
+            f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
         )
         self.ticket_meta_label.setText(self._build_ticket_meta_html(ticket))
-        self.close_ticket_btn.setEnabled(can_user_confirm_close(ticket))
+        self._refresh_top_pinned_info(ticket, messages)
+        self._refresh_pinned_messages_label(ticket.get("ticket_id") or "")
+        self._apply_ticket_background(status)
         requester_name = ticket.get("requester_display_name") or "Пользователь"
+        requester_profile = ticket.get("requester_profile") or {}
+        requester_full_name = (
+            requester_profile.get("full_name")
+            or ticket.get("requester_display_name")
+            or "Пользователь"
+        )
         assignee_name = ticket.get("assignee_id") or "Поддержка"
 
         items: List[tuple[float, str, str]] = []
@@ -777,44 +1009,20 @@ class ChatPanel(QWidget):
             text = (message.get("text") or "").strip()
             sender_kind = message_visual_role(message)
             sender = requester_name if sender_kind == "self" else assignee_name if sender_kind == "support" else "Система"
-            attachments_html = self._render_message_attachments(message)
-            text_html = self._escape_html(text).replace("\n", "<br>")
-            if sender_kind == "self":
-                block = (
-                    "<table width='100%' cellspacing='0' cellpadding='0' style='margin:10px 0;'>"
-                    "<tr><td align='right'>"
-                    "<div style='font-size:11px; color:#53708c; margin-bottom:4px;'>Вы</div>"
-                    "<table cellspacing='0' cellpadding='0' style='margin-left:auto;'><tr>"
-                    f"<td style='background:#d9fdd3; color:#153d2a; padding:10px 14px; border:1px solid #bee9b8; border-radius:16px;'>"
-                    f"{text_html or 'Вложение'}{attachments_html}</td>"
-                    "</tr></table>"
-                    f"<div style='font-size:11px; color:#7b91a8; margin-top:4px;'>{self._format_ts(ts)}</div>"
-                    "</td></tr></table>"
+            items.append(
+                (
+                    self._ts_sort_value(ts),
+                    "msg",
+                    {
+                        "bubble_role": "self" if sender_kind == "self" else "support" if sender_kind == "support" else "event",
+                        "sender": requester_full_name if sender_kind == "self" else sender,
+                        "text": text or "Вложение",
+                        "attachments": self._message_attachment_labels(message),
+                        "ts_text": self._format_ts(ts),
+                        "menu_text": text or " ".join(self._message_attachment_labels(message)),
+                    },
                 )
-            elif sender_kind == "support":
-                block = (
-                    "<table width='100%' cellspacing='0' cellpadding='0' style='margin:10px 0;'>"
-                    "<tr><td align='left'>"
-                    f"<div style='font-size:11px; color:#53708c; margin-bottom:4px;'>{self._escape_html(sender)}</div>"
-                    "<table cellspacing='0' cellpadding='0'><tr>"
-                    f"<td style='background:#ffffff; color:#1f2937; padding:10px 14px; border:1px solid #d5e3f1; border-radius:16px;'>"
-                    f"{text_html or 'Вложение'}{attachments_html}</td>"
-                    "</tr></table>"
-                    f"<div style='font-size:11px; color:#7b91a8; margin-top:4px;'>{self._format_ts(ts)}</div>"
-                    "</td></tr></table>"
-                )
-            else:
-                block = (
-                    "<table width='100%' cellspacing='0' cellpadding='0' style='margin:10px 0;'>"
-                    "<tr><td align='center'>"
-                    "<table cellspacing='0' cellpadding='0'><tr>"
-                    f"<td style='background:#f8fafc; color:#475569; padding:8px 12px; border:1px solid #dbe2ea; border-radius:16px;'>"
-                    f"{text_html or 'Событие'}{attachments_html}</td>"
-                    "</tr></table>"
-                    f"<div style='font-size:11px; color:#7b91a8; margin-top:4px;'>{self._format_ts(ts)}</div>"
-                    "</td></tr></table>"
-                )
-            items.append((self._ts_sort_value(ts), "msg", block))
+            )
 
         _HIDDEN = frozenset({
             "chat_message", "job_started", "job_running", "job_succeeded", "job_completed",
@@ -829,44 +1037,43 @@ class ChatPanel(QWidget):
                 continue
             ts = event.get("ts")
             line = self._format_event_text(event)
-            block = (
-                f'<div style="text-align:center; margin:10px 0;"><span style="background:#f8fafc; color:#475569; padding:6px 12px; border-radius:999px; '
-                f'font-size:12px; border: 1px solid #dbe2ea;">'
-                f'⚙ {self._escape_html(line)}</span><br><span style="font-size:11px; color:#999;">{self._format_ts(ts)}</span></div>'
+            items.append(
+                (
+                    self._ts_sort_value(ts),
+                    "event",
+                    {
+                        "bubble_role": "event",
+                        "sender": "",
+                        "text": f"⚙ {line}",
+                        "attachments": [],
+                        "ts_text": self._format_ts(ts),
+                        "menu_text": "",
+                    },
+                )
             )
-            items.append((self._ts_sort_value(ts), "event", block))
 
         items.sort(key=lambda x: x[0])
-        if items:
-            html = "<div style='font-family: Segoe UI;'>" + "<br>".join(block for _, _, block in items) + "</div>"
-        else:
-            html = "<p style='color:#64748b;'>Пока нет сообщений.</p>"
 
         self._maybe_prompt_resolution_confirmation(ticket)
 
-        if self.timeline_view.textCursor().hasSelection():
+        if self._bubble_menu_open:
             self._pending_ticket_snapshot = (dict(ticket), list(messages), list(events))
             return
 
-        if html == self._last_timeline_html:
+        signature = self._build_timeline_signature(ticket, messages, events)
+        if signature == self._last_timeline_html:
             self._pending_ticket_snapshot = None
             return
 
-        scroll_bar = self.timeline_view.verticalScrollBar()
+        scroll_bar = self.timeline_scroll.verticalScrollBar()
         previous_value = scroll_bar.value()
         previous_max = scroll_bar.maximum()
         stick_to_bottom = previous_max == 0 or previous_value >= max(previous_max - 24, 0)
-        self.timeline_view.setHtml(html)
-        self._last_timeline_html = html
+        self._render_timeline_widgets(items)
+        self._last_timeline_html = signature
         self._pending_ticket_snapshot = None
 
-        def restore_scroll() -> None:
-            if stick_to_bottom:
-                scroll_bar.setValue(scroll_bar.maximum())
-            else:
-                scroll_bar.setValue(min(previous_value, scroll_bar.maximum()))
-
-        QTimer.singleShot(0, restore_scroll)
+        self._restore_timeline_scroll(previous_value, stick_to_bottom)
 
     def _build_ticket_meta_html(self, ticket: dict) -> str:
         requester = ticket.get("requester_display_name") or "Пользователь"
@@ -886,7 +1093,7 @@ class ChatPanel(QWidget):
             ("Обновлён", self._format_ts(ticket.get("updated_at")) or "—"),
             ("Решён", self._format_ts(ticket.get("resolved_at")) or "—"),
             ("Закрыт", self._format_ts(ticket.get("closed_at")) or "—"),
-            ("Описание", ticket.get("description") or "—"),
+            ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
         return "".join(
             f"<div style='margin-bottom:6px;'><span style='color:#64748b;'>{self._escape_html(label)}:</span> "
@@ -894,7 +1101,7 @@ class ChatPanel(QWidget):
             for label, value in rows
         )
 
-    def _render_message_attachments(self, message: dict) -> str:
+    def _message_attachment_labels(self, message: dict) -> List[str]:
         attachments = message.get("attachments") or []
         attachment_refs = message.get("attachment_refs") or []
         labels: List[str] = []
@@ -902,18 +1109,115 @@ class ChatPanel(QWidget):
             if not isinstance(item, dict):
                 continue
             label = item.get("name") or item.get("artifact_id") or item.get("mime_type") or "Вложение"
-            labels.append(str(label))
+            mime = str(item.get("mime_type") or "").lower()
+            prefix = "📷 " if mime.startswith("image/") else "📎 "
+            labels.append(f"{prefix}{label}")
         if not labels and attachment_refs:
-            labels = [str(ref) for ref in attachment_refs[:5]]
-        if not labels:
-            return ""
-        return "".join(
-            f"<div style='margin-top:6px; font-size:11px; color:#53708c;'>📎 {self._escape_html(label)}</div>"
-            for label in labels
-        )
+            labels = [f"📎 {ref}" for ref in attachment_refs[:5]]
+        return labels
+
+    def _build_timeline_signature(self, ticket: dict, messages: List[dict], events: List[dict]) -> str:
+        merged_events = list(events) + self.local_action_buffer.get(self.active_ticket_id, [])
+        payload = {
+            "ticket_id": ticket.get("ticket_id"),
+            "ticket_status": ticket.get("status"),
+            "ticket_updated_at": ticket.get("updated_at"),
+            "messages": [
+                {
+                    "id": msg.get("message_id"),
+                    "ts": msg.get("ts"),
+                    "text": msg.get("text"),
+                    "from_role": msg.get("from_role"),
+                    "attachments": msg.get("attachments"),
+                    "attachment_refs": msg.get("attachment_refs"),
+                }
+                for msg in messages
+            ],
+            "events": merged_events,
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+    def _restore_timeline_scroll(self, previous_value: int, stick_to_bottom: bool) -> None:
+        scroll_bar = self.timeline_scroll.verticalScrollBar()
+
+        def apply_scroll() -> None:
+            if stick_to_bottom:
+                scroll_bar.setValue(scroll_bar.maximum())
+            else:
+                scroll_bar.setValue(min(previous_value, scroll_bar.maximum()))
+
+        QTimer.singleShot(0, apply_scroll)
+        QTimer.singleShot(30, apply_scroll)
+        QTimer.singleShot(90, apply_scroll)
+
+    def _clear_timeline_widgets(self) -> None:
+        self._timeline_bubbles.clear()
+        while self.timeline_layout.count():
+            item = self.timeline_layout.takeAt(0)
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.deleteLater()
+            elif child_layout is not None:
+                while child_layout.count():
+                    sub_item = child_layout.takeAt(0)
+                    sub_widget = sub_item.widget()
+                    if sub_widget is not None:
+                        sub_widget.deleteLater()
+
+    def _message_bubble_max_width(self) -> int:
+        viewport_width = max(self.timeline_scroll.viewport().width(), 480)
+        return int(viewport_width * 0.68)
+
+    def _create_timeline_row(self, bubble: MessageBubbleWidget, alignment: str) -> QWidget:
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+        bubble.setMaximumWidth(self._message_bubble_max_width())
+        self._timeline_bubbles.append(bubble)
+
+        if alignment == "right":
+            row_layout.addStretch(1)
+            row_layout.addWidget(bubble)
+        elif alignment == "center":
+            row_layout.addStretch(1)
+            row_layout.addWidget(bubble)
+            row_layout.addStretch(1)
+        else:
+            row_layout.addWidget(bubble)
+            row_layout.addStretch(1)
+        return row
+
+    def _render_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
+        self._clear_timeline_widgets()
+        if not items:
+            empty = MessageBubbleWidget(self, "event", "", "Пока нет сообщений.", "", [])
+            self.timeline_layout.addWidget(self._create_timeline_row(empty, "center"))
+            return
+
+        for _sort_value, kind, payload in items:
+            bubble = MessageBubbleWidget(
+                self,
+                payload.get("bubble_role", "event"),
+                payload.get("sender", ""),
+                payload.get("text", ""),
+                payload.get("ts_text", ""),
+                payload.get("attachments", []),
+                payload.get("menu_text", ""),
+            )
+            alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
+            self.timeline_layout.addWidget(self._create_timeline_row(bubble, alignment))
+        self.timeline_layout.addStretch(1)
+
+    def _update_timeline_bubble_widths(self) -> None:
+        max_width = self._message_bubble_max_width()
+        for bubble in self._timeline_bubbles:
+            bubble.setMaximumWidth(max_width)
 
     def _maybe_prompt_resolution_confirmation(self, ticket: dict) -> None:
         if not ticket or not can_user_confirm_close(ticket):
+            self.resolution_message_widget.hide()
             return
         ticket_id = str(ticket.get("ticket_id") or "")
         prompt_key = f"{ticket_id}:{ticket.get('resolved_at') or ticket.get('updated_at') or 'resolved'}"
@@ -922,24 +1226,7 @@ class ChatPanel(QWidget):
         self._resolution_prompt_keys.add(prompt_key)
         self._resolution_prompt_open_for = ticket_id
 
-        box = QMessageBox(self)
-        box.setWindowTitle("Подтвердить решение")
-        box.setText(
-            "Поддержка перевела тикет в статус 'Решён'.\n"
-            "Если всё действительно исправлено, подтвердите закрытие."
-        )
-        box.setIcon(QMessageBox.Icon.Question)
-        confirm_btn = box.addButton("Подтвердить и закрыть", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Позже", QMessageBox.ButtonRole.RejectRole)
-        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-
-        def on_finished(_result: int) -> None:
-            self._resolution_prompt_open_for = None
-            if box.clickedButton() == confirm_btn and self.active_ticket_id == ticket_id:
-                self._spawn_task(self._async_close_ticket())
-
-        box.finished.connect(on_finished)
-        box.open()
+        self.resolution_message_widget.show()
 
     def _ts_sort_value(self, value) -> float:
         if value is None:
@@ -1013,28 +1300,99 @@ class ChatPanel(QWidget):
     def _format_event_text(self, event: dict) -> str:
         event_type = event.get("type") or event.get("event_type") or "event"
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        tool_name = str(event.get("tool_name") or payload.get("tool_name") or "").strip()
+        action = str(event.get("action") or payload.get("action") or "").strip()
+        status = str(event.get("status") or payload.get("status") or "").strip().lower()
+        message = str(event.get("message") or payload.get("message") or payload.get("description") or "").strip()
+        error = str(payload.get("error") or payload.get("error_message") or "").strip()
 
-        details: List[str] = []
-        for key in ("tool_name", "action", "status", "message"):
-            value = event.get(key)
-            if not value:
-                value = payload.get(key)
-            if value:
-                details.append(f"{key}={value}")
+        tool_label = self._friendly_tool_name(tool_name or action)
+        status_label = self._friendly_status_label(status)
 
-        if not details and payload:
-            summary_keys = ["result", "error", "code", "description"]
-            for key in summary_keys:
-                value = payload.get(key)
-                if value:
-                    details.append(f"{key}={value}")
-                    break
+        if event_type == "tool_requested":
+            return f"Запрошено действие {tool_label}."
+        if event_type == "tool_started":
+            return f"Запущено действие {tool_label}."
+        if event_type == "tool_running":
+            return message or f"Действие {tool_label} выполняется."
+        if event_type == "tool_finished":
+            if error:
+                return f"Действие {tool_label} завершилось с ошибкой: {error}"
+            if status_label:
+                return f"Действие {tool_label} завершено: {status_label}."
+            return f"Действие {tool_label} завершено."
+        if event_type == "tool_result":
+            if message:
+                return f"Результат действия {tool_label}: {message}"
+            return f"Получен результат действия {tool_label}."
+        if event_type == "collect_progress":
+            return message or f"Идёт выполнение действия {tool_label}."
+        if event_type == "consent_required":
+            return f"Нужно подтвердить действие {tool_label}."
+        if event_type == "notification":
+            return message or "Получено уведомление."
+        if event_type == "module_observation":
+            return message or f"Получено сообщение от модуля {tool_label}."
+        if event_type == "agent_action":
+            if action:
+                return f"Агент выполняет действие: {self._friendly_action_label(action)}."
+            return message or "Агент выполняет действие."
 
-        if details:
-            return f"{event_type} | " + " | ".join(details)
-        return event_type
+        if message:
+            return message
+        if action:
+            return f"Событие: {self._friendly_action_label(action)}."
+        return self._friendly_action_label(event_type)
+
+    @staticmethod
+    def _friendly_status_label(status: str) -> str:
+        mapping = {
+            "ok": "успешно",
+            "success": "успешно",
+            "succeeded": "успешно",
+            "done": "успешно",
+            "finished": "завершено",
+            "running": "выполняется",
+            "pending": "ожидание",
+            "queued": "в очереди",
+            "failed": "ошибка",
+            "error": "ошибка",
+            "denied": "отклонено",
+            "cancelled": "отменено",
+            "canceled": "отменено",
+        }
+        return mapping.get((status or "").strip().lower(), status or "")
+
+    @staticmethod
+    def _friendly_tool_name(name: str) -> str:
+        raw = (name or "").strip()
+        if not raw:
+            return "«действие»"
+        mapping = {
+            "screen.collect": "«Скриншот экрана»",
+            "screen.record": "«Запись экрана»",
+            "screen.capture": "«Снимок экрана»",
+        }
+        return mapping.get(raw, f"«{raw}»")
+
+    @staticmethod
+    def _friendly_action_label(action: str) -> str:
+        raw = (action or "").strip()
+        if not raw:
+            return "действие"
+        mapping = {
+            "prepare_screen_capture": "подготовка скриншота",
+            "screen_capture_done": "скриншот готов",
+            "prepare_screen_recording": "подготовка записи экрана",
+            "screen_recording_done": "запись экрана завершена",
+        }
+        return mapping.get(raw, raw.replace("_", " "))
 
     def _on_create_ticket(self) -> None:
+        if not self.has_active_profile():
+            QMessageBox.warning(self, "Профиль обязателен", "Сначала заполните и выберите профиль инициатора.")
+            self.open_profile_manager()
+            return
         dialog = TicketCreateDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -1109,9 +1467,20 @@ class ChatPanel(QWidget):
     async def _async_send_message(self, text: str) -> None:
         try:
             self.send_btn.setEnabled(False)
-            await self.ticket_client.send_message(self.active_ticket_id, text, from_role="user")
+            metadata = None
+            if self._reply_target:
+                metadata = {
+                    PINNED_STUB_META_KEY: {
+                        "source": "agent_gui_stub",
+                        "target_preview": self._reply_target.get("preview", ""),
+                        "target_ts": self._reply_target.get("ts"),
+                    }
+                }
+            await self.ticket_client.send_message(self.active_ticket_id, text, from_role="user", metadata=metadata)
             self.input_line.clear()
+            self._clear_reply_stub()
             await self._async_refresh_ticket_detail()
+            self._restore_timeline_scroll(0, True)
         except Exception as exc:
             logger.error(f"Ошибка отправки сообщения: {exc}")
             QMessageBox.critical(self, "Ошибка", str(exc))
@@ -1123,6 +1492,27 @@ class ChatPanel(QWidget):
             QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
             return
         files, _ = QFileDialog.getOpenFileNames(self, "Выберите вложения")
+        if not files:
+            return
+        self._spawn_task(self._async_attach_files(files))
+
+    def _on_attach_photo(self) -> None:
+        self._pick_and_attach_files("Выберите фото", "Изображения (*.png *.jpg *.jpeg *.bmp *.webp)")
+
+    def _on_attach_document(self) -> None:
+        self._pick_and_attach_files(
+            "Выберите документ",
+            "Документы (*.pdf *.doc *.docx *.txt *.rtf *.xls *.xlsx *.csv *.ppt *.pptx)"
+        )
+
+    def _on_attach_any_file(self) -> None:
+        self._pick_and_attach_files("Выберите файл", "Все файлы (*.*)")
+
+    def _pick_and_attach_files(self, title: str, file_filter: str) -> None:
+        if not self.active_ticket_id:
+            QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
+            return
+        files, _ = QFileDialog.getOpenFileNames(self, title, "", file_filter)
         if not files:
             return
         self._spawn_task(self._async_attach_files(files))
@@ -1161,6 +1551,7 @@ class ChatPanel(QWidget):
             self.input_line.clear()
             self.tool_status_label.setText(f"Отправлено вложений: {len(refs)}")
             await self._async_refresh_ticket_detail()
+            self._restore_timeline_scroll(0, True)
         except Exception as exc:
             logger.error(f"Ошибка отправки вложений: {exc}")
             self.tool_status_label.setText("Ошибка отправки вложений")
@@ -1200,33 +1591,9 @@ class ChatPanel(QWidget):
             self.tool_status_label.setText(f"Ошибка {tool_name}")
             QMessageBox.warning(self, "Инструмент", str(exc))
 
-    def _on_close_ticket(self) -> None:
-        if not self.active_ticket_id:
-            return
-        ticket = next(
-            (
-                row.get("ticket", row)
-                for row in self.tickets_cache
-                if (row.get("ticket", row) or {}).get("ticket_id") == self.active_ticket_id
-            ),
-            {},
-        )
-        if not can_user_confirm_close(ticket):
-            QMessageBox.information(
-                self,
-                "Закрытие недоступно",
-                "Подтвердить закрытие можно только когда тикет уже переведён в статус 'Решён'.",
-            )
-            return
-        confirm = QMessageBox.question(
-            self,
-            "Подтвердить закрытие",
-            "Закрыть тикет как подтверждённо решённый?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-        self._spawn_task(self._async_close_ticket())
+    def _on_reject_resolution(self) -> None:
+        self.resolution_message_widget.hide()
+        QMessageBox.information(self, "Решение отклонено", "Вы можете продолжить переписку в тикете.")
 
     async def _async_close_ticket(self) -> None:
         try:
@@ -1273,3 +1640,146 @@ class ChatPanel(QWidget):
     def _show_chat_screen(self) -> None:
         self.stacked.setCurrentWidget(self.chat_screen)
         self.input_line.setFocus()
+
+    def _open_message_context_menu(self, global_pos, message_text: str) -> None:
+        menu = QMenu(self)
+        copy_action = menu.addAction("Копировать текст")
+        reply_action = menu.addAction("Ответить (заглушка)")
+        pin_action = menu.addAction("Закрепить сообщение")
+        self._bubble_menu_open = True
+        try:
+            chosen = menu.exec(global_pos)
+        finally:
+            self._bubble_menu_open = False
+        if chosen == copy_action:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(message_text)
+        elif chosen == reply_action:
+            self._set_reply_stub(message_text)
+        elif chosen == pin_action:
+            self._pin_selected_message(message_text)
+        if self._pending_ticket_snapshot:
+            snapshot = self._pending_ticket_snapshot
+            self._pending_ticket_snapshot = None
+            QTimer.singleShot(0, lambda: self._update_ticket_detail_ui(*snapshot))
+
+    def _set_reply_stub(self, selected_text: str) -> None:
+        if not self.active_ticket_id:
+            return
+        preview = (selected_text or "").strip()
+        if not preview:
+            QMessageBox.information(self, "Ответ", "Сначала выделите текст сообщения для ответа.")
+            return
+        preview = preview[:180]
+        self._reply_target = {"preview": preview, "ts": datetime.now().isoformat()}
+        self.reply_stub_label.setText(f"Ответ (заглушка) на: {preview}")
+        self.reply_stub_label.show()
+
+    def _clear_reply_stub(self) -> None:
+        self._reply_target = None
+        self.reply_stub_label.hide()
+        self.reply_stub_label.setText("")
+
+    def _pin_selected_message(self, selected_text: str) -> None:
+        ticket_id = self.active_ticket_id
+        if not ticket_id:
+            return
+        preview = (selected_text or "").strip()
+        if not preview:
+            QMessageBox.information(self, "Закрепить", "Сначала выделите текст сообщения для закрепления.")
+            return
+        items = self._pinned_messages.setdefault(ticket_id, [])
+        items.append({"text": preview[:220], "ts": datetime.now().isoformat()})
+        self._refresh_pinned_messages_label(ticket_id)
+
+    def _refresh_pinned_messages_label(self, ticket_id: str) -> None:
+        items = self._pinned_messages.get(ticket_id) or []
+        if not items:
+            self.pinned_messages_widget.hide()
+            return
+        lines = [f"• {item.get('text', '')}" for item in items[-3:]]
+        self.pinned_messages_label.setText("Закреплённые сообщения:\n" + "\n".join(lines))
+        self.pinned_messages_widget.show()
+
+    def _extract_public_access_code(self, ticket: dict, messages: List[dict]) -> str:
+        code = str(ticket.get("public_access_code") or "").strip().upper()
+        if code:
+            return code
+        for msg in reversed(messages or []):
+            metadata = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+            candidate = str(metadata.get("public_access_code") or "").strip().upper()
+            if candidate:
+                return candidate
+            text = str(msg.get("text") or "")
+            if "Код авторизации" in text:
+                match = re.search(r"\b[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}\b", text.upper())
+                if match:
+                    return match.group(0)
+        return ""
+
+    @staticmethod
+    def _append_access_code_to_url(url: str, code: str) -> str:
+        if not url or not code:
+            return url or ""
+        glue = "&" if "?" in url else "?"
+        return f"{url}{glue}code={code}"
+
+    def _refresh_top_pinned_info(self, ticket: dict, messages: List[dict]) -> None:
+        full_code = self._extract_public_access_code(ticket, messages)
+        code_hint = str(ticket.get("public_access_code_hint") or "").strip().upper()
+        shown_code = full_code or (f"****{code_hint}" if code_hint else "—")
+        raw_url = str(ticket.get("public_access_url") or "").strip()
+        url = self._append_access_code_to_url(raw_url, full_code)
+        if url:
+            self.top_pinned_info.setText(
+                f"Код авторизации: <a href='copy_auth_code:{self._escape_html(str(full_code or shown_code))}'><b>{self._escape_html(str(shown_code))}</b></a><br>"
+                f"Ссылка на веб-тикет: <a href='{self._escape_html(str(url))}'>{self._escape_html(str(url))}</a>"
+            )
+        else:
+            self.top_pinned_info.setText(
+                f"Код авторизации: <a href='copy_auth_code:{self._escape_html(str(full_code or shown_code))}'><b>{self._escape_html(str(shown_code))}</b></a><br>Ссылка: —"
+            )
+
+    def _apply_ticket_background(self, status: str) -> None:
+        normalized = str(status or "").strip().lower()
+        bg = "rgba(219, 234, 254, 0.25)"
+        if normalized == "resolved":
+            bg = "rgba(6, 78, 59, 0.18)"
+        elif normalized == "closed":
+            bg = "rgba(71, 85, 105, 0.14)"
+        self.chat_screen.setStyleSheet(
+            f"background: {bg}; border-radius: 10px;"
+        )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_timeline_bubble_widths()
+
+    def _clear_pinned_messages_for_active_ticket(self) -> None:
+        if not self.active_ticket_id:
+            return
+        self._pinned_messages.pop(self.active_ticket_id, None)
+        self._refresh_pinned_messages_label(self.active_ticket_id)
+
+    def _on_ticket_code_clicked(self, link: str) -> None:
+        prefix = "copy_ticket_code:"
+        if not link.startswith(prefix):
+            return
+        code = link[len(prefix):].strip()
+        if not code:
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(code)
+        QMessageBox.information(self, "Скопировано", f"Номер тикета скопирован: {code}")
+
+    def _on_top_info_link_activated(self, link: str) -> None:
+        prefix = "copy_auth_code:"
+        if not link.startswith(prefix):
+            return
+        code = link[len(prefix):].strip()
+        if not code or code == "—":
+            QMessageBox.information(self, "Код", "Код авторизации пока недоступен.")
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(code)
+        QMessageBox.information(self, "Скопировано", f"Код авторизации скопирован: {code}")
