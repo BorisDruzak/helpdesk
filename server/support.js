@@ -748,18 +748,39 @@
 
     function ensureEmbeddedTicketFrame(ticketId) {
         const frame = byId('embeddedTicketFrame');
-        const placeholder = byId('embeddedTicketPlaceholder');
-        if (!frame || !placeholder || !ticketId) {
+        if (!frame || !ticketId) {
             return;
         }
         const nextSrc = '/ticket.html?ticket_id=' + encodeURIComponent(ticketId) + '&embed=1&_shell=' + SUPPORT_SHELL_VERSION;
         if (frame.dataset.ticketId !== ticketId || frame.getAttribute('src') !== nextSrc) {
-            placeholder.textContent = 'Загрузка чата тикета…';
-            placeholder.classList.remove('hidden');
-            frame.classList.add('hidden');
+            frame.dataset.loadedTicketId = '';
             frame.dataset.ticketId = ticketId;
+            setEmbeddedTicketLoading(true, 'Загрузка чата тикета...');
             frame.src = nextSrc;
+            return;
         }
+        if (frame.dataset.loadedTicketId === ticketId) {
+            setEmbeddedTicketLoading(false, '');
+        } else {
+            setEmbeddedTicketLoading(true, 'Загрузка чата тикета...');
+        }
+    }
+
+    function setEmbeddedTicketLoading(isLoading, message) {
+        const frame = byId('embeddedTicketFrame');
+        const placeholder = byId('embeddedTicketPlaceholder');
+        const shell = frame ? frame.closest('.embedded-ticket-shell') : null;
+        if (shell) {
+            shell.classList.toggle('is-loading', !!isLoading);
+        }
+        if (frame) {
+            frame.dataset.loading = isLoading ? '1' : '0';
+        }
+        if (!placeholder) {
+            return;
+        }
+        placeholder.textContent = message || 'Загрузка чата тикета...';
+        placeholder.classList.toggle('hidden', !isLoading);
     }
 
     function renderWorkPane() {
@@ -771,9 +792,7 @@
             return;
         }
         if (!snapshot || !ticket) {
-            placeholder.textContent = 'Загрузка чата тикета…';
-            placeholder.classList.remove('hidden');
-            frame.classList.add('hidden');
+            setEmbeddedTicketLoading(true, 'Загрузка чата тикета...');
             return;
         }
         ensureEmbeddedTicketFrame(ticket.ticket_id);
@@ -1627,8 +1646,11 @@
             renderPipelinePanel();
         });
         byId('embeddedTicketFrame')?.addEventListener('load', () => {
-            byId('embeddedTicketPlaceholder')?.classList.add('hidden');
-            byId('embeddedTicketFrame')?.classList.remove('hidden');
+            const frame = byId('embeddedTicketFrame');
+            if (frame) {
+                frame.dataset.loadedTicketId = frame.dataset.ticketId || '';
+            }
+            setEmbeddedTicketLoading(false, '');
         });
         window.addEventListener('resize', applyLayoutClasses);
     }

@@ -478,6 +478,11 @@ body {
     position: relative;
 }
 
+.embedded-ticket-shell.is-loading .embedded-ticket-frame {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .embedded-ticket-placeholder {
     align-items: center;
     color: var(--support-muted);
@@ -497,6 +502,8 @@ body {
     flex: 1;
     height: 100%;
     min-height: 0;
+    opacity: 1;
+    transition: opacity 0.18s ease;
     width: 100%;
 }
 
