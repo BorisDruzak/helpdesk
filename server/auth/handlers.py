@@ -5,6 +5,7 @@ HTTP обработчики для аутентификации.
 from datetime import datetime, timezone
 from aiohttp import web
 from loguru import logger
+from auth.context import AuthType
 from .service import AuthService, ArchivedDeviceError
 from .connection_request_service import ConnectionRequestService
 from tech.runtime_audit import write_agent_runtime_audit
@@ -99,6 +100,7 @@ async def handle_ui_login(request):
         data = await request.json()
         login = data.get("login")
         password = data.get("password")
+        expected_role = str(data.get("expected_role") or "").strip().lower()
         
         if not login or not password:
             return web.json_response({
@@ -121,6 +123,19 @@ async def handle_ui_login(request):
         valid_roles = ("admin", "support", "auditor", "user")
         if actor_role not in valid_roles:
             actor_role = "admin"
+        if expected_role and expected_role in valid_roles and actor_role != expected_role:
+            logger.warning(
+                f"⚠️  UI login rejected due to role mismatch: login={login}, "
+                f"actual_role={actor_role}, expected_role={expected_role}"
+            )
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": f"Account role mismatch: expected {expected_role}, got {actor_role}",
+                    "actor_role": actor_role,
+                },
+                status=403,
+            )
         
         # Генерируем UI токен (срок действия 24 часа)
         try:
@@ -152,6 +167,29 @@ async def handle_ui_login(request):
             "status": "error",
             "error": str(e)
         }, status=500)
+
+
+async def handle_ui_session(request):
+    """GET /api/ui_session - returns current UI session actor and role."""
+    auth_context = request.get("auth_context")
+    if not auth_context or auth_context.auth_type != AuthType.UI_TOKEN:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Authentication required",
+                "error_code": "AUTH_REQUIRED",
+            },
+            status=401,
+        )
+
+    return web.json_response(
+        {
+            "status": "success",
+            "user_login": auth_context.actor_id,
+            "actor_role": auth_context.actor_role,
+            "auth_type": auth_context.auth_type.value,
+        }
+    )
 
 
 async def handle_get_device_tokens(request):

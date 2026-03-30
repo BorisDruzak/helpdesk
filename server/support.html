@@ -7,10 +7,10 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260330a">
+    <link rel="stylesheet" href="/support.css?v=20260330b">
 </head>
 <body>
-    <div id="loginContainer" class="support-login-shell">
+    <div id="loginContainer" class="support-login-shell hidden">
         <div class="support-login-card">
             <p class="support-login-eyebrow">Support Workspace</p>
             <h1>Вход в рабочее место поддержки</h1>
@@ -45,7 +45,7 @@
             <div class="support-topbar-actions">
                 <span id="workspaceSyncState" class="workspace-sync-state">Обновление по опросу</span>
                 <span id="authBadge" class="auth-badge">—</span>
-                <a class="btn btn-secondary" href="/admin?_shell=20260324b">Админка</a>
+                <a id="switchRoleBtn" class="btn btn-secondary" href="/login?_shell=20260330a&amp;target=admin">Войти как admin</a>
                 <button id="refreshWorkspaceBtn" class="btn btn-secondary" type="button">Обновить</button>
                 <button id="logoutBtn" class="btn btn-secondary" type="button">Выйти</button>
             </div>
@@ -128,21 +128,10 @@
                 </section>
 
                 <section id="workPane" class="stage-pane hidden">
-                    <div id="workTimeline" class="ticket-timeline"></div>
-                    <form id="composerForm" class="ticket-composer">
-                        <div class="composer-toolbar">
-                            <label class="composer-toggle">
-                                <input id="internalToggle" type="checkbox">
-                                <span>Внутренняя заметка</span>
-                            </label>
-                            <button id="insertPipelineBtn" class="btn btn-secondary" type="button">Вставить пайплайн</button>
-                        </div>
-                        <textarea id="messageInput" rows="5" placeholder="Введите сообщение или внутреннюю заметку"></textarea>
-                        <div class="composer-actions">
-                            <span id="composerHint" class="composer-hint">Ответ уйдёт в контекст текущего тикета.</span>
-                            <button id="sendMessageBtn" class="btn btn-primary" type="submit">Отправить</button>
-                        </div>
-                    </form>
+                    <div class="embedded-ticket-shell">
+                        <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета…</div>
+                        <iframe id="embeddedTicketFrame" class="embedded-ticket-frame hidden" title="Ticket Chat" loading="lazy"></iframe>
+                    </div>
                 </section>
 
                 <section id="observePane" class="stage-pane hidden">
@@ -215,6 +204,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260330a"></script>
+    <script src="/support.js?v=20260330b"></script>
 </body>
 </html>

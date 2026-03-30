@@ -30,6 +30,15 @@ except ImportError:
     DB_AVAILABLE = False
 
 
+def _is_closing_transport_error(error: Exception) -> bool:
+    message = str(error or "").lower()
+    return (
+        "cannot write to closing transport" in message
+        or "connection reset by peer" in message
+        or "websocket connection is closing" in message
+    )
+
+
 async def send_ticket_catchup(
     ws: web.WebSocketResponse,
     ticket_id: str,
@@ -655,6 +664,9 @@ async def websocket_ui_handler(request):
                 except json.JSONDecodeError:
                     logger.warning(f"⚠️  Получено не-JSON сообщение от UI")
                 except Exception as e:
+                    if _is_closing_transport_error(e):
+                        logger.debug("UI websocket closed while sending a response; suppressing transport noise")
+                        break
                     logger.error(f"❌ Ошибка обработки сообщения UI: {e}", exc_info=True)
             
             elif msg.type == WSMsgType.ERROR:

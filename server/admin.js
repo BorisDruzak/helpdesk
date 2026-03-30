@@ -1183,17 +1183,7 @@
         function queueOpenWorkbench(ticketId) {
             const id = String(ticketId || '').trim();
             if (!id) return;
-            workbenchTicketId = id;
-            const label = document.getElementById('workbenchTicketLabel');
-            const empty = document.getElementById('workbenchEmptyState');
-            const frame = document.getElementById('workbenchFrame');
-            if (label) label.textContent = 'Тикет: ' + id;
-            if (empty) empty.style.display = 'none';
-            if (frame) {
-                frame.style.display = 'block';
-                frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(id);
-            }
-            switchTab('workbench');
+            window.location.href = '/ticket.html?ticket_id=' + encodeURIComponent(id);
         }
 
         async function queueOrderServerMoveToPosition(ticketId, fromIdx, toIdx) {
@@ -1995,12 +1985,7 @@
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                if (queueWs && queueWs.readyState === WebSocket.OPEN) {
-                    queueState.subscribedTicketIds.forEach(tid => {
-                        try { queueWs.send(JSON.stringify({ type: 'unsubscribe_ticket', ticket_id: tid })); } catch (e) {}
-                    });
-                    queueState.subscribedTicketIds.clear();
-                }
+                return;
             } else if (document.visibilityState === 'visible') {
                 const tab = document.getElementById('tab-queue');
                 if (tab && tab.classList.contains('active') && queueWs?.readyState === WebSocket.OPEN)
@@ -5294,6 +5279,8 @@
 
         const AUTH_TOKEN_KEY = 'admin_auth_token';
         const USER_LOGIN_KEY = 'admin_user_login';
+        const ROLE_KEY = 'admin_actor_role';
+        const LOGIN_SHELL_VERSION = '20260330a';
 
         function cancelQueueReconnectTimer() {
             if (queueReconnectTimer) {
@@ -5326,14 +5313,28 @@
             cancelQueueReconnectTimer();
         }
 
+        function redirectToLogin(message) {
+            const params = new URLSearchParams();
+            params.set('_shell', LOGIN_SHELL_VERSION);
+            params.set('target', 'admin');
+            if (message) {
+                params.set('message', message);
+            }
+            window.location.href = '/login?' + params.toString();
+        }
+
+        function clearStoredSession() {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem(USER_LOGIN_KEY);
+            localStorage.removeItem(ROLE_KEY);
+        }
+
         function handleAuthFailure(message) {
             if (authSessionInvalid) {
                 return;
             }
             authSessionInvalid = true;
-            localStorage.removeItem(AUTH_TOKEN_KEY);
-            localStorage.removeItem(USER_LOGIN_KEY);
-            localStorage.removeItem('admin_actor_role');
+            clearStoredSession();
             if (typeof stopPolling === 'function') {
                 stopPolling();
             }
@@ -5346,12 +5347,7 @@
             }
             appInitialized = false;
             closeQueueWs();
-            showLogin();
-            const errorDiv = document.getElementById('loginError');
-            if (errorDiv) {
-                errorDiv.textContent = message || 'Сессия истекла. Войдите заново.';
-                errorDiv.style.display = 'block';
-            }
+            redirectToLogin(message || 'Session expired. Sign in again.');
         }
         
         // Check authentication on page load
@@ -5359,48 +5355,56 @@
             const token = localStorage.getItem(AUTH_TOKEN_KEY);
             if (token) {
                 // Verify token is still valid by making a test request
-                verifyToken(token);
+                verifySession(token);
             } else {
-                showLogin();
+                redirectToLogin();
             }
         });
         
         // Verify token by making a test API request
-        async function verifyToken(token) {
+        async function verifySession(token) {
             try {
-                const response = await fetch('/api/agents', {
+                const response = await fetch('/api/ui_session', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
                 
-                if (response.ok || response.status === 404) {
-                    // Token is valid (404 is ok for empty agents list)
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.status === 'success' && data.actor_role === 'admin') {
+                    if (data.user_login) {
+                        localStorage.setItem(USER_LOGIN_KEY, data.user_login);
+                    }
+                    if (data.actor_role) {
+                        localStorage.setItem(ROLE_KEY, data.actor_role);
+                    }
                     resetAuthSessionState();
-                    showMainContent(token);
-                    // Initialize app if not already initialized
+                    showMainContent();
                     if (typeof initializeApp === 'function') {
                         initializeApp();
                     }
+                } else if (response.ok && data.status === 'success') {
+                    clearStoredSession();
+                    redirectToLogin('Для админки нужна роль admin.');
                 } else if (response.status === 401) {
                     handleAuthFailure('Сессия панели истекла. Войдите заново.');
                 } else {
-                    showLogin();
+                    redirectToLogin();
                 }
             } catch (error) {
                 console.error('Token verification error:', error);
-                showLogin();
+                redirectToLogin();
             }
         }
         
         // Show login form, hide main content
         function showLogin() {
-            document.getElementById('loginContainer').style.display = 'flex';
-            document.getElementById('mainContent').style.display = 'none';
+            redirectToLogin();
         }
         
         // Show main content, hide login
-        function showMainContent(token) {
+        function showMainContent() {
             document.getElementById('loginContainer').style.display = 'none';
             document.getElementById('mainContent').style.display = 'block';
             // Ticket Queue is default tab: init if visible
@@ -5497,6 +5501,101 @@
             closeQueueWs();
             appInitialized = false;
             showLogin();
+        }
+
+        function showLogin() {
+            redirectToLogin();
+        }
+
+        function showMainContent() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            const queueTab = document.getElementById('tab-queue');
+            if (queueTab && queueTab.classList.contains('active')) {
+                const body = document.getElementById('queueTableBody');
+                if (body && !body.dataset.inited && typeof queueInit === 'function') {
+                    body.dataset.inited = '1';
+                    queueInit();
+                }
+            }
+            updateUserInfo(localStorage.getItem(USER_LOGIN_KEY) || '');
+        }
+
+        function updateUserInfo(login) {
+            const badge = document.getElementById('adminSessionBadge');
+            if (badge) {
+                const role = localStorage.getItem(ROLE_KEY) || 'admin';
+                badge.textContent = (login || '—') + ' • ' + role;
+            }
+            const switchBtn = document.getElementById('adminSwitchRoleBtn');
+            if (switchBtn) {
+                switchBtn.href = '/login?_shell=' + LOGIN_SHELL_VERSION + '&target=support';
+            }
+            const logoutBtn = document.getElementById('adminLogoutBtn');
+            if (logoutBtn && !logoutBtn.dataset.bound) {
+                logoutBtn.dataset.bound = '1';
+                logoutBtn.addEventListener('click', handleLogout);
+            }
+        }
+
+        async function verifySession(token) {
+            try {
+                const response = await fetch('/api/ui_session', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.status === 'success' && data.actor_role === 'admin') {
+                    if (data.user_login) {
+                        localStorage.setItem(USER_LOGIN_KEY, data.user_login);
+                    }
+                    if (data.actor_role) {
+                        localStorage.setItem(ROLE_KEY, data.actor_role);
+                    }
+                    resetAuthSessionState();
+                    showMainContent();
+                    if (typeof initializeApp === 'function') {
+                        initializeApp();
+                    }
+                    return;
+                }
+                if (response.ok && data.status === 'success') {
+                    clearStoredSession();
+                    redirectToLogin('Для админки нужна роль admin.');
+                    return;
+                }
+                if (response.status === 401) {
+                    handleAuthFailure('Сессия панели истекла. Войдите заново.');
+                    return;
+                }
+                redirectToLogin();
+            } catch (error) {
+                console.error('Token verification error:', error);
+                redirectToLogin();
+            }
+        }
+
+        async function handleLogin(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            redirectToLogin();
+        }
+
+        function handleLogout() {
+            resetAuthSessionState();
+            clearStoredSession();
+            if (typeof stopPolling === 'function') {
+                stopPolling();
+            }
+            if (typeof queueStopPolling === 'function') {
+                queueStopPolling();
+            }
+            closeQueueWs();
+            appInitialized = false;
+            redirectToLogin();
         }
         
         // Intercept all fetch calls to add auth token

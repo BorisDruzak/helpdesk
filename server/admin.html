@@ -7,11 +7,11 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Панель администратора</title>
-    <link rel="stylesheet" href="/admin.css?v=20260324b">
+    <link rel="stylesheet" href="/admin.css?v=20260330b">
 </head>
 <body>
     <!-- Форма входа -->
-    <div id="loginContainer">
+    <div id="loginContainer" style="display: none;">
         <div class="login-box">
             <h1>🔐 Вход в панель</h1>
             <p>Введите учётные данные для доступа в панель администратора</p>
@@ -42,21 +42,9 @@
             </div>
             <ul class="sidebar-menu">
                 <li class="sidebar-menu-item">
-                    <a href="/support?_shell=20260330a" class="tab-link">
-                        <span class="icon">💬</span>
-                        <span>Support Workspace</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
                     <a href="#" class="tab-link active" data-tab="queue">
                         <span class="icon">📋</span>
                         <span>Очередь тикетов</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
-                    <a href="#" class="tab-link" data-tab="workbench">
-                        <span class="icon">🧰</span>
-                        <span>Ticket Workbench</span>
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
@@ -94,6 +82,16 @@
 
         <!-- Main Content Area -->
         <div class="main-content-area">
+            <div id="adminSessionBar" class="admin-session-bar">
+                <div class="admin-session-copy">
+                    <span class="admin-session-label">Сессия</span>
+                    <strong id="adminSessionBadge">—</strong>
+                </div>
+                <div class="admin-session-actions">
+                    <a id="adminSwitchRoleBtn" class="btn btn-secondary" href="/login?_shell=20260330a&amp;target=support">Войти как support</a>
+                    <button id="adminLogoutBtn" type="button" class="btn btn-secondary">Выйти</button>
+                </div>
+            </div>
             <!-- Ticket Queue Tab (Stage 10.1) -->
             <div id="tab-queue" class="tab-content active">
                 <div id="queueToolbar" class="queue-toolbar">
@@ -1118,6 +1116,6 @@
     </div> <!-- End of app-layout -->
     </div> <!-- End of mainContent -->
 
-    <script src="/admin.js?v=20260324b"></script>
+    <script src="/admin.js?v=20260330b"></script>
 </body>
 </html>

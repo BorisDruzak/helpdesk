@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Вход в Help Desk</title>
+    <link rel="stylesheet" href="/login.css?v=20260330a">
+</head>
+<body>
+    <main class="login-shell">
+        <section class="login-panel">
+            <div class="login-brand">
+                <p class="login-eyebrow">Help Desk</p>
+                <h1>Выберите рабочую зону</h1>
+                <p class="login-subtitle">Администратор входит в админку, оператор поддержки — в support workspace.</p>
+            </div>
+
+            <div class="role-switch" id="roleSwitch" role="tablist" aria-label="Роль входа">
+                <button class="role-chip active" type="button" data-target="admin" role="tab" aria-selected="true">Админ</button>
+                <button class="role-chip" type="button" data-target="support" role="tab" aria-selected="false">Support</button>
+            </div>
+
+            <div class="role-card-wrap">
+                <article id="roleCard" class="role-card" data-target="admin">
+                    <h2 id="roleTitle">Вход в админку</h2>
+                    <p id="roleDescription">Управление системой, пользователями, очередями и настройками help desk.</p>
+                </article>
+            </div>
+
+            <form id="loginForm" class="login-form">
+                <label class="field">
+                    <span>Логин</span>
+                    <input id="loginInput" name="login" type="text" autocomplete="username" required>
+                </label>
+                <label class="field">
+                    <span>Пароль</span>
+                    <input id="passwordInput" name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <div id="loginError" class="message message-error hidden"></div>
+                <div id="loginHint" class="message hidden"></div>
+                <div class="login-actions">
+                    <button id="submitBtn" class="btn btn-primary" type="submit">Войти</button>
+                    <a id="directTargetLink" class="btn btn-secondary" href="/admin?_shell=20260330b">Открыть страницу</a>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script src="/login.js?v=20260330a"></script>
+</body>
+</html>

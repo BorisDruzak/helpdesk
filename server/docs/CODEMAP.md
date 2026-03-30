@@ -25,7 +25,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake |
-| `server/routes.py` | Регистрация всех HTTP и WS маршрутов |
+| `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket` и session endpoint `GET /api/ui_session` |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
 
 ---
@@ -110,9 +110,9 @@
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
 | `server/uploads/` | handlers |
-| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service |
+| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service; `handlers.py` также содержит UI login/session endpoints |
 | `server/playbook_handlers.py` | Старт playbook run |
-| `server/static_pages/` | handlers для admin, ticket, public_queue, CSS/JS |
+| `server/static_pages/` | handlers для login/admin/support/ticket/public_queue/help и их CSS/JS shell-файлов |
 
 ### 2.6 Утилиты (модули/manifest)
 | Файл | Назначение |
@@ -128,8 +128,9 @@
 | Файл | Назначение |
 |------|------------|
 | `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
-| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: inbox тикетов, режимы preview/work/observe, встроенный workbench drawer с поиском инструментов и черновиком пайплайна |
-| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Страница тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read и подтверждение решения |
+| `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
+| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: inbox тикетов, режимы preview/work/observe, встроенный workbench drawer; в work-режиме встраивает `ticket.html?embed=1` вместо упрощённого кастомного чата |
+| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Страница тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read и подтверждение решения; поддерживает `embed=1` для встраивания в support workspace |
 | `server/public_queue.html`, `server/public_queue.js` | Публичная очередь со ссылками на requester-вход в тикет |
 | `server/help.html`, `server/help.js`, `server/help.css` | Публичная страница requester: создание тикета, вход по коду, чат |
 | `server/static_pages/` | Обработчики страниц и статики |
@@ -153,7 +154,7 @@
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters)
-- **аутентификация, RBAC** — `auth/`, `auth/agent_token_service.py`, `docs/SECURITY_AND_AUTH.md`
+- **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` (overview, alerts, logs, agent timeline/actions, audits)

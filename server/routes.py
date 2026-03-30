@@ -5,7 +5,7 @@
 from aiohttp import web
 
 # Import handlers from modules
-from auth.handlers import handle_login, handle_ui_login, handle_get_device_tokens, handle_revoke_device_token
+from auth.handlers import handle_login, handle_ui_login, handle_ui_session, handle_get_device_tokens, handle_revoke_device_token
 from auth.connection_request_handlers import (
     handle_connection_request,
     handle_connection_request_status,
@@ -115,10 +115,13 @@ from uploads.handlers import handle_upload, handle_artifact_download
 from static_pages.handlers import (
     handle_index,
     handle_admin_page,
+    handle_login_page,
     handle_support_page,
     handle_favicon,
     handle_admin_css,
     handle_admin_js,
+    handle_login_css,
+    handle_login_js,
     handle_support_css,
     handle_support_js,
     handle_ticket_page,
@@ -247,6 +250,9 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.get('/', handle_index),
         web.get('/favicon.ico', handle_favicon),
+        web.get('/login', handle_login_page),
+        web.get('/login.css', handle_login_css),
+        web.get('/login.js', handle_login_js),
         web.get('/admin', handle_admin_page),
         web.get('/admin.css', handle_admin_css),
         web.get('/admin.js', handle_admin_js),
@@ -285,6 +291,7 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.post('/api/login', handle_login),
         web.post('/api/ui_login', handle_ui_login),  # UI user login
+        web.get('/api/ui_session', handle_ui_session),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
         # Connection request flow (no auth: agent requests token)
         web.post('/api/connection_request', handle_connection_request),

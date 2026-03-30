@@ -7,6 +7,8 @@
     const USER_LOGIN_KEY = 'admin_user_login';
     const ROLE_KEY = 'admin_actor_role';
     const LAST_TICKET_KEY = 'support_workspace_last_ticket';
+    const LOGIN_SHELL_VERSION = '20260330a';
+    const SUPPORT_SHELL_VERSION = '20260330b';
     const POLL_INTERVAL_MS = 8000;
     const ACTIVE_WORK_STATUSES = new Set(['triaged', 'in_progress', 'waiting_on_user', 'waiting_on_vendor', 'resolved']);
     const STATUS_LABELS = {
@@ -182,7 +184,7 @@
     }
 
     function canAccessWorkspace(role) {
-        return role === 'support' || role === 'admin' || role === 'auditor';
+        return role === 'support';
     }
 
     function setSyncState(text) {
@@ -223,6 +225,14 @@
         node.textContent = user + ' • ' + role;
     }
 
+    function updateSwitchRoleLink() {
+        const node = byId('switchRoleBtn');
+        if (!node) {
+            return;
+        }
+        node.href = '/login?_shell=' + LOGIN_SHELL_VERSION + '&target=admin';
+    }
+
     function applyLayoutClasses() {
         const layout = byId('supportLayout');
         if (!layout) {
@@ -232,9 +242,18 @@
         layout.classList.toggle('layout-drawer-collapsed', !state.drawerOpen);
     }
 
+    function redirectToLogin(message) {
+        const params = new URLSearchParams();
+        params.set('_shell', LOGIN_SHELL_VERSION);
+        params.set('target', 'support');
+        if (message) {
+            params.set('message', message);
+        }
+        window.location.href = '/login?' + params.toString();
+    }
+
     function showLoginScreen() {
-        byId('loginContainer')?.classList.remove('hidden');
-        byId('supportApp')?.classList.add('hidden');
+        redirectToLogin();
     }
 
     function showWorkspace() {
@@ -242,12 +261,16 @@
         byId('supportApp')?.classList.remove('hidden');
     }
 
-    function logout() {
-        stopPolling();
+    function clearStoredSession() {
         localStorage.removeItem(AUTH_TOKEN_KEY);
         localStorage.removeItem(USER_LOGIN_KEY);
         localStorage.removeItem(ROLE_KEY);
         sessionStorage.removeItem(LAST_TICKET_KEY);
+    }
+
+    function logout() {
+        stopPolling();
+        clearStoredSession();
         state.actorRole = '';
         state.userLogin = '';
         state.tickets = [];
@@ -258,8 +281,7 @@
         renderStage();
         renderContextPanel();
         renderToolPanels();
-        showLoginScreen();
-        setLoginError('');
+        redirectToLogin();
     }
 
     function syncSessionFromStorage() {
@@ -271,43 +293,27 @@
 
     async function handleLoginSubmit(event) {
         event.preventDefault();
-        setLoginError('');
-        const login = String(byId('loginInput')?.value || '').trim();
-        const password = String(byId('passwordInput')?.value || '').trim();
-        if (!login || !password) {
-            setLoginError('Введите логин и пароль.');
-            return;
+        redirectToLogin();
+    }
+
+    async function fetchCurrentSession() {
+        const token = getToken();
+        if (!token) {
+            return null;
         }
-        const button = event.submitter || byId('loginForm')?.querySelector('button[type="submit"]');
-        if (button) {
-            button.disabled = true;
+        const response = await fetch('/api/ui_session', {
+            headers: { Authorization: 'Bearer ' + token },
+        });
+        if (response.status === 401) {
+            clearStoredSession();
+            return null;
         }
-        try {
-            const response = await fetch('/api/ui_login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ login, password }),
-            });
-            const data = await responseToJson(response);
-            if (!response.ok || data.status !== 'success') {
-                throw new Error(data.error || 'Ошибка входа');
-            }
-            if (!canAccessWorkspace(data.actor_role)) {
-                throw new Error('Для этой страницы подходят только роли support, admin или auditor.');
-            }
-            localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-            localStorage.setItem(USER_LOGIN_KEY, data.user_login || login);
-            localStorage.setItem(ROLE_KEY, data.actor_role || '');
-            syncSessionFromStorage();
-            showWorkspace();
-            await initializeWorkspace();
-        } catch (error) {
-            setLoginError(error.message || 'Ошибка входа');
-        } finally {
-            if (button) {
-                button.disabled = false;
-            }
+        const data = await responseToJson(response);
+        if (!response.ok || data.status !== 'success') {
+            clearStoredSession();
+            return null;
         }
+        return data;
     }
 
     function startPolling() {
@@ -740,58 +746,37 @@
         return Object.keys(payload || {}).length ? JSON.stringify(payload, null, 2) : 'Системное событие';
     }
 
+    function ensureEmbeddedTicketFrame(ticketId) {
+        const frame = byId('embeddedTicketFrame');
+        const placeholder = byId('embeddedTicketPlaceholder');
+        if (!frame || !placeholder || !ticketId) {
+            return;
+        }
+        const nextSrc = '/ticket.html?ticket_id=' + encodeURIComponent(ticketId) + '&embed=1&_shell=' + SUPPORT_SHELL_VERSION;
+        if (frame.dataset.ticketId !== ticketId || frame.getAttribute('src') !== nextSrc) {
+            placeholder.textContent = 'Загрузка чата тикета…';
+            placeholder.classList.remove('hidden');
+            frame.classList.add('hidden');
+            frame.dataset.ticketId = ticketId;
+            frame.src = nextSrc;
+        }
+    }
+
     function renderWorkPane() {
         const snapshot = state.selectedSnapshot;
-        const timelineNode = byId('workTimeline');
-        const textarea = byId('messageInput');
-        const sendButton = byId('sendMessageBtn');
-        const internalToggle = byId('internalToggle');
-        if (!timelineNode || !textarea || !sendButton || !internalToggle) {
+        const ticket = selectedTicket();
+        const frame = byId('embeddedTicketFrame');
+        const placeholder = byId('embeddedTicketPlaceholder');
+        if (!frame || !placeholder) {
             return;
         }
-        if (!snapshot) {
-            timelineNode.innerHTML = '<div class="activity-item">Загрузка переписки…</div>';
-            textarea.disabled = true;
-            sendButton.disabled = true;
-            internalToggle.disabled = true;
+        if (!snapshot || !ticket) {
+            placeholder.textContent = 'Загрузка чата тикета…';
+            placeholder.classList.remove('hidden');
+            frame.classList.add('hidden');
             return;
         }
-        const events = (snapshot.events || []).filter((event) => !HIDDEN_TIMELINE_EVENT_TYPES.has(event.event_type));
-        timelineNode.innerHTML = events.length
-            ? events.map((event) => {
-                const payload = event.payload || {};
-                if (event.event_type === 'chat_message') {
-                    const role = displayRole(payload);
-                    const visibility = payload.visibility || 'public';
-                    const title = role === 'support' ? 'Поддержка' : 'Пользователь';
-                    return `
-                        <article class="message-card" data-role="${escapeHtml(role)}" data-visibility="${escapeHtml(visibility)}">
-                            <div class="message-card-head">
-                                <span class="message-role">${escapeHtml(title)}</span>
-                                <span class="timeline-meta">${escapeHtml(formatDate(event.created_at || event.ts))}</span>
-                            </div>
-                            <div class="timeline-tags">
-                                <span class="chip">${escapeHtml(visibility === 'internal' ? 'Внутреннее' : 'Публичное')}</span>
-                                ${payload.sender_display_name ? '<span class="chip">' + escapeHtml(payload.sender_display_name) + '</span>' : ''}
-                            </div>
-                            <div class="message-body">${escapeHtml(payload.text || '(без текста)')}</div>
-                        </article>
-                    `;
-                }
-                return `
-                    <article class="timeline-card">
-                        <div class="timeline-card-head">
-                            <strong>${escapeHtml(event.event_type)}</strong>
-                            <span class="timeline-meta">${escapeHtml(formatDate(event.created_at || event.ts))}</span>
-                        </div>
-                        <div class="timeline-body">${escapeHtml(eventSummary(event.event_type, payload))}</div>
-                    </article>
-                `;
-            }).join('')
-            : '<div class="activity-item">В этом тикете пока нет сообщений.</div>';
-        textarea.disabled = !canWrite() || !shouldWorkTicket(selectedTicket());
-        sendButton.disabled = textarea.disabled;
-        internalToggle.disabled = textarea.disabled;
+        ensureEmbeddedTicketFrame(ticket.ticket_id);
     }
 
     function renderStage() {
@@ -814,7 +799,8 @@
         const response = await fetch(url, options);
         const data = await responseToJson(response);
         if (response.status === 401) {
-            logout();
+            clearStoredSession();
+            redirectToLogin('Сессия поддержки истекла.');
             throw new Error('Сессия истекла. Войдите заново.');
         }
         if (!response.ok || data.status === 'error') {
@@ -1492,15 +1478,18 @@
             showToast('Пайплайн можно вставить только в рабочий чат своего тикета.', true);
             return;
         }
-        const textarea = byId('messageInput');
         const text = buildPipelineText();
-        if (!textarea || !text) {
+        if (!text) {
             showToast('Черновик пайплайна пуст.', true);
             return;
         }
-        const current = String(textarea.value || '').trim();
-        textarea.value = current ? (current + '\n\n' + text) : text;
-        textarea.focus();
+        const frame = byId('embeddedTicketFrame');
+        const api = frame && frame.contentWindow ? frame.contentWindow.ticketEmbedApi : null;
+        if (!api || typeof api.insertText !== 'function') {
+            showToast('Чат тикета ещё загружается. Попробуйте через секунду.', true);
+            return;
+        }
+        api.insertText(text);
         state.drawerTab = 'pipeline';
         renderToolPanels();
     }
@@ -1562,13 +1551,22 @@
             showLoginScreen();
             return;
         }
-        if (!canAccessWorkspace(state.actorRole)) {
+        const session = await fetchCurrentSession();
+        if (!session) {
             showLoginScreen();
-            setLoginError('Для этой страницы нужны роли support, admin или auditor.');
             return;
         }
+        if (!canAccessWorkspace(session.actor_role)) {
+            clearStoredSession();
+            redirectToLogin('Для support workspace нужна роль support.');
+            return;
+        }
+        localStorage.setItem(USER_LOGIN_KEY, session.user_login || '');
+        localStorage.setItem(ROLE_KEY, session.actor_role || '');
+        syncSessionFromStorage();
         showWorkspace();
         updateAuthBadge();
+        updateSwitchRoleLink();
         applyLayoutClasses();
         renderTicketList();
         renderStage();
@@ -1579,7 +1577,6 @@
     }
 
     function bindEvents() {
-        byId('loginForm')?.addEventListener('submit', handleLoginSubmit);
         byId('logoutBtn')?.addEventListener('click', logout);
         byId('refreshWorkspaceBtn')?.addEventListener('click', async () => {
             try {
@@ -1621,8 +1618,6 @@
             state.toolSearch = String(byId('toolSearchInput')?.value || '').trim();
             await renderToolPanels();
         });
-        byId('composerForm')?.addEventListener('submit', handleComposerSubmit);
-        byId('insertPipelineBtn')?.addEventListener('click', insertPipelineIntoEditor);
         byId('pipelineInsertBtn')?.addEventListener('click', insertPipelineIntoEditor);
         byId('pipelineSendBtn')?.addEventListener('click', async () => {
             await sendPipelineToChat();
@@ -1631,13 +1626,17 @@
             state.pipeline = [];
             renderPipelinePanel();
         });
+        byId('embeddedTicketFrame')?.addEventListener('load', () => {
+            byId('embeddedTicketPlaceholder')?.classList.add('hidden');
+            byId('embeddedTicketFrame')?.classList.remove('hidden');
+        });
         window.addEventListener('resize', applyLayoutClasses);
     }
 
     async function init() {
         bindEvents();
         syncSessionFromStorage();
-        if (getToken() && canAccessWorkspace(state.actorRole)) {
+        if (getToken()) {
             await initializeWorkspace();
             return;
         }

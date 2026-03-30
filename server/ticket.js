@@ -5,6 +5,7 @@
 (function () {
     const AUTH_TOKEN_KEY = 'admin_auth_token';
     const POLL_FALLBACK_MS = 25000;
+    const EMBED_MODE = new URLSearchParams(window.location.search).get('embed') === '1';
     const STATUS_LABELS = {
         new: 'Новая', triaged: 'В очереди у оператора', in_progress: 'В работе',
         waiting_on_user: 'Ожидание ответа пользователя', waiting_on_vendor: 'Ожидание внешней стороны',
@@ -74,6 +75,33 @@
         return h;
     }
     function el(id) { return document.getElementById(id); }
+
+    function exposeEmbedApi() {
+        window.ticketEmbedApi = {
+            insertText(text) {
+                const textarea = el('messageInput');
+                if (!textarea || !text) return false;
+                const current = String(textarea.value || '').trim();
+                textarea.value = current ? (current + '\n\n' + text) : text;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                textarea.focus();
+                return true;
+            },
+            focusComposer() {
+                const textarea = el('messageInput');
+                if (!textarea) return false;
+                textarea.focus();
+                return true;
+            },
+            setInternalMode(enabled) {
+                const toggle = el('internalToggle');
+                if (!toggle) return false;
+                toggle.checked = !!enabled;
+                toggle.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+        };
+    }
 
     function statusLabel(s) { return s ? (STATUS_LABELS[s] || s) : '—'; }
     function priorityLabel(p) { return p ? ((PRIORITY_LABELS[p] || p) + ' (' + p + ')') : '—'; }
@@ -1718,6 +1746,10 @@
     function init() {
         const pathMatch = window.location.pathname.match(/\/ticket\/([^/]+)/);
         ticketId = pathMatch ? pathMatch[1] : (new URLSearchParams(window.location.search).get('ticket_id'));
+        if (EMBED_MODE) {
+            document.body.classList.add('ticket-embedded');
+        }
+        exposeEmbedApi();
         populateStatusSelect();
         document.querySelectorAll('.segmented-control').forEach((container) => {
             container.querySelectorAll('button[data-value]').forEach((btn) => {
@@ -1907,4 +1939,3 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
 })();
-

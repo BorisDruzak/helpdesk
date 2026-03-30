@@ -2,7 +2,7 @@
 
 Документация по безопасности, аутентификации и авторизации сервера PC Agent.
 
-**Дата обновления:** 2026-03-25
+**Дата обновления:** 2026-03-30
 
 ---
 
@@ -106,6 +106,7 @@
 
 - `POST /api/login` — получение токена агента по `device_id` (uuid).
 - `POST /api/ui_login` — логин UI (логин/пароль → выдача UI токена).
+- `GET /api/ui_session` — проверка текущей UI-сессии по Bearer UI token; возвращает `user_login`, `actor_role`, `auth_type`.
 - `GET /api/health` — (зарезервировано для проверки здоровья сервиса; endpoint может быть добавлен отдельно).
 
 Все остальные `/api/*` требуют валидный токен (agent или UI).
@@ -163,9 +164,16 @@
 ### 5.2 UI token: POST /api/ui_login
 
 - **Тело:** `{"login": "...", "password": "..."}`.
+- Опционально поддерживается `expected_role` (`admin`, `support`, `auditor`, `user`). Если фактическая роль аккаунта не совпадает, сервер возвращает **403** и не выдаёт UI token. Это используется общей страницей `/login` для разведения admin shell и support shell.
 - **Stage 10:** при `AUTH_UI_DB_USERS_ENABLED=true` аутентификация сначала по БД (таблица **ui_users**): проверка пароля через PBKDF2-SHA256, учёт failed_attempts и locked_until. Роль при успехе берётся из **ui_users.actor_role**. Если пользователя нет в БД и `AUTH_UI_CONFIG_FALLBACK_ENABLED=true`, используется fallback на **state.users** (USERS) и роль из **UI_USER_ROLES_JSON** (Stage 9).
 - Без DB-режима: проверка по `state.users` (конфиг логин/пароль), роль из **UI_USER_ROLES_JSON** или **admin**.
 - При неверных данных или блокировке — 401 «Invalid login or password». При успехе создаётся запись в `ui_tokens`, клиенту возвращается сырой токен, `user_login` и `actor_role`. Валидные роли: `admin`, `support`, `auditor`, `user`.
+
+### 5.3 UI session: GET /api/ui_session
+
+- Требует Bearer UI token и проходит через обычный auth middleware.
+- Возвращает текущий `AuthContext` для UI: `status`, `user_login`, `actor_role`, `auth_type`.
+- Используется shell-страницами `/admin`, `/support` и `/login` для проверки, что пользователь действительно вошёл под нужной ролью до показа рабочего интерфейса.
 
 ---
 
@@ -181,6 +189,8 @@
 ## 7. Интерфейс тикета (Stage 10.4, 10.5)
 
 - Страница тикета (/ticket/{id}) использует тот же UI-токен (admin_auth_token), что и админка; WebSocket /ws_ui — ui_hello с этим токеном, затем subscribe_ticket.
+- Отдельная страница `/login` стала единым входом для shell-страниц: admin логин ведёт в `/admin`, support логин — в `/support`. Сами shell-страницы проверяют `GET /api/ui_session` и при несоответствии роли перенаправляют обратно на `/login`.
+- Support workspace в work-режиме не дублирует composer/timeline вручную, а встраивает `ticket.html?embed=1`. Это сохраняет RBAC, вложения, reply-to, скриншоты и прочие возможности ticket chat без расхождения поведения между страницами.
 - **Видимость сообщений:** в composer переключатель «Внутренняя заметка» (internal); по умолчанию сообщения — public. Только роли support/admin могут отправлять internal; requester не видит внутренние сообщения (фильтрация в snapshot и в API).
 - **Stage 10.5 — Action Dock:** управление тикетом через панель кнопок (Статус, Назначить, Очередь, Приоритет, Инструменты ПК, Трудозатраты, Закрыть, Перемаршрутизация) и inline-панели; slash-команды из UI убраны. **RBAC в UI:** snapshot возвращает `actor_role`; для роли **auditor** кнопки Action Dock отображаются в состоянии disabled (read-only); admin/support — полный доступ к действиям. Серверная проверка прав остаётся источником истины. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-105-action-dock--inline-panels). Подход со slash-командами (Stage 10.4) deprecated, см. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-104-chat-first-deprecated).
 

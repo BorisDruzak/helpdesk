@@ -4,8 +4,9 @@ from aiohttp import web
 
 
 BASE_DIR = Path(__file__).parent.parent
-ADMIN_SHELL_VERSION = "20260324b"
-SUPPORT_SHELL_VERSION = "20260330a"
+ADMIN_SHELL_VERSION = "20260330b"
+SUPPORT_SHELL_VERSION = "20260330b"
+LOGIN_SHELL_VERSION = "20260330a"
 
 
 # Запрет кэширования админки, чтобы после деплоя всегда подгружалась новая версия.
@@ -53,6 +54,13 @@ async def handle_support_page(request):
     return _text_file_response(BASE_DIR / "support.html", "text/html", no_cache=True)
 
 
+async def handle_login_page(request):
+    redirect = _versioned_self_redirect(request, LOGIN_SHELL_VERSION)
+    if redirect is not None:
+        raise redirect
+    return _text_file_response(BASE_DIR / "login.html", "text/html", no_cache=True)
+
+
 async def handle_favicon(request):
     """Отдаём 204 No Content, чтобы браузер не получал 404 по /favicon.ico."""
     return web.Response(status=204)
@@ -72,6 +80,14 @@ async def handle_support_css(request):
 
 async def handle_support_js(request):
     return _text_file_response(BASE_DIR / "support.js", "application/javascript", no_cache=True)
+
+
+async def handle_login_css(request):
+    return _text_file_response(BASE_DIR / "login.css", "text/css", no_cache=True)
+
+
+async def handle_login_js(request):
+    return _text_file_response(BASE_DIR / "login.js", "application/javascript", no_cache=True)
 
 
 async def handle_ticket_page(request):

@@ -580,6 +580,36 @@
             padding: 20px;
         }
 
+        .admin-session-bar {
+            align-items: center;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 16px 20px;
+        }
+
+        .admin-session-copy {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .admin-session-label {
+            color: #6e6e73;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .admin-session-actions {
+            display: flex;
+            gap: 10px;
+        }
+
         .tab-content {
             display: none;
         }
