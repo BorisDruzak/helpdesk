@@ -16,7 +16,7 @@
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
 | Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
-| Admin / ticket UI | `server/admin.js` или `server/ticket.js` | `server/static_pages/`, browser check на `http://192.168.100.17:8666/admin` |
+| Admin / support / ticket UI | `server/support.js`, `server/admin.js` или `server/ticket.js` | `server/static_pages/`, browser check на `http://192.168.100.17:8666/admin` |
 
 ---
 
@@ -128,6 +128,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
+| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: inbox тикетов, режимы preview/work/observe, встроенный workbench drawer с поиском инструментов и черновиком пайплайна |
 | `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Страница тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read и подтверждение решения |
 | `server/public_queue.html`, `server/public_queue.js` | Публичная очередь со ссылками на requester-вход в тикет |
 | `server/help.html`, `server/help.js`, `server/help.css` | Публичная страница requester: создание тикета, вход по коду, чат |
