@@ -19,11 +19,14 @@ body {
 
 body.ticket-embedded {
     background: transparent;
+    color: #1f241f;
 }
 
 body.ticket-embedded .ticket-app {
+    background: linear-gradient(180deg, rgba(255, 252, 246, 0.98) 0%, rgba(244, 239, 229, 0.98) 100%);
+    border-radius: 18px;
     box-shadow: none;
-    height: 100vh;
+    height: 100%;
     max-width: none;
 }
 
@@ -780,20 +783,145 @@ body.ticket-embedded #inlinePanel {
 
 body.ticket-embedded .ticket-main {
     display: flex;
+    height: 100%;
     grid-template-columns: none;
+    min-height: 0;
 }
 
 body.ticket-embedded .ticket-content {
+    background: transparent;
     flex: 1;
+    min-height: 0;
 }
 
 body.ticket-embedded .ticket-timeline {
-    padding: 18px 18px 8px;
+    background: transparent;
+    padding: 16px 18px 12px;
 }
 
 body.ticket-embedded .ticket-composer {
-    border-top-color: #e5e7eb;
-    padding-bottom: 14px;
+    background: rgba(255, 251, 244, 0.96);
+    border-top-color: #d8d2c4;
+    box-shadow: 0 -10px 24px rgba(41, 45, 38, 0.08);
+    padding: 12px 16px 14px;
+}
+
+body.ticket-embedded .timeline-item .ti-meta {
+    color: #706a60;
+}
+
+body.ticket-embedded .timeline-item .ti-avatar {
+    background: linear-gradient(135deg, #4b6b66 0%, #1d5c54 100%);
+}
+
+body.ticket-embedded .timeline-item.from-user .ti-avatar {
+    background: linear-gradient(135deg, #c96b27 0%, #a65318 100%);
+}
+
+body.ticket-embedded .timeline-item.system .ti-avatar {
+    background: #8a816f;
+}
+
+body.ticket-embedded .timeline-item .ti-bubble {
+    background: #fffdf8;
+    border: 1px solid #ddd3c2;
+    border-radius: 16px;
+    color: #2d312c;
+}
+
+body.ticket-embedded .timeline-item.from-staff .ti-bubble {
+    background: #dfeee8;
+    border-color: #b9d2c9;
+    color: #214940;
+}
+
+body.ticket-embedded .timeline-item.from-user .ti-bubble {
+    background: #f7eadc;
+    border-color: #e4c8a8;
+    color: #73451f;
+}
+
+body.ticket-embedded .timeline-item.system .ti-bubble {
+    background: #f3ecdf;
+    border-color: #d8ccb7;
+    color: #5f5241;
+}
+
+body.ticket-embedded .timeline-item.system .ti-bubble.success {
+    background: #e6f1ea;
+    border-color: #bfd6cb;
+    color: #285448;
+}
+
+body.ticket-embedded .timeline-item.system .ti-bubble.error {
+    background: #f9e3de;
+    border-color: #e5b7ab;
+    color: #8e4037;
+}
+
+body.ticket-embedded .timeline-item .ti-tool-result {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid #ddd3c2;
+}
+
+body.ticket-embedded .timeline-item .ti-reply-btn,
+body.ticket-embedded .timeline-item .ti-reply-author {
+    color: #1d5c54;
+}
+
+body.ticket-embedded .timeline-item .ti-reply-ref {
+    background: rgba(255, 255, 255, 0.76);
+    border-color: rgba(29, 92, 84, 0.18);
+}
+
+body.ticket-embedded .ticket-composer .composer-topbar {
+    margin-bottom: 10px;
+}
+
+body.ticket-embedded .ticket-composer textarea {
+    background: #fffdf8;
+    border-color: #d8d2c4;
+    border-radius: 14px;
+    min-height: 54px;
+}
+
+body.ticket-embedded .ticket-composer textarea:focus {
+    border-color: #1d5c54;
+    box-shadow: 0 0 0 3px rgba(29, 92, 84, 0.12);
+}
+
+body.ticket-embedded .ticket-composer .composer-toggle {
+    color: #5f625a;
+}
+
+body.ticket-embedded .ticket-composer .btn.btn-secondary {
+    background: #fffaf3;
+    border-color: #d8d2c4;
+    color: #2d312c;
+}
+
+body.ticket-embedded .ticket-composer .btn.btn-primary {
+    background: #1d5c54;
+    border-color: #1d5c54;
+    color: #fff;
+}
+
+body.ticket-embedded .pending-attachment {
+    background: #f3ece0;
+    border-color: #d8d2c4;
+}
+
+body.ticket-embedded .pending-attachment-name {
+    color: #5a4d3d;
+}
+
+body.ticket-embedded .pending-attachment-remove {
+    background: #e6ddcf;
+    color: #4f4436;
+}
+
+body.ticket-embedded .pending-attachment-remove:hover {
+    background: #dad0c0;
 }
 
 @media (max-width: 1100px) {

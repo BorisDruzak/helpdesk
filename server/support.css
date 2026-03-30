@@ -204,8 +204,7 @@ body {
 .ticket-meta-line,
 .ticket-row-foot,
 .timeline-meta,
-.observe-links,
-.context-actions-note {
+.observe-links {
     color: var(--support-muted);
     font-size: 13px;
 }
@@ -437,26 +436,78 @@ body {
 .support-stage {
     display: flex;
     flex-direction: column;
+    gap: 14px;
     min-height: 0;
     overflow: hidden;
     padding: 18px;
 }
 
 .stage-header {
-    justify-content: space-between;
-    margin-bottom: 16px;
+    align-items: start;
+    display: grid;
+    gap: 14px 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
 }
 
 .selected-ticket-meta {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.selected-ticket-meta-item {
+    background: rgba(255, 255, 255, 0.74);
+    border: 1px solid rgba(185, 175, 155, 0.4);
+    border-radius: 16px;
+    min-width: 132px;
+    padding: 10px 12px;
+}
+
+.selected-ticket-meta-label {
+    color: var(--support-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.selected-ticket-meta-value {
+    color: var(--support-text);
+    display: block;
+    font-size: 14px;
+    line-height: 1.35;
 }
 
 .stage-quick-actions {
     display: flex;
+    justify-content: flex-end;
+}
+
+.stage-actions-card {
+    background: rgba(255, 255, 255, 0.74);
+    border: 1px solid rgba(185, 175, 155, 0.42);
+    border-radius: 18px;
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px;
+    width: 100%;
+}
+
+.stage-actions-title {
+    color: var(--support-brand);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.stage-actions-grid {
+    display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    justify-content: flex-end;
 }
 
 .stage-empty,
@@ -468,11 +519,12 @@ body {
 }
 
 .embedded-ticket-shell {
-    background: rgba(255, 255, 255, 0.7);
-    border: 1px solid rgba(185, 175, 155, 0.32);
+    background: rgba(255, 251, 244, 0.88);
+    border: 1px solid rgba(185, 175, 155, 0.36);
     border-radius: 20px;
     display: flex;
     flex: 1;
+    height: 100%;
     min-height: 0;
     overflow: hidden;
     position: relative;
@@ -851,11 +903,18 @@ body {
     .support-topbar,
     .support-topbar-main,
     .support-topbar-actions,
-    .stage-header,
     .composer-toolbar,
     .composer-actions {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .stage-header {
+        grid-template-columns: 1fr;
+    }
+
+    .stage-quick-actions {
+        justify-content: stretch;
     }
 
     .support-layout {

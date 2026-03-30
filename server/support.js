@@ -536,9 +536,9 @@
             ['Режим', mode === 'work' ? 'Работа' : (mode === 'observe' ? 'Наблюдение' : 'Предпросмотр')],
         ];
         metaNode.innerHTML = items.map(([label, value]) => `
-            <div>
-                <div class="ticket-list-meta">${escapeHtml(label)}</div>
-                <strong>${escapeHtml(value)}</strong>
+            <div class="selected-ticket-meta-item">
+                <div class="selected-ticket-meta-label">${escapeHtml(label)}</div>
+                <strong class="selected-ticket-meta-value">${escapeHtml(value)}</strong>
             </div>
         `).join('');
     }
@@ -553,7 +553,7 @@
         }
         if (shouldWorkTicket(ticket) && canWrite()) {
             if (ticket.status === 'new' || ticket.status === 'triaged' || ticket.status === 'waiting_on_user' || ticket.status === 'waiting_on_vendor') {
-                actions.push({ id: 'to_in_progress', label: 'В работу', kind: 'primary' });
+                actions.push({ id: 'to_in_progress', label: ticket.status === 'waiting_on_user' ? 'Вернуть в работу' : 'В работу', kind: 'primary' });
             }
             if (ticket.status === 'in_progress') {
                 actions.push({ id: 'to_waiting_user', label: 'Ждём пользователя', kind: 'secondary' });
@@ -562,7 +562,7 @@
                 actions.push({ id: 'to_resolved', label: 'Решено', kind: 'primary' });
             }
         }
-        actions.push({ id: 'refresh', label: 'Обновить контекст', kind: 'secondary' });
+        actions.push({ id: 'refresh', label: 'Обновить', kind: 'secondary' });
         if (ticket.device_id) {
             actions.push({ id: 'open_tools', label: 'Инструменты', kind: 'secondary' });
         }
@@ -586,10 +586,17 @@
         titleNode.textContent = (ticket.ticket_code || ticket.ticket_id) + ' • ' + (ticket.title || 'Без названия');
         renderSelectedMeta(ticket, snapshot);
         const actions = quickActionButtons(ticket);
-        actionsNode.innerHTML = actions.map((action) => {
-            const btnClass = action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
-            return '<button type="button" class="' + btnClass + '" data-quick-action="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>';
-        }).join('');
+        actionsNode.innerHTML = actions.length ? `
+            <div class="stage-actions-card">
+                <div class="stage-actions-title">Управление тикетом</div>
+                <div class="stage-actions-grid">
+                    ${actions.map((action) => {
+                        const btnClass = action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
+                        return '<button type="button" class="' + btnClass + '" data-quick-action="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>';
+                    }).join('')}
+                </div>
+            </div>
+        ` : '';
         actionsNode.querySelectorAll('[data-quick-action]').forEach((button) => {
             button.addEventListener('click', async () => {
                 await handleQuickAction(button.getAttribute('data-quick-action') || '');
@@ -1054,7 +1061,6 @@
             ['SLA FR', snapshot?.first_response_due_at ? formatDate(snapshot.first_response_due_at) : '—'],
             ['SLA Resolution', snapshot?.resolution_due_at ? formatDate(snapshot.resolution_due_at) : '—'],
         ];
-        const quickActions = quickActionButtons(ticket);
         panel.innerHTML = `
             <article class="support-card drawer-card">
                 <div class="card-head">
@@ -1064,21 +1070,7 @@
                     ${contextRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
                 </dl>
             </article>
-            <article class="support-card drawer-card">
-                <div class="card-head">
-                    <h3>Быстрые действия</h3>
-                </div>
-                <div class="quick-action-row">
-                    ${quickActions.map((action) => '<button type="button" class="' + (action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary') + '" data-context-action="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>').join('')}
-                </div>
-                <div class="context-actions-note">Операционные действия вынесены сюда, а системные настройки оставлены в админке.</div>
-            </article>
         `;
-        panel.querySelectorAll('[data-context-action]').forEach((button) => {
-            button.addEventListener('click', async () => {
-                await handleQuickAction(button.getAttribute('data-context-action') || '');
-            });
-        });
     }
 
     function scenarioForTool(tool) {
