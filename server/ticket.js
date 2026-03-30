@@ -1256,6 +1256,7 @@
     }
 
     async function refreshSidebarOptions() {
+        if (EMBED_MODE) return;
         if (!canPerformActions()) return;
         try {
             await Promise.all([ensureUsersLoaded(), ensureQueuesLoaded(), ensureDevicesLoaded()]);
