@@ -535,7 +535,7 @@ async def _reconcile_queue_scope_state(
     current_assignee = getattr(ticket, "assignee_id", None)
     queue_id = getattr(ticket, "queue_id", None)
 
-    if current_assignee and not await ticket_repo.is_actor_in_queue(queue_id, current_assignee):
+    if current_assignee:
         clear_payload = {
             "field_name": "assignee_id",
             "old_value": current_assignee,
