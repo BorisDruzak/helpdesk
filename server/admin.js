@@ -2092,6 +2092,7 @@
             calendars: [],
             audit: [],
             resolutionCodes: [],
+            resolutionCodesReadOnly: false,
             users: [],
         };
 
@@ -2604,6 +2605,18 @@
             return data;
         }
 
+        async function settingsLoadResolutionCodes() {
+            try {
+                return await settingsApi('/api/admin/tickets/resolution_codes?include_inactive=true');
+            } catch (error) {
+                if (error && error.status === 404) {
+                    const fallback = await settingsApi('/api/tickets/resolution_codes');
+                    return { resolution_codes: fallback.resolution_codes || [], read_only_fallback: true };
+                }
+                throw error;
+            }
+        }
+
         function settingsParseJson(value, fallback) {
             const text = String(value || '').trim();
             if (!text) return fallback;
@@ -2921,7 +2934,7 @@
                     settingsApi('/api/admin/tickets/sla_policies?include_inactive=true'),
                     settingsApi('/api/admin/tickets/calendars?include_inactive=true'),
                     settingsApi('/api/admin/tickets/audit?limit=50'),
-                    settingsApi('/api/admin/tickets/resolution_codes?include_inactive=true'),
+                    settingsLoadResolutionCodes(),
                     settingsApi('/api/admin/users?include_inactive=true'),
                 ]);
                 settingsState.queues = queuesData.queues || [];
@@ -2930,7 +2943,11 @@
                 settingsState.calendars = calendarsData.calendars || [];
                 settingsState.audit = auditData.audit || [];
                 settingsState.resolutionCodes = resolutionData.resolution_codes || [];
+                settingsState.resolutionCodesReadOnly = !!resolutionData.read_only_fallback;
                 settingsState.users = (usersData.users || []).filter(user => user.actor_role === 'admin' || user.actor_role === 'support');
+                if (resolutionData.read_only_fallback) {
+                    settingsShowMessage('success', 'Справочник кодов решения загружен в режиме чтения: на этом стенде admin API для списка пока недоступен.');
+                }
                 if (!settingsState.selectedResolutionCode || !settingsState.resolutionCodes.some(item => item.code === settingsState.selectedResolutionCode)) {
                     settingsState.selectedResolutionCode = '';
                 }
@@ -3201,11 +3218,24 @@
 
         function settingsPopulateResolutionCodeForm() {
             const current = settingsState.resolutionCodes.find(code => code.code === settingsState.selectedResolutionCode);
-            document.getElementById('settingsResolutionCode').value = current ? (current.code || '') : '';
-            document.getElementById('settingsResolutionCode').disabled = !!current;
-            document.getElementById('settingsResolutionName').value = current ? (current.name || '') : '';
-            document.getElementById('settingsResolutionSortOrder').value = current ? (current.sort_order ?? 0) : 0;
-            document.getElementById('settingsResolutionActive').checked = !current || current.is_active !== false;
+            const codeInput = document.getElementById('settingsResolutionCode');
+            const nameInput = document.getElementById('settingsResolutionName');
+            const sortOrderInput = document.getElementById('settingsResolutionSortOrder');
+            const activeInput = document.getElementById('settingsResolutionActive');
+            const resetBtn = document.getElementById('settingsResolutionResetBtn');
+            const deleteBtn = document.getElementById('settingsResolutionDeleteBtn');
+            const saveBtn = document.querySelector('#settingsResolutionCodeForm button[type="submit"]');
+            codeInput.value = current ? (current.code || '') : '';
+            codeInput.disabled = !!current || settingsState.resolutionCodesReadOnly;
+            nameInput.value = current ? (current.name || '') : '';
+            nameInput.disabled = settingsState.resolutionCodesReadOnly;
+            sortOrderInput.value = current ? (current.sort_order ?? 0) : 0;
+            sortOrderInput.disabled = settingsState.resolutionCodesReadOnly;
+            activeInput.checked = !current || current.is_active !== false;
+            activeInput.disabled = settingsState.resolutionCodesReadOnly;
+            if (saveBtn) saveBtn.disabled = settingsState.resolutionCodesReadOnly;
+            if (deleteBtn) deleteBtn.disabled = settingsState.resolutionCodesReadOnly || !current;
+            if (resetBtn) resetBtn.disabled = false;
         }
 
         function settingsPopulateRoutingForm() {
