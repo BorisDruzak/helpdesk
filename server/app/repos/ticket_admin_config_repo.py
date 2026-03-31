@@ -17,6 +17,7 @@ from app.db.models import (
     TicketPriorityMatrix,
     TicketBusinessCalendar,
     Ticket,
+    TicketResolutionCode,
 )
 
 
@@ -47,8 +48,20 @@ class TicketAdminConfigRepo:
         )
         return result.scalar_one_or_none()
 
-    async def create_queue(self, code: str, name: str, is_triage: bool = False) -> TicketQueue:
-        q = TicketQueue(code=code, name=name, is_triage=is_triage, is_active=True)
+    async def create_queue(
+        self,
+        code: str,
+        name: str,
+        is_triage: bool = False,
+        auto_assign_enabled: bool = True,
+    ) -> TicketQueue:
+        q = TicketQueue(
+            code=code,
+            name=name,
+            is_triage=is_triage,
+            is_active=True,
+            auto_assign_enabled=auto_assign_enabled,
+        )
         self.session.add(q)
         await self.session.flush()
         return q
@@ -59,7 +72,7 @@ class TicketAdminConfigRepo:
         q = await self.get_queue(queue_id)
         if not q:
             return None
-        for key in ("code", "name", "is_triage", "is_active"):
+        for key in ("code", "name", "is_triage", "is_active", "auto_assign_enabled"):
             if key in kwargs:
                 setattr(q, key, kwargs[key])
         await self.session.flush()
@@ -127,6 +140,61 @@ class TicketAdminConfigRepo:
         await self.session.delete(m)
         await self.session.flush()
         return True
+
+    # --- Resolution codes ---
+    async def list_resolution_codes(self, include_inactive: bool = False) -> List[TicketResolutionCode]:
+        stmt = select(TicketResolutionCode).order_by(TicketResolutionCode.sort_order.asc(), TicketResolutionCode.code.asc())
+        if not include_inactive:
+            stmt = stmt.where(TicketResolutionCode.is_active.is_(True))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_resolution_code(self, code: str) -> Optional[TicketResolutionCode]:
+        result = await self.session.execute(
+            select(TicketResolutionCode).where(TicketResolutionCode.code == code)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_resolution_code(
+        self,
+        code: str,
+        name: str,
+        *,
+        is_active: bool = True,
+        sort_order: int = 0,
+    ) -> TicketResolutionCode:
+        item = TicketResolutionCode(
+            code=code,
+            name=name,
+            is_active=is_active,
+            sort_order=sort_order,
+        )
+        self.session.add(item)
+        await self.session.flush()
+        return item
+
+    async def update_resolution_code(self, code: str, **kwargs) -> Optional[TicketResolutionCode]:
+        item = await self.get_resolution_code(code)
+        if not item:
+            return None
+        for key in ("name", "is_active", "sort_order"):
+            if key in kwargs:
+                setattr(item, key, kwargs[key])
+        await self.session.flush()
+        return item
+
+    async def delete_resolution_code(self, code: str) -> bool:
+        item = await self.get_resolution_code(code)
+        if not item:
+            return False
+        await self.session.delete(item)
+        await self.session.flush()
+        return True
+
+    async def count_tickets_with_resolution_code(self, code: str) -> int:
+        stmt = select(func.count(Ticket.ticket_id)).where(Ticket.resolution_code == code)
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
 
     # --- Routing rules ---
     async def list_routing_rules(

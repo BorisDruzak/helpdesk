@@ -1,10 +1,45 @@
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Ticket, TicketEvent, UiUser
+from app.db.models import (
+    Ticket,
+    TicketBusinessCalendar,
+    TicketEvent,
+    TicketQueue,
+    TicketQueueMember,
+    TicketQueueOlaTarget,
+    TicketSlaPolicy,
+    TicketSlaTarget,
+    UiUser,
+)
+
+
+async def _seed_queue(
+    session,
+    *,
+    code: str = "servicedesk_l1",
+    name: str = "ServiceDesk L1",
+    members: list[str] | None = None,
+    auto_assign_enabled: bool = True,
+) -> TicketQueue:
+    result = await session.execute(select(TicketQueue).where(TicketQueue.code == code))
+    queue = result.scalar_one_or_none()
+    if queue is None:
+        queue = TicketQueue(code=code, name=name, is_triage=True, is_active=True, auto_assign_enabled=auto_assign_enabled)
+        session.add(queue)
+        await session.flush()
+    else:
+        queue.name = name
+        queue.is_triage = True
+        queue.is_active = True
+        queue.auto_assign_enabled = auto_assign_enabled
+        await session.execute(delete(TicketQueueMember).where(TicketQueueMember.queue_id == queue.id))
+    for actor_id in members or []:
+        session.add(TicketQueueMember(queue_id=queue.id, actor_id=actor_id, role_in_queue=None))
+    return queue
 
 
 @pytest.mark.asyncio
@@ -72,6 +107,7 @@ async def test_create_ticket_auto_assigns_and_sets_operator_queue_status(test_cl
                 is_active=True,
             )
         )
+        await _seed_queue(session, members=["op_auto"])
         await session.commit()
 
     response = await test_client.post(
@@ -178,6 +214,7 @@ async def test_requester_reply_requeues_waiting_ticket(test_client, test_engine)
                 is_active=True,
             )
         )
+        await _seed_queue(session, members=["op_wait", "support-test"])
         await session.commit()
 
     response = await test_client.post(
@@ -237,6 +274,7 @@ async def test_resolution_confirmation_request_uses_structured_metadata(test_cli
                 is_active=True,
             )
         )
+        await _seed_queue(session, members=["op_confirm", "support-test"])
         await session.commit()
 
     response = await test_client.post(
@@ -323,6 +361,7 @@ async def test_resolution_confirmation_reject_requeues_ticket(test_client, test_
                 is_active=True,
             )
         )
+        await _seed_queue(session, members=["op_reject", "support-test"])
         await session.commit()
 
     response = await test_client.post(

@@ -23,12 +23,27 @@ class TicketAssignmentService:
     def __init__(self, ticket_repo):
         self.ticket_repo = ticket_repo
 
-    async def get_operator_loads(self) -> list[Dict[str, Any]]:
-        return await self.ticket_repo.list_assignable_users_with_load()
+    async def get_operator_loads(self, queue_id: Optional[int] = None) -> list[Dict[str, Any]]:
+        return await self.ticket_repo.list_assignable_users_with_load(queue_id=queue_id)
+
+    async def _get_queue_policy(self, queue_id: Optional[int]) -> Optional[Any]:
+        if queue_id is None:
+            return None
+        return await self.ticket_repo.get_queue(queue_id)
+
+    async def _ensure_actor_in_queue(self, queue_id: Optional[int], actor_id: Optional[str]) -> None:
+        if queue_id is None or not actor_id:
+            return
+        is_member = await self.ticket_repo.is_actor_in_queue(queue_id, actor_id)
+        if not is_member:
+            raise TicketAssignmentError(
+                f"Пользователь {actor_id} не состоит в очереди и не может работать с этим тикетом"
+            )
 
     async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str]) -> None:
         if not assignee_id:
             return
+        await self._ensure_actor_in_queue(getattr(ticket, "queue_id", None), assignee_id)
         if not is_active_operator_status(getattr(ticket, "status", None)):
             return
         if getattr(ticket, "assignee_id", None) == assignee_id:
@@ -46,10 +61,23 @@ class TicketAssignmentService:
         requested_assignee_id: Optional[str],
         auto_assign: bool,
     ) -> Dict[str, Any]:
+        queue_id = getattr(ticket, "queue_id", None)
         if auto_assign:
-            user_login = await self.ticket_repo.select_assignee_for_update(MAX_ACTIVE_TICKETS_PER_OPERATOR)
+            queue = await self._get_queue_policy(queue_id)
+            if queue_id is not None and queue is None:
+                raise TicketAssignmentError("Очередь тикета не найдена")
+            if queue is not None and not getattr(queue, "auto_assign_enabled", True):
+                raise TicketAssignmentError("В этой очереди автоназначение отключено")
+            user_login = await self.ticket_repo.select_assignee_for_update(
+                MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                queue_id=queue_id,
+            )
             if not user_login:
-                raise TicketAssignmentError("Нет доступных операторов для назначения")
+                raise TicketAssignmentError(
+                    "Нет доступных операторов в составе очереди для автоназначения"
+                    if queue_id is not None
+                    else "Нет доступных операторов для назначения"
+                )
             actual_count = await self.ticket_repo.count_active_tickets_for_assignee(user_login)
             return {
                 "assignee_id": user_login,

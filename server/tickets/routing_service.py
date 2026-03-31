@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.db.models import Ticket
+from tickets.public_access import is_public_unbound_ticket
+from tickets.statuses import extract_priority_class, get_requester_display_name, get_requester_profile
 
 FALLBACK_QUEUE_CODE = "servicedesk_l1"
 ROUTING_LOCK_KEY = "routing_lock"
@@ -23,20 +25,35 @@ ROUTING_LOCK_AT_KEY = "routing_lock_at"
 
 def _get_ticket_context(ticket: Ticket, device_metadata: Optional[dict]) -> Dict[str, Any]:
     """Контекст тикета для правил: поля тикета + devices.metadata (location, device_type и т.д.)."""
+    requester_profile = get_requester_profile(ticket)
+    requester_display_name = get_requester_display_name(ticket)
+    is_public_ticket = str(getattr(ticket, "requester_id", "") or "").startswith("public:")
     ctx = {
         "ticket_id": ticket.ticket_id,
         "device_id": ticket.device_id,
+        "title": ticket.title,
+        "description": ticket.description,
         "status": ticket.status,
         "priority": ticket.priority,
+        "priority_class": extract_priority_class(ticket),
         "impact": ticket.impact,
         "urgency": ticket.urgency,
+        "importance": ticket.importance,
         "queue_id": ticket.queue_id,
         "category_id": ticket.category_id,
         "service_id": ticket.service_id,
         "subcategory_id": ticket.subcategory_id,
         "assignee_id": ticket.assignee_id,
         "requester_id": ticket.requester_id,
+        "requester_display_name": requester_display_name,
+        "requester_profile": requester_profile,
+        "is_public_ticket": is_public_ticket,
+        "public_ticket_unbound": is_public_unbound_ticket(ticket),
     }
+    if requester_profile:
+        ctx["building"] = requester_profile.get("building")
+        ctx["room"] = requester_profile.get("room")
+        ctx["phone"] = requester_profile.get("phone")
     if device_metadata and isinstance(device_metadata, dict):
         ctx["device_metadata"] = device_metadata
         ctx["location"] = device_metadata.get("location")
@@ -78,6 +95,8 @@ def _evaluate_condition(condition: Optional[dict], context: Dict[str, Any]) -> b
         return actual != value
     if op == "in":
         return value is not None and actual in value
+    if op == "nin":
+        return value is not None and actual not in value
     if op == "contains":
         return isinstance(actual, str) and value is not None and value in actual
     if op == "is_null":

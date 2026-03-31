@@ -72,7 +72,14 @@ async def handle_admin_queues_list(request: web.Request) -> web.Response:
         queues = await repo.list_queues(include_inactive=include_inactive)
         await session.commit()
     items = [
-        {"id": q.id, "code": q.code, "name": q.name, "is_triage": q.is_triage, "is_active": q.is_active}
+        {
+            "id": q.id,
+            "code": q.code,
+            "name": q.name,
+            "is_triage": q.is_triage,
+            "is_active": q.is_active,
+            "auto_assign_enabled": getattr(q, "auto_assign_enabled", True),
+        }
         for q in queues
     ]
     return web.json_response({"status": "ok", "queues": items})
@@ -93,6 +100,7 @@ async def handle_admin_queues_post(request: web.Request) -> web.Response:
     code = (data.get("code") or "").strip()
     name = (data.get("name") or "").strip()
     is_triage = data.get("is_triage", False)
+    auto_assign_enabled = data.get("auto_assign_enabled", True)
     if not code or not name:
         return web.json_response(
             {"status": "error", "error": "code and name required", "error_code": "VALIDATION_ERROR"},
@@ -109,7 +117,12 @@ async def handle_admin_queues_post(request: web.Request) -> web.Response:
                 {"status": "error", "error": f"Queue with code {code} already exists", "error_code": "CONFLICT"},
                 status=409,
             )
-        q = await repo.create_queue(code=code, name=name, is_triage=is_triage)
+        q = await repo.create_queue(
+            code=code,
+            name=name,
+            is_triage=is_triage,
+            auto_assign_enabled=bool(auto_assign_enabled),
+        )
         svc = AdminConfigService(repo, audit_repo)
         await audit_repo.add(
             entity_type="queue",
@@ -122,7 +135,17 @@ async def handle_admin_queues_post(request: web.Request) -> web.Response:
         )
         await session.commit()
     return web.json_response(
-        {"status": "ok", "queue": {"id": q.id, "code": q.code, "name": q.name, "is_triage": q.is_triage, "is_active": q.is_active}},
+        {
+            "status": "ok",
+            "queue": {
+                "id": q.id,
+                "code": q.code,
+                "name": q.name,
+                "is_triage": q.is_triage,
+                "is_active": q.is_active,
+                "auto_assign_enabled": getattr(q, "auto_assign_enabled", True),
+            },
+        },
         status=201,
     )
 
@@ -148,7 +171,17 @@ async def handle_admin_queues_get(request: web.Request) -> web.Response:
             status=404,
         )
     return web.json_response(
-        {"status": "ok", "queue": {"id": q.id, "code": q.code, "name": q.name, "is_triage": q.is_triage, "is_active": q.is_active}}
+        {
+            "status": "ok",
+            "queue": {
+                "id": q.id,
+                "code": q.code,
+                "name": q.name,
+                "is_triage": q.is_triage,
+                "is_active": q.is_active,
+                "auto_assign_enabled": getattr(q, "auto_assign_enabled", True),
+            },
+        }
     )
 
 
@@ -187,7 +220,7 @@ async def handle_admin_queues_patch(request: web.Request) -> web.Response:
                 )
         before = svc._serialize_queue(q)
         updates = {}
-        for k in ("code", "name", "is_triage", "is_active"):
+        for k in ("code", "name", "is_triage", "is_active", "auto_assign_enabled"):
             if k in data:
                 updates[k] = data[k]
         q = await repo.update_queue(queue_id, **updates)
@@ -209,7 +242,17 @@ async def handle_admin_queues_patch(request: web.Request) -> web.Response:
             status=404,
         )
     return web.json_response(
-        {"status": "ok", "queue": {"id": q.id, "code": q.code, "name": q.name, "is_triage": q.is_triage, "is_active": q.is_active}}
+        {
+            "status": "ok",
+            "queue": {
+                "id": q.id,
+                "code": q.code,
+                "name": q.name,
+                "is_triage": q.is_triage,
+                "is_active": q.is_active,
+                "auto_assign_enabled": getattr(q, "auto_assign_enabled", True),
+            },
+        }
     )
 
 
@@ -315,6 +358,217 @@ async def handle_admin_queue_members_delete(request: web.Request) -> web.Respons
             actor_id=auth.actor_id,
             actor_role=auth.actor_role,
             before_json={"actor_id": actor_id, "role_in_queue": before_m.role_in_queue},
+            after_json=None,
+            trace_id=_get_trace_id(request),
+        )
+        await session.commit()
+    return web.json_response({"status": "ok"}, status=200)
+
+
+# --- Resolution codes ---
+@require_auth("admin", "support", "auditor")
+async def handle_admin_resolution_codes_list(request: web.Request) -> web.Response:
+    if not TICKET_AUDITOR_ROLE_ENABLED and request.get("auth_context").actor_role == "auditor":
+        return web.json_response(
+            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+    r = _check_api_enabled()
+    if r:
+        return r
+    include_inactive = request.query.get("include_inactive", "false").lower() == "true"
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        items = await repo.list_resolution_codes(include_inactive=include_inactive)
+        await session.commit()
+    return web.json_response(
+        {
+            "status": "ok",
+            "resolution_codes": [
+                {
+                    "code": item.code,
+                    "name": item.name,
+                    "is_active": item.is_active,
+                    "sort_order": item.sort_order,
+                }
+                for item in items
+            ],
+        }
+    )
+
+
+@require_auth("admin")
+async def handle_admin_resolution_codes_post(request: web.Request) -> web.Response:
+    r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Invalid JSON", "error_code": "INVALID_JSON"},
+            status=400,
+        )
+    code = str(data.get("code") or "").strip()
+    name = str(data.get("name") or "").strip()
+    if not code or not name:
+        return web.json_response(
+            {"status": "error", "error": "code and name required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    auth = request["auth_context"]
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        audit_repo = TicketAdminAuditRepo(session)
+        existing = await repo.get_resolution_code(code)
+        if existing:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": f"Resolution code {code} already exists", "error_code": "CONFLICT"},
+                status=409,
+            )
+        item = await repo.create_resolution_code(
+            code=code,
+            name=name,
+            is_active=bool(data.get("is_active", True)),
+            sort_order=int(data.get("sort_order", 0) or 0),
+        )
+        await audit_repo.add(
+            entity_type="resolution_code",
+            entity_id=item.code,
+            action="create",
+            actor_id=auth.actor_id,
+            actor_role=auth.actor_role,
+            after_json={
+                "code": item.code,
+                "name": item.name,
+                "is_active": item.is_active,
+                "sort_order": item.sort_order,
+            },
+            trace_id=_get_trace_id(request),
+        )
+        await session.commit()
+    return web.json_response(
+        {
+            "status": "ok",
+            "resolution_code": {
+                "code": item.code,
+                "name": item.name,
+                "is_active": item.is_active,
+                "sort_order": item.sort_order,
+            },
+        },
+        status=201,
+    )
+
+
+@require_auth("admin")
+async def handle_admin_resolution_codes_patch(request: web.Request) -> web.Response:
+    r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    code = request.match_info["code"]
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Invalid JSON", "error_code": "INVALID_JSON"},
+            status=400,
+        )
+    auth = request["auth_context"]
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        audit_repo = TicketAdminAuditRepo(session)
+        item = await repo.get_resolution_code(code)
+        if not item:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": "not_found", "error_code": "NOT_FOUND"},
+                status=404,
+            )
+        before = {
+            "code": item.code,
+            "name": item.name,
+            "is_active": item.is_active,
+            "sort_order": item.sort_order,
+        }
+        updates = {}
+        for key in ("name", "is_active", "sort_order"):
+            if key in data:
+                updates[key] = data[key]
+        item = await repo.update_resolution_code(code, **updates)
+        await audit_repo.add(
+            entity_type="resolution_code",
+            entity_id=code,
+            action="update",
+            actor_id=auth.actor_id,
+            actor_role=auth.actor_role,
+            before_json=before,
+            after_json={
+                "code": item.code,
+                "name": item.name,
+                "is_active": item.is_active,
+                "sort_order": item.sort_order,
+            },
+            trace_id=_get_trace_id(request),
+        )
+        await session.commit()
+    return web.json_response(
+        {
+            "status": "ok",
+            "resolution_code": {
+                "code": item.code,
+                "name": item.name,
+                "is_active": item.is_active,
+                "sort_order": item.sort_order,
+            },
+        }
+    )
+
+
+@require_auth("admin")
+async def handle_admin_resolution_codes_delete(request: web.Request) -> web.Response:
+    r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    code = request.match_info["code"]
+    auth = request["auth_context"]
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        audit_repo = TicketAdminAuditRepo(session)
+        item = await repo.get_resolution_code(code)
+        if not item:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": "not_found", "error_code": "NOT_FOUND"},
+                status=404,
+            )
+        usage_count = await repo.count_tickets_with_resolution_code(code)
+        if usage_count > 0:
+            await session.rollback()
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Resolution code is already used in tickets. Deactivate it instead of deleting.",
+                    "error_code": "VALIDATION_ERROR",
+                    "usage_count": usage_count,
+                },
+                status=409,
+            )
+        before = {
+            "code": item.code,
+            "name": item.name,
+            "is_active": item.is_active,
+            "sort_order": item.sort_order,
+        }
+        await repo.delete_resolution_code(code)
+        await audit_repo.add(
+            entity_type="resolution_code",
+            entity_id=code,
+            action="delete",
+            actor_id=auth.actor_id,
+            actor_role=auth.actor_role,
+            before_json=before,
             after_json=None,
             trace_id=_get_trace_id(request),
         )

@@ -128,6 +128,15 @@ async def cleanup_db(request, test_engine):
                 agent_runtime_audit,
                 ui_user_audit,
                 ticket_admin_audit,
+                ticket_queue_ola_targets,
+                ticket_queue_members,
+                ticket_routing_rules,
+                ticket_priority_matrix,
+                ticket_sla_targets,
+                ticket_sla_policies,
+                ticket_business_calendars,
+                ticket_resolution_codes,
+                ticket_queues,
                 ui_users,
                 tickets
             RESTART IDENTITY CASCADE

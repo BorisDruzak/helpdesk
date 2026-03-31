@@ -54,7 +54,6 @@
     let wsLive = false;
     let toolsList = [];
     let actorRole = ''; // admin | support | auditor — из snapshot или по умолчанию
-    let usersCache = [];
     let resolutionCodesCache = [];
     let queuesCache = [];
     let devicesCache = [];
@@ -91,6 +90,31 @@
             vendor: 'Передано поставщику / вендору',
         };
         return map[code] || 'Служебный код закрытия';
+    }
+
+    function assignableUsersForTicket() {
+        return Array.isArray(meta.assignable_users) ? meta.assignable_users : [];
+    }
+
+    function availableQueuesForTicket() {
+        if (Array.isArray(meta.available_queues) && meta.available_queues.length) {
+            return meta.available_queues;
+        }
+        return queuesCache;
+    }
+
+    function applyTicketContext(ticketData) {
+        if (!ticketData || typeof ticketData !== 'object') return;
+        meta = {
+            ...meta,
+            ...ticketData,
+            assignable_users: Array.isArray(ticketData.assignable_users) ? ticketData.assignable_users : (meta.assignable_users || []),
+            queue_members: Array.isArray(ticketData.queue_members) ? ticketData.queue_members : (meta.queue_members || []),
+            available_queues: Array.isArray(ticketData.available_queues) ? ticketData.available_queues : (meta.available_queues || []),
+        };
+        if (Array.isArray(meta.available_queues) && meta.available_queues.length) {
+            queuesCache = meta.available_queues.slice();
+        }
     }
 
     function exposeEmbedApi() {
@@ -547,8 +571,9 @@
             el('sideDeviceSelect').value = hasBoundDevice() ? (meta.device_id || '') : '';
         }
         const queueSection = el('sideQueueSection');
-        if (queueSection) queueSection.classList.toggle('hidden', queuesCache.length <= 1);
+        if (queueSection) queueSection.classList.toggle('hidden', availableQueuesForTicket().length <= 1);
         syncActionStateMarker();
+        syncQueueAssignmentHint();
         refreshDeviceActionControls();
         refreshStatusResolutionFields(force === true);
     }
@@ -1012,7 +1037,7 @@
         events = evs.slice();
         lastEventId = data.last_event_id || 0;
         evs.forEach(e => { if (e.id != null) seenEventIds.add(e.id); });
-        meta = {
+        applyTicketContext({
             ticket_id: data.ticket_id,
             ticket_code: data.ticket_code,
             device_id: data.device_id,
@@ -1036,7 +1061,11 @@
             first_response_due_at: data.first_response_due_at,
             resolution_due_at: data.resolution_due_at,
             chat_counters: data.chat_counters || (data.ticket && data.ticket.chat_counters) || {},
-        };
+            queue_auto_assign_enabled: data.queue_auto_assign_enabled,
+            queue_members: data.queue_members || [],
+            assignable_users: data.assignable_users || [],
+            available_queues: data.available_queues || [],
+        });
         actorRole = data.actor_role || '';
         if (actorRole === 'user') {
             lastMarkedReadEventId = Number(meta.chat_counters?.requester_last_read_event_id || 0);
@@ -1205,15 +1234,6 @@
         }
     }
 
-    async function ensureUsersLoaded() {
-        if (usersCache.length) return usersCache;
-        const r = await fetch('/api/admin/users', { headers: authHeaders() });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || 'Не удалось загрузить список исполнителей');
-        usersCache = (d.users || d || []).filter((u) => u.is_active !== false && ['support', 'admin'].includes(u.actor_role));
-        return usersCache;
-    }
-
     async function ensureResolutionCodesLoaded() {
         if (resolutionCodesCache.length) return resolutionCodesCache;
         const r = await fetch('/api/tickets/resolution_codes', { headers: authHeaders() });
@@ -1263,6 +1283,10 @@
     }
 
     async function ensureQueuesLoaded() {
+        if (Array.isArray(meta.available_queues) && meta.available_queues.length) {
+            queuesCache = meta.available_queues.slice();
+            return queuesCache;
+        }
         if (queuesCache.length) return queuesCache;
         const r = await fetch('/api/admin/tickets/queues', { headers: authHeaders() });
         const d = await r.json().catch(() => ({}));
@@ -1294,9 +1318,18 @@
         const select = el('sideAssigneeSelect');
         if (!select) return;
         const current = meta.assignee_id || '';
+        const users = assignableUsersForTicket();
         const options = ['<option value="">Не назначен</option>'].concat(
-            usersCache.map((user) => `<option value="${escapeHtml(user.user_login || user.login || '')}">${escapeHtml(user.user_login || user.login || '')}</option>`)
+            users.map((user) => {
+                const login = user.user_login || user.login || '';
+                const activeCount = Number(user.active_count || 0);
+                const roleLabel = user.role_in_queue ? ` • ${user.role_in_queue}` : '';
+                return `<option value="${escapeHtml(login)}">${escapeHtml(`${login}${roleLabel} [активных: ${activeCount}]`)}</option>`;
+            })
         );
+        if (current && !users.some((user) => (user.user_login || user.login || '') === current)) {
+            options.push(`<option value="${escapeHtml(current)}">${escapeHtml(`${current} • вне состава очереди`)}</option>`);
+        }
         select.innerHTML = options.join('');
         select.value = current;
     }
@@ -1304,11 +1337,37 @@
     function populateQueueSelect() {
         const select = el('sideQueueSelect');
         if (!select) return;
-        const options = queuesCache.map((queue) => `<option value="${escapeHtml(String(queue.id))}">${escapeHtml(queue.code || queue.name || String(queue.id))}</option>`);
+        const options = availableQueuesForTicket().map((queue) => `<option value="${escapeHtml(String(queue.id))}">${escapeHtml(queue.code || queue.name || String(queue.id))}</option>`);
         select.innerHTML = options.join('');
         if (meta.queue_id != null) select.value = String(meta.queue_id);
         const queueSection = el('sideQueueSection');
-        if (queueSection) queueSection.classList.toggle('hidden', queuesCache.length <= 1);
+        if (queueSection) queueSection.classList.toggle('hidden', availableQueuesForTicket().length <= 1);
+    }
+
+    function syncQueueAssignmentHint() {
+        const hintEl = el('sideAssigneeHint');
+        if (!hintEl) return;
+        const members = Array.isArray(meta.queue_members) ? meta.queue_members : [];
+        const assignable = assignableUsersForTicket();
+        const assigneeOutsideQueue = meta.assignee_id && !assignable.some((user) => (user.user_login || user.login || '') === meta.assignee_id);
+        const queueLabel = meta.queue_code || meta.queue_id || 'текущей очереди';
+        if (!meta.queue_id) {
+            hintEl.textContent = 'У тикета пока нет очереди. Сначала выберите очередь, затем станет доступно корректное назначение.';
+            hintEl.classList.remove('hidden');
+            return;
+        }
+        if (!members.length) {
+            hintEl.textContent = `В очереди ${queueLabel} пока нет участников. Назначение и автоназначение для этой очереди работать не будут.`;
+            hintEl.classList.remove('hidden');
+            return;
+        }
+        const memberNames = members.map((member) => member.actor_id).join(', ');
+        const autoAssignText = meta.queue_auto_assign_enabled === false
+            ? 'Автоназначение в очереди выключено.'
+            : 'Автоназначение в очереди включено.';
+        const assigneeHint = assigneeOutsideQueue ? ` Текущий исполнитель ${meta.assignee_id} не входит в состав этой очереди.` : '';
+        hintEl.textContent = `Назначать можно только участников очереди: ${memberNames}. ${autoAssignText}${assignable.length ? '' : ' Сейчас нет доступных исполнителей в составе очереди.'}${assigneeHint}`;
+        hintEl.classList.remove('hidden');
     }
 
     function populateDeviceSelect() {
@@ -1332,10 +1391,9 @@
     }
 
     async function refreshSidebarOptions() {
-        if (EMBED_MODE) return;
         if (!canPerformActions()) return;
         try {
-            await Promise.all([ensureUsersLoaded(), ensureQueuesLoaded(), ensureDevicesLoaded()]);
+            await Promise.all([ensureQueuesLoaded(), ensureDevicesLoaded()]);
             populateAssigneeSelect();
             populateQueueSelect();
             populateDeviceSelect();
@@ -1345,7 +1403,7 @@
         }
     }
 
-    async function applyRequesterProfile() {
+    async function applyRequesterProfile(options = {}) {
         const payload = {
             user_display_name: el('sideRequesterDisplayNameInput')?.value?.trim() || '',
             requester_profile: {
@@ -1353,19 +1411,15 @@
                 building: el('sideRequesterBuildingInput')?.value?.trim() || '',
                 room: el('sideRequesterRoomInput')?.value?.trim() || '',
                 phone: el('sideRequesterPhoneInput')?.value?.trim() || ''
-            }
+            },
+            reroute: Boolean(options.reroute),
         };
         const r = await fetch('/api/tickets/' + ticketId + '/requester_profile', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(payload) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'Ошибка обновления профиля');
-        const updatedTicket = d.ticket || {};
-        meta.requester_profile = updatedTicket.requester_profile || payload.requester_profile;
-        meta.requester_display_name =
-            updatedTicket.requester_display_name
-            || payload.requester_profile.full_name
-            || payload.user_display_name
-            || meta.requester_display_name;
+        applyTicketContext(d.ticket || {});
         renderSidebar(true);
+        await loadSnapshot();
     }
 
     async function applyStatus() {
@@ -1379,6 +1433,10 @@
         const r = await fetch('/api/tickets/' + ticketId + '/status', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(payload) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.details?.to_status || d.error || 'Ошибка смены статуса');
+        applyTicketContext(d.ticket || {});
+        setTopbar(meta);
+        renderSidebar(true);
+        await loadSnapshot();
     }
 
     async function applyPriority() {
@@ -1394,6 +1452,17 @@
         const r = await fetch('/api/tickets/' + ticketId + '/priority', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(payload) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.details?.priority || d.error || 'Ошибка смены приоритета');
+        await loadSnapshot();
+    }
+
+    async function applyReroute() {
+        const r = await fetch('/api/tickets/' + ticketId + '/reroute', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({}) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'Ошибка пересчёта очереди');
+        applyTicketContext(d.ticket || {});
+        setTopbar(meta);
+        renderSidebar(true);
+        await loadSnapshot();
     }
 
     async function applyAssignee() {
@@ -1401,12 +1470,10 @@
         const r = await fetch('/api/tickets/' + ticketId + '/assign', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ assignee_id: assigneeId }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.message || d.error || 'Ошибка назначения');
-    }
-
-    async function applyAutoAssign() {
-        const r = await fetch('/api/tickets/' + ticketId + '/assign', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ auto_assign: true, reason: 'auto_balance' }) });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.message || d.error || 'Ошибка автоназначения');
+        applyTicketContext(d.ticket || {});
+        setTopbar(meta);
+        renderSidebar(true);
+        await loadSnapshot();
     }
 
     async function applyQueue() {
@@ -1415,6 +1482,10 @@
         const r = await fetch('/api/tickets/' + ticketId + '/queue', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ queue_id: queueId, reason: 'manual' }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.details?.queue_id || d.error || 'Ошибка смены очереди');
+        applyTicketContext(d.ticket || {});
+        setTopbar(meta);
+        renderSidebar(true);
+        await loadSnapshot();
     }
 
     async function applyDeviceBinding(deviceIdOverride, reasonOverride) {
@@ -1522,20 +1593,13 @@
                 });
             return;
         }
-        if (cmd === '/assign_auto') {
-            const r = await fetch('/api/tickets/' + ticketId + '/assign', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ auto_assign: true, reason: 'auto_balance' }) });
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) { showSystemMessage(d.message || d.error || 'Ошибка автоназначения', true); return; }
-            meta.assignee_id = d.assignee_id || meta.assignee_id;
-            setTopbar(meta);
-            renderSidebar();
-            return;
-        }
         if (cmd === '/assign') {
-            const r = await fetch('/api/admin/users', { headers: authHeaders() });
-            const d = await r.json().catch(() => ({}));
-            const users = (d.users || d || []).filter(u => u.is_active !== false && ['support', 'admin'].includes(u.actor_role));
-            const opts = '<option value="">— Снять назначение —</option>' + users.map(u => `<option value="${escapeHtml(u.user_login || u.login || '')}">${escapeHtml(u.user_login || u.login || '')}</option>`).join('');
+            const users = assignableUsersForTicket();
+            const opts = '<option value="">— Снять назначение —</option>' + users.map((u) => {
+                const login = u.user_login || u.login || '';
+                const activeCount = Number(u.active_count || 0);
+                return `<option value="${escapeHtml(login)}">${escapeHtml(`${login} [активных: ${activeCount}]`)}</option>`;
+            }).join('');
             openInlinePanel('Назначить исполнителя',
                 `<div class="form-group"><label>Исполнитель</label><select id="cmdAssignSelect">${opts}</select></div>`,
                 async (body) => {
@@ -1543,8 +1607,9 @@
                     const r = await fetch('/api/tickets/' + ticketId + '/assign', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ assignee_id: assigneeId }) });
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok) throw new Error(d.error || 'Ошибка назначения');
-                    meta.assignee_id = assigneeId || 'Не назначен';
+                    applyTicketContext(d.ticket || {});
                     setTopbar(meta);
+                    renderSidebar(true);
                 });
             return;
         }
@@ -1645,11 +1710,13 @@
             return;
         }
         if (cmd === '/reroute') {
-            const r = await fetch('/api/tickets/' + ticketId + '/reroute', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({}) });
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) { showSystemMessage(d.error || 'Ошибка reroute', true); return; }
+            try {
+                await applyReroute();
+            } catch (err) {
+                showSystemMessage(err.message || 'Ошибка reroute', true);
+                return;
+            }
             showSystemMessage('Очередь пересчитана по правилам');
-            loadSnapshot();
             return;
         }
         if (cmd === '/close') {
@@ -1930,6 +1997,14 @@
                     el('sideRequesterApplyBtn')?.addEventListener('click', async () => {
                         try { await applyRequesterProfile(); } catch (err) { showSystemMessage(err.message || String(err), true); }
                     });
+                    el('sideRequesterApplyAndRerouteBtn')?.addEventListener('click', async () => {
+                        try {
+                            await applyRequesterProfile({ reroute: true });
+                            showSystemMessage('Профиль сохранён, очередь пересчитана');
+                        } catch (err) {
+                            showSystemMessage(err.message || String(err), true);
+                        }
+                    });
                     el('sideStatusApplyBtn')?.addEventListener('click', async () => {
                         try { await applyStatus(); } catch (err) { showSystemMessage(err.message || String(err), true); }
                     });
@@ -1939,11 +2014,16 @@
                     el('sideAssigneeApplyBtn')?.addEventListener('click', async () => {
                         try { await applyAssignee(); } catch (err) { showSystemMessage(err.message || String(err), true); }
                     });
-                    el('sideAutoAssignBtn')?.addEventListener('click', async () => {
-                        try { await applyAutoAssign(); } catch (err) { showSystemMessage(err.message || String(err), true); }
-                    });
                     el('sideQueueApplyBtn')?.addEventListener('click', async () => {
                         try { await applyQueue(); } catch (err) { showSystemMessage(err.message || String(err), true); }
+                    });
+                    el('sideQueueRerouteBtn')?.addEventListener('click', async () => {
+                        try {
+                            await applyReroute();
+                            showSystemMessage('Очередь пересчитана по правилам');
+                        } catch (err) {
+                            showSystemMessage(err.message || String(err), true);
+                        }
                     });
                     el('sideDeviceApplyBtn')?.addEventListener('click', async () => {
                         try { await applyDeviceBinding(); } catch (err) { showSystemMessage(err.message || String(err), true); }

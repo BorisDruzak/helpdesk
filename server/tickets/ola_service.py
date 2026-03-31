@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Ticket, TicketQueueOlaTarget
 from config import TICKET_OLA_ENABLED
+from tickets.statuses import extract_priority_class
 
 
 async def get_ola_targets_for_queue(
@@ -30,6 +31,14 @@ async def get_ola_targets_for_queue(
         )
     )
     row = result.scalar_one_or_none()
+    if row is None and priority != "P3":
+        fallback_result = await session.execute(
+            select(TicketQueueOlaTarget).where(
+                TicketQueueOlaTarget.queue_id == queue_id,
+                TicketQueueOlaTarget.priority == "P3",
+            )
+        )
+        row = fallback_result.scalar_one_or_none()
     if not row:
         return None
     return row.ack_min, row.processing_min
@@ -47,7 +56,11 @@ async def start_ola_for_ticket(
     if not TICKET_OLA_ENABLED or not ticket.queue_id:
         return
     now = started_at or datetime.now(timezone.utc)
-    targets = await get_ola_targets_for_queue(session, ticket.queue_id, ticket.priority or "P3")
+    targets = await get_ola_targets_for_queue(
+        session,
+        ticket.queue_id,
+        extract_priority_class(ticket) or "P3",
+    )
     if not targets:
         return
     ack_min, processing_min = targets

@@ -1187,18 +1187,38 @@
             return;
         }
         const requester = snapshot?.requester_profile || {};
+        const queueMembers = Array.isArray(snapshot?.queue_members) ? snapshot.queue_members : [];
+        const queueMemberText = queueMembers.length
+            ? queueMembers.map((member) => member.actor_id).join(', ')
+            : 'У очереди пока нет участников';
         const contextRows = [
             ['Код', ticket.ticket_code || ticket.ticket_id],
             ['Режим', currentMode() === 'work' ? 'Работа' : (currentMode() === 'observe' ? 'Наблюдение' : 'Предпросмотр')],
             ['Статус', statusLabel(ticket.status)],
             ['Исполнитель', ticket.assignee_id || 'Не назначен'],
             ['Очередь', snapshot?.queue_code || ticket.queue_code || ticket.queue_id || '—'],
+            ['Состав очереди', queueMemberText],
             ['Инициатор', snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—'],
             ['Устройство', snapshot?.device_id || ticket.device_id || 'Не привязано'],
             ['Телефон', requester.phone || '—'],
             ['Корпус / кабинет', [requester.building, requester.room].filter(Boolean).join(' / ') || '—'],
             ['SLA FR', snapshot?.first_response_due_at ? formatDate(snapshot.first_response_due_at) : '—'],
             ['SLA Resolution', snapshot?.resolution_due_at ? formatDate(snapshot.resolution_due_at) : '—'],
+        ];
+        const routingHints = [
+            snapshot?.public_ticket_unbound ? 'Публичный тикет без привязки к агенту' : '',
+            snapshot?.requester_display_name ? ('Отображаемое имя: ' + snapshot.requester_display_name) : '',
+            requester.full_name ? ('ФИО: ' + requester.full_name) : '',
+            requester.building ? ('Корпус: ' + requester.building) : '',
+            requester.room ? ('Кабинет: ' + requester.room) : '',
+            requester.phone ? ('Телефон: ' + requester.phone) : '',
+            ticket.title ? ('Заголовок: ' + ticket.title) : '',
+            ticket.priority_class ? ('Приоритет: ' + priorityLabel(ticket.priority_class)) : '',
+        ].filter(Boolean);
+        const queuePolicyRows = [
+            ['Автоназначение очереди', snapshot?.queue_auto_assign_enabled === false ? 'Выключено' : 'Включено'],
+            ['Если правил нет', 'Тикет уходит в базовую очередь ServiceDesk L1'],
+            ['Что влияет на маршрут', routingHints.length ? routingHints.join(' • ') : 'Явные признаки маршрутизации не заполнены'],
         ];
         panel.innerHTML = `
             <article class="support-card drawer-card">
@@ -1207,6 +1227,14 @@
                 </div>
                 <dl class="key-value-list">
                     ${contextRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
+                </dl>
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Очередь и маршрут</h3>
+                </div>
+                <dl class="key-value-list">
+                    ${queuePolicyRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
                 </dl>
             </article>
         `;

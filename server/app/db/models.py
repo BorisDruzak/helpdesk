@@ -179,6 +179,7 @@ class TicketQueue(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     is_triage: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
 
 
 class TicketCategory(Base):

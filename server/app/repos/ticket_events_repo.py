@@ -4,7 +4,7 @@ Repository for ticket_events table operations.
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import bindparam, select, and_, or_, text, func, delete, case, update
+from sqlalchemy import bindparam, select, and_, or_, text, func, delete, case, update, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -965,6 +965,11 @@ class TicketEventsRepo:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_queue(self, queue_id: int) -> Optional[TicketQueue]:
+        stmt = select(TicketQueue).where(TicketQueue.id == queue_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_routing_rules_ordered(self) -> List[TicketRoutingRule]:
         """Активные правила маршрутизации, отсортированные по priority_order."""
         stmt = (
@@ -1175,6 +1180,14 @@ class TicketEventsRepo:
             if "watching_actor_id" in filters:
                 stmt = stmt.join(TicketWatcher, Ticket.ticket_id == TicketWatcher.ticket_id).where(
                     TicketWatcher.actor_id == filters["watching_actor_id"]
+                )
+            if "support_actor_id" in filters:
+                support_actor_id = filters["support_actor_id"]
+                stmt = stmt.outerjoin(TicketQueueMember, Ticket.queue_id == TicketQueueMember.queue_id).where(
+                    or_(
+                        Ticket.assignee_id == support_actor_id,
+                        TicketQueueMember.actor_id == support_actor_id,
+                    )
                 )
             if filters.get("first_response_breached") is True:
                 stmt = stmt.where(Ticket.first_response_breached_at.isnot(None))
@@ -1448,7 +1461,8 @@ class TicketEventsRepo:
         result = await self.session.execute(stmt)
         return int(result.scalar_one() or 0)
 
-    async def list_assignable_users_with_load(self) -> List[Dict[str, Any]]:
+    async def list_assignable_users_with_load(self, queue_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        role_expr = literal(None).label("role_in_queue")
         active_count_subq = (
             select(
                 Ticket.assignee_id.label("assignee_id"),
@@ -1466,19 +1480,42 @@ class TicketEventsRepo:
                 UiUser.is_active,
                 UiUser.last_ticket_assigned_at,
                 func.coalesce(active_count_subq.c.active_count, 0).label("active_count"),
+                role_expr,
             )
             .outerjoin(active_count_subq, active_count_subq.c.assignee_id == UiUser.user_login)
             .where(UiUser.is_active.is_(True))
             .where(UiUser.actor_role.in_(("admin", "support")))
-            .order_by(
-                func.coalesce(active_count_subq.c.active_count, 0).asc(),
-                case(
-                    (UiUser.last_ticket_assigned_at.is_(None), 0),
-                    else_=1,
-                ).asc(),
-                UiUser.last_ticket_assigned_at.asc(),
-                UiUser.user_login.asc(),
+        )
+        if queue_id is not None:
+            role_expr = TicketQueueMember.role_in_queue.label("role_in_queue")
+            stmt = (
+                select(
+                    UiUser.user_login,
+                    UiUser.actor_role,
+                    UiUser.is_active,
+                    UiUser.last_ticket_assigned_at,
+                    func.coalesce(active_count_subq.c.active_count, 0).label("active_count"),
+                    role_expr,
+                )
+                .outerjoin(active_count_subq, active_count_subq.c.assignee_id == UiUser.user_login)
+                .where(UiUser.is_active.is_(True))
+                .where(UiUser.actor_role.in_(("admin", "support")))
             )
+            stmt = stmt.join(
+                TicketQueueMember,
+                and_(
+                    TicketQueueMember.actor_id == UiUser.user_login,
+                    TicketQueueMember.queue_id == queue_id,
+                ),
+            )
+        stmt = stmt.order_by(
+            func.coalesce(active_count_subq.c.active_count, 0).asc(),
+            case(
+                (UiUser.last_ticket_assigned_at.is_(None), 0),
+                else_=1,
+            ).asc(),
+            UiUser.last_ticket_assigned_at.asc(),
+            UiUser.user_login.asc(),
         )
         result = await self.session.execute(stmt)
         rows = []
@@ -1490,9 +1527,22 @@ class TicketEventsRepo:
                     "is_active": row[2],
                     "last_ticket_assigned_at": row[3],
                     "active_count": int(row[4] or 0),
+                    "role_in_queue": row[5],
                 }
             )
         return rows
+
+    async def is_actor_in_queue(self, queue_id: Optional[int], actor_id: str) -> bool:
+        if queue_id is None or not actor_id:
+            return False
+        stmt = select(TicketQueueMember.actor_id).where(
+            and_(
+                TicketQueueMember.queue_id == queue_id,
+                TicketQueueMember.actor_id == actor_id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.first() is not None
 
     async def touch_user_last_assignment(self, user_login: str, assigned_at: datetime) -> bool:
         stmt = (
@@ -1503,7 +1553,7 @@ class TicketEventsRepo:
         result = await self.session.execute(stmt)
         return result.rowcount > 0
 
-    async def select_assignee_for_update(self, max_active: int) -> Optional[str]:
+    async def select_assignee_for_update(self, max_active: int, queue_id: Optional[int] = None) -> Optional[str]:
         """Выбирает первого доступного кандидата с блокировкой FOR UPDATE SKIP LOCKED.
 
         Запрашивает упорядоченный список кандидатов, затем для каждого пытается
@@ -1511,7 +1561,7 @@ class TicketEventsRepo:
         конкурирующими транзакциями). После блокировки перепроверяет счётчик активных
         тикетов, чтобы исключить гонку между параллельными запросами auto-assign.
         """
-        candidates = await self.list_assignable_users_with_load()
+        candidates = await self.list_assignable_users_with_load(queue_id=queue_id)
         for candidate in candidates:
             if int(candidate.get("active_count") or 0) >= max_active:
                 continue

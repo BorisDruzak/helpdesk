@@ -1436,9 +1436,7 @@
             const wrap = document.getElementById('queueManageAssignWrap');
             const sel = document.getElementById('queueManageAssign');
             const degraded = document.getElementById('queueManageAssignDegraded');
-            const autoBtn = document.getElementById('queueManageAssignAuto');
             const isSupport = queueState.actorRole === 'support';
-            if (autoBtn) autoBtn.style.display = isSupport ? 'none' : '';
             if (!sel) return;
             if (!queueManageAssignAvailable || !queueCachedUsers.length) {
                 if (degraded) degraded.style.display = 'block';
@@ -1627,23 +1625,6 @@
                 if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
                 if (data.status === 'ok') { queueToast('Исполнитель изменён'); queueLoadTickets(); queueManageModalTicket = queueManageModalTicket || {}; queueManageModalTicket.assignee_id = assigneeId || null; }
                 else { errEl.textContent = data.error || 'Ошибка'; errEl.style.display = 'inline'; }
-            } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
-        }
-
-        async function queueManageAssignAuto() {
-            if (!queueManageModalTicketId || !queueManageAssignAvailable) return;
-            const errEl = document.getElementById('queueManageAssignError');
-            errEl.style.display = 'none';
-            try {
-                const res = await fetch(`/api/tickets/${queueManageModalTicketId}/assign`, {
-                    method: 'POST',
-                    headers: getAuthHeaders(true),
-                    body: JSON.stringify({ auto_assign: true, reason: 'auto_balance' })
-                });
-                const data = await res.json();
-                if (res.status === 403) { queueState.canWrite = false; queueManageModalClose(); queueToast('Нет прав'); queueLoadTickets(); return; }
-                if (data.status === 'ok') { queueToast(data.auto_assigned ? 'Тикет автоназначен' : 'Исполнитель изменён'); queueLoadTickets(); queueManageModalClose(); }
-                else { errEl.textContent = data.message || data.error || 'Ошибка'; errEl.style.display = 'inline'; }
             } catch (e) { errEl.textContent = e.message; errEl.style.display = 'inline'; }
         }
 
@@ -1851,7 +1832,6 @@
             document.getElementById('queueManageModalOverlay')?.addEventListener('click', (e) => { if (e.target.id === 'queueManageModalOverlay') queueManageModalClose(); });
             document.getElementById('queueManageStatusApply')?.addEventListener('click', () => queueManageStatusApply());
             document.getElementById('queueManageAssignApply')?.addEventListener('click', () => queueManageAssignApply());
-            document.getElementById('queueManageAssignAuto')?.addEventListener('click', () => queueManageAssignAuto());
             document.getElementById('queueManageQueueApply')?.addEventListener('click', () => queueManageQueueApply());
             document.getElementById('queueManagePriorityApply')?.addEventListener('click', () => queueManagePriorityApply());
             document.getElementById('queueManageDeviceApply')?.addEventListener('click', () => queueManageDeviceApply());
@@ -2097,6 +2077,7 @@
             loading: false,
             activeSection: 'overview',
             selectedQueueId: null,
+            selectedResolutionCode: '',
             selectedSlaId: null,
             selectedCalendarId: null,
             selectedRoutingId: null,
@@ -2134,7 +2115,6 @@
                     <div class="settings-section-nav">
                         <button type="button" class="settings-section-tab active" data-settings-section="overview">Обзор</button>
                         <button type="button" class="settings-section-tab" data-settings-section="queues">Очереди</button>
-                        <button type="button" class="settings-section-tab" data-settings-section="autoassign">Автоназначение</button>
                         <button type="button" class="settings-section-tab" data-settings-section="routing">Маршрутизация</button>
                         <button type="button" class="settings-section-tab" data-settings-section="sla">SLA, календари и OLA</button>
                         <button type="button" class="settings-section-tab" data-settings-section="references">Справочники</button>
@@ -2143,7 +2123,6 @@
                     </div>
                     ${settingsRenderOverviewSection()}
                     ${settingsRenderQueuesSection()}
-                    ${settingsRenderAutoassignSection()}
                     ${settingsRenderRoutingSection()}
                     ${settingsRenderSlaSection()}
                     ${settingsRenderReferencesSection()}
@@ -2252,43 +2231,6 @@
             `;
         }
 
-        function settingsRenderAutoassignSection() {
-            return `
-                <section id="settingsSection-autoassign" class="settings-section">
-                    <div class="settings-grid-two">
-                        <article class="section">
-                            <h2>Как сейчас работает автоназначение</h2>
-                            <div class="settings-example-box">
-                                <strong>Текущее системное поведение</strong>
-                                <ul class="settings-bullet-list">
-                                    <li>кандидаты на автоназначение: все активные пользователи с ролью <code>support</code> или <code>admin</code>;</li>
-                                    <li>состав очереди сейчас не ограничивает автоназначение;</li>
-                                    <li>сначала выбирается оператор с наименьшей текущей нагрузкой;</li>
-                                    <li>при равной нагрузке выбирается тот, кому дольше не назначали новый тикет;</li>
-                                    <li>лимит активных тикетов на оператора сейчас фиксированный: <strong id="settingsAssignmentLimitLabel">3</strong>.</li>
-                                </ul>
-                            </div>
-                            <p class="settings-help-text">Если хотите привязать автоназначение именно к участникам очередей, это уже следующий шаг развития логики, сейчас на сервере так не сделано.</p>
-                        </article>
-                        <article class="section">
-                            <div class="settings-section-head">
-                                <div>
-                                    <h2>Операторы и текущая нагрузка</h2>
-                                    <p class="settings-help-text">Эти люди реально участвуют в автоназначении на текущей версии сервера.</p>
-                                </div>
-                            </div>
-                            <div class="settings-table-wrap">
-                                <table class="settings-table">
-                                    <thead><tr><th>Пользователь</th><th>Роль</th><th>Активных тикетов</th><th>Можно назначать</th></tr></thead>
-                                    <tbody id="settingsAutoassignTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </article>
-                    </div>
-                </section>
-            `;
-        }
-
         function settingsRenderQueuesSection() {
             return `
                 <section id="settingsSection-queues" class="settings-section">
@@ -2303,8 +2245,8 @@
                             </div>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
-                                    <thead><tr><th>Код</th><th>Название</th><th>Triage</th><th>Активна</th><th>Состав</th><th>Действие</th></tr></thead>
-                                    <tbody id="settingsQueuesTableBody"><tr><td colspan="6" class="muted">Загрузка...</td></tr></tbody>
+                                    <thead><tr><th>Код</th><th>Название</th><th>Triage</th><th>Автоназначение</th><th>Активна</th><th>Состав</th><th>Действие</th></tr></thead>
+                                    <tbody id="settingsQueuesTableBody"><tr><td colspan="7" class="muted">Загрузка...</td></tr></tbody>
                                 </table>
                             </div>
                         </article>
@@ -2321,6 +2263,7 @@
                                 <div class="form-group"><label for="settingsQueueName">Название</label><input type="text" id="settingsQueueName" placeholder="Человеческое название для операторов"></div>
                                 <div class="settings-inline-fields">
                                     <label class="settings-switch"><input type="checkbox" id="settingsQueueIsTriage"><span>Это triage-очередь</span></label>
+                                    <label class="settings-switch"><input type="checkbox" id="settingsQueueAutoAssign" checked><span>Автоназначение в очереди включено</span></label>
                                     <label class="settings-switch"><input type="checkbox" id="settingsQueueIsActive" checked><span>Очередь активна</span></label>
                                 </div>
                                 <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить</button><button type="button" class="btn btn-secondary" id="settingsQueueResetBtn">Сбросить</button></div>
@@ -2329,7 +2272,7 @@
                                 <div class="settings-section-head compact">
                                     <div>
                                         <h3>Участники очереди</h3>
-                                        <p class="settings-help-text">Список участников нужен для прозрачной ответственности и уведомлений. Если он пуст, HelpDesk всё равно работает, но логика команды становится неочевидной.</p>
+                                        <p class="settings-help-text">Участники очереди определяют, кто реально видит очередь в support workspace, кто может брать тикеты себе и кто участвует в автоназначении этой очереди.</p>
                                     </div>
                                 </div>
                                 <div class="settings-inline-fields">
@@ -2366,6 +2309,12 @@
                                 <strong>Как работает сейчас</strong>
                                 <p>Сервер проверяет правила сверху вниз и берёт первое подходящее.</p>
                                 <p>Если правил нет или ни одно не подошло, тикет уходит в fallback-очередь <code>servicedesk_l1</code>.</p>
+                                <p>Для веб-тикетов уже доступны поля: заголовок, описание, отображаемое имя, ФИО, корпус, кабинет, телефон, срочность, важность, итоговый приоритет и признак публичного тикета.</p>
+                            </div>
+                            <div class="settings-feature-list">
+                                <article class="settings-feature-card"><strong>Вариант 1</strong><p><code>requester_profile.building = АБК</code> → направить в локальную очередь здания.</p></article>
+                                <article class="settings-feature-card"><strong>Вариант 2</strong><p><code>description содержит "1с"</code> или <code>title содержит "1с"</code> → направить в очередь 1C.</p></article>
+                                <article class="settings-feature-card"><strong>Вариант 3</strong><p><code>is_public_ticket = true</code> и <code>priority_class = P0/P1</code> → отправить в приоритетную первую линию.</p></article>
                             </div>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
@@ -2403,7 +2352,7 @@
                                     <div class="form-group">
                                         <label for="settingsRoutingCondition">Условие (JSON)</label>
                                         <textarea id="settingsRoutingCondition" rows="8" spellcheck="false"></textarea>
-                                        <small class="settings-hint">Нужен только если правило слишком сложное для обычной формы. Поддерживаются поля priority, category_id, service_id, subcategory_id, location, device_type и операции eq, ne, in, contains, is_null.</small>
+                                        <small class="settings-hint">Нужен только если правило слишком сложное для обычной формы. Поддерживаются поля title, description, requester_display_name, requester_profile.full_name, requester_profile.building, requester_profile.room, requester_profile.phone, priority_class, urgency, importance, is_public_ticket, location, device_type и операции eq, ne, in, contains, is_null.</small>
                                     </div>
                                 </details>
                                 <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить правило</button><button type="button" class="btn btn-secondary" id="settingsRoutingResetBtn">Сбросить</button></div>
@@ -2542,18 +2491,28 @@
                             <p class="settings-help-text">Эти коды используются при переводе тикета в «Решена» или «Закрыта». Они помогают понимать, каким способом проблема была закрыта.</p>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
-                                    <thead><tr><th>Код</th><th>Название</th><th>Что означает</th><th>Активен</th></tr></thead>
-                                    <tbody id="settingsResolutionCodesTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
+                                    <thead><tr><th>Код</th><th>Название</th><th>Что означает</th><th>Порядок</th><th>Активен</th><th>Действие</th></tr></thead>
+                                    <tbody id="settingsResolutionCodesTableBody"><tr><td colspan="6" class="muted">Загрузка...</td></tr></tbody>
                                 </table>
                             </div>
                         </article>
                         <article class="section">
+                            <h2>Карточка кода решения</h2>
+                            <form id="settingsResolutionCodeForm" class="settings-form">
+                                <div class="form-group"><label for="settingsResolutionCode">Код</label><input type="text" id="settingsResolutionCode" placeholder="fixed"></div>
+                                <div class="form-group"><label for="settingsResolutionName">Название</label><input type="text" id="settingsResolutionName" placeholder="Проблему исправили"></div>
+                                <div class="settings-inline-fields">
+                                    <div class="form-group"><label for="settingsResolutionSortOrder">Порядок</label><input type="number" min="0" id="settingsResolutionSortOrder" value="0"></div>
+                                    <label class="settings-switch"><input type="checkbox" id="settingsResolutionActive" checked><span>Код активен</span></label>
+                                </div>
+                                <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить код</button><button type="button" class="btn btn-secondary" id="settingsResolutionResetBtn">Сбросить</button><button type="button" class="btn btn-secondary" id="settingsResolutionDeleteBtn">Удалить</button></div>
+                            </form>
                             <h2>Пояснения простыми словами</h2>
                             <div class="settings-feature-list">
                                 <article class="settings-feature-card"><strong>Код решения</strong><p>Показывает, как именно команда закрыла заявку: исправили, обошли проблему, отдали вендору, нашли ошибку пользователя и так далее.</p></article>
                                 <article class="settings-feature-card"><strong>Первопричина</strong><p>Это короткое объяснение, почему инцидент вообще возник. Нужна для анализа повторяемых проблем и серьёзных инцидентов.</p></article>
                                 <article class="settings-feature-card"><strong>CRUD</strong><p>Стандартное сокращение от Create / Read / Update / Delete: создать, посмотреть, изменить и удалить запись.</p></article>
-                                <article class="settings-feature-card"><strong>Что ещё не доделано</strong><p>Полноценное управление самими кодами решения, глобальные уведомления и справочники категорий/сервисов ещё нужно вывести в отдельные формы.</p></article>
+                                <article class="settings-feature-card"><strong>Удаление с защитой</strong><p>Если код уже использовался в тикетах, его лучше деактивировать, а не удалять. Система это контролирует.</p></article>
                             </div>
                         </article>
                     </div>
@@ -2695,7 +2654,18 @@
 
         function settingsRoutingFieldOptions() {
             return [
-                { value: 'priority', label: 'Приоритет' },
+                { value: 'priority_class', label: 'Итоговый приоритет' },
+                { value: 'title', label: 'Заголовок тикета' },
+                { value: 'description', label: 'Описание тикета' },
+                { value: 'requester_display_name', label: 'Отображаемое имя' },
+                { value: 'requester_profile.full_name', label: 'ФИО' },
+                { value: 'requester_profile.building', label: 'Корпус' },
+                { value: 'requester_profile.room', label: 'Кабинет' },
+                { value: 'requester_profile.phone', label: 'Телефон' },
+                { value: 'is_public_ticket', label: 'Публичный веб-тикет' },
+                { value: 'public_ticket_unbound', label: 'Публичный тикет без агента' },
+                { value: 'urgency', label: 'Срочность (0/1)' },
+                { value: 'importance', label: 'Важность (0/1)' },
                 { value: 'category_id', label: 'Категория' },
                 { value: 'service_id', label: 'Сервис' },
                 { value: 'subcategory_id', label: 'Подкатегория' },
@@ -2772,7 +2742,7 @@
             }
             if (hintEl) {
                 hintEl.textContent = routingModel.rows.length
-                    ? 'Обычная форма подходит для типовых правил по приоритету, категории, сервису, локации и типу устройства.'
+                    ? 'Обычная форма подходит для типовых правил по тексту заявки, данным инициатора, приоритету, признаку публичного тикета, локации и типу устройства.'
                     : 'Если оставить условия пустыми, правило будет общим и сработает для всех тикетов.';
             }
             const rows = routingModel.rows.length ? routingModel.rows : [];
@@ -2951,7 +2921,7 @@
                     settingsApi('/api/admin/tickets/sla_policies?include_inactive=true'),
                     settingsApi('/api/admin/tickets/calendars?include_inactive=true'),
                     settingsApi('/api/admin/tickets/audit?limit=50'),
-                    settingsApi('/api/tickets/resolution_codes?include_inactive=true'),
+                    settingsApi('/api/admin/tickets/resolution_codes?include_inactive=true'),
                     settingsApi('/api/admin/users?include_inactive=true'),
                 ]);
                 settingsState.queues = queuesData.queues || [];
@@ -2961,6 +2931,9 @@
                 settingsState.audit = auditData.audit || [];
                 settingsState.resolutionCodes = resolutionData.resolution_codes || [];
                 settingsState.users = (usersData.users || []).filter(user => user.actor_role === 'admin' || user.actor_role === 'support');
+                if (!settingsState.selectedResolutionCode || !settingsState.resolutionCodes.some(item => item.code === settingsState.selectedResolutionCode)) {
+                    settingsState.selectedResolutionCode = '';
+                }
                 if (!settingsState.selectedQueueId || !settingsState.queues.some(item => Number(item.id) === Number(settingsState.selectedQueueId))) {
                     settingsState.selectedQueueId = settingsState.queues[0] ? settingsState.queues[0].id : null;
                 }
@@ -3024,7 +2997,6 @@
             settingsRenderOverview();
             settingsRenderQueues();
             settingsRenderQueueMembers();
-            settingsRenderAutoassign();
             settingsRenderRouting();
             settingsRenderSla();
             settingsRenderCalendars();
@@ -3042,7 +3014,7 @@
                     { label: 'Правил маршрутизации', value: settingsState.routingRules.length, note: 'Активные и выключенные правила' },
                     { label: 'SLA политик', value: settingsState.slaPolicies.length, note: 'Включая политику по умолчанию' },
                     { label: 'Календарей', value: settingsState.calendars.length, note: 'Часовые пояса, рабочие часы, праздники' },
-                    { label: 'Кодов решения', value: settingsState.resolutionCodes.length, note: 'Пока в режиме просмотра' },
+                    { label: 'Кодов решения', value: settingsState.resolutionCodes.length, note: 'Управляются через форму справа' },
                     { label: 'Записей аудита', value: settingsState.audit.length, note: 'Последние изменения правил' },
                 ];
                 cardsEl.innerHTML = cards.map(card => `<article class="settings-overview-card"><label>${escapeHtml(card.label)}</label><strong>${escapeHtml(String(card.value))}</strong><span>${escapeHtml(card.note)}</span></article>`).join('');
@@ -3050,30 +3022,15 @@
             if (listEl) {
                 listEl.innerHTML = [
                     'очереди и состав очередей;',
-                    'автоназначение и текущая нагрузка операторов;',
+                    'политика автоназначения на уровне очереди;',
                     'правила маршрутизации по условиям;',
                     'SLA-политики, цели SLA и матрица приоритетов;',
                     'календари рабочего времени и праздники;',
                     'OLA по очередям;',
+                    'коды решения и правила закрытия;',
                     'аудит изменений help desk-настроек.'
                 ].map(item => `<li>${item}</li>`).join('');
             }
-        }
-
-        function settingsRenderAutoassign() {
-            const tbody = document.getElementById('settingsAutoassignTableBody');
-            if (!tbody) return;
-            const operators = settingsActiveOperators();
-            if (!operators.length) {
-                tbody.innerHTML = '<tr><td colspan="4" class="muted">Активные support/admin пользователи не найдены.</td></tr>';
-                return;
-            }
-            tbody.innerHTML = operators.map(user => `<tr>
-                <td>${escapeHtml(user.user_login || '—')}</td>
-                <td>${escapeHtml(user.actor_role === 'admin' ? 'Администратор' : 'Поддержка')}</td>
-                <td>${escapeHtml(String(user.active_count || 0))}</td>
-                <td>${user.assignment_available === false ? '<span class="settings-status-pill warn">Лимит достигнут</span>' : '<span class="settings-status-pill ok">Да</span>'}</td>
-            </tr>`).join('');
         }
 
         function settingsRenderQueues() {
@@ -3083,7 +3040,7 @@
             const olaSelect = document.getElementById('settingsOlaQueueSelect');
             if (tbody) {
                 if (!settingsState.queues.length) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="muted">Очереди пока не настроены.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="muted">Очереди пока не настроены.</td></tr>';
                 } else {
                     tbody.innerHTML = settingsState.queues.map(queue => {
                         const memberCount = settingsState.selectedQueueId && Number(settingsState.selectedQueueId) === Number(queue.id) ? settingsState.queueMembers.length : '—';
@@ -3091,6 +3048,7 @@
                             <td><code>${escapeHtml(queue.code || '')}</code></td>
                             <td>${escapeHtml(queue.name || '—')}</td>
                             <td>${queue.is_triage ? 'Да' : 'Нет'}</td>
+                            <td>${queue.auto_assign_enabled === false ? '<span class="settings-status-pill off">Выключено</span>' : '<span class="settings-status-pill ok">Включено</span>'}</td>
                             <td>${queue.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
                             <td>${escapeHtml(String(memberCount))}</td>
                             <td><button type="button" class="settings-row-action" data-settings-action="edit-queue" data-queue-id="${queue.id}">Открыть</button></td>
@@ -3118,7 +3076,7 @@
                 return;
             }
             if (!settingsState.queueMembers.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="muted">В этой очереди пока нет участников. Это не мешает автоназначению, но очередь остаётся без явного состава команды.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="muted">В этой очереди пока нет участников. Для support workspace это значит, что тикеты очереди никто из саппортов не увидит как рабочие, а автоназначение тоже не сработает.</td></tr>';
                 return;
             }
             tbody.innerHTML = settingsState.queueMembers.map(member => `<tr>
@@ -3199,15 +3157,19 @@
             const tbody = document.getElementById('settingsResolutionCodesTableBody');
             if (!tbody) return;
             if (!settingsState.resolutionCodes.length) {
-                tbody.innerHTML = '<tr><td colspan="4" class="muted">Коды решения пока не найдены.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="muted">Коды решения пока не найдены.</td></tr>';
+                settingsPopulateResolutionCodeForm();
                 return;
             }
             tbody.innerHTML = settingsState.resolutionCodes.map(code => `<tr>
                 <td><code>${escapeHtml(code.code || '')}</code></td>
                 <td>${escapeHtml(code.name || '—')}</td>
                 <td>${escapeHtml(settingsResolutionMeaning(code.code || ''))}</td>
+                <td>${escapeHtml(String(code.sort_order ?? 0))}</td>
                 <td>${code.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
+                <td><button type="button" class="settings-row-action" data-settings-action="edit-resolution-code" data-resolution-code="${escapeHtml(code.code || '')}">Открыть</button></td>
             </tr>`).join('');
+            settingsPopulateResolutionCodeForm();
         }
 
         function settingsRenderAudit() {
@@ -3233,7 +3195,17 @@
             document.getElementById('settingsQueueCode').value = current ? (current.code || '') : '';
             document.getElementById('settingsQueueName').value = current ? (current.name || '') : '';
             document.getElementById('settingsQueueIsTriage').checked = !!(current && current.is_triage);
+            document.getElementById('settingsQueueAutoAssign').checked = !current || current.auto_assign_enabled !== false;
             document.getElementById('settingsQueueIsActive').checked = !current || current.is_active !== false;
+        }
+
+        function settingsPopulateResolutionCodeForm() {
+            const current = settingsState.resolutionCodes.find(code => code.code === settingsState.selectedResolutionCode);
+            document.getElementById('settingsResolutionCode').value = current ? (current.code || '') : '';
+            document.getElementById('settingsResolutionCode').disabled = !!current;
+            document.getElementById('settingsResolutionName').value = current ? (current.name || '') : '';
+            document.getElementById('settingsResolutionSortOrder').value = current ? (current.sort_order ?? 0) : 0;
+            document.getElementById('settingsResolutionActive').checked = !current || current.is_active !== false;
         }
 
         function settingsPopulateRoutingForm() {
@@ -3296,6 +3268,9 @@
                 } else if (action === 'edit-calendar') {
                     settingsState.selectedCalendarId = Number(actionBtn.getAttribute('data-calendar-id'));
                     settingsRenderCalendars();
+                } else if (action === 'edit-resolution-code') {
+                    settingsState.selectedResolutionCode = actionBtn.getAttribute('data-resolution-code') || '';
+                    settingsRenderResolutionCodes();
                 } else if (action === 'remove-routing-condition') {
                     const current = settingsReadRoutingBuilderRows();
                     const index = Number(actionBtn.getAttribute('data-routing-index'));
@@ -3322,6 +3297,9 @@
             } else if (id === 'settingsCalendarNewBtn' || id === 'settingsCalendarResetBtn') {
                 settingsState.selectedCalendarId = null;
                 settingsRenderCalendars();
+            } else if (id === 'settingsResolutionResetBtn') {
+                settingsState.selectedResolutionCode = '';
+                settingsRenderResolutionCodes();
             } else if (id === 'settingsQueueMemberAddBtn') {
                 await settingsUpsertQueueMember();
             } else if (id === 'settingsQueueAddAllOperatorsBtn') {
@@ -3341,6 +3319,8 @@
                 await settingsSaveOlaTargets();
             } else if (id === 'settingsAuditRefreshBtn') {
                 await loadSettingsTab(true);
+            } else if (id === 'settingsResolutionDeleteBtn') {
+                await settingsDeleteResolutionCode();
             }
         }
 
@@ -3354,6 +3334,8 @@
                 await settingsSaveSla();
             } else if (event.target.id === 'settingsCalendarForm') {
                 await settingsSaveCalendar();
+            } else if (event.target.id === 'settingsResolutionCodeForm') {
+                await settingsSaveResolutionCode();
             }
         }
 
@@ -3364,6 +3346,7 @@
                     code: document.getElementById('settingsQueueCode').value.trim(),
                     name: document.getElementById('settingsQueueName').value.trim(),
                     is_triage: document.getElementById('settingsQueueIsTriage').checked,
+                    auto_assign_enabled: document.getElementById('settingsQueueAutoAssign').checked,
                     is_active: document.getElementById('settingsQueueIsActive').checked,
                 };
                 if (!payload.code || !payload.name) throw new Error('Укажите код и название очереди');
@@ -3426,6 +3409,53 @@
                 await settingsLoadQueueMembers(settingsState.selectedQueueId);
                 settingsRenderQueueMembers();
                 settingsShowMessage('success', 'Участник удалён из очереди.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveResolutionCode() {
+            try {
+                const currentCode = settingsState.selectedResolutionCode;
+                const payload = {
+                    code: document.getElementById('settingsResolutionCode').value.trim(),
+                    name: document.getElementById('settingsResolutionName').value.trim(),
+                    sort_order: Number(document.getElementById('settingsResolutionSortOrder').value || 0),
+                    is_active: document.getElementById('settingsResolutionActive').checked,
+                };
+                if (!payload.code || !payload.name) throw new Error('Заполните код и название');
+                if (currentCode) {
+                    await settingsApi('/api/admin/tickets/resolution_codes/' + encodeURIComponent(currentCode), {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            name: payload.name,
+                            sort_order: payload.sort_order,
+                            is_active: payload.is_active,
+                        }),
+                    });
+                } else {
+                    await settingsApi('/api/admin/tickets/resolution_codes', {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                    settingsState.selectedResolutionCode = payload.code;
+                }
+                await loadSettingsTab(false);
+                settingsShowMessage('success', 'Код решения сохранён.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsDeleteResolutionCode() {
+            try {
+                if (!settingsState.selectedResolutionCode) throw new Error('Сначала выберите код решения');
+                await settingsApi('/api/admin/tickets/resolution_codes/' + encodeURIComponent(settingsState.selectedResolutionCode), {
+                    method: 'DELETE',
+                });
+                settingsState.selectedResolutionCode = '';
+                await loadSettingsTab(false);
+                settingsShowMessage('success', 'Код решения удалён.');
             } catch (error) {
                 settingsHandleWriteError(error);
             }

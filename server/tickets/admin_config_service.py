@@ -17,7 +17,7 @@ VALID_IMPACT_URGENCY = (1, 2, 3)
 def validate_condition_json(condition: Optional[dict]) -> Tuple[bool, Optional[str]]:
     """
     Валидация condition_json для routing rule.
-    Формат: {"field":"priority","op":"eq","value":"P1"} или {"and":[cond1,cond2]}.
+    Формат: {"field":"priority_class","op":"eq","value":"P1"} или {"and":[cond1,cond2]}.
     """
     if condition is None:
         return True, None
@@ -45,7 +45,7 @@ def validate_condition_json(condition: Optional[dict]) -> Tuple[bool, Optional[s
     op = condition.get("op")
     if field is None and op is None and "value" not in condition:
         return True, None
-    valid_ops = ("eq", "ne", "in", "nin")
+    valid_ops = ("eq", "ne", "in", "nin", "contains", "is_null")
     if op not in valid_ops:
         return False, f"condition_json.op must be one of {valid_ops}"
     if not isinstance(field, str) or not field.strip():
@@ -118,6 +118,7 @@ class AdminConfigService:
             "name": q.name,
             "is_triage": q.is_triage,
             "is_active": q.is_active,
+            "auto_assign_enabled": getattr(q, "auto_assign_enabled", True),
         }
 
     def _serialize_rule(self, r: TicketRoutingRule) -> dict:

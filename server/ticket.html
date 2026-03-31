@@ -50,7 +50,13 @@
                                 <span class="sidebar-label">Телефон</span>
                                 <input id="sideRequesterPhoneInput" type="text" placeholder="+7 ...">
                             </label>
-                            <button id="sideRequesterApplyBtn" class="btn btn-primary" type="button">Сохранить профиль</button>
+                            <div class="sidebar-help">
+                                Эти поля можно использовать в маршрутизации: отображаемое имя, ФИО, корпус, кабинет и телефон.
+                            </div>
+                            <div class="sidebar-inline-controls">
+                                <button id="sideRequesterApplyBtn" class="btn btn-primary" type="button">Сохранить профиль</button>
+                                <button id="sideRequesterApplyAndRerouteBtn" class="btn btn-secondary" type="button">Сохранить и пересчитать очередь</button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -127,8 +133,8 @@
                         <div class="sidebar-inline-controls sidebar-editable">
                             <select id="sideAssigneeSelect"></select>
                             <button id="sideAssigneeApplyBtn" class="btn btn-secondary" type="button">Назначить</button>
-                            <button id="sideAutoAssignBtn" class="btn btn-secondary" type="button">Автоназначение</button>
                         </div>
+                        <div id="sideAssigneeHint" class="sidebar-help hidden"></div>
                     </div>
                 </section>
 
@@ -142,6 +148,12 @@
                         <div class="sidebar-inline-controls sidebar-editable">
                             <select id="sideQueueSelect"></select>
                             <button id="sideQueueApplyBtn" class="btn btn-secondary" type="button">Перенести</button>
+                        </div>
+                        <div class="sidebar-help">
+                            Очередь можно перенести вручную или пересчитать по правилам маршрутизации. Правила обычно смотрят на корпус, кабинет, ФИО, приоритет, описание и признак публичного тикета.
+                        </div>
+                        <div class="sidebar-inline-controls sidebar-editable">
+                            <button id="sideQueueRerouteBtn" class="btn btn-secondary" type="button">Пересчитать по правилам</button>
                         </div>
                     </div>
                 </section>
