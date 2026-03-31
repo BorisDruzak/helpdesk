@@ -2606,15 +2606,29 @@
         }
 
         async function settingsLoadResolutionCodes() {
+            const adminHeaders = getAuthHeaders(false);
             try {
-                return await settingsApi('/api/admin/tickets/resolution_codes?include_inactive=true');
-            } catch (error) {
-                if (error && error.status === 404) {
-                    const fallback = await settingsApi('/api/tickets/resolution_codes');
-                    return { resolution_codes: fallback.resolution_codes || [], read_only_fallback: true };
+                const adminResponse = await fetch('/api/admin/tickets/resolution_codes?include_inactive=true', {
+                    headers: adminHeaders,
+                });
+                if (adminResponse.ok) {
+                    const adminData = await responseToJson(adminResponse);
+                    if (adminData.status !== 'error') {
+                        return adminData;
+                    }
+                } else if (adminResponse.status !== 404) {
+                    const adminData = await responseToJson(adminResponse);
+                    const error = new Error((adminData && adminData.error) || ('HTTP ' + adminResponse.status));
+                    error.status = adminResponse.status;
+                    throw error;
                 }
-                throw error;
+            } catch (error) {
+                if (error && error.status && error.status !== 404) {
+                    throw error;
+                }
             }
+            const fallback = await settingsApi('/api/tickets/resolution_codes');
+            return { resolution_codes: fallback.resolution_codes || [], read_only_fallback: true };
         }
 
         function settingsParseJson(value, fallback) {
