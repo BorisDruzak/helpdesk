@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260330b">
+    <link rel="stylesheet" href="/support.css?v=20260331a">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -36,7 +36,7 @@
     <div id="supportApp" class="support-shell hidden">
         <header class="support-topbar">
             <div class="support-topbar-main">
-                <button id="sidebarToggleBtn" class="topbar-icon-btn" type="button" title="Свернуть список тикетов">☰</button>
+                <button id="sidebarToggleBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⟩</button>
                 <div class="support-brand">
                     <p class="support-brand-eyebrow">Help Desk</p>
                     <h1>Support Workspace</h1>
@@ -58,7 +58,7 @@
                         <p class="section-eyebrow">Inbox</p>
                         <h2>Тикеты</h2>
                     </div>
-                    <button id="collapseInboxBtn" class="topbar-icon-btn" type="button" title="Свернуть панель">⟨</button>
+                    <button id="collapseInboxBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⟪</button>
                 </div>
 
                 <div class="ticket-inbox-toolbar">
@@ -160,7 +160,10 @@
                         <p class="section-eyebrow">Workbench</p>
                         <h2>Инструменты</h2>
                     </div>
-                    <button id="drawerToggleBtn" class="topbar-icon-btn" type="button" title="Свернуть панель">⟩</button>
+                    <div class="drawer-head-actions">
+                        <button id="drawerResizeBtn" class="topbar-icon-btn" type="button" title="Развернуть панель инструментов">⟫</button>
+                        <button id="drawerToggleBtn" class="topbar-icon-btn" type="button" title="Свернуть панель">⟩</button>
+                    </div>
                 </div>
 
                 <div class="drawer-tabs" id="drawerTabs">
@@ -204,6 +207,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260330b"></script>
+    <script src="/support.js?v=20260331a"></script>
 </body>
 </html>

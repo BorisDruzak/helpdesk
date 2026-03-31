@@ -7,9 +7,16 @@
     const USER_LOGIN_KEY = 'admin_user_login';
     const ROLE_KEY = 'admin_actor_role';
     const LAST_TICKET_KEY = 'support_workspace_last_ticket';
+    const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
+    const DRAWER_MODE_KEY = 'support_workspace_drawer_mode';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260330b';
+    const SUPPORT_SHELL_VERSION = '20260331a';
     const POLL_INTERVAL_MS = 8000;
+    const PANEL_MODES = Object.freeze({
+        COLLAPSED: 'collapsed',
+        HALF: 'half',
+        FULL: 'full',
+    });
     const ACTIVE_WORK_STATUSES = new Set(['triaged', 'in_progress', 'waiting_on_user', 'waiting_on_vendor', 'resolved']);
     const STATUS_LABELS = {
         new: 'Новая',
@@ -60,9 +67,9 @@
         selectedSnapshot: null,
         selectedLifecycle: null,
         detailLoading: false,
-        drawerOpen: true,
+        drawerMode: PANEL_MODES.HALF,
         drawerTab: 'context',
-        sidebarCollapsed: false,
+        sidebarMode: PANEL_MODES.HALF,
         pollTimer: null,
         tools: [],
         toolsDeviceId: '',
@@ -74,6 +81,13 @@
 
     function byId(id) {
         return document.getElementById(id);
+    }
+
+    function normalizePanelMode(value) {
+        if (value === PANEL_MODES.COLLAPSED || value === PANEL_MODES.FULL) {
+            return value;
+        }
+        return PANEL_MODES.HALF;
     }
 
     function getToken() {
@@ -238,8 +252,48 @@
         if (!layout) {
             return;
         }
-        layout.classList.toggle('layout-sidebar-collapsed', !!state.sidebarCollapsed);
-        layout.classList.toggle('layout-drawer-collapsed', !state.drawerOpen);
+        layout.dataset.sidebarMode = state.sidebarMode;
+        layout.dataset.drawerMode = state.drawerMode;
+        const sidebarToggleBtn = byId('sidebarToggleBtn');
+        if (sidebarToggleBtn) {
+            const isCollapsed = state.sidebarMode === PANEL_MODES.COLLAPSED;
+            sidebarToggleBtn.textContent = isCollapsed ? '⟩' : '⟨';
+            sidebarToggleBtn.title = isCollapsed ? 'Развернуть список тикетов' : 'Полностью свернуть список тикетов';
+        }
+        const inboxResizeBtn = byId('collapseInboxBtn');
+        if (inboxResizeBtn) {
+            const isFull = state.sidebarMode === PANEL_MODES.FULL;
+            inboxResizeBtn.textContent = isFull ? '⟫' : '⟪';
+            inboxResizeBtn.title = isFull ? 'Вернуть стандартную ширину списка тикетов' : 'Развернуть список тикетов на всю ширину';
+        }
+        const drawerToggleBtn = byId('drawerToggleBtn');
+        if (drawerToggleBtn) {
+            const isCollapsed = state.drawerMode === PANEL_MODES.COLLAPSED;
+            drawerToggleBtn.textContent = isCollapsed ? '⟨' : '⟩';
+            drawerToggleBtn.title = isCollapsed ? 'Развернуть панель инструментов' : 'Полностью свернуть панель инструментов';
+        }
+        const drawerResizeBtn = byId('drawerResizeBtn');
+        if (drawerResizeBtn) {
+            const isFull = state.drawerMode === PANEL_MODES.FULL;
+            drawerResizeBtn.textContent = isFull ? '⟪' : '⟫';
+            drawerResizeBtn.title = isFull ? 'Вернуть стандартную ширину панели инструментов' : 'Развернуть панель инструментов на всю ширину';
+        }
+    }
+
+    function setSidebarMode(mode, options) {
+        state.sidebarMode = normalizePanelMode(mode);
+        if (!(options && options.persist === false)) {
+            sessionStorage.setItem(SIDEBAR_MODE_KEY, state.sidebarMode);
+        }
+        applyLayoutClasses();
+    }
+
+    function setDrawerMode(mode, options) {
+        state.drawerMode = normalizePanelMode(mode);
+        if (!(options && options.persist === false)) {
+            sessionStorage.setItem(DRAWER_MODE_KEY, state.drawerMode);
+        }
+        applyLayoutClasses();
     }
 
     function redirectToLogin(message) {
@@ -266,6 +320,8 @@
         localStorage.removeItem(USER_LOGIN_KEY);
         localStorage.removeItem(ROLE_KEY);
         sessionStorage.removeItem(LAST_TICKET_KEY);
+        sessionStorage.removeItem(SIDEBAR_MODE_KEY);
+        sessionStorage.removeItem(DRAWER_MODE_KEY);
     }
 
     function logout() {
@@ -277,6 +333,8 @@
         state.selectedTicketId = '';
         state.selectedSnapshot = null;
         state.selectedLifecycle = null;
+        state.sidebarMode = PANEL_MODES.HALF;
+        state.drawerMode = PANEL_MODES.HALF;
         renderTicketList();
         renderStage();
         renderContextPanel();
@@ -288,6 +346,8 @@
         state.userLogin = localStorage.getItem(USER_LOGIN_KEY) || '';
         state.actorRole = localStorage.getItem(ROLE_KEY) || '';
         state.selectedTicketId = sessionStorage.getItem(LAST_TICKET_KEY) || '';
+        state.sidebarMode = normalizePanelMode(sessionStorage.getItem(SIDEBAR_MODE_KEY));
+        state.drawerMode = normalizePanelMode(sessionStorage.getItem(DRAWER_MODE_KEY));
         updateAuthBadge();
     }
 
@@ -469,6 +529,12 @@
         listNode.innerHTML = tickets.map((ticket) => {
             const active = ticket.ticket_id === state.selectedTicketId ? ' active' : '';
             const requester = ticket.requester_display_name || ticket.requester_id || '—';
+            const expandedDetails = [
+                'ID: ' + (ticket.ticket_id || '—'),
+                'Устройство: ' + (ticket.device_id || 'Не привязано'),
+                'Создан: ' + formatDate(ticket.created_at),
+            ];
+            const descriptionPreview = String(ticket.description || '').trim();
             const modeBadge = shouldWorkTicket(ticket)
                 ? '<span class="mode-badge">Work</span>'
                 : (shouldObserveTicket(ticket) ? '<span class="mode-badge mode-badge-observe">Observe</span>' : '<span class="mode-badge">Preview</span>');
@@ -489,6 +555,12 @@
                         <div>${escapeHtml(requester)}</div>
                         <div class="ticket-meta-line">${escapeHtml(buildTicketMetaLine(ticket))}</div>
                         <div class="ticket-row-foot">Обновлён: ${escapeHtml(formatDate(ticket.updated_at || ticket.created_at))} • Возраст: ${escapeHtml(formatAge(ticket.created_at))}</div>
+                        <div class="ticket-row-expanded">
+                            <div class="ticket-row-expanded-grid">
+                                ${expandedDetails.map((item) => '<div class="ticket-row-expanded-item">' + escapeHtml(item) + '</div>').join('')}
+                            </div>
+                            ${descriptionPreview ? '<div class="ticket-row-description">' + escapeHtml(descriptionPreview) + '</div>' : ''}
+                        </div>
                     </div>
                     <div class="ticket-row-actions">
                         <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
@@ -504,7 +576,16 @@
                 if (event.target instanceof Element && event.target.closest('[data-ticket-action="take"]')) {
                     return;
                 }
-                await selectTicket(row.getAttribute('data-ticket-id') || '', { autoCollapse: window.innerWidth < 1240 });
+                await selectTicket(row.getAttribute('data-ticket-id') || '');
+            });
+            row.addEventListener('dblclick', async (event) => {
+                if (event.target instanceof Element && event.target.closest('[data-ticket-action="take"]')) {
+                    return;
+                }
+                await selectTicket(row.getAttribute('data-ticket-id') || '');
+                if (state.sidebarMode === PANEL_MODES.FULL) {
+                    setSidebarMode(PANEL_MODES.HALF);
+                }
             });
         });
         listNode.querySelectorAll('[data-ticket-action="take"]').forEach((button) => {
@@ -859,7 +940,7 @@
                 || tickets[0]
                 || null;
             if (preferred) {
-                await selectTicket(preferred.ticket_id, { autoCollapse: false });
+                await selectTicket(preferred.ticket_id);
             } else {
                 renderStage();
                 renderContextPanel();
@@ -871,8 +952,7 @@
         setSyncState('Обновлено ' + new Date().toLocaleTimeString('ru-RU'));
     }
 
-    async function selectTicket(ticketId, options) {
-        const opts = options || {};
+    async function selectTicket(ticketId) {
         if (!ticketId) {
             return;
         }
@@ -888,10 +968,6 @@
         renderStage();
         renderContextPanel();
         renderToolPanels();
-        if (opts.autoCollapse) {
-            state.sidebarCollapsed = true;
-            applyLayoutClasses();
-        }
         try {
             await refreshSelectedDetails(false);
         } finally {
@@ -975,9 +1051,10 @@
                 return;
             }
             if (actionId === 'open_tools') {
-                state.drawerOpen = true;
+                if (state.drawerMode === PANEL_MODES.COLLAPSED) {
+                    setDrawerMode(PANEL_MODES.HALF);
+                }
                 state.drawerTab = 'tools';
-                applyLayoutClasses();
                 renderToolPanels();
                 return;
             }
@@ -1608,16 +1685,16 @@
             });
         });
         byId('sidebarToggleBtn')?.addEventListener('click', () => {
-            state.sidebarCollapsed = !state.sidebarCollapsed;
-            applyLayoutClasses();
+            setSidebarMode(state.sidebarMode === PANEL_MODES.COLLAPSED ? PANEL_MODES.HALF : PANEL_MODES.COLLAPSED);
         });
         byId('collapseInboxBtn')?.addEventListener('click', () => {
-            state.sidebarCollapsed = true;
-            applyLayoutClasses();
+            setSidebarMode(state.sidebarMode === PANEL_MODES.FULL ? PANEL_MODES.HALF : PANEL_MODES.FULL);
         });
         byId('drawerToggleBtn')?.addEventListener('click', () => {
-            state.drawerOpen = !state.drawerOpen;
-            applyLayoutClasses();
+            setDrawerMode(state.drawerMode === PANEL_MODES.COLLAPSED ? PANEL_MODES.HALF : PANEL_MODES.COLLAPSED);
+        });
+        byId('drawerResizeBtn')?.addEventListener('click', () => {
+            setDrawerMode(state.drawerMode === PANEL_MODES.FULL ? PANEL_MODES.HALF : PANEL_MODES.FULL);
         });
         document.querySelectorAll('.drawer-tab').forEach((button) => {
             button.addEventListener('click', async () => {
