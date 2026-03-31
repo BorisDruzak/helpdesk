@@ -2707,12 +2707,13 @@
                 { value: 'ne', label: 'не равно' },
                 { value: 'contains', label: 'содержит' },
                 { value: 'in', label: 'в списке (через запятую)' },
+                { value: 'nin', label: 'не в списке (через запятую)' },
                 { value: 'is_null', label: 'пусто / не пусто' },
             ];
         }
 
         function settingsRoutingEmptyRow() {
-            return { field: 'priority', op: 'eq', value: 'P1' };
+            return { field: 'priority_class', op: 'eq', value: 'P1' };
         }
 
         function settingsRoutingIsSimpleCondition(condition) {
@@ -2738,7 +2739,7 @@
         function settingsRoutingBuilderToCondition(mode, rows) {
             const cleanRows = (rows || []).filter(row => row.field && row.op).map(row => {
                 let value = row.value;
-                if (row.op === 'in') {
+                if (row.op === 'in' || row.op === 'nin') {
                     value = String(row.value || '').split(',').map(item => item.trim()).filter(Boolean);
                 } else if (row.op === 'is_null') {
                     value = String(row.value || 'true') !== 'false';

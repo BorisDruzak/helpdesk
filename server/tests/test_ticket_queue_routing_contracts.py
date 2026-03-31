@@ -269,3 +269,105 @@ async def test_manual_assignment_requires_queue_membership(test_client, test_eng
     assert accept_response.status == 200, await accept_response.text()
     accept_payload = await accept_response.json()
     assert accept_payload["ticket"]["assignee_id"] == "queue_member"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_without_queue_members_stays_unassigned(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="lonely_support", password_hash="test", actor_role="support", is_active=True))
+        await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=[], auto_assign_enabled=True)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "No queue members",
+            "description": "Ticket should stay unassigned",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "No Members",
+        },
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["ticket"]["assignee_id"] in (None, "")
+    assert payload["ticket"]["status"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_manual_queue_change_reassigns_within_target_queue(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add_all([
+            UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="l1_member", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="network_member", password_hash="test", actor_role="support", is_active=True),
+        ])
+        queue_a = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test", "l1_member"])
+        queue_b = await _seed_queue(session, code="network", name="Network", members=["network_member"], auto_assign_enabled=True)
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=str(uuid.uuid4()),
+            title="Queue handoff",
+            description="Ticket should move to target queue member",
+            status="in_progress",
+            requester_id="user-a",
+            queue_id=queue_a.id,
+            assignee_id="support-test",
+        )
+        session.add(ticket)
+        ticket_id = ticket.ticket_id
+        target_queue_id = queue_b.id
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/tickets/{ticket_id}/queue",
+        json={"queue_id": target_queue_id, "reason": "manual"},
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["ticket"]["queue_id"] == target_queue_id
+    assert payload["ticket"]["assignee_id"] == "network_member"
+    assert payload["ticket"]["status"] == "triaged"
+
+
+@pytest.mark.asyncio
+async def test_manual_queue_change_clears_assignee_when_target_queue_has_no_autoassign(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add_all([
+            UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="l1_member", password_hash="test", actor_role="support", is_active=True),
+        ])
+        queue_a = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test", "l1_member"])
+        queue_b = await _seed_queue(session, code="backoffice", name="Backoffice", members=[], auto_assign_enabled=False)
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=str(uuid.uuid4()),
+            title="Queue handoff without autoassign",
+            description="Ticket should come back to queue without assignee",
+            status="waiting_on_user",
+            requester_id="user-b",
+            queue_id=queue_a.id,
+            assignee_id="support-test",
+        )
+        session.add(ticket)
+        ticket_id = ticket.ticket_id
+        target_queue_id = queue_b.id
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/tickets/{ticket_id}/queue",
+        json={"queue_id": target_queue_id, "reason": "manual"},
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["ticket"]["queue_id"] == target_queue_id
+    assert payload["ticket"]["assignee_id"] in (None, "")
+    assert payload["ticket"]["status"] == "new"

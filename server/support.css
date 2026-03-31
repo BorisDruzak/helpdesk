@@ -966,6 +966,92 @@ body {
     z-index: 30;
 }
 
+.support-facts-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.support-fact {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(185, 175, 155, 0.32);
+    border-radius: 14px;
+    padding: 12px 14px;
+}
+
+.support-fact-label {
+    color: var(--support-muted);
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+
+.support-fact-value {
+    color: #1f241f;
+    font-size: 14px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.support-dialog {
+    inset: 0;
+    position: fixed;
+    z-index: 80;
+}
+
+.support-dialog-backdrop {
+    background: rgba(17, 24, 39, 0.48);
+    inset: 0;
+    position: absolute;
+}
+
+.support-dialog-card {
+    background: linear-gradient(180deg, #fffdf7 0%, #f7f1e5 100%);
+    border: 1px solid rgba(185, 175, 155, 0.44);
+    border-radius: 24px;
+    box-shadow: 0 24px 60px rgba(31, 36, 31, 0.24);
+    display: grid;
+    gap: 18px;
+    left: 50%;
+    max-width: 560px;
+    padding: 22px;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - 32px);
+}
+
+.support-dialog-head {
+    align-items: start;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.support-dialog-body {
+    display: grid;
+    gap: 14px;
+}
+
+.support-dialog-text {
+    color: var(--support-muted);
+    line-height: 1.6;
+}
+
+.support-dialog-body textarea,
+.support-dialog-body select {
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.support-dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
 @media (max-width: 1440px) {
     .support-layout {
         --drawer-width: clamp(300px, 22vw, 360px);

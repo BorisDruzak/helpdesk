@@ -401,6 +401,15 @@ async def _ticket_payload(
 ) -> Dict[str, Any]:
     queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None)])
     ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+    ticket_data["ola"] = build_ola_block(ticket)
+    if getattr(ticket, "device_id", None):
+        try:
+            device = await DevicesRepo(session).get_by_device_id(ticket.device_id)
+        except Exception as exc:
+            logger.debug(f"[ticket_payload] failed to load device metadata ticket_id={ticket.ticket_id} err={exc}")
+            device = None
+        if device is not None and isinstance(getattr(device, "device_metadata", None), dict):
+            ticket_data["device_metadata"] = device.device_metadata
     queue_id = getattr(ticket, "queue_id", None)
     admin_repo = TicketAdminConfigRepo(session)
     if queue_id is not None:
@@ -509,6 +518,116 @@ async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, 
     except TicketAssignmentError:
         return ticket
     return ticket
+
+
+async def _reconcile_queue_scope_state(
+    session: Any,
+    ticket_repo: TicketEventsRepo,
+    ticket: Any,
+    *,
+    actor_id: str,
+    actor_role: str,
+    reason_prefix: str,
+) -> tuple[Any, List[tuple[str, Dict[str, Any], Optional[tuple]]]]:
+    captured: List[tuple[str, Dict[str, Any], Optional[tuple]]] = []
+    assignment_service = TicketAssignmentService(ticket_repo)
+    workflow = TicketWorkflowService(session, ticket_repo)
+    current_assignee = getattr(ticket, "assignee_id", None)
+    queue_id = getattr(ticket, "queue_id", None)
+
+    if current_assignee and not await ticket_repo.is_actor_in_queue(queue_id, current_assignee):
+        clear_payload = {
+            "field_name": "assignee_id",
+            "old_value": current_assignee,
+            "new_value": None,
+            "actor_id": actor_id,
+            "actor_role": actor_role,
+            "reason": f"{reason_prefix}_queue_scope",
+            "comment": "",
+            "assignee_id": None,
+            "previous_assignee_id": current_assignee,
+            "auto_assigned": False,
+            "target_active_count": 0,
+            "limit": MAX_ACTIVE_TICKETS_PER_OPERATOR,
+        }
+        clear_result = await assignment_service.assign_ticket(
+            ticket.ticket_id,
+            ticket.device_id,
+            None,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            reason=f"{reason_prefix}_queue_scope",
+            comment="",
+            old_assignee=current_assignee,
+            auto_assigned=False,
+            active_count=0,
+            limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+            db_session=session,
+            close_ola=False,
+        )
+        captured.append(("assignee_changed", clear_payload, clear_result))
+        ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+
+    if not getattr(ticket, "assignee_id", None):
+        try:
+            selection = await assignment_service.resolve_assignee(
+                ticket,
+                requested_assignee_id=None,
+                auto_assign=True,
+            )
+        except TicketAssignmentError:
+            selection = None
+        if selection and selection.get("assignee_id"):
+            auto_assignee_id = selection["assignee_id"]
+            auto_payload = {
+                "field_name": "assignee_id",
+                "old_value": None,
+                "new_value": auto_assignee_id,
+                "actor_id": "system",
+                "actor_role": "system",
+                "reason": f"{reason_prefix}_auto_assign",
+                "comment": "",
+                "assignee_id": auto_assignee_id,
+                "previous_assignee_id": None,
+                "auto_assigned": True,
+                "target_active_count": selection["active_count"],
+                "limit": MAX_ACTIVE_TICKETS_PER_OPERATOR,
+            }
+            auto_result = await assignment_service.assign_ticket(
+                ticket.ticket_id,
+                ticket.device_id,
+                auto_assignee_id,
+                actor_id="system",
+                actor_role="system",
+                reason=f"{reason_prefix}_auto_assign",
+                comment="",
+                old_assignee=None,
+                auto_assigned=True,
+                active_count=selection["active_count"],
+                limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                db_session=session,
+                close_ola=True,
+            )
+            captured.append(("assignee_changed", auto_payload, auto_result))
+            ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+
+    current_status = str(getattr(ticket, "status", "") or "").lower()
+    if current_status and current_status not in ("closed", "resolved"):
+        target_status = "triaged" if getattr(ticket, "assignee_id", None) else "new"
+        if current_status != target_status:
+            transition = await workflow.apply_status_transition(
+                ticket_id=ticket.ticket_id,
+                from_status=current_status,
+                to_status=target_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                reason=f"{reason_prefix}_queue_state",
+                source="system",
+            )
+            captured.append(("status_changed", transition["event_payload"], transition["event_result"]))
+            ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+
+    return ticket, captured
 
 
 async def _apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
@@ -1026,6 +1145,7 @@ async def handle_ticket_reroute(request: web.Request) -> web.Response:
             return _json_error("forbidden", status=403)
         routing = TicketRoutingService(session, repo, DevicesRepo(session))
         captured: List[tuple[str, Dict[str, Any], Optional[tuple]]] = []
+        previous_queue_id = getattr(ticket, "queue_id", None)
 
         async def capture(ticket_id: str, device_id: str, event_type: str, payload: Dict[str, Any]) -> None:
             result = await repo.add_event(
@@ -1050,6 +1170,16 @@ async def handle_ticket_reroute(request: web.Request) -> web.Response:
             await start_ola_for_ticket(session, ticket)
         except Exception as exc:
             logger.warning(f"[reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        if getattr(ticket, "queue_id", None) != previous_queue_id:
+            ticket, queue_events = await _reconcile_queue_scope_state(
+                session,
+                repo,
+                ticket,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason_prefix="reroute",
+            )
+            captured.extend(queue_events)
         await session.commit()
         for event_type, payload, result in captured:
             await _push_ticket_event(request, ticket.ticket_id, result, event_type, payload)
@@ -1112,6 +1242,16 @@ async def handle_ticket_queue(request: web.Request) -> web.Response:
             await start_ola_for_ticket(session, ticket)
         except Exception as exc:
             logger.warning(f"[queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        captured: List[tuple[str, Dict[str, Any], Optional[tuple]]] = []
+        if queue_id != old_queue_id:
+            ticket, captured = await _reconcile_queue_scope_state(
+                session,
+                repo,
+                ticket,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason_prefix="manual_queue_change",
+            )
         payload = {
             "queue_id": queue_id,
             "previous_queue_id": old_queue_id,
@@ -1129,6 +1269,8 @@ async def handle_ticket_queue(request: web.Request) -> web.Response:
         )
         await session.commit()
         await _push_ticket_event(request, ticket.ticket_id, result, "queue_changed", payload)
+        for event_type, event_payload, event_result in captured:
+            await _push_ticket_event(request, ticket.ticket_id, event_result, event_type, event_payload)
         ticket = await repo.get_ticket(ticket.ticket_id)
         return _json_ok(ticket=await _ticket_payload(session, ticket, include_assignment_context=True))
 
@@ -1536,6 +1678,7 @@ async def handle_ticket_requester_profile(request: web.Request) -> web.Response:
         )
         if reroute_requested and _is_staff(auth_context):
             routing = TicketRoutingService(session, repo, DevicesRepo(session))
+            previous_queue_id = getattr(ticket, "queue_id", None)
 
             async def capture(ticket_id: str, device_id: str, event_type: str, event_payload: Dict[str, Any]) -> None:
                 event_result = await repo.add_event(
@@ -1560,6 +1703,16 @@ async def handle_ticket_requester_profile(request: web.Request) -> web.Response:
                 await start_ola_for_ticket(session, ticket)
             except Exception as exc:
                 logger.warning(f"[requester_profile] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            if getattr(ticket, "queue_id", None) != previous_queue_id:
+                ticket, queue_events = await _reconcile_queue_scope_state(
+                    session,
+                    repo,
+                    ticket,
+                    actor_id=auth_context.actor_id,
+                    actor_role=auth_context.actor_role,
+                    reason_prefix="requester_profile_reroute",
+                )
+                routing_events.extend(queue_events)
         await session.commit()
         await _push_ticket_event(request, ticket.ticket_id, result, "requester_profile_changed", payload)
         for event_type, event_payload, event_result in routing_events:

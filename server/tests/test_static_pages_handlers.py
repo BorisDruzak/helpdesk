@@ -32,7 +32,7 @@ async def test_admin_page_serves_html_for_current_shell_version():
 
     assert response.status == 200
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
-    assert "/admin.js?v=20260330b" in response.text
+    assert "/admin.js?v=20260331e" in response.text
     assert "id=\"adminSessionBar\"" in response.text
     assert "Support Workspace" not in response.text
     assert "data-tab=\"tech\"" in response.text
@@ -58,7 +58,7 @@ async def test_support_page_serves_workspace_shell():
 
     assert response.status == 200
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
-    assert "/support.js?v=20260330b" in response.text
+    assert "/support.js?v=20260331c" in response.text
     assert "Support Workspace" in response.text
     assert "id=\"ticketInbox\"" in response.text
     assert "id=\"workbenchDrawer\"" in response.text

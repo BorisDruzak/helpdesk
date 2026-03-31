@@ -129,8 +129,8 @@
 |------|------------|
 | `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
-| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: inbox тикетов, режимы preview/work/observe, встроенный workbench drawer; drawer показывает состав очереди, факторы маршрутизации и состояние автоназначения очереди, а в work-режиме встраивает `ticket.html?embed=1` вместо упрощённого кастомного чата |
-| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Основная рабочая область тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read, подтверждение решения, редактирование профиля инициатора, очередь/исполнитель по составу очереди, ручной reroute по правилам; поддерживает `embed=1` для встраивания в support workspace |
+| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: inbox тикетов, режимы preview/work/observe, встроенный workbench drawer; drawer показывает состав очереди, факторы маршрутизации, SLA/OLA и состояние автоназначения очереди, а для закрытия тикета использует встроенную форму кодов решения вместо prompt |
+| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Основная рабочая область тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read, подтверждение решения, редактирование профиля инициатора, очередь/исполнитель по составу очереди, SLA/OLA и ручной reroute по правилам; поддерживает `embed=1` для встраивания в support workspace |
 | `server/public_queue.html`, `server/public_queue.js` | Публичная очередь со ссылками на requester-вход в тикет |
 | `server/help.html`, `server/help.js`, `server/help.css` | Публичная страница requester: создание тикета, вход по коду, чат |
 | `server/static_pages/` | Обработчики страниц и статики |
@@ -153,7 +153,7 @@
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
-- **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
+- **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
@@ -167,7 +167,7 @@
 - **Agent → Server (Protocol V3):** агент подключается к `/ws`, handshake → outbox_item (ticket_event/device_event) → outbox_ack/outbox_nack.
 - **Server → Agent:** команда в device_outbox → DeviceOutboxSender → WS → при command_result outbox помечается delivered/failed.
 - **UI → Server:** `/ws_ui`, ui_hello → run_tool/API → операции и события в UI.
-- **Helpdesk ticket flow:** создание тикета → routing/SLA/OLA → попытка auto-assign только внутри состава целевой очереди и только если у очереди включено автоназначение → статус `new` или `triaged` ("В очереди у оператора"); ручная смена очереди ставит routing lock, а ручной reroute и сохранение профиля инициатора с флагом reroute пересчитывают очередь по правилам; лимит оператора считается только по `in_progress`; `resolved` закрывается только после подтверждения requester, а его ответ из `waiting_on_user` возвращает тикет в очередь оператора.
+- **Helpdesk ticket flow:** создание тикета → routing/SLA/OLA → попытка auto-assign только внутри состава целевой очереди и только если у очереди включено автоназначение → статус `new` или `triaged` ("В очереди у оператора"); ручная смена очереди ставит routing lock, а ручной reroute и сохранение профиля инициатора с флагом reroute пересчитывают очередь по правилам и дополнительно приводят назначение к составу новой очереди (старый исполнитель снимается, затем возможен auto-assign по новой очереди); лимит оператора считается только по `in_progress`; `resolved` закрывается только после подтверждения requester, а его ответ из `waiting_on_user` возвращает тикет в очередь оператора.
 
 ### 4.1 Internal WS pipelines
 

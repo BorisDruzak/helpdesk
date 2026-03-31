@@ -532,6 +532,9 @@
     function syncSidebarForm(force) {
         if (!force && isSidebarEditing()) return;
         const profile = meta.requester_profile || {};
+        const queueMembers = Array.isArray(meta.queue_members) ? meta.queue_members : [];
+        const deviceMetadata = meta.device_metadata || {};
+        const ola = meta.ola || null;
         if (el('sideRequesterName')) el('sideRequesterName').textContent = meta.requester_display_name || '—';
         if (el('sideRequesterDisplayNameInput')) el('sideRequesterDisplayNameInput').value = meta.requester_display_name || '';
         if (el('sideRequesterFullNameInput')) el('sideRequesterFullNameInput').value = profile.full_name || '';
@@ -555,7 +558,40 @@
         if (el('sideAssigneeText')) el('sideAssigneeText').textContent = meta.assignee_id || 'Не назначен';
         if (el('sideAssigneeSelect')) el('sideAssigneeSelect').value = meta.assignee_id || '';
         if (el('sideQueueText')) el('sideQueueText').textContent = meta.queue_code || meta.queue_id || '—';
+        if (el('sideQueueMembersText')) {
+            el('sideQueueMembersText').textContent = queueMembers.length
+                ? queueMembers.map((member) => member.role_in_queue ? `${member.actor_id} (${member.role_in_queue})` : member.actor_id).join(', ')
+                : 'У очереди пока нет участников';
+        }
+        if (el('sideQueueAutoAssignText')) {
+            el('sideQueueAutoAssignText').textContent = meta.queue_auto_assign_enabled === false
+                ? 'Выключено'
+                : 'Включено';
+        }
+        if (el('sideRoutingFactorsText')) {
+            const routingFactors = [
+                meta.title ? `Заголовок: ${meta.title}` : '',
+                meta.description ? `Описание: ${meta.description}` : '',
+                meta.requester_display_name ? `Отображаемое имя: ${meta.requester_display_name}` : '',
+                profile.full_name ? `ФИО: ${profile.full_name}` : '',
+                profile.building ? `Корпус: ${profile.building}` : '',
+                profile.room ? `Кабинет: ${profile.room}` : '',
+                profile.phone ? `Телефон: ${profile.phone}` : '',
+                meta.priority_class ? `Приоритет: ${priorityLabel(meta.priority_class)}` : '',
+                `Публичный тикет: ${meta.is_public_ticket ? 'да' : 'нет'}`,
+                `Без агента: ${meta.public_ticket_unbound ? 'да' : 'нет'}`,
+                deviceMetadata.location ? `Локация: ${deviceMetadata.location}` : '',
+                deviceMetadata.device_type ? `Тип устройства: ${deviceMetadata.device_type}` : '',
+            ].filter(Boolean);
+            el('sideRoutingFactorsText').textContent = routingFactors.length
+                ? routingFactors.join(' • ')
+                : 'Пока нет явных заполненных факторов маршрутизации';
+        }
         if (el('sideQueueSelect')) el('sideQueueSelect').value = meta.queue_id != null ? String(meta.queue_id) : '';
+        if (el('sideSlaFrText')) el('sideSlaFrText').textContent = meta.first_response_due_at ? formatSla(meta.first_response_due_at) : 'Не рассчитан';
+        if (el('sideSlaResText')) el('sideSlaResText').textContent = meta.resolution_due_at ? formatSla(meta.resolution_due_at) : 'Не рассчитан';
+        if (el('sideOlaAckText')) el('sideOlaAckText').textContent = ola && ola.ola_ack_due_at ? formatSla(ola.ola_ack_due_at) : 'Не задан';
+        if (el('sideOlaProcessingText')) el('sideOlaProcessingText').textContent = ola && ola.ola_processing_due_at ? formatSla(ola.ola_processing_due_at) : 'Не задан';
         if (el('sideDeviceText')) el('sideDeviceText').textContent = hasBoundDevice() ? deviceLabel(meta.device_id) : 'Не привязан';
         if (el('sideDeviceState')) {
             let stateText = 'Ожидает привязки';

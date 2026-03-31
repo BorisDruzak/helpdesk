@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260331b">
+    <link rel="stylesheet" href="/support.css?v=20260331c">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -205,8 +205,39 @@
         </div>
     </div>
 
+    <div id="resolutionDialog" class="support-dialog hidden" aria-hidden="true">
+        <div class="support-dialog-backdrop" data-dialog-close="1"></div>
+        <div class="support-dialog-card" role="dialog" aria-modal="true" aria-labelledby="resolutionDialogTitle">
+            <div class="support-dialog-head">
+                <div>
+                    <p class="section-eyebrow">Справочники</p>
+                    <h2 id="resolutionDialogTitle">Завершение работы по тикету</h2>
+                </div>
+                <button id="resolutionDialogClose" class="topbar-icon-btn" type="button" title="Закрыть">×</button>
+            </div>
+            <div class="support-dialog-body">
+                <p class="support-dialog-text">
+                    Код решения нужен для отчётности и аналитики. Первопричина помогает понять, почему инцидент возник, и найти повторяющиеся проблемы.
+                </p>
+                <label class="support-field">
+                    <span>Код решения</span>
+                    <select id="resolutionDialogCode"></select>
+                </label>
+                <label class="support-field">
+                    <span>Первопричина</span>
+                    <textarea id="resolutionDialogRootCause" rows="4" placeholder="Коротко опишите, почему проблема возникла"></textarea>
+                </label>
+                <div id="resolutionDialogError" class="support-login-error hidden"></div>
+            </div>
+            <div class="support-dialog-actions">
+                <button id="resolutionDialogCancel" class="btn btn-secondary" type="button">Отмена</button>
+                <button id="resolutionDialogApply" class="btn btn-primary" type="button">Применить</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260331b"></script>
+    <script src="/support.js?v=20260331c"></script>
 </body>
 </html>

@@ -77,7 +77,7 @@
 
 - **POST** `/api/tickets/{ticket_id}/reroute` — явный пересчёт очереди, снятие manual lock.
 - **POST** `/api/tickets/{ticket_id}/classify` — body: `category_id`, `service_id`, `subcategory_id`; триггер reroute только для статусов New/Triaged.
-- **POST** `/api/tickets/{ticket_id}/queue` — ручная смена очереди + reason, устанавливает routing lock.
+- **POST** `/api/tickets/{ticket_id}/queue` — ручная смена очереди + reason, устанавливает routing lock, снимает исполнителя вне новой очереди и при необходимости запускает автоназначение уже по составу целевой очереди.
 - **GET** `/api/tickets/{ticket_id}/sla` — текущие SLA-таймеры, breach state, paused seconds.
 
 **Расширенный ответ тикета (ticket_to_dict):** `queue_id`, `queue_code`, `assignee_id`, `priority`, `impact`, `urgency`, `requester_id`, `first_response_due_at`, `resolution_due_at`, `first_response_at`, `first_response_breached_at`, `resolution_breached_at`, `sla_paused_at`, `sla_paused_seconds`, `reopen_count`, `routing_lock`, `routing_lock_reason`.
@@ -378,7 +378,7 @@ API: POST status, assign, queue, priority, reroute, close, worklogs, read; GET t
 - UI продолжает русифицировать статусы; soft-normalization на сервере принимает legacy-значения старых клиентов.
 - Классификация приоритета строится по `urgency` + `importance` + текстовым обоснованиям. Квадрант даёт `priority_class` (`P0..P3`), а legacy `priority` остаётся внутренним SLA-слоем совместимости.
 - `requester_profile` хранится в `tickets.custom_fields.requester_profile`, `requester_display_name` вычисляется по правилу `full_name -> user_display_name -> requester_id`.
-- В snapshot/list добавлены `priority_class`, `effective_priority`, `requester_profile`, `requester_display_name`, `requires_operator_action`.
+- В snapshot/list добавлены `priority_class`, `effective_priority`, `requester_profile`, `requester_display_name`, `requires_operator_action`; в snapshot рабочей области также доступны `queue_members`, `assignable_users`, `available_queues`, `queue_auto_assign_enabled`, `device_metadata`, `ola`.
 - POST `/api/tickets/{id}/requester_profile` обновляет профиль инициатора, не изменяя `requester_id` (RBAC-идентификатор).
 - Назначение исполнителя: `admin` может ручное/auto (`auto_assign=true`), `support` может назначать только на себя. Для auto сервер выбирает оператора с минимальным `active_count`, затем по самому давно не назначавшемуся. Новый тикет при автоназначении переводится в `triaged`.
 - Лимит `3` считается только по статусу `in_progress`; `triaged` и waiting-статусы не занимают активный слот, но сохраняют назначение за оператором.

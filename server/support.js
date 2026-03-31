@@ -80,6 +80,8 @@
         pipeline: [],
     };
     let resolutionCodesCache = [];
+    let resolutionDialogResolve = null;
+    let resolutionDialogReject = null;
 
     function byId(id) {
         return document.getElementById(id);
@@ -121,6 +123,10 @@
         return map[code] || 'Служебный код закрытия';
     }
 
+    function boolLabel(value) {
+        return value ? 'Да' : 'Нет';
+    }
+
     async function ensureResolutionCodesLoaded() {
         if (resolutionCodesCache.length) {
             return resolutionCodesCache;
@@ -134,27 +140,59 @@
         return resolutionCodesCache;
     }
 
+    function closeResolutionDialog(error) {
+        const dialog = byId('resolutionDialog');
+        const errorNode = byId('resolutionDialogError');
+        if (dialog) {
+            dialog.classList.add('hidden');
+            dialog.setAttribute('aria-hidden', 'true');
+        }
+        if (errorNode) {
+            errorNode.textContent = '';
+            errorNode.classList.add('hidden');
+        }
+        const reject = resolutionDialogReject;
+        resolutionDialogResolve = null;
+        resolutionDialogReject = null;
+        if (error && reject) {
+            reject(error);
+        }
+    }
+
+    function openResolutionDialog(codes) {
+        const dialog = byId('resolutionDialog');
+        const codeSelect = byId('resolutionDialogCode');
+        const rootCauseInput = byId('resolutionDialogRootCause');
+        const errorNode = byId('resolutionDialogError');
+        if (!dialog || !codeSelect || !rootCauseInput || !errorNode) {
+            return Promise.reject(new Error('Не удалось открыть форму завершения тикета'));
+        }
+        codeSelect.innerHTML = '<option value="">Выберите код решения</option>' + codes.map((code) => {
+            const codeValue = String(code.code || '').trim();
+            const codeLabel = (code.name || codeValue || '') + ' — ' + resolutionCodeMeaning(codeValue);
+            return `<option value="${escapeHtml(codeValue)}">${escapeHtml(codeLabel)}</option>`;
+        }).join('');
+        rootCauseInput.value = '';
+        errorNode.textContent = '';
+        errorNode.classList.add('hidden');
+        dialog.classList.remove('hidden');
+        dialog.setAttribute('aria-hidden', 'false');
+        window.setTimeout(() => codeSelect.focus(), 0);
+        return new Promise((resolve, reject) => {
+            resolutionDialogResolve = resolve;
+            resolutionDialogReject = reject;
+        });
+    }
+
     async function collectResolutionPayload(nextStatus) {
         if (nextStatus !== 'resolved' && nextStatus !== 'closed') {
             return {};
         }
         const codes = await ensureResolutionCodesLoaded();
-        const variants = codes.map((code, index) => `${index + 1}. ${code.code} — ${resolutionCodeMeaning(code.code)}`).join('\n');
-        const answer = window.prompt('Выберите код решения.\nМожно ввести номер или сам код.\n\n' + variants, codes[0]?.code || '');
-        if (answer == null) {
-            throw new Error('Операция отменена');
+        if (!codes.length) {
+            throw new Error('В справочнике нет активных кодов решения');
         }
-        const normalized = String(answer || '').trim();
-        const pickedByIndex = /^\d+$/.test(normalized) ? codes[Number(normalized) - 1] : null;
-        const picked = pickedByIndex || codes.find((code) => String(code.code || '').toLowerCase() === normalized.toLowerCase());
-        if (!picked) {
-            throw new Error('Не удалось определить код решения');
-        }
-        const rootCause = window.prompt('Укажите первопричину проблемы.\nЭто короткое объяснение, почему инцидент возник.', '') || '';
-        return {
-            resolution_code: picked.code,
-            root_cause: String(rootCause || '').trim(),
-        };
+        return openResolutionDialog(codes);
     }
 
     async function responseToJson(response) {
@@ -513,7 +551,7 @@
     }
 
     function canTakeSelf(ticket) {
-        return canWrite() && Boolean(ticket) && !ticket.assignee_id && ticket.status === 'new';
+        return canWrite() && Boolean(ticket) && !ticket.assignee_id && (ticket.status === 'new' || ticket.status === 'triaged');
     }
 
     function shouldObserveTicket(ticket) {
@@ -703,6 +741,9 @@
             if (ticket.status === 'in_progress' || ticket.status === 'waiting_on_user' || ticket.status === 'waiting_on_vendor') {
                 actions.push({ id: 'to_resolved', label: 'Решено', kind: 'primary' });
             }
+        }
+        if (canWrite()) {
+            actions.push({ id: 'reroute_queue', label: 'Пересчитать очередь', kind: 'secondary' });
         }
         actions.push({ id: 'refresh', label: 'Обновить', kind: 'secondary' });
         if (ticket.device_id) {
@@ -1124,6 +1165,17 @@
                 await takeTicketSelf(ticket.ticket_id);
                 return;
             }
+            if (actionId === 'reroute_queue') {
+                await fetchJson('/api/tickets/' + encodeURIComponent(ticket.ticket_id) + '/reroute', {
+                    method: 'POST',
+                    headers: authHeaders(true),
+                    body: JSON.stringify({}),
+                });
+                showToast('Очередь пересчитана по правилам');
+                await loadTickets({ preserveSelection: true });
+                await refreshSelectedDetails(true);
+                return;
+            }
             if (actionId === 'to_in_progress') {
                 await applyTicketStatus('in_progress');
                 return;
@@ -1136,6 +1188,9 @@
                 await applyTicketStatus('resolved');
             }
         } catch (error) {
+            if (error && error.message === 'Операция отменена') {
+                return;
+            }
             showToast(error.message || 'Не удалось выполнить действие', true);
         }
     }
@@ -1188,9 +1243,27 @@
         }
         const requester = snapshot?.requester_profile || {};
         const queueMembers = Array.isArray(snapshot?.queue_members) ? snapshot.queue_members : [];
+        const deviceMetadata = snapshot?.device_metadata || {};
+        const ola = snapshot?.ola || null;
         const queueMemberText = queueMembers.length
-            ? queueMembers.map((member) => member.actor_id).join(', ')
+            ? queueMembers.map((member) => member.role_in_queue ? `${member.actor_id} (${member.role_in_queue})` : member.actor_id).join(', ')
             : 'У очереди пока нет участников';
+        const routeFactorItems = [
+            ['Заголовок', ticket.title || '—'],
+            ['Описание', ticket.description || '—'],
+            ['Отображаемое имя', snapshot?.requester_display_name || ticket.requester_display_name || '—'],
+            ['ФИО', requester.full_name || '—'],
+            ['Корпус', requester.building || '—'],
+            ['Кабинет', requester.room || '—'],
+            ['Телефон', requester.phone || '—'],
+            ['Приоритет', ticket.priority_class ? priorityLabel(ticket.priority_class) : '—'],
+            ['Срочность', boolLabel(Boolean(ticket.urgency))],
+            ['Важность', boolLabel(Boolean(ticket.importance))],
+            ['Публичный тикет', boolLabel(Boolean(snapshot?.is_public_ticket))],
+            ['Без привязанного агента', boolLabel(Boolean(snapshot?.public_ticket_unbound))],
+            ['Локация устройства', deviceMetadata.location || '—'],
+            ['Тип устройства', deviceMetadata.device_type || '—'],
+        ];
         const contextRows = [
             ['Код', ticket.ticket_code || ticket.ticket_id],
             ['Режим', currentMode() === 'work' ? 'Работа' : (currentMode() === 'observe' ? 'Наблюдение' : 'Предпросмотр')],
@@ -1205,20 +1278,19 @@
             ['SLA FR', snapshot?.first_response_due_at ? formatDate(snapshot.first_response_due_at) : '—'],
             ['SLA Resolution', snapshot?.resolution_due_at ? formatDate(snapshot.resolution_due_at) : '—'],
         ];
-        const routingHints = [
-            snapshot?.public_ticket_unbound ? 'Публичный тикет без привязки к агенту' : '',
-            snapshot?.requester_display_name ? ('Отображаемое имя: ' + snapshot.requester_display_name) : '',
-            requester.full_name ? ('ФИО: ' + requester.full_name) : '',
-            requester.building ? ('Корпус: ' + requester.building) : '',
-            requester.room ? ('Кабинет: ' + requester.room) : '',
-            requester.phone ? ('Телефон: ' + requester.phone) : '',
-            ticket.title ? ('Заголовок: ' + ticket.title) : '',
-            ticket.priority_class ? ('Приоритет: ' + priorityLabel(ticket.priority_class)) : '',
-        ].filter(Boolean);
         const queuePolicyRows = [
             ['Автоназначение очереди', snapshot?.queue_auto_assign_enabled === false ? 'Выключено' : 'Включено'],
             ['Если правил нет', 'Тикет уходит в базовую очередь ServiceDesk L1'],
-            ['Что влияет на маршрут', routingHints.length ? routingHints.join(' • ') : 'Явные признаки маршрутизации не заполнены'],
+            ['Что происходит при смене очереди', 'Исполнитель должен входить в состав новой очереди. Иначе назначение снимается, а дальше срабатывает автоназначение очереди или тикет возвращается в очередь без исполнителя.'],
+        ];
+        const slaFacts = [
+            ['SLA', 'Внешнее обещание пользователю: когда мы должны ответить и когда должны решить тикет.'],
+            ['Календарь', 'Определяет, в какие дни и часы считаются SLA и OLA. Обычно это рабочие часы, выходные и праздники.'],
+            ['OLA', 'Внутренний норматив очереди: за сколько очередь должна взять тикет и начать обработку.'],
+            ['SLA первого ответа', snapshot?.first_response_due_at ? `Срок до ${formatDate(snapshot.first_response_due_at)}` : 'Для этого тикета срок не рассчитан'],
+            ['SLA решения', snapshot?.resolution_due_at ? `Срок до ${formatDate(snapshot.resolution_due_at)}` : 'Для этого тикета срок не рассчитан'],
+            ['OLA принятия', ola?.ola_ack_due_at ? `Очередь должна взять тикет до ${formatDate(ola.ola_ack_due_at)}` : 'Для этой очереди OLA принятия не задан'],
+            ['OLA обработки', ola?.ola_processing_due_at ? `Очередь должна продвинуть тикет до ${formatDate(ola.ola_processing_due_at)}` : 'Для этой очереди OLA обработки не задан'],
         ];
         panel.innerHTML = `
             <article class="support-card drawer-card">
@@ -1231,11 +1303,38 @@
             </article>
             <article class="support-card drawer-card">
                 <div class="card-head">
-                    <h3>Очередь и маршрут</h3>
+                    <h3>Очередь и назначение</h3>
                 </div>
                 <dl class="key-value-list">
                     ${queuePolicyRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
                 </dl>
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Что влияет на маршрут</h3>
+                </div>
+                <p class="drawer-note">Маршрутизация может смотреть на текст заявки, данные инициатора, приоритет, признак публичного тикета и метаданные устройства.</p>
+                <div class="support-facts-list">
+                    ${routeFactorItems.map(([label, value]) => `
+                        <div class="support-fact">
+                            <span class="support-fact-label">${escapeHtml(label)}</span>
+                            <div class="support-fact-value">${escapeHtml(value)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>SLA, календарь и OLA</h3>
+                </div>
+                <div class="support-facts-list">
+                    ${slaFacts.map(([label, value]) => `
+                        <div class="support-fact">
+                            <span class="support-fact-label">${escapeHtml(label)}</span>
+                            <div class="support-fact-value">${escapeHtml(value)}</div>
+                        </div>
+                    `).join('')}
+                </div>
             </article>
         `;
     }
@@ -1810,6 +1909,47 @@
                 frame.dataset.loadedTicketId = frame.dataset.ticketId || '';
             }
             setEmbeddedTicketLoading(false, '');
+        });
+        byId('resolutionDialogClose')?.addEventListener('click', () => {
+            closeResolutionDialog(new Error('Операция отменена'));
+        });
+        byId('resolutionDialogCancel')?.addEventListener('click', () => {
+            closeResolutionDialog(new Error('Операция отменена'));
+        });
+        byId('resolutionDialog')?.addEventListener('click', (event) => {
+            if (event.target instanceof HTMLElement && event.target.getAttribute('data-dialog-close') === '1') {
+                closeResolutionDialog(new Error('Операция отменена'));
+            }
+        });
+        byId('resolutionDialogApply')?.addEventListener('click', () => {
+            const resolve = resolutionDialogResolve;
+            const reject = resolutionDialogReject;
+            const codeValue = String(byId('resolutionDialogCode')?.value || '').trim();
+            const rootCause = String(byId('resolutionDialogRootCause')?.value || '').trim();
+            const errorNode = byId('resolutionDialogError');
+            if (!resolve || !reject || !errorNode) {
+                return;
+            }
+            if (!codeValue) {
+                errorNode.textContent = 'Выберите код решения';
+                errorNode.classList.remove('hidden');
+                return;
+            }
+            resolutionDialogResolve = null;
+            resolutionDialogReject = null;
+            byId('resolutionDialog')?.classList.add('hidden');
+            byId('resolutionDialog')?.setAttribute('aria-hidden', 'true');
+            errorNode.textContent = '';
+            errorNode.classList.add('hidden');
+            resolve({
+                resolution_code: codeValue,
+                root_cause: rootCause,
+            });
+        });
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && resolutionDialogReject) {
+                closeResolutionDialog(new Error('Операция отменена'));
+            }
         });
         window.addEventListener('resize', applyLayoutClasses);
     }

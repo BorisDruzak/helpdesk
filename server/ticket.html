@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ticket</title>
-    <link rel="stylesheet" href="/ticket.css?v=20260331b">
+    <link rel="stylesheet" href="/ticket.css?v=20260331c">
 </head>
 <body>
     <div id="ticketApp" class="ticket-app hidden">
@@ -145,6 +145,18 @@
                             <span class="sidebar-label">Текущая очередь</span>
                             <span id="sideQueueText" class="sidebar-value">—</span>
                         </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Состав очереди</span>
+                            <span id="sideQueueMembersText" class="sidebar-value sidebar-multiline">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Автоназначение</span>
+                            <span id="sideQueueAutoAssignText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">Что влияет на маршрут</span>
+                            <span id="sideRoutingFactorsText" class="sidebar-value sidebar-multiline">—</span>
+                        </div>
                         <div class="sidebar-inline-controls sidebar-editable">
                             <select id="sideQueueSelect"></select>
                             <button id="sideQueueApplyBtn" class="btn btn-secondary" type="button">Перенести</button>
@@ -154,6 +166,31 @@
                         </div>
                         <div class="sidebar-inline-controls sidebar-editable">
                             <button id="sideQueueRerouteBtn" class="btn btn-secondary" type="button">Пересчитать по правилам</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="sidebar-card">
+                    <h3>SLA и OLA</h3>
+                    <div class="sidebar-grid">
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">SLA первого ответа</span>
+                            <span id="sideSlaFrText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">SLA решения</span>
+                            <span id="sideSlaResText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">OLA принятия</span>
+                            <span id="sideOlaAckText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-row">
+                            <span class="sidebar-label">OLA обработки</span>
+                            <span id="sideOlaProcessingText" class="sidebar-value">—</span>
+                        </div>
+                        <div class="sidebar-help">
+                            SLA — это обещание пользователю по срокам ответа и решения. Календарь определяет, в какие часы считаются эти сроки. OLA — внутренний норматив очереди: за сколько очередь должна взять тикет и продвинуть его дальше.
                         </div>
                     </div>
                 </section>
@@ -249,6 +286,6 @@
     <div id="ticketLoading" class="ticket-state-screen">Загрузка тикета…</div>
     <div id="ticketError" class="ticket-state-screen hidden"></div>
 
-    <script src="/ticket.js?v=20260330b"></script>
+    <script src="/ticket.js?v=20260331c"></script>
 </body>
 </html>
