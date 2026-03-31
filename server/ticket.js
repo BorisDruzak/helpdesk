@@ -64,6 +64,10 @@
     let lastMarkedReadEventId = 0;
     let markReadTimer = null;
 
+    function statusNeedsResolution(status) {
+        return status === 'resolved' || status === 'closed';
+    }
+
     function getToken() {
         const t = localStorage.getItem(AUTH_TOKEN_KEY);
         return (t && typeof t === 'string') ? t.trim() : '';
@@ -513,6 +517,12 @@
         if (el('sideStatusText')) el('sideStatusText').textContent = statusLabel(meta.status);
         if (el('sideDescriptionText')) el('sideDescriptionText').textContent = meta.description || '—';
         if (el('sideStatusSelect')) el('sideStatusSelect').value = meta.status || 'new';
+        if (el('sideResolutionCodeSelect') && (force || el('sideStatusSelect')?.value === meta.status)) {
+            el('sideResolutionCodeSelect').value = meta.resolution_code || '';
+        }
+        if (el('sideRootCauseInput') && (force || el('sideStatusSelect')?.value === meta.status)) {
+            el('sideRootCauseInput').value = meta.root_cause || '';
+        }
         if (el('sidePrioritySummary')) el('sidePrioritySummary').textContent = priorityLabel(meta.priority_class || meta.priority);
         if (el('sideUrgencyReasonInput')) el('sideUrgencyReasonInput').value = meta.urgency_reason || '';
         if (el('sideImportanceReasonInput')) el('sideImportanceReasonInput').value = meta.importance_reason || '';
@@ -540,6 +550,7 @@
         if (queueSection) queueSection.classList.toggle('hidden', queuesCache.length <= 1);
         syncActionStateMarker();
         refreshDeviceActionControls();
+        refreshStatusResolutionFields(force === true);
     }
 
     function renderSidebar(force) {
@@ -1212,6 +1223,45 @@
         return resolutionCodesCache;
     }
 
+    function populateResolutionCodeSelect(selectedCode) {
+        const select = el('sideResolutionCodeSelect');
+        if (!select) return;
+        const options = ['<option value="">Выберите код решения</option>'].concat(
+            resolutionCodesCache.map((code) => {
+                const codeValue = code.code || '';
+                const codeLabel = (code.name || code.code || '') + ' - ' + resolutionCodeMeaning(codeValue);
+                return `<option value="${escapeHtml(codeValue)}">${escapeHtml(codeLabel)}</option>`;
+            })
+        );
+        select.innerHTML = options.join('');
+        select.value = selectedCode || '';
+    }
+
+    async function refreshStatusResolutionFields(force) {
+        const wrap = el('sideResolutionFields');
+        const statusSelect = el('sideStatusSelect');
+        const resolutionSelect = el('sideResolutionCodeSelect');
+        const rootCauseInput = el('sideRootCauseInput');
+        if (!wrap || !statusSelect) return;
+        const needResolution = statusNeedsResolution(statusSelect.value);
+        wrap.classList.toggle('hidden', !needResolution);
+        if (!needResolution) return;
+        try {
+            await ensureResolutionCodesLoaded();
+            const shouldUseTicketValues = force === true || statusSelect.value === meta.status;
+            const selectedCode = shouldUseTicketValues ? (meta.resolution_code || '') : (resolutionSelect?.value || '');
+            populateResolutionCodeSelect(selectedCode);
+            if (rootCauseInput && shouldUseTicketValues) {
+                rootCauseInput.value = meta.root_cause || '';
+            }
+        } catch (err) {
+            if (resolutionSelect) {
+                resolutionSelect.innerHTML = '<option value="">Не удалось загрузить коды</option>';
+            }
+            showSystemMessage(err.message || String(err), true);
+        }
+    }
+
     async function ensureQueuesLoaded() {
         if (queuesCache.length) return queuesCache;
         const r = await fetch('/api/admin/tickets/queues', { headers: authHeaders() });
@@ -1233,7 +1283,11 @@
     function populateStatusSelect() {
         const select = el('sideStatusSelect');
         if (!select || select.options.length) return;
-        select.innerHTML = STATUS_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
+        const options = STATUS_OPTIONS.slice();
+        if (!options.some((option) => option.value === 'closed')) {
+            options.push({ value: 'closed', label: statusLabel('closed') });
+        }
+        select.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
     }
 
     function populateAssigneeSelect() {
@@ -1316,7 +1370,13 @@
 
     async function applyStatus() {
         const toStatus = el('sideStatusSelect')?.value;
-        const r = await fetch('/api/tickets/' + ticketId + '/status', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ to_status: toStatus }) });
+        const payload = { to_status: toStatus };
+        if (statusNeedsResolution(toStatus)) {
+            payload.resolution_code = el('sideResolutionCodeSelect')?.value || '';
+            payload.root_cause = el('sideRootCauseInput')?.value?.trim() || '';
+            if (!payload.resolution_code) throw new Error('Выберите код решения');
+        }
+        const r = await fetch('/api/tickets/' + ticketId + '/status', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(payload) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.details?.to_status || d.error || 'Ошибка смены статуса');
     }
@@ -1863,6 +1923,9 @@
                 refreshDeviceActionControls();
                 refreshCloseControls();
                 refreshSidebarOptions();
+                el('sideStatusSelect')?.addEventListener('change', () => {
+                    refreshStatusResolutionFields(false);
+                });
                 if (canPerformActions()) {
                     el('sideRequesterApplyBtn')?.addEventListener('click', async () => {
                         try { await applyRequesterProfile(); } catch (err) { showSystemMessage(err.message || String(err), true); }

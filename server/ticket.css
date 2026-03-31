@@ -157,6 +157,7 @@ body.ticket-embedded .ticket-app {
 }
 
 .sidebar-input-group input,
+.sidebar-input-group textarea,
 .sidebar-inline-controls select,
 .sidebar-inline-controls input,
 .sidebar-form-grid input,
@@ -167,6 +168,19 @@ body.ticket-embedded .ticket-app {
     padding: 8px 10px;
     font-size: 14px;
     background: #fff;
+}
+
+.sidebar-input-group textarea {
+    resize: vertical;
+    min-height: 88px;
+    font-family: inherit;
+}
+
+.sidebar-help {
+    margin-top: 8px;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .sidebar-inline-controls {

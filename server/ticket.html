@@ -70,6 +70,21 @@
                             <select id="sideStatusSelect"></select>
                             <button id="sideStatusApplyBtn" class="btn btn-secondary" type="button">Изменить статус</button>
                         </div>
+                        <div id="sideResolutionFields" class="sidebar-section sidebar-editable hidden">
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Код решения</span>
+                                <select id="sideResolutionCodeSelect">
+                                    <option value="">Выберите код решения</option>
+                                </select>
+                            </label>
+                            <label class="sidebar-input-group">
+                                <span class="sidebar-label">Первопричина</span>
+                                <textarea id="sideRootCauseInput" rows="4" placeholder="Коротко опишите, почему возникла проблема"></textarea>
+                            </label>
+                            <div class="sidebar-help">
+                                Код решения нужен для отчетности и аналитики. Первопричина помогает находить повторяющиеся проблемы.
+                            </div>
+                        </div>
                     </div>
                 </section>
 
