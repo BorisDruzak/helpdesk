@@ -10,7 +10,7 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const DRAWER_MODE_KEY = 'support_workspace_drawer_mode';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260331a';
+    const SUPPORT_SHELL_VERSION = '20260331b';
     const POLL_INTERVAL_MS = 8000;
     const PANEL_MODES = Object.freeze({
         COLLAPSED: 'collapsed',
@@ -70,6 +70,7 @@
         drawerMode: PANEL_MODES.HALF,
         drawerTab: 'context',
         sidebarMode: PANEL_MODES.HALF,
+        ticketClickTimer: 0,
         pollTimer: null,
         tools: [],
         toolsDeviceId: '',
@@ -576,16 +577,27 @@
                 if (event.target instanceof Element && event.target.closest('[data-ticket-action="take"]')) {
                     return;
                 }
-                await selectTicket(row.getAttribute('data-ticket-id') || '');
-            });
-            row.addEventListener('dblclick', async (event) => {
-                if (event.target instanceof Element && event.target.closest('[data-ticket-action="take"]')) {
+                const ticketId = row.getAttribute('data-ticket-id') || '';
+                if (!ticketId) {
                     return;
                 }
-                await selectTicket(row.getAttribute('data-ticket-id') || '');
-                if (state.sidebarMode === PANEL_MODES.FULL) {
-                    setSidebarMode(PANEL_MODES.HALF);
+                if (state.ticketClickTimer) {
+                    window.clearTimeout(state.ticketClickTimer);
+                    state.ticketClickTimer = 0;
                 }
+                if (event.detail > 1) {
+                    await selectTicket(ticketId);
+                    if (state.sidebarMode === PANEL_MODES.FULL) {
+                        setSidebarMode(PANEL_MODES.HALF);
+                    }
+                    return;
+                }
+                state.ticketClickTimer = window.setTimeout(() => {
+                    state.ticketClickTimer = 0;
+                    selectTicket(ticketId).catch((error) => {
+                        console.error('Failed to select ticket from inbox click', error);
+                    });
+                }, 220);
             });
         });
         listNode.querySelectorAll('[data-ticket-action="take"]').forEach((button) => {
