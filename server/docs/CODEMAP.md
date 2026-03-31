@@ -103,7 +103,7 @@
 ### 2.5 Доменные модули (handlers + service)
 | Каталог/файл | Назначение |
 |--------------|------------|
-| `server/tickets/` | handlers, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др. |
+| `server/tickets/` | handlers, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др.; `admin_config_handlers.py` ведёт helpdesk-admin settings API: очереди, состав очередей, routing rules, SLA policies, targets/matrix (GET/PUT), calendars, OLA targets, audit |
 | `server/agents/` | handlers, agent_builds_handlers, service; `handlers.py` также даёт admin-only архивирование устройства с очисткой live runtime-сессии |
 | `server/modules/` | handlers, service, reconcile, verification |
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |

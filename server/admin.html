@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Панель администратора</title>
-    <link rel="stylesheet" href="/admin.css?v=20260330b">
+    <link rel="stylesheet" href="/admin.css?v=20260331c">
 </head>
 <body>
     <!-- Форма входа -->
@@ -65,6 +65,16 @@
                         <span>Пользователи</span>
                     </a>
                 </li>
+                <li class="sidebar-menu-item sidebar-menu-item-with-help">
+                    <a href="#" class="tab-link" data-tab="settings">
+                        <span class="icon">⚙️</span>
+                        <span class="sidebar-menu-copy">
+                            <span class="sidebar-menu-title">Настройки</span>
+                            <span class="sidebar-menu-note">HelpDesk, правила и справочники</span>
+                        </span>
+                    </a>
+                    <button type="button" id="settingsSidebarHelpBtn" class="sidebar-help-button" aria-label="Пояснение к разделу Настройки" title="Для чего нужен раздел Настройки">!</button>
+                </li>
                 <li class="sidebar-menu-item">
                     <a href="#" class="tab-link" data-tab="agent-updates">
                         <span class="icon">🔄</span>
@@ -78,6 +88,11 @@
                     </a>
                 </li>
             </ul>
+            <div id="settingsSidebarHelpPanel" class="sidebar-help-panel" hidden>
+                <strong>Зачем нужен этот раздел</strong>
+                <p>Здесь настраивается, как HelpDesk принимает и обрабатывает заявки: очереди, маршрутизация, SLA, приоритеты, OLA и аудит.</p>
+                <p>Изменения влияют на то, куда попадёт тикет, кто его увидит, когда сработает эскалация и как считаются сроки.</p>
+            </div>
         </div>
 
         <!-- Main Content Area -->
@@ -876,6 +891,20 @@
                 </div>
             </div> <!-- End of Users Tab -->
 
+            <div id="tab-settings" class="tab-content">
+                <div class="page-header settings-page-header">
+                    <div>
+                        <h1>Настройки</h1>
+                        <p class="settings-page-lead">Единое место для управления HelpDesk: очереди, маршрутизация, SLA, приоритеты, OLA и план развития.</p>
+                    </div>
+                    <div class="header-actions">
+                        <span id="settingsWriteModeBadge" class="settings-mode-badge settings-mode-badge-neutral">Загрузка настроек</span>
+                        <button type="button" class="btn btn-primary" id="settingsRefreshBtn">Обновить</button>
+                    </div>
+                </div>
+                <div id="settingsApp" class="settings-app"></div>
+            </div>
+
             <!-- Tech Observability Tab -->
             <div id="tab-tech" class="tab-content">
                 <div class="page-header">
@@ -1116,6 +1145,6 @@
     </div> <!-- End of app-layout -->
     </div> <!-- End of mainContent -->
 
-    <script src="/admin.js?v=20260330b"></script>
+    <script src="/admin.js?v=20260331c"></script>
 </body>
 </html>

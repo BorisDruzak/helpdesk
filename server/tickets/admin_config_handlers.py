@@ -756,6 +756,35 @@ async def handle_admin_sla_targets_put(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "targets": targets})
 
 
+@require_auth("admin", "support", "auditor")
+async def handle_admin_sla_targets_get(request: web.Request) -> web.Response:
+    if not TICKET_AUDITOR_ROLE_ENABLED and request.get("auth_context").actor_role == "auditor":
+        return web.json_response(
+            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+    r = _check_api_enabled()
+    if r:
+        return r
+    policy_id = int(request.match_info["policy_id"])
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        policy = await repo.get_sla_policy(policy_id)
+        if not policy:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": "not_found", "error_code": "NOT_FOUND"},
+                status=404,
+            )
+        targets = await repo.get_sla_targets(policy_id)
+        await session.commit()
+    payload = [
+        {"priority": target.priority, "first_response_min": target.first_response_min, "resolution_min": target.resolution_min}
+        for target in targets
+    ]
+    return web.json_response({"status": "ok", "targets": payload})
+
+
 @require_auth("admin")
 async def handle_admin_priority_matrix_put(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
@@ -803,6 +832,32 @@ async def handle_admin_priority_matrix_put(request: web.Request) -> web.Response
         )
         await session.commit()
     return web.json_response({"status": "ok", "matrix": matrix})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_admin_priority_matrix_get(request: web.Request) -> web.Response:
+    if not TICKET_AUDITOR_ROLE_ENABLED and request.get("auth_context").actor_role == "auditor":
+        return web.json_response(
+            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+    r = _check_api_enabled()
+    if r:
+        return r
+    policy_id = int(request.match_info["policy_id"])
+    async with get_session() as session:
+        repo = TicketAdminConfigRepo(session)
+        policy = await repo.get_sla_policy(policy_id)
+        if not policy:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": "not_found", "error_code": "NOT_FOUND"},
+                status=404,
+            )
+        rows = await repo.get_priority_matrix(policy_id)
+        await session.commit()
+    payload = [{"impact": row.impact, "urgency": row.urgency, "priority": row.priority} for row in rows]
+    return web.json_response({"status": "ok", "matrix": payload})
 
 
 # --- Stage 11: Calendars ---

@@ -2008,6 +2008,7 @@
                 });
             });
             initWorkbenchTab();
+            initSettingsTab();
             initTechTab();
         });
 
@@ -2057,6 +2058,9 @@
                 loadUsersTab();
             } else if (tabName === 'agent-updates') {
                 loadAgentUpdatesTab();
+            } else if (tabName === 'settings') {
+                initSettingsTab();
+                loadSettingsTab();
             } else if (tabName === 'tech') {
                 loadTechPanel();
             } else if (tabName === 'workbench') {
@@ -2086,6 +2090,1074 @@
                 if (!frame || !workbenchTicketId) return;
                 frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(workbenchTicketId) + '&_ts=' + Date.now();
             });
+        }
+
+        const settingsState = {
+            initialized: false,
+            loading: false,
+            activeSection: 'overview',
+            selectedQueueId: null,
+            selectedSlaId: null,
+            selectedCalendarId: null,
+            selectedRoutingId: null,
+            olaQueueId: null,
+            queueMembers: [],
+            slaTargets: [],
+            priorityMatrix: [],
+            olaTargets: [],
+            queues: [],
+            routingRules: [],
+            slaPolicies: [],
+            calendars: [],
+            audit: [],
+            resolutionCodes: [],
+            users: [],
+        };
+
+        function settingsRenderShell() {
+            return `
+                <div class="settings-groups-panel">
+                    <div class="settings-groups-title">Группы настроек</div>
+                    <button type="button" class="settings-group-btn active" data-settings-category="helpdesk">HelpDesk</button>
+                    <p class="settings-groups-note">Внутри собраны рабочие настройки и блоки, которые уже нужны службе поддержки, даже если часть функций пока только запланирована.</p>
+                </div>
+                <div class="settings-category-panel">
+                    <div class="settings-callout">
+                        <div class="settings-callout-icon">!</div>
+                        <div>
+                            <strong>Важно</strong>
+                            <p>Изменения в этом разделе влияют на маршрутизацию тикетов, сроки реакции, состав очередей и общую логику работы HelpDesk. Сверяйте изменения с реальным процессом поддержки.</p>
+                        </div>
+                    </div>
+                    <div id="settingsError" class="error-message" style="display:none;"></div>
+                    <div id="settingsSuccess" class="success-message" style="display:none;"></div>
+                    <div class="settings-section-nav">
+                        <button type="button" class="settings-section-tab active" data-settings-section="overview">Обзор</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="queues">Очереди</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="routing">Маршрутизация</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="sla">SLA, календари и OLA</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="references">Справочники</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="audit">Аудит</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="roadmap">Что ещё нужно</button>
+                    </div>
+                    ${settingsRenderOverviewSection()}
+                    ${settingsRenderQueuesSection()}
+                    ${settingsRenderRoutingSection()}
+                    ${settingsRenderSlaSection()}
+                    ${settingsRenderReferencesSection()}
+                    ${settingsRenderAuditSection()}
+                    ${settingsRenderRoadmapSection()}
+                </div>
+            `;
+        }
+
+        function settingsApplyStaticCopy() {
+            const menuTitle = document.querySelector('.tab-link[data-tab="settings"] .sidebar-menu-title');
+            const menuNote = document.querySelector('.tab-link[data-tab="settings"] .sidebar-menu-note');
+            const helpBtn = document.getElementById('settingsSidebarHelpBtn');
+            const helpPanel = document.getElementById('settingsSidebarHelpPanel');
+            const pageTitle = document.querySelector('#tab-settings h1');
+            const pageLead = document.querySelector('#tab-settings .settings-page-lead');
+            const modeBadge = document.getElementById('settingsWriteModeBadge');
+            const refreshBtn = document.getElementById('settingsRefreshBtn');
+
+            if (menuTitle) menuTitle.textContent = 'Настройки';
+            if (menuNote) menuNote.textContent = 'HelpDesk, правила и справочники';
+            if (helpBtn) {
+                helpBtn.setAttribute('aria-label', 'Пояснение к разделу Настройки');
+                helpBtn.setAttribute('title', 'Для чего нужен раздел Настройки');
+            }
+            if (helpPanel) {
+                helpPanel.innerHTML = `
+                    <strong>Зачем нужен этот раздел</strong>
+                    <p>Здесь настраивается, как HelpDesk принимает и обрабатывает заявки: очереди, маршрутизация, SLA, приоритеты, OLA и аудит.</p>
+                    <p>Изменения влияют на то, куда попадёт тикет, кто его увидит, когда сработает эскалация и как считаются сроки.</p>
+                `;
+            }
+            if (pageTitle) pageTitle.textContent = 'Настройки';
+            if (pageLead) pageLead.textContent = 'Единое место для управления HelpDesk: очереди, маршрутизация, SLA, приоритеты, OLA и план развития.';
+            if (modeBadge && !settingsState.loading) modeBadge.textContent = 'Загрузка настроек';
+            if (refreshBtn) refreshBtn.textContent = 'Обновить';
+        }
+
+        function initSettingsTab() {
+            if (settingsState.initialized) {
+                settingsApplyStaticCopy();
+                settingsBindSidebarHelp();
+                return;
+            }
+            const app = document.getElementById('settingsApp');
+            if (!app) return;
+            settingsApplyStaticCopy();
+            app.innerHTML = settingsRenderShell();
+            settingsState.initialized = true;
+            app.addEventListener('click', handleSettingsClick);
+            app.addEventListener('submit', handleSettingsSubmit);
+            app.addEventListener('change', async function(event) {
+                if (event.target && event.target.id === 'settingsOlaQueueSelect') {
+                    try {
+                        settingsState.olaQueueId = event.target.value ? Number(event.target.value) : null;
+                        await settingsLoadOlaTargets(settingsState.olaQueueId);
+                        settingsRenderOla();
+                    } catch (error) {
+                        settingsShowMessage('error', error.message || 'Не удалось загрузить OLA для очереди');
+                    }
+                }
+            });
+            const refreshBtn = document.getElementById('settingsRefreshBtn');
+            if (refreshBtn) refreshBtn.addEventListener('click', () => loadSettingsTab(true));
+            settingsBindSidebarHelp();
+        }
+
+        function settingsBindSidebarHelp() {
+            const helpBtn = document.getElementById('settingsSidebarHelpBtn');
+            const panel = document.getElementById('settingsSidebarHelpPanel');
+            if (!helpBtn || !panel || helpBtn.dataset.bound === '1') return;
+            helpBtn.dataset.bound = '1';
+            helpBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                panel.hidden = !panel.hidden;
+            });
+            document.addEventListener('click', function(e) {
+                if (panel.hidden) return;
+                if (panel.contains(e.target) || helpBtn.contains(e.target)) return;
+                panel.hidden = true;
+            });
+        }
+
+        function settingsRenderOverviewSection() {
+            return `
+                <section id="settingsSection-overview" class="settings-section active">
+                    <div id="settingsOverviewCards" class="settings-overview-grid"></div>
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <h2>Что уже можно настраивать</h2>
+                            <ul id="settingsOverviewList" class="settings-bullet-list"></ul>
+                        </article>
+                        <article class="section">
+                            <h2>На что это влияет</h2>
+                            <ul class="settings-bullet-list">
+                                <li>куда попадает новый тикет и кто увидит его первым;</li>
+                                <li>какие сроки обещаны пользователю и оператору;</li>
+                                <li>как считается приоритет и что считается срочным;</li>
+                                <li>кто входит в очередь и получает уведомления;</li>
+                                <li>как потом разбирать историю изменений правил.</li>
+                            </ul>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
+        function settingsRenderQueuesSection() {
+            return `
+                <section id="settingsSection-queues" class="settings-section">
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <div class="settings-section-head">
+                                <div>
+                                    <h2>Очереди HelpDesk</h2>
+                                    <p class="settings-help-text">Очередь определяет, куда попадает тикет и какая команда его обслуживает.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="settingsQueueNewBtn">Новая очередь</button>
+                            </div>
+                            <div class="settings-table-wrap">
+                                <table class="settings-table">
+                                    <thead><tr><th>Код</th><th>Название</th><th>Triage</th><th>Активна</th><th>Состав</th><th>Действие</th></tr></thead>
+                                    <tbody id="settingsQueuesTableBody"><tr><td colspan="6" class="muted">Загрузка...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </article>
+                        <article class="section">
+                            <h2>Карточка очереди</h2>
+                            <form id="settingsQueueForm" class="settings-form">
+                                <input type="hidden" id="settingsQueueId">
+                                <div class="form-group"><label for="settingsQueueCode">Код очереди</label><input type="text" id="settingsQueueCode" placeholder="например, servicedesk_l1"></div>
+                                <div class="form-group"><label for="settingsQueueName">Название</label><input type="text" id="settingsQueueName" placeholder="Человеческое название для операторов"></div>
+                                <div class="settings-inline-fields">
+                                    <label class="settings-switch"><input type="checkbox" id="settingsQueueIsTriage"><span>Это triage-очередь</span></label>
+                                    <label class="settings-switch"><input type="checkbox" id="settingsQueueIsActive" checked><span>Очередь активна</span></label>
+                                </div>
+                                <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить</button><button type="button" class="btn btn-secondary" id="settingsQueueResetBtn">Сбросить</button></div>
+                            </form>
+                            <div class="settings-subcard">
+                                <div class="settings-section-head compact">
+                                    <div>
+                                        <h3>Состав очереди</h3>
+                                        <p class="settings-help-text">Состав влияет на уведомления и доступность тикетов для команды.</p>
+                                    </div>
+                                </div>
+                                <div class="settings-inline-fields">
+                                    <div class="form-group"><label for="settingsQueueMembersUser">Пользователь</label><select id="settingsQueueMembersUser"></select></div>
+                                    <div class="form-group"><label for="settingsQueueMembersRole">Роль в очереди</label><select id="settingsQueueMembersRole"><option value="">Без уточнения</option><option value="primary">Основной</option><option value="backup">Подменный</option><option value="lead">Старший</option><option value="observer">Наблюдатель</option></select></div>
+                                </div>
+                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsQueueMemberAddBtn">Добавить в очередь</button></div>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table">
+                                        <thead><tr><th>Пользователь</th><th>Роль</th><th>Действие</th></tr></thead>
+                                        <tbody id="settingsQueueMembersTableBody"><tr><td colspan="3" class="muted">Выберите очередь, чтобы увидеть состав.</td></tr></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
+        function settingsRenderRoutingSection() {
+            return `
+                <section id="settingsSection-routing" class="settings-section">
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <div class="settings-section-head">
+                                <div>
+                                    <h2>Правила маршрутизации</h2>
+                                    <p class="settings-help-text">Правила определяют, в какую очередь попадает новый или перенаправленный тикет.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="settingsRoutingNewBtn">Новое правило</button>
+                            </div>
+                            <div class="settings-table-wrap">
+                                <table class="settings-table">
+                                    <thead><tr><th>Приоритет</th><th>Очередь</th><th>Условие</th><th>Статус</th><th>Действие</th></tr></thead>
+                                    <tbody id="settingsRoutingTableBody"><tr><td colspan="5" class="muted">Загрузка...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </article>
+                        <article class="section">
+                            <h2>Карточка правила</h2>
+                            <form id="settingsRoutingForm" class="settings-form">
+                                <input type="hidden" id="settingsRoutingId">
+                                <div class="settings-inline-fields">
+                                    <div class="form-group"><label for="settingsRoutingPriority">Порядок срабатывания</label><input type="number" id="settingsRoutingPriority" min="0" value="0"></div>
+                                    <div class="form-group"><label for="settingsRoutingQueue">Целевая очередь</label><select id="settingsRoutingQueue"></select></div>
+                                </div>
+                                <label class="settings-switch"><input type="checkbox" id="settingsRoutingEnabled" checked><span>Правило активно</span></label>
+                                <div class="form-group">
+                                    <label for="settingsRoutingCondition">Условие (JSON)</label>
+                                    <textarea id="settingsRoutingCondition" rows="8" spellcheck="false"></textarea>
+                                    <small class="settings-hint">Поддерживаются поля priority, category_id, service_id, subcategory_id, location, device_type и операции eq, ne, in, contains, is_null.</small>
+                                </div>
+                                <div class="settings-example-box"><strong>Пример</strong><pre>{
+  "and": [
+    {"field": "priority", "op": "eq", "value": "P1"},
+    {"field": "location", "op": "eq", "value": "HQ"}
+  ]
+}</pre></div>
+                                <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить правило</button><button type="button" class="btn btn-secondary" id="settingsRoutingResetBtn">Сбросить</button></div>
+                            </form>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
+        function settingsRenderSlaSection() {
+            return `
+                <section id="settingsSection-sla" class="settings-section">
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <div class="settings-section-head">
+                                <div>
+                                    <h2>SLA политики</h2>
+                                    <p class="settings-help-text">SLA влияет на срок первой реакции и срок решения по приоритетам.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="settingsSlaNewBtn">Новая политика</button>
+                            </div>
+                            <div class="settings-table-wrap">
+                                <table class="settings-table">
+                                    <thead><tr><th>Название</th><th>Часовой пояс</th><th>По умолчанию</th><th>Активна</th><th>Действие</th></tr></thead>
+                                    <tbody id="settingsSlaTableBody"><tr><td colspan="5" class="muted">Загрузка...</td></tr></tbody>
+                                </table>
+                            </div>
+                            <div class="settings-subcard">
+                                <h3>Цели SLA по приоритетам</h3>
+                                <p class="settings-help-text">Список пар <code>priority / first_response_min / resolution_min</code>.</p>
+                                <textarea id="settingsSlaTargets" rows="8" spellcheck="false"></textarea>
+                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsSlaTargetsSaveBtn">Сохранить цели SLA</button></div>
+                            </div>
+                            <div class="settings-subcard">
+                                <h3>Матрица impact / urgency</h3>
+                                <p class="settings-help-text">Преобразует impact и urgency в итоговый приоритет.</p>
+                                <textarea id="settingsPriorityMatrix" rows="8" spellcheck="false"></textarea>
+                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsPriorityMatrixSaveBtn">Сохранить матрицу</button></div>
+                            </div>
+                        </article>
+                        <article class="section">
+                            <h2>Карточка SLA</h2>
+                            <form id="settingsSlaForm" class="settings-form">
+                                <input type="hidden" id="settingsSlaId">
+                                <div class="form-group"><label for="settingsSlaName">Название политики</label><input type="text" id="settingsSlaName"></div>
+                                <div class="settings-inline-fields">
+                                    <div class="form-group"><label for="settingsSlaTimezone">Часовой пояс</label><input type="text" id="settingsSlaTimezone" placeholder="Europe/Moscow"></div>
+                                    <div class="form-group"><label for="settingsSlaCalendar">Календарь</label><select id="settingsSlaCalendar"></select></div>
+                                </div>
+                                <div class="settings-inline-fields">
+                                    <label class="settings-switch"><input type="checkbox" id="settingsSlaDefault"><span>Политика по умолчанию</span></label>
+                                    <label class="settings-switch"><input type="checkbox" id="settingsSlaActive" checked><span>Политика активна</span></label>
+                                </div>
+                                <div class="form-group">
+                                    <label for="settingsSlaBusinessHours">Business hours JSON</label>
+                                    <textarea id="settingsSlaBusinessHours" rows="6" spellcheck="false"></textarea>
+                                    <small class="settings-hint">Если используете календарь, здесь можно оставить <code>null</code>.</small>
+                                </div>
+                                <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить SLA</button><button type="button" class="btn btn-secondary" id="settingsSlaResetBtn">Сбросить</button><button type="button" class="btn btn-secondary" id="settingsSlaSetDefaultBtn">Сделать по умолчанию</button></div>
+                            </form>
+                            <div class="settings-subcard">
+                                <div class="settings-section-head compact">
+                                    <div>
+                                        <h3>Календари</h3>
+                                        <p class="settings-help-text">Календарь влияет на расчёт SLA в рабочее время.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary" id="settingsCalendarNewBtn">Новый календарь</button>
+                                </div>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table">
+                                        <thead><tr><th>Код</th><th>Имя</th><th>Часовой пояс</th><th>Действие</th></tr></thead>
+                                        <tbody id="settingsCalendarsTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
+                                    </table>
+                                </div>
+                                <form id="settingsCalendarForm" class="settings-form settings-form-tight">
+                                    <input type="hidden" id="settingsCalendarId">
+                                    <div class="settings-inline-fields">
+                                        <div class="form-group"><label for="settingsCalendarCode">Код</label><input type="text" id="settingsCalendarCode"></div>
+                                        <div class="form-group"><label for="settingsCalendarName">Название</label><input type="text" id="settingsCalendarName"></div>
+                                    </div>
+                                    <div class="form-group"><label for="settingsCalendarTimezone">Часовой пояс</label><input type="text" id="settingsCalendarTimezone"></div>
+                                    <div class="form-group"><label for="settingsCalendarWeeklyHours">Рабочие часы JSON</label><textarea id="settingsCalendarWeeklyHours" rows="5" spellcheck="false"></textarea></div>
+                                    <div class="form-group"><label for="settingsCalendarHolidays">Праздники JSON</label><textarea id="settingsCalendarHolidays" rows="4" spellcheck="false"></textarea></div>
+                                    <label class="settings-switch"><input type="checkbox" id="settingsCalendarActive" checked><span>Календарь активен</span></label>
+                                    <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить календарь</button><button type="button" class="btn btn-secondary" id="settingsCalendarResetBtn">Сбросить</button></div>
+                                </form>
+                            </div>
+                            <div class="settings-subcard">
+                                <h3>OLA по очереди</h3>
+                                <p class="settings-help-text">OLA следит за тем, как быстро очередь берёт тикет в работу и завершает обработку.</p>
+                                <div class="form-group"><label for="settingsOlaQueueSelect">Очередь для OLA</label><select id="settingsOlaQueueSelect"></select></div>
+                                <textarea id="settingsOlaTargets" rows="8" spellcheck="false"></textarea>
+                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsOlaSaveBtn">Сохранить OLA</button></div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
+        function settingsRenderReferencesSection() {
+            return `
+                <section id="settingsSection-references" class="settings-section">
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <h2>Справочник кодов решения</h2>
+                            <p class="settings-help-text">Эти коды используются при закрытии и анализе выполненной работы.</p>
+                            <div class="settings-table-wrap">
+                                <table class="settings-table">
+                                    <thead><tr><th>Код</th><th>Название</th><th>Сортировка</th><th>Активен</th></tr></thead>
+                                    <tbody id="settingsResolutionCodesTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </article>
+                        <article class="section">
+                            <h2>Что пока не выведено в UI</h2>
+                            <div class="settings-feature-list">
+                                <article class="settings-feature-card"><strong>CRUD для кодов решения</strong><p>Сейчас админка показывает справочник, но полноценное редактирование ещё нужно вывести в серверные API и UI.</p></article>
+                                <article class="settings-feature-card"><strong>Глобальные уведомления</strong><p>Персональные preferences уже есть, но правила для всей службы поддержки пока не выведены.</p></article>
+                                <article class="settings-feature-card"><strong>Категории и сервисы</strong><p>Поля в модели уже есть, но справочники категорий, сервисов и подкатегорий нужно доделать.</p></article>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
+        function settingsRenderAuditSection() {
+            return `
+                <section id="settingsSection-audit" class="settings-section">
+                    <article class="section">
+                        <div class="settings-section-head">
+                            <div>
+                                <h2>Аудит изменений</h2>
+                                <p class="settings-help-text">Помогает понять, кто, что и когда менял. Это важно для разборов и аккуратной эволюции правил.</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary" id="settingsAuditRefreshBtn">Обновить аудит</button>
+                        </div>
+                        <div class="settings-table-wrap">
+                            <table class="settings-table">
+                                <thead><tr><th>Время</th><th>Сущность</th><th>Действие</th><th>Кто</th><th>Trace</th><th>Детали</th></tr></thead>
+                                <tbody id="settingsAuditTableBody"><tr><td colspan="6" class="muted">Загрузка...</td></tr></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </section>
+            `;
+        }
+
+        function settingsRenderRoadmapSection() {
+            return `
+                <section id="settingsSection-roadmap" class="settings-section">
+                    <article class="section">
+                        <h2>Что ещё нужно для полноценного HelpDesk</h2>
+                        <div class="settings-roadmap-grid">
+                            <article class="settings-roadmap-card"><strong>Шаблоны ответов</strong><p>Быстрые ответы и готовые сценарии для типовых обращений.</p></article>
+                            <article class="settings-roadmap-card"><strong>Правила эскалаций</strong><p>Автоматическая эскалация по breach SLA, vendor wait и VIP-кейсам.</p></article>
+                            <article class="settings-roadmap-card"><strong>Problem / Known Error</strong><p>Управление массовыми проблемами, known issues и быстрая связка с тикетами.</p></article>
+                            <article class="settings-roadmap-card"><strong>Управление хранением</strong><p>Retention / archive policy для событий, аудита и видимой истории.</p></article>
+                            <article class="settings-roadmap-card"><strong>Публичный портал</strong><p>Настройки intake-форм, доступных очередей и правил public-access.</p></article>
+                            <article class="settings-roadmap-card"><strong>База знаний</strong><p>Не просто ссылки на знания в карточке тикета, а отдельное управление контентом и подсказками.</p></article>
+                        </div>
+                    </article>
+                </section>
+            `;
+        }
+
+        function settingsShowMessage(kind, text) {
+            const errorEl = document.getElementById('settingsError');
+            const successEl = document.getElementById('settingsSuccess');
+            if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+            if (successEl) { successEl.style.display = 'none'; successEl.textContent = ''; }
+            if (!text) return;
+            const target = kind === 'error' ? errorEl : successEl;
+            if (!target) return;
+            target.textContent = text;
+            target.style.display = 'block';
+        }
+
+        function settingsSetSection(sectionName) {
+            settingsState.activeSection = sectionName;
+            document.querySelectorAll('.settings-section-tab').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-settings-section') === sectionName);
+            });
+            document.querySelectorAll('.settings-section').forEach(section => {
+                section.classList.toggle('active', section.id === 'settingsSection-' + sectionName);
+            });
+        }
+
+        function settingsSetModeBadge(kind, text) {
+            const badge = document.getElementById('settingsWriteModeBadge');
+            if (!badge) return;
+            badge.className = 'settings-mode-badge settings-mode-badge-' + kind;
+            badge.textContent = text;
+        }
+
+        async function settingsApi(path, options) {
+            const opts = options ? { ...options } : {};
+            const includeContentType = !!opts.body && !(opts.headers && opts.headers['Content-Type']);
+            opts.headers = { ...(opts.headers || {}), ...getAuthHeaders(includeContentType) };
+            const response = await fetch(path, opts);
+            const data = await responseToJson(response);
+            if (!response.ok || data.status === 'error') {
+                const error = new Error(data.error || ('HTTP ' + response.status));
+                error.status = response.status;
+                error.payload = data;
+                throw error;
+            }
+            return data;
+        }
+
+        function settingsParseJson(value, fallback) {
+            const text = String(value || '').trim();
+            if (!text) return fallback;
+            if (text === 'null') return null;
+            return JSON.parse(text);
+        }
+
+        function settingsPrettyJson(value) {
+            return JSON.stringify(value == null ? null : value, null, 2);
+        }
+
+        function settingsRoleLabel(role) {
+            const map = {
+                primary: 'Основной',
+                backup: 'Подменный',
+                lead: 'Старший',
+                observer: 'Наблюдатель',
+            };
+            return map[role] || 'Без уточнения';
+        }
+
+        function settingsQueueNameById(queueId) {
+            const queue = settingsState.queues.find(item => Number(item.id) === Number(queueId));
+            return queue ? `${queue.name} (${queue.code})` : '—';
+        }
+
+        function settingsHandleWriteError(error) {
+            if (error?.payload?.error_code === 'WRITE_DISABLED') {
+                settingsSetModeBadge('bad', 'Запись отключена на сервере');
+            } else if (error?.status === 403) {
+                settingsSetModeBadge('bad', 'Недостаточно прав на изменение');
+            } else {
+                settingsSetModeBadge('warn', 'Чтение доступно, запись требует внимания');
+            }
+            settingsShowMessage('error', error.message || 'Не удалось сохранить изменения');
+        }
+
+        async function loadSettingsTab(forceReload) {
+            initSettingsTab();
+            if (!settingsState.initialized || settingsState.loading) return;
+            settingsState.loading = true;
+            settingsShowMessage('success', '');
+            settingsSetModeBadge('neutral', 'Загрузка настроек...');
+            try {
+                const [queuesData, routingData, slaData, calendarsData, auditData, resolutionData, usersData] = await Promise.all([
+                    settingsApi('/api/admin/tickets/queues?include_inactive=true'),
+                    settingsApi('/api/admin/tickets/routing_rules?include_disabled=true'),
+                    settingsApi('/api/admin/tickets/sla_policies?include_inactive=true'),
+                    settingsApi('/api/admin/tickets/calendars?include_inactive=true'),
+                    settingsApi('/api/admin/tickets/audit?limit=50'),
+                    settingsApi('/api/tickets/resolution_codes?include_inactive=true'),
+                    settingsApi('/api/admin/users?include_inactive=true'),
+                ]);
+                settingsState.queues = queuesData.queues || [];
+                settingsState.routingRules = routingData.routing_rules || [];
+                settingsState.slaPolicies = slaData.sla_policies || [];
+                settingsState.calendars = calendarsData.calendars || [];
+                settingsState.audit = auditData.audit || [];
+                settingsState.resolutionCodes = resolutionData.resolution_codes || [];
+                settingsState.users = (usersData.users || []).filter(user => user.actor_role === 'admin' || user.actor_role === 'support');
+                if (!settingsState.selectedQueueId || !settingsState.queues.some(item => Number(item.id) === Number(settingsState.selectedQueueId))) {
+                    settingsState.selectedQueueId = settingsState.queues[0] ? settingsState.queues[0].id : null;
+                }
+                if (!settingsState.selectedSlaId || !settingsState.slaPolicies.some(item => Number(item.id) === Number(settingsState.selectedSlaId))) {
+                    settingsState.selectedSlaId = settingsState.slaPolicies[0] ? settingsState.slaPolicies[0].id : null;
+                }
+                if (!settingsState.olaQueueId || !settingsState.queues.some(item => Number(item.id) === Number(settingsState.olaQueueId))) {
+                    settingsState.olaQueueId = settingsState.selectedQueueId;
+                }
+                await Promise.all([
+                    settingsLoadQueueMembers(settingsState.selectedQueueId),
+                    settingsLoadSlaDetails(settingsState.selectedSlaId),
+                    settingsLoadOlaTargets(settingsState.olaQueueId),
+                ]);
+                settingsRenderAll();
+                settingsSetModeBadge('neutral', 'Чтение настроек доступно. Сохранение выполняется для admin.');
+                if (forceReload) {
+                    settingsShowMessage('success', 'Настройки HelpDesk обновлены.');
+                }
+            } catch (error) {
+                settingsSetModeBadge('bad', 'Не удалось загрузить настройки');
+                settingsShowMessage('error', error.message || 'Не удалось загрузить настройки HelpDesk');
+            } finally {
+                settingsState.loading = false;
+            }
+        }
+
+        async function settingsLoadQueueMembers(queueId) {
+            if (!queueId) {
+                settingsState.queueMembers = [];
+                return;
+            }
+            const data = await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(queueId) + '/members');
+            settingsState.queueMembers = data.members || [];
+        }
+
+        async function settingsLoadSlaDetails(policyId) {
+            if (!policyId) {
+                settingsState.slaTargets = [];
+                settingsState.priorityMatrix = [];
+                return;
+            }
+            const [targetsData, matrixData] = await Promise.all([
+                settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(policyId) + '/targets'),
+                settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(policyId) + '/priority_matrix'),
+            ]);
+            settingsState.slaTargets = targetsData.targets || [];
+            settingsState.priorityMatrix = matrixData.matrix || [];
+        }
+
+        async function settingsLoadOlaTargets(queueId) {
+            if (!queueId) {
+                settingsState.olaTargets = [];
+                return;
+            }
+            const data = await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(queueId) + '/ola_targets');
+            settingsState.olaTargets = data.ola_targets || [];
+        }
+
+        function settingsRenderAll() {
+            settingsRenderOverview();
+            settingsRenderQueues();
+            settingsRenderQueueMembers();
+            settingsRenderRouting();
+            settingsRenderSla();
+            settingsRenderCalendars();
+            settingsRenderOla();
+            settingsRenderResolutionCodes();
+            settingsRenderAudit();
+        }
+
+        function settingsRenderOverview() {
+            const cardsEl = document.getElementById('settingsOverviewCards');
+            const listEl = document.getElementById('settingsOverviewList');
+            if (cardsEl) {
+                const cards = [
+                    { label: 'Очередей', value: settingsState.queues.length, note: 'Рабочие и архивные очереди' },
+                    { label: 'Правил маршрутизации', value: settingsState.routingRules.length, note: 'Активные и выключенные правила' },
+                    { label: 'SLA политик', value: settingsState.slaPolicies.length, note: 'Включая политику по умолчанию' },
+                    { label: 'Календарей', value: settingsState.calendars.length, note: 'Часовые пояса, рабочие часы, праздники' },
+                    { label: 'Кодов решения', value: settingsState.resolutionCodes.length, note: 'Пока в режиме просмотра' },
+                    { label: 'Записей аудита', value: settingsState.audit.length, note: 'Последние изменения правил' },
+                ];
+                cardsEl.innerHTML = cards.map(card => `<article class="settings-overview-card"><label>${escapeHtml(card.label)}</label><strong>${escapeHtml(String(card.value))}</strong><span>${escapeHtml(card.note)}</span></article>`).join('');
+            }
+            if (listEl) {
+                listEl.innerHTML = [
+                    'очереди и состав очередей;',
+                    'правила маршрутизации по условиям;',
+                    'SLA-политики, цели SLA и матрица приоритетов;',
+                    'календари рабочего времени и праздники;',
+                    'OLA по очередям;',
+                    'аудит изменений help desk-настроек.'
+                ].map(item => `<li>${item}</li>`).join('');
+            }
+        }
+
+        function settingsRenderQueues() {
+            const tbody = document.getElementById('settingsQueuesTableBody');
+            const userSelect = document.getElementById('settingsQueueMembersUser');
+            const queueSelect = document.getElementById('settingsRoutingQueue');
+            const olaSelect = document.getElementById('settingsOlaQueueSelect');
+            if (tbody) {
+                if (!settingsState.queues.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="muted">Очереди пока не настроены.</td></tr>';
+                } else {
+                    tbody.innerHTML = settingsState.queues.map(queue => {
+                        const memberCount = settingsState.selectedQueueId && Number(settingsState.selectedQueueId) === Number(queue.id) ? settingsState.queueMembers.length : '—';
+                        return `<tr>
+                            <td><code>${escapeHtml(queue.code || '')}</code></td>
+                            <td>${escapeHtml(queue.name || '—')}</td>
+                            <td>${queue.is_triage ? 'Да' : 'Нет'}</td>
+                            <td>${queue.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
+                            <td>${escapeHtml(String(memberCount))}</td>
+                            <td><button type="button" class="settings-row-action" data-settings-action="edit-queue" data-queue-id="${queue.id}">Открыть</button></td>
+                        </tr>`;
+                    }).join('');
+                }
+            }
+            const options = settingsState.queues.map(queue => `<option value="${queue.id}">${escapeHtml(queue.name)} (${escapeHtml(queue.code)})</option>`).join('');
+            if (queueSelect) queueSelect.innerHTML = options;
+            if (olaSelect) {
+                olaSelect.innerHTML = `<option value="">Выберите очередь</option>${options}`;
+                olaSelect.value = settingsState.olaQueueId != null ? String(settingsState.olaQueueId) : '';
+            }
+            if (userSelect) {
+                userSelect.innerHTML = `<option value="">Выберите пользователя</option>${settingsState.users.map(user => `<option value="${escapeHtml(user.user_login || '')}">${escapeHtml(user.user_login || '')} • ${escapeHtml(user.actor_role || '')}</option>`).join('')}`;
+            }
+            settingsPopulateQueueForm();
+        }
+
+        function settingsRenderQueueMembers() {
+            const tbody = document.getElementById('settingsQueueMembersTableBody');
+            if (!tbody) return;
+            if (!settingsState.selectedQueueId) {
+                tbody.innerHTML = '<tr><td colspan="3" class="muted">Выберите очередь, чтобы увидеть состав.</td></tr>';
+                return;
+            }
+            if (!settingsState.queueMembers.length) {
+                tbody.innerHTML = '<tr><td colspan="3" class="muted">В этой очереди пока нет участников.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = settingsState.queueMembers.map(member => `<tr>
+                <td>${escapeHtml(member.actor_id || '—')}</td>
+                <td>${escapeHtml(settingsRoleLabel(member.role_in_queue))}</td>
+                <td><button type="button" class="settings-row-action" data-settings-action="remove-queue-member" data-actor-id="${escapeHtml(member.actor_id || '')}">Удалить</button></td>
+            </tr>`).join('');
+        }
+
+        function settingsRenderRouting() {
+            const tbody = document.getElementById('settingsRoutingTableBody');
+            if (!tbody) return;
+            if (!settingsState.routingRules.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">Правила маршрутизации пока не настроены.</td></tr>';
+            } else {
+                tbody.innerHTML = settingsState.routingRules.map(rule => `<tr>
+                    <td>${escapeHtml(String(rule.priority_order ?? 0))}</td>
+                    <td>${escapeHtml(settingsQueueNameById(rule.target_queue_id))}</td>
+                    <td><div class="settings-code">${escapeHtml(settingsPrettyJson(rule.condition_json || {}))}</div></td>
+                    <td>${rule.enabled ? '<span class="settings-status-pill ok">Активно</span>' : '<span class="settings-status-pill off">Выключено</span>'}</td>
+                    <td><button type="button" class="settings-row-action" data-settings-action="edit-routing" data-rule-id="${rule.id}">Открыть</button></td>
+                </tr>`).join('');
+            }
+            settingsPopulateRoutingForm();
+        }
+
+        function settingsRenderSla() {
+            const tbody = document.getElementById('settingsSlaTableBody');
+            const calendarSelect = document.getElementById('settingsSlaCalendar');
+            if (tbody) {
+                if (!settingsState.slaPolicies.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="muted">SLA-политики пока не настроены.</td></tr>';
+                } else {
+                    tbody.innerHTML = settingsState.slaPolicies.map(policy => `<tr>
+                        <td>${escapeHtml(policy.name || '—')}</td>
+                        <td>${escapeHtml(policy.timezone || '—')}</td>
+                        <td>${policy.is_default ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
+                        <td>${policy.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
+                        <td><button type="button" class="settings-row-action" data-settings-action="edit-sla" data-policy-id="${policy.id}">Открыть</button></td>
+                    </tr>`).join('');
+                }
+            }
+            if (calendarSelect) {
+                calendarSelect.innerHTML = `<option value="">Без календаря</option>${settingsState.calendars.map(calendar => `<option value="${calendar.id}">${escapeHtml(calendar.name || calendar.code || '')}</option>`).join('')}`;
+            }
+            const targetsEl = document.getElementById('settingsSlaTargets');
+            if (targetsEl) targetsEl.value = settingsPrettyJson(settingsState.slaTargets || []);
+            const matrixEl = document.getElementById('settingsPriorityMatrix');
+            if (matrixEl) matrixEl.value = settingsPrettyJson(settingsState.priorityMatrix || []);
+            settingsPopulateSlaForm();
+        }
+
+        function settingsRenderCalendars() {
+            const tbody = document.getElementById('settingsCalendarsTableBody');
+            if (!tbody) return;
+            if (!settingsState.calendars.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">Календари пока не настроены.</td></tr>';
+            } else {
+                tbody.innerHTML = settingsState.calendars.map(calendar => `<tr>
+                    <td><code>${escapeHtml(calendar.code || '')}</code></td>
+                    <td>${escapeHtml(calendar.name || '—')}</td>
+                    <td>${escapeHtml(calendar.timezone || '—')}</td>
+                    <td><button type="button" class="settings-row-action" data-settings-action="edit-calendar" data-calendar-id="${calendar.id}">Открыть</button></td>
+                </tr>`).join('');
+            }
+            settingsPopulateCalendarForm();
+        }
+
+        function settingsRenderOla() {
+            const targetsEl = document.getElementById('settingsOlaTargets');
+            if (targetsEl) targetsEl.value = settingsPrettyJson(settingsState.olaTargets || []);
+        }
+
+        function settingsRenderResolutionCodes() {
+            const tbody = document.getElementById('settingsResolutionCodesTableBody');
+            if (!tbody) return;
+            if (!settingsState.resolutionCodes.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">Коды решения пока не найдены.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = settingsState.resolutionCodes.map(code => `<tr>
+                <td><code>${escapeHtml(code.code || '')}</code></td>
+                <td>${escapeHtml(code.name || '—')}</td>
+                <td>${escapeHtml(String(code.sort_order ?? '—'))}</td>
+                <td>${code.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
+            </tr>`).join('');
+        }
+
+        function settingsRenderAudit() {
+            const tbody = document.getElementById('settingsAuditTableBody');
+            if (!tbody) return;
+            if (!settingsState.audit.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="muted">История изменений пока пуста.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = settingsState.audit.map(row => `<tr>
+                <td>${escapeHtml(techFormatDate(row.created_at))}</td>
+                <td>${escapeHtml(row.entity_type || '—')}</td>
+                <td>${escapeHtml(row.action || '—')}</td>
+                <td>${escapeHtml((row.actor_id || '—') + (row.actor_role ? ' • ' + row.actor_role : ''))}</td>
+                <td><code>${escapeHtml((row.trace_id || '—').slice(0, 16))}</code></td>
+                <td><div class="settings-code">${escapeHtml(settingsPrettyJson({ before: row.before_json, after: row.after_json }))}</div></td>
+            </tr>`).join('');
+        }
+
+        function settingsPopulateQueueForm() {
+            const current = settingsState.queues.find(queue => Number(queue.id) === Number(settingsState.selectedQueueId));
+            document.getElementById('settingsQueueId').value = current ? current.id : '';
+            document.getElementById('settingsQueueCode').value = current ? (current.code || '') : '';
+            document.getElementById('settingsQueueName').value = current ? (current.name || '') : '';
+            document.getElementById('settingsQueueIsTriage').checked = !!(current && current.is_triage);
+            document.getElementById('settingsQueueIsActive').checked = !current || current.is_active !== false;
+        }
+
+        function settingsPopulateRoutingForm() {
+            const current = settingsState.routingRules.find(rule => Number(rule.id) === Number(settingsState.selectedRoutingId));
+            document.getElementById('settingsRoutingId').value = current ? current.id : '';
+            document.getElementById('settingsRoutingPriority').value = current ? (current.priority_order ?? 0) : 0;
+            document.getElementById('settingsRoutingQueue').value = current ? String(current.target_queue_id || '') : '';
+            document.getElementById('settingsRoutingEnabled').checked = !current || current.enabled !== false;
+            document.getElementById('settingsRoutingCondition').value = current ? settingsPrettyJson(current.condition_json || {}) : settingsPrettyJson({});
+        }
+
+        function settingsPopulateSlaForm() {
+            const current = settingsState.slaPolicies.find(policy => Number(policy.id) === Number(settingsState.selectedSlaId));
+            document.getElementById('settingsSlaId').value = current ? current.id : '';
+            document.getElementById('settingsSlaName').value = current ? (current.name || '') : '';
+            document.getElementById('settingsSlaTimezone').value = current ? (current.timezone || '') : '';
+            document.getElementById('settingsSlaCalendar').value = current && current.calendar_id != null ? String(current.calendar_id) : '';
+            document.getElementById('settingsSlaDefault').checked = !!(current && current.is_default);
+            document.getElementById('settingsSlaActive').checked = !current || current.is_active !== false;
+            document.getElementById('settingsSlaBusinessHours').value = current ? settingsPrettyJson(current.business_hours_json) : 'null';
+        }
+
+        function settingsPopulateCalendarForm() {
+            const current = settingsState.calendars.find(calendar => Number(calendar.id) === Number(settingsState.selectedCalendarId));
+            document.getElementById('settingsCalendarId').value = current ? current.id : '';
+            document.getElementById('settingsCalendarCode').value = current ? (current.code || '') : '';
+            document.getElementById('settingsCalendarName').value = current ? (current.name || '') : '';
+            document.getElementById('settingsCalendarTimezone').value = current ? (current.timezone || '') : '';
+            document.getElementById('settingsCalendarWeeklyHours').value = current ? settingsPrettyJson(current.weekly_hours_json) : '[]';
+            document.getElementById('settingsCalendarHolidays').value = current ? settingsPrettyJson(current.holidays_json) : '[]';
+            document.getElementById('settingsCalendarActive').checked = !current || current.is_active !== false;
+        }
+
+        async function handleSettingsClick(event) {
+            const tabBtn = event.target.closest('.settings-section-tab');
+            if (tabBtn) {
+                settingsSetSection(tabBtn.getAttribute('data-settings-section'));
+                return;
+            }
+            const actionBtn = event.target.closest('[data-settings-action]');
+            if (actionBtn) {
+                const action = actionBtn.getAttribute('data-settings-action');
+                if (action === 'edit-queue') {
+                    settingsState.selectedQueueId = Number(actionBtn.getAttribute('data-queue-id'));
+                    await settingsLoadQueueMembers(settingsState.selectedQueueId);
+                    settingsRenderQueues();
+                    settingsRenderQueueMembers();
+                } else if (action === 'remove-queue-member') {
+                    await settingsDeleteQueueMember(actionBtn.getAttribute('data-actor-id'));
+                } else if (action === 'edit-routing') {
+                    settingsState.selectedRoutingId = Number(actionBtn.getAttribute('data-rule-id'));
+                    settingsRenderRouting();
+                } else if (action === 'edit-sla') {
+                    settingsState.selectedSlaId = Number(actionBtn.getAttribute('data-policy-id'));
+                    await settingsLoadSlaDetails(settingsState.selectedSlaId);
+                    settingsRenderSla();
+                } else if (action === 'edit-calendar') {
+                    settingsState.selectedCalendarId = Number(actionBtn.getAttribute('data-calendar-id'));
+                    settingsRenderCalendars();
+                }
+                return;
+            }
+            const id = event.target.id;
+            if (id === 'settingsQueueNewBtn' || id === 'settingsQueueResetBtn') {
+                settingsState.selectedQueueId = null;
+                settingsState.queueMembers = [];
+                settingsRenderQueues();
+                settingsRenderQueueMembers();
+            } else if (id === 'settingsRoutingNewBtn' || id === 'settingsRoutingResetBtn') {
+                settingsState.selectedRoutingId = null;
+                settingsRenderRouting();
+            } else if (id === 'settingsSlaNewBtn' || id === 'settingsSlaResetBtn') {
+                settingsState.selectedSlaId = null;
+                settingsState.slaTargets = [];
+                settingsState.priorityMatrix = [];
+                settingsRenderSla();
+            } else if (id === 'settingsCalendarNewBtn' || id === 'settingsCalendarResetBtn') {
+                settingsState.selectedCalendarId = null;
+                settingsRenderCalendars();
+            } else if (id === 'settingsQueueMemberAddBtn') {
+                await settingsUpsertQueueMember();
+            } else if (id === 'settingsSlaTargetsSaveBtn') {
+                await settingsSaveSlaTargets();
+            } else if (id === 'settingsPriorityMatrixSaveBtn') {
+                await settingsSavePriorityMatrix();
+            } else if (id === 'settingsSlaSetDefaultBtn') {
+                await settingsSetDefaultSla();
+            } else if (id === 'settingsOlaSaveBtn') {
+                await settingsSaveOlaTargets();
+            } else if (id === 'settingsAuditRefreshBtn') {
+                await loadSettingsTab(true);
+            }
+        }
+
+        async function handleSettingsSubmit(event) {
+            event.preventDefault();
+            if (event.target.id === 'settingsQueueForm') {
+                await settingsSaveQueue();
+            } else if (event.target.id === 'settingsRoutingForm') {
+                await settingsSaveRouting();
+            } else if (event.target.id === 'settingsSlaForm') {
+                await settingsSaveSla();
+            } else if (event.target.id === 'settingsCalendarForm') {
+                await settingsSaveCalendar();
+            }
+        }
+
+        async function settingsSaveQueue() {
+            try {
+                const queueId = document.getElementById('settingsQueueId').value;
+                const payload = {
+                    code: document.getElementById('settingsQueueCode').value.trim(),
+                    name: document.getElementById('settingsQueueName').value.trim(),
+                    is_triage: document.getElementById('settingsQueueIsTriage').checked,
+                    is_active: document.getElementById('settingsQueueIsActive').checked,
+                };
+                if (!payload.code || !payload.name) throw new Error('Укажите код и название очереди');
+                await settingsApi(queueId ? '/api/admin/tickets/queues/' + encodeURIComponent(queueId) : '/api/admin/tickets/queues', {
+                    method: queueId ? 'PATCH' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                settingsSetModeBadge('ok', 'Изменения можно сохранять');
+                await loadSettingsTab(true);
+                settingsShowMessage('success', 'Очередь сохранена.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsUpsertQueueMember() {
+            try {
+                if (!settingsState.selectedQueueId) throw new Error('Сначала выберите очередь');
+                const actorId = document.getElementById('settingsQueueMembersUser').value;
+                if (!actorId) throw new Error('Выберите пользователя для очереди');
+                const payload = { role_in_queue: document.getElementById('settingsQueueMembersRole').value || null };
+                await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(settingsState.selectedQueueId) + '/members/' + encodeURIComponent(actorId), {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+                settingsSetModeBadge('ok', 'Изменения можно сохранять');
+                await settingsLoadQueueMembers(settingsState.selectedQueueId);
+                settingsRenderQueueMembers();
+                settingsShowMessage('success', 'Состав очереди обновлён.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsDeleteQueueMember(actorId) {
+            try {
+                if (!settingsState.selectedQueueId || !actorId) throw new Error('Не удалось определить участника очереди');
+                await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(settingsState.selectedQueueId) + '/members/' + encodeURIComponent(actorId), {
+                    method: 'DELETE',
+                });
+                await settingsLoadQueueMembers(settingsState.selectedQueueId);
+                settingsRenderQueueMembers();
+                settingsShowMessage('success', 'Участник удалён из очереди.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveRouting() {
+            try {
+                const ruleId = document.getElementById('settingsRoutingId').value;
+                const payload = {
+                    priority_order: Number(document.getElementById('settingsRoutingPriority').value || 0),
+                    target_queue_id: Number(document.getElementById('settingsRoutingQueue').value || 0),
+                    enabled: document.getElementById('settingsRoutingEnabled').checked,
+                    condition_json: settingsParseJson(document.getElementById('settingsRoutingCondition').value, {}),
+                };
+                if (!payload.target_queue_id) throw new Error('Выберите целевую очередь');
+                await settingsApi(ruleId ? '/api/admin/tickets/routing_rules/' + encodeURIComponent(ruleId) : '/api/admin/tickets/routing_rules', {
+                    method: ruleId ? 'PATCH' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                await loadSettingsTab(true);
+                settingsShowMessage('success', 'Правило маршрутизации сохранено.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveSla() {
+            try {
+                const policyId = document.getElementById('settingsSlaId').value;
+                const payload = {
+                    name: document.getElementById('settingsSlaName').value.trim(),
+                    timezone: document.getElementById('settingsSlaTimezone').value.trim() || 'UTC',
+                    calendar_id: document.getElementById('settingsSlaCalendar').value ? Number(document.getElementById('settingsSlaCalendar').value) : null,
+                    is_default: document.getElementById('settingsSlaDefault').checked,
+                    is_active: document.getElementById('settingsSlaActive').checked,
+                    business_hours_json: settingsParseJson(document.getElementById('settingsSlaBusinessHours').value, null),
+                };
+                if (!payload.name) throw new Error('Укажите название SLA-политики');
+                await settingsApi(policyId ? '/api/admin/tickets/sla_policies/' + encodeURIComponent(policyId) : '/api/admin/tickets/sla_policies', {
+                    method: policyId ? 'PATCH' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                await loadSettingsTab(true);
+                settingsShowMessage('success', 'SLA-политика сохранена.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveSlaTargets() {
+            try {
+                if (!settingsState.selectedSlaId) throw new Error('Сначала выберите SLA-политику');
+                const payload = { targets: settingsParseJson(document.getElementById('settingsSlaTargets').value, []) };
+                await settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(settingsState.selectedSlaId) + '/targets', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+                await settingsLoadSlaDetails(settingsState.selectedSlaId);
+                settingsRenderSla();
+                settingsShowMessage('success', 'Цели SLA сохранены.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSavePriorityMatrix() {
+            try {
+                if (!settingsState.selectedSlaId) throw new Error('Сначала выберите SLA-политику');
+                const payload = { matrix: settingsParseJson(document.getElementById('settingsPriorityMatrix').value, []) };
+                await settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(settingsState.selectedSlaId) + '/priority_matrix', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+                await settingsLoadSlaDetails(settingsState.selectedSlaId);
+                settingsRenderSla();
+                settingsShowMessage('success', 'Матрица приоритетов сохранена.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSetDefaultSla() {
+            try {
+                if (!settingsState.selectedSlaId) throw new Error('Сначала выберите SLA-политику');
+                await settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(settingsState.selectedSlaId) + '/set_default', {
+                    method: 'POST',
+                    body: JSON.stringify({}),
+                });
+                await loadSettingsTab(true);
+                settingsShowMessage('success', 'Политика SLA по умолчанию обновлена.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveCalendar() {
+            try {
+                const calendarId = document.getElementById('settingsCalendarId').value;
+                const payload = {
+                    code: document.getElementById('settingsCalendarCode').value.trim(),
+                    name: document.getElementById('settingsCalendarName').value.trim(),
+                    timezone: document.getElementById('settingsCalendarTimezone').value.trim() || 'UTC',
+                    weekly_hours_json: settingsParseJson(document.getElementById('settingsCalendarWeeklyHours').value, []),
+                    holidays_json: settingsParseJson(document.getElementById('settingsCalendarHolidays').value, []),
+                    is_active: document.getElementById('settingsCalendarActive').checked,
+                };
+                if (!payload.code || !payload.name) throw new Error('Укажите код и название календаря');
+                await settingsApi(calendarId ? '/api/admin/tickets/calendars/' + encodeURIComponent(calendarId) : '/api/admin/tickets/calendars', {
+                    method: calendarId ? 'PATCH' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                await loadSettingsTab(true);
+                settingsShowMessage('success', 'Календарь сохранён.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
+        async function settingsSaveOlaTargets() {
+            try {
+                const queueId = document.getElementById('settingsOlaQueueSelect').value;
+                if (!queueId) throw new Error('Выберите очередь для OLA');
+                const payload = { ola_targets: settingsParseJson(document.getElementById('settingsOlaTargets').value, []) };
+                await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(queueId) + '/ola_targets', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+                settingsState.olaQueueId = Number(queueId);
+                await settingsLoadOlaTargets(settingsState.olaQueueId);
+                settingsRenderOla();
+                settingsShowMessage('success', 'OLA-цели сохранены.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
         }
 
         let techPollTimer = null;
