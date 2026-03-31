@@ -55,6 +55,7 @@
     let toolsList = [];
     let actorRole = ''; // admin | support | auditor — из snapshot или по умолчанию
     let usersCache = [];
+    let resolutionCodesCache = [];
     let queuesCache = [];
     let devicesCache = [];
     let pendingAttachments = [];
@@ -75,6 +76,18 @@
         return h;
     }
     function el(id) { return document.getElementById(id); }
+
+    function resolutionCodeMeaning(code) {
+        const map = {
+            fixed: 'Проблему исправили',
+            workaround: 'Использован обходной путь',
+            user_error: 'Ошибка в действиях пользователя',
+            duplicate: 'Дубликат другой заявки',
+            cannot_reproduce: 'Проблему не удалось повторить',
+            vendor: 'Передано поставщику / вендору',
+        };
+        return map[code] || 'Служебный код закрытия';
+    }
 
     function exposeEmbedApi() {
         window.ticketEmbedApi = {
@@ -1190,6 +1203,15 @@
         return usersCache;
     }
 
+    async function ensureResolutionCodesLoaded() {
+        if (resolutionCodesCache.length) return resolutionCodesCache;
+        const r = await fetch('/api/tickets/resolution_codes', { headers: authHeaders() });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'Не удалось загрузить коды решения');
+        resolutionCodesCache = d.resolution_codes || d.codes || [];
+        return resolutionCodesCache;
+    }
+
     async function ensureQueuesLoaded() {
         if (queuesCache.length) return queuesCache;
         const r = await fetch('/api/admin/tickets/queues', { headers: authHeaders() });
@@ -1397,16 +1419,46 @@
             const statusOpts = [
                 { v: 'new', l: 'Новая' }, { v: 'triaged', l: 'В очереди у оператора' }, { v: 'in_progress', l: 'В работе' },
                 { v: 'waiting_on_user', l: 'Ожидание ответа пользователя' }, { v: 'waiting_on_vendor', l: 'Ожидание внешней стороны' },
-                { v: 'resolved', l: 'Решена' }
+                { v: 'resolved', l: 'Решена' }, { v: 'closed', l: 'Закрыта' }
             ];
             openInlinePanel('Сменить статус',
-                `<div class="form-group"><label>Новый статус</label><select id="cmdStatusSelect">${statusOpts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.l)}</option>`).join('')}</select></div>`,
-                async (body) => {
+                `<div class="form-group"><label>Новый статус</label><select id="cmdStatusSelect">${statusOpts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.l)}</option>`).join('')}</select></div>
+                 <div id="cmdResolutionWrap" class="hidden">
+                    <div class="form-group"><label>Код решения</label><select id="cmdResolutionCode"><option value="">Загрузка...</option></select></div>
+                    <div class="form-group"><label>Первопричина</label><textarea id="cmdRootCause" rows="4" placeholder="Коротко опишите, почему проблема возникла"></textarea></div>
+                    <div class="muted" style="font-size:12px; line-height:1.5;">Код решения нужен для отчётности и аналитики. Первопричина помогает разбирать повторяющиеся и серьёзные инциденты.</div>
+                 </div>`,
+                async (body, errEl) => {
                     const to = body.querySelector('#cmdStatusSelect').value;
-                    const r = await fetch('/api/tickets/' + ticketId + '/status', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ to_status: to }) });
+                    const payload = { to_status: to };
+                    if (to === 'resolved' || to === 'closed') {
+                        payload.resolution_code = body.querySelector('#cmdResolutionCode')?.value || '';
+                        payload.root_cause = body.querySelector('#cmdRootCause')?.value?.trim() || '';
+                        if (!payload.resolution_code) throw new Error('Выберите код решения');
+                    }
+                    const r = await fetch('/api/tickets/' + ticketId + '/status', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(payload) });
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok) throw new Error(d.details?.to_status || d.error || 'Ошибка смены статуса');
                     if (d.status === 'error') throw new Error(d.error);
+                    if (errEl) errEl.textContent = '';
+                },
+                (body) => {
+                    const statusSelect = body.querySelector('#cmdStatusSelect');
+                    const resolutionWrap = body.querySelector('#cmdResolutionWrap');
+                    const resolutionSelect = body.querySelector('#cmdResolutionCode');
+                    const syncResolutionVisibility = () => {
+                        const needResolution = statusSelect.value === 'resolved' || statusSelect.value === 'closed';
+                        resolutionWrap.classList.toggle('hidden', !needResolution);
+                    };
+                    statusSelect.addEventListener('change', syncResolutionVisibility);
+                    syncResolutionVisibility();
+                    ensureResolutionCodesLoaded().then((codes) => {
+                        resolutionSelect.innerHTML = '<option value="">Выберите код решения</option>' + codes.map((code) => `<option value="${escapeHtml(code.code || '')}">${escapeHtml((code.name || code.code || '') + ' — ' + resolutionCodeMeaning(code.code || ''))}</option>`).join('');
+                    }).catch((error) => {
+                        resolutionSelect.innerHTML = '<option value="">Не удалось загрузить коды</option>';
+                        const errEl = el('inlinePanelError');
+                        if (errEl) errEl.textContent = error.message || 'Не удалось загрузить коды решения';
+                    });
                 });
             return;
         }

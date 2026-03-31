@@ -1196,6 +1196,11 @@
         .settings-table tbody tr:hover {
             background: #f9fbff;
         }
+        .settings-table input,
+        .settings-table select {
+            width: 100%;
+            min-width: 0;
+        }
         .settings-row-action {
             padding: 4px 8px;
             border-radius: 8px;
@@ -1263,6 +1268,15 @@
             margin-top: 6px;
             font-size: 12px;
             line-height: 1.45;
+        }
+        .settings-advanced-block {
+            margin-top: 14px;
+        }
+        .settings-advanced-block summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 8px;
         }
         .settings-mode-badge {
             display: inline-flex;

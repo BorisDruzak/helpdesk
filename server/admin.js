@@ -2134,6 +2134,7 @@
                     <div class="settings-section-nav">
                         <button type="button" class="settings-section-tab active" data-settings-section="overview">Обзор</button>
                         <button type="button" class="settings-section-tab" data-settings-section="queues">Очереди</button>
+                        <button type="button" class="settings-section-tab" data-settings-section="autoassign">Автоназначение</button>
                         <button type="button" class="settings-section-tab" data-settings-section="routing">Маршрутизация</button>
                         <button type="button" class="settings-section-tab" data-settings-section="sla">SLA, календари и OLA</button>
                         <button type="button" class="settings-section-tab" data-settings-section="references">Справочники</button>
@@ -2142,6 +2143,7 @@
                     </div>
                     ${settingsRenderOverviewSection()}
                     ${settingsRenderQueuesSection()}
+                    ${settingsRenderAutoassignSection()}
                     ${settingsRenderRoutingSection()}
                     ${settingsRenderSlaSection()}
                     ${settingsRenderReferencesSection()}
@@ -2250,6 +2252,43 @@
             `;
         }
 
+        function settingsRenderAutoassignSection() {
+            return `
+                <section id="settingsSection-autoassign" class="settings-section">
+                    <div class="settings-grid-two">
+                        <article class="section">
+                            <h2>Как сейчас работает автоназначение</h2>
+                            <div class="settings-example-box">
+                                <strong>Текущее системное поведение</strong>
+                                <ul class="settings-bullet-list">
+                                    <li>кандидаты на автоназначение: все активные пользователи с ролью <code>support</code> или <code>admin</code>;</li>
+                                    <li>состав очереди сейчас не ограничивает автоназначение;</li>
+                                    <li>сначала выбирается оператор с наименьшей текущей нагрузкой;</li>
+                                    <li>при равной нагрузке выбирается тот, кому дольше не назначали новый тикет;</li>
+                                    <li>лимит активных тикетов на оператора сейчас фиксированный: <strong id="settingsAssignmentLimitLabel">3</strong>.</li>
+                                </ul>
+                            </div>
+                            <p class="settings-help-text">Если хотите привязать автоназначение именно к участникам очередей, это уже следующий шаг развития логики, сейчас на сервере так не сделано.</p>
+                        </article>
+                        <article class="section">
+                            <div class="settings-section-head">
+                                <div>
+                                    <h2>Операторы и текущая нагрузка</h2>
+                                    <p class="settings-help-text">Эти люди реально участвуют в автоназначении на текущей версии сервера.</p>
+                                </div>
+                            </div>
+                            <div class="settings-table-wrap">
+                                <table class="settings-table">
+                                    <thead><tr><th>Пользователь</th><th>Роль</th><th>Активных тикетов</th><th>Можно назначать</th></tr></thead>
+                                    <tbody id="settingsAutoassignTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            `;
+        }
+
         function settingsRenderQueuesSection() {
             return `
                 <section id="settingsSection-queues" class="settings-section">
@@ -2271,6 +2310,11 @@
                         </article>
                         <article class="section">
                             <h2>Карточка очереди</h2>
+                            <div class="settings-example-box">
+                                <strong>Важно понимать разницу</strong>
+                                <p><strong>Очередь</strong> определяет, куда попадает тикет.</p>
+                                <p><strong>Участники очереди</strong> нужны для явного состава команды и уведомлений. Текущее автоназначение сервера идёт не по этому списку, а по всем активным <code>support/admin</code>.</p>
+                            </div>
                             <form id="settingsQueueForm" class="settings-form">
                                 <input type="hidden" id="settingsQueueId">
                                 <div class="form-group"><label for="settingsQueueCode">Код очереди</label><input type="text" id="settingsQueueCode" placeholder="например, servicedesk_l1"></div>
@@ -2284,15 +2328,15 @@
                             <div class="settings-subcard">
                                 <div class="settings-section-head compact">
                                     <div>
-                                        <h3>Состав очереди</h3>
-                                        <p class="settings-help-text">Состав влияет на уведомления и доступность тикетов для команды.</p>
+                                        <h3>Участники очереди</h3>
+                                        <p class="settings-help-text">Список участников нужен для прозрачной ответственности и уведомлений. Если он пуст, HelpDesk всё равно работает, но логика команды становится неочевидной.</p>
                                     </div>
                                 </div>
                                 <div class="settings-inline-fields">
                                     <div class="form-group"><label for="settingsQueueMembersUser">Пользователь</label><select id="settingsQueueMembersUser"></select></div>
                                     <div class="form-group"><label for="settingsQueueMembersRole">Роль в очереди</label><select id="settingsQueueMembersRole"><option value="">Без уточнения</option><option value="primary">Основной</option><option value="backup">Подменный</option><option value="lead">Старший</option><option value="observer">Наблюдатель</option></select></div>
                                 </div>
-                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsQueueMemberAddBtn">Добавить в очередь</button></div>
+                                <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsQueueMemberAddBtn">Добавить в очередь</button><button type="button" class="btn btn-secondary" id="settingsQueueAddAllOperatorsBtn">Добавить всех операторов</button></div>
                                 <div class="settings-table-wrap">
                                     <table class="settings-table">
                                         <thead><tr><th>Пользователь</th><th>Роль</th><th>Действие</th></tr></thead>
@@ -2318,6 +2362,11 @@
                                 </div>
                                 <button type="button" class="btn btn-secondary" id="settingsRoutingNewBtn">Новое правило</button>
                             </div>
+                            <div class="settings-example-box">
+                                <strong>Как работает сейчас</strong>
+                                <p>Сервер проверяет правила сверху вниз и берёт первое подходящее.</p>
+                                <p>Если правил нет или ни одно не подошло, тикет уходит в fallback-очередь <code>servicedesk_l1</code>.</p>
+                            </div>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
                                     <thead><tr><th>Приоритет</th><th>Очередь</th><th>Условие</th><th>Статус</th><th>Действие</th></tr></thead>
@@ -2335,16 +2384,28 @@
                                 </div>
                                 <label class="settings-switch"><input type="checkbox" id="settingsRoutingEnabled" checked><span>Правило активно</span></label>
                                 <div class="form-group">
-                                    <label for="settingsRoutingCondition">Условие (JSON)</label>
-                                    <textarea id="settingsRoutingCondition" rows="8" spellcheck="false"></textarea>
-                                    <small class="settings-hint">Поддерживаются поля priority, category_id, service_id, subcategory_id, location, device_type и операции eq, ne, in, contains, is_null.</small>
+                                    <label for="settingsRoutingMatchMode">Логика проверки условий</label>
+                                    <select id="settingsRoutingMatchMode">
+                                        <option value="all">Должны совпасть все условия</option>
+                                        <option value="any">Достаточно любого условия</option>
+                                    </select>
                                 </div>
-                                <div class="settings-example-box"><strong>Пример</strong><pre>{
-  "and": [
-    {"field": "priority", "op": "eq", "value": "P1"},
-    {"field": "location", "op": "eq", "value": "HQ"}
-  ]
-}</pre></div>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table">
+                                        <thead><tr><th>Поле</th><th>Проверка</th><th>Значение</th><th>Действие</th></tr></thead>
+                                        <tbody id="settingsRoutingBuilderBody"><tr><td colspan="4" class="muted">Добавьте условия или оставьте правило пустым для общего маршрута.</td></tr></tbody>
+                                    </table>
+                                </div>
+                                <div class="form-actions"><button type="button" class="btn btn-secondary" id="settingsRoutingAddConditionBtn">Добавить условие</button></div>
+                                <div id="settingsRoutingBuilderHint" class="settings-help-text"></div>
+                                <details class="settings-advanced-block">
+                                    <summary>Расширенный JSON для сложных правил</summary>
+                                    <div class="form-group">
+                                        <label for="settingsRoutingCondition">Условие (JSON)</label>
+                                        <textarea id="settingsRoutingCondition" rows="8" spellcheck="false"></textarea>
+                                        <small class="settings-hint">Нужен только если правило слишком сложное для обычной формы. Поддерживаются поля priority, category_id, service_id, subcategory_id, location, device_type и операции eq, ne, in, contains, is_null.</small>
+                                    </div>
+                                </details>
                                 <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить правило</button><button type="button" class="btn btn-secondary" id="settingsRoutingResetBtn">Сбросить</button></div>
                             </form>
                         </article>
@@ -2365,6 +2426,12 @@
                                 </div>
                                 <button type="button" class="btn btn-secondary" id="settingsSlaNewBtn">Новая политика</button>
                             </div>
+                            <div class="settings-example-box">
+                                <strong>Коротко о влиянии</strong>
+                                <p><strong>SLA</strong> влияет на обещание пользователю: когда ответим и когда закроем.</p>
+                                <p><strong>Календарь</strong> определяет, считаем ли срок круглосуточно или только в рабочие часы.</p>
+                                <p><strong>OLA</strong> влияет на внутреннюю дисциплину команды: как быстро очередь должна взять тикет и передвинуть его дальше.</p>
+                            </div>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
                                     <thead><tr><th>Название</th><th>Часовой пояс</th><th>По умолчанию</th><th>Активна</th><th>Действие</th></tr></thead>
@@ -2373,14 +2440,23 @@
                             </div>
                             <div class="settings-subcard">
                                 <h3>Цели SLA по приоритетам</h3>
-                                <p class="settings-help-text">Список пар <code>priority / first_response_min / resolution_min</code>.</p>
-                                <textarea id="settingsSlaTargets" rows="8" spellcheck="false"></textarea>
+                                <p class="settings-help-text">Настройка без JSON: отдельно задайте первую реакцию и решение для каждого приоритета.</p>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table">
+                                        <thead><tr><th>Приоритет</th><th>Первая реакция, мин</th><th>Решение, мин</th></tr></thead>
+                                        <tbody id="settingsSlaTargetsTableBody"></tbody>
+                                    </table>
+                                </div>
+                                <textarea id="settingsSlaTargets" rows="8" spellcheck="false" hidden></textarea>
                                 <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsSlaTargetsSaveBtn">Сохранить цели SLA</button></div>
                             </div>
                             <div class="settings-subcard">
                                 <h3>Матрица impact / urgency</h3>
-                                <p class="settings-help-text">Преобразует impact и urgency в итоговый приоритет.</p>
-                                <textarea id="settingsPriorityMatrix" rows="8" spellcheck="false"></textarea>
+                                <p class="settings-help-text">Показывает, какой приоритет получится из сочетания воздействия и срочности.</p>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table" id="settingsPriorityMatrixTable"></table>
+                                </div>
+                                <textarea id="settingsPriorityMatrix" rows="8" spellcheck="false" hidden></textarea>
                                 <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsPriorityMatrixSaveBtn">Сохранить матрицу</button></div>
                             </div>
                         </article>
@@ -2397,11 +2473,8 @@
                                     <label class="settings-switch"><input type="checkbox" id="settingsSlaDefault"><span>Политика по умолчанию</span></label>
                                     <label class="settings-switch"><input type="checkbox" id="settingsSlaActive" checked><span>Политика активна</span></label>
                                 </div>
-                                <div class="form-group">
-                                    <label for="settingsSlaBusinessHours">Business hours JSON</label>
-                                    <textarea id="settingsSlaBusinessHours" rows="6" spellcheck="false"></textarea>
-                                    <small class="settings-hint">Если используете календарь, здесь можно оставить <code>null</code>.</small>
-                                </div>
+                                <p class="settings-help-text">Если календарь не выбран, политика считается как <strong>24x7</strong>. Технический JSON оставлен скрыто для совместимости.</p>
+                                <textarea id="settingsSlaBusinessHours" rows="6" spellcheck="false" hidden></textarea>
                                 <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить SLA</button><button type="button" class="btn btn-secondary" id="settingsSlaResetBtn">Сбросить</button><button type="button" class="btn btn-secondary" id="settingsSlaSetDefaultBtn">Сделать по умолчанию</button></div>
                             </form>
                             <div class="settings-subcard">
@@ -2425,8 +2498,18 @@
                                         <div class="form-group"><label for="settingsCalendarName">Название</label><input type="text" id="settingsCalendarName"></div>
                                     </div>
                                     <div class="form-group"><label for="settingsCalendarTimezone">Часовой пояс</label><input type="text" id="settingsCalendarTimezone"></div>
-                                    <div class="form-group"><label for="settingsCalendarWeeklyHours">Рабочие часы JSON</label><textarea id="settingsCalendarWeeklyHours" rows="5" spellcheck="false"></textarea></div>
-                                    <div class="form-group"><label for="settingsCalendarHolidays">Праздники JSON</label><textarea id="settingsCalendarHolidays" rows="4" spellcheck="false"></textarea></div>
+                                    <div class="form-group">
+                                        <label>Рабочие дни и часы</label>
+                                        <div class="settings-table-wrap">
+                                            <table class="settings-table">
+                                                <thead><tr><th>День</th><th>Рабочий</th><th>Начало</th><th>Конец</th></tr></thead>
+                                                <tbody id="settingsCalendarWeeklyHoursBody"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div class="form-group"><label for="settingsCalendarHolidaysLines">Праздники и нерабочие даты</label><textarea id="settingsCalendarHolidaysLines" rows="4" spellcheck="false" placeholder="2026-01-01&#10;2026-01-07"></textarea><small class="settings-hint">По одной дате в строке, формат <code>ГГГГ-ММ-ДД</code>.</small></div>
+                                    <textarea id="settingsCalendarWeeklyHours" rows="5" spellcheck="false" hidden></textarea>
+                                    <textarea id="settingsCalendarHolidays" rows="4" spellcheck="false" hidden></textarea>
                                     <label class="settings-switch"><input type="checkbox" id="settingsCalendarActive" checked><span>Календарь активен</span></label>
                                     <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить календарь</button><button type="button" class="btn btn-secondary" id="settingsCalendarResetBtn">Сбросить</button></div>
                                 </form>
@@ -2435,7 +2518,13 @@
                                 <h3>OLA по очереди</h3>
                                 <p class="settings-help-text">OLA следит за тем, как быстро очередь берёт тикет в работу и завершает обработку.</p>
                                 <div class="form-group"><label for="settingsOlaQueueSelect">Очередь для OLA</label><select id="settingsOlaQueueSelect"></select></div>
-                                <textarea id="settingsOlaTargets" rows="8" spellcheck="false"></textarea>
+                                <div class="settings-table-wrap">
+                                    <table class="settings-table">
+                                        <thead><tr><th>Приоритет</th><th>Взять в работу, мин</th><th>Обработать внутри очереди, мин</th></tr></thead>
+                                        <tbody id="settingsOlaTargetsTableBody"></tbody>
+                                    </table>
+                                </div>
+                                <textarea id="settingsOlaTargets" rows="8" spellcheck="false" hidden></textarea>
                                 <div class="form-actions"><button type="button" class="btn btn-primary" id="settingsOlaSaveBtn">Сохранить OLA</button></div>
                             </div>
                         </article>
@@ -2450,20 +2539,21 @@
                     <div class="settings-grid-two">
                         <article class="section">
                             <h2>Справочник кодов решения</h2>
-                            <p class="settings-help-text">Эти коды используются при закрытии и анализе выполненной работы.</p>
+                            <p class="settings-help-text">Эти коды используются при переводе тикета в «Решена» или «Закрыта». Они помогают понимать, каким способом проблема была закрыта.</p>
                             <div class="settings-table-wrap">
                                 <table class="settings-table">
-                                    <thead><tr><th>Код</th><th>Название</th><th>Сортировка</th><th>Активен</th></tr></thead>
+                                    <thead><tr><th>Код</th><th>Название</th><th>Что означает</th><th>Активен</th></tr></thead>
                                     <tbody id="settingsResolutionCodesTableBody"><tr><td colspan="4" class="muted">Загрузка...</td></tr></tbody>
                                 </table>
                             </div>
                         </article>
                         <article class="section">
-                            <h2>Что пока не выведено в UI</h2>
+                            <h2>Пояснения простыми словами</h2>
                             <div class="settings-feature-list">
-                                <article class="settings-feature-card"><strong>CRUD для кодов решения</strong><p>Сейчас админка показывает справочник, но полноценное редактирование ещё нужно вывести в серверные API и UI.</p></article>
-                                <article class="settings-feature-card"><strong>Глобальные уведомления</strong><p>Персональные preferences уже есть, но правила для всей службы поддержки пока не выведены.</p></article>
-                                <article class="settings-feature-card"><strong>Категории и сервисы</strong><p>Поля в модели уже есть, но справочники категорий, сервисов и подкатегорий нужно доделать.</p></article>
+                                <article class="settings-feature-card"><strong>Код решения</strong><p>Показывает, как именно команда закрыла заявку: исправили, обошли проблему, отдали вендору, нашли ошибку пользователя и так далее.</p></article>
+                                <article class="settings-feature-card"><strong>Первопричина</strong><p>Это короткое объяснение, почему инцидент вообще возник. Нужна для анализа повторяемых проблем и серьёзных инцидентов.</p></article>
+                                <article class="settings-feature-card"><strong>CRUD</strong><p>Стандартное сокращение от Create / Read / Update / Delete: создать, посмотреть, изменить и удалить запись.</p></article>
+                                <article class="settings-feature-card"><strong>Что ещё не доделано</strong><p>Полноценное управление самими кодами решения, глобальные уведомления и справочники категорий/сервисов ещё нужно вывести в отдельные формы.</p></article>
                             </div>
                         </article>
                     </div>
@@ -2564,6 +2654,262 @@
 
         function settingsPrettyJson(value) {
             return JSON.stringify(value == null ? null : value, null, 2);
+        }
+
+        const SETTINGS_PRIORITY_OPTIONS = ['P1', 'P2', 'P3', 'P4'];
+        const SETTINGS_WEEKDAYS = [
+            { day: 0, label: 'Понедельник', short: 'Пн' },
+            { day: 1, label: 'Вторник', short: 'Вт' },
+            { day: 2, label: 'Среда', short: 'Ср' },
+            { day: 3, label: 'Четверг', short: 'Чт' },
+            { day: 4, label: 'Пятница', short: 'Пт' },
+            { day: 5, label: 'Суббота', short: 'Сб' },
+            { day: 6, label: 'Воскресенье', short: 'Вс' },
+        ];
+
+        function settingsPriorityLabel(priority) {
+            const map = {
+                P1: 'Критичный (P1)',
+                P2: 'Высокий (P2)',
+                P3: 'Средний (P3)',
+                P4: 'Низкий (P4)',
+            };
+            return map[priority] || priority || '—';
+        }
+
+        function settingsResolutionMeaning(code) {
+            const map = {
+                fixed: 'Проблему исправили и устранили причину.',
+                workaround: 'Найден обходной путь, сервис восстановлен без полного исправления.',
+                user_error: 'Причина была в действиях пользователя или неверном использовании.',
+                duplicate: 'Это дубликат уже существующей заявки или инцидента.',
+                cannot_reproduce: 'Проблему не удалось повторить и подтвердить.',
+                vendor: 'Решение или исправление передано внешнему поставщику.',
+            };
+            return map[code] || 'Служебный код для классификации способа закрытия.';
+        }
+
+        function settingsActiveOperators() {
+            return (settingsState.users || []).filter(user => user.actor_role === 'admin' || user.actor_role === 'support');
+        }
+
+        function settingsRoutingFieldOptions() {
+            return [
+                { value: 'priority', label: 'Приоритет' },
+                { value: 'category_id', label: 'Категория' },
+                { value: 'service_id', label: 'Сервис' },
+                { value: 'subcategory_id', label: 'Подкатегория' },
+                { value: 'location', label: 'Локация' },
+                { value: 'device_type', label: 'Тип устройства' },
+            ];
+        }
+
+        function settingsRoutingOperatorOptions() {
+            return [
+                { value: 'eq', label: 'равно' },
+                { value: 'ne', label: 'не равно' },
+                { value: 'contains', label: 'содержит' },
+                { value: 'in', label: 'в списке (через запятую)' },
+                { value: 'is_null', label: 'пусто / не пусто' },
+            ];
+        }
+
+        function settingsRoutingEmptyRow() {
+            return { field: 'priority', op: 'eq', value: 'P1' };
+        }
+
+        function settingsRoutingIsSimpleCondition(condition) {
+            return Boolean(condition) && typeof condition === 'object' && !Array.isArray(condition) && condition.field && condition.op;
+        }
+
+        function settingsRoutingModelFromCondition(condition) {
+            if (!condition || (typeof condition === 'object' && !Array.isArray(condition) && Object.keys(condition).length === 0)) {
+                return { mode: 'all', rows: [], advancedOnly: false, raw: {} };
+            }
+            if (settingsRoutingIsSimpleCondition(condition)) {
+                return { mode: 'all', rows: [{ field: condition.field, op: condition.op, value: condition.value }], advancedOnly: false, raw: condition };
+            }
+            if (Array.isArray(condition.and) && condition.and.every(settingsRoutingIsSimpleCondition)) {
+                return { mode: 'all', rows: condition.and.map(item => ({ field: item.field, op: item.op, value: item.value })), advancedOnly: false, raw: condition };
+            }
+            if (Array.isArray(condition.or) && condition.or.every(settingsRoutingIsSimpleCondition)) {
+                return { mode: 'any', rows: condition.or.map(item => ({ field: item.field, op: item.op, value: item.value })), advancedOnly: false, raw: condition };
+            }
+            return { mode: 'all', rows: [], advancedOnly: true, raw: condition };
+        }
+
+        function settingsRoutingBuilderToCondition(mode, rows) {
+            const cleanRows = (rows || []).filter(row => row.field && row.op).map(row => {
+                let value = row.value;
+                if (row.op === 'in') {
+                    value = String(row.value || '').split(',').map(item => item.trim()).filter(Boolean);
+                } else if (row.op === 'is_null') {
+                    value = String(row.value || 'true') !== 'false';
+                } else {
+                    value = String(row.value || '').trim();
+                }
+                return { field: row.field, op: row.op, value };
+            });
+            if (!cleanRows.length) return {};
+            if (cleanRows.length === 1) return cleanRows[0];
+            return mode === 'any' ? { or: cleanRows } : { and: cleanRows };
+        }
+
+        function settingsRenderRoutingBuilder(model) {
+            const tbody = document.getElementById('settingsRoutingBuilderBody');
+            const modeSelect = document.getElementById('settingsRoutingMatchMode');
+            const hintEl = document.getElementById('settingsRoutingBuilderHint');
+            const advancedEl = document.getElementById('settingsRoutingCondition');
+            if (!tbody || !modeSelect || !advancedEl) return;
+            const routingModel = model || settingsRoutingModelFromCondition({});
+            modeSelect.value = routingModel.mode || 'all';
+            advancedEl.value = settingsPrettyJson(routingModel.raw || {});
+            advancedEl.dataset.advancedOnly = routingModel.advancedOnly ? '1' : '0';
+            if (routingModel.advancedOnly) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">Текущее правило сложнее обычной формы. Его можно посмотреть и сохранить через расширенный JSON ниже.</td></tr>';
+                if (hintEl) hintEl.textContent = 'Для простых правил используйте форму. Для сложных вложенных условий пока оставлен расширенный JSON.';
+                return;
+            }
+            if (hintEl) {
+                hintEl.textContent = routingModel.rows.length
+                    ? 'Обычная форма подходит для типовых правил по приоритету, категории, сервису, локации и типу устройства.'
+                    : 'Если оставить условия пустыми, правило будет общим и сработает для всех тикетов.';
+            }
+            const rows = routingModel.rows.length ? routingModel.rows : [];
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">Условий пока нет. Такое правило будет общим.</td></tr>';
+                return;
+            }
+            const fieldOptions = settingsRoutingFieldOptions();
+            const opOptions = settingsRoutingOperatorOptions();
+            tbody.innerHTML = rows.map((row, index) => `<tr>
+                <td><select data-settings-routing-field="${index}">${fieldOptions.map(option => `<option value="${option.value}"${option.value === row.field ? ' selected' : ''}>${option.label}</option>`).join('')}</select></td>
+                <td><select data-settings-routing-op="${index}">${opOptions.map(option => `<option value="${option.value}"${option.value === row.op ? ' selected' : ''}>${option.label}</option>`).join('')}</select></td>
+                <td><input type="text" data-settings-routing-value="${index}" value="${escapeHtml(Array.isArray(row.value) ? row.value.join(', ') : String(row.value ?? ''))}" placeholder="значение"></td>
+                <td><button type="button" class="settings-row-action" data-settings-action="remove-routing-condition" data-routing-index="${index}">Удалить</button></td>
+            </tr>`).join('');
+        }
+
+        function settingsReadRoutingBuilderRows() {
+            return Array.from(document.querySelectorAll('#settingsRoutingBuilderBody tr')).map((row, index) => ({
+                field: row.querySelector(`[data-settings-routing-field="${index}"]`)?.value || '',
+                op: row.querySelector(`[data-settings-routing-op="${index}"]`)?.value || '',
+                value: row.querySelector(`[data-settings-routing-value="${index}"]`)?.value || '',
+            })).filter(row => row.field && row.op);
+        }
+
+        function settingsTargetsMapByPriority(items, keys) {
+            const map = {};
+            (items || []).forEach(item => {
+                map[item.priority] = item;
+            });
+            return SETTINGS_PRIORITY_OPTIONS.map(priority => ({
+                priority,
+                values: keys.reduce((acc, key) => {
+                    acc[key] = map[priority] ? map[priority][key] : '';
+                    return acc;
+                }, {}),
+            }));
+        }
+
+        function settingsRenderSlaTargetsEditor() {
+            const tbody = document.getElementById('settingsSlaTargetsTableBody');
+            if (!tbody) return;
+            const rows = settingsTargetsMapByPriority(settingsState.slaTargets, ['first_response_min', 'resolution_min']);
+            tbody.innerHTML = rows.map(row => `<tr>
+                <td>${settingsPriorityLabel(row.priority)}</td>
+                <td><input type="number" min="0" id="settingsSlaFr-${row.priority}" value="${escapeHtml(String(row.values.first_response_min ?? ''))}"></td>
+                <td><input type="number" min="0" id="settingsSlaRes-${row.priority}" value="${escapeHtml(String(row.values.resolution_min ?? ''))}"></td>
+            </tr>`).join('');
+        }
+
+        function settingsReadSlaTargetsEditor() {
+            return SETTINGS_PRIORITY_OPTIONS.map(priority => ({
+                priority,
+                first_response_min: Number(document.getElementById(`settingsSlaFr-${priority}`)?.value || 0),
+                resolution_min: Number(document.getElementById(`settingsSlaRes-${priority}`)?.value || 0),
+            })).filter(item => item.first_response_min > 0 || item.resolution_min > 0);
+        }
+
+        function settingsRenderPriorityMatrixEditor() {
+            const table = document.getElementById('settingsPriorityMatrixTable');
+            if (!table) return;
+            const matrixMap = {};
+            (settingsState.priorityMatrix || []).forEach(item => {
+                matrixMap[`${item.impact}-${item.urgency}`] = item.priority;
+            });
+            const header = `<thead><tr><th>Impact \\ Urgency</th><th>1 (низкая)</th><th>2 (средняя)</th><th>3 (высокая)</th></tr></thead>`;
+            const body = [1, 2, 3].map(impact => `<tr>
+                <td>${impact} (${impact === 1 ? 'низкое' : impact === 2 ? 'среднее' : 'высокое'})</td>
+                ${[1, 2, 3].map(urgency => `<td><select id="settingsMatrix-${impact}-${urgency}">${SETTINGS_PRIORITY_OPTIONS.map(priority => `<option value="${priority}"${(matrixMap[`${impact}-${urgency}`] || 'P3') === priority ? ' selected' : ''}>${settingsPriorityLabel(priority)}</option>`).join('')}</select></td>`).join('')}
+            </tr>`).join('');
+            table.innerHTML = `${header}<tbody>${body}</tbody>`;
+        }
+
+        function settingsReadPriorityMatrixEditor() {
+            const rows = [];
+            [1, 2, 3].forEach(impact => {
+                [1, 2, 3].forEach(urgency => {
+                    rows.push({
+                        impact,
+                        urgency,
+                        priority: document.getElementById(`settingsMatrix-${impact}-${urgency}`)?.value || 'P3',
+                    });
+                });
+            });
+            return rows;
+        }
+
+        function settingsRenderCalendarScheduleEditor(weekly) {
+            const tbody = document.getElementById('settingsCalendarWeeklyHoursBody');
+            if (!tbody) return;
+            const weeklyMap = {};
+            (weekly || []).forEach(item => {
+                weeklyMap[item.day] = item;
+            });
+            tbody.innerHTML = SETTINGS_WEEKDAYS.map(day => {
+                const slot = weeklyMap[day.day] || {};
+                const enabled = !!slot.start && !!slot.end;
+                return `<tr>
+                    <td>${day.short}</td>
+                    <td><input type="checkbox" id="settingsCalDayEnabled-${day.day}"${enabled ? ' checked' : ''}></td>
+                    <td><input type="time" id="settingsCalDayStart-${day.day}" value="${escapeHtml(slot.start || '09:00')}"></td>
+                    <td><input type="time" id="settingsCalDayEnd-${day.day}" value="${escapeHtml(slot.end || '18:00')}"></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function settingsReadCalendarScheduleEditor() {
+            const rows = [];
+            SETTINGS_WEEKDAYS.forEach(day => {
+                const enabled = !!document.getElementById(`settingsCalDayEnabled-${day.day}`)?.checked;
+                if (!enabled) return;
+                rows.push({
+                    day: day.day,
+                    start: document.getElementById(`settingsCalDayStart-${day.day}`)?.value || '09:00',
+                    end: document.getElementById(`settingsCalDayEnd-${day.day}`)?.value || '18:00',
+                });
+            });
+            return rows;
+        }
+
+        function settingsRenderOlaTargetsEditor() {
+            const tbody = document.getElementById('settingsOlaTargetsTableBody');
+            if (!tbody) return;
+            const rows = settingsTargetsMapByPriority(settingsState.olaTargets, ['ack_min', 'processing_min']);
+            tbody.innerHTML = rows.map(row => `<tr>
+                <td>${settingsPriorityLabel(row.priority)}</td>
+                <td><input type="number" min="0" id="settingsOlaAck-${row.priority}" value="${escapeHtml(String(row.values.ack_min ?? ''))}"></td>
+                <td><input type="number" min="0" id="settingsOlaProcessing-${row.priority}" value="${escapeHtml(String(row.values.processing_min ?? ''))}"></td>
+            </tr>`).join('');
+        }
+
+        function settingsReadOlaTargetsEditor() {
+            return SETTINGS_PRIORITY_OPTIONS.map(priority => ({
+                priority,
+                ack_min: Number(document.getElementById(`settingsOlaAck-${priority}`)?.value || 0),
+                processing_min: Number(document.getElementById(`settingsOlaProcessing-${priority}`)?.value || 0),
+            })).filter(item => item.ack_min > 0 || item.processing_min > 0);
         }
 
         function settingsRoleLabel(role) {
@@ -2678,6 +3024,7 @@
             settingsRenderOverview();
             settingsRenderQueues();
             settingsRenderQueueMembers();
+            settingsRenderAutoassign();
             settingsRenderRouting();
             settingsRenderSla();
             settingsRenderCalendars();
@@ -2703,6 +3050,7 @@
             if (listEl) {
                 listEl.innerHTML = [
                     'очереди и состав очередей;',
+                    'автоназначение и текущая нагрузка операторов;',
                     'правила маршрутизации по условиям;',
                     'SLA-политики, цели SLA и матрица приоритетов;',
                     'календари рабочего времени и праздники;',
@@ -2710,6 +3058,22 @@
                     'аудит изменений help desk-настроек.'
                 ].map(item => `<li>${item}</li>`).join('');
             }
+        }
+
+        function settingsRenderAutoassign() {
+            const tbody = document.getElementById('settingsAutoassignTableBody');
+            if (!tbody) return;
+            const operators = settingsActiveOperators();
+            if (!operators.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">Активные support/admin пользователи не найдены.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = operators.map(user => `<tr>
+                <td>${escapeHtml(user.user_login || '—')}</td>
+                <td>${escapeHtml(user.actor_role === 'admin' ? 'Администратор' : 'Поддержка')}</td>
+                <td>${escapeHtml(String(user.active_count || 0))}</td>
+                <td>${user.assignment_available === false ? '<span class="settings-status-pill warn">Лимит достигнут</span>' : '<span class="settings-status-pill ok">Да</span>'}</td>
+            </tr>`).join('');
         }
 
         function settingsRenderQueues() {
@@ -2741,7 +3105,7 @@
                 olaSelect.value = settingsState.olaQueueId != null ? String(settingsState.olaQueueId) : '';
             }
             if (userSelect) {
-                userSelect.innerHTML = `<option value="">Выберите пользователя</option>${settingsState.users.map(user => `<option value="${escapeHtml(user.user_login || '')}">${escapeHtml(user.user_login || '')} • ${escapeHtml(user.actor_role || '')}</option>`).join('')}`;
+                userSelect.innerHTML = `<option value="">Выберите пользователя</option>${settingsActiveOperators().map(user => `<option value="${escapeHtml(user.user_login || '')}">${escapeHtml(user.user_login || '')} • ${escapeHtml(user.actor_role === 'admin' ? 'админ' : 'поддержка')} • активных: ${escapeHtml(String(user.active_count || 0))}</option>`).join('')}`;
             }
             settingsPopulateQueueForm();
         }
@@ -2754,7 +3118,7 @@
                 return;
             }
             if (!settingsState.queueMembers.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="muted">В этой очереди пока нет участников.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="muted">В этой очереди пока нет участников. Это не мешает автоназначению, но очередь остаётся без явного состава команды.</td></tr>';
                 return;
             }
             tbody.innerHTML = settingsState.queueMembers.map(member => `<tr>
@@ -2768,7 +3132,7 @@
             const tbody = document.getElementById('settingsRoutingTableBody');
             if (!tbody) return;
             if (!settingsState.routingRules.length) {
-                tbody.innerHTML = '<tr><td colspan="5" class="muted">Правила маршрутизации пока не настроены.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">Правила маршрутизации пока не настроены. Сейчас все новые тикеты уходят в fallback-очередь servicedesk_l1.</td></tr>';
             } else {
                 tbody.innerHTML = settingsState.routingRules.map(rule => `<tr>
                     <td>${escapeHtml(String(rule.priority_order ?? 0))}</td>
@@ -2804,6 +3168,8 @@
             if (targetsEl) targetsEl.value = settingsPrettyJson(settingsState.slaTargets || []);
             const matrixEl = document.getElementById('settingsPriorityMatrix');
             if (matrixEl) matrixEl.value = settingsPrettyJson(settingsState.priorityMatrix || []);
+            settingsRenderSlaTargetsEditor();
+            settingsRenderPriorityMatrixEditor();
             settingsPopulateSlaForm();
         }
 
@@ -2826,6 +3192,7 @@
         function settingsRenderOla() {
             const targetsEl = document.getElementById('settingsOlaTargets');
             if (targetsEl) targetsEl.value = settingsPrettyJson(settingsState.olaTargets || []);
+            settingsRenderOlaTargetsEditor();
         }
 
         function settingsRenderResolutionCodes() {
@@ -2838,7 +3205,7 @@
             tbody.innerHTML = settingsState.resolutionCodes.map(code => `<tr>
                 <td><code>${escapeHtml(code.code || '')}</code></td>
                 <td>${escapeHtml(code.name || '—')}</td>
-                <td>${escapeHtml(String(code.sort_order ?? '—'))}</td>
+                <td>${escapeHtml(settingsResolutionMeaning(code.code || ''))}</td>
                 <td>${code.is_active ? '<span class="settings-status-pill ok">Да</span>' : '<span class="settings-status-pill off">Нет</span>'}</td>
             </tr>`).join('');
         }
@@ -2875,7 +3242,7 @@
             document.getElementById('settingsRoutingPriority').value = current ? (current.priority_order ?? 0) : 0;
             document.getElementById('settingsRoutingQueue').value = current ? String(current.target_queue_id || '') : '';
             document.getElementById('settingsRoutingEnabled').checked = !current || current.enabled !== false;
-            document.getElementById('settingsRoutingCondition').value = current ? settingsPrettyJson(current.condition_json || {}) : settingsPrettyJson({});
+            settingsRenderRoutingBuilder(settingsRoutingModelFromCondition(current ? (current.condition_json || {}) : {}));
         }
 
         function settingsPopulateSlaForm() {
@@ -2897,6 +3264,9 @@
             document.getElementById('settingsCalendarTimezone').value = current ? (current.timezone || '') : '';
             document.getElementById('settingsCalendarWeeklyHours').value = current ? settingsPrettyJson(current.weekly_hours_json) : '[]';
             document.getElementById('settingsCalendarHolidays').value = current ? settingsPrettyJson(current.holidays_json) : '[]';
+            const holidaysLines = document.getElementById('settingsCalendarHolidaysLines');
+            if (holidaysLines) holidaysLines.value = (current && Array.isArray(current.holidays_json) ? current.holidays_json.join('\n') : '');
+            settingsRenderCalendarScheduleEditor(current ? current.weekly_hours_json : []);
             document.getElementById('settingsCalendarActive').checked = !current || current.is_active !== false;
         }
 
@@ -2926,6 +3296,12 @@
                 } else if (action === 'edit-calendar') {
                     settingsState.selectedCalendarId = Number(actionBtn.getAttribute('data-calendar-id'));
                     settingsRenderCalendars();
+                } else if (action === 'remove-routing-condition') {
+                    const current = settingsReadRoutingBuilderRows();
+                    const index = Number(actionBtn.getAttribute('data-routing-index'));
+                    current.splice(index, 1);
+                    const mode = document.getElementById('settingsRoutingMatchMode')?.value || 'all';
+                    settingsRenderRoutingBuilder({ mode, rows: current, advancedOnly: false, raw: settingsRoutingBuilderToCondition(mode, current) });
                 }
                 return;
             }
@@ -2948,6 +3324,13 @@
                 settingsRenderCalendars();
             } else if (id === 'settingsQueueMemberAddBtn') {
                 await settingsUpsertQueueMember();
+            } else if (id === 'settingsQueueAddAllOperatorsBtn') {
+                await settingsAddAllOperatorsToQueue();
+            } else if (id === 'settingsRoutingAddConditionBtn') {
+                const existingRows = settingsReadRoutingBuilderRows();
+                existingRows.push(settingsRoutingEmptyRow());
+                const mode = document.getElementById('settingsRoutingMatchMode')?.value || 'all';
+                settingsRenderRoutingBuilder({ mode, rows: existingRows, advancedOnly: false, raw: settingsRoutingBuilderToCondition(mode, existingRows) });
             } else if (id === 'settingsSlaTargetsSaveBtn') {
                 await settingsSaveSlaTargets();
             } else if (id === 'settingsPriorityMatrixSaveBtn') {
@@ -3015,6 +3398,25 @@
             }
         }
 
+        async function settingsAddAllOperatorsToQueue() {
+            try {
+                if (!settingsState.selectedQueueId) throw new Error('Сначала выберите очередь');
+                const operators = settingsActiveOperators();
+                if (!operators.length) throw new Error('Нет активных операторов support/admin');
+                for (const operator of operators) {
+                    await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(settingsState.selectedQueueId) + '/members/' + encodeURIComponent(operator.user_login), {
+                        method: 'PUT',
+                        body: JSON.stringify({ role_in_queue: null }),
+                    });
+                }
+                await settingsLoadQueueMembers(settingsState.selectedQueueId);
+                settingsRenderQueueMembers();
+                settingsShowMessage('success', 'Все активные операторы добавлены в очередь.');
+            } catch (error) {
+                settingsHandleWriteError(error);
+            }
+        }
+
         async function settingsDeleteQueueMember(actorId) {
             try {
                 if (!settingsState.selectedQueueId || !actorId) throw new Error('Не удалось определить участника очереди');
@@ -3032,11 +3434,21 @@
         async function settingsSaveRouting() {
             try {
                 const ruleId = document.getElementById('settingsRoutingId').value;
+                const advancedEl = document.getElementById('settingsRoutingCondition');
+                const matchMode = document.getElementById('settingsRoutingMatchMode').value || 'all';
+                const routingRows = settingsReadRoutingBuilderRows();
+                let conditionJson;
+                if (advancedEl && advancedEl.dataset.advancedOnly === '1') {
+                    conditionJson = settingsParseJson(advancedEl.value, {});
+                } else {
+                    conditionJson = settingsRoutingBuilderToCondition(matchMode, routingRows);
+                    if (advancedEl) advancedEl.value = settingsPrettyJson(conditionJson);
+                }
                 const payload = {
                     priority_order: Number(document.getElementById('settingsRoutingPriority').value || 0),
                     target_queue_id: Number(document.getElementById('settingsRoutingQueue').value || 0),
                     enabled: document.getElementById('settingsRoutingEnabled').checked,
-                    condition_json: settingsParseJson(document.getElementById('settingsRoutingCondition').value, {}),
+                    condition_json: conditionJson,
                 };
                 if (!payload.target_queue_id) throw new Error('Выберите целевую очередь');
                 await settingsApi(ruleId ? '/api/admin/tickets/routing_rules/' + encodeURIComponent(ruleId) : '/api/admin/tickets/routing_rules', {
@@ -3076,7 +3488,9 @@
         async function settingsSaveSlaTargets() {
             try {
                 if (!settingsState.selectedSlaId) throw new Error('Сначала выберите SLA-политику');
-                const payload = { targets: settingsParseJson(document.getElementById('settingsSlaTargets').value, []) };
+                const targets = settingsReadSlaTargetsEditor();
+                document.getElementById('settingsSlaTargets').value = settingsPrettyJson(targets);
+                const payload = { targets };
                 await settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(settingsState.selectedSlaId) + '/targets', {
                     method: 'PUT',
                     body: JSON.stringify(payload),
@@ -3092,7 +3506,9 @@
         async function settingsSavePriorityMatrix() {
             try {
                 if (!settingsState.selectedSlaId) throw new Error('Сначала выберите SLA-политику');
-                const payload = { matrix: settingsParseJson(document.getElementById('settingsPriorityMatrix').value, []) };
+                const matrix = settingsReadPriorityMatrixEditor();
+                document.getElementById('settingsPriorityMatrix').value = settingsPrettyJson(matrix);
+                const payload = { matrix };
                 await settingsApi('/api/admin/tickets/sla_policies/' + encodeURIComponent(settingsState.selectedSlaId) + '/priority_matrix', {
                     method: 'PUT',
                     body: JSON.stringify(payload),
@@ -3122,12 +3538,16 @@
         async function settingsSaveCalendar() {
             try {
                 const calendarId = document.getElementById('settingsCalendarId').value;
+                const weeklyHours = settingsReadCalendarScheduleEditor();
+                const holidays = String(document.getElementById('settingsCalendarHolidaysLines').value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+                document.getElementById('settingsCalendarWeeklyHours').value = settingsPrettyJson(weeklyHours);
+                document.getElementById('settingsCalendarHolidays').value = settingsPrettyJson(holidays);
                 const payload = {
                     code: document.getElementById('settingsCalendarCode').value.trim(),
                     name: document.getElementById('settingsCalendarName').value.trim(),
                     timezone: document.getElementById('settingsCalendarTimezone').value.trim() || 'UTC',
-                    weekly_hours_json: settingsParseJson(document.getElementById('settingsCalendarWeeklyHours').value, []),
-                    holidays_json: settingsParseJson(document.getElementById('settingsCalendarHolidays').value, []),
+                    weekly_hours_json: weeklyHours,
+                    holidays_json: holidays,
                     is_active: document.getElementById('settingsCalendarActive').checked,
                 };
                 if (!payload.code || !payload.name) throw new Error('Укажите код и название календаря');
@@ -3146,7 +3566,9 @@
             try {
                 const queueId = document.getElementById('settingsOlaQueueSelect').value;
                 if (!queueId) throw new Error('Выберите очередь для OLA');
-                const payload = { ola_targets: settingsParseJson(document.getElementById('settingsOlaTargets').value, []) };
+                const olaTargets = settingsReadOlaTargetsEditor();
+                document.getElementById('settingsOlaTargets').value = settingsPrettyJson(olaTargets);
+                const payload = { ola_targets: olaTargets };
                 await settingsApi('/api/admin/tickets/queues/' + encodeURIComponent(queueId) + '/ola_targets', {
                     method: 'PUT',
                     body: JSON.stringify(payload),

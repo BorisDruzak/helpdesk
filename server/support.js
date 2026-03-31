@@ -79,6 +79,7 @@
         selectedToolKey: '',
         pipeline: [],
     };
+    let resolutionCodesCache = [];
 
     function byId(id) {
         return document.getElementById(id);
@@ -106,6 +107,54 @@
             headers['Content-Type'] = 'application/json';
         }
         return headers;
+    }
+
+    function resolutionCodeMeaning(code) {
+        const map = {
+            fixed: 'Проблему исправили',
+            workaround: 'Использован обходной путь',
+            user_error: 'Ошибка пользователя',
+            duplicate: 'Дубликат другой заявки',
+            cannot_reproduce: 'Не удалось повторить',
+            vendor: 'Передано вендору',
+        };
+        return map[code] || 'Служебный код закрытия';
+    }
+
+    async function ensureResolutionCodesLoaded() {
+        if (resolutionCodesCache.length) {
+            return resolutionCodesCache;
+        }
+        const response = await fetch('/api/tickets/resolution_codes', { headers: authHeaders() });
+        const data = await responseToJson(response);
+        if (!response.ok) {
+            throw new Error(data.error || 'Не удалось загрузить коды решения');
+        }
+        resolutionCodesCache = data.resolution_codes || [];
+        return resolutionCodesCache;
+    }
+
+    async function collectResolutionPayload(nextStatus) {
+        if (nextStatus !== 'resolved' && nextStatus !== 'closed') {
+            return {};
+        }
+        const codes = await ensureResolutionCodesLoaded();
+        const variants = codes.map((code, index) => `${index + 1}. ${code.code} — ${resolutionCodeMeaning(code.code)}`).join('\n');
+        const answer = window.prompt('Выберите код решения.\nМожно ввести номер или сам код.\n\n' + variants, codes[0]?.code || '');
+        if (answer == null) {
+            throw new Error('Операция отменена');
+        }
+        const normalized = String(answer || '').trim();
+        const pickedByIndex = /^\d+$/.test(normalized) ? codes[Number(normalized) - 1] : null;
+        const picked = pickedByIndex || codes.find((code) => String(code.code || '').toLowerCase() === normalized.toLowerCase());
+        if (!picked) {
+            throw new Error('Не удалось определить код решения');
+        }
+        const rootCause = window.prompt('Укажите первопричину проблемы.\nЭто короткое объяснение, почему инцидент возник.', '') || '';
+        return {
+            resolution_code: picked.code,
+            root_cause: String(rootCause || '').trim(),
+        };
     }
 
     async function responseToJson(response) {
@@ -1041,10 +1090,11 @@
         if (!ticket) {
             return;
         }
+        const extraPayload = await collectResolutionPayload(nextStatus);
         await fetchJson('/api/tickets/' + encodeURIComponent(ticket.ticket_id) + '/status', {
             method: 'POST',
             headers: authHeaders(true),
-            body: JSON.stringify({ to_status: nextStatus }),
+            body: JSON.stringify({ to_status: nextStatus, ...extraPayload }),
         });
         showToast('Статус обновлён');
         await loadTickets({ preserveSelection: true });
