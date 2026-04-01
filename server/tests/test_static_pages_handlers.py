@@ -58,7 +58,7 @@ async def test_support_page_serves_workspace_shell():
 
     assert response.status == 200
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
-    assert "/support.js?v=20260331c" in response.text
+    assert "/support.js?v=20260401a" in response.text
     assert "Support Workspace" in response.text
     assert "id=\"ticketInbox\"" in response.text
     assert "id=\"workbenchDrawer\"" in response.text

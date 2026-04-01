@@ -10,8 +10,9 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const DRAWER_MODE_KEY = 'support_workspace_drawer_mode';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260331b';
+    const SUPPORT_SHELL_VERSION = '20260401a';
     const POLL_INTERVAL_MS = 8000;
+    const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const PANEL_MODES = Object.freeze({
         COLLAPSED: 'collapsed',
         HALF: 'half',
@@ -78,6 +79,7 @@
         activeToolScenario: 'all',
         selectedToolKey: '',
         pipeline: [],
+        hiddenClosedCount: 0,
     };
     let resolutionCodesCache = [];
     let resolutionDialogResolve = null;
@@ -542,6 +544,30 @@
         return true;
     }
 
+    function closeTimestampForWorkspace(ticket) {
+        if (!ticket) {
+            return null;
+        }
+        return parseServerDate(ticket.closed_at || ticket.updated_at || ticket.resolved_at);
+    }
+
+    function shouldHideClosedTicket(ticket) {
+        if (!ticket) {
+            return false;
+        }
+        if (ticket.archived_at) {
+            return true;
+        }
+        if (ticket.status !== 'closed') {
+            return false;
+        }
+        const closedAt = closeTimestampForWorkspace(ticket);
+        if (!closedAt) {
+            return false;
+        }
+        return (Date.now() - closedAt.getTime()) >= CLOSED_TICKET_HIDE_AFTER_MS;
+    }
+
     function filteredTickets() {
         return state.tickets.filter((ticket) => ticketPassesFilter(ticket, state.currentFilter) && ticketMatchesQuery(ticket, state.ticketQuery));
     }
@@ -609,7 +635,11 @@
             return;
         }
         const tickets = filteredTickets();
+        const hiddenClosedNote = state.hiddenClosedCount > 0
+            ? (' • Закрытые старше 1 дня скрыты: ' + state.hiddenClosedCount)
+            : '';
         metaNode.textContent = 'Показано ' + tickets.length + ' из ' + state.tickets.length;
+        metaNode.textContent += hiddenClosedNote;
         if (!tickets.length) {
             listNode.innerHTML = '<div class="activity-item">По выбранным фильтрам тикеты не найдены.</div>';
             return;
@@ -1029,17 +1059,19 @@
                 const b = parseServerDate(left.updated_at || left.created_at);
                 return (a ? a.getTime() : 0) - (b ? b.getTime() : 0);
             });
-        state.tickets = tickets;
-        if (state.selectedTicketId && !tickets.some((ticket) => ticket.ticket_id === state.selectedTicketId)) {
+        const visibleTickets = tickets.filter((ticket) => !shouldHideClosedTicket(ticket));
+        state.hiddenClosedCount = Math.max(0, tickets.length - visibleTickets.length);
+        state.tickets = visibleTickets;
+        if (state.selectedTicketId && !visibleTickets.some((ticket) => ticket.ticket_id === state.selectedTicketId)) {
             state.selectedTicketId = '';
             state.selectedSnapshot = null;
             state.selectedLifecycle = null;
         }
         renderTicketList();
         if (!state.selectedTicketId) {
-            const preferred = tickets.find((ticket) => ticket.ticket_id === sessionStorage.getItem(LAST_TICKET_KEY))
+            const preferred = visibleTickets.find((ticket) => ticket.ticket_id === sessionStorage.getItem(LAST_TICKET_KEY))
                 || filteredTickets()[0]
-                || tickets[0]
+                || visibleTickets[0]
                 || null;
             if (preferred) {
                 await selectTicket(preferred.ticket_id);
