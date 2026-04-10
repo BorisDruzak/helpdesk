@@ -28,12 +28,10 @@ from tickets.assignment_service import (
     TicketAssignmentError,
     TicketAssignmentService,
 )
+from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 from tickets.ola_service import build_ola_block, close_ola_processing, start_ola_for_ticket
 from tickets.public_access import (
-    build_public_access_message,
-    generate_public_access_code,
     mark_public_ticket_unbound,
-    set_public_access_code,
 )
 from tickets.queue_position_service import QueuePositionService
 from tickets.routing_service import TicketRoutingService, set_routing_lock
@@ -62,6 +60,8 @@ HISTORY_EVENT_TYPES = {
 }
 
 PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
+RESOLUTION_CONFIRMATION_TEXT = "Проблема решена. Для подтверждения используйте одну из кнопок ниже."
+RESOLUTION_CONFIRMATION_MESSAGE = "Если проблема решена, нажмите «Подтверждаю». Если нет, выберите «Не принято»."
 
 
 def _json_ok(**payload: Any) -> web.Response:
@@ -149,6 +149,52 @@ def _extract_reply_to_from_payload(payload: Any) -> Optional[Dict[str, Any]]:
     return normalized or None
 
 
+def _resolution_confirmation_state(ticket: Any) -> Dict[str, Any]:
+    custom_fields = getattr(ticket, "custom_fields", None)
+    if not isinstance(custom_fields, dict):
+        return {}
+    state = custom_fields.get("resolution_confirmation")
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def _resolution_confirmation_pending(ticket: Any) -> bool:
+    return bool(_resolution_confirmation_state(ticket).get("pending"))
+
+
+def _build_resolution_confirmation_request() -> Dict[str, Any]:
+    request_id = str(uuid.uuid4())
+    return {
+        "request_id": request_id,
+        "kind": "ticket_resolution",
+        "message": RESOLUTION_CONFIRMATION_MESSAGE,
+        "options": [
+            {"option_id": "confirm", "label": "Подтверждаю"},
+            {"option_id": "reject", "label": "Не принято"},
+        ],
+    }
+
+
+async def _store_resolution_confirmation_state(
+    repo: TicketEventsRepo,
+    ticket: Any,
+    *,
+    pending: bool,
+    request_id: Optional[str] = None,
+    responded_option_id: Optional[str] = None,
+) -> Any:
+    custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
+    state = dict(custom_fields.get("resolution_confirmation") or {})
+    state["pending"] = pending
+    if request_id is not None:
+        state["request_id"] = request_id
+    if responded_option_id is not None:
+        state["responded_option_id"] = responded_option_id
+    custom_fields["resolution_confirmation"] = state
+    custom_fields["resolution_confirmation_pending"] = pending
+    await repo.update_ticket(ticket.ticket_id, custom_fields=custom_fields)
+    return await repo.get_ticket(ticket.ticket_id)
+
+
 def _chat_counters_defaults() -> Dict[str, Any]:
     return {
         "requester_last_read_event_id": 0,
@@ -200,7 +246,8 @@ async def _get_ticket_or_response(
     if auth_context.actor_role == "support":
         queue_allowed = await ticket_repo.is_actor_in_queue(getattr(ticket, "queue_id", None), auth_context.actor_id)
         assignee_allowed = auth_context.actor_id == getattr(ticket, "assignee_id", None)
-        if not queue_allowed and not assignee_allowed:
+        queue_less_ticket = getattr(ticket, "queue_id", None) is None
+        if not queue_allowed and not assignee_allowed and not queue_less_ticket:
             return None, _json_error("forbidden", status=403), ticket_repo, auth_context
     allowed = _allow_ticket_write(ticket, auth_context) if write else _allow_ticket_read(ticket, auth_context)
     if not allowed:
@@ -681,7 +728,7 @@ def _default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
 async def handle_tickets_create(request: web.Request) -> web.Response:
     auth_context = _auth(request)
-    if auth_context.actor_role not in {"agent", "admin", "support"}:
+    if auth_context.actor_role not in {"user", "agent", "admin", "support"}:
         return _json_error("forbidden", status=403)
     try:
         data = await request.json()
@@ -715,73 +762,29 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
         if not device_id:
             return _validation_error({"device_id": "device_id is required"})
 
-    ticket_id = new_ticket_id()
-    initial_message_id = str(uuid.uuid4())
-    public_access_code = generate_public_access_code()
-
     async with get_session() as session:
-        ticket_repo = TicketEventsRepo(session)
-        ticket = await ticket_repo.create_ticket(
-            ticket_id=ticket_id,
+        created = await create_ticket_with_side_effects(
+            session,
             device_id=device_id,
+            requester_id=auth_context.actor_id,
             title=title,
             description=description,
-            status="new",
-            requester_id=auth_context.actor_id,
-        )
-        custom_fields = merge_requester_custom_fields(
-            getattr(ticket, "custom_fields", None),
             user_display_name=user_display_name,
             requester_profile=requester_profile,
-            priority_class=normalized_priority["priority_class"],
-        )
-        custom_fields = set_public_access_code(custom_fields, public_access_code)
-        await ticket_repo.update_ticket(
-            ticket_id,
-            urgency=normalized_priority["urgency"],
-            importance=normalized_priority["importance"],
-            urgency_reason=normalized_priority["urgency_reason"],
-            importance_reason=normalized_priority["importance_reason"],
-            priority=normalized_priority["legacy_priority"],
-            custom_fields=custom_fields,
-        )
-        ticket = await ticket_repo.get_ticket(ticket_id)
-        ticket = await _apply_create_side_effects(session, ticket_repo, ticket)
-        await ticket_repo.add_event(
-            ticket_id=ticket_id,
-            device_id=device_id,
-            agent_seq=None,
-            event_type="chat_message",
-            payload={
-                "message_id": initial_message_id,
-                "sender_role": "user",
-                "from": "user",
-                "is_initial": True,
-                "text": description,
-                "visibility": "public",
-            },
-            trace_id=str(uuid.uuid4()),
-            event_id=initial_message_id,
-        )
-        access_payload = build_public_access_message(public_access_code, ticket_id)
-        await ticket_repo.add_event(
-            ticket_id=ticket_id,
-            device_id=device_id,
-            agent_seq=None,
-            event_type="chat_message",
-            payload=access_payload,
-            trace_id=str(uuid.uuid4()),
-            event_id=access_payload["message_id"],
+            normalized_priority=normalized_priority,
+            initial_message_text=description,
+            initial_message_sender_role="user",
+            initial_message_from="user",
+            include_public_access=True,
         )
         await session.commit()
-        ticket = await ticket_repo.get_ticket(ticket_id)
-        ticket_data = await _ticket_payload(session, ticket)
+        ticket_data = await _ticket_payload(session, created["ticket"])
 
     return _json_ok(
         ticket=ticket_data,
-        session={"ticket_id": ticket_id, "actor_role": auth_context.actor_role},
-        initial_message_id=initial_message_id,
-        public_access_code=public_access_code,
+        session={"ticket_id": created["ticket_id"], "actor_role": auth_context.actor_role},
+        initial_message_id=created["initial_message_id"],
+        public_access_code=created["public_access_code"],
         public_access_url=ticket_data.get("public_access_url"),
     )
 
@@ -844,10 +847,20 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
         if error:
             return error
-        events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=2000)
-        visible_events = list(events)
+        since_event_id_raw = request.query.get("since_event_id")
+        incremental = since_event_id_raw is not None
+        if incremental:
+            try:
+                since_event_id = max(int(since_event_id_raw or "0"), 0)
+            except ValueError:
+                return _validation_error({"since_event_id": "must be an integer >= 0"})
+            raw_events = await repo.get_events_since_id(ticket.ticket_id, since_event_id=since_event_id, limit=500)
+        else:
+            since_event_id = 0
+            raw_events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=2000)
+        visible_events = list(raw_events)
         if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
-            visible_events = [event for event in events if _event_visible_to_requester(event)]
+            visible_events = [event for event in raw_events if _event_visible_to_requester(event)]
         messages = [event for event in visible_events if getattr(event, "event_type", None) == "chat_message"]
         counters_map = await _chat_counters_by_ticket_ids(repo, [ticket.ticket_id])
         ticket_data = await _ticket_payload(
@@ -862,6 +875,9 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
             messages=[_serialize_message(event, ticket=ticket) for event in messages],
             events=[_serialize_event_for_agent(event) for event in visible_events],
             agent_online=False,
+            incremental=incremental,
+            has_more=incremental and len(raw_events) >= 500,
+            last_event_id=(getattr(raw_events[-1], "id", since_event_id) if raw_events else since_event_id),
         )
 
 
@@ -1061,6 +1077,53 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
         )
         status_result = None
         status_payload = None
+        confirmation_response = None
+        if isinstance(clean_metadata.get("confirmation_response"), dict):
+            confirmation_response = clean_metadata.get("confirmation_response")
+        if visibility == "public" and sender_role == "user" and confirmation_response and ticket.status == "resolved":
+            pending_state = _resolution_confirmation_state(ticket)
+            request_id = str(confirmation_response.get("request_id") or "").strip()
+            option_id = str(confirmation_response.get("option_id") or "").strip().lower()
+            if pending_state.get("pending") and request_id and request_id == pending_state.get("request_id"):
+                workflow = TicketWorkflowService(session, repo)
+                if option_id == "confirm":
+                    transition = await workflow.apply_status_transition(
+                        ticket_id=ticket.ticket_id,
+                        from_status=ticket.status,
+                        to_status="closed",
+                        actor_id=auth_context.actor_id,
+                        actor_role=auth_context.actor_role,
+                        reason="requester_confirmed_resolution",
+                        source="requester_confirmation",
+                    )
+                    status_result = transition.get("event_result")
+                    status_payload = transition.get("event_payload") or {}
+                    ticket = await repo.get_ticket(ticket.ticket_id)
+                    ticket = await _store_resolution_confirmation_state(
+                        repo,
+                        ticket,
+                        pending=False,
+                        responded_option_id="confirm",
+                    )
+                elif option_id == "reject":
+                    transition = await workflow.apply_status_transition(
+                        ticket_id=ticket.ticket_id,
+                        from_status=ticket.status,
+                        to_status="triaged",
+                        actor_id=auth_context.actor_id,
+                        actor_role=auth_context.actor_role,
+                        reason="requester_rejected_resolution",
+                        source="requester_confirmation",
+                    )
+                    status_result = transition.get("event_result")
+                    status_payload = transition.get("event_payload") or {}
+                    ticket = await repo.get_ticket(ticket.ticket_id)
+                    ticket = await _store_resolution_confirmation_state(
+                        repo,
+                        ticket,
+                        pending=False,
+                        responded_option_id="reject",
+                    )
         if visibility == "public" and sender_role == "user" and getattr(ticket, "status", None) == "waiting_on_user":
             workflow = TicketWorkflowService(session, repo)
             transition = await workflow.apply_status_transition(
@@ -1086,6 +1149,12 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
 
 async def handle_ticket_close(request: web.Request) -> web.Response:
     data = await _read_json(request)
+    async with get_session() as session:
+        ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=True)
+        if error:
+            return error
+        if ticket.status == "resolved" and _resolution_confirmation_pending(ticket) and auth_context.actor_role in {"admin", "support"}:
+            return _json_error("closed_requires_requester_confirmation", status=409)
     data["to_status"] = "closed"
     request["_forced_status_payload"] = data
     return await handle_ticket_status(request)
@@ -1124,6 +1193,36 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
             root_cause=data.get("root_cause"),
             source="api",
         )
+        followup_result = None
+        followup_payload = None
+        ticket = await repo.get_ticket(ticket.ticket_id)
+        if to_status == "resolved" and is_support_or_admin:
+            confirmation_request = _build_resolution_confirmation_request()
+            ticket = await _store_resolution_confirmation_state(
+                repo,
+                ticket,
+                pending=True,
+                request_id=confirmation_request["request_id"],
+            )
+            followup_payload = {
+                "message_id": str(uuid.uuid4()),
+                "sender_role": "support",
+                "from": "support",
+                "text": RESOLUTION_CONFIRMATION_TEXT,
+                "visibility": "public",
+                "metadata": {"confirmation_request": confirmation_request},
+            }
+            followup_result = await repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type="chat_message",
+                payload=followup_payload,
+                trace_id=str(uuid.uuid4()),
+                event_id=followup_payload["message_id"],
+            )
+        elif to_status == "closed" and _resolution_confirmation_pending(ticket):
+            ticket = await _store_resolution_confirmation_state(repo, ticket, pending=False)
         await session.commit()
         await _push_ticket_event(
             request,
@@ -1132,6 +1231,8 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
             "status_changed",
             result.get("event_payload") or {},
         )
+        if followup_result and followup_payload:
+            await _push_ticket_event(request, ticket.ticket_id, followup_result, "chat_message", followup_payload)
         ticket = await repo.get_ticket(ticket.ticket_id)
         return _json_ok(ticket=await _ticket_payload(session, ticket, include_assignment_context=True))
 

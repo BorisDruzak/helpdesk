@@ -7,6 +7,9 @@ import time
 import uuid
 from aiohttp import web
 from loguru import logger
+from app.db import get_session
+from auth.context import AuthType
+from tickets.create_flow import build_agent_raise_description, create_ticket_with_side_effects
 from websocket.protocol import send_ws_command, push_chat_event_to_ui
 from chat.service import ChatService
 
@@ -127,15 +130,40 @@ async def handle_chat_raise(request):
     try:
         state = request.app['state']
         service = ChatService(state)
-        
-        data = await request.json()
-        device_id = data.get("device_id")
-        
-        if not device_id:
+
+        auth_context = request.get("auth_context")
+        if not auth_context:
             return web.json_response({
                 "status": "error",
-                "error": "Missing device_id"
-            }, status=400)
+                "error": "Unauthorized"
+            }, status=401)
+
+        data = await request.json()
+        body_device_id = str(data.get("device_id") or "").strip()
+        title = str(data.get("title") or "Agent Support Request").strip() or "Agent Support Request"
+        reason = str(data.get("reason") or "agent_initiated").strip() or "agent_initiated"
+        severity = str(data.get("severity") or "warning").strip() or "warning"
+        context_payload = data.get("context") if isinstance(data.get("context"), dict) else {}
+
+        if auth_context.auth_type == AuthType.AGENT_TOKEN:
+            device_id = auth_context.actor_id
+            if body_device_id and body_device_id != device_id:
+                return web.json_response({
+                    "status": "error",
+                    "error": "device_id does not match authenticated agent"
+                }, status=403)
+        elif auth_context.actor_role in {"admin", "support"}:
+            device_id = body_device_id
+            if not device_id:
+                return web.json_response({
+                    "status": "error",
+                    "error": "Missing device_id"
+                }, status=400)
+        else:
+            return web.json_response({
+                "status": "error",
+                "error": "Forbidden"
+            }, status=403)
         
         if not state.is_agent_online(device_id):
             return web.json_response({
@@ -147,17 +175,37 @@ async def handle_chat_raise(request):
         
         # Генерируем chat_job_id
         chat_job_id = str(uuid.uuid4())
+        ticket_id = str(uuid.uuid4())
         
         # Создаем chat_session
         service.create_session(chat_job_id, device_id, created_by="agent")
+
+        async with get_session() as session:
+            created = await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id=device_id if auth_context.auth_type == AuthType.AGENT_TOKEN else auth_context.actor_id,
+                title=title,
+                description=build_agent_raise_description(
+                    reason=reason,
+                    severity=severity,
+                    context=context_payload,
+                ),
+                user_display_name=device_id,
+                initial_message_sender_role="agent",
+                initial_message_from="agent",
+                include_public_access=False,
+            )
+            ticket_id = created["ticket_id"]
+            await session.commit()
         
         # Отправляем команду start_job с job_type="support_chat" и переданным job_id
         res = await send_ws_command(
             state=state,
             device_id=device_id,
             command="start_job",
-            params={"job_type": "support_chat", "params": {"job_id": chat_job_id}},
-            actor_role="agent",
+            params={"job_type": "support_chat", "params": {"job_id": chat_job_id, "ticket_id": ticket_id}},
+            auth_context=auth_context,
             timeout=60
         )
         
@@ -167,9 +215,13 @@ async def handle_chat_raise(request):
         invite_event = {
             "event": "chat_invite",
             "job_id": chat_job_id,
+            "ticket_id": ticket_id,
             "device_id": device_id,
             "from": "agent",
-            "title": "Agent Chat",
+            "title": title,
+            "reason": reason,
+            "severity": severity,
+            "context": context_payload,
             "ts": time.time(),
         }
         
@@ -184,7 +236,7 @@ async def handle_chat_raise(request):
                 device_id=device_id,
                 command="ui_notify",
                 params={"event": invite_event},
-                actor_role="agent",
+                auth_context=auth_context,
                 timeout=10
             )
             logger.info(f"[SERVER] TX ui_notify chat_invite job_id={chat_job_id} device_id={device_id}")
@@ -195,6 +247,7 @@ async def handle_chat_raise(request):
         return web.json_response({
             "status": "success",
             "job_id": chat_job_id,
+            "ticket_id": ticket_id,
             "device_id": device_id
         })
     
@@ -527,7 +580,5 @@ async def handle_chat_events(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-
-
 
 

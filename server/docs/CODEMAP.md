@@ -14,7 +14,7 @@
 |------|------------------|-------|
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
-| Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
+| Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
 | Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
 | Admin / support / ticket UI | `server/support.js`, `server/admin.js` или `server/ticket.js` | `server/static_pages/`, browser check на `http://192.168.100.17:8666/admin` |
 
@@ -103,7 +103,7 @@
 ### 2.5 Доменные модули (handlers + service)
 | Каталог/файл | Назначение |
 |--------------|------------|
-| `server/tickets/` | handlers, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др.; `assignment_service.py` и `ticket_events_repo.py` теперь считают состав очереди обязательным для назначения и автоназначения, а `admin_config_handlers.py` ведёт helpdesk-admin settings API: очереди, состав очередей, routing rules, SLA policies, targets/matrix (GET/PUT), calendars, OLA targets, audit |
+| `server/tickets/` | handlers, `create_flow.py`, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др.; `create_flow.py` держит единый DB-first путь создания для `/api/tickets/create`, WS `chat_raise` и legacy `/api/chat_raise`, а `assignment_service.py` и `ticket_events_repo.py` считают состав очереди обязательным для назначения и автоназначения; `admin_config_handlers.py` ведёт helpdesk-admin settings API: очереди, состав очередей, routing rules, SLA policies, targets/matrix (GET/PUT), calendars, OLA targets, audit |
 | `server/agents/` | handlers, agent_builds_handlers, service; `handlers.py` также даёт admin-only архивирование устройства с очисткой live runtime-сессии |
 | `server/modules/` | handlers, service, reconcile, verification |
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |

@@ -76,7 +76,13 @@ class SseClient:
                 ) as response:
                     self._response = response
                     if response.status != 200:
-                        logger.error(f"Ошибка подключения к SSE: HTTP {response.status}")
+                        hint = ""
+                        if response.status == 404:
+                            hint = (
+                                " (на этом порту нет маршрута /ui/events — часто порт занят не pc_agent; "
+                                "проверьте ui.port и закройте лишний процесс)"
+                            )
+                        logger.error(f"Ошибка подключения к SSE: HTTP {response.status}{hint}")
                         if on_connection_change:
                             on_connection_change(False)
                         await asyncio.sleep(5)

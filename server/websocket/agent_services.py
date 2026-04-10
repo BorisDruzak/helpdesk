@@ -30,7 +30,7 @@ from websocket.outbox_ingest_components import (
 from .contexts import AgentConnectionContext, EnvelopeContext
 
 try:
-    from app.repos import TicketEventsRepo
+    from tickets.create_flow import build_agent_raise_description, create_ticket_with_side_effects
 
     DB_AVAILABLE = True
 except ImportError:
@@ -577,21 +577,23 @@ class AgentCommandService:
         if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
             try:
                 async with get_session() as db_session:
-                    ticket_repo = TicketEventsRepo(db_session)
-                    created = await ticket_repo.create_ticket(
-                        ticket_id=ticket_id,
+                    created = await create_ticket_with_side_effects(
+                        db_session,
                         device_id=ctx.agent_id,
-                        title=title,
-                        description=f"Agent-initiated: {reason} (severity: {severity})",
-                        status="new",
                         requester_id=ctx.agent_id,
+                        title=title,
+                        description=build_agent_raise_description(
+                            reason=str(reason or "agent_initiated"),
+                            severity=str(severity or "warning"),
+                            context=context_payload if isinstance(context_payload, dict) else {},
+                        ),
+                        user_display_name=ctx.agent_id,
+                        initial_message_sender_role="agent",
+                        initial_message_from="agent",
+                        include_public_access=False,
                     )
-                    code = getattr(created, "ticket_code", None) or ""
-                    if code:
-                        snippet = (title or getattr(created, "description", "") or "")[:80].strip()
-                        new_title = f"{code} {snippet}".strip() if snippet else code
-                        if new_title:
-                            await ticket_repo.update_ticket(ticket_id, title=new_title)
+                    ticket_id = created["ticket_id"]
+                    session_data["ticket_id"] = ticket_id
                     await db_session.commit()
             except Exception as exc:
                 logger.opt(exception=True).error("❌ [V3] Failed to create ticket for chat_raise: {}", exc)

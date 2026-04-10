@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import json
 import time
 from typing import Set, Optional, Dict, Any
 import aiohttp
@@ -10,7 +11,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QStatusBar, QLabel, QGroupBox, QHBoxLayout, QPushButton,
     QMessageBox, QApplication, QDialog, QLineEdit, QFormLayout,
-    QCheckBox, QSpinBox, QSplitter,
+    QCheckBox, QSpinBox, QSplitter, QScrollArea, QFrame,
 )
 from PySide6.QtCore import Qt, QTimer
 from loguru import logger
@@ -155,10 +156,21 @@ class MainWindow(QMainWindow):
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("Настройки")
         self.settings_dialog.setModal(True)
-        self.settings_dialog.setMinimumWidth(700)
+        self.settings_dialog.setMinimumWidth(520)
+        self.settings_dialog.setMinimumHeight(400)
+        self.settings_dialog.setMaximumHeight(900)
 
-        settings_layout = QVBoxLayout(self.settings_dialog)
-        settings_layout.setContentsMargins(16, 16, 16, 16)
+        dlg_root = QVBoxLayout(self.settings_dialog)
+        dlg_root.setContentsMargins(8, 8, 8, 8)
+        dlg_root.setSpacing(8)
+
+        scroll = QScrollArea(self.settings_dialog)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_content = QWidget()
+        settings_layout = QVBoxLayout(scroll_content)
+        settings_layout.setContentsMargins(8, 8, 8, 8)
         settings_layout.setSpacing(12)
 
         device_group = QGroupBox("Информация об устройстве")
@@ -183,6 +195,14 @@ class MainWindow(QMainWindow):
         self.config_path_label = QLabel("—")
         self.config_path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         device_layout.addRow("Файл конфига:", self.config_path_label)
+        self.config_path_hint = QLabel(
+            "Агент читает и сохраняет настройки в этот файл (внутри data_root). "
+            "Правка только pc_agent/config/settings.yaml в клоне репозитория не меняет работающий агент, "
+            "если у него другой data_root — меняйте здесь или скопируйте YAML по указанному пути."
+        )
+        self.config_path_hint.setWordWrap(True)
+        self.config_path_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        device_layout.addRow(self.config_path_hint)
         settings_layout.addWidget(device_group)
 
         server_group = QGroupBox("Сервер")
@@ -191,10 +211,35 @@ class MainWindow(QMainWindow):
         self.ws_url_input = QLineEdit()
         self.reconnect_spin = QSpinBox()
         self.reconnect_spin.setRange(1, 3600)
+        self.reconnect_spin.setValue(5)
         server_form.addRow("API URL:", self.api_url_input)
         server_form.addRow("WS URL:", self.ws_url_input)
         server_form.addRow("Интервал reconnect (с):", self.reconnect_spin)
         settings_layout.addWidget(server_group)
+
+        ui_bridge_group = QGroupBox("Локальный UI-мост (только этот компьютер)")
+        ui_bridge_outer = QVBoxLayout(ui_bridge_group)
+        ui_bridge_form = QFormLayout()
+        ui_bridge_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.ui_host_input = QLineEdit()
+        self.ui_port_spin = QSpinBox()
+        self.ui_port_spin.setRange(1, 65535)
+        self.ui_port_spin.setValue(8765)
+        self.ui_enabled_checkbox = QCheckBox("Разрешить GUI (ui.enabled)")
+        self.ui_autostart_checkbox = QCheckBox("Автозапуск окна при старте агента (ui.autostart_gui)")
+        ui_bridge_form.addRow("Хост UI API:", self.ui_host_input)
+        ui_bridge_form.addRow("Порт UI API:", self.ui_port_spin)
+        ui_bridge_form.addRow("", self.ui_enabled_checkbox)
+        ui_bridge_form.addRow("", self.ui_autostart_checkbox)
+        ui_bridge_outer.addLayout(ui_bridge_form)
+        self.ui_bridge_hint = QLabel(
+            "Порт и хост — для связи окна Maria Agent с процессом ws_agent (SSE, настройки). "
+            "На удалённый сервер (WS/API) не влияет. После смены порта или хоста нужен перезапуск агента."
+        )
+        self.ui_bridge_hint.setWordWrap(True)
+        self.ui_bridge_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        ui_bridge_outer.addWidget(self.ui_bridge_hint)
+        settings_layout.addWidget(ui_bridge_group)
 
         paths_group = QGroupBox("Пути (относительно data_root)")
         paths_form = QFormLayout(paths_group)
@@ -216,6 +261,15 @@ class MainWindow(QMainWindow):
             f"color: {theme.TEXT_SECONDARY};"
         )
         modules_form.addRow("Включённые модули:", self.enabled_modules_input)
+        self.enabled_modules_hint = QLabel(
+            "В списке — встроенные модули, которые агент загружает при старте. "
+            "«system» и «screen» всегда добавляются автоматически (их нельзя отключить через YAML). "
+            "Остальные имена (например diag_logs) подключаются только если они есть в образе агента; "
+            "пакеты из modules_store обрабатываются отдельно (см. установленные модули ниже)."
+        )
+        self.enabled_modules_hint.setWordWrap(True)
+        self.enabled_modules_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        modules_form.addRow(self.enabled_modules_hint)
         modules_form.addRow("", self.allow_remote_code_checkbox)
         modules_form.addRow("Установленные модули:", self.installed_modules_label)
         settings_layout.addWidget(modules_group)
@@ -247,6 +301,9 @@ class MainWindow(QMainWindow):
         self.settings_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
         settings_layout.addWidget(self.settings_status_label)
 
+        scroll.setWidget(scroll_content)
+        dlg_root.addWidget(scroll, 1)
+
         buttons_layout = QHBoxLayout()
         self.test_connection_btn = QPushButton("Проверить соединение")
         self.test_connection_btn.setObjectName("SecondaryButton")
@@ -268,13 +325,17 @@ class MainWindow(QMainWindow):
         close_settings_btn.setObjectName("SecondaryButton")
         close_settings_btn.clicked.connect(self.settings_dialog.reject)
         buttons_layout.addWidget(close_settings_btn)
-        settings_layout.addLayout(buttons_layout)
+        dlg_root.addLayout(buttons_layout)
 
         theme.apply_agent_dialog_theme(self.settings_dialog)
 
         self.api_url_input.textChanged.connect(self._on_settings_field_changed)
         self.ws_url_input.textChanged.connect(self._on_settings_field_changed)
         self.reconnect_spin.valueChanged.connect(self._on_settings_field_changed)
+        self.ui_host_input.textChanged.connect(self._on_settings_field_changed)
+        self.ui_port_spin.valueChanged.connect(self._on_settings_field_changed)
+        self.ui_enabled_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.ui_autostart_checkbox.toggled.connect(self._on_settings_field_changed)
         self.data_dir_input.textChanged.connect(self._on_settings_field_changed)
         self.enabled_modules_input.textChanged.connect(self._on_settings_field_changed)
         self.allow_remote_code_checkbox.toggled.connect(self._on_settings_field_changed)
@@ -349,8 +410,31 @@ class MainWindow(QMainWindow):
             f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
         )
 
+    def _ui_bridge_host_port(self) -> tuple[str, int]:
+        """Адрес локального UiApiServer — из актуального get_config().ui (как при bind в ws_agent)."""
+        try:
+            from pc_agent.config.config_loader import get_config
+
+            ui = get_config().ui
+            h = str(ui.host or "").strip() or "127.0.0.1"
+            p = int(ui.port)
+            if not (1 <= p <= 65535):
+                raise ValueError("ui.port out of range")
+            return h, p
+        except Exception:
+            h = str(getattr(self, "host", None) or "").strip() or "127.0.0.1"
+            try:
+                p = int(getattr(self, "port", 8765))
+            except (TypeError, ValueError):
+                p = 8765
+            if not (1 <= p <= 65535):
+                p = 8765
+            return h, p
+
     def _settings_api_url(self, path: str) -> str:
-        return f"http://{self.host}:{self.port}{path}"
+        h, p = self._ui_bridge_host_port()
+        pth = path if path.startswith("/") else f"/{path}"
+        return f"http://{h}:{p}{pth}"
 
     def _set_settings_status(self, text: str, error: bool = False) -> None:
         color = theme.DANGER_FG if error else theme.TEXT_MUTED
@@ -413,6 +497,12 @@ class MainWindow(QMainWindow):
                     "data_dir": self.data_dir_input.text().strip(),
                 },
                 "enabled_modules": modules,
+                "ui": {
+                    "enabled": bool(self.ui_enabled_checkbox.isChecked()),
+                    "host": self.ui_host_input.text().strip() or "127.0.0.1",
+                    "port": int(self.ui_port_spin.value()),
+                    "autostart_gui": bool(self.ui_autostart_checkbox.isChecked()),
+                },
             }
         }
         if include_auth:
@@ -449,16 +539,34 @@ class MainWindow(QMainWindow):
     async def _async_ui_request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         url = self._settings_api_url(path)
         timeout = aiohttp.ClientTimeout(total=10)
+        kw: Dict[str, Any] = {}
+        if payload is not None and method.upper() != "GET":
+            kw["json"] = payload
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(method.upper(), url, json=payload) as resp:
+            async with session.request(
+                method.upper(),
+                url,
+                headers={"Accept": "application/json"},
+                **kw,
+            ) as resp:
                 text = await resp.text()
                 try:
-                    data = await resp.json()
-                except Exception:
-                    data = {"status": "error", "error": text or f"HTTP {resp.status}"}
+                    data = json.loads(text) if text.strip() else {}
+                except json.JSONDecodeError:
+                    snippet = (text or "").strip().replace("\n", " ")[:280]
+                    hint = ""
+                    if resp.status == 404 and ("<!DOCTYPE" in text or "File not found" in text):
+                        hint = (
+                            f" Запрос: {url}. На этом адресе нет /ui/settings у pc_agent "
+                            f"(нужен запущенный UiApiServer на ui.host/ui.port из data_root/settings.yaml)."
+                        )
+                    logger.error("Ответ UI-моста не JSON: HTTP {} — {}{}", resp.status, snippet, hint)
+                    raise RuntimeError(
+                        f"Ожидался JSON от локального моста (HTTP {resp.status}).{hint or ' Проверьте порт и процесс ws_agent.'}"
+                    )
                 if resp.status >= 400:
-                    error = data.get("error") if isinstance(data, dict) else text
-                    raise Exception(error or f"HTTP {resp.status}")
+                    error = data.get("error") if isinstance(data, dict) else None
+                    raise Exception(str(error or text or f"HTTP {resp.status}"))
                 if not isinstance(data, dict):
                     return {"status": "ok", "result": data}
                 return data
@@ -501,6 +609,7 @@ class MainWindow(QMainWindow):
         server = settings.get("server", {})
         security = settings.get("security", {})
         paths = settings.get("paths", {})
+        ui_cfg = settings.get("ui", {}) or {}
         enabled_modules = settings.get("enabled_modules", [])
         installed_modules = settings.get("installed_modules", [])
         auth = settings.get("auth", {})
@@ -510,6 +619,10 @@ class MainWindow(QMainWindow):
         self.api_url_input.setText(str(server.get("api_url", "")))
         self.ws_url_input.setText(str(server.get("ws_url", "")))
         self.reconnect_spin.setValue(int(server.get("reconnect_interval", 5) or 5))
+        self.ui_host_input.setText(str(ui_cfg.get("host", "127.0.0.1")))
+        self.ui_port_spin.setValue(int(ui_cfg.get("port", 8765) or 8765))
+        self.ui_enabled_checkbox.setChecked(bool(ui_cfg.get("enabled", False)))
+        self.ui_autostart_checkbox.setChecked(bool(ui_cfg.get("autostart_gui", False)))
         self.data_dir_input.setText(str(paths.get("data_dir", "")))
         self.enabled_modules_input.setText(", ".join(enabled_modules if isinstance(enabled_modules, list) else []))
         self.installed_modules_label.setText(self._repair_text(self._format_installed_modules_text(installed_modules)))
@@ -608,10 +721,15 @@ class MainWindow(QMainWindow):
 
             should_restart = request_restart
             if config_changed and not request_restart:
-                should_restart = await self._ask_yes_no_async(
-                    "Перезапуск агента",
-                    "Настройки сохранены. Перезапустить агент сейчас?",
-                )
+                restart_msg = "Настройки сохранены. Перезапустить агент сейчас?"
+                if isinstance(changed_keys, list) and any(
+                    str(k).startswith("ui.") for k in changed_keys
+                ):
+                    restart_msg = (
+                        "Настройки сохранены. Порт и хост UI-моста применяются только после перезапуска агента. "
+                        "Перезапустить сейчас?"
+                    )
+                should_restart = await self._ask_yes_no_async("Перезапуск агента", restart_msg)
 
             if should_restart:
                 await self._async_restart_agent()
@@ -919,7 +1037,8 @@ class MainWindow(QMainWindow):
                 session_key = data.get("session_key") or self.current_chat_job_id or ""
                 
                 # Создаем и показываем диалог с session_key
-                dialog = ConsentDialog(event, self.host, self.port, self, session_key=session_key)
+                bh, bp = self._ui_bridge_host_port()
+                dialog = ConsentDialog(event, bh, bp, self, session_key=session_key)
                 
                 # Удаляем токен из множества при закрытии диалога
                 def on_finished(result):
@@ -984,7 +1103,7 @@ class MainWindow(QMainWindow):
     async def _async_stop_recording(self, operation_id: str) -> None:
         """Асинхронная отправка сигнала остановки записи на UI API агента."""
         import aiohttp
-        url = f"http://{self.host}:{self.port}/ui/stop_recording"
+        url = self._settings_api_url("/ui/stop_recording")
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json={"operation_id": operation_id}) as resp:

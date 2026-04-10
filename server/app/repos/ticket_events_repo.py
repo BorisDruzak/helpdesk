@@ -1187,6 +1187,10 @@ class TicketEventsRepo:
                     or_(
                         Ticket.assignee_id == support_actor_id,
                         TicketQueueMember.actor_id == support_actor_id,
+                        and_(
+                            Ticket.queue_id.is_(None),
+                            Ticket.status.notin_(list(TERMINAL_STATUSES)),
+                        ),
                     )
                 )
             if filters.get("first_response_breached") is True:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
 
 from websocket.agent_services import (
+    AgentCommandService,
     CommandResultService,
     OutboxAckDecisionService,
     OutboxIngestService,
@@ -187,3 +189,77 @@ async def test_outbox_persistence_rejects_device_event_without_device_seq():
     assert outcome.decision == "nack"
     assert outcome.error_code == "VALIDATION_ERROR"
     assert "device_seq" in (outcome.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_raise_returns_canonical_ticket_id(monkeypatch):
+    sent_messages = []
+    queued_commands = []
+
+    class _WsStub:
+        async def send_json(self, payload):
+            sent_messages.append(payload)
+
+    class _StateStub(SimpleNamespace):
+        def __init__(self):
+            super().__init__()
+            self.sessions = {}
+            self.ui_connections = {}
+            self.subscription_registry = None
+            self.chat_sessions = self.sessions
+
+        def get_agent(self, _agent_id):
+            return {"metadata": {"user": "user-1"}}
+
+        def create_chat_session(self, job_id, data):
+            self.sessions[job_id] = data
+
+    async def _fake_create_ticket(*args, **kwargs):
+        return {"ticket_id": "ticket-canonical-1"}
+
+    async def _fake_send_ws_command(**kwargs):
+        queued_commands.append(kwargs)
+        return {"status": "queued"}
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield object()
+
+    monkeypatch.setattr("websocket.agent_services.create_ticket_with_side_effects", _fake_create_ticket)
+    monkeypatch.setattr("websocket.agent_services.send_ws_command", _fake_send_ws_command)
+    monkeypatch.setattr("websocket.agent_services.get_session", _fake_get_session)
+
+    service = AgentCommandService()
+    state = _StateStub()
+    ctx = AgentConnectionContext(
+        ws=_WsStub(),
+        request=SimpleNamespace(),
+        state=state,
+        agent_id="dev-1",
+    )
+
+    await service.handle(
+        {
+            "type": "command",
+            "request_id": "req-raise-1",
+            "payload": {
+                "command": "chat_raise",
+                "params": {
+                    "title": "Need support",
+                    "reason": "agent_initiated",
+                    "severity": "warning",
+                    "context": {"screen": "main"},
+                },
+            },
+        },
+        ctx,
+    )
+    await asyncio.sleep(0)
+
+    assert sent_messages
+    observations = sent_messages[0]["payload"]["data"]["observations"]
+    assert observations["job_id"]
+    assert observations["ticket_id"] == "ticket-canonical-1"
+    assert state.sessions[observations["job_id"]]["ticket_id"] == "ticket-canonical-1"
+    assert queued_commands
+    assert queued_commands[0]["params"]["params"]["ticket_id"] == "ticket-canonical-1"

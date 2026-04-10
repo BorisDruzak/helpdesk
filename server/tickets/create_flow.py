@@ -1,0 +1,233 @@
+"""Shared ticket creation flow for HTTP, agent WS, and legacy chat entrypoints."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Any, Dict, Optional
+
+from loguru import logger
+
+from app.repos import DevicesRepo, TicketEventsRepo
+from tickets.assignment_service import (
+    MAX_ACTIVE_TICKETS_PER_OPERATOR,
+    TicketAssignmentError,
+    TicketAssignmentService,
+)
+from tickets.ola_service import start_ola_for_ticket
+from tickets.public_access import (
+    build_public_access_message,
+    generate_public_access_code,
+    set_public_access_code,
+)
+from tickets.routing_service import TicketRoutingService
+from tickets.sla_service import TicketSlaService
+from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
+from tickets.workflow_service import TicketWorkflowService
+from utils import new_ticket_id
+
+
+def build_default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    urgency = data.get("urgency")
+    importance = data.get("importance")
+    urgency_reason = str(data.get("urgency_reason") or "").strip()
+    importance_reason = str(data.get("importance_reason") or "").strip()
+    if urgency is None or importance is None:
+        urgency = False
+        importance = False
+    if not urgency_reason:
+        urgency_reason = "Не указано при создании"
+    if not importance_reason:
+        importance_reason = "Не указано при создании"
+    return normalize_ticket_priority_inputs(urgency, importance, urgency_reason, importance_reason)
+
+
+def build_agent_raise_description(
+    *,
+    reason: str,
+    severity: str,
+    context: Optional[dict[str, Any]] = None,
+) -> str:
+    parts = [
+        "Agent requested support.",
+        f"Reason: {reason or 'agent_initiated'}.",
+        f"Severity: {severity or 'warning'}.",
+    ]
+    if context:
+        try:
+            context_blob = json.dumps(context, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            context_blob = str(context)
+        if context_blob:
+            parts.append(f"Context: {context_blob}")
+    return " ".join(part for part in parts if part).strip()
+
+
+async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
+    if getattr(ticket, "assignee_id", None):
+        return ticket
+    assignment_service = TicketAssignmentService(ticket_repo)
+    workflow = TicketWorkflowService(session, ticket_repo)
+    try:
+        selection = await assignment_service.resolve_assignee(
+            ticket,
+            requested_assignee_id=None,
+            auto_assign=True,
+        )
+        assignee_id = selection["assignee_id"]
+        if assignee_id:
+            await assignment_service.assign_ticket(
+                ticket.ticket_id,
+                ticket.device_id,
+                assignee_id,
+                actor_id="system",
+                actor_role="system",
+                reason="auto_assign_on_create",
+                comment="",
+                old_assignee=getattr(ticket, "assignee_id", None),
+                auto_assigned=True,
+                active_count=selection["active_count"],
+                limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                db_session=session,
+                close_ola=True,
+            )
+            await workflow.apply_status_transition(
+                ticket_id=ticket.ticket_id,
+                from_status=getattr(ticket, "status", "new") or "new",
+                to_status="triaged",
+                actor_id="system",
+                actor_role="system",
+                reason="auto_assign_on_create",
+                source="system",
+            )
+            ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    except TicketAssignmentError:
+        return ticket
+    return ticket
+
+
+async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
+    devices_repo = DevicesRepo(session)
+    routing = TicketRoutingService(session, ticket_repo, devices_repo)
+    sla = TicketSlaService(session, ticket_repo)
+
+    async def add_routing_event(ticket_id: str, device_id: str, event_type: str, payload: Dict[str, Any]) -> None:
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type=event_type,
+            payload=payload,
+            trace_id=str(uuid.uuid4()),
+        )
+
+    try:
+        await routing.apply_routing(ticket.ticket_id, ticket.device_id, add_events_fn=add_routing_event)
+    except Exception as exc:
+        logger.warning(f"[create] routing failed ticket_id={ticket.ticket_id} err={exc}")
+    ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    try:
+        await sla.start_sla(ticket)
+    except Exception as exc:
+        logger.warning(f"[create] sla failed ticket_id={ticket.ticket_id} err={exc}")
+    ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    try:
+        await start_ola_for_ticket(session, ticket)
+    except Exception as exc:
+        logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
+    ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    ticket = await _auto_assign_if_possible(session, ticket_repo, ticket)
+    return ticket
+
+
+async def create_ticket_with_side_effects(
+    session: Any,
+    *,
+    device_id: str,
+    requester_id: str,
+    title: str,
+    description: str,
+    user_display_name: str,
+    requester_profile: Optional[dict[str, Any]] = None,
+    normalized_priority: Optional[Dict[str, Any]] = None,
+    initial_message_text: Optional[str] = None,
+    initial_message_sender_role: str = "user",
+    initial_message_from: Optional[str] = None,
+    include_public_access: bool = True,
+) -> Dict[str, Any]:
+    ticket_repo = TicketEventsRepo(session)
+    ticket_id = new_ticket_id()
+    ticket = await ticket_repo.create_ticket(
+        ticket_id=ticket_id,
+        device_id=device_id,
+        title=title,
+        description=description,
+        status="new",
+        requester_id=requester_id,
+    )
+
+    normalized_priority = normalized_priority or build_default_priority_payload({})
+    custom_fields = merge_requester_custom_fields(
+        getattr(ticket, "custom_fields", None),
+        user_display_name=user_display_name,
+        requester_profile=requester_profile or {},
+        priority_class=normalized_priority["priority_class"],
+    )
+
+    public_access_code: Optional[str] = None
+    if include_public_access:
+        public_access_code = generate_public_access_code()
+        custom_fields = set_public_access_code(custom_fields, public_access_code)
+
+    await ticket_repo.update_ticket(
+        ticket_id,
+        urgency=normalized_priority["urgency"],
+        importance=normalized_priority["importance"],
+        urgency_reason=normalized_priority["urgency_reason"],
+        importance_reason=normalized_priority["importance_reason"],
+        priority=normalized_priority["legacy_priority"],
+        custom_fields=custom_fields,
+    )
+    ticket = await ticket_repo.get_ticket(ticket_id)
+    ticket = await apply_create_side_effects(session, ticket_repo, ticket)
+
+    initial_message_id: Optional[str] = None
+    initial_message_text = (initial_message_text if initial_message_text is not None else description).strip()
+    if initial_message_text:
+        initial_message_id = str(uuid.uuid4())
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload={
+                "message_id": initial_message_id,
+                "sender_role": initial_message_sender_role,
+                "from": initial_message_from or initial_message_sender_role,
+                "is_initial": True,
+                "text": initial_message_text,
+                "visibility": "public",
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id=initial_message_id,
+        )
+
+    if public_access_code:
+        access_payload = build_public_access_message(public_access_code, ticket_id)
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload=access_payload,
+            trace_id=str(uuid.uuid4()),
+            event_id=access_payload["message_id"],
+        )
+
+    ticket = await ticket_repo.get_ticket(ticket_id)
+    return {
+        "ticket": ticket,
+        "ticket_id": ticket_id,
+        "initial_message_id": initial_message_id,
+        "public_access_code": public_access_code,
+    }

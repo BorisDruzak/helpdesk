@@ -8,8 +8,9 @@ HTTP API сервер для UI Bridge.
 """
 
 import asyncio
+import errno
 import json
-from typing import Callable, Optional, Dict, Any, Union, Awaitable, List
+from typing import Callable, Optional, Dict, Any, Union, Awaitable, List, Set
 from aiohttp import web
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response, StreamResponse
@@ -17,6 +18,17 @@ from loguru import logger
 
 from .event_bus import EventBus
 from .models import ConsentDecision
+
+
+def _is_address_in_use(exc: OSError) -> bool:
+    """Linux EADDRINUSE (98) и Windows WSAEADDRINUSE (10048 / winerror)."""
+    if getattr(exc, "winerror", None) == 10048:
+        return True
+    if exc.errno == errno.EADDRINUSE:
+        return True
+    if exc.errno == 10048:
+        return True
+    return False
 
 
 class UiApiServer:
@@ -66,7 +78,8 @@ class UiApiServer:
         self._active_sse_transports: Set[Any] = set()
         self._shutdown_timeout = 0.75
         self._stopping = False
-        
+        self._listening = False
+
         # Регистрируем маршруты
         self._setup_routes()
         
@@ -587,16 +600,35 @@ class UiApiServer:
                 headers={"Access-Control-Allow-Origin": "*"},
             )
     
-    async def start(self):
-        """Запускает HTTP сервер."""
+    async def _abort_start(self) -> None:
+        """Откат после неудачного bind (иначе runner течёт и повторный start снова падает)."""
+        self.site = None
+        if self.runner is not None:
+            try:
+                await self.runner.cleanup()
+            except Exception as exc:
+                logger.debug(f"UiApiServer cleanup после ошибки bind: {exc}")
+            self.runner = None
+
+    async def start(self) -> bool:
+        """Запускает HTTP сервер. Идемпотентен: повторный вызов безопасен.
+
+        Returns:
+            True если слушаем порт, False если порт занят (другой процесс / гонка).
+        """
+        if self._listening:
+            logger.debug("UiApiServer.start: уже слушаем, пропуск")
+            return True
+
         try:
             self._stopping = False
             self.runner = web.AppRunner(self.app, shutdown_timeout=self._shutdown_timeout)
             await self.runner.setup()
-            
+
             self.site = web.TCPSite(self.runner, self.host, self.port)
             await self.site.start()
-            
+            self._listening = True
+
             logger.success(f"✅ UI API сервер запущен на http://{self.host}:{self.port}")
             logger.info(f"   Эндпоинты:")
             logger.info(f"   - GET  /ui/events (SSE или long-poll)")
@@ -609,21 +641,23 @@ class UiApiServer:
             logger.info(f"   - POST /ui/settings/test_connection")
             logger.info(f"   - POST /ui/agent/restart")
             logger.info(f"   - GET  /health")
-            
+            return True
+
         except OSError as e:
-            if e.errno == 98:  # Address already in use
+            if _is_address_in_use(e):
                 logger.warning(
-                    f"⚠️  Порт {self.port} уже занят. "
-                    f"UI API сервер не запущен. "
-                    f"Возможно, уже запущен другой экземпляр агента или GUI."
+                    f"⚠️  Порт {self.port} уже занят ({self.host}). "
+                    f"Повторный запуск UI API в этом процессе пропущен; "
+                    f"закройте другой экземпляр агента или смените ui.port в конфиге."
                 )
-                # Не падаем, просто продолжаем работу без UI API сервера
-                return
-            else:
-                logger.error(f"❌ Ошибка запуска UI API сервера: {e}")
-                raise
+                await self._abort_start()
+                return False
+            logger.error(f"❌ Ошибка запуска UI API сервера: {e}")
+            await self._abort_start()
+            raise
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UI API сервера: {e}")
+            await self._abort_start()
             raise
     
     async def stop(self):
@@ -647,6 +681,7 @@ class UiApiServer:
         finally:
             self.site = None
             self.runner = None
+            self._listening = False
 
     async def _close_active_sse_connections(self) -> None:
         """Прерывает активные SSE stream'ы до cleanup aiohttp, чтобы shutdown не зависал."""

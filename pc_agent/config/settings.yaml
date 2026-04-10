@@ -25,6 +25,6 @@ enabled_modules:
 ui:
   enabled: true
   host: "127.0.0.1"
-  port: 8765
+  port: 8766
   autostart_gui: true
 

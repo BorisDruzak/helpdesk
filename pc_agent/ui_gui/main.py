@@ -325,17 +325,26 @@ async def show_token_dialog_async(device_uuid: str) -> Optional[str]:
                 pass
 
 
-async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = None, auth_complete_event: Optional[asyncio.Event] = None):
+async def run_gui(
+    host: str,
+    port: int,
+    stop_event: Optional[asyncio.Event] = None,
+    auth_complete_event: Optional[asyncio.Event] = None,
+    *,
+    ui_bridge_listening: Optional[bool] = None,
+):
     """
     Запускает GUI приложение.
-    
+
     Требует валидный токен аутентификации перед показом главного окна.
     Если токен отсутствует или невалиден - показывает диалог авторизации.
-    
+
     Args:
         host: Хост UI API сервера
         port: Порт UI API сервера
         stop_event: Событие для остановки (опционально)
+        ui_bridge_listening: False — мост не поднят (порт занят и т.д.), SSE не запускать;
+            None — определить по /health; True — считать, что bind был успешен, всё равно проверить /health.
     """
     try:
         logger.info("🚀 run_gui() начал выполнение")
@@ -492,35 +501,59 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
     # Создаем обработчик событий
     event_handler = EventHandler(window)
     
-    # Создаем SSE клиент
+    # Создаем SSE клиент (только если есть шанс, что на порту именно UiApiServer)
     base_url = f"http://{host}:{port}"
     sse_client = SseClient(base_url)
-    
-    # Ждем, пока UI API сервер станет доступен
-    # Проверяем доступность через health check
+
     import aiohttp
+
     max_retries = 10
     retry_count = 0
     server_ready = False
-    
-    while retry_count < max_retries and not server_ready:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=2)) as response:
-                    if response.status == 200:
-                        server_ready = True
-                        logger.info("✅ UI API сервер готов к подключению")
-                        break
-        except Exception as e:
-            logger.debug(f"UI API сервер еще не готов (попытка {retry_count + 1}/{max_retries}): {e}")
-        
+
+    if ui_bridge_listening is False:
+        logger.error(
+            f"❌ Локальный UI-мост не слушает {host}:{port} (порт занят другим процессом или bind не удался). "
+            f"Закройте лишний экземпляр агента или смените ui.port в конфиге. SSE не запускаю."
+        )
+    else:
+        while retry_count < max_retries and not server_ready:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=2)
+                    ) as response:
+                        if response.status != 200:
+                            logger.debug(
+                                f"UI API health: HTTP {response.status} (попытка {retry_count + 1}/{max_retries})"
+                            )
+                        else:
+                            try:
+                                data = await response.json()
+                            except Exception as exc:
+                                logger.debug(f"UI API health: не JSON ({exc})")
+                                data = {}
+                            if data.get("service") == "ui_bridge":
+                                server_ready = True
+                                logger.info("✅ UI API (ui_bridge) готов к подключению")
+                                break
+                            logger.warning(
+                                f"⚠️ На {host}:{port} отвечает не pc_agent UiApiServer "
+                                f"(health service={data.get('service')!r}). "
+                                f"Закройте процесс, занявший порт, или смените ui.port."
+                            )
+            except Exception as e:
+                logger.debug(f"UI API сервер еще не готов (попытка {retry_count + 1}/{max_retries}): {e}")
+
+            if not server_ready:
+                retry_count += 1
+                await asyncio.sleep(0.5)
+
         if not server_ready:
-            retry_count += 1
-            await asyncio.sleep(0.5)
-    
-    if not server_ready:
-        logger.warning("⚠️ UI API сервер не стал доступен, но продолжаю попытки подключения SSE")
-    
+            logger.error(
+                f"❌ Не найден ui_bridge на {base_url}/health — SSE не запускаю (избегаем HTTP 404 в цикле)."
+            )
+
     window.set_bridge_connected(False)
     window.set_connection_state("connecting", "ожидание сервера")
     
@@ -546,7 +579,12 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
             logger.error(f"Ошибка в SSE клиенте: {e}")
             window.set_bridge_connected(False)
     
-    sse_task_obj = asyncio.create_task(sse_task())
+    sse_task_obj: Optional[asyncio.Task] = None
+    if server_ready:
+        sse_task_obj = asyncio.create_task(sse_task())
+    else:
+        window.set_bridge_connected(False)
+        window.set_connection_state("disconnected", "мост UI недоступен")
     
     # Обработчик закрытия окна
     def on_window_closed():
@@ -574,7 +612,8 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
             sse_stop_task = asyncio.create_task(sse_client.stop_async(), name="gui.sse_stop")
         except Exception as e:
             logger.debug(f"Не удалось создать задачу остановки SSE: {e}")
-        sse_task_obj.cancel()
+        if sse_task_obj is not None:
+            sse_task_obj.cancel()
         window_closed.set()
         if stop_event:
             stop_event.set()
@@ -621,7 +660,8 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
             await asyncio.wait_for(sse_stop_task, timeout=1.5)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             logger.debug("Остановка SSE клиента превысила таймаут")
-    try:
-        await asyncio.wait_for(sse_task_obj, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
-        logger.debug("Ожидание завершения SSE задачи превысило таймаут")
+    if sse_task_obj is not None:
+        try:
+            await asyncio.wait_for(sse_task_obj, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            logger.debug("Ожидание завершения SSE задачи превысило таймаут")

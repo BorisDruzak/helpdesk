@@ -427,3 +427,88 @@ async def test_resolution_confirmation_reject_requeues_ticket(test_client, test_
         assert ticket.status == "triaged"
         marker = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
         assert marker.get("pending") is False
+
+
+@pytest.mark.asyncio
+async def test_support_can_list_and_open_queue_less_ticket(test_client):
+    device_id = str(uuid.uuid4())
+    user_login = "queue-less-user"
+
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Queue-less issue",
+            "description": "Created without routing queue",
+            "device_id": device_id,
+            "user_display_name": "Queue Less",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    created = await create_response.json()
+    ticket_id = created["ticket"]["ticket_id"]
+
+    list_response = await test_client.get(
+        "/api/tickets",
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )
+    assert list_response.status == 200, await list_response.text()
+    listed_ids = [item["ticket"]["ticket_id"] for item in (await list_response.json())["tickets"]]
+    assert ticket_id in listed_ids
+
+    snapshot_response = await test_client.get(
+        f"/api/tickets/{ticket_id}/snapshot",
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )
+    assert snapshot_response.status == 200, await snapshot_response.text()
+
+
+@pytest.mark.asyncio
+async def test_ticket_get_supports_incremental_since_event_id(test_client):
+    device_id = str(uuid.uuid4())
+    user_login = "incremental-user"
+
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Incremental issue",
+            "description": "Need incremental fetch",
+            "device_id": device_id,
+            "user_display_name": "Incremental User",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    ticket_id = (await create_response.json())["ticket"]["ticket_id"]
+
+    full_response = await test_client.get(
+        f"/api/tickets/{ticket_id}",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert full_response.status == 200, await full_response.text()
+    full_payload = await full_response.json()
+    last_event_id = int(full_payload["last_event_id"])
+    assert full_payload["incremental"] is False
+
+    message_response = await test_client.post(
+        f"/api/tickets/{ticket_id}/message",
+        json={
+            "message_id": str(uuid.uuid4()),
+            "text": "New incremental message",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert message_response.status == 200, await message_response.text()
+
+    delta_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?since_event_id={last_event_id}",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert delta_response.status == 200, await delta_response.text()
+    delta = await delta_response.json()
+
+    assert delta["incremental"] is True
+    assert delta["last_event_id"] > last_event_id
+    assert len(delta["messages"]) == 1
+    assert delta["messages"][0]["text"] == "New incremental message"
+    assert any(event.get("type") == "chat_message" for event in delta["events"])

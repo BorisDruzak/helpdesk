@@ -39,6 +39,10 @@ class FakeSession:
         self.calls.append({"url": url, **kwargs})
         return self.response
 
+    def get(self, url, **kwargs):
+        self.calls.append({"url": url, **kwargs})
+        return self.response
+
 
 class FakeFormData:
     def __init__(self):
@@ -141,6 +145,37 @@ async def test_mark_ticket_read_posts_last_read_event_id(monkeypatch):
     call = fake_session.calls[0]
     assert call["url"] == "http://localhost:8666/api/tickets/ticket-1/read"
     assert call["json"]["last_read_event_id"] == 42
+    assert call["headers"]["Authorization"] == "Bearer token-123"
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_passes_since_event_id(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            payload={"status": "ok", "ticket": {}, "messages": [], "events": [], "last_event_id": 7},
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_ticket("ticket-1", since_event_id=42)
+
+    assert result["status"] == "ok"
+    assert len(fake_session.calls) == 1
+    call = fake_session.calls[0]
+    assert call["url"] == "http://localhost:8666/api/tickets/ticket-1"
+    assert call["params"] == {"since_event_id": 42}
     assert call["headers"]["Authorization"] == "Bearer token-123"
 
 

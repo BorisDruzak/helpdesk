@@ -55,6 +55,8 @@ from .ticket_format import (
 from .tickets_list_model import TicketCardDelegate, TicketsListModel
 
 PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
+TICKET_LIST_POLL_INTERVAL_MS = 10_000
+TICKET_DETAIL_POLL_INTERVAL_MS = 5_000
 
 OUTGOING_MESSAGE_ROLES = {"user", "agent", "requester"}
 SUPPORT_MESSAGE_ROLES = {"support", "admin"}
@@ -94,6 +96,30 @@ def message_visual_role(message: dict) -> str:
     if role in SUPPORT_MESSAGE_ROLES:
         return "support"
     return "neutral"
+
+
+def merge_ticket_stream(existing: List[dict], incoming: List[dict], *, key_fields: tuple[str, ...]) -> List[dict]:
+    merged = list(existing)
+    seen = set()
+    for item in merged:
+        for key_field in key_fields:
+            value = item.get(key_field)
+            if value not in (None, ""):
+                seen.add((key_field, str(value)))
+                break
+    for item in incoming:
+        marker = None
+        for key_field in key_fields:
+            value = item.get(key_field)
+            if value not in (None, ""):
+                marker = (key_field, str(value))
+                break
+        if marker and marker in seen:
+            continue
+        if marker:
+            seen.add(marker)
+        merged.append(item)
+    return merged
 
 
 class MessageBubbleWidget(QFrame):
@@ -562,6 +588,9 @@ class ChatPanel(QWidget):
         self._reply_target: Optional[dict] = None
         self._last_timeline_html: Optional[str] = None
         self._pending_ticket_snapshot: Optional[tuple[dict, List[dict], List[dict]]] = None
+        self._active_ticket_messages: List[dict] = []
+        self._active_ticket_events: List[dict] = []
+        self._last_detail_event_id = 0
         self._bubble_menu_open = False
         self._timeline_bubbles: List[MessageBubbleWidget] = []
         self._resolution_prompt_keys: set[str] = set()
@@ -585,7 +614,7 @@ class ChatPanel(QWidget):
         self._ticket_detail_timer.timeout.connect(self._refresh_ticket_detail_async)
 
         self._setup_ui()
-        self._ticket_list_timer.start(3000)
+        self._ticket_list_timer.start(TICKET_LIST_POLL_INTERVAL_MS)
         self._refresh_ticket_list_async()
 
     def _setup_ui(self) -> None:
@@ -1268,22 +1297,54 @@ class ChatPanel(QWidget):
                 logger.warning(f"Не удалось отметить сообщения как прочитанные для {ticket_id}: {exc}")
                 self._last_marked_read_event_id[ticket_id] = previous_value
 
+    def _reset_active_ticket_cache(self) -> None:
+        self._active_ticket_messages = []
+        self._active_ticket_events = []
+        self._last_detail_event_id = 0
+
+    def _consume_ticket_detail_payload(self, result: dict) -> tuple[dict, List[dict], List[dict]]:
+        ticket = result.get("ticket", {})
+        messages = list(result.get("messages", []))
+        events = list(result.get("events", []))
+        incremental = bool(result.get("incremental"))
+
+        if incremental:
+            self._active_ticket_messages = merge_ticket_stream(
+                self._active_ticket_messages,
+                messages,
+                key_fields=("message_id", "event_id", "id"),
+            )
+            self._active_ticket_events = merge_ticket_stream(
+                self._active_ticket_events,
+                events,
+                key_fields=("id", "event_id", "message_id"),
+            )
+        else:
+            self._active_ticket_messages = messages
+            self._active_ticket_events = events
+
+        self._last_detail_event_id = max(
+            int(result.get("last_event_id") or 0),
+            int(self._last_detail_event_id or 0),
+        )
+        return ticket, list(self._active_ticket_messages), list(self._active_ticket_events)
+
     async def _async_refresh_ticket_detail(self) -> None:
         if self._is_closing or not self.active_ticket_id:
             return
         self._ticket_detail_refresh_seq += 1
         my_seq = self._ticket_detail_refresh_seq
         try:
-            result = await self.ticket_client.get_ticket(self.active_ticket_id)
+            result = await self.ticket_client.get_ticket(
+                self.active_ticket_id,
+                since_event_id=(self._last_detail_event_id or None),
+            )
             if self._is_closing or my_seq != self._ticket_detail_refresh_seq:
                 return
             if result.get("status") != "ok":
                 return
-            self._update_ticket_detail_ui(
-                result.get("ticket", {}),
-                result.get("messages", []),
-                result.get("events", []),
-            )
+            ticket, messages, events = self._consume_ticket_detail_payload(result)
+            self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
                 logger.error(f"Ошибка загрузки тикета {self.active_ticket_id}: {exc}")
@@ -1815,7 +1876,8 @@ class ChatPanel(QWidget):
             self._last_timeline_html = None
             self._last_detail_header_sig = None
             self._pending_ticket_snapshot = None
-            self._ticket_detail_timer.start(2500)
+            self._reset_active_ticket_cache()
+            self._ticket_detail_timer.start(TICKET_DETAIL_POLL_INTERVAL_MS)
             await self._async_refresh_ticket_list()
             await self._async_refresh_ticket_detail()
             self._show_chat_screen()
@@ -1840,7 +1902,8 @@ class ChatPanel(QWidget):
         self._last_timeline_html = None
         self._last_detail_header_sig = None
         self._pending_ticket_snapshot = None
-        self._ticket_detail_timer.start(2500)
+        self._reset_active_ticket_cache()
+        self._ticket_detail_timer.start(TICKET_DETAIL_POLL_INTERVAL_MS)
         self._refresh_ticket_detail_async()
         self._show_chat_screen()
 
@@ -2057,6 +2120,10 @@ class ChatPanel(QWidget):
         self._cancel_pending_tasks()
 
     def _show_list_screen(self) -> None:
+        if self._ticket_detail_timer.isActive():
+            self._ticket_detail_timer.stop()
+        if not self._ticket_list_timer.isActive() and not self._is_closing:
+            self._ticket_list_timer.start(TICKET_LIST_POLL_INTERVAL_MS)
         self.stacked.setCurrentWidget(self.list_screen)
         self.stacked.update()
         self.list_screen.update()

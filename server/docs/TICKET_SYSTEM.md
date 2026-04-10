@@ -16,6 +16,10 @@
 - В БД хранятся только канонические статусы (snake_case): `new`, `triaged`, `in_progress`, `waiting_on_user`, `waiting_on_vendor`, `resolved`, `closed`. При создании тикета использовать `status="new"`; значение `"open"` не сохранять (legacy, при чтении нормализуется в `in_progress`).
 - Для корректного RBAC (список «мои заявки» для requester) при создании тикета должен быть задан `requester_id`.
 - Сообщения chat_message в payload должны содержать каноническое поле `sender_role` (см. CHAT_MESSAGE_CONTRACT.md).
+- `/api/tickets/create`, WS `chat_raise` и legacy `POST /api/chat_raise` используют общий DB-first create flow в `server/tickets/create_flow.py`: routing, SLA, OLA, auto-assign и initial chat event должны совпадать.
+- Support ticket list включает queue-less active tickets как triage backlog; detail/snapshot для таких тикетов не должен давать `403`.
+- `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh; агентский GUI использует этот режим вместо постоянной полной выгрузки истории.
+- При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`; `closed` для таких тикетов разрешён только после подтверждения requester.
 
 ---
 

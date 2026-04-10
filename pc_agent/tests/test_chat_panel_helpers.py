@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
     can_user_confirm_close,
+    merge_ticket_stream,
     message_visual_role,
     ticket_matches_query,
     ticket_status_label,
@@ -61,3 +62,16 @@ def test_resolve_reply_reference_prefers_message_index_and_fallback_author():
         "sender_display_name": "Поддержка",
         "ts": "",
     }
+
+
+def test_merge_ticket_stream_appends_only_new_items():
+    merged = merge_ticket_stream(
+        [{"id": 1, "text": "first"}],
+        [{"id": 1, "text": "duplicate"}, {"id": 2, "text": "second"}],
+        key_fields=("id",),
+    )
+
+    assert merged == [
+        {"id": 1, "text": "first"},
+        {"id": 2, "text": "second"},
+    ]

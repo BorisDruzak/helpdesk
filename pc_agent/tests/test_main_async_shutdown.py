@@ -72,7 +72,7 @@ class _FakeAgentWithStoredToken(_FakeAgent):
 
 @pytest.mark.asyncio
 async def test_main_async_does_not_hang_when_gui_stops_and_agent_cancel_is_slow(monkeypatch, tmp_path):
-    async def fake_run_gui(host, port, stop_event=None, auth_complete_event=None):
+    async def fake_run_gui(host, port, stop_event=None, auth_complete_event=None, **kwargs):
         if auth_complete_event:
             auth_complete_event.set()
         if stop_event:
@@ -103,7 +103,7 @@ async def test_main_async_does_not_hang_when_gui_stops_and_agent_cancel_is_slow(
 async def test_main_async_does_not_request_connection_when_token_already_in_db(monkeypatch, tmp_path):
     _FakeAgent.instances.clear()
 
-    async def fake_run_gui(host, port, stop_event=None, auth_complete_event=None):
+    async def fake_run_gui(host, port, stop_event=None, auth_complete_event=None, **kwargs):
         await asyncio.sleep(1.2)
         if auth_complete_event:
             auth_complete_event.set()

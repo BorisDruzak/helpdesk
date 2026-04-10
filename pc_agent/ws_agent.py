@@ -631,10 +631,10 @@ class WSAgent:
                 severity = payload.get("severity", "warning")
                 context = payload.get("context") or {}
 
-                job_id = await self.chat_raise(title=title, reason=reason, severity=severity, context=context)
-                if not job_id:
+                result = await self.chat_raise(title=title, reason=reason, severity=severity, context=context)
+                if not result:
                     return {"ok": False, "error": "chat_raise failed"}
-                return {"ok": True, "job_id": job_id}
+                return {"ok": True, **result}
 
             self.ui_api_server.on_request_support = on_request_support
             
@@ -2147,7 +2147,7 @@ class WSAgent:
         logger.info("✅ Reprovision завершен, токен обновлён")
         return True
     
-    async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> str | None:
+    async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> dict[str, str] | None:
         """
         Инициирует чат через WebSocket команду к серверу.
         
@@ -2158,7 +2158,7 @@ class WSAgent:
             context: Дополнительный контекст
         
         Returns:
-            job_id или None при ошибке
+            Словарь с job_id и ticket_id или None при ошибке
         """
         if not hasattr(self, '_agent_ws') or not self._agent_ws:
             logger.error("[chat_raise] WebSocket not connected")
@@ -2193,17 +2193,18 @@ class WSAgent:
             # Ждем ответ с таймаутом
             response = await asyncio.wait_for(future, timeout=30)
             
-            # Извлекаем job_id из ответа
+            # Извлекаем job_id и ticket_id из ответа
             payload = response.get("payload", {})
             data = payload.get("data", {})
             observations = data.get("observations", {})
             job_id = observations.get("job_id")
-            
-            if job_id:
-                logger.info(f"[chat_raise] success job_id={job_id}")
-                return job_id
+            ticket_id = observations.get("ticket_id")
+
+            if job_id and ticket_id:
+                logger.info(f"[chat_raise] success job_id={job_id} ticket_id={ticket_id}")
+                return {"job_id": job_id, "ticket_id": ticket_id}
             else:
-                logger.warning(f"[chat_raise] no job_id in response: {response}")
+                logger.warning(f"[chat_raise] incomplete response: {response}")
                 return None
                 
         except asyncio.TimeoutError:
@@ -2247,11 +2248,14 @@ class WSAgent:
                 return
             # Токен получен и сохранён в request_connection_flow(), продолжаем
 
-        # Запускаем UI API сервер как background task (если еще не запущен)
+        # Запускаем UI API сервер (если main_async с GUI уже поднял — start() no-op)
         if self.ui_api_server and not self.ui_api_task:
-            await self.ui_api_server.start()
-            self.ui_api_task = True  # просто флаг, что сервер запущен
-            logger.info("🚀 UI API сервер запущен")
+            try:
+                ok = await self.ui_api_server.start()
+                if ok:
+                    logger.info("🚀 UI API сервер запущен")
+            finally:
+                self.ui_api_task = True
 
         
         # Создаем или используем существующую HTTP сессию
@@ -2976,16 +2980,23 @@ async def main_async(
                 
                 # КРИТИЧНО: Запускаем UI API сервер ДО запуска GUI
                 # GUI будет пытаться подключиться к серверу сразу после запуска
+                ui_bridge_listening: Optional[bool] = None
                 if agent.ui_api_server and not agent.ui_api_task:
                     try:
-                        await agent.ui_api_server.start()
-                        agent.ui_api_task = True  # просто флаг, что сервер запущен
-                        logger.info("🚀 UI API сервер запущен перед запуском GUI")
+                        ui_bridge_listening = await agent.ui_api_server.start()
+                        if ui_bridge_listening:
+                            logger.info("🚀 UI API сервер запущен перед запуском GUI")
+                        else:
+                            logger.warning(
+                                "⚠️ UI API не поднят (порт занят). GUI не будет опрашивать SSE, пока на порту нет ui_bridge."
+                            )
                     except Exception as e:
+                        ui_bridge_listening = False
                         logger.error(f"❌ Ошибка запуска UI API сервера: {e}")
                         logger.exception(e)
-                        # Продолжаем работу, возможно порт занят другим экземпляром
-                
+                    finally:
+                        agent.ui_api_task = True
+
                 from ui_gui.main import run_gui
                 host = ui_config.host
                 port = ui_config.port
@@ -2998,7 +3009,13 @@ async def main_async(
                 # Обертываем run_gui: при отсутствии токена GUI сразу покажет «Ожидании подтверждения администратором»
                 async def run_gui_with_auth():
                     try:
-                        await run_gui(host, port, stop_event, gui_auth_complete)
+                        await run_gui(
+                            host,
+                            port,
+                            stop_event,
+                            gui_auth_complete,
+                            ui_bridge_listening=ui_bridge_listening,
+                        )
                         gui_auth_complete.set()
                     except Exception as e:
                         logger.error(f"Ошибка в GUI: {e}")

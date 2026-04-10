@@ -248,8 +248,16 @@ class ServerApiClient:
         Raises:
             Exception: Если HTTP статус != 200, содержит текст ответа для дебага
         """
-        # ui api server (локальный агент)
-        url = f"http://127.0.0.1:8765/ui/request_support"
+        # Локальный UiApiServer (тот же host/port, что в ui.* конфига и run_gui)
+        try:
+            from pc_agent.config.config_loader import get_config
+
+            ui = get_config().ui
+            _host = ui.host if ui else "127.0.0.1"
+            _port = ui.port if ui else 8765
+        except Exception:
+            _host, _port = "127.0.0.1", 8765
+        url = f"http://{_host}:{_port}/ui/request_support"
         payload = {"title": title, "reason": reason, "severity": severity, "context": context or {}}
         
         logger.debug(f"POST {url} с payload: {payload}")
@@ -449,12 +457,13 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при list_tickets: {e}")
             raise Exception(f"Network error: {e}")
     
-    async def get_ticket(self, ticket_id: str) -> dict:
+    async def get_ticket(self, ticket_id: str, *, since_event_id: Optional[int] = None) -> dict:
         """
         Получает информацию о тикете, включая сообщения и события.
         
         Args:
             ticket_id: Идентификатор тикета
+            since_event_id: Если указан, вернуть только события с id больше этого значения
             
         Returns:
             dict: JSON ответ от сервера с ticket, session, messages, events
@@ -463,13 +472,16 @@ class TicketApiClient:
             Exception: Если HTTP статус != 200, содержит текст ответа для дебага
         """
         url = f"{self.base_url}/tickets/{ticket_id}"
+        params = None
+        if since_event_id is not None:
+            params = {"since_event_id": int(since_event_id)}
         
         logger.debug(f"GET {url}")
         
         session = await self._get_session()
         headers = self._get_headers()
         try:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, params=params, headers=headers) as response:
                 response_text = await response.text()
                 
                 if response.status == 404:
