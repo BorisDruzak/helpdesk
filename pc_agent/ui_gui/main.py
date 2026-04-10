@@ -352,7 +352,14 @@ async def run_gui(host: str, port: int, stop_event: Optional[asyncio.Event] = No
         # Это необходимо потому что TokenDialog может быть единственным окном на момент закрытия
         app.setQuitOnLastWindowClosed(False)
         logger.debug("✅ setQuitOnLastWindowClosed(False) установлен")
-        
+
+        from PySide6.QtGui import QFont
+
+        _app_font = QFont()
+        _app_font.setFamilies(["Segoe UI", "Tahoma", "Arial"])
+        _app_font.setPointSize(10)
+        app.setFont(_app_font)
+
         logger.info("✅ QApplication найден")
     except Exception as e:
         logger.error(f"❌ Критическая ошибка при инициализации GUI: {e}")

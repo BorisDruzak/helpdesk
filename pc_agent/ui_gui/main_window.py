@@ -10,13 +10,14 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QStatusBar, QLabel, QGroupBox, QHBoxLayout, QPushButton,
     QMessageBox, QApplication, QDialog, QLineEdit, QFormLayout,
-    QCheckBox, QSpinBox
+    QCheckBox, QSpinBox, QSplitter,
 )
 from PySide6.QtCore import Qt, QTimer
 from loguru import logger
 
 from .consent_dialog import ConsentDialog
-from .chat_panel import ChatPanel
+from .chat_panel import ChatPanel, ProfileSidebarWidget
+from . import theme
 from pc_agent.version import AGENT_VERSION
 
 
@@ -100,7 +101,7 @@ class MainWindow(QMainWindow):
         """Настройка UI главного окна."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        central_widget.setStyleSheet("background: #f4f8fb;")
+        central_widget.setStyleSheet(f"background: {theme.BG_PAGE};")
 
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -111,28 +112,45 @@ class MainWindow(QMainWindow):
         top_bar.setSpacing(8)
 
         self.title_label = QLabel(f"Maria Agent v{AGENT_VERSION}")
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #1d4f7a;")
+        self.title_label.setStyleSheet(
+            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+        )
         top_bar.addWidget(self.title_label)
         self.profile_top_status = QLabel("")
         self.profile_top_status.setStyleSheet(
-            "padding: 6px 10px; border-radius: 999px; background: #e8f3ff; color: #1b5f93; font-weight: 700;"
+            f"padding: 6px 10px; border-radius: 999px; background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-weight: 700;"
         )
         top_bar.addWidget(self.profile_top_status)
         top_bar.addStretch()
 
         self.settings_btn = QPushButton("Настройки")
         self.settings_btn.setStyleSheet(
-            "QPushButton { border: 1px solid #d6e5f3; border-radius: 14px; background: #ffffff; padding: 8px 14px; color: #1d4f7a; }"
-            "QPushButton:hover { background: #f0f7ff; }"
+            f"QPushButton {{ border: 1px solid {theme.BORDER}; border-radius: 14px; background: {theme.BG_INPUT}; padding: 8px 14px; color: {theme.TEXT_PRIMARY}; }}"
+            f"QPushButton:hover {{ background: {theme.LIST_ITEM_HOVER}; }}"
         )
         self.settings_btn.clicked.connect(self._show_settings_dialog)
         top_bar.addWidget(self.settings_btn)
         layout.addLayout(top_bar)
 
         self.chat_panel = ChatPanel(base_url=None, auth_token=self.auth_token)
-        layout.addWidget(self.chat_panel)
+        self.profile_sidebar = ProfileSidebarWidget(self.chat_panel)
+        self.chat_panel.set_profile_sidebar(self.profile_sidebar)
+
+        self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.body_splitter.setChildrenCollapsible(False)
+        self.body_splitter.addWidget(self.profile_sidebar)
+        self.body_splitter.addWidget(self.chat_panel)
+        self.body_splitter.setStretchFactor(0, 0)
+        self.body_splitter.setStretchFactor(1, 1)
+        self.body_splitter.setSizes([320, 980])
+        self._split_sizes_with_profile = [320, 980]
+
+        layout.addWidget(self.body_splitter, 1)
         self.chat_panel.chatSessionChanged.connect(self._on_chat_session_changed)
+        self.chat_panel.requesterProfileChanged.connect(self._render_profile_status)
+        self.chat_panel.listNavigationVisibilityChanged.connect(self._on_list_navigation_visibility_changed)
         self._render_profile_status()
+        self._on_list_navigation_visibility_changed(True)
 
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("Настройки")
@@ -149,8 +167,9 @@ class MainWindow(QMainWindow):
         uuid_layout = QHBoxLayout()
         self.device_uuid_label = QLabel()
         self.device_uuid_label.setStyleSheet(
-            "font-family: monospace; font-size: 14px; padding: 8px; "
-            "background: #f5f5f7; border: 1px solid #d2d2d7; border-radius: 6px;"
+            f"font-family: monospace; font-size: 13px; padding: 8px; "
+            f"background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; border-radius: 10px; "
+            f"color: {theme.TEXT_PRIMARY};"
         )
         self.device_uuid_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         uuid_layout.addWidget(self.device_uuid_label)
@@ -192,8 +211,9 @@ class MainWindow(QMainWindow):
         self.installed_modules_label.setWordWrap(True)
         self.installed_modules_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.installed_modules_label.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 12px; padding: 8px; "
-            "background: #f5f5f7; border: 1px solid #d2d2d7; border-radius: 6px;"
+            f"font-family: Consolas, 'Courier New', monospace; font-size: 11px; padding: 8px; "
+            f"background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; border-radius: 10px; "
+            f"color: {theme.TEXT_SECONDARY};"
         )
         modules_form.addRow("Включённые модули:", self.enabled_modules_input)
         modules_form.addRow("", self.allow_remote_code_checkbox)
@@ -206,7 +226,7 @@ class MainWindow(QMainWindow):
         self.token_input.setPlaceholderText("Введите новый токен (или оставьте пустым)")
         self.clear_token_checkbox = QCheckBox("Очистить токен")
         self.token_hint_label = QLabel("Текущий токен: —")
-        self.token_hint_label.setStyleSheet("color: #6e6e73;")
+        self.token_hint_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
         auth_form.addRow("Новый токен:", self.token_input)
         auth_form.addRow("", self.clear_token_checkbox)
         auth_form.addRow("", self.token_hint_label)
@@ -217,33 +237,40 @@ class MainWindow(QMainWindow):
         self.profile_summary_label = QLabel(self.chat_panel.current_requester_profile_summary())
         self.profile_summary_label.setWordWrap(True)
         self.profile_manage_btn = QPushButton("Открыть профили")
+        self.profile_manage_btn.setObjectName("PrimaryButton")
         self.profile_manage_btn.clicked.connect(self._on_manage_requester_profiles_clicked)
         profile_form.addRow("Активный профиль:", self.profile_summary_label)
         profile_form.addRow("", self.profile_manage_btn)
         settings_layout.addWidget(profile_group)
 
         self.settings_status_label = QLabel("")
-        self.settings_status_label.setStyleSheet("color: #6e6e73;")
+        self.settings_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
         settings_layout.addWidget(self.settings_status_label)
 
         buttons_layout = QHBoxLayout()
         self.test_connection_btn = QPushButton("Проверить соединение")
+        self.test_connection_btn.setObjectName("SecondaryButton")
         self.test_connection_btn.clicked.connect(self._on_test_connection_clicked)
         buttons_layout.addWidget(self.test_connection_btn)
 
         self.save_settings_btn = QPushButton("Сохранить")
+        self.save_settings_btn.setObjectName("PrimaryButton")
         self.save_settings_btn.clicked.connect(self._on_save_settings_clicked)
         buttons_layout.addWidget(self.save_settings_btn)
 
         self.restart_agent_btn = QPushButton("Перезапустить агент")
+        self.restart_agent_btn.setObjectName("SecondaryButton")
         self.restart_agent_btn.clicked.connect(self._on_restart_agent_clicked)
         buttons_layout.addWidget(self.restart_agent_btn)
         buttons_layout.addStretch()
 
         close_settings_btn = QPushButton("Закрыть")
+        close_settings_btn.setObjectName("SecondaryButton")
         close_settings_btn.clicked.connect(self.settings_dialog.reject)
         buttons_layout.addWidget(close_settings_btn)
         settings_layout.addLayout(buttons_layout)
+
+        theme.apply_agent_dialog_theme(self.settings_dialog)
 
         self.api_url_input.textChanged.connect(self._on_settings_field_changed)
         self.ws_url_input.textChanged.connect(self._on_settings_field_changed)
@@ -258,7 +285,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel("")
         self.status_label.setStyleSheet(
-            "padding: 6px 12px; border-radius: 999px; background: #e8f3ff; color: #1b5f93; font-weight: 700;"
+            f"padding: 6px 12px; border-radius: 999px; background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-weight: 700;"
         )
         self.status_bar.addWidget(self.status_label)
 
@@ -266,7 +293,19 @@ class MainWindow(QMainWindow):
         self._repair_widget_texts(self.settings_dialog)
         self._add_log("GUI запущен", "info")
         self._load_device_uuid()
-    
+
+    def _on_list_navigation_visibility_changed(self, list_mode: bool) -> None:
+        """В режиме чата скрываем панель профиля — область тикета на всю ширину."""
+        if not list_mode:
+            cur = self.body_splitter.sizes()
+            if cur and cur[0] > 0:
+                self._split_sizes_with_profile = list(cur)
+        self.profile_sidebar.setVisible(list_mode)
+        if list_mode:
+            w = max(280, self._split_sizes_with_profile[0] if self._split_sizes_with_profile else 320)
+            rest = max(400, self.body_splitter.width() - w - 12)
+            self.body_splitter.setSizes([w, rest])
+
     def _add_log(self, message: str, level: str = "info"):
         """
         Добавляет запись в лог.
@@ -299,12 +338,12 @@ class MainWindow(QMainWindow):
         has_profile = bool(self.chat_panel.has_active_profile())
         if has_profile:
             text = f"Профиль: {self.chat_panel.current_requester_profile_summary()}"
-            bg = "#dcfce7"
-            fg = "#166534"
+            bg = "#e0ead8"
+            fg = "#2d4a22"
         else:
             text = "Профиль не выбран (обязательно)"
-            bg = "#fee2e2"
-            fg = "#b42318"
+            bg = "#f5e4e0"
+            fg = "#8b2c1a"
         self.profile_top_status.setText(self._repair_text(text))
         self.profile_top_status.setStyleSheet(
             f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
@@ -314,8 +353,8 @@ class MainWindow(QMainWindow):
         return f"http://{self.host}:{self.port}{path}"
 
     def _set_settings_status(self, text: str, error: bool = False) -> None:
-        color = "#b42318" if error else "#6e6e73"
-        self.settings_status_label.setStyleSheet(f"color: {color};")
+        color = theme.DANGER_FG if error else theme.TEXT_MUTED
+        self.settings_status_label.setStyleSheet(f"color: {color}; background: transparent;")
         self.settings_status_label.setText(self._repair_text(text))
 
     def _set_settings_buttons_enabled(self, enabled: bool) -> None:

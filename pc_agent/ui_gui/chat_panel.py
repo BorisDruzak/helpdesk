@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -23,6 +25,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
@@ -41,43 +44,20 @@ from loguru import logger
 from pc_agent.core.runtime_paths import resolve_data_root
 
 from .server_api import ServerApiClient, TicketApiClient
-
-
-STATUS_LABELS = {
-    "new": "Новый",
-    "triaged": "Разобран",
-    "in_progress": "В работе",
-    "waiting_on_user": "Ждёт пользователя",
-    "waiting_on_vendor": "Ждёт подрядчика",
-    "resolved": "Решён",
-    "closed": "Закрыт",
-}
-
-STATUS_COLORS = {
-    "new": ("#1d4ed8", "#dbeafe"),
-    "triaged": ("#7c3aed", "#ede9fe"),
-    "in_progress": ("#0f766e", "#ccfbf1"),
-    "waiting_on_user": ("#b45309", "#fef3c7"),
-    "waiting_on_vendor": ("#92400e", "#fde68a"),
-    "resolved": ("#065f46", "#064e3b"),
-    "closed": ("#475569", "#e2e8f0"),
-    "unknown": ("#475569", "#e2e8f0"),
-}
+from . import theme
+from .ticket_format import (
+    format_ts_short,
+    normalize_iso_ts,
+    ticket_row_fingerprint,
+    ticket_status_colors,
+    ticket_status_label,
+)
+from .tickets_list_model import TicketCardDelegate, TicketsListModel
 
 PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
 
 OUTGOING_MESSAGE_ROLES = {"user", "agent", "requester"}
 SUPPORT_MESSAGE_ROLES = {"support", "admin"}
-
-
-def ticket_status_label(status: Optional[str]) -> str:
-    normalized = str(status or "unknown").strip().lower()
-    return STATUS_LABELS.get(normalized, normalized or "unknown")
-
-
-def ticket_status_colors(status: Optional[str]) -> tuple[str, str]:
-    normalized = str(status or "unknown").strip().lower()
-    return STATUS_COLORS.get(normalized, STATUS_COLORS["unknown"])
 
 
 def can_user_confirm_close(ticket: dict) -> bool:
@@ -141,22 +121,22 @@ class MessageBubbleWidget(QFrame):
 
         styles = {
             "self": (
-                "#dbeafe",
-                "#93c5fd",
-                "#1e3a8a",
-                "#53708c",
+                theme.BUBBLE_SELF_BG,
+                theme.BUBBLE_SELF_BORDER,
+                theme.BUBBLE_SELF_FG,
+                theme.TEXT_MUTED,
             ),
             "support": (
-                "#dcfce7",
-                "#86efac",
-                "#14532d",
-                "#53708c",
+                theme.BUBBLE_SUPPORT_BG,
+                theme.BUBBLE_SUPPORT_BORDER,
+                theme.BUBBLE_SUPPORT_FG,
+                theme.TEXT_MUTED,
             ),
             "event": (
-                "#f8fafc",
-                "#dbe2ea",
-                "#475569",
-                "#7b91a8",
+                theme.BUBBLE_EVENT_BG,
+                theme.BUBBLE_EVENT_BORDER,
+                theme.BUBBLE_EVENT_FG,
+                theme.BUBBLE_EVENT_MUTED,
             ),
         }
         bg, border, fg, muted = styles.get(bubble_role, styles["event"])
@@ -172,28 +152,34 @@ class MessageBubbleWidget(QFrame):
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(6)
 
         if sender:
             sender_label = QLabel(sender)
             sender_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            sender_label.setStyleSheet(f"font-size: 11px; color: {muted}; font-weight: 600; border: none; background: transparent;")
+            sender_label.setStyleSheet(
+                f"font-size: {theme.UI_FONT_PT + 1}pt; color: {muted}; font-weight: 700; border: none; background: transparent;"
+            )
             layout.addWidget(sender_label)
 
         reply_info = self._panel._resolve_reply_reference(reply_to)
         if reply_info:
             reply_author = QLabel(reply_info.get("sender_display_name") or "Ответ")
             reply_author.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            reply_author.setStyleSheet("font-size: 10px; font-weight: 700; color: #2563eb; border: none; background: transparent;")
+            reply_author.setStyleSheet(
+                f"font-size: {theme.UI_FONT_PT}pt; font-weight: 700; color: {theme.LINK}; border: none; background: transparent;"
+            )
             reply_preview = QLabel(reply_info.get("preview") or "")
             reply_preview.setWordWrap(True)
             reply_preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            reply_preview.setStyleSheet("font-size: 11px; color: #475569; border: none; background: transparent;")
+            reply_preview.setStyleSheet(
+                f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_SECONDARY}; border: none; background: transparent;"
+            )
             reply_wrap = QFrame()
             reply_wrap.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             reply_wrap.setStyleSheet(
-                "background: rgba(255,255,255,0.55); border: 1px solid rgba(37, 99, 235, 0.18); border-radius: 10px;"
+                f"background: rgba(255,255,255,0.65); border: 1px solid {theme.BORDER_SOFT}; border-radius: 12px;"
             )
             reply_layout = QVBoxLayout(reply_wrap)
             reply_layout.setContentsMargins(8, 6, 8, 6)
@@ -204,8 +190,14 @@ class MessageBubbleWidget(QFrame):
 
         text_label = QLabel(text or "Вложение")
         text_label.setWordWrap(True)
-        text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        text_label.setStyleSheet(f"font-size: 13px; color: {fg}; border: none; background: transparent;")
+        text_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        text_label.setStyleSheet(
+            f"font-size: {theme.BUBBLE_BODY_PT}pt; color: {fg}; border: none; background: transparent; "
+            f"line-height: 1.5; padding: 2px 0;"
+        )
         layout.addWidget(text_label)
 
         for attachment in attachments or []:
@@ -213,16 +205,18 @@ class MessageBubbleWidget(QFrame):
             chip.setWordWrap(True)
             chip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             chip.setStyleSheet(
-                f"font-size: 12px; color: {fg}; "
-                "padding: 4px 8px; border-radius: 10px; border: none; "
-                "background: rgba(255,255,255,0.45);"
+                f"font-size: {theme.BODY_PT}pt; color: {fg}; "
+                "padding: 6px 10px; border-radius: 10px; border: none; "
+                "background: rgba(255,255,255,0.55); font-weight: 600;"
             )
             layout.addWidget(chip)
 
         if ts_text:
             time_label = QLabel(ts_text)
             time_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            time_label.setStyleSheet(f"font-size: 11px; color: {muted}; border: none; background: transparent;")
+            time_label.setStyleSheet(
+                f"font-size: {theme.UI_FONT_PT}pt; color: {muted}; border: none; background: transparent;"
+            )
             layout.addWidget(time_label, alignment=Qt.AlignmentFlag.AlignRight if bubble_role == "support" else Qt.AlignmentFlag.AlignLeft)
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
@@ -234,95 +228,6 @@ class MessageBubbleWidget(QFrame):
             context["preview"] = self._menu_text
         self._panel._open_message_context_menu(event.globalPos(), context)
         event.accept()
-
-
-class TicketListItemWidget(QFrame):
-    """Compact ticket card with status tint and unread badges."""
-
-    def __init__(self, ticket: dict, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._ticket = ticket
-        self._selected = False
-        status = ticket.get("status") or "unknown"
-        self._status_fg, self._status_bg = ticket_status_colors(status)
-
-        self.setObjectName("TicketListCard")
-        self.setStyleSheet("QFrame#TicketListCard { border-radius: 16px; }")
-
-        root = QHBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(12)
-
-        left = QVBoxLayout()
-        left.setSpacing(4)
-
-        code = ticket.get("ticket_code") or str(ticket.get("ticket_id") or "")[:8]
-        priority = ticket.get("priority_class") or ticket.get("priority") or "—"
-        requester = ticket.get("requester_display_name") or "Пользователь"
-        title = ticket.get("title") or "Без названия"
-        updated_at = ticket.get("updated_at") or ticket.get("created_at") or ""
-
-        top_label = QLabel(f"#{code}  •  {ticket_status_label(status)}  •  {priority}")
-        top_label.setStyleSheet("font-size: 12px; font-weight: 700; color: #0f172a; background: transparent; border: none;")
-        top_label.setWordWrap(True)
-        left.addWidget(top_label)
-
-        title_label = QLabel(title)
-        title_label.setWordWrap(True)
-        title_label.setStyleSheet("font-size: 13px; font-weight: 700; color: #0f172a; background: transparent; border: none;")
-        left.addWidget(title_label)
-
-        meta_label = QLabel(f"{requester} • {ChatPanel._format_ts_static(updated_at) or '—'}")
-        meta_label.setWordWrap(True)
-        meta_label.setStyleSheet("font-size: 11px; color: #475569; background: transparent; border: none;")
-        left.addWidget(meta_label)
-
-        root.addLayout(left, 1)
-
-        counters = ticket.get("chat_counters") or {}
-        badges_col = QVBoxLayout()
-        badges_col.setSpacing(6)
-        badges_col.setContentsMargins(0, 2, 0, 2)
-        unread_messages = int(counters.get("requester_unread_messages") or 0)
-        unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
-        if unread_messages > 0:
-            badges_col.addWidget(self._badge(str(unread_messages), "#dc2626"))
-        if unread_tools > 0:
-            badges_col.addWidget(self._badge(str(unread_tools), "#2563eb"))
-        if badges_col.count() == 0:
-            spacer = QLabel("")
-            spacer.setFixedWidth(8)
-            badges_col.addWidget(spacer)
-        root.addLayout(badges_col)
-
-        self._apply_style()
-
-    @staticmethod
-    def _badge(text: str, bg: str) -> QLabel:
-        badge = QLabel(text)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setMinimumSize(24, 24)
-        badge.setStyleSheet(
-            f"font-size: 11px; font-weight: 700; color: white; background: {bg}; border-radius: 12px; padding: 0 7px;"
-        )
-        return badge
-
-    def set_selected(self, selected: bool) -> None:
-        self._selected = bool(selected)
-        self._apply_style()
-
-    def _apply_style(self) -> None:
-        border = "#3390ec" if self._selected else self._status_fg
-        bg = self._status_bg if not self._selected else "#dff0ff"
-        self.setStyleSheet(
-            f"""
-            QFrame#TicketListCard {{
-                background: {bg};
-                border: 1px solid {border};
-                border-radius: 16px;
-            }}
-            """
-        )
 
 
 class TicketCreateDialog(QDialog):
@@ -386,10 +291,14 @@ class TicketCreateDialog(QDialog):
         self.cancel_btn = QPushButton("Отмена")
         self.cancel_btn.clicked.connect(self.reject)
         buttons.addStretch(1)
+        self.create_btn.setObjectName("PrimaryButton")
+        self.cancel_btn.setObjectName("SecondaryButton")
         buttons.addWidget(self.create_btn)
         buttons.addWidget(self.cancel_btn)
         layout.addLayout(buttons)
 
+        self.manage_profiles_btn.setObjectName("SecondaryButton")
+        theme.apply_agent_dialog_theme(self)
         self._refresh_profiles()
 
     def _refresh_profiles(self) -> None:
@@ -444,10 +353,156 @@ class TicketCreateDialog(QDialog):
         }
 
 
+class ProfileSidebarWidget(QFrame):
+    """Левая колонка главного окна: данные активного профиля и переключение."""
+
+    def __init__(self, panel: "ChatPanel", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._panel = panel
+        self._loading_combo = False
+        self.setObjectName("ProfileSidebar")
+        self.setStyleSheet(theme.profile_sidebar_stylesheet())
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(400)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 14, 14, 14)
+        outer.setSpacing(12)
+
+        title = QLabel("Профиль инициатора")
+        title.setObjectName("ProfileSidebarTitle")
+        outer.addWidget(title)
+
+        self._hint = QLabel("")
+        self._hint.setObjectName("ProfileHint")
+        self._hint.setWordWrap(True)
+        outer.addWidget(self._hint)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        self._fld_display = QLabel("—")
+        self._fld_display.setObjectName("ProfileFieldValue")
+        self._fld_display.setWordWrap(True)
+        self._lbl_display = QLabel("Отображаемое имя")
+        self._lbl_display.setObjectName("ProfileFieldLabel")
+        form.addRow(self._lbl_display, self._fld_display)
+
+        self._fld_full = QLabel("—")
+        self._fld_full.setObjectName("ProfileFieldValue")
+        self._fld_full.setWordWrap(True)
+        self._lbl_full = QLabel("ФИО")
+        self._lbl_full.setObjectName("ProfileFieldLabel")
+        form.addRow(self._lbl_full, self._fld_full)
+
+        self._fld_location = QLabel("—")
+        self._fld_location.setObjectName("ProfileFieldValue")
+        self._fld_location.setWordWrap(True)
+        self._lbl_location = QLabel("Корпус / кабинет")
+        self._lbl_location.setObjectName("ProfileFieldLabel")
+        form.addRow(self._lbl_location, self._fld_location)
+
+        self._fld_phone = QLabel("—")
+        self._fld_phone.setObjectName("ProfileFieldValue")
+        self._fld_phone.setWordWrap(True)
+        self._lbl_phone = QLabel("Телефон")
+        self._lbl_phone.setObjectName("ProfileFieldLabel")
+        form.addRow(self._lbl_phone, self._fld_phone)
+
+        outer.addLayout(form)
+
+        combo_label = QLabel("Активный профиль")
+        combo_label.setObjectName("ProfileFieldLabel")
+        outer.addWidget(combo_label)
+        self._profile_combo = QComboBox()
+        self._profile_combo.currentIndexChanged.connect(self._on_combo_changed)
+        outer.addWidget(self._profile_combo)
+
+        btn_row = QVBoxLayout()
+        btn_row.setSpacing(8)
+        self._btn_manage = QPushButton("Изменить / создать профили…")
+        self._btn_manage.clicked.connect(self._on_manage_clicked)
+        btn_row.addWidget(self._btn_manage)
+        self._btn_new = QPushButton("Новый профиль")
+        self._btn_new.clicked.connect(self._on_new_clicked)
+        btn_row.addWidget(self._btn_new)
+        outer.addLayout(btn_row)
+
+        outer.addStretch(1)
+        self.refresh_from_panel()
+
+    def _on_manage_clicked(self) -> None:
+        self._panel.open_profile_manager(start_new=False)
+
+    def _on_new_clicked(self) -> None:
+        self._panel.open_profile_manager(start_new=True)
+
+    def _on_combo_changed(self, _index: int) -> None:
+        if self._loading_combo:
+            return
+        pid = self._profile_combo.currentData()
+        if pid is None:
+            return
+        cur = self._panel._profiles_data.get("active_profile_id")
+        if pid == cur:
+            return
+        self._panel._profiles_data["active_profile_id"] = pid
+        self._panel._save_profiles()
+
+    def refresh_from_panel(self) -> None:
+        profile = self._panel._active_profile()
+        if profile is None:
+            self._hint.setText("Профиль не выбран. Создайте или выберите профиль — без него нельзя создать тикет.")
+            self._fld_display.setText("—")
+            self._fld_full.setText("—")
+            self._fld_location.setText("—")
+            self._fld_phone.setText("—")
+            for w in (
+                self._lbl_display,
+                self._lbl_full,
+                self._lbl_location,
+                self._lbl_phone,
+                self._fld_display,
+                self._fld_full,
+                self._fld_location,
+                self._fld_phone,
+            ):
+                w.show()
+        else:
+            self._hint.setText("")
+            self._fld_display.setText(str(profile.get("display_name") or "—"))
+            self._fld_full.setText(str(profile.get("full_name") or "—"))
+            loc = " ".join(filter(None, [profile.get("building"), profile.get("room")])) or "—"
+            self._fld_location.setText(loc)
+            self._fld_phone.setText(str(profile.get("phone") or "—"))
+
+        self._loading_combo = True
+        self._profile_combo.clear()
+        active_id = self._panel._profiles_data.get("active_profile_id")
+        for p in self._panel._profiles():
+            title = p.get("display_name") or p.get("full_name") or "Без имени"
+            self._profile_combo.addItem(str(title), p.get("id"))
+        if self._profile_combo.count() == 0:
+            self._profile_combo.addItem("(нет профилей)", None)
+        else:
+            idx = -1
+            if active_id:
+                idx = self._profile_combo.findData(active_id)
+            if idx < 0:
+                idx = 0
+            self._profile_combo.setCurrentIndex(idx)
+        self._loading_combo = False
+
+
 class ChatPanel(QWidget):
     """Ticket UI used by the desktop agent."""
 
     chatSessionChanged = Signal(str)
+    requesterProfileChanged = Signal()
+    listNavigationVisibilityChanged = Signal(bool)
 
     def __init__(
         self,
@@ -513,8 +568,13 @@ class ChatPanel(QWidget):
         self._resolution_prompt_open_for: Optional[str] = None
         self._pending_tasks: set[asyncio.Task] = set()
         self._is_closing = False
-        self._ticket_item_widgets: Dict[str, TicketListItemWidget] = {}
         self._last_marked_read_event_id: Dict[str, int] = {}
+        self._profile_sidebar: Optional[ProfileSidebarWidget] = None
+        self._last_tickets_list_fingerprint: Optional[str] = None
+        self._last_detail_header_sig: Optional[str] = None
+        self._ticket_list_refresh_seq = 0
+        self._ticket_detail_refresh_seq = 0
+        self._tickets_model: Optional[TicketsListModel] = None
 
         self._profiles_path = resolve_data_root() / "requester_profiles.json"
         self._profiles_data = self._load_profiles()
@@ -529,33 +589,15 @@ class ChatPanel(QWidget):
         self._refresh_ticket_list_async()
 
     def _setup_ui(self) -> None:
-        self.setStyleSheet(
-            """
-            QWidget { font-size: 13px; color: #182533; background: #f4f8fb; }
-            QGroupBox { font-weight: 700; border: 1px solid #d6e5f3; border-radius: 20px; margin-top: 10px; background: #ffffff; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 2px 6px; }
-            QListWidget { border: none; background: transparent; outline: none; padding: 2px; }
-            QListWidget::item { border: 1px solid #dce9f5; border-radius: 18px; padding: 14px 16px; margin: 6px 4px; background: #ffffff; min-height: 34px; }
-            QListWidget::item:hover { background: #f0f7ff; border-color: #8cc8ff; }
-            QListWidget::item:selected { background: #dff0ff; border-color: #3390ec; color: #102030; }
-            QPushButton { border: 1px solid #d6e5f3; border-radius: 15px; background: #ffffff; padding: 8px 14px; }
-            QPushButton:hover { background: #f0f7ff; }
-            QToolButton { border: 1px solid #d6e5f3; border-radius: 15px; background: #ffffff; padding: 8px 12px; font-size: 16px; }
-            QToolButton:hover { background: #f0f7ff; }
-            QPushButton#PrimaryButton { background: #3390ec; color: white; border-color: #3390ec; font-weight: 700; }
-            QPushButton#PrimaryButton:hover { background: #2586e6; }
-            QPushButton#DangerButton { background: #fef2f2; color: #b42318; border-color: #fca5a5; font-weight: 700; }
-            QPushButton#DangerButton:hover { background: #fee2e2; }
-            QPushButton#DangerButton:disabled { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
-            QLineEdit, QTextEdit, QComboBox { border: 1px solid #d6e5f3; border-radius: 16px; background: #ffffff; padding: 8px 10px; selection-background-color: #3390ec; }
-            """
-        )
+        self.setObjectName("AgentChatPanel")
+        self.setStyleSheet(theme.chat_panel_stylesheet())
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(8, 8, 8, 8)
         root_layout.setSpacing(8)
 
         self.stacked = QStackedWidget()
+        self.stacked.setObjectName("TicketStack")
         self._setup_list_screen()
         self._setup_chat_screen()
         self.stacked.addWidget(self.list_screen)
@@ -563,27 +605,21 @@ class ChatPanel(QWidget):
         self.stacked.setCurrentWidget(self.list_screen)
         root_layout.addWidget(self.stacked)
 
+        self._apply_view_port_opts()
+        self._solidify_stack_backgrounds()
         self._refresh_profile_selector()
 
     def _setup_list_screen(self) -> None:
         self.list_screen = QWidget()
+        self.list_screen.setObjectName("TicketListScreen")
         layout = QVBoxLayout(self.list_screen)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
-
-        self.profile_summary = QLabel("")
-        self.profile_summary.setWordWrap(True)
-        self.profile_summary.setStyleSheet(
-            "padding: 8px 10px; color: #2b3c4d; background: #ffffff; border: 1px solid #d6e5f3; border-radius: 12px;"
-        )
-        layout.addWidget(self.profile_summary)
 
         actions_row = QHBoxLayout()
         self.create_ticket_btn = QPushButton("Создать тикет")
         self.create_ticket_btn.setObjectName("PrimaryButton")
         self.create_ticket_btn.clicked.connect(self._on_create_ticket)
-        self.manage_profiles_btn = QPushButton("Профили")
-        self.manage_profiles_btn.clicked.connect(self.open_profile_manager)
         self.ticket_search_input = QLineEdit()
         self.ticket_search_input.setPlaceholderText("Поиск по коду, названию, статусу")
         self.ticket_search_input.textChanged.connect(self._on_ticket_search_changed)
@@ -593,24 +629,37 @@ class ChatPanel(QWidget):
         self.filter_closed_checkbox = QCheckBox("Закрытые")
         self.filter_closed_checkbox.setChecked(False)
         self.filter_closed_checkbox.toggled.connect(self._on_ticket_filter_changed)
-        self.auto_refresh_label = QLabel("Автообновление каждые 3 секунды")
-        self.auto_refresh_label.setStyleSheet("color: #64748b; padding-left: 6px;")
         actions_row.addWidget(self.create_ticket_btn)
-        actions_row.addWidget(self.manage_profiles_btn)
         actions_row.addWidget(self.ticket_search_input, 1)
         actions_row.addWidget(self.filter_open_checkbox)
         actions_row.addWidget(self.filter_closed_checkbox)
-        actions_row.addWidget(self.auto_refresh_label)
         actions_row.addStretch(1)
         layout.addLayout(actions_row)
 
         tickets_group = QGroupBox("Список тикетов (только тикеты этого агента)")
         tickets_layout = QVBoxLayout(tickets_group)
 
-        self.tickets_list = QListWidget()
-        self.tickets_list.itemDoubleClicked.connect(lambda *_: self._on_open_ticket())
-        self.tickets_list.itemSelectionChanged.connect(self._refresh_ticket_list_selection_styles)
-        tickets_layout.addWidget(self.tickets_list)
+        self.tickets_empty_label = QLabel("Ничего не найдено")
+        self.tickets_empty_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-weight: 600; padding: 12px; background: transparent;"
+        )
+        self.tickets_empty_label.setVisible(False)
+        tickets_layout.addWidget(self.tickets_empty_label)
+
+        self.tickets_list = QListView()
+        self.tickets_list.setObjectName("TicketsListView")
+        self.tickets_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tickets_list.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tickets_list.setUniformItemSizes(True)
+        self.tickets_list.setSpacing(6)
+        self.tickets_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tickets_list.setMouseTracking(True)
+        self.tickets_list.setAutoFillBackground(True)
+        self._tickets_model = TicketsListModel(self.tickets_list)
+        self.tickets_list.setModel(self._tickets_model)
+        self.tickets_list.setItemDelegate(TicketCardDelegate(self.tickets_list))
+        self.tickets_list.doubleClicked.connect(lambda *_: self._on_open_ticket())
+        tickets_layout.addWidget(self.tickets_list, 1)
 
         open_row = QHBoxLayout()
         self.open_ticket_btn = QPushButton("Открыть чат")
@@ -624,18 +673,22 @@ class ChatPanel(QWidget):
 
     def _setup_chat_screen(self) -> None:
         self.chat_screen = QWidget()
+        self.chat_screen.setObjectName("ChatScreenRoot")
         main_layout = QHBoxLayout(self.chat_screen)
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(12)
 
         left_panel = QFrame()
         left_panel.setFrameShape(QFrame.Shape.StyledPanel)
-        left_panel.setStyleSheet("background: #ffffff; border: 1px solid #d6e5f3; border-radius: 16px;")
+        left_panel.setStyleSheet(
+            f"background: {theme.BG_CARD}; border: 1px solid {theme.BORDER}; border-radius: 16px;"
+        )
         left_panel.setFixedWidth(280)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setSpacing(10)
 
         self.back_to_list_btn = QPushButton("← К списку тикетов")
+        self.back_to_list_btn.setObjectName("SecondaryButton")
         self.back_to_list_btn.clicked.connect(self._show_list_screen)
         left_layout.addWidget(self.back_to_list_btn)
 
@@ -644,7 +697,10 @@ class ChatPanel(QWidget):
         self.ticket_info_label.setTextFormat(Qt.TextFormat.RichText)
         self.ticket_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.ticket_info_label.linkActivated.connect(self._on_ticket_code_clicked)
-        self.ticket_info_label.setStyleSheet("font-weight: 700; padding: 12px 14px; border-radius: 18px; background: #e8f3ff; color: #16456b;")
+        self.ticket_info_label.setStyleSheet(
+            f"font-weight: 700; font-size: {theme.TITLE_PT}pt; padding: 14px 16px; border-radius: 16px; "
+            f"background: {theme.INFO_BG}; color: {theme.INFO_FG};"
+        )
         left_layout.addWidget(self.ticket_info_label)
 
         self.ticket_meta_label = QLabel("Откройте тикет в списке.")
@@ -654,20 +710,26 @@ class ChatPanel(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         self.ticket_meta_label.setStyleSheet(
-            "padding: 10px 12px; color: #334155; background: #f9fcff; border: 1px solid #d6e5f3; border-radius: 16px; font-size: 12px;"
+            f"padding: 12px 14px; color: {theme.TEXT_SECONDARY}; background: {theme.BG_INPUT}; "
+            f"border: 1px solid {theme.BORDER}; border-radius: 14px; font-size: {theme.BODY_PT}pt; line-height: 1.45;"
         )
         left_layout.addWidget(self.ticket_meta_label, 1)
         left_layout.addStretch(1)
         main_layout.addWidget(left_panel)
 
         right_center = QWidget()
+        right_center.setObjectName("ChatRightColumn")
+        right_center.setStyleSheet(
+            f"QWidget#ChatRightColumn {{ background: {theme.BG_CARD}; border: 1px solid {theme.BORDER}; border-radius: 18px; }}"
+        )
         center_layout = QVBoxLayout(right_center)
-        center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(8)
+        center_layout.setContentsMargins(12, 12, 12, 12)
+        center_layout.setSpacing(10)
 
         self.ticket_status_top = QLabel("Статус: —")
         self.ticket_status_top.setStyleSheet(
-            "font-weight: 700; padding: 10px 14px; border-radius: 14px; background: #e8f3ff; color: #16456b;"
+            f"font-weight: 700; font-size: {theme.TITLE_PT}pt; padding: 12px 16px; border-radius: 14px; "
+            f"background: {theme.INFO_BG}; color: {theme.INFO_FG};"
         )
         center_layout.addWidget(self.ticket_status_top)
 
@@ -680,7 +742,8 @@ class ChatPanel(QWidget):
         self.top_pinned_info.setOpenExternalLinks(True)
         self.top_pinned_info.linkActivated.connect(self._on_top_info_link_activated)
         self.top_pinned_info.setStyleSheet(
-            "padding: 10px 12px; border: 1px solid #b9dbfb; border-radius: 12px; background: #e8f3ff; color: #1b5f93;"
+            f"padding: 12px 14px; border: 1px solid {theme.BORDER}; border-radius: 12px; "
+            f"background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-size: {theme.BODY_PT}pt;"
         )
         center_layout.addWidget(self.top_pinned_info)
 
@@ -691,7 +754,7 @@ class ChatPanel(QWidget):
         self.pinned_messages_label = QLabel("")
         self.pinned_messages_label.setWordWrap(True)
         self.pinned_messages_label.setStyleSheet(
-            "color: #1e3a8a;"
+            f"color: {theme.LINK}; font-size: {theme.BODY_PT}pt; font-weight: 600;"
         )
         self.pinned_clear_btn = QPushButton("✕")
         self.pinned_clear_btn.setFixedSize(28, 28)
@@ -699,7 +762,7 @@ class ChatPanel(QWidget):
         pinned_row.addWidget(self.pinned_messages_label, 1)
         pinned_row.addWidget(self.pinned_clear_btn)
         self.pinned_messages_widget.setStyleSheet(
-            "border: 1px dashed #9dcdf7; border-radius: 12px; background: #f3f9ff;"
+            f"border: 1px dashed {theme.BORDER_SOFT}; border-radius: 12px; background: {theme.BG_CARD_ALT};"
         )
         self.pinned_messages_widget.hide()
         center_layout.addWidget(self.pinned_messages_widget)
@@ -707,41 +770,26 @@ class ChatPanel(QWidget):
         self.reply_stub_label = QLabel("")
         self.reply_stub_label.setWordWrap(True)
         self.reply_stub_label.setStyleSheet(
-            "padding: 6px 10px; border-radius: 10px; background: #fff8e8; color: #8b5a11; border: 1px solid #f5cf71;"
+            f"padding: 6px 10px; border-radius: 10px; background: #faf3e3; color: #7a5a1a; border: 1px solid #e8d4a8;"
         )
         self.reply_stub_label.hide()
         center_layout.addWidget(self.reply_stub_label)
 
         self.timeline_scroll = QScrollArea()
+        self.timeline_scroll.setObjectName("TimelineScroll")
         self.timeline_scroll.setWidgetResizable(True)
         self.timeline_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.timeline_scroll.setStyleSheet(
-            """
-            QScrollArea { background: #edf6ff; border: 1px solid #d6e5f3; border-radius: 22px; }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 0px;
-                margin: 8px 4px 8px 4px;
-                border-radius: 8px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(30, 64, 175, 120);
-                min-height: 40px;
-                border-radius: 8px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar:vertical:hover, QScrollBar:vertical:pressed { width: 10px; background: rgba(148, 163, 184, 70); }
-            """
-        )
+        self.timeline_scroll.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.timeline_container = QWidget()
         self.timeline_layout = QVBoxLayout(self.timeline_container)
-        self.timeline_layout.setContentsMargins(14, 14, 14, 14)
-        self.timeline_layout.setSpacing(10)
+        self.timeline_layout.setContentsMargins(16, 16, 16, 16)
+        self.timeline_layout.setSpacing(12)
         self.timeline_scroll.setWidget(self.timeline_container)
         center_layout.addWidget(self.timeline_scroll, 1)
 
         self.input_line = QLineEdit()
+        self.input_line.setObjectName("ChatInputLine")
         self.input_line.setPlaceholderText("Сообщение в тикет")
         self.input_line.returnPressed.connect(self._on_send)
         center_layout.addWidget(self.input_line)
@@ -750,14 +798,19 @@ class ChatPanel(QWidget):
         resolution_layout = QHBoxLayout(self.resolution_message_widget)
         resolution_layout.setContentsMargins(10, 8, 10, 8)
         self.resolution_message_widget.setStyleSheet(
-            "background: #fff7ed; border: 1px solid #fdba74; border-radius: 12px;"
+            f"background: #faf0e4; border: 1px solid #e8c49a; border-radius: 12px;"
         )
         self.resolution_prompt_label = QLabel(
             "Поддержка перевела тикет в статус 'Решён'. Подтвердить закрытие?"
         )
+        self.resolution_prompt_label.setStyleSheet(
+            f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_PRIMARY}; background: transparent;"
+        )
         self.resolution_confirm_btn = QPushButton("Подтвердить")
+        self.resolution_confirm_btn.setObjectName("PrimaryButton")
         self.resolution_confirm_btn.clicked.connect(lambda: self._spawn_task(self._async_close_ticket()))
         self.resolution_reject_btn = QPushButton("Отклонить")
+        self.resolution_reject_btn.setObjectName("SecondaryButton")
         self.resolution_reject_btn.clicked.connect(self._on_reject_resolution)
         resolution_layout.addWidget(self.resolution_prompt_label, 1)
         resolution_layout.addWidget(self.resolution_confirm_btn)
@@ -767,7 +820,7 @@ class ChatPanel(QWidget):
 
         actions = QHBoxLayout()
         self.send_btn = QPushButton("Отправить")
-        self.send_btn.setObjectName("PrimaryButton")
+        self.send_btn.setObjectName("ChatSendButton")
         self.send_btn.clicked.connect(self._on_send)
         self.attach_btn = QToolButton()
         self.attach_btn.setText("📎")
@@ -792,6 +845,57 @@ class ChatPanel(QWidget):
 
         main_layout.addWidget(right_center, 3)
 
+    def _apply_view_port_opts(self) -> None:
+        base = QFont()
+        base.setFamilies(["Segoe UI", "Tahoma", "Arial"])
+        base.setPointSize(10)
+        self.setFont(base)
+        if hasattr(self, "tickets_list"):
+            self.tickets_list.setFont(base)
+            _list_bg = QColor(theme.BG_CARD_ALT)
+            list_pal = QPalette(self.tickets_list.palette())
+            list_pal.setColor(QPalette.ColorRole.Window, _list_bg)
+            list_pal.setColor(QPalette.ColorRole.Base, _list_bg)
+            self.tickets_list.setPalette(list_pal)
+
+            t_vp = self.tickets_list.viewport()
+            t_vp.setMouseTracking(True)
+            # Не ставить WA_OpaquePaintEvent: иначе Qt не заливает фон viewport, а делегат рисует
+            # только строки — на Windows остаётся «чёрная дыра».
+            t_vp.setAutoFillBackground(True)
+            t_vp.setStyleSheet(f"background-color: {theme.BG_CARD_ALT};")
+            vp_pal = QPalette(t_vp.palette())
+            vp_pal.setColor(QPalette.ColorRole.Window, _list_bg)
+            vp_pal.setColor(QPalette.ColorRole.Base, _list_bg)
+            t_vp.setPalette(vp_pal)
+        if hasattr(self, "timeline_scroll"):
+            self.timeline_scroll.setAutoFillBackground(True)
+            tsp = self.timeline_scroll.palette()
+            tsp.setColor(self.timeline_scroll.backgroundRole(), QColor(theme.TIMELINE_SCROLL_BG))
+            self.timeline_scroll.setPalette(tsp)
+            s_vp = self.timeline_scroll.viewport()
+            s_vp.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+            s_vp.setAutoFillBackground(True)
+            pal2 = s_vp.palette()
+            pal2.setColor(s_vp.backgroundRole(), QColor(theme.TIMELINE_SCROLL_BG))
+            s_vp.setPalette(pal2)
+        if hasattr(self, "timeline_container"):
+            self.timeline_container.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+
+    def _solidify_stack_backgrounds(self) -> None:
+        page = QColor(theme.BG_PAGE)
+        for w in (self.stacked, self.list_screen, self.chat_screen):
+            w.setAutoFillBackground(True)
+            pal = QPalette(w.palette())
+            pal.setColor(QPalette.ColorRole.Window, page)
+            w.setPalette(pal)
+        if hasattr(self, "timeline_container"):
+            tl = QColor(theme.TIMELINE_SCROLL_BG)
+            self.timeline_container.setAutoFillBackground(True)
+            p = QPalette(self.timeline_container.palette())
+            p.setColor(QPalette.ColorRole.Window, tl)
+            self.timeline_container.setPalette(p)
+
     def _profiles_dir_ready(self) -> None:
         self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -810,18 +914,40 @@ class ChatPanel(QWidget):
             encoding="utf-8",
         )
         self._refresh_profile_selector()
+        self.requesterProfileChanged.emit()
 
     def _profiles(self) -> List[dict]:
         profiles = self._profiles_data.get("profiles")
         return profiles if isinstance(profiles, list) else []
 
+    def set_profile_sidebar(self, sidebar: ProfileSidebarWidget) -> None:
+        self._profile_sidebar = sidebar
+
     def _refresh_profile_selector(self) -> None:
-        if not hasattr(self, "profile_summary"):
-            return
-        self.profile_summary.setText(f"Активный профиль: {self.current_requester_profile_summary()}")
+        if self._profile_sidebar is not None:
+            self._profile_sidebar.refresh_from_panel()
+
+    def _filtered_tickets_for_list(self) -> List[dict]:
+        filtered: List[dict] = []
+        for row in self.tickets_cache:
+            ticket = row.get("ticket", row)
+            status = str(ticket.get("status") or "").strip().lower()
+            is_closed = status == "closed"
+            if is_closed and not self._show_closed_tickets:
+                continue
+            if (not is_closed) and not self._show_open_tickets:
+                continue
+            if ticket_matches_query(ticket, self._ticket_search_query):
+                filtered.append(ticket)
+        return filtered
+
+    @staticmethod
+    def _fingerprint_visible_tickets(filtered: List[dict]) -> str:
+        return "\n".join(ticket_row_fingerprint(t) for t in filtered)
 
     def _on_ticket_search_changed(self, text: str) -> None:
         self._ticket_search_query = text or ""
+        self._last_tickets_list_fingerprint = None
         self._update_tickets_list_ui()
 
     def _on_ticket_filter_changed(self) -> None:
@@ -832,6 +958,7 @@ class ChatPanel(QWidget):
             self.filter_open_checkbox.blockSignals(True)
             self.filter_open_checkbox.setChecked(True)
             self.filter_open_checkbox.blockSignals(False)
+        self._last_tickets_list_fingerprint = None
         self._update_tickets_list_ui()
 
     def _active_profile(self) -> Optional[dict]:
@@ -858,13 +985,15 @@ class ChatPanel(QWidget):
     def has_active_profile(self) -> bool:
         return self._active_profile() is not None
 
-    def open_profile_manager(self) -> None:
+    def open_profile_manager(self, *, start_new: bool = False) -> None:
         dialog = QDialog(self)
         dialog.setWindowTitle("Профили инициатора")
         dialog.setMinimumWidth(540)
+        theme.apply_agent_dialog_theme(dialog)
         layout = QVBoxLayout(dialog)
 
         profiles_list = QListWidget()
+        profiles_list.setObjectName("ProfileManagerList")
         layout.addWidget(profiles_list)
 
         form_widget = QWidget()
@@ -881,7 +1010,11 @@ class ChatPanel(QWidget):
         form.addRow("Телефон", phone)
         layout.addWidget(form_widget)
 
-        def refresh_profiles(selected_id: Optional[str] = None) -> None:
+        def refresh_profiles(
+            selected_id: Optional[str] = None,
+            *,
+            skip_auto_select: bool = False,
+        ) -> None:
             profiles_list.clear()
             for profile in self._profiles():
                 title = profile.get("display_name") or profile.get("full_name") or "Без имени"
@@ -890,6 +1023,8 @@ class ChatPanel(QWidget):
                 profiles_list.addItem(item)
                 if selected_id and profile.get("id") == selected_id:
                     profiles_list.setCurrentItem(item)
+            if skip_auto_select:
+                return
             if profiles_list.count() and profiles_list.currentRow() < 0:
                 profiles_list.setCurrentRow(0)
 
@@ -910,6 +1045,10 @@ class ChatPanel(QWidget):
         btn_save = QPushButton("Сохранить")
         btn_delete = QPushButton("Удалить")
         btn_select = QPushButton("Выбрать активным")
+        btn_save.setObjectName("PrimaryButton")
+        btn_select.setObjectName("PrimaryButton")
+        btn_new.setObjectName("SecondaryButton")
+        btn_delete.setObjectName("SecondaryButton")
         buttons.addWidget(btn_new)
         buttons.addWidget(btn_save)
         buttons.addWidget(btn_delete)
@@ -920,7 +1059,7 @@ class ChatPanel(QWidget):
             item = profiles_list.currentItem()
             return item.data(Qt.ItemDataRole.UserRole) if item else None
 
-        def save_profile(force_new: bool = False) -> None:
+        def save_profile(*, force_new: bool) -> None:
             profile_id = None if force_new else current_profile_id()
             payload = {
                 "id": profile_id or str(uuid.uuid4()),
@@ -937,6 +1076,17 @@ class ChatPanel(QWidget):
                 self._profiles_data["active_profile_id"] = payload["id"]
             self._save_profiles()
             refresh_profiles(payload["id"])
+
+        def save_clicked() -> None:
+            save_profile(force_new=current_profile_id() is None)
+
+        def start_blank_profile() -> None:
+            profiles_list.clearSelection()
+            display_name.clear()
+            full_name.clear()
+            building.clear()
+            room.clear()
+            phone.clear()
 
         def delete_profile() -> None:
             profile_id = current_profile_id()
@@ -957,13 +1107,19 @@ class ChatPanel(QWidget):
             self._save_profiles()
             dialog.accept()
 
-        btn_new.clicked.connect(lambda: save_profile(True))
-        btn_save.clicked.connect(lambda: save_profile(False))
+        btn_new.clicked.connect(start_blank_profile)
+        btn_save.clicked.connect(save_clicked)
         btn_delete.clicked.connect(delete_profile)
         btn_select.clicked.connect(select_active)
 
-        refresh_profiles(self._profiles_data.get("active_profile_id"))
-        load_current()
+        active = self._profiles_data.get("active_profile_id")
+        if start_new:
+            refresh_profiles(None, skip_auto_select=True)
+            profiles_list.clearSelection()
+            load_current()
+        else:
+            refresh_profiles(active)
+            load_current()
         dialog.exec()
         self._refresh_profile_selector()
 
@@ -1016,77 +1172,57 @@ class ChatPanel(QWidget):
     async def _async_refresh_ticket_list(self) -> None:
         if self._is_closing:
             return
+        self._ticket_list_refresh_seq += 1
+        my_seq = self._ticket_list_refresh_seq
         try:
             result = await self.ticket_client.list_tickets()
+            if self._is_closing or my_seq != self._ticket_list_refresh_seq:
+                return
             if result.get("status") != "ok":
                 return
             self.tickets_cache = result.get("tickets", [])
+            filtered = self._filtered_tickets_for_list()
+            fp = self._fingerprint_visible_tickets(filtered)
+            if fp == self._last_tickets_list_fingerprint:
+                return
             self._update_tickets_list_ui()
         except Exception as exc:
             if not self._is_closing:
                 logger.error(f"Ошибка загрузки списка тикетов: {exc}")
 
     def _update_tickets_list_ui(self) -> None:
-        current_item = self.tickets_list.currentItem()
-        current_id = self.active_ticket_id or (
-            current_item.data(Qt.ItemDataRole.UserRole) if current_item else None
-        )
+        filtered_tickets = self._filtered_tickets_for_list()
+        self._last_tickets_list_fingerprint = self._fingerprint_visible_tickets(filtered_tickets)
+
+        sm = self.tickets_list.selectionModel()
+        prev_tid: Optional[str] = None
+        cur = sm.currentIndex()
+        if cur.isValid() and self._tickets_model is not None:
+            prev_ticket = self._tickets_model.ticket_at_row(cur.row())
+            if prev_ticket:
+                prev_tid = str(prev_ticket.get("ticket_id") or "")
+
+        current_id = self.active_ticket_id or prev_tid
         scroll_bar = self.tickets_list.verticalScrollBar()
         scroll_value = scroll_bar.value()
-        self.tickets_list.clear()
-        self._ticket_item_widgets = {}
-        filtered_tickets: List[dict] = []
-        for row in self.tickets_cache:
-            ticket = row.get("ticket", row)
-            status = str(ticket.get("status") or "").strip().lower()
-            is_closed = status == "closed"
-            if is_closed and not self._show_closed_tickets:
-                continue
-            if (not is_closed) and not self._show_open_tickets:
-                continue
-            if ticket_matches_query(ticket, self._ticket_search_query):
-                filtered_tickets.append(ticket)
 
-        if not filtered_tickets:
-            empty_item = QListWidgetItem("Ничего не найдено")
-            empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tickets_list.addItem(empty_item)
-            QTimer.singleShot(0, lambda: scroll_bar.setValue(0))
-            return
-
-        for ticket in filtered_tickets:
-            status = ticket.get("status") or "unknown"
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, ticket.get("ticket_id"))
-            item.setToolTip(
-                "\n".join(
-                    [
-                        f"Статус: {ticket_status_label(status)}",
-                        f"Приоритет: {ticket.get('priority_class') or ticket.get('priority') or '—'}",
-                        f"Очередь: {ticket.get('queue_code') or ticket.get('queue_id') or '—'}",
-                        f"Исполнитель: {ticket.get('assignee_id') or 'Не назначен'}",
-                    ]
-                )
-            )
-            self.tickets_list.addItem(item)
-            widget = TicketListItemWidget(ticket, self.tickets_list)
-            item.setSizeHint(widget.sizeHint())
-            self.tickets_list.setItemWidget(item, widget)
-            self._ticket_item_widgets[str(ticket.get("ticket_id") or "")] = widget
-            if current_id and ticket.get("ticket_id") == current_id:
-                self.tickets_list.setCurrentItem(item)
-        self._refresh_ticket_list_selection_styles()
-        QTimer.singleShot(0, lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())))
-
-    def _refresh_ticket_list_selection_styles(self) -> None:
-        for index in range(self.tickets_list.count()):
-            item = self.tickets_list.item(index)
-            if item is None:
-                continue
-            ticket_id = str(item.data(Qt.ItemDataRole.UserRole) or "")
-            widget = self._ticket_item_widgets.get(ticket_id)
-            if widget is not None:
-                widget.set_selected(bool(item.isSelected()))
+        self.tickets_list.setUpdatesEnabled(False)
+        try:
+            assert self._tickets_model is not None
+            self._tickets_model.set_rows(filtered_tickets)
+            self.tickets_empty_label.setVisible(len(filtered_tickets) == 0)
+            if not filtered_tickets:
+                sm.clear()
+                QTimer.singleShot(0, lambda: scroll_bar.setValue(0))
+            else:
+                row = self._tickets_model.row_for_ticket_id(current_id) if current_id else -1
+                if row < 0:
+                    row = 0
+                idx = self._tickets_model.index(row, 0)
+                self.tickets_list.setCurrentIndex(idx)
+                QTimer.singleShot(0, lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())))
+        finally:
+            self.tickets_list.setUpdatesEnabled(True)
 
     def _latest_requester_read_event_id(self, ticket: dict, messages: List[dict], events: List[dict]) -> int:
         counters = ticket.get("chat_counters") or {}
@@ -1135,8 +1271,12 @@ class ChatPanel(QWidget):
     async def _async_refresh_ticket_detail(self) -> None:
         if self._is_closing or not self.active_ticket_id:
             return
+        self._ticket_detail_refresh_seq += 1
+        my_seq = self._ticket_detail_refresh_seq
         try:
             result = await self.ticket_client.get_ticket(self.active_ticket_id)
+            if self._is_closing or my_seq != self._ticket_detail_refresh_seq:
+                return
             if result.get("status") != "ok":
                 return
             self._update_ticket_detail_ui(
@@ -1148,7 +1288,27 @@ class ChatPanel(QWidget):
             if not self._is_closing:
                 logger.error(f"Ошибка загрузки тикета {self.active_ticket_id}: {exc}")
 
-    def _update_ticket_detail_ui(self, ticket: dict, messages: List[dict], events: List[dict]) -> None:
+    def _detail_header_signature(self, ticket: dict, messages: List[dict]) -> str:
+        return json.dumps(
+            {
+                "ticket_id": ticket.get("ticket_id"),
+                "code": ticket.get("ticket_code"),
+                "title": ticket.get("title"),
+                "status": ticket.get("status"),
+                "counters": ticket.get("chat_counters"),
+                "updated_at": ticket.get("updated_at"),
+                "resolved_at": ticket.get("resolved_at"),
+                "closed_at": ticket.get("closed_at"),
+                "public_access_url": ticket.get("public_access_url"),
+                "public_access_code_hint": ticket.get("public_access_code_hint"),
+                "extracted_code": self._extract_public_access_code(ticket, messages),
+                "meta_html": self._build_ticket_meta_html(ticket),
+            },
+            sort_keys=True,
+            default=str,
+        )
+
+    def _apply_ticket_detail_header(self, ticket: dict, messages: List[dict]) -> None:
         code = ticket.get("ticket_code") or ticket.get("ticket_id", "")
         title = ticket.get("title") or "Без названия"
         status = ticket.get("status") or "unknown"
@@ -1166,15 +1326,21 @@ class ChatPanel(QWidget):
             status_suffix = " • Непрочитано " + ", ".join(status_suffix_parts)
         safe_code = self._escape_html(str(code))
         safe_title = self._escape_html(str(title))
-        self.ticket_info_label.setText(f"Тикет <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}")
-        self.ticket_status_top.setText(f"Статус тикета: {ticket_status_label(status)}{status_suffix}")
-        self.ticket_status_top.setStyleSheet(
+        info_html = f"Тикет <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}"
+        status_text = f"Статус тикета: {ticket_status_label(status)}{status_suffix}"
+        status_style = (
             f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
         )
-        self.ticket_meta_label.setText(self._build_ticket_meta_html(ticket))
+        meta_html = self._build_ticket_meta_html(ticket)
+        self.ticket_info_label.setText(info_html)
+        self.ticket_status_top.setText(status_text)
+        self.ticket_status_top.setStyleSheet(status_style)
+        self.ticket_meta_label.setText(meta_html)
         self._refresh_top_pinned_info(ticket, messages)
         self._refresh_pinned_messages_label(ticket.get("ticket_id") or "")
         self._apply_ticket_background(status)
+
+    def _build_timeline_items(self, ticket: dict, messages: List[dict], events: List[dict]) -> List[tuple[float, str, dict]]:
         requester_name = ticket.get("requester_display_name") or "Пользователь"
         requester_profile = ticket.get("requester_profile") or {}
         requester_full_name = (
@@ -1188,9 +1354,7 @@ class ChatPanel(QWidget):
             for msg in messages
             if str(msg.get("message_id") or "").strip()
         }
-
-        items: List[tuple[float, str, str]] = []
-
+        items: List[tuple[float, str, dict]] = []
         for message in messages:
             ts = message.get("ts")
             text = (message.get("text") or "").strip()
@@ -1223,7 +1387,6 @@ class ChatPanel(QWidget):
                     },
                 )
             )
-
         _HIDDEN = frozenset({
             "chat_message", "job_started", "job_running", "job_succeeded", "job_completed",
             "chat_session", "chat_ended", "event_delivered", "tool_response", "routing_applied",
@@ -1251,28 +1414,47 @@ class ChatPanel(QWidget):
                     },
                 )
             )
-
         items.sort(key=lambda x: x[0])
+        return items
 
-        self._maybe_prompt_resolution_confirmation(ticket)
-
+    def _update_ticket_detail_ui(self, ticket: dict, messages: List[dict], events: List[dict]) -> None:
         if self._bubble_menu_open:
             self._pending_ticket_snapshot = (dict(ticket), list(messages), list(events))
             return
 
-        signature = self._build_timeline_signature(ticket, messages, events)
-        if signature == self._last_timeline_html:
-            self._pending_ticket_snapshot = None
+        timeline_sig = self._build_timeline_signature(ticket, messages, events)
+        header_sig = self._detail_header_signature(ticket, messages)
+
+        if timeline_sig == self._last_timeline_html and header_sig == self._last_detail_header_sig:
+            self._maybe_mark_ticket_read(ticket, messages, events)
             return
 
+        header_changed = header_sig != self._last_detail_header_sig
+        timeline_changed = timeline_sig != self._last_timeline_html
+
+        if header_changed:
+            self._last_detail_header_sig = header_sig
+            self._apply_ticket_detail_header(ticket, messages)
+
+        self._maybe_prompt_resolution_confirmation(ticket)
+
+        if not timeline_changed:
+            self._pending_ticket_snapshot = None
+            self._maybe_mark_ticket_read(ticket, messages, events)
+            return
+
+        items = self._build_timeline_items(ticket, messages, events)
         scroll_bar = self.timeline_scroll.verticalScrollBar()
         previous_value = scroll_bar.value()
         previous_max = scroll_bar.maximum()
         stick_to_bottom = previous_max == 0 or previous_value >= max(previous_max - 24, 0)
-        self._render_timeline_widgets(items)
-        self._last_timeline_html = signature
+        self.timeline_scroll.setUpdatesEnabled(False)
+        try:
+            self._render_timeline_widgets(items)
+        finally:
+            self.timeline_scroll.setUpdatesEnabled(True)
+        self._last_timeline_html = timeline_sig
         self._pending_ticket_snapshot = None
-
         self._restore_timeline_scroll(previous_value, stick_to_bottom)
         self._maybe_mark_ticket_read(ticket, messages, events)
 
@@ -1297,8 +1479,9 @@ class ChatPanel(QWidget):
             ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
         return "".join(
-            f"<div style='margin-bottom:6px;'><span style='color:#64748b;'>{self._escape_html(label)}:</span> "
-            f"<span style='color:#0f172a;'>{self._escape_html(str(value))}</span></div>"
+            f"<div style='margin-bottom:8px; font-size:{theme.BODY_PT}pt; line-height:1.5;'>"
+            f"<span style='color:{theme.TEXT_MUTED}; font-weight:600;'>{self._escape_html(label)}:</span> "
+            f"<span style='color:{theme.TEXT_PRIMARY};'>{self._escape_html(str(value))}</span></div>"
             for label, value in rows
         )
 
@@ -1354,7 +1537,6 @@ class ChatPanel(QWidget):
             "ticket_id": ticket.get("ticket_id"),
             "ticket_status": ticket.get("status"),
             "ticket_updated_at": ticket.get("updated_at"),
-            "chat_counters": ticket.get("chat_counters") or {},
             "messages": [
                 {
                     "id": msg.get("message_id"),
@@ -1470,7 +1652,7 @@ class ChatPanel(QWidget):
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
-            raw = self._normalize_iso_ts(value)
+            raw = normalize_iso_ts(value)
             if not raw:
                 return 0.0
             try:
@@ -1484,61 +1666,7 @@ class ChatPanel(QWidget):
         return 0.0
 
     def _format_ts(self, value) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
-        if isinstance(value, str):
-            raw = self._normalize_iso_ts(value)
-            if not raw:
-                return ""
-            try:
-                dt = datetime.fromisoformat(raw)
-                if dt.tzinfo is not None:
-                    dt = dt.astimezone()
-                return dt.strftime("%d.%m.%Y %H:%M:%S")
-            except ValueError:
-                return raw
-        return str(value)
-
-    @staticmethod
-    def _format_ts_static(value) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y %H:%M:%S")
-        if isinstance(value, str):
-            raw = ChatPanel._normalize_iso_ts(value)
-            if not raw:
-                return ""
-            try:
-                dt = datetime.fromisoformat(raw)
-                if dt.tzinfo is not None:
-                    dt = dt.astimezone()
-                return dt.strftime("%d.%m.%Y %H:%M:%S")
-            except ValueError:
-                return raw
-        return str(value)
-
-    @staticmethod
-    def _normalize_iso_ts(value: str) -> str:
-        raw = (value or "").strip()
-        if not raw:
-            return ""
-        normalized = raw.replace("Z", "+00:00")
-        if "." in normalized:
-            dot_idx = normalized.find(".")
-            tz_idx = len(normalized)
-            plus_idx = normalized.find("+", dot_idx)
-            minus_idx = normalized.find("-", dot_idx)
-            if plus_idx != -1:
-                tz_idx = min(tz_idx, plus_idx)
-            if minus_idx != -1:
-                tz_idx = min(tz_idx, minus_idx)
-            frac = normalized[dot_idx + 1:tz_idx]
-            if frac.isdigit() and len(frac) > 6:
-                normalized = f"{normalized[:dot_idx + 1]}{frac[:6]}{normalized[tz_idx:]}"
-        return normalized
+        return format_ts_short(value)
 
     @staticmethod
     def _escape_html(s: str) -> str:
@@ -1646,7 +1774,7 @@ class ChatPanel(QWidget):
     def _on_create_ticket(self) -> None:
         if not self.has_active_profile():
             QMessageBox.warning(self, "Профиль обязателен", "Сначала заполните и выберите профиль инициатора.")
-            self.open_profile_manager()
+            self.open_profile_manager(start_new=True)
             return
         dialog = TicketCreateDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1685,6 +1813,7 @@ class ChatPanel(QWidget):
             ticket = result.get("ticket", {})
             self.active_ticket_id = ticket.get("ticket_id")
             self._last_timeline_html = None
+            self._last_detail_header_sig = None
             self._pending_ticket_snapshot = None
             self._ticket_detail_timer.start(2500)
             await self._async_refresh_ticket_list()
@@ -1701,11 +1830,15 @@ class ChatPanel(QWidget):
             self.create_ticket_btn.setEnabled(True)
 
     def _on_open_ticket(self) -> None:
-        item = self.tickets_list.currentItem()
-        if not item:
+        cur = self.tickets_list.currentIndex()
+        if not cur.isValid() or self._tickets_model is None:
             return
-        self.active_ticket_id = item.data(Qt.ItemDataRole.UserRole)
+        ticket = self._tickets_model.ticket_at_row(cur.row())
+        if not ticket:
+            return
+        self.active_ticket_id = ticket.get("ticket_id")
         self._last_timeline_html = None
+        self._last_detail_header_sig = None
         self._pending_ticket_snapshot = None
         self._ticket_detail_timer.start(2500)
         self._refresh_ticket_detail_async()
@@ -1925,10 +2058,16 @@ class ChatPanel(QWidget):
 
     def _show_list_screen(self) -> None:
         self.stacked.setCurrentWidget(self.list_screen)
+        self.stacked.update()
+        self.list_screen.update()
+        self.listNavigationVisibilityChanged.emit(True)
 
     def _show_chat_screen(self) -> None:
         self.stacked.setCurrentWidget(self.chat_screen)
+        self.stacked.update()
+        self.chat_screen.update()
         self.input_line.setFocus()
+        self.listNavigationVisibilityChanged.emit(False)
 
     def _open_message_context_menu(self, global_pos, message_context: dict) -> None:
         menu = QMenu(self)
@@ -2040,14 +2179,17 @@ class ChatPanel(QWidget):
 
     def _apply_ticket_background(self, status: str) -> None:
         normalized = str(status or "").strip().lower()
-        bg = "rgba(219, 234, 254, 0.25)"
+        bg = theme.CHAT_SCREEN_SOLID_OPEN
         if normalized == "resolved":
-            bg = "rgba(6, 78, 59, 0.18)"
+            bg = theme.CHAT_SCREEN_SOLID_RESOLVED
         elif normalized == "closed":
-            bg = "rgba(71, 85, 105, 0.14)"
+            bg = theme.CHAT_SCREEN_SOLID_CLOSED
         self.chat_screen.setStyleSheet(
-            f"background: {bg}; border-radius: 10px;"
+            f"QWidget#ChatScreenRoot {{ background-color: {bg}; border-radius: 10px; }}"
         )
+        pal = QPalette(self.chat_screen.palette())
+        pal.setColor(QPalette.ColorRole.Window, QColor(bg))
+        self.chat_screen.setPalette(pal)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
