@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260401a">
+    <link rel="stylesheet" href="/support.css?v=20260411a">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -36,7 +36,7 @@
     <div id="supportApp" class="support-shell hidden">
         <header class="support-topbar">
             <div class="support-topbar-main">
-                <button id="sidebarToggleBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⟩</button>
+                <button id="sidebarToggleBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">☰</button>
                 <div class="support-brand">
                     <p class="support-brand-eyebrow">Help Desk</p>
                     <h1>Support Workspace</h1>
@@ -58,11 +58,23 @@
                         <p class="section-eyebrow">Inbox</p>
                         <h2>Тикеты</h2>
                     </div>
-                    <button id="collapseInboxBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⟪</button>
+                    <button id="collapseInboxBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⤢</button>
                 </div>
 
                 <div class="ticket-inbox-toolbar">
-                    <input id="ticketSearchInput" class="support-search" type="search" placeholder="Поиск по коду, описанию, инициатору">
+                    <div class="ticket-toolbar-row">
+                        <input id="ticketSearchInput" class="support-search" type="search" placeholder="Поиск по коду, описанию, инициатору">
+                        <label class="support-select-wrap" for="ticketSortSelect">
+                            <span>Сортировка</span>
+                            <select id="ticketSortSelect" class="support-select">
+                                <option value="updated_desc">Свежие сверху</option>
+                                <option value="sla_risk">SLA / OLA риск</option>
+                                <option value="priority">По приоритету</option>
+                                <option value="requester_reply">По ответу пользователя</option>
+                                <option value="age_desc">Старые сверху</option>
+                            </select>
+                        </label>
+                    </div>
                     <div id="ticketFilterChips" class="filter-chip-row">
                         <button class="filter-chip active" type="button" data-filter="mine">Мои</button>
                         <button class="filter-chip" type="button" data-filter="all">Все</button>
@@ -76,132 +88,179 @@
                 <div id="ticketList" class="ticket-list" aria-live="polite"></div>
             </aside>
 
-            <main class="support-stage">
-                <section id="stageHeader" class="stage-header">
-                    <div class="stage-title-block">
-                        <p class="section-eyebrow">Выбранный тикет</p>
-                        <h2 id="selectedTicketTitle">Тикет не выбран</h2>
-                        <div id="selectedTicketMeta" class="selected-ticket-meta"></div>
+            <main id="workspaceShell" class="workspace-shell">
+                <section class="workspace-shell-head">
+                    <div class="workspace-shell-copy">
+                        <p class="section-eyebrow">Workspace</p>
+                        <h2>Операционная панель поддержки</h2>
+                        <p class="workspace-shell-text">Сначала разбирайте очередь и риски по SLA/OLA, затем переключайтесь в режим точечной работы по выбранному тикету.</p>
                     </div>
-                    <div id="stageQuickActions" class="stage-quick-actions"></div>
-                </section>
-
-                <section id="stageEmpty" class="stage-empty">
-                    <div class="stage-empty-card">
-                        <div class="stage-empty-icon">🧭</div>
-                        <h3>Выберите тикет</h3>
-                        <p>Слева находится рабочий inbox саппорта. Выберите тикет, чтобы посмотреть контекст, чат или дерево событий.</p>
+                    <div id="workspaceModeSwitch" class="workspace-mode-switch" role="tablist" aria-label="Режим работы поддержки">
+                        <button class="workspace-mode-chip active" type="button" data-workspace-view="queue">Queue Desk</button>
+                        <button class="workspace-mode-chip" type="button" data-workspace-view="ticket">Ticket Desk</button>
                     </div>
                 </section>
 
-                <section id="previewPane" class="stage-pane hidden">
-                    <div class="pane-grid">
-                        <article class="support-card support-card-wide">
+                <section id="queueDesk" class="workspace-desk queue-desk">
+                    <div id="queueSummaryStrip" class="queue-summary-strip"></div>
+                    <div class="queue-desk-grid">
+                        <article class="support-card queue-actions-card">
                             <div class="card-head">
-                                <h3>Описание заявки</h3>
-                                <span id="previewModeBadge" class="mode-badge">Preview</span>
+                                <h3>Управление списком</h3>
                             </div>
-                            <p id="previewDescription" class="ticket-description">—</p>
+                            <div id="queueActionDock" class="queue-action-dock"></div>
                         </article>
 
-                        <article class="support-card">
+                        <article class="support-card queue-focus-card">
                             <div class="card-head">
-                                <h3>Инициатор</h3>
+                                <h3>Фокус по выбранному тикету</h3>
                             </div>
-                            <dl id="previewRequester" class="key-value-list"></dl>
+                            <div id="queueFocusPanel" class="queue-focus-panel"></div>
                         </article>
 
-                        <article class="support-card">
+                        <article class="support-card queue-context-card">
                             <div class="card-head">
-                                <h3>Контекст</h3>
+                                <h3>Контекст и присутствие</h3>
                             </div>
-                            <dl id="previewContext" class="key-value-list"></dl>
+                            <div id="queueContextPanel" class="context-panel"></div>
                         </article>
 
-                        <article class="support-card support-card-wide">
+                        <article class="support-card queue-insight-card">
                             <div class="card-head">
-                                <h3>Короткая история</h3>
+                                <h3>SLA / OLA / маршрут</h3>
                             </div>
-                            <div id="previewHistory" class="activity-feed"></div>
+                            <div id="queueInsightPanel" class="support-facts-list"></div>
                         </article>
                     </div>
                 </section>
 
-                <section id="workPane" class="stage-pane hidden">
-                    <div class="embedded-ticket-shell">
-                        <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета...</div>
-                        <iframe id="embeddedTicketFrame" class="embedded-ticket-frame" title="Ticket Chat"></iframe>
-                    </div>
-                </section>
+                <section id="ticketDesk" class="workspace-desk ticket-desk hidden">
+                    <section id="stageHeader" class="stage-header">
+                        <div class="stage-title-block">
+                            <p class="section-eyebrow">Выбранный тикет</p>
+                            <h2 id="selectedTicketTitle">Тикет не выбран</h2>
+                            <div id="selectedTicketMeta" class="selected-ticket-meta"></div>
+                        </div>
+                        <div id="stageQuickActions" class="stage-quick-actions"></div>
+                    </section>
 
-                <section id="observePane" class="stage-pane hidden">
-                    <div class="pane-grid">
-                        <article class="support-card support-card-wide">
-                            <div class="card-head">
-                                <h3>Lifecycle</h3>
-                                <span class="mode-badge mode-badge-observe">Observe</span>
+                    <div class="ticket-desk-layout">
+                        <div class="ticket-desk-main">
+                            <section id="stageEmpty" class="stage-empty">
+                                <div class="stage-empty-card">
+                                    <div class="stage-empty-icon">🧭</div>
+                                    <h3>Выберите тикет</h3>
+                                    <p>Слева находится inbox саппорта. Одинарный клик обновляет triage-контекст, двойной клик открывает полноценный Ticket Desk.</p>
+                                </div>
+                            </section>
+
+                            <section id="previewPane" class="stage-pane hidden">
+                                <div class="pane-grid">
+                                    <article class="support-card support-card-wide">
+                                        <div class="card-head">
+                                            <h3>Описание заявки</h3>
+                                            <span id="previewModeBadge" class="mode-badge">Preview</span>
+                                        </div>
+                                        <p id="previewDescription" class="ticket-description">—</p>
+                                    </article>
+
+                                    <article class="support-card">
+                                        <div class="card-head">
+                                            <h3>Инициатор</h3>
+                                        </div>
+                                        <dl id="previewRequester" class="key-value-list"></dl>
+                                    </article>
+
+                                    <article class="support-card">
+                                        <div class="card-head">
+                                            <h3>Контекст</h3>
+                                        </div>
+                                        <dl id="previewContext" class="key-value-list"></dl>
+                                    </article>
+
+                                    <article class="support-card support-card-wide">
+                                        <div class="card-head">
+                                            <h3>Короткая история</h3>
+                                        </div>
+                                        <div id="previewHistory" class="activity-feed"></div>
+                                    </article>
+                                </div>
+                            </section>
+
+                            <section id="workPane" class="stage-pane hidden">
+                                <div class="embedded-ticket-shell">
+                                    <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета...</div>
+                                    <iframe id="embeddedTicketFrame" class="embedded-ticket-frame" title="Ticket Chat"></iframe>
+                                </div>
+                            </section>
+
+                            <section id="observePane" class="stage-pane hidden">
+                                <div class="pane-grid">
+                                    <article class="support-card support-card-wide">
+                                        <div class="card-head">
+                                            <h3>Lifecycle</h3>
+                                            <span class="mode-badge mode-badge-observe">Observe</span>
+                                        </div>
+                                        <div id="observeMilestones" class="milestone-rail"></div>
+                                        <div id="observeSlaLane" class="sla-lane"></div>
+                                    </article>
+                                    <article class="support-card support-card-wide">
+                                        <div class="card-head">
+                                            <h3>Дерево событий тикета</h3>
+                                        </div>
+                                        <div id="observeTimeline" class="observe-timeline"></div>
+                                    </article>
+                                </div>
+                            </section>
+                        </div>
+
+                        <aside id="ticketWorkbench" class="ticket-workbench">
+                            <div class="drawer-head">
+                                <div>
+                                    <p class="section-eyebrow">Ticket Workbench</p>
+                                    <h2>Контекст и инструменты</h2>
+                                </div>
                             </div>
-                            <div id="observeMilestones" class="milestone-rail"></div>
-                            <div id="observeSlaLane" class="sla-lane"></div>
-                        </article>
-                        <article class="support-card support-card-wide">
-                            <div class="card-head">
-                                <h3>Дерево событий тикета</h3>
+
+                            <div class="drawer-tabs" id="drawerTabs">
+                                <button class="drawer-tab active" type="button" data-tab="context">Контекст</button>
+                                <button class="drawer-tab" type="button" data-tab="tools">Инструменты</button>
+                                <button class="drawer-tab" type="button" data-tab="pipeline">Пайплайн</button>
                             </div>
-                            <div id="observeTimeline" class="observe-timeline"></div>
-                        </article>
+
+                            <section id="drawerTab-context" class="drawer-tab-panel">
+                                <div id="contextPanel" class="context-panel"></div>
+                            </section>
+
+                            <section id="drawerTab-tools" class="drawer-tab-panel hidden">
+                                <div class="drawer-search-wrap">
+                                    <input id="toolSearchInput" class="support-search" type="search" placeholder="Поиск по инструментам и модулям">
+                                </div>
+                                <div id="toolScenarioChips" class="filter-chip-row compact"></div>
+                                <div id="toolList" class="tool-list"></div>
+                                <div id="toolInspector" class="tool-inspector">
+                                    <div class="tool-inspector-empty">Выберите инструмент справа, чтобы увидеть параметры и действия.</div>
+                                </div>
+                            </section>
+
+                            <section id="drawerTab-pipeline" class="drawer-tab-panel hidden">
+                                <article class="support-card drawer-card">
+                                    <div class="card-head">
+                                        <h3>Черновик пайплайна</h3>
+                                    </div>
+                                    <p class="drawer-note">Соберите план диагностики или последовательность действий и при необходимости отправьте её в чат как внутреннюю заметку.</p>
+                                    <div id="pipelineList" class="pipeline-list"></div>
+                                    <div class="pipeline-actions">
+                                        <button id="pipelineInsertBtn" class="btn btn-secondary" type="button">Вставить в редактор</button>
+                                        <button id="pipelineSendBtn" class="btn btn-primary" type="button">Отправить в чат</button>
+                                        <button id="pipelineClearBtn" class="btn btn-secondary" type="button">Очистить</button>
+                                    </div>
+                                </article>
+                            </section>
+                        </aside>
                     </div>
                 </section>
             </main>
-
-            <aside id="workbenchDrawer" class="workbench-drawer">
-                <div class="drawer-head">
-                    <div>
-                        <p class="section-eyebrow">Workbench</p>
-                        <h2>Инструменты</h2>
-                    </div>
-                    <div class="drawer-head-actions">
-                        <button id="drawerResizeBtn" class="topbar-icon-btn" type="button" title="Развернуть панель инструментов">⟫</button>
-                        <button id="drawerToggleBtn" class="topbar-icon-btn" type="button" title="Свернуть панель">⟩</button>
-                    </div>
-                </div>
-
-                <div class="drawer-tabs" id="drawerTabs">
-                    <button class="drawer-tab active" type="button" data-tab="context">Контекст</button>
-                    <button class="drawer-tab" type="button" data-tab="tools">Инструменты</button>
-                    <button class="drawer-tab" type="button" data-tab="pipeline">Пайплайн</button>
-                </div>
-
-                <section id="drawerTab-context" class="drawer-tab-panel">
-                    <div id="contextPanel" class="context-panel"></div>
-                </section>
-
-                <section id="drawerTab-tools" class="drawer-tab-panel hidden">
-                    <div class="drawer-search-wrap">
-                        <input id="toolSearchInput" class="support-search" type="search" placeholder="Поиск по инструментам и модулям">
-                    </div>
-                    <div id="toolScenarioChips" class="filter-chip-row compact"></div>
-                    <div id="toolList" class="tool-list"></div>
-                    <div id="toolInspector" class="tool-inspector">
-                        <div class="tool-inspector-empty">Выберите инструмент справа, чтобы увидеть параметры и действия.</div>
-                    </div>
-                </section>
-
-                <section id="drawerTab-pipeline" class="drawer-tab-panel hidden">
-                    <article class="support-card drawer-card">
-                        <div class="card-head">
-                            <h3>Черновик пайплайна</h3>
-                        </div>
-                        <p class="drawer-note">Соберите план диагностики или набросок последовательности действий и отправьте его в чат как заметку.</p>
-                        <div id="pipelineList" class="pipeline-list"></div>
-                        <div class="pipeline-actions">
-                            <button id="pipelineInsertBtn" class="btn btn-secondary" type="button">Вставить в редактор</button>
-                            <button id="pipelineSendBtn" class="btn btn-primary" type="button">Отправить в чат</button>
-                            <button id="pipelineClearBtn" class="btn btn-secondary" type="button">Очистить</button>
-                        </div>
-                    </article>
-                </section>
-            </aside>
         </div>
     </div>
 
@@ -238,6 +297,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260401a"></script>
+    <script src="/support.js?v=20260411a"></script>
 </body>
 </html>

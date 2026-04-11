@@ -1,6 +1,7 @@
 /**
- * Support workspace: inbox + preview/work/observe + right workbench drawer.
- * Uses existing UI auth token and ticket/tool APIs.
+ * Support workspace: queue desk + ticket desk.
+ * Reuses existing ticket preview/work/observe and tool APIs,
+ * but presents them as two operator-oriented workflows.
  */
 (function () {
     const AUTH_TOKEN_KEY = 'admin_auth_token';
@@ -8,15 +9,20 @@
     const ROLE_KEY = 'admin_actor_role';
     const LAST_TICKET_KEY = 'support_workspace_last_ticket';
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
-    const DRAWER_MODE_KEY = 'support_workspace_drawer_mode';
+    const WORKSPACE_VIEW_KEY = 'support_workspace_view';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260401a';
+    const SUPPORT_SHELL_VERSION = '20260411a';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
+    const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
     const PANEL_MODES = Object.freeze({
         COLLAPSED: 'collapsed',
         HALF: 'half',
         FULL: 'full',
+    });
+    const WORKSPACE_VIEWS = Object.freeze({
+        QUEUE: 'queue',
+        TICKET: 'ticket',
     });
     const ACTIVE_WORK_STATUSES = new Set(['triaged', 'in_progress', 'waiting_on_user', 'waiting_on_vendor', 'resolved']);
     const STATUS_LABELS = {
@@ -63,12 +69,13 @@
         userLogin: '',
         currentFilter: 'mine',
         ticketQuery: '',
+        ticketSort: 'updated_desc',
         tickets: [],
         selectedTicketId: '',
         selectedSnapshot: null,
         selectedLifecycle: null,
         detailLoading: false,
-        drawerMode: PANEL_MODES.HALF,
+        workspaceView: WORKSPACE_VIEWS.QUEUE,
         drawerTab: 'context',
         sidebarMode: PANEL_MODES.HALF,
         ticketClickTimer: 0,
@@ -94,6 +101,10 @@
             return value;
         }
         return PANEL_MODES.HALF;
+    }
+
+    function normalizeWorkspaceView(value) {
+        return value === WORKSPACE_VIEWS.TICKET ? WORKSPACE_VIEWS.TICKET : WORKSPACE_VIEWS.QUEUE;
     }
 
     function getToken() {
@@ -370,31 +381,23 @@
             return;
         }
         layout.dataset.sidebarMode = state.sidebarMode;
-        layout.dataset.drawerMode = state.drawerMode;
         const sidebarToggleBtn = byId('sidebarToggleBtn');
         if (sidebarToggleBtn) {
             const isCollapsed = state.sidebarMode === PANEL_MODES.COLLAPSED;
-            sidebarToggleBtn.textContent = isCollapsed ? '⟩' : '⟨';
+            sidebarToggleBtn.textContent = isCollapsed ? '☰' : '⟨';
             sidebarToggleBtn.title = isCollapsed ? 'Развернуть список тикетов' : 'Полностью свернуть список тикетов';
         }
         const inboxResizeBtn = byId('collapseInboxBtn');
         if (inboxResizeBtn) {
             const isFull = state.sidebarMode === PANEL_MODES.FULL;
-            inboxResizeBtn.textContent = isFull ? '⟫' : '⟪';
+            inboxResizeBtn.textContent = isFull ? '⤡' : '⤢';
             inboxResizeBtn.title = isFull ? 'Вернуть стандартную ширину списка тикетов' : 'Развернуть список тикетов на всю ширину';
         }
-        const drawerToggleBtn = byId('drawerToggleBtn');
-        if (drawerToggleBtn) {
-            const isCollapsed = state.drawerMode === PANEL_MODES.COLLAPSED;
-            drawerToggleBtn.textContent = isCollapsed ? '⟨' : '⟩';
-            drawerToggleBtn.title = isCollapsed ? 'Развернуть панель инструментов' : 'Полностью свернуть панель инструментов';
-        }
-        const drawerResizeBtn = byId('drawerResizeBtn');
-        if (drawerResizeBtn) {
-            const isFull = state.drawerMode === PANEL_MODES.FULL;
-            drawerResizeBtn.textContent = isFull ? '⟪' : '⟫';
-            drawerResizeBtn.title = isFull ? 'Вернуть стандартную ширину панели инструментов' : 'Развернуть панель инструментов на всю ширину';
-        }
+        document.querySelectorAll('[data-workspace-view]').forEach((button) => {
+            button.classList.toggle('active', button.getAttribute('data-workspace-view') === state.workspaceView);
+        });
+        byId('queueDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.QUEUE);
+        byId('ticketDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.TICKET);
     }
 
     function setSidebarMode(mode, options) {
@@ -405,10 +408,13 @@
         applyLayoutClasses();
     }
 
-    function setDrawerMode(mode, options) {
-        state.drawerMode = normalizePanelMode(mode);
+    function setWorkspaceView(view, options) {
+        state.workspaceView = normalizeWorkspaceView(view);
+        if (state.workspaceView === WORKSPACE_VIEWS.TICKET && !selectedTicket()) {
+            state.workspaceView = WORKSPACE_VIEWS.QUEUE;
+        }
         if (!(options && options.persist === false)) {
-            sessionStorage.setItem(DRAWER_MODE_KEY, state.drawerMode);
+            sessionStorage.setItem(WORKSPACE_VIEW_KEY, state.workspaceView);
         }
         applyLayoutClasses();
     }
@@ -438,7 +444,7 @@
         localStorage.removeItem(ROLE_KEY);
         sessionStorage.removeItem(LAST_TICKET_KEY);
         sessionStorage.removeItem(SIDEBAR_MODE_KEY);
-        sessionStorage.removeItem(DRAWER_MODE_KEY);
+        sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
     }
 
     function logout() {
@@ -446,12 +452,15 @@
         clearStoredSession();
         state.actorRole = '';
         state.userLogin = '';
+        state.currentFilter = 'mine';
+        state.ticketQuery = '';
+        state.ticketSort = 'updated_desc';
         state.tickets = [];
         state.selectedTicketId = '';
         state.selectedSnapshot = null;
         state.selectedLifecycle = null;
         state.sidebarMode = PANEL_MODES.HALF;
-        state.drawerMode = PANEL_MODES.HALF;
+        state.workspaceView = WORKSPACE_VIEWS.QUEUE;
         renderTicketList();
         renderStage();
         renderContextPanel();
@@ -464,7 +473,7 @@
         state.actorRole = localStorage.getItem(ROLE_KEY) || '';
         state.selectedTicketId = sessionStorage.getItem(LAST_TICKET_KEY) || '';
         state.sidebarMode = normalizePanelMode(sessionStorage.getItem(SIDEBAR_MODE_KEY));
-        state.drawerMode = normalizePanelMode(sessionStorage.getItem(DRAWER_MODE_KEY));
+        state.workspaceView = normalizeWorkspaceView(sessionStorage.getItem(WORKSPACE_VIEW_KEY));
         updateAuthBadge();
     }
 
@@ -595,8 +604,93 @@
         return (Date.now() - closedAt.getTime()) >= CLOSED_TICKET_HIDE_AFTER_MS;
     }
 
+    function priorityRank(priorityClass) {
+        const mapping = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+        return Number.isFinite(mapping[priorityClass]) ? mapping[priorityClass] : 99;
+    }
+
+    function numericTimestamp(value) {
+        const date = parseServerDate(value);
+        return date ? date.getTime() : 0;
+    }
+
+    function ticketDueCandidates(ticket) {
+        const ola = ticket?.ola || {};
+        return [
+            numericTimestamp(ticket?.first_response_due_at),
+            numericTimestamp(ticket?.resolution_due_at),
+            numericTimestamp(ola.ola_ack_due_at),
+            numericTimestamp(ola.ola_processing_due_at),
+        ].filter((value) => value > 0);
+    }
+
+    function ticketEarliestDueAt(ticket) {
+        const values = ticketDueCandidates(ticket);
+        return values.length ? Math.min(...values) : 0;
+    }
+
+    function ticketSlaState(ticket) {
+        if (!ticket) {
+            return { level: 'none', label: 'SLA/OLA не задан', dueAt: 0 };
+        }
+        const breachedAt = [
+            ticket.first_response_breached_at,
+            ticket.resolution_breached_at,
+            ticket?.ola?.ola_ack_breached_at,
+            ticket?.ola?.ola_processing_breached_at,
+        ].some(Boolean);
+        const dueAt = ticketEarliestDueAt(ticket);
+        if (breachedAt || (dueAt && dueAt <= Date.now())) {
+            return { level: 'breach', label: 'SLA/OLA breach', dueAt };
+        }
+        if (dueAt && dueAt - Date.now() <= SLA_RISK_WINDOW_MS) {
+            return { level: 'risk', label: 'SLA/OLA риск', dueAt };
+        }
+        if (dueAt) {
+            return { level: 'healthy', label: 'SLA/OLA в норме', dueAt };
+        }
+        return { level: 'none', label: 'SLA/OLA не задан', dueAt: 0 };
+    }
+
+    function compareTickets(left, right) {
+        if (state.ticketSort === 'sla_risk') {
+            const score = { breach: 0, risk: 1, healthy: 2, none: 3 };
+            const leftState = ticketSlaState(left);
+            const rightState = ticketSlaState(right);
+            const levelDiff = score[leftState.level] - score[rightState.level];
+            if (levelDiff !== 0) {
+                return levelDiff;
+            }
+            return (leftState.dueAt || Number.MAX_SAFE_INTEGER) - (rightState.dueAt || Number.MAX_SAFE_INTEGER);
+        }
+        if (state.ticketSort === 'priority') {
+            const diff = priorityRank(left?.priority_class) - priorityRank(right?.priority_class);
+            if (diff !== 0) {
+                return diff;
+            }
+        }
+        if (state.ticketSort === 'requester_reply') {
+            const leftUnread = Number(left?.chat_counters?.support_unread_user_messages || 0);
+            const rightUnread = Number(right?.chat_counters?.support_unread_user_messages || 0);
+            if (leftUnread !== rightUnread) {
+                return rightUnread - leftUnread;
+            }
+            const leftPending = Number(left?.chat_counters?.support_pending_user_messages || 0);
+            const rightPending = Number(right?.chat_counters?.support_pending_user_messages || 0);
+            if (leftPending !== rightPending) {
+                return rightPending - leftPending;
+            }
+        }
+        if (state.ticketSort === 'age_desc') {
+            return numericTimestamp(left?.created_at) - numericTimestamp(right?.created_at);
+        }
+        return numericTimestamp(right?.updated_at || right?.created_at) - numericTimestamp(left?.updated_at || left?.created_at);
+    }
+
     function filteredTickets() {
-        return state.tickets.filter((ticket) => ticketPassesFilter(ticket, state.currentFilter) && ticketMatchesQuery(ticket, state.ticketQuery));
+        return state.tickets
+            .filter((ticket) => ticketPassesFilter(ticket, state.currentFilter) && ticketMatchesQuery(ticket, state.ticketQuery))
+            .sort(compareTickets);
     }
 
     function countForFilter(filterName) {
@@ -674,6 +768,10 @@
         listNode.innerHTML = tickets.map((ticket) => {
             const active = ticket.ticket_id === state.selectedTicketId ? ' active' : '';
             const requester = ticket.requester_display_name || ticket.requester_id || '—';
+            const chatCounters = ticket.chat_counters || {};
+            const unreadForSupport = Number(chatCounters.support_unread_user_messages || 0);
+            const pendingUser = Number(chatCounters.support_pending_user_messages || 0);
+            const slaState = ticketSlaState(ticket);
             const expandedDetails = [
                 'ID: ' + (ticket.ticket_id || '—'),
                 'Устройство: ' + (ticket.device_id || 'Не привязано'),
@@ -684,6 +782,12 @@
                 ? '<span class="mode-badge">Work</span>'
                 : (shouldObserveTicket(ticket) ? '<span class="mode-badge mode-badge-observe">Observe</span>' : '<span class="mode-badge">Preview</span>');
             const actionMarker = isNeedsAction(ticket) ? '<span class="chip">Нужно действие</span>' : '';
+            const unreadMarker = unreadForSupport > 0
+                ? '<span class="chip">Ответ пользователя: ' + unreadForSupport + '</span>'
+                : (pendingUser > 0 ? '<span class="chip">Ждут разбора: ' + pendingUser + '</span>' : '');
+            const slaMarker = slaState.level === 'breach'
+                ? '<span class="chip">SLA/OLA breach</span>'
+                : (slaState.level === 'risk' ? '<span class="chip">SLA/OLA риск</span>' : '');
             const takeSelfButton = canTakeSelf(ticket)
                 ? '<button type="button" class="btn btn-secondary ticket-take-btn" data-ticket-action="take" data-ticket-id="' + escapeHtml(ticket.ticket_id) + '">Взять себе</button>'
                 : '';
@@ -710,6 +814,8 @@
                     <div class="ticket-row-actions">
                         <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
                         ${ticket.priority_class ? '<span class="chip">' + escapeHtml(ticket.priority_class) + '</span>' : ''}
+                        ${slaMarker}
+                        ${unreadMarker}
                         ${actionMarker}
                         ${takeSelfButton}
                     </div>
@@ -730,7 +836,7 @@
                     state.ticketClickTimer = 0;
                 }
                 if (event.detail > 1) {
-                    await selectTicket(ticketId);
+                    await selectTicket(ticketId, { view: WORKSPACE_VIEWS.TICKET });
                     if (state.sidebarMode === PANEL_MODES.FULL) {
                         setSidebarMode(PANEL_MODES.HALF);
                     }
@@ -789,6 +895,9 @@
             return [];
         }
         const actions = [];
+        if (state.workspaceView !== WORKSPACE_VIEWS.TICKET) {
+            actions.push({ id: 'open_ticket_desk', label: 'Открыть тикет', kind: 'primary' });
+        }
         if (canTakeSelf(ticket)) {
             actions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
         }
@@ -846,6 +955,196 @@
                 await handleQuickAction(button.getAttribute('data-quick-action') || '');
             });
         });
+    }
+
+    function queueSummaryStats() {
+        const filtered = filteredTickets();
+        const actionable = filtered.filter((ticket) => isNeedsAction(ticket)).length;
+        const unassigned = filtered.filter((ticket) => !ticket.assignee_id).length;
+        const mine = filtered.filter((ticket) => ticket.assignee_id === state.userLogin).length;
+        const unread = filtered.filter((ticket) => Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0).length;
+        const waiting = filtered.filter((ticket) => ticket.status === 'waiting_on_user').length;
+        const slaRisk = filtered.filter((ticket) => {
+            const level = ticketSlaState(ticket).level;
+            return level === 'risk' || level === 'breach';
+        }).length;
+        return [
+            { label: 'Видимые тикеты', value: String(filtered.length), note: 'С учётом текущего фильтра и поиска', tone: 'default' },
+            { label: 'Нужны действия', value: String(actionable), note: 'Статус, ответ пользователя или подтверждение решения', tone: 'action' },
+            { label: 'Без исполнителя', value: String(unassigned), note: 'Можно быстро забрать в работу', tone: 'default' },
+            { label: 'SLA / OLA риск', value: String(slaRisk), note: 'Есть риск или breach по ближайшему дедлайну', tone: 'risk' },
+            { label: 'Ответы пользователя', value: String(unread), note: 'Есть новые сообщения от инициатора', tone: 'action' },
+            { label: 'Ждут пользователя', value: String(waiting), note: 'Контроль по возврату к работе', tone: 'default' },
+            { label: 'Мои в выборке', value: String(mine), note: 'Тикеты, закреплённые за вами', tone: 'default' },
+        ];
+    }
+
+    function queueActionButtonMarkup(action, attrName) {
+        const btnClass = action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
+        return '<button type="button" class="' + btnClass + '" ' + attrName + '="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>';
+    }
+
+    function renderQueueDesk() {
+        const summaryNode = byId('queueSummaryStrip');
+        const actionNode = byId('queueActionDock');
+        const focusNode = byId('queueFocusPanel');
+        const contextNode = byId('queueContextPanel');
+        const insightNode = byId('queueInsightPanel');
+        const ticket = selectedTicket();
+        const snapshot = state.selectedSnapshot;
+        if (summaryNode) {
+            summaryNode.innerHTML = queueSummaryStats().map((item) => `
+                <article class="queue-summary-card" data-tone="${escapeHtml(item.tone || 'default')}">
+                    <div class="queue-summary-label">${escapeHtml(item.label)}</div>
+                    <div class="queue-summary-value">${escapeHtml(item.value)}</div>
+                    <div class="queue-summary-note">${escapeHtml(item.note)}</div>
+                </article>
+            `).join('');
+        }
+        if (actionNode) {
+            const filterActions = [
+                { id: 'mine', label: 'Мои', kind: state.currentFilter === 'mine' ? 'primary' : 'secondary' },
+                { id: 'actionable', label: 'Нужны действия', kind: state.currentFilter === 'actionable' ? 'primary' : 'secondary' },
+                { id: 'unassigned', label: 'Без исполнителя', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
+                { id: 'waiting', label: 'Ждут пользователя', kind: state.currentFilter === 'waiting' ? 'primary' : 'secondary' },
+                { id: 'all', label: 'Вся очередь', kind: state.currentFilter === 'all' ? 'primary' : 'secondary' },
+            ];
+            const sortActions = [
+                { id: 'updated_desc', label: 'Свежие', kind: state.ticketSort === 'updated_desc' ? 'primary' : 'secondary' },
+                { id: 'sla_risk', label: 'SLA риск', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
+                { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
+                { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
+            ];
+            const ctaActions = [{ id: 'refresh', label: 'Обновить очередь', kind: 'secondary' }];
+            if (ticket) {
+                ctaActions.push({ id: 'open_ticket_desk', label: 'Открыть Ticket Desk', kind: 'primary' });
+                if (canTakeSelf(ticket)) {
+                    ctaActions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
+                }
+            }
+            actionNode.innerHTML = `
+                <section class="queue-filter-stack">
+                    <div class="queue-stack-title">Пресеты очереди</div>
+                    <div class="quick-action-row">${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}</div>
+                </section>
+                <section class="queue-sort-stack">
+                    <div class="queue-stack-title">Сортировка списка</div>
+                    <div class="quick-action-row">${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}</div>
+                </section>
+                <section class="queue-cta-stack">
+                    <div class="queue-stack-title">Быстрые действия</div>
+                    <div class="quick-action-row">${ctaActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
+                </section>
+            `;
+            actionNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    state.currentFilter = button.getAttribute('data-queue-filter') || 'all';
+                    renderTicketList();
+                    renderQueueDesk();
+                });
+            });
+            actionNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
+                    const sortSelect = byId('ticketSortSelect');
+                    if (sortSelect) {
+                        sortSelect.value = state.ticketSort;
+                    }
+                    renderTicketList();
+                    renderQueueDesk();
+                });
+            });
+            actionNode.querySelectorAll('[data-queue-action]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    await handleQuickAction(button.getAttribute('data-queue-action') || '');
+                });
+            });
+        }
+        if (focusNode) {
+            if (!ticket) {
+                focusNode.innerHTML = '<div class="activity-item">Выберите тикет слева, чтобы увидеть triage-контекст, SLA и быстрые действия.</div>';
+            } else {
+                const queueActions = quickActionButtons(ticket);
+                const counters = ticket.chat_counters || {};
+                focusNode.innerHTML = `
+                    <div class="queue-focus-title">Текущий focus</div>
+                    <article class="queue-focus-shell">
+                        <div class="queue-focus-header">
+                            <div>
+                                <div class="queue-focus-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
+                                <div class="queue-focus-name">${escapeHtml(ticket.title || 'Без названия')}</div>
+                            </div>
+                            <span class="mode-badge">${escapeHtml(currentMode() === 'work' ? 'Work' : (currentMode() === 'observe' ? 'Observe' : 'Preview'))}</span>
+                        </div>
+                        <div class="queue-focus-description">${escapeHtml(ticket.description || 'Описание заявки пока не заполнено.')}</div>
+                        <div class="queue-focus-meta">
+                            <div class="queue-focus-stat">
+                                <div class="queue-focus-stat-label">Инициатор</div>
+                                <div class="queue-focus-stat-value">${escapeHtml(snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—')}</div>
+                            </div>
+                            <div class="queue-focus-stat">
+                                <div class="queue-focus-stat-label">Статус и очередь</div>
+                                <div class="queue-focus-stat-value">${escapeHtml(statusLabel(ticket.status))} • ${escapeHtml(ticket.queue_code || snapshot?.queue_code || '—')}</div>
+                            </div>
+                            <div class="queue-focus-stat">
+                                <div class="queue-focus-stat-label">Исполнитель</div>
+                                <div class="queue-focus-stat-value">${escapeHtml(ticket.assignee_id || 'Не назначен')}</div>
+                            </div>
+                            <div class="queue-focus-stat">
+                                <div class="queue-focus-stat-label">Ответ пользователя</div>
+                                <div class="queue-focus-stat-value">${escapeHtml(String(counters.support_unread_user_messages || 0))}</div>
+                            </div>
+                        </div>
+                        <div class="quick-action-row">${queueActions.map((action) => queueActionButtonMarkup(action, 'data-queue-quick-action')).join('')}</div>
+                    </article>
+                `;
+                focusNode.querySelectorAll('[data-queue-quick-action]').forEach((button) => {
+                    button.addEventListener('click', async () => {
+                        await handleQuickAction(button.getAttribute('data-queue-quick-action') || '');
+                    });
+                });
+            }
+        }
+        if (contextNode) {
+            if (!ticket) {
+                contextNode.innerHTML = '<div class="activity-item">Нет выбранного тикета.</div>';
+            } else {
+                const presence = snapshot?.presence || {};
+                const deviceSummary = snapshot?.device_summary || {};
+                const requesterProfile = snapshot?.requester_profile || {};
+                const contextRows = [
+                    ['Код', ticket.ticket_code || ticket.ticket_id],
+                    ['Приоритет', ticket.priority_class ? priorityLabel(ticket.priority_class) : '—'],
+                    ['Инициатор в чате', formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, 'онлайн', 'офлайн')],
+                    ['Агент', formatPresenceState(Boolean(deviceSummary.online), deviceSummary.last_seen_at, 'онлайн', 'офлайн')],
+                    ['Телефон', requesterProfile.phone || '—'],
+                    ['Корпус / кабинет', [requesterProfile.building, requesterProfile.room].filter(Boolean).join(' / ') || '—'],
+                ];
+                contextNode.innerHTML = '<dl class="key-value-list">' + contextRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('') + '</dl>';
+            }
+        }
+        if (insightNode) {
+            if (!ticket) {
+                insightNode.innerHTML = '<div class="activity-item">SLA, OLA и маршрут появятся после выбора тикета.</div>';
+            } else {
+                const requester = snapshot?.requester_profile || {};
+                const ola = snapshot?.ola || ticket?.ola || {};
+                const facts = [
+                    ['SLA первого ответа', snapshot?.first_response_due_at ? formatDate(snapshot.first_response_due_at) : (ticket.first_response_due_at ? formatDate(ticket.first_response_due_at) : 'не задан')],
+                    ['SLA решения', snapshot?.resolution_due_at ? formatDate(snapshot.resolution_due_at) : (ticket.resolution_due_at ? formatDate(ticket.resolution_due_at) : 'не задан')],
+                    ['OLA принятия', ola.ola_ack_due_at ? formatDate(ola.ola_ack_due_at) : 'не задан'],
+                    ['OLA обработки', ola.ola_processing_due_at ? formatDate(ola.ola_processing_due_at) : 'не задан'],
+                    ['Риск', ticketSlaState(ticket).label],
+                    ['Маршрутный профиль', [requester.full_name, requester.building, requester.room].filter(Boolean).join(' • ') || 'базовый профиль'],
+                ];
+                insightNode.innerHTML = facts.map(([label, value]) => `
+                    <div class="support-fact">
+                        <span class="support-fact-label">${escapeHtml(label)}</span>
+                        <div class="support-fact-value">${escapeHtml(value)}</div>
+                    </div>
+                `).join('');
+            }
+        }
     }
 
     function historyItemsFromSnapshot(snapshot) {
@@ -1051,6 +1350,12 @@
 
     function renderStage() {
         const mode = currentMode();
+        if (!selectedTicket() && state.workspaceView === WORKSPACE_VIEWS.TICKET) {
+            setWorkspaceView(WORKSPACE_VIEWS.QUEUE, { persist: false });
+        } else {
+            applyLayoutClasses();
+        }
+        renderQueueDesk();
         renderStageHeader();
         byId('stageEmpty')?.classList.toggle('hidden', mode !== 'empty');
         byId('previewPane')?.classList.toggle('hidden', mode !== 'preview');
@@ -1117,11 +1422,14 @@
         setSyncState('Обновлено ' + new Date().toLocaleTimeString('ru-RU'));
     }
 
-    async function selectTicket(ticketId) {
+    async function selectTicket(ticketId, options) {
         if (!ticketId) {
             return;
         }
         state.selectedTicketId = ticketId;
+        if (options && options.view) {
+            setWorkspaceView(options.view);
+        }
         sessionStorage.setItem(LAST_TICKET_KEY, ticketId);
         state.selectedSnapshot = null;
         state.selectedLifecycle = null;
@@ -1182,6 +1490,7 @@
             showToast('Тикет назначен на вас');
             await loadTickets({ preserveSelection: true });
             if (state.selectedTicketId === ticketId) {
+                setWorkspaceView(WORKSPACE_VIEWS.TICKET);
                 await refreshSelectedDetails(true);
             }
         } catch (error) {
@@ -1206,22 +1515,25 @@
     }
 
     async function handleQuickAction(actionId) {
-        const ticket = selectedTicket();
-        if (!ticket) {
-            return;
-        }
         try {
             if (actionId === 'refresh') {
                 await loadTickets({ preserveSelection: true, skipSelectionRefresh: true });
                 await refreshSelectedDetails(false);
                 return;
             }
+            const ticket = selectedTicket();
+            if (!ticket) {
+                return;
+            }
+            if (actionId === 'open_ticket_desk') {
+                setWorkspaceView(WORKSPACE_VIEWS.TICKET);
+                renderStage();
+                return;
+            }
             if (actionId === 'open_tools') {
-                if (state.drawerMode === PANEL_MODES.COLLAPSED) {
-                    setDrawerMode(PANEL_MODES.HALF);
-                }
+                setWorkspaceView(WORKSPACE_VIEWS.TICKET);
                 state.drawerTab = 'tools';
-                renderToolPanels();
+                await renderToolPanels();
                 return;
             }
             if (actionId === 'take_self') {
@@ -1908,6 +2220,9 @@
         updateAuthBadge();
         updateSwitchRoleLink();
         applyLayoutClasses();
+        if (byId('ticketSortSelect')) {
+            byId('ticketSortSelect').value = state.ticketSort;
+        }
         renderTicketList();
         renderStage();
         renderContextPanel();
@@ -1929,11 +2244,18 @@
         byId('ticketSearchInput')?.addEventListener('input', () => {
             state.ticketQuery = String(byId('ticketSearchInput')?.value || '').trim();
             renderTicketList();
+            renderQueueDesk();
+        });
+        byId('ticketSortSelect')?.addEventListener('change', () => {
+            state.ticketSort = String(byId('ticketSortSelect')?.value || 'updated_desc');
+            renderTicketList();
+            renderQueueDesk();
         });
         document.querySelectorAll('#ticketFilterChips .filter-chip').forEach((button) => {
             button.addEventListener('click', () => {
                 state.currentFilter = button.getAttribute('data-filter') || 'all';
                 renderTicketList();
+                renderQueueDesk();
             });
         });
         byId('sidebarToggleBtn')?.addEventListener('click', () => {
@@ -1942,11 +2264,11 @@
         byId('collapseInboxBtn')?.addEventListener('click', () => {
             setSidebarMode(state.sidebarMode === PANEL_MODES.FULL ? PANEL_MODES.HALF : PANEL_MODES.FULL);
         });
-        byId('drawerToggleBtn')?.addEventListener('click', () => {
-            setDrawerMode(state.drawerMode === PANEL_MODES.COLLAPSED ? PANEL_MODES.HALF : PANEL_MODES.COLLAPSED);
-        });
-        byId('drawerResizeBtn')?.addEventListener('click', () => {
-            setDrawerMode(state.drawerMode === PANEL_MODES.FULL ? PANEL_MODES.HALF : PANEL_MODES.FULL);
+        document.querySelectorAll('[data-workspace-view]').forEach((button) => {
+            button.addEventListener('click', () => {
+                setWorkspaceView(button.getAttribute('data-workspace-view') || WORKSPACE_VIEWS.QUEUE);
+                renderStage();
+            });
         });
         document.querySelectorAll('.drawer-tab').forEach((button) => {
             button.addEventListener('click', async () => {
