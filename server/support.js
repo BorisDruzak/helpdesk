@@ -230,6 +230,22 @@
         return Number.isNaN(date.getTime()) ? null : date;
     }
 
+    function dedupeTicketsById(tickets) {
+        const unique = new Map();
+        (Array.isArray(tickets) ? tickets : []).forEach((ticket) => {
+            if (!ticket || !ticket.ticket_id) {
+                return;
+            }
+            const current = unique.get(ticket.ticket_id);
+            const currentTs = parseServerDate(current?.updated_at || current?.created_at);
+            const nextTs = parseServerDate(ticket.updated_at || ticket.created_at);
+            if (!current || (nextTs ? nextTs.getTime() : 0) >= (currentTs ? currentTs.getTime() : 0)) {
+                unique.set(ticket.ticket_id, ticket);
+            }
+        });
+        return Array.from(unique.values());
+    }
+
     function formatDate(value) {
         const date = parseServerDate(value);
         if (!date) {
@@ -1067,8 +1083,8 @@
         const opts = options || {};
         setSyncState(opts.silent ? 'Синхронизация…' : 'Обновляем список тикетов…');
         const data = await fetchJson('/api/tickets?limit=200', { headers: authHeaders() });
-        const tickets = (data.tickets || [])
-            .map((item) => item.ticket || item)
+        const tickets = dedupeTicketsById((data.tickets || [])
+            .map((item) => item.ticket || item))
             .sort((left, right) => {
                 const a = parseServerDate(right.updated_at || right.created_at);
                 const b = parseServerDate(left.updated_at || left.created_at);

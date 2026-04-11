@@ -121,6 +121,44 @@ async def test_support_ticket_list_and_snapshot_follow_queue_membership(test_cli
 
 
 @pytest.mark.asyncio
+async def test_support_ticket_list_does_not_duplicate_assigned_queue_member_tickets(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add_all([
+            UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="op_a", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="op_b", password_hash="test", actor_role="support", is_active=True),
+        ])
+        queue = await _seed_queue(
+            session,
+            code="servicedesk_l1",
+            name="ServiceDesk L1",
+            members=["support-test", "op_a", "op_b"],
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=str(uuid.uuid4()),
+            title="Assigned queue ticket",
+            description="Should appear once for support assignee",
+            status="in_progress",
+            requester_id="user-a",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        session.add(ticket)
+        ticket_id = ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.get("/api/tickets", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    listed_ids = [item["ticket"]["ticket_id"] for item in payload["tickets"]]
+
+    assert listed_ids.count(ticket_id) == 1
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_routes_by_requester_profile_field(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 

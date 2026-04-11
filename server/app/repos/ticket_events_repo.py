@@ -1183,10 +1183,18 @@ class TicketEventsRepo:
                 )
             if "support_actor_id" in filters:
                 support_actor_id = filters["support_actor_id"]
-                stmt = stmt.outerjoin(TicketQueueMember, Ticket.queue_id == TicketQueueMember.queue_id).where(
+                queue_membership_exists = (
+                    select(TicketQueueMember.queue_id)
+                    .where(
+                        TicketQueueMember.queue_id == Ticket.queue_id,
+                        TicketQueueMember.actor_id == support_actor_id,
+                    )
+                    .exists()
+                )
+                stmt = stmt.where(
                     or_(
                         Ticket.assignee_id == support_actor_id,
-                        TicketQueueMember.actor_id == support_actor_id,
+                        queue_membership_exists,
                         and_(
                             Ticket.queue_id.is_(None),
                             Ticket.status.notin_(list(TERMINAL_STATUSES)),
