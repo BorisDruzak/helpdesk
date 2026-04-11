@@ -172,6 +172,11 @@
             second: '2-digit'
         });
     }
+    function formatDate(ts) {
+        const d = parseServerDate(ts);
+        if (!d) return '—';
+        return d.toLocaleString('ru-RU');
+    }
     function formatSla(iso) {
         if (!iso) return '—';
         const d = parseServerDate(iso);
