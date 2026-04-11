@@ -57,6 +57,8 @@ from .tickets_list_model import TicketCardDelegate, TicketsListModel
 PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
 TICKET_LIST_POLL_INTERVAL_MS = 10_000
 TICKET_DETAIL_POLL_INTERVAL_MS = 5_000
+TICKET_HISTORY_PAGE_SIZE = 100
+TICKET_HISTORY_TOP_THRESHOLD_PX = 72
 
 OUTGOING_MESSAGE_ROLES = {"user", "agent", "requester"}
 SUPPORT_MESSAGE_ROLES = {"support", "admin"}
@@ -120,6 +122,32 @@ def merge_ticket_stream(existing: List[dict], incoming: List[dict], *, key_field
             seen.add(marker)
         merged.append(item)
     return merged
+
+
+def prepend_ticket_stream(existing: List[dict], incoming: List[dict], *, key_fields: tuple[str, ...]) -> List[dict]:
+    merged_existing = list(existing)
+    seen = set()
+    for item in merged_existing:
+        for key_field in key_fields:
+            value = item.get(key_field)
+            if value not in (None, ""):
+                seen.add((key_field, str(value)))
+                break
+
+    prepended: List[dict] = []
+    for item in incoming:
+        marker = None
+        for key_field in key_fields:
+            value = item.get(key_field)
+            if value not in (None, ""):
+                marker = (key_field, str(value))
+                break
+        if marker and marker in seen:
+            continue
+        if marker:
+            seen.add(marker)
+        prepended.append(item)
+    return prepended + merged_existing
 
 
 class MessageBubbleWidget(QFrame):
@@ -587,10 +615,14 @@ class ChatPanel(QWidget):
         self._pinned_messages: Dict[str, List[dict]] = {}
         self._reply_target: Optional[dict] = None
         self._last_timeline_html: Optional[str] = None
+        self._last_timeline_item_signatures: List[str] = []
         self._pending_ticket_snapshot: Optional[tuple[dict, List[dict], List[dict]]] = None
         self._active_ticket_messages: List[dict] = []
         self._active_ticket_events: List[dict] = []
         self._last_detail_event_id = 0
+        self._oldest_loaded_event_id = 0
+        self._has_older_history = False
+        self._loading_older_history = False
         self._bubble_menu_open = False
         self._timeline_bubbles: List[MessageBubbleWidget] = []
         self._resolution_prompt_keys: set[str] = set()
@@ -598,6 +630,11 @@ class ChatPanel(QWidget):
         self._pending_tasks: set[asyncio.Task] = set()
         self._is_closing = False
         self._last_marked_read_event_id: Dict[str, int] = {}
+        self._optimistic_read_event_id: Dict[str, int] = {}
+        self._follow_latest_messages = True
+        self._force_scroll_to_latest_on_next_render = False
+        self._suspend_scroll_tracking = False
+        self._timeline_scroll_restore_revision = 0
         self._profile_sidebar: Optional[ProfileSidebarWidget] = None
         self._last_tickets_list_fingerprint: Optional[str] = None
         self._last_detail_header_sig: Optional[str] = None
@@ -814,8 +851,30 @@ class ChatPanel(QWidget):
         self.timeline_layout = QVBoxLayout(self.timeline_container)
         self.timeline_layout.setContentsMargins(16, 16, 16, 16)
         self.timeline_layout.setSpacing(12)
+        # Верхний spacer прижимает короткий чат к низу, как в мессенджерах.
+        self.timeline_layout.addStretch(1)
         self.timeline_scroll.setWidget(self.timeline_container)
         center_layout.addWidget(self.timeline_scroll, 1)
+
+        self.jump_to_latest_btn = QToolButton()
+        self.jump_to_latest_btn.setText("↓ Вниз")
+        self.jump_to_latest_btn.setToolTip("Перейти к последним сообщениям")
+        self.jump_to_latest_btn.clicked.connect(self._jump_to_latest_messages)
+        self.jump_to_latest_btn.setVisible(False)
+        self.jump_to_latest_btn.setStyleSheet(
+            f"padding: 4px 12px; border-radius: 12px; "
+            f"background: {theme.PRIMARY_BTN}; color: {theme.PRIMARY_BTN_TEXT}; font-weight: 700;"
+        )
+        jump_row = QHBoxLayout()
+        jump_row.setContentsMargins(0, 0, 0, 0)
+        jump_row.setSpacing(0)
+        jump_row.addStretch(1)
+        jump_row.addWidget(self.jump_to_latest_btn)
+        center_layout.addLayout(jump_row)
+
+        timeline_scrollbar = self.timeline_scroll.verticalScrollBar()
+        timeline_scrollbar.valueChanged.connect(self._on_timeline_scroll_changed)
+        timeline_scrollbar.rangeChanged.connect(self._on_timeline_scroll_changed)
 
         self.input_line = QLineEdit()
         self.input_line.setObjectName("ChatInputLine")
@@ -903,13 +962,15 @@ class ChatPanel(QWidget):
             tsp.setColor(self.timeline_scroll.backgroundRole(), QColor(theme.TIMELINE_SCROLL_BG))
             self.timeline_scroll.setPalette(tsp)
             s_vp = self.timeline_scroll.viewport()
-            s_vp.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+            # На Windows OpaquePaintEvent у viewport QScrollArea приводит к "грязной"
+            # перерисовке (старые пузыри визуально остаются под новыми).
+            s_vp.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
             s_vp.setAutoFillBackground(True)
             pal2 = s_vp.palette()
             pal2.setColor(s_vp.backgroundRole(), QColor(theme.TIMELINE_SCROLL_BG))
             s_vp.setPalette(pal2)
         if hasattr(self, "timeline_container"):
-            self.timeline_container.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+            self.timeline_container.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
     def _solidify_stack_backgrounds(self) -> None:
         page = QColor(theme.BG_PAGE)
@@ -1259,6 +1320,10 @@ class ChatPanel(QWidget):
         unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
         if unread_messages <= 0 and unread_tools <= 0:
             return 0
+        last_read_event_id = int(counters.get("requester_last_read_event_id") or 0)
+        if self._has_older_history and self._oldest_loaded_event_id > 0:
+            if last_read_event_id < max(self._oldest_loaded_event_id - 1, 0):
+                return 0
 
         latest_event_id = 0
         for message in messages:
@@ -1279,16 +1344,35 @@ class ChatPanel(QWidget):
         ticket_id = str(ticket.get("ticket_id") or "")
         if not ticket_id:
             return
+        if not self._force_scroll_to_latest_on_next_render and not self._is_timeline_near_bottom(24):
+            return
         last_read_event_id = self._latest_requester_read_event_id(ticket, messages, events)
         if last_read_event_id <= 0:
             return
         if last_read_event_id <= int(self._last_marked_read_event_id.get(ticket_id, 0)):
             return
         previous_value = int(self._last_marked_read_event_id.get(ticket_id, 0))
+        previous_optimistic = int(self._optimistic_read_event_id.get(ticket_id, 0))
         self._last_marked_read_event_id[ticket_id] = last_read_event_id
-        self._spawn_task(self._async_mark_ticket_read(ticket_id, last_read_event_id, previous_value))
+        self._optimistic_read_event_id[ticket_id] = max(previous_optimistic, last_read_event_id)
+        # Сразу убираем "непрочитано" локально, не дожидаясь roundtrip на сервер.
+        self._apply_ticket_detail_header(ticket, messages, events)
+        self._spawn_task(
+            self._async_mark_ticket_read(
+                ticket_id,
+                last_read_event_id,
+                previous_value,
+                previous_optimistic,
+            )
+        )
 
-    async def _async_mark_ticket_read(self, ticket_id: str, last_read_event_id: int, previous_value: int) -> None:
+    async def _async_mark_ticket_read(
+        self,
+        ticket_id: str,
+        last_read_event_id: int,
+        previous_value: int,
+        previous_optimistic: int,
+    ) -> None:
         try:
             await self.ticket_client.mark_ticket_read(ticket_id, last_read_event_id)
             await self._async_refresh_ticket_list()
@@ -1296,25 +1380,66 @@ class ChatPanel(QWidget):
             if not self._is_closing:
                 logger.warning(f"Не удалось отметить сообщения как прочитанные для {ticket_id}: {exc}")
                 self._last_marked_read_event_id[ticket_id] = previous_value
+                if previous_optimistic > 0:
+                    self._optimistic_read_event_id[ticket_id] = previous_optimistic
+                else:
+                    self._optimistic_read_event_id.pop(ticket_id, None)
 
     def _reset_active_ticket_cache(self) -> None:
         self._active_ticket_messages = []
         self._active_ticket_events = []
         self._last_detail_event_id = 0
+        self._oldest_loaded_event_id = 0
+        self._has_older_history = False
+        self._loading_older_history = False
+        self._last_timeline_item_signatures = []
 
-    def _consume_ticket_detail_payload(self, result: dict) -> tuple[dict, List[dict], List[dict]]:
+    @staticmethod
+    def _extract_oldest_event_id(messages: List[dict], events: List[dict]) -> int:
+        oldest_event_id = 0
+        for message in messages:
+            try:
+                event_id = int(message.get("event_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if event_id > 0 and (oldest_event_id == 0 or event_id < oldest_event_id):
+                oldest_event_id = event_id
+        for event in events:
+            try:
+                event_id = int(event.get("id") or event.get("event_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if event_id > 0 and (oldest_event_id == 0 or event_id < oldest_event_id):
+                oldest_event_id = event_id
+        return oldest_event_id
+
+    def _consume_ticket_detail_payload(
+        self,
+        result: dict,
+        *,
+        mode: str,
+    ) -> tuple[dict, List[dict], List[dict]]:
         ticket = result.get("ticket", {})
         messages = list(result.get("messages", []))
         events = list(result.get("events", []))
-        incremental = bool(result.get("incremental"))
-
-        if incremental:
+        if mode == "append":
             self._active_ticket_messages = merge_ticket_stream(
                 self._active_ticket_messages,
                 messages,
                 key_fields=("message_id", "event_id", "id"),
             )
             self._active_ticket_events = merge_ticket_stream(
+                self._active_ticket_events,
+                events,
+                key_fields=("id", "event_id", "message_id"),
+            )
+        elif mode == "prepend":
+            self._active_ticket_messages = prepend_ticket_stream(
+                self._active_ticket_messages,
+                messages,
+                key_fields=("message_id", "event_id", "id"),
+            )
+            self._active_ticket_events = prepend_ticket_stream(
                 self._active_ticket_events,
                 events,
                 key_fields=("id", "event_id", "message_id"),
@@ -1327,6 +1452,15 @@ class ChatPanel(QWidget):
             int(result.get("last_event_id") or 0),
             int(self._last_detail_event_id or 0),
         )
+        if mode in {"replace", "prepend"}:
+            candidate_oldest_event_id = int(result.get("oldest_event_id") or 0)
+            if candidate_oldest_event_id <= 0:
+                candidate_oldest_event_id = self._extract_oldest_event_id(
+                    self._active_ticket_messages,
+                    self._active_ticket_events,
+                )
+            self._oldest_loaded_event_id = candidate_oldest_event_id
+            self._has_older_history = bool(result.get("has_older"))
         return ticket, list(self._active_ticket_messages), list(self._active_ticket_events)
 
     async def _async_refresh_ticket_detail(self) -> None:
@@ -1334,20 +1468,62 @@ class ChatPanel(QWidget):
             return
         self._ticket_detail_refresh_seq += 1
         my_seq = self._ticket_detail_refresh_seq
+        initial_tail_load = (
+            not self._active_ticket_messages
+            and not self._active_ticket_events
+            and int(self._last_detail_event_id or 0) <= 0
+        )
         try:
-            result = await self.ticket_client.get_ticket(
-                self.active_ticket_id,
-                since_event_id=(self._last_detail_event_id or None),
-            )
+            if initial_tail_load:
+                result = await self.ticket_client.get_ticket(
+                    self.active_ticket_id,
+                    limit=TICKET_HISTORY_PAGE_SIZE,
+                )
+                consume_mode = "replace"
+            else:
+                result = await self.ticket_client.get_ticket(
+                    self.active_ticket_id,
+                    since_event_id=(self._last_detail_event_id or None),
+                )
+                consume_mode = "append"
             if self._is_closing or my_seq != self._ticket_detail_refresh_seq:
                 return
             if result.get("status") != "ok":
                 return
-            ticket, messages, events = self._consume_ticket_detail_payload(result)
+            ticket, messages, events = self._consume_ticket_detail_payload(result, mode=consume_mode)
             self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
                 logger.error(f"Ошибка загрузки тикета {self.active_ticket_id}: {exc}")
+
+    def _load_older_history_async(self) -> None:
+        if not self.active_ticket_id or not self._has_older_history or self._loading_older_history:
+            return
+        if self._oldest_loaded_event_id <= 0:
+            return
+        self._spawn_task(self._async_load_older_history())
+
+    async def _async_load_older_history(self) -> None:
+        if self._is_closing or not self.active_ticket_id or self._loading_older_history:
+            return
+        if not self._has_older_history or self._oldest_loaded_event_id <= 0:
+            return
+        self._loading_older_history = True
+        try:
+            result = await self.ticket_client.get_ticket(
+                self.active_ticket_id,
+                before_event_id=self._oldest_loaded_event_id,
+                limit=TICKET_HISTORY_PAGE_SIZE,
+            )
+            if self._is_closing or result.get("status") != "ok":
+                return
+            ticket, messages, events = self._consume_ticket_detail_payload(result, mode="prepend")
+            self._update_ticket_detail_ui(ticket, messages, events)
+        except Exception as exc:
+            if not self._is_closing:
+                logger.error(f"Ошибка догрузки старой истории тикета {self.active_ticket_id}: {exc}")
+        finally:
+            self._loading_older_history = False
 
     def _detail_header_signature(self, ticket: dict, messages: List[dict]) -> str:
         return json.dumps(
@@ -1364,19 +1540,29 @@ class ChatPanel(QWidget):
                 "public_access_code_hint": ticket.get("public_access_code_hint"),
                 "extracted_code": self._extract_public_access_code(ticket, messages),
                 "meta_html": self._build_ticket_meta_html(ticket),
+                "optimistic_read_until": self._optimistic_read_event_id.get(str(ticket.get("ticket_id") or ""), 0),
             },
             sort_keys=True,
             default=str,
         )
 
-    def _apply_ticket_detail_header(self, ticket: dict, messages: List[dict]) -> None:
+    def _apply_ticket_detail_header(self, ticket: dict, messages: List[dict], events: List[dict]) -> None:
         code = ticket.get("ticket_code") or ticket.get("ticket_id", "")
         title = ticket.get("title") or "Без названия"
         status = ticket.get("status") or "unknown"
         status_fg, status_bg = ticket_status_colors(status)
+        ticket_id = str(ticket.get("ticket_id") or "")
         counters = ticket.get("chat_counters") or {}
         unread_messages = int(counters.get("requester_unread_messages") or 0)
         unread_tools = int(counters.get("requester_unread_tool_calls") or 0)
+        optimistic_read_until = int(self._optimistic_read_event_id.get(ticket_id, 0))
+        if unread_messages <= 0 and unread_tools <= 0:
+            self._optimistic_read_event_id.pop(ticket_id, None)
+        elif optimistic_read_until > 0:
+            unread_anchor = self._latest_requester_read_event_id(ticket, messages, events)
+            if unread_anchor > 0 and unread_anchor <= optimistic_read_until:
+                unread_messages = 0
+                unread_tools = 0
         status_suffix_parts: List[str] = []
         if unread_messages > 0:
             status_suffix_parts.append(f"сообщения: {unread_messages}")
@@ -1487,6 +1673,8 @@ class ChatPanel(QWidget):
         header_sig = self._detail_header_signature(ticket, messages)
 
         if timeline_sig == self._last_timeline_html and header_sig == self._last_detail_header_sig:
+            if (self._follow_latest_messages or self._force_scroll_to_latest_on_next_render) and not self._is_timeline_near_bottom(12):
+                self._restore_timeline_scroll(0, 0, True)
             self._maybe_mark_ticket_read(ticket, messages, events)
             return
 
@@ -1495,7 +1683,7 @@ class ChatPanel(QWidget):
 
         if header_changed:
             self._last_detail_header_sig = header_sig
-            self._apply_ticket_detail_header(ticket, messages)
+            self._apply_ticket_detail_header(ticket, messages, events)
 
         self._maybe_prompt_resolution_confirmation(ticket)
 
@@ -1505,18 +1693,52 @@ class ChatPanel(QWidget):
             return
 
         items = self._build_timeline_items(ticket, messages, events)
+        item_signatures = self._timeline_item_signatures(items)
+        if item_signatures == self._last_timeline_item_signatures:
+            self._last_timeline_html = timeline_sig
+            self._pending_ticket_snapshot = None
+            self._refresh_jump_to_latest_button()
+            self._maybe_mark_ticket_read(ticket, messages, events)
+            return
+
         scroll_bar = self.timeline_scroll.verticalScrollBar()
         previous_value = scroll_bar.value()
         previous_max = scroll_bar.maximum()
-        stick_to_bottom = previous_max == 0 or previous_value >= max(previous_max - 24, 0)
+        previous_bottom_gap = max(previous_max - previous_value, 0)
+        force_to_bottom = self._force_scroll_to_latest_on_next_render
+        stick_to_bottom = force_to_bottom or self._follow_latest_messages or self._is_timeline_near_bottom(40)
+        append_only = self._can_incrementally_append_timeline(
+            self._last_timeline_item_signatures,
+            item_signatures,
+        )
+        prepend_only = self._can_incrementally_prepend_timeline(
+            self._last_timeline_item_signatures,
+            item_signatures,
+        )
         self.timeline_scroll.setUpdatesEnabled(False)
         try:
-            self._render_timeline_widgets(items)
+            if append_only:
+                self._append_timeline_widgets(items[len(self._last_timeline_item_signatures):])
+                self._apply_timeline_scroll(previous_value, previous_bottom_gap, stick_to_bottom)
+            elif prepend_only:
+                prepend_count = len(item_signatures) - len(self._last_timeline_item_signatures)
+                self._prepend_timeline_widgets(items[:prepend_count])
+                self._apply_prepend_timeline_scroll(previous_value, previous_max)
+            else:
+                self._render_timeline_widgets(items)
+                self._apply_timeline_scroll(previous_value, previous_bottom_gap, stick_to_bottom)
         finally:
             self.timeline_scroll.setUpdatesEnabled(True)
         self._last_timeline_html = timeline_sig
+        self._last_timeline_item_signatures = item_signatures
+        if force_to_bottom:
+            self._force_scroll_to_latest_on_next_render = False
         self._pending_ticket_snapshot = None
-        self._restore_timeline_scroll(previous_value, stick_to_bottom)
+        if prepend_only:
+            self._restore_prepend_timeline_scroll(previous_value, previous_max)
+        else:
+            self._restore_timeline_scroll(previous_value, previous_bottom_gap, stick_to_bottom)
+        self._refresh_jump_to_latest_button()
         self._maybe_mark_ticket_read(ticket, messages, events)
 
     def _build_ticket_meta_html(self, ticket: dict) -> str:
@@ -1614,32 +1836,162 @@ class ChatPanel(QWidget):
         }
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
-    def _restore_timeline_scroll(self, previous_value: int, stick_to_bottom: bool) -> None:
-        scroll_bar = self.timeline_scroll.verticalScrollBar()
+    @staticmethod
+    def _timeline_item_signature(item: tuple[float, str, dict]) -> str:
+        sort_value, kind, payload = item
+        return json.dumps(
+            {
+                "sort": sort_value,
+                "kind": kind,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+
+    def _timeline_item_signatures(self, items: List[tuple[float, str, dict]]) -> List[str]:
+        return [self._timeline_item_signature(item) for item in items]
+
+    @staticmethod
+    def _can_incrementally_append_timeline(previous_signatures: List[str], new_signatures: List[str]) -> bool:
+        if not previous_signatures or len(new_signatures) <= len(previous_signatures):
+            return False
+        return list(new_signatures[: len(previous_signatures)]) == list(previous_signatures)
+
+    @staticmethod
+    def _can_incrementally_prepend_timeline(previous_signatures: List[str], new_signatures: List[str]) -> bool:
+        if not previous_signatures or len(new_signatures) <= len(previous_signatures):
+            return False
+        return list(new_signatures[-len(previous_signatures):]) == list(previous_signatures)
+
+    def _restore_timeline_scroll(
+        self,
+        previous_value: int,
+        previous_bottom_gap: int,
+        stick_to_bottom: bool,
+    ) -> None:
+        self._timeline_scroll_restore_revision += 1
+        revision = self._timeline_scroll_restore_revision
 
         def apply_scroll() -> None:
-            if stick_to_bottom:
-                scroll_bar.setValue(scroll_bar.maximum())
-            else:
-                scroll_bar.setValue(min(previous_value, scroll_bar.maximum()))
+            if revision != self._timeline_scroll_restore_revision:
+                return
+            self._apply_timeline_scroll(previous_value, previous_bottom_gap, stick_to_bottom)
 
         QTimer.singleShot(0, apply_scroll)
         QTimer.singleShot(30, apply_scroll)
-        QTimer.singleShot(90, apply_scroll)
+
+    def _restore_prepend_timeline_scroll(
+        self,
+        previous_value: int,
+        previous_max: int,
+    ) -> None:
+        self._timeline_scroll_restore_revision += 1
+        revision = self._timeline_scroll_restore_revision
+
+        def apply_scroll() -> None:
+            if revision != self._timeline_scroll_restore_revision:
+                return
+            self._apply_prepend_timeline_scroll(previous_value, previous_max)
+
+        QTimer.singleShot(0, apply_scroll)
+        QTimer.singleShot(30, apply_scroll)
+
+    def _apply_timeline_scroll(
+        self,
+        previous_value: int,
+        previous_bottom_gap: int,
+        stick_to_bottom: bool,
+    ) -> None:
+        scroll_bar = self.timeline_scroll.verticalScrollBar()
+        self._suspend_scroll_tracking = True
+        try:
+            if stick_to_bottom:
+                scroll_bar.setValue(scroll_bar.maximum())
+            else:
+                target = max(scroll_bar.maximum() - previous_bottom_gap, 0)
+                if target == 0 and previous_value > 0:
+                    target = min(previous_value, scroll_bar.maximum())
+                scroll_bar.setValue(target)
+        finally:
+            self._suspend_scroll_tracking = False
+        if stick_to_bottom and self._is_timeline_near_bottom(12):
+            self._force_scroll_to_latest_on_next_render = False
+        self._refresh_jump_to_latest_button()
+
+    def _apply_prepend_timeline_scroll(
+        self,
+        previous_value: int,
+        previous_max: int,
+    ) -> None:
+        scroll_bar = self.timeline_scroll.verticalScrollBar()
+        new_max = scroll_bar.maximum()
+        delta = max(new_max - previous_max, 0)
+        self._suspend_scroll_tracking = True
+        try:
+            scroll_bar.setValue(min(previous_value + delta, new_max))
+        finally:
+            self._suspend_scroll_tracking = False
+        self._refresh_jump_to_latest_button()
+
+    def _is_timeline_near_bottom(self, threshold_px: int = 32) -> bool:
+        scroll_bar = self.timeline_scroll.verticalScrollBar()
+        return scroll_bar.maximum() <= 0 or scroll_bar.value() >= max(scroll_bar.maximum() - threshold_px, 0)
+
+    def _refresh_jump_to_latest_button(self, *_args) -> None:
+        if not hasattr(self, "jump_to_latest_btn"):
+            return
+        self.jump_to_latest_btn.setVisible(not self._is_timeline_near_bottom(40))
+
+    def _on_timeline_scroll_changed(self, *_args) -> None:
+        if self._suspend_scroll_tracking:
+            return
+        if len(_args) >= 2:
+            self._refresh_jump_to_latest_button()
+            return
+        scroll_value = int(_args[0]) if _args else self.timeline_scroll.verticalScrollBar().value()
+        self._follow_latest_messages = self._is_timeline_near_bottom(40)
+        self._force_scroll_to_latest_on_next_render = False
+        self._refresh_jump_to_latest_button()
+        if (
+            scroll_value <= TICKET_HISTORY_TOP_THRESHOLD_PX
+            and getattr(self, "active_ticket_id", None)
+            and getattr(self, "_has_older_history", False)
+            and not getattr(self, "_loading_older_history", False)
+        ):
+            self._load_older_history_async()
+
+    def _ensure_timeline_bottom_follow(self) -> None:
+        self._follow_latest_messages = True
+        self._force_scroll_to_latest_on_next_render = True
+        self._restore_timeline_scroll(0, 0, True)
+        QTimer.singleShot(80, lambda: self._restore_timeline_scroll(0, 0, True))
+        QTimer.singleShot(180, lambda: self._restore_timeline_scroll(0, 0, True))
+        QTimer.singleShot(320, lambda: self._restore_timeline_scroll(0, 0, True))
+
+    def _jump_to_latest_messages(self) -> None:
+        self._ensure_timeline_bottom_follow()
 
     def _clear_timeline_widgets(self) -> None:
         self._timeline_bubbles.clear()
-        while self.timeline_layout.count():
-            item = self.timeline_layout.takeAt(0)
+        if self.timeline_layout.count() == 0:
+            self.timeline_layout.addStretch(1)
+        while self.timeline_layout.count() > 1:
+            item = self.timeline_layout.takeAt(1)
             widget = item.widget()
             child_layout = item.layout()
             if widget is not None:
+                # Важно сразу убрать из иерархии, иначе до следующего цикла event loop
+                # старые виджеты могут визуально перекрывать новые.
+                widget.setParent(None)
                 widget.deleteLater()
             elif child_layout is not None:
                 while child_layout.count():
                     sub_item = child_layout.takeAt(0)
                     sub_widget = sub_item.widget()
                     if sub_widget is not None:
+                        sub_widget.setParent(None)
                         sub_widget.deleteLater()
 
     def _message_bubble_max_width(self) -> int:
@@ -1666,13 +2018,7 @@ class ChatPanel(QWidget):
             row_layout.addStretch(1)
         return row
 
-    def _render_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
-        self._clear_timeline_widgets()
-        if not items:
-            empty = MessageBubbleWidget(self, "event", "", "Пока нет сообщений.", "", [])
-            self.timeline_layout.addWidget(self._create_timeline_row(empty, "center"))
-            return
-
+    def _append_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
         for _sort_value, kind, payload in items:
             bubble = MessageBubbleWidget(
                 self,
@@ -1687,7 +2033,32 @@ class ChatPanel(QWidget):
             )
             alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
             self.timeline_layout.addWidget(self._create_timeline_row(bubble, alignment))
-        self.timeline_layout.addStretch(1)
+
+    def _prepend_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
+        insert_index = 1 if self.timeline_layout.count() > 0 else 0
+        for _sort_value, kind, payload in reversed(items):
+            bubble = MessageBubbleWidget(
+                self,
+                payload.get("bubble_role", "event"),
+                payload.get("sender", ""),
+                payload.get("text", ""),
+                payload.get("ts_text", ""),
+                payload.get("attachments", []),
+                payload.get("menu_text", ""),
+                payload.get("reply_to"),
+                payload.get("message_context"),
+            )
+            alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
+            self.timeline_layout.insertWidget(insert_index, self._create_timeline_row(bubble, alignment))
+
+    def _render_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
+        self._clear_timeline_widgets()
+        if not items:
+            empty = MessageBubbleWidget(self, "event", "", "Пока нет сообщений.", "", [])
+            self.timeline_layout.addWidget(self._create_timeline_row(empty, "center"))
+            return
+
+        self._append_timeline_widgets(items)
 
     def _update_timeline_bubble_widths(self) -> None:
         max_width = self._message_bubble_max_width()
@@ -1881,6 +2252,7 @@ class ChatPanel(QWidget):
             await self._async_refresh_ticket_list()
             await self._async_refresh_ticket_detail()
             self._show_chat_screen()
+            self._ensure_timeline_bottom_follow()
 
             code = result.get("public_access_code") or "—"
             url = result.get("public_access_url") or ""
@@ -1903,6 +2275,7 @@ class ChatPanel(QWidget):
         self._last_detail_header_sig = None
         self._pending_ticket_snapshot = None
         self._reset_active_ticket_cache()
+        self._ensure_timeline_bottom_follow()
         self._ticket_detail_timer.start(TICKET_DETAIL_POLL_INTERVAL_MS)
         self._refresh_ticket_detail_async()
         self._show_chat_screen()
@@ -1945,7 +2318,7 @@ class ChatPanel(QWidget):
             self.input_line.clear()
             self._clear_reply_stub()
             await self._async_refresh_ticket_detail()
-            self._restore_timeline_scroll(0, True)
+            self._ensure_timeline_bottom_follow()
         except Exception as exc:
             logger.error(f"Ошибка отправки сообщения: {exc}")
             QMessageBox.critical(self, "Ошибка", str(exc))
@@ -2036,7 +2409,7 @@ class ChatPanel(QWidget):
             self._clear_reply_stub()
             self.tool_status_label.setText(f"Отправлено вложений: {len(refs)}")
             await self._async_refresh_ticket_detail()
-            self._restore_timeline_scroll(0, True)
+            self._ensure_timeline_bottom_follow()
         except Exception as exc:
             logger.error(f"Ошибка отправки вложений: {exc}")
             self.tool_status_label.setText("Ошибка отправки вложений")
@@ -2134,6 +2507,8 @@ class ChatPanel(QWidget):
         self.stacked.update()
         self.chat_screen.update()
         self.input_line.setFocus()
+        if self.active_ticket_id:
+            QTimer.singleShot(0, self._ensure_timeline_bottom_follow)
         self.listNavigationVisibilityChanged.emit(False)
 
     def _open_message_context_menu(self, global_pos, message_context: dict) -> None:

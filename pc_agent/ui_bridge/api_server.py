@@ -94,6 +94,8 @@ class UiApiServer:
         self.app.router.add_post("/ui/request_support", self.handle_request_support)
         self.app.router.add_get("/ui/settings", self.handle_get_settings)
         self.app.router.add_patch("/ui/settings", self.handle_update_settings)
+        # POST — то же тело, что PATCH; часть стеков/прокси отдаёт 501/HTML на PATCH.
+        self.app.router.add_post("/ui/settings", self.handle_update_settings)
         self.app.router.add_post("/ui/settings/test_connection", self.handle_test_connection)
         self.app.router.add_post("/ui/agent/restart", self.handle_restart_agent)
         
@@ -505,7 +507,7 @@ class UiApiServer:
             )
 
     async def handle_update_settings(self, request: Request) -> Response:
-        """Обработчик PATCH /ui/settings."""
+        """Обработчик PATCH и POST /ui/settings."""
         if not self.on_update_settings:
             return web.json_response(
                 {"status": "error", "error": "settings updater not configured"},
@@ -638,6 +640,7 @@ class UiApiServer:
             logger.info(f"   - POST /ui/request_support")
             logger.info(f"   - GET  /ui/settings")
             logger.info(f"   - PATCH /ui/settings")
+            logger.info(f"   - POST /ui/settings (как PATCH)")
             logger.info(f"   - POST /ui/settings/test_connection")
             logger.info(f"   - POST /ui/agent/restart")
             logger.info(f"   - GET  /health")

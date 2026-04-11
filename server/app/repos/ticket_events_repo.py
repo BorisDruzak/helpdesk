@@ -1279,6 +1279,49 @@ class TicketEventsRepo:
         
         return list(events)    # ---------- Worklog (Stage 4) ----------
 
+    async def get_events_before_id(
+        self,
+        ticket_id: str,
+        before_event_id: Optional[int],
+        limit: int = 100,
+    ) -> tuple[List[TicketEvent], bool]:
+        """
+        Get the latest ticket events page in chronological order, optionally before a cursor.
+
+        Args:
+            ticket_id: Ticket identifier
+            before_event_id: If set, return events with id < this value.
+                             If None, return the latest page for the ticket.
+            limit: Maximum number of events in the returned page
+
+        Returns:
+            Tuple (events, has_older) where:
+            - events: chronological list ordered by id ASC
+            - has_older: True if older events exist before the returned page
+        """
+        effective_limit = max(int(limit or 0), 1)
+        stmt = select(TicketEvent).where(TicketEvent.ticket_id == ticket_id)
+        if before_event_id is not None:
+            stmt = stmt.where(TicketEvent.id < before_event_id)
+        stmt = (
+            stmt.order_by(TicketEvent.id.desc())
+            .limit(effective_limit + 1)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = list(result.scalars().all())
+        has_older = len(rows) > effective_limit
+        if has_older:
+            rows = rows[:effective_limit]
+        rows.reverse()
+
+        logger.debug(
+            f"[TicketEventsRepo] Retrieved {len(rows)} events for ticket_id={ticket_id} "
+            f"before_event_id={before_event_id} has_older={has_older}"
+        )
+
+        return rows, has_older
+
     async def add_worklog(
         self,
         ticket_id: str,

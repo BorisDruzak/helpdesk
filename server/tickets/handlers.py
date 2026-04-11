@@ -848,16 +848,61 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         if error:
             return error
         since_event_id_raw = request.query.get("since_event_id")
+        before_event_id_raw = request.query.get("before_event_id")
+        limit_raw = request.query.get("limit")
+        if since_event_id_raw is not None and before_event_id_raw is not None:
+            return _validation_error(
+                {
+                    "query": "since_event_id and before_event_id are mutually exclusive",
+                }
+            )
+
         incremental = since_event_id_raw is not None
+        backward = before_event_id_raw is not None
+        default_limit = 500 if incremental else 2000
+        limit = default_limit
+        if limit_raw is not None:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                return _validation_error({"limit": "must be an integer >= 1"})
+            if limit < 1:
+                return _validation_error({"limit": "must be an integer >= 1"})
+            limit = min(limit, 2000)
+
         if incremental:
             try:
                 since_event_id = max(int(since_event_id_raw or "0"), 0)
             except ValueError:
                 return _validation_error({"since_event_id": "must be an integer >= 0"})
-            raw_events = await repo.get_events_since_id(ticket.ticket_id, since_event_id=since_event_id, limit=500)
+            raw_events = await repo.get_events_since_id(ticket.ticket_id, since_event_id=since_event_id, limit=limit)
+            has_older = False
+            page_oldest_event_id = getattr(raw_events[0], "id", 0) if raw_events else 0
+            next_before_event_id = None
         else:
             since_event_id = 0
-            raw_events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=2000)
+            if backward:
+                try:
+                    before_event_id = int(before_event_id_raw or "0")
+                except ValueError:
+                    return _validation_error({"before_event_id": "must be an integer >= 1"})
+                if before_event_id < 1:
+                    return _validation_error({"before_event_id": "must be an integer >= 1"})
+            else:
+                before_event_id = None
+            if backward or limit_raw is not None:
+                raw_events, has_older = await repo.get_events_before_id(
+                    ticket.ticket_id,
+                    before_event_id=before_event_id,
+                    limit=limit,
+                )
+                page_oldest_event_id = getattr(raw_events[0], "id", before_event_id or 0) if raw_events else (before_event_id or 0)
+                next_before_event_id = page_oldest_event_id if has_older and page_oldest_event_id > 0 else None
+            else:
+                raw_events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=limit)
+                has_older = False
+                page_oldest_event_id = getattr(raw_events[0], "id", 0) if raw_events else 0
+                next_before_event_id = None
         visible_events = list(raw_events)
         if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
             visible_events = [event for event in raw_events if _event_visible_to_requester(event)]
@@ -876,7 +921,11 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
             events=[_serialize_event_for_agent(event) for event in visible_events],
             agent_online=False,
             incremental=incremental,
-            has_more=incremental and len(raw_events) >= 500,
+            backward=backward,
+            has_more=incremental and len(raw_events) >= limit,
+            has_older=has_older,
+            oldest_event_id=page_oldest_event_id,
+            next_before_event_id=next_before_event_id,
             last_event_id=(getattr(raw_events[-1], "id", since_event_id) if raw_events else since_event_id),
         )
 

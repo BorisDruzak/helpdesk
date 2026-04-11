@@ -512,3 +512,98 @@ async def test_ticket_get_supports_incremental_since_event_id(test_client):
     assert len(delta["messages"]) == 1
     assert delta["messages"][0]["text"] == "New incremental message"
     assert any(event.get("type") == "chat_message" for event in delta["events"])
+
+
+@pytest.mark.asyncio
+async def test_ticket_get_supports_backward_pagination(test_client):
+    device_id = str(uuid.uuid4())
+    user_login = "backward-user"
+
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Backward issue",
+            "description": "Need reverse pagination",
+            "device_id": device_id,
+            "user_display_name": "Backward User",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    ticket_id = (await create_response.json())["ticket"]["ticket_id"]
+
+    for idx in range(1, 5):
+        response = await test_client.post(
+            f"/api/tickets/{ticket_id}/message",
+            json={
+                "message_id": str(uuid.uuid4()),
+                "text": f"Page message {idx}",
+            },
+            headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+        )
+        assert response.status == 200, await response.text()
+
+    tail_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?limit=2",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert tail_response.status == 200, await tail_response.text()
+    tail_payload = await tail_response.json()
+
+    assert tail_payload["incremental"] is False
+    assert tail_payload["backward"] is False
+    assert tail_payload["has_older"] is True
+    assert [message["text"] for message in tail_payload["messages"]] == ["Page message 3", "Page message 4"]
+    cursor = int(tail_payload["next_before_event_id"])
+    assert cursor == int(tail_payload["oldest_event_id"])
+
+    older_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?before_event_id={cursor}&limit=2",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert older_response.status == 200, await older_response.text()
+    older_payload = await older_response.json()
+
+    assert older_payload["incremental"] is False
+    assert older_payload["backward"] is True
+    assert [message["text"] for message in older_payload["messages"]] == ["Page message 1", "Page message 2"]
+    assert older_payload["has_older"] is True
+
+
+@pytest.mark.asyncio
+async def test_ticket_get_rejects_invalid_pagination_query_combinations(test_client):
+    device_id = str(uuid.uuid4())
+    user_login = "invalid-pagination-user"
+
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Validation issue",
+            "description": "Need query validation",
+            "device_id": device_id,
+            "user_display_name": "Validation User",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    ticket_id = (await create_response.json())["ticket"]["ticket_id"]
+
+    both_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?since_event_id=1&before_event_id=2",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert both_response.status == 400, await both_response.text()
+    both_payload = await both_response.json()
+    assert both_payload["error"] == "validation_error"
+
+    before_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?before_event_id=0",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert before_response.status == 400, await before_response.text()
+
+    limit_response = await test_client.get(
+        f"/api/tickets/{ticket_id}?limit=0",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert limit_response.status == 400, await limit_response.text()

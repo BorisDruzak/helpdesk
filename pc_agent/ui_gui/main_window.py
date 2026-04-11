@@ -692,7 +692,7 @@ class MainWindow(QMainWindow):
         token_clear = self.clear_token_checkbox.isChecked()
         try:
             payload = self._collect_settings_payload(include_auth=True)
-            result = await self._async_ui_request("PATCH", "/ui/settings", payload)
+            result = await self._async_ui_request("POST", "/ui/settings", payload)
             if result.get("status") != "ok":
                 raise Exception(result.get("error", "Не удалось сохранить настройки"))
 

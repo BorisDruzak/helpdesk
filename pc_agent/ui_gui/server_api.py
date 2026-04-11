@@ -457,13 +457,22 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при list_tickets: {e}")
             raise Exception(f"Network error: {e}")
     
-    async def get_ticket(self, ticket_id: str, *, since_event_id: Optional[int] = None) -> dict:
+    async def get_ticket(
+        self,
+        ticket_id: str,
+        *,
+        since_event_id: Optional[int] = None,
+        before_event_id: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> dict:
         """
         Получает информацию о тикете, включая сообщения и события.
         
         Args:
             ticket_id: Идентификатор тикета
             since_event_id: Если указан, вернуть только события с id больше этого значения
+            before_event_id: Если указан, вернуть страницу событий с id меньше этого значения
+            limit: Размер страницы истории
             
         Returns:
             dict: JSON ответ от сервера с ticket, session, messages, events
@@ -473,8 +482,16 @@ class TicketApiClient:
         """
         url = f"{self.base_url}/tickets/{ticket_id}"
         params = None
-        if since_event_id is not None:
-            params = {"since_event_id": int(since_event_id)}
+        if since_event_id is not None and before_event_id is not None:
+            raise ValueError("since_event_id and before_event_id are mutually exclusive")
+        if since_event_id is not None or before_event_id is not None or limit is not None:
+            params = {}
+            if since_event_id is not None:
+                params["since_event_id"] = int(since_event_id)
+            if before_event_id is not None:
+                params["before_event_id"] = int(before_event_id)
+            if limit is not None:
+                params["limit"] = int(limit)
         
         logger.debug(f"GET {url}")
         

@@ -180,6 +180,47 @@ async def test_get_ticket_passes_since_event_id(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_ticket_passes_before_event_id_and_limit(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            payload={"status": "ok", "ticket": {}, "messages": [], "events": [], "oldest_event_id": 15},
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_ticket("ticket-1", before_event_id=15, limit=50)
+
+    assert result["status"] == "ok"
+    call = fake_session.calls[0]
+    assert call["params"] == {"before_event_id": 15, "limit": 50}
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_rejects_conflicting_cursors():
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        await client.get_ticket("ticket-1", since_event_id=10, before_event_id=5)
+
+
+@pytest.mark.asyncio
 async def test_upload_attachment_sends_expected_multipart(monkeypatch):
     client = TicketApiClient(
         base_url="http://localhost:8666/api",

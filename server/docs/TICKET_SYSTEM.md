@@ -18,7 +18,7 @@
 - Сообщения chat_message в payload должны содержать каноническое поле `sender_role` (см. CHAT_MESSAGE_CONTRACT.md).
 - `/api/tickets/create`, WS `chat_raise` и legacy `POST /api/chat_raise` используют общий DB-first create flow в `server/tickets/create_flow.py`: routing, SLA, OLA, auto-assign и initial chat event должны совпадать.
 - Support ticket list включает queue-less active tickets как triage backlog; detail/snapshot для таких тикетов не должен давать `403`.
-- `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh; агентский GUI использует этот режим вместо постоянной полной выгрузки истории.
+- `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh и reverse pagination через `before_event_id` + `limit`; агентский GUI открывает тикет с tail-page и догружает старую историю вверх без полного reload всей ленты.
 - При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`; `closed` для таких тикетов разрешён только после подтверждения requester.
 
 ---

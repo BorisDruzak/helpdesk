@@ -92,7 +92,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="agent_ui_update_settings",
-            description="Обновить настройки агента (PATCH /ui/settings). Тело — объект с полями для обновления.",
+            description="Обновить настройки агента (POST /ui/settings). Тело — объект с полями для обновления.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -199,7 +199,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 payload = arguments.get("settings") if "settings" in arguments else arguments
                 if not payload:
                     return _tool_result("Ошибка: укажите объект settings с полями для обновления.")
-                r = await client.patch("/ui/settings", json=payload)
+                r = await client.post("/ui/settings", json=payload)
                 r.raise_for_status()
                 return _tool_result(_format_response(r.json()))
 
