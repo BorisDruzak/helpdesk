@@ -5,6 +5,7 @@
 (function () {
     const AUTH_TOKEN_KEY = 'admin_auth_token';
     const POLL_FALLBACK_MS = 25000;
+    const WS_PING_INTERVAL_MS = 10000;
     const EMBED_MODE = new URLSearchParams(window.location.search).get('embed') === '1';
     const STATUS_LABELS = {
         new: 'Новая', triaged: 'В очереди у оператора', in_progress: 'В работе',
@@ -51,6 +52,7 @@
     let seenEventIds = new Set();
     let ws = null;
     let pollTimer = null;
+    let wsPingTimer = null;
     let wsLive = false;
     let toolsList = [];
     let actorRole = ''; // admin | support | auditor — из snapshot или по умолчанию
@@ -469,6 +471,17 @@
         return device.online ? `${host} (online)` : `${host} (offline)`;
     }
 
+    function formatPresenceState(online, lastSeenAt, { onlineText, offlineText }) {
+        if (online) {
+            return onlineText;
+        }
+        const lastSeen = formatDate(lastSeenAt);
+        if (lastSeen && lastSeen !== '—') {
+            return `${offlineText} • ${lastSeen}`;
+        }
+        return offlineText;
+    }
+
     function refreshDeviceActionControls() {
         const quickScreenshotBtn = el('quickScreenshotBtn');
         const quickRecordBtn = el('quickRecordBtn');
@@ -535,7 +548,25 @@
         const queueMembers = Array.isArray(meta.queue_members) ? meta.queue_members : [];
         const deviceMetadata = meta.device_metadata || {};
         const ola = meta.ola || null;
+        const presence = meta.presence || {};
         if (el('sideRequesterName')) el('sideRequesterName').textContent = meta.requester_display_name || '—';
+        if (el('sidePeerPresenceLabel')) {
+            el('sidePeerPresenceLabel').textContent = actorRole === 'support' || actorRole === 'admin'
+                ? 'Инициатор в чате'
+                : 'Поддержка в чате';
+        }
+        if (el('sidePeerPresenceText')) {
+            const peerText = actorRole === 'support' || actorRole === 'admin'
+                ? formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, {
+                    onlineText: 'онлайн',
+                    offlineText: 'офлайн',
+                })
+                : formatPresenceState(Boolean(presence.support_online), presence.support_last_seen_at, {
+                    onlineText: 'поддержка онлайн',
+                    offlineText: 'поддержка офлайн',
+                });
+            el('sidePeerPresenceText').textContent = peerText;
+        }
         if (el('sideRequesterDisplayNameInput')) el('sideRequesterDisplayNameInput').value = meta.requester_display_name || '';
         if (el('sideRequesterFullNameInput')) el('sideRequesterFullNameInput').value = profile.full_name || '';
         if (el('sideRequesterBuildingInput')) el('sideRequesterBuildingInput').value = profile.building || '';
@@ -1096,6 +1127,7 @@
             public_ticket_unbound: !!data.public_ticket_unbound,
             first_response_due_at: data.first_response_due_at,
             resolution_due_at: data.resolution_due_at,
+            presence: data.presence || {},
             chat_counters: data.chat_counters || (data.ticket && data.ticket.chat_counters) || {},
             queue_auto_assign_enabled: data.queue_auto_assign_enabled,
             queue_members: data.queue_members || [],
@@ -1133,6 +1165,7 @@
                 if (data.type === 'ui_hello_ack') {
                     wsLive = true;
                     setTopbar();
+                    startWsPing();
                     ws.send(JSON.stringify({ type: 'subscribe_ticket', ticket_id: ticketId, since_event_id: lastEventId }));
                     return;
                 }
@@ -1155,8 +1188,8 @@
                 }
             } catch (err) { console.warn('ws parse', err); }
         };
-        ws.onclose = () => { ws = null; wsLive = false; setTopbar(); };
-        ws.onerror = () => { wsLive = false; setTopbar(); };
+        ws.onclose = () => { stopWsPing(); ws = null; wsLive = false; setTopbar(); };
+        ws.onerror = () => { stopWsPing(); wsLive = false; setTopbar(); };
     }
 
     function startPollFallback() {
@@ -1168,6 +1201,24 @@
                 lastEventId = data.last_event_id || lastEventId;
             } catch (e) { console.warn('poll snapshot', e); }
         }, POLL_FALLBACK_MS);
+    }
+
+    function stopWsPing() {
+        if (!wsPingTimer) return;
+        clearInterval(wsPingTimer);
+        wsPingTimer = null;
+    }
+
+    function startWsPing() {
+        stopWsPing();
+        wsPingTimer = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            try {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (_error) {
+                stopWsPing();
+            }
+        }, WS_PING_INTERVAL_MS);
     }
 
     async function sendMessage(text, visibility, attachmentRefs, replyTo) {

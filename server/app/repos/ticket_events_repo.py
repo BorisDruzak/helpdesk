@@ -484,7 +484,7 @@ class TicketEventsRepo:
         if scope not in {"requester", "staff"}:
             raise ValueError(f"Unsupported read scope: {scope}")
 
-        actor_roles = ["user"] if scope == "requester" else ["support", "admin"]
+        actor_roles = ["user", "agent"] if scope == "requester" else ["support", "admin"]
         stmt = text(
             """
             SELECT
@@ -627,7 +627,7 @@ class TicketEventsRepo:
                     COALESCE(NULLIF(payload->>'last_read_event_id', ''), '0')::bigint AS last_read_event_id
                 FROM base
                 WHERE event_type = 'message_read'
-                  AND COALESCE(payload->>'actor_role', '') = 'user'
+                  AND COALESCE(payload->>'actor_role', '') IN ('user', 'agent')
                 ORDER BY ticket_id, id DESC
             ),
             staff_cursor AS (

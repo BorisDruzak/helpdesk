@@ -164,6 +164,24 @@ def chat_panel_stylesheet() -> str:
             color: {TEXT_PRIMARY};
         }}
         QToolButton:hover {{ background: {LIST_ITEM_HOVER}; border-color: {ACCENT}; }}
+        QToolButton#JumpToLatestButton {{
+            min-width: 48px;
+            min-height: 48px;
+            max-width: 48px;
+            max-height: 48px;
+            padding: 0px;
+            border-radius: 24px;
+            border: 1px solid {PRIMARY_BTN};
+            background: {PRIMARY_BTN};
+            color: {PRIMARY_BTN_TEXT};
+            font-size: 16pt;
+            font-weight: 800;
+            margin: 0 16px 16px 0;
+        }}
+        QToolButton#JumpToLatestButton:hover {{
+            background: {PRIMARY_BTN_HOVER};
+            border-color: {PRIMARY_BTN_HOVER};
+        }}
         QPushButton#PrimaryButton {{
             background: {PRIMARY_BTN};
             color: {PRIMARY_BTN_TEXT};
@@ -228,9 +246,9 @@ def chat_panel_stylesheet() -> str:
             background-color: {TIMELINE_SCROLL_BG};
         }}
         QScrollArea#TimelineScroll QScrollBar:vertical {{
-            background: {TIMELINE_SCROLL_BG};
-            width: 0px;
-            margin: 8px 4px 8px 4px;
+            background: #dfd5c7;
+            width: 12px;
+            margin: 8px 6px 8px 0px;
             border-radius: 8px;
         }}
         QScrollArea#TimelineScroll QScrollBar::handle:vertical {{
@@ -242,8 +260,37 @@ def chat_panel_stylesheet() -> str:
         QScrollArea#TimelineScroll QScrollBar::sub-line:vertical {{ height: 0px; }}
         QScrollArea#TimelineScroll QScrollBar:vertical:hover,
         QScrollArea#TimelineScroll QScrollBar:vertical:pressed {{
-            width: 10px;
             background: #d4c4b0;
+        }}
+        QComboBox QAbstractItemView,
+        QMenu,
+        QMenu#AgentPopupMenu {{
+            background: {BG_INPUT};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER};
+            border-radius: 14px;
+            outline: none;
+            padding: 6px;
+        }}
+        QComboBox QAbstractItemView::item,
+        QMenu::item,
+        QMenu#AgentPopupMenu::item {{
+            background: transparent;
+            border-radius: 10px;
+            padding: 8px 12px;
+            margin: 2px 0px;
+        }}
+        QComboBox QAbstractItemView::item:selected,
+        QMenu::item:selected,
+        QMenu#AgentPopupMenu::item:selected {{
+            background: {LIST_ITEM_HOVER};
+            color: {TEXT_PRIMARY};
+        }}
+        QMenu::separator,
+        QMenu#AgentPopupMenu::separator {{
+            height: 1px;
+            background: {BORDER_SOFT};
+            margin: 6px 10px;
         }}
     """
 

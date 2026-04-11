@@ -14,6 +14,8 @@ Runtime данные (эпемерные, существуют только в �
 - tools_cache - кеш инструментов
 """
 
+from datetime import datetime, timezone
+import time
 from typing import Dict, Set, List, Optional, Any
 from models import Session
 from config import USERS
@@ -115,8 +117,15 @@ class StateManager:
             # Fallback if ui_publisher not available
             self.ui_publisher = None
             logger.warning("[StateManager] UiPublisher not available")
-        
-    
+
+        # ============================================================================
+        # Ticket viewer presence (Runtime)
+        # ============================================================================
+        # ticket_id -> {"requester": {presence_key: entry}, "support": {presence_key: entry}}
+        self.ticket_presence: Dict[str, Dict[str, Dict[str, dict]]] = {}
+        self.ticket_presence_ttl_sec: float = 20.0
+
+
     # ============================================================================
     # Agent Management Methods (Runtime)
     # ============================================================================
@@ -334,7 +343,136 @@ class StateManager:
     def list_ui_connections(self) -> List[dict]:
         """Возвращает список всех UI подключений (RUNTIME)."""
         return list(self.ui_connections.values())
-    
+
+    # ============================================================================
+    # Ticket Presence Methods (Runtime)
+    # ============================================================================
+
+    @staticmethod
+    def _ticket_presence_scope(actor_role: str) -> Optional[str]:
+        if actor_role in {"user", "agent"}:
+            return "requester"
+        if actor_role in {"support", "admin"}:
+            return "support"
+        return None
+
+    def _prune_ticket_presence(self, ticket_id: str, now_ts: Optional[float] = None) -> None:
+        bucket = self.ticket_presence.get(ticket_id)
+        if not bucket:
+            return
+        current_ts = float(now_ts if now_ts is not None else time.time())
+        stale_before = current_ts - float(self.ticket_presence_ttl_sec)
+        for scope in ("requester", "support"):
+            scope_entries = bucket.get(scope) or {}
+            stale_keys = [
+                presence_key
+                for presence_key, entry in scope_entries.items()
+                if float((entry or {}).get("last_seen_ts") or 0.0) < stale_before
+            ]
+            for presence_key in stale_keys:
+                scope_entries.pop(presence_key, None)
+            if not scope_entries:
+                bucket.pop(scope, None)
+        if not bucket:
+            self.ticket_presence.pop(ticket_id, None)
+
+    def touch_ticket_presence(
+        self,
+        ticket_id: str,
+        actor_id: str,
+        actor_role: str,
+        *,
+        presence_key: Optional[str] = None,
+        now_ts: Optional[float] = None,
+    ) -> None:
+        normalized_ticket_id = str(ticket_id or "").strip()
+        normalized_actor_id = str(actor_id or "").strip()
+        scope = self._ticket_presence_scope(str(actor_role or "").strip().lower())
+        if not normalized_ticket_id or not normalized_actor_id or scope is None:
+            return
+        key = str(presence_key or f"{scope}:{normalized_actor_id}").strip()
+        if not key:
+            return
+        current_ts = float(now_ts if now_ts is not None else time.time())
+        bucket = self.ticket_presence.setdefault(normalized_ticket_id, {})
+        scope_entries = bucket.setdefault(scope, {})
+        scope_entries[key] = {
+            "actor_id": normalized_actor_id,
+            "actor_role": str(actor_role or "").strip().lower(),
+            "last_seen_ts": current_ts,
+        }
+        self._prune_ticket_presence(normalized_ticket_id, now_ts=current_ts)
+
+    def remove_ticket_presence(self, ticket_id: str, presence_key: str) -> None:
+        normalized_ticket_id = str(ticket_id or "").strip()
+        key = str(presence_key or "").strip()
+        if not normalized_ticket_id or not key:
+            return
+        bucket = self.ticket_presence.get(normalized_ticket_id)
+        if not bucket:
+            return
+        for scope in ("requester", "support"):
+            scope_entries = bucket.get(scope) or {}
+            scope_entries.pop(key, None)
+            if not scope_entries and scope in bucket:
+                bucket.pop(scope, None)
+        if not bucket:
+            self.ticket_presence.pop(normalized_ticket_id, None)
+
+    def clear_ticket_presence_key(self, presence_key: str) -> None:
+        key = str(presence_key or "").strip()
+        if not key:
+            return
+        for ticket_id in list(self.ticket_presence.keys()):
+            self.remove_ticket_presence(ticket_id, key)
+
+    def get_ticket_presence(self, ticket_id: str) -> Dict[str, Any]:
+        normalized_ticket_id = str(ticket_id or "").strip()
+        if not normalized_ticket_id:
+            return {
+                "requester_online": False,
+                "requester_last_seen_at": None,
+                "requester_actor_ids": [],
+                "support_online": False,
+                "support_last_seen_at": None,
+                "support_actor_ids": [],
+            }
+        self._prune_ticket_presence(normalized_ticket_id)
+        bucket = self.ticket_presence.get(normalized_ticket_id, {})
+
+        def summarize(scope: str) -> Dict[str, Any]:
+            scope_entries = bucket.get(scope) or {}
+            if not scope_entries:
+                return {
+                    "online": False,
+                    "last_seen_at": None,
+                    "actor_ids": [],
+                }
+            newest_ts = max(float((entry or {}).get("last_seen_ts") or 0.0) for entry in scope_entries.values())
+            actor_ids = sorted(
+                {
+                    str((entry or {}).get("actor_id") or "").strip()
+                    for entry in scope_entries.values()
+                    if str((entry or {}).get("actor_id") or "").strip()
+                }
+            )
+            return {
+                "online": True,
+                "last_seen_at": datetime.fromtimestamp(newest_ts, tz=timezone.utc).isoformat() if newest_ts > 0 else None,
+                "actor_ids": actor_ids,
+            }
+
+        requester = summarize("requester")
+        support = summarize("support")
+        return {
+            "requester_online": requester["online"],
+            "requester_last_seen_at": requester["last_seen_at"],
+            "requester_actor_ids": requester["actor_ids"],
+            "support_online": support["online"],
+            "support_last_seen_at": support["last_seen_at"],
+            "support_actor_ids": support["actor_ids"],
+        }
+
     # ============================================================================
     # Job Events Methods (Runtime)
     # ============================================================================

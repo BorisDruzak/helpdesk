@@ -656,6 +656,10 @@ Response shape:
 
 Server persists this as `event_type="message_read"` and treats repeated calls with the same or older cursor as idempotent.
 
+Notes:
+- `read_scope="requester"` is used both for classic requester sessions and for the desktop agent GUI authenticated with `actor_role="agent"`.
+- `read_scope="staff"` is used for `support` / `admin` ticket workspaces.
+
 ### Chat counters in ticket payloads
 
 `GET /api/tickets`, `GET /api/tickets/{ticket_id}` and `GET /api/tickets/{ticket_id}/snapshot` now include `ticket.chat_counters` with precomputed queue/UI metrics:

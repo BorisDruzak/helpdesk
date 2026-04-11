@@ -217,6 +217,25 @@ def _merge_ticket_with_chat_counters(ticket_data: Dict[str, Any], chat_counters:
     return merged
 
 
+def _ticket_presence_payload(request: web.Request, ticket: Any) -> Dict[str, Any]:
+    state = request.app.get("state")
+    if state is None:
+        return {
+            "requester_online": False,
+            "requester_last_seen_at": None,
+            "requester_actor_ids": [],
+            "support_online": False,
+            "support_last_seen_at": None,
+            "support_actor_ids": [],
+            "agent_online": False,
+        }
+    presence = state.get_ticket_presence(getattr(ticket, "ticket_id", None))
+    return {
+        **presence,
+        "agent_online": bool(getattr(state, "is_agent_online", lambda _device_id: False)(getattr(ticket, "device_id", None))),
+    }
+
+
 def _allow_ticket_read(ticket: Any, auth_context: AuthContext) -> bool:
     if auth_context.actor_role in {"admin", "support", "auditor"}:
         return True
@@ -847,6 +866,17 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
         if error:
             return error
+        state = request.app.get("state")
+        if state is not None and (
+            auth_context.actor_role in {"agent", "user"}
+            or auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN
+        ):
+            state.touch_ticket_presence(
+                ticket.ticket_id,
+                auth_context.actor_id,
+                auth_context.actor_role,
+                presence_key=f"http:{auth_context.actor_role}:{auth_context.actor_id}",
+            )
         since_event_id_raw = request.query.get("since_event_id")
         before_event_id_raw = request.query.get("before_event_id")
         limit_raw = request.query.get("limit")
@@ -914,12 +944,15 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
             chat_counters=counters_map.get(ticket.ticket_id),
             include_assignment_context=True,
         )
+        presence = _ticket_presence_payload(request, ticket)
+        ticket_data["presence"] = presence
         return _json_ok(
             ticket=ticket_data,
             session={"ticket_id": ticket.ticket_id, "actor_role": auth_context.actor_role},
             messages=[_serialize_message(event, ticket=ticket) for event in messages],
             events=[_serialize_event_for_agent(event) for event in visible_events],
-            agent_online=False,
+            agent_online=presence["agent_online"],
+            presence=presence,
             incremental=incremental,
             backward=backward,
             has_more=incremental and len(raw_events) >= limit,
@@ -935,6 +968,17 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
         if error:
             return error
+        state = request.app.get("state")
+        if state is not None and (
+            auth_context.actor_role in {"agent", "user"}
+            or auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN
+        ):
+            state.touch_ticket_presence(
+                ticket.ticket_id,
+                auth_context.actor_id,
+                auth_context.actor_role,
+                presence_key=f"http:{auth_context.actor_role}:{auth_context.actor_id}",
+            )
         events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=2000)
         visible_events = list(events)
         if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
@@ -948,6 +992,8 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             chat_counters=counters_map.get(ticket.ticket_id),
             include_assignment_context=True,
         )
+        presence = _ticket_presence_payload(request, ticket)
+        ticket_data["presence"] = presence
         last_event_id = raw_events[-1]["id"] if raw_events else 0
         worklogs = await repo.list_worklogs(ticket.ticket_id, limit=100, offset=0)
         worklog_total = await repo.get_worklog_total(ticket.ticket_id)
@@ -1011,6 +1057,7 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             {
                 **ticket_data,
                 "actor_role": auth_context.actor_role,
+                "presence": presence,
                 "events": raw_events,
                 "history": history,
                 "last_event_id": last_event_id,

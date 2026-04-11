@@ -176,6 +176,21 @@ def test_can_incrementally_prepend_timeline_when_existing_items_are_suffix():
     ) is True
 
 
+def test_append_contains_incoming_support_items_detects_support_bubbles():
+    assert ChatPanel._append_contains_incoming_support_items(
+        [
+            (1.0, "event", {"bubble_role": "event"}),
+            (2.0, "msg", {"bubble_role": "support"}),
+        ]
+    ) is True
+    assert ChatPanel._append_contains_incoming_support_items(
+        [
+            (1.0, "msg", {"bubble_role": "self"}),
+            (2.0, "event", {"bubble_role": "event"}),
+        ]
+    ) is False
+
+
 def test_apply_prepend_timeline_scroll_keeps_viewport_anchor():
     class _ScrollBar:
         def __init__(self):

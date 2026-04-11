@@ -363,7 +363,9 @@ async def websocket_ui_handler(request):
         "connection_id": connection_id,
         "role": user_role,
         "auth_context": None,  # Phase 3: будет установлен после ui_hello
-        "connected_at": time.time()
+        "connected_at": time.time(),
+        "ticket_subscriptions": set(),
+        "presence_key": f"ws:{connection_id}",
     }
     state.register_ui_connection(connection_id, connection_data)
     
@@ -504,6 +506,14 @@ async def websocket_ui_handler(request):
                         # 2. THEN register subscription (after catch-up complete)
                         if state.subscription_registry:
                             await state.subscription_registry.add_ticket_subscriber(ticket_id, ws)
+                        connection_data.setdefault("ticket_subscriptions", set()).add(ticket_id)
+                        if auth_context and auth_context.has_role("admin", "support"):
+                            state.touch_ticket_presence(
+                                ticket_id,
+                                auth_context.actor_id,
+                                auth_context.actor_role,
+                                presence_key=connection_data.get("presence_key"),
+                            )
                         
                         # 3. Send ack
                         await ws.send_json({
@@ -524,6 +534,8 @@ async def websocket_ui_handler(request):
                         ticket_id = data.get("ticket_id")
                         if ticket_id and state.subscription_registry:
                             await state.subscription_registry.remove_ticket_subscriber(ticket_id, ws)
+                            connection_data.setdefault("ticket_subscriptions", set()).discard(ticket_id)
+                            state.remove_ticket_presence(ticket_id, connection_data.get("presence_key"))
                             await ws.send_json({
                                 "type": "unsubscribe_ack",
                                 "ticket_id": ticket_id
@@ -646,6 +658,14 @@ async def websocket_ui_handler(request):
                     # f) type == "ping"
                     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     elif msg_type == "ping":
+                        if auth_context and auth_context.has_role("admin", "support"):
+                            for subscribed_ticket_id in list(connection_data.get("ticket_subscriptions") or []):
+                                state.touch_ticket_presence(
+                                    subscribed_ticket_id,
+                                    auth_context.actor_id,
+                                    auth_context.actor_role,
+                                    presence_key=connection_data.get("presence_key"),
+                                )
                         await ws.send_json({
                             "type": "pong",
                             "ts": datetime.now(timezone.utc).isoformat()
@@ -677,6 +697,7 @@ async def websocket_ui_handler(request):
         # КРИТИЧНО: Cleanup subscriptions on disconnect
         if state.subscription_registry:
             await state.subscription_registry.cleanup_ws(ws)
+        state.clear_ticket_presence_key(connection_data.get("presence_key"))
         
         # Очистка при отключении
         conn_data = state.get_ui_connection(connection_id)

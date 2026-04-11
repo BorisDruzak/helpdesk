@@ -238,6 +238,17 @@
         return date.toLocaleString('ru-RU');
     }
 
+    function formatPresenceState(online, lastSeenAt, onlineText, offlineText) {
+        if (online) {
+            return onlineText;
+        }
+        const lastSeen = formatDate(lastSeenAt);
+        if (lastSeen && lastSeen !== '—') {
+            return offlineText + ' • ' + lastSeen;
+        }
+        return offlineText;
+    }
+
     function formatAge(value) {
         const date = parseServerDate(value);
         if (!date) {
@@ -736,12 +747,16 @@
             return;
         }
         const mode = currentMode();
+        const presence = snapshot?.presence || {};
+        const deviceSummary = snapshot?.device_summary || {};
         const items = [
             ['Код', ticket.ticket_code || ticket.ticket_id],
             ['Статус', statusLabel(ticket.status)],
             ['Очередь', ticket.queue_code || snapshot?.queue_code || ticket.queue_id || '—'],
             ['Исполнитель', ticket.assignee_id || 'Не назначен'],
             ['Инициатор', snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—'],
+            ['Инициатор в чате', formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, 'онлайн', 'офлайн')],
+            ['Агент', formatPresenceState(Boolean(deviceSummary.online), deviceSummary.last_seen_at, 'онлайн', 'офлайн')],
             ['Приоритет', ticket.priority_class ? priorityLabel(ticket.priority_class) : '—'],
             ['Режим', mode === 'work' ? 'Работа' : (mode === 'observe' ? 'Наблюдение' : 'Предпросмотр')],
         ];

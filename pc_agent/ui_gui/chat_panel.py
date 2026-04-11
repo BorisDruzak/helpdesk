@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -854,23 +855,29 @@ class ChatPanel(QWidget):
         # Верхний spacer прижимает короткий чат к низу, как в мессенджерах.
         self.timeline_layout.addStretch(1)
         self.timeline_scroll.setWidget(self.timeline_container)
-        center_layout.addWidget(self.timeline_scroll, 1)
+        self.timeline_shell = QWidget()
+        self.timeline_shell.setObjectName("TimelineShell")
+        timeline_shell_layout = QGridLayout(self.timeline_shell)
+        timeline_shell_layout.setContentsMargins(0, 0, 0, 0)
+        timeline_shell_layout.setHorizontalSpacing(0)
+        timeline_shell_layout.setVerticalSpacing(0)
+        timeline_shell_layout.addWidget(self.timeline_scroll, 0, 0)
 
         self.jump_to_latest_btn = QToolButton()
-        self.jump_to_latest_btn.setText("↓ Вниз")
+        self.jump_to_latest_btn.setObjectName("JumpToLatestButton")
+        self.jump_to_latest_btn.setText("↓")
         self.jump_to_latest_btn.setToolTip("Перейти к последним сообщениям")
         self.jump_to_latest_btn.clicked.connect(self._jump_to_latest_messages)
         self.jump_to_latest_btn.setVisible(False)
-        self.jump_to_latest_btn.setStyleSheet(
-            f"padding: 4px 12px; border-radius: 12px; "
-            f"background: {theme.PRIMARY_BTN}; color: {theme.PRIMARY_BTN_TEXT}; font-weight: 700;"
+        self.jump_to_latest_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.jump_to_latest_btn.setFixedSize(48, 48)
+        timeline_shell_layout.addWidget(
+            self.jump_to_latest_btn,
+            0,
+            0,
+            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
         )
-        jump_row = QHBoxLayout()
-        jump_row.setContentsMargins(0, 0, 0, 0)
-        jump_row.setSpacing(0)
-        jump_row.addStretch(1)
-        jump_row.addWidget(self.jump_to_latest_btn)
-        center_layout.addLayout(jump_row)
+        center_layout.addWidget(self.timeline_shell, 1)
 
         timeline_scrollbar = self.timeline_scroll.verticalScrollBar()
         timeline_scrollbar.valueChanged.connect(self._on_timeline_scroll_changed)
@@ -915,12 +922,14 @@ class ChatPanel(QWidget):
         self.attach_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.attach_btn.setToolTip("Прикрепить")
         attach_menu = QMenu(self.attach_btn)
+        attach_menu.setObjectName("AgentPopupMenu")
         attach_menu.addAction("Прикрепить фото", self._on_attach_photo)
         attach_menu.addAction("Прикрепить документ", self._on_attach_document)
         attach_menu.addAction("Прикрепить любой файл", self._on_attach_any_file)
         self.attach_btn.setMenu(attach_menu)
         self.media_btn = QPushButton("Скриншот / Видео")
         media_menu = QMenu(self.media_btn)
+        media_menu.setObjectName("AgentPopupMenu")
         media_menu.addAction("Сделать скриншот", self._on_send_screenshot)
         media_menu.addAction("Записать видео до 60 секунд", self._on_send_video)
         self.media_btn.setMenu(media_menu)
@@ -1582,6 +1591,8 @@ class ChatPanel(QWidget):
             status_suffix_parts.append(f"сообщения: {unread_messages}")
         if unread_tools > 0:
             status_suffix_parts.append(f"вызовы: {unread_tools}")
+        if bool((ticket.get("presence") or {}).get("support_online")):
+            status_suffix_parts.append("поддержка онлайн")
         status_suffix = ""
         if status_suffix_parts:
             status_suffix = " • Непрочитано " + ", ".join(status_suffix_parts)
@@ -1678,6 +1689,13 @@ class ChatPanel(QWidget):
         items.sort(key=lambda x: x[0])
         return items
 
+    @staticmethod
+    def _append_contains_incoming_support_items(items: List[tuple[float, str, dict]]) -> bool:
+        return any(
+            item_type == "msg" and isinstance(payload, dict) and payload.get("bubble_role") == "support"
+            for _sort_key, item_type, payload in items
+        )
+
     def _update_ticket_detail_ui(self, ticket: dict, messages: List[dict], events: List[dict]) -> None:
         if self._bubble_menu_open:
             self._pending_ticket_snapshot = (dict(ticket), list(messages), list(events))
@@ -1720,7 +1738,6 @@ class ChatPanel(QWidget):
         previous_max = scroll_bar.maximum()
         previous_bottom_gap = max(previous_max - previous_value, 0)
         force_to_bottom = self._force_scroll_to_latest_on_next_render
-        stick_to_bottom = force_to_bottom or self._follow_latest_messages or self._is_timeline_near_bottom(40)
         append_only = self._can_incrementally_append_timeline(
             self._last_timeline_item_signatures,
             item_signatures,
@@ -1729,6 +1746,13 @@ class ChatPanel(QWidget):
             self._last_timeline_item_signatures,
             item_signatures,
         )
+        if append_only:
+            appended_items = items[len(self._last_timeline_item_signatures):]
+            if self._append_contains_incoming_support_items(appended_items) and (
+                self._follow_latest_messages or previous_max <= 0 or previous_bottom_gap <= 120
+            ):
+                force_to_bottom = True
+        stick_to_bottom = force_to_bottom or self._follow_latest_messages or self._is_timeline_near_bottom(40)
         self.timeline_scroll.setUpdatesEnabled(False)
         try:
             if append_only:
@@ -1756,6 +1780,15 @@ class ChatPanel(QWidget):
         self._schedule_fill_viewport_with_history()
         self._maybe_mark_ticket_read(ticket, messages, events)
 
+    def _support_presence_text(self, ticket: dict) -> str:
+        presence = ticket.get("presence") or {}
+        if bool(presence.get("support_online")):
+            return "онлайн"
+        last_seen = self._format_ts(presence.get("support_last_seen_at"))
+        if last_seen:
+            return f"офлайн, последний пинг {last_seen}"
+        return "офлайн"
+
     def _build_ticket_meta_html(self, ticket: dict) -> str:
         requester = ticket.get("requester_display_name") or "Пользователь"
         profile = ticket.get("requester_profile") or {}
@@ -1770,6 +1803,7 @@ class ChatPanel(QWidget):
             ("Приоритет", ticket.get("priority_class") or ticket.get("priority") or "—"),
             ("Очередь", ticket.get("queue_code") or ticket.get("queue_id") or "—"),
             ("Исполнитель", ticket.get("assignee_id") or "Не назначен"),
+            ("Поддержка", self._support_presence_text(ticket)),
             ("Создан", self._format_ts(ticket.get("created_at")) or "—"),
             ("Обновлён", self._format_ts(ticket.get("updated_at")) or "—"),
             ("Решён", self._format_ts(ticket.get("resolved_at")) or "—"),
