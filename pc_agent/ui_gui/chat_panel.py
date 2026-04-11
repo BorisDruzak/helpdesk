@@ -1501,14 +1501,28 @@ class ChatPanel(QWidget):
             return
         if self._oldest_loaded_event_id <= 0:
             return
+        self._loading_older_history = True
         self._spawn_task(self._async_load_older_history())
 
+    def _schedule_fill_viewport_with_history(self) -> None:
+        if not self.active_ticket_id or not self._has_older_history or self._loading_older_history:
+            return
+
+        def maybe_load() -> None:
+            if not self.active_ticket_id or not self._has_older_history or self._loading_older_history:
+                return
+            scroll_bar = self.timeline_scroll.verticalScrollBar()
+            if scroll_bar.maximum() <= 0:
+                self._load_older_history_async()
+
+        QTimer.singleShot(0, maybe_load)
+        QTimer.singleShot(40, maybe_load)
+
     async def _async_load_older_history(self) -> None:
-        if self._is_closing or not self.active_ticket_id or self._loading_older_history:
+        if self._is_closing or not self.active_ticket_id:
             return
         if not self._has_older_history or self._oldest_loaded_event_id <= 0:
             return
-        self._loading_older_history = True
         try:
             result = await self.ticket_client.get_ticket(
                 self.active_ticket_id,
@@ -1739,6 +1753,7 @@ class ChatPanel(QWidget):
         else:
             self._restore_timeline_scroll(previous_value, previous_bottom_gap, stick_to_bottom)
         self._refresh_jump_to_latest_button()
+        self._schedule_fill_viewport_with_history()
         self._maybe_mark_ticket_read(ticket, messages, events)
 
     def _build_ticket_meta_html(self, ticket: dict) -> str:

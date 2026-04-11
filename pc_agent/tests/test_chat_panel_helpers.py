@@ -275,3 +275,69 @@ def test_on_timeline_scroll_changed_requests_older_history_near_top():
     panel._on_timeline_scroll_changed(10)
 
     assert requested == [True]
+
+
+def test_schedule_fill_viewport_with_history_requests_more_when_scrollbar_absent(monkeypatch):
+    class _ScrollBar:
+        def maximum(self):
+            return 0
+
+    class _ScrollArea:
+        def verticalScrollBar(self):
+            return _ScrollBar()
+
+    panel = ChatPanel.__new__(ChatPanel)
+    panel.active_ticket_id = "ticket-1"
+    panel._has_older_history = True
+    panel._loading_older_history = False
+    panel.timeline_scroll = _ScrollArea()
+    requested = []
+    callbacks = []
+    def fake_load():
+        requested.append(True)
+        panel._loading_older_history = True
+
+    panel._load_older_history_async = fake_load
+
+    def fake_single_shot(_delay_ms, callback):
+        callbacks.append(callback)
+
+    monkeypatch.setattr(chat_panel_module.QTimer, "singleShot", staticmethod(fake_single_shot))
+
+    panel._schedule_fill_viewport_with_history()
+
+    for callback in callbacks:
+        callback()
+
+    assert requested == [True]
+
+
+def test_schedule_fill_viewport_with_history_skips_when_scrollbar_exists(monkeypatch):
+    class _ScrollBar:
+        def maximum(self):
+            return 12
+
+    class _ScrollArea:
+        def verticalScrollBar(self):
+            return _ScrollBar()
+
+    panel = ChatPanel.__new__(ChatPanel)
+    panel.active_ticket_id = "ticket-1"
+    panel._has_older_history = True
+    panel._loading_older_history = False
+    panel.timeline_scroll = _ScrollArea()
+    requested = []
+    callbacks = []
+    panel._load_older_history_async = lambda: requested.append(True)
+
+    def fake_single_shot(_delay_ms, callback):
+        callbacks.append(callback)
+
+    monkeypatch.setattr(chat_panel_module.QTimer, "singleShot", staticmethod(fake_single_shot))
+
+    panel._schedule_fill_viewport_with_history()
+
+    for callback in callbacks:
+        callback()
+
+    assert requested == []
