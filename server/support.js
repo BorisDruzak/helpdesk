@@ -1658,7 +1658,7 @@
                 }
                 details.setAttribute('data-expander-section', section);
                 if (ticketId) {
-                    details.open = queueExpanderOpen(ticketId, section, details.open);
+                    details.open = queueExpanderOpen(ticketId, section, false);
                 }
                 details.addEventListener('toggle', () => {
                     if (!ticketId) {
