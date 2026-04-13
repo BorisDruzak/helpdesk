@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260413d">
+    <link rel="stylesheet" href="/support.css?v=20260413e">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -41,17 +41,16 @@
                     <p class="support-brand-eyebrow">Help Desk</p>
                     <h1>Support Workspace</h1>
                 </div>
-                <div class="support-topbar-copy">
-                    <p class="section-eyebrow">Workspace</p>
-                    <h2>Операционная панель поддержки</h2>
-                    <p class="support-topbar-copy-text">Сначала разбирайте очередь и риски по SLA/OLA, затем переключайтесь в режим точечной работы по выбранному тикету.</p>
-                </div>
             </div>
-            <div class="support-topbar-actions">
+
+            <div class="support-topbar-center">
                 <div id="workspaceModeSwitch" class="workspace-mode-switch workspace-mode-switch-topbar" role="tablist" aria-label="Режим работы поддержки">
                     <button class="workspace-mode-chip active" type="button" data-workspace-view="queue">Очередь тикетов</button>
                     <button class="workspace-mode-chip" type="button" data-workspace-view="ticket">Рабочий тикет</button>
                 </div>
+            </div>
+
+            <div class="support-topbar-actions">
                 <span id="workspaceSyncState" class="workspace-sync-state">Обновление по опросу</span>
                 <span id="authBadge" class="auth-badge">—</span>
                 <a id="switchRoleBtn" class="btn btn-secondary" href="/login?_shell=20260330a&amp;target=admin">Войти как admin</a>
@@ -108,13 +107,12 @@
                         </div>
                         <div id="queueHeadSummaryStrip" class="queue-summary-strip"></div>
                         <div class="queue-command-tools">
-                            <div class="queue-inline-group">
-                                <span class="queue-stack-title">Фильтр списка</span>
-                                <div id="queueHeadFilterDock" class="quick-action-row"></div>
-                            </div>
-                            <div class="queue-inline-group">
-                                <span class="queue-stack-title">Сортировка</span>
-                                <div id="queueHeadSortDock" class="quick-action-row"></div>
+                            <div class="queue-inline-group queue-inline-group-wide">
+                                <div class="queue-controls-head">
+                                    <span class="queue-stack-title">Фильтр и порядок</span>
+                                    <span class="queue-controls-note">Сначала отберите нужный срез очереди, затем выберите порядок карточек.</span>
+                                </div>
+                                <div id="queueHeadControlDock" class="queue-control-dock"></div>
                             </div>
                         </div>
                     </section>
@@ -147,15 +145,6 @@
                         <section class="support-card queue-board-card">
                             <div id="queueBoardList" class="queue-board-list" aria-live="polite"></div>
                         </section>
-
-                        <aside class="queue-side-rail">
-                            <article class="support-card queue-side-card">
-                                <div class="card-head">
-                                    <h3>Панель очереди</h3>
-                                </div>
-                                <div id="queueActionDock" class="queue-action-dock"></div>
-                            </article>
-                        </aside>
                     </div>
                 </section>
 
@@ -166,7 +155,6 @@
                             <h2 id="selectedTicketTitle">Тикет не выбран</h2>
                             <div id="selectedTicketMeta" class="selected-ticket-meta"></div>
                         </div>
-                        <div id="stageQuickActions" class="stage-quick-actions"></div>
                     </section>
 
                     <div class="ticket-desk-layout">
@@ -213,8 +201,8 @@
                             </section>
 
                             <section id="workPane" class="stage-pane hidden">
-                                <div class="embedded-ticket-shell">
-                                    <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета...</div>
+                                <div id="chatWindowShell" class="embedded-ticket-shell">
+                                    <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета…</div>
                                     <iframe id="embeddedTicketFrame" class="embedded-ticket-frame" title="Ticket Chat"></iframe>
                                 </div>
                             </section>
@@ -246,6 +234,8 @@
                                     <h2>Контекст и инструменты</h2>
                                 </div>
                             </div>
+
+                            <section id="ticketCommandDock" class="ticket-command-dock"></section>
 
                             <div class="drawer-tabs" id="drawerTabs">
                                 <button class="drawer-tab active" type="button" data-tab="context">Контекст</button>
@@ -322,6 +312,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260413d"></script>
+    <script src="/support.js?v=20260413e"></script>
 </body>
 </html>

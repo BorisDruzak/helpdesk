@@ -207,38 +207,36 @@ body {
 }
 
 .support-topbar {
-    align-items: center;
     background: rgba(255, 252, 244, 0.9);
     backdrop-filter: blur(14px);
     border: 1px solid rgba(29, 92, 84, 0.12);
     border-radius: 24px;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, auto) minmax(280px, 1fr) minmax(0, auto);
     margin-bottom: 16px;
     padding: 14px 18px;
+}
+
+.support-topbar-main,
+.support-topbar-center,
+.support-topbar-actions {
+    min-width: 0;
+}
+
+.support-topbar-main {
+    justify-self: start;
+}
+
+.support-topbar-center {
+    display: flex;
+    justify-content: center;
 }
 
 .support-topbar-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
-}
-
-.support-topbar-copy {
-    display: grid;
-    gap: 4px;
-    max-width: 720px;
-}
-
-.support-topbar-copy h2 {
-    font-family: var(--support-heading-font);
-    font-size: 24px;
-    margin: 0;
-}
-
-.support-topbar-copy-text {
-    color: var(--support-muted);
-    line-height: 1.45;
-    margin: 0;
+    justify-self: end;
 }
 
 .support-brand h1 {
@@ -602,7 +600,7 @@ body {
 }
 
 .workspace-mode-switch-topbar {
-    margin-right: 8px;
+    margin-right: 0;
 }
 
 .workspace-mode-switch-topbar .workspace-mode-chip {
@@ -661,13 +659,54 @@ body {
 
 .queue-command-tools {
     display: grid;
-    gap: 14px;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .queue-inline-group {
     display: grid;
     gap: 10px;
+}
+
+.queue-inline-group-wide {
+    width: 100%;
+}
+
+.queue-controls-head {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    justify-content: space-between;
+}
+
+.queue-controls-note {
+    color: var(--support-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.queue-control-dock {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.queue-control-cluster {
+    display: grid;
+    gap: 8px;
+}
+
+.queue-control-label {
+    color: var(--support-muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.queue-info-btn {
+    align-self: end;
 }
 
 #queueHeadSummaryStrip {
@@ -698,7 +737,7 @@ body {
 .queue-summary-strip {
     display: grid;
     gap: 12px;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .queue-desk > #queueSummaryStrip,
@@ -735,34 +774,13 @@ body {
     display: grid;
     flex: 1;
     gap: 16px;
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     overflow: visible;
 }
 
-.queue-side-rail,
-.queue-side-card,
 .queue-board-card {
     min-height: 0;
-}
-
-.queue-side-rail {
-    order: 0;
-}
-
-.queue-board-card {
-    order: 1;
-}
-
-.queue-side-card {
-    display: flex;
-    flex-direction: column;
-}
-
-.queue-action-dock {
-    flex: 1;
-    overflow: visible;
-    padding-right: 4px;
 }
 
 .queue-stack-title {
@@ -782,7 +800,7 @@ body {
     display: grid;
     gap: 2px 12px;
     grid-template-columns: minmax(0, 1fr) auto;
-    min-height: 84px;
+    min-height: 76px;
     padding: 10px 12px;
 }
 
@@ -829,7 +847,7 @@ body {
     flex: 1;
     gap: 18px;
     min-height: 0;
-    overflow: visible;
+    overflow: auto;
     padding-right: 4px;
 }
 
@@ -899,6 +917,13 @@ body {
     color: #9e2525;
 }
 
+.sla-chip.is-breach-alert {
+    animation: support-breach-pulse 1.2s ease-in-out infinite;
+    background: #fff0f0;
+    border-color: rgba(179, 57, 57, 0.38);
+    color: #9e2525;
+}
+
 .sla-chip[data-sla-level="none"] {
     background: #ece8df;
     color: #6f6858;
@@ -927,8 +952,8 @@ body {
     border-radius: 22px;
     cursor: pointer;
     display: grid;
-    gap: 14px;
-    padding: 18px 18px 16px 18px;
+    gap: 12px;
+    padding: 16px 18px;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
@@ -954,11 +979,19 @@ body {
     border-left-color: #b33939;
 }
 
+.queue-ticket-card.is-breach-alert {
+    box-shadow: 0 0 0 1px rgba(179, 57, 57, 0.18), 0 0 0 rgba(179, 57, 57, 0);
+}
+
+.queue-ticket-card.is-breach-alert:not(:hover) {
+    animation: support-breach-card 1.4s ease-in-out infinite;
+}
+
 .queue-ticket-card-head {
     align-items: start;
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
 }
 
 .queue-ticket-card-code {
@@ -988,7 +1021,33 @@ body {
 .queue-ticket-card-side {
     align-items: flex-end;
     flex-direction: column;
+    gap: 10px;
     justify-content: start;
+}
+
+.queue-ticket-primary-action {
+    min-width: 180px;
+}
+
+.queue-ticket-alert {
+    align-items: center;
+    animation: support-breach-pulse 1.2s ease-in-out infinite;
+    background: rgba(179, 57, 57, 0.08);
+    border: 1px solid rgba(179, 57, 57, 0.18);
+    border-radius: 16px;
+    color: #9e2525;
+    display: flex;
+    font-size: 13px;
+    font-weight: 700;
+    gap: 8px;
+    line-height: 1.45;
+    padding: 10px 12px;
+}
+
+.queue-ticket-alert::before {
+    content: "!";
+    display: inline-flex;
+    font-weight: 900;
 }
 
 .queue-ticket-card-meta,
@@ -1102,18 +1161,17 @@ body {
 
 .ticket-workbench {
     min-height: 0;
-    overflow: visible;
+    overflow: auto;
     padding: 18px;
 }
 
 .stage-header {
-    align-items: start;
     background: rgba(255, 255, 255, 0.7);
     border: 1px solid rgba(185, 175, 155, 0.42);
     border-radius: 20px;
     display: grid;
-    gap: 14px 18px;
-    grid-template-columns: minmax(0, 1fr) var(--ticket-workbench-width);
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr);
     padding: 18px;
 }
 
@@ -1148,11 +1206,11 @@ body {
     line-height: 1.35;
 }
 
-.stage-quick-actions {
-    display: flex;
-    justify-content: flex-end;
+.ticket-command-dock {
+    margin: 16px 0 0;
 }
 
+.ticket-command-card,
 .stage-actions-card {
     background: rgba(255, 255, 255, 0.74);
     border: 1px solid rgba(185, 175, 155, 0.42);
@@ -1164,6 +1222,7 @@ body {
     width: 100%;
 }
 
+.ticket-command-title,
 .stage-actions-title {
     color: var(--support-brand);
     font-size: 11px;
@@ -1172,6 +1231,13 @@ body {
     text-transform: uppercase;
 }
 
+.ticket-command-note {
+    color: var(--support-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ticket-command-actions,
 .stage-actions-grid {
     display: flex;
     flex-wrap: wrap;
@@ -1191,10 +1257,16 @@ body {
     border: 1px solid rgba(185, 175, 155, 0.36);
     border-radius: 20px;
     display: flex;
-    flex: 1;
-    min-height: 0;
+    flex: 0 0 auto;
+    height: clamp(620px, 72vh, 1100px);
+    margin: 0 auto;
+    max-width: 950px;
+    min-height: 560px;
+    min-width: min(620px, 100%);
     overflow: hidden;
     position: relative;
+    resize: both;
+    width: min(100%, 950px);
 }
 
 .embedded-ticket-shell.is-loading .embedded-ticket-frame {
@@ -1220,7 +1292,8 @@ body {
     display: block;
     flex: 1;
     height: 100%;
-    min-height: 0;
+    min-height: 100%;
+    min-width: 100%;
     opacity: 1;
     transition: opacity 0.18s ease;
     width: 100%;
@@ -1434,6 +1507,44 @@ body {
     grid-template-columns: 1fr;
 }
 
+.context-accordion {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(185, 175, 155, 0.42);
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.context-accordion summary {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    list-style: none;
+    padding: 16px 18px;
+}
+
+.context-accordion summary::-webkit-details-marker {
+    display: none;
+}
+
+.context-accordion-title {
+    color: #1f241f;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.context-accordion-hint {
+    color: var(--support-muted);
+    font-size: 12px;
+}
+
+.context-accordion-body {
+    border-top: 1px solid rgba(185, 175, 155, 0.24);
+    display: grid;
+    gap: 14px;
+    padding: 0 18px 18px;
+}
+
 .tool-list,
 .pipeline-list {
     margin-top: 14px;
@@ -1633,24 +1744,44 @@ body {
     justify-content: flex-end;
 }
 
+@keyframes support-breach-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(179, 57, 57, 0.12);
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 0 5px rgba(179, 57, 57, 0.05);
+        transform: translateY(-1px);
+    }
+}
+
+@keyframes support-breach-card {
+    0%, 100% {
+        box-shadow: 0 0 0 1px rgba(179, 57, 57, 0.18), 0 0 0 rgba(179, 57, 57, 0);
+    }
+    50% {
+        box-shadow: 0 0 0 1px rgba(179, 57, 57, 0.28), 0 0 0 7px rgba(179, 57, 57, 0.05);
+    }
+}
+
 @media (max-width: 1440px) {
     .support-layout {
         --sidebar-width: clamp(280px, 24vw, 340px);
     }
 
     .support-topbar {
-        align-items: start;
-        flex-direction: column;
+        grid-template-columns: 1fr;
     }
 
     .support-topbar-main,
+    .support-topbar-center,
     .support-topbar-actions {
+        justify-self: stretch;
         width: 100%;
     }
 
     .support-topbar-main {
-        align-items: start;
-        flex-wrap: wrap;
+        align-items: center;
     }
 
     .workspace-shell {
@@ -1669,6 +1800,7 @@ body {
 @media (max-width: 1080px) {
     .support-topbar,
     .support-topbar-main,
+    .support-topbar-center,
     .support-topbar-actions,
     .composer-toolbar,
     .composer-actions {
@@ -1685,6 +1817,7 @@ body {
     .ticket-desk-layout,
     .queue-command-tools,
     .queue-desk-grid,
+    .queue-control-dock,
     .queue-ticket-card-grid,
     .queue-ticket-expander-body {
         grid-template-columns: 1fr;
@@ -1692,10 +1825,6 @@ body {
 
     .queue-summary-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .stage-quick-actions {
-        justify-content: stretch;
     }
 
     .support-layout {
@@ -1708,6 +1837,12 @@ body {
 
     .workspace-mode-switch {
         flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .embedded-ticket-shell {
+        min-width: 100%;
+        resize: vertical;
         width: 100%;
     }
 

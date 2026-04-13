@@ -10,8 +10,12 @@
     const LAST_TICKET_KEY = 'support_workspace_last_ticket';
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
+    const DRAWER_TAB_KEY = 'support_workspace_drawer_tab';
+    const QUEUE_EXPANDERS_KEY = 'support_workspace_queue_expanders';
+    const CONTEXT_ACCORDIONS_KEY = 'support_workspace_context_accordions';
+    const CHAT_WINDOW_SIZE_KEY = 'support_workspace_chat_window_size';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260413d';
+    const SUPPORT_SHELL_VERSION = '20260413e';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -78,6 +82,13 @@
         workspaceView: WORKSPACE_VIEWS.QUEUE,
         drawerTab: 'context',
         sidebarMode: PANEL_MODES.HALF,
+        queueExpanders: {},
+        contextAccordions: {},
+        listScrollTop: {
+            ticketList: 0,
+            queueBoardList: 0,
+        },
+        chatWindowSize: null,
         ticketClickTimer: 0,
         pollTimer: null,
         tools: [],
@@ -91,9 +102,113 @@
     let resolutionCodesCache = [];
     let resolutionDialogResolve = null;
     let resolutionDialogReject = null;
+    let chatWindowResizeTimer = 0;
 
     function byId(id) {
         return document.getElementById(id);
+    }
+
+    function parseStoredObject(value, fallback) {
+        if (!value) {
+            return fallback;
+        }
+        try {
+            const parsed = JSON.parse(value);
+            return parsed && typeof parsed === 'object' ? parsed : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function readSessionObject(key, fallback) {
+        return parseStoredObject(sessionStorage.getItem(key), fallback);
+    }
+
+    function writeSessionObject(key, value) {
+        try {
+            sessionStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.warn('Failed to persist session state', key, error);
+        }
+    }
+
+    function queueExpanderStateKey(ticketId, section) {
+        return String(ticketId || '') + ':' + String(section || '');
+    }
+
+    function queueExpanderOpen(ticketId, section, fallback) {
+        const key = queueExpanderStateKey(ticketId, section);
+        if (Object.prototype.hasOwnProperty.call(state.queueExpanders, key)) {
+            return Boolean(state.queueExpanders[key]);
+        }
+        return Boolean(fallback);
+    }
+
+    function setQueueExpanderOpen(ticketId, section, open) {
+        const key = queueExpanderStateKey(ticketId, section);
+        state.queueExpanders[key] = Boolean(open);
+        writeSessionObject(QUEUE_EXPANDERS_KEY, state.queueExpanders);
+    }
+
+    function contextAccordionOpen(sectionId, fallback) {
+        if (Object.prototype.hasOwnProperty.call(state.contextAccordions, sectionId)) {
+            return Boolean(state.contextAccordions[sectionId]);
+        }
+        return Boolean(fallback);
+    }
+
+    function setContextAccordionOpen(sectionId, open) {
+        state.contextAccordions[sectionId] = Boolean(open);
+        writeSessionObject(CONTEXT_ACCORDIONS_KEY, state.contextAccordions);
+    }
+
+    function captureScrollPosition(nodeId) {
+        const node = byId(nodeId);
+        if (!node) {
+            return 0;
+        }
+        const current = Math.max(0, node.scrollTop || 0);
+        state.listScrollTop[nodeId] = current;
+        return current;
+    }
+
+    function restoreScrollPosition(nodeId, fallback) {
+        const node = byId(nodeId);
+        if (!node) {
+            return;
+        }
+        const next = Number.isFinite(state.listScrollTop[nodeId]) ? state.listScrollTop[nodeId] : fallback;
+        node.scrollTop = Math.max(0, Number(next || 0));
+    }
+
+    function applyChatWindowSize() {
+        const shell = byId('chatWindowShell');
+        const size = state.chatWindowSize;
+        if (!shell) {
+            return;
+        }
+        if (size && Number(size.width) > 0) {
+            shell.style.width = Math.min(Number(size.width), 950) + 'px';
+        } else {
+            shell.style.width = '';
+        }
+        if (size && Number(size.height) > 0) {
+            shell.style.height = Math.max(Number(size.height), 560) + 'px';
+        } else {
+            shell.style.height = '';
+        }
+    }
+
+    function rememberChatWindowSize() {
+        const shell = byId('chatWindowShell');
+        if (!shell) {
+            return;
+        }
+        state.chatWindowSize = {
+            width: Math.round(shell.getBoundingClientRect().width),
+            height: Math.round(shell.getBoundingClientRect().height),
+        };
+        writeSessionObject(CHAT_WINDOW_SIZE_KEY, state.chatWindowSize);
     }
 
     function normalizePanelMode(value) {
@@ -451,6 +566,10 @@
         sessionStorage.removeItem(LAST_TICKET_KEY);
         sessionStorage.removeItem(SIDEBAR_MODE_KEY);
         sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+        sessionStorage.removeItem(DRAWER_TAB_KEY);
+        sessionStorage.removeItem(QUEUE_EXPANDERS_KEY);
+        sessionStorage.removeItem(CONTEXT_ACCORDIONS_KEY);
+        sessionStorage.removeItem(CHAT_WINDOW_SIZE_KEY);
     }
 
     function logout() {
@@ -467,6 +586,10 @@
         state.selectedLifecycle = null;
         state.sidebarMode = PANEL_MODES.HALF;
         state.workspaceView = WORKSPACE_VIEWS.QUEUE;
+        state.drawerTab = 'context';
+        state.queueExpanders = {};
+        state.contextAccordions = {};
+        state.chatWindowSize = null;
         renderTicketList();
         renderStage();
         renderContextPanel();
@@ -480,6 +603,12 @@
         state.selectedTicketId = sessionStorage.getItem(LAST_TICKET_KEY) || '';
         state.sidebarMode = normalizePanelMode(sessionStorage.getItem(SIDEBAR_MODE_KEY));
         state.workspaceView = normalizeWorkspaceView(sessionStorage.getItem(WORKSPACE_VIEW_KEY));
+        state.drawerTab = ['context', 'tools', 'pipeline'].includes(sessionStorage.getItem(DRAWER_TAB_KEY))
+            ? sessionStorage.getItem(DRAWER_TAB_KEY)
+            : 'context';
+        state.queueExpanders = readSessionObject(QUEUE_EXPANDERS_KEY, {});
+        state.contextAccordions = readSessionObject(CONTEXT_ACCORDIONS_KEY, {});
+        state.chatWindowSize = readSessionObject(CHAT_WINDOW_SIZE_KEY, null);
         updateAuthBadge();
     }
 
@@ -672,11 +801,78 @@
         return { level: 'none', label: 'SLA/OLA не задан', dueAt: 0 };
     }
 
+    function ticketSignalState(ticket) {
+        if (!ticket) {
+            return { level: 'none', label: 'SLA/OLA не задан', dueAt: 0, alertText: '', reasonLabel: '' };
+        }
+        const now = Date.now();
+        const entries = [
+            {
+                key: 'ola_ack',
+                label: 'OLA принятия',
+                dueAt: numericTimestamp(ticket?.ola?.ola_ack_due_at),
+                breachedAt: ticket?.ola?.ola_ack_breached_at,
+            },
+            {
+                key: 'first_response',
+                label: 'SLA первого ответа',
+                dueAt: numericTimestamp(ticket?.first_response_due_at),
+                breachedAt: ticket?.first_response_breached_at,
+            },
+            {
+                key: 'ola_processing',
+                label: 'OLA обработки',
+                dueAt: numericTimestamp(ticket?.ola?.ola_processing_due_at),
+                breachedAt: ticket?.ola?.ola_processing_breached_at,
+            },
+            {
+                key: 'resolution',
+                label: 'SLA решения',
+                dueAt: numericTimestamp(ticket?.resolution_due_at),
+                breachedAt: ticket?.resolution_breached_at,
+            },
+        ]
+            .filter((entry) => entry.dueAt > 0 || entry.breachedAt)
+            .sort((left, right) => (left.dueAt || Number.MAX_SAFE_INTEGER) - (right.dueAt || Number.MAX_SAFE_INTEGER));
+        const breached = entries.find((entry) => entry.breachedAt || (entry.dueAt && entry.dueAt <= now));
+        if (breached) {
+            const actionText = breached.key === 'ola_ack'
+                ? (canTakeSelf(ticket) ? 'Нужно взять в работу' : 'Нужно открыть рабочий тикет')
+                : breached.key === 'first_response'
+                    ? 'Нужно ответить пользователю'
+                    : breached.key === 'ola_processing'
+                        ? 'Нужно продолжить обработку'
+                        : 'Нужно завершить тикет';
+            return {
+                level: 'breach',
+                label: 'SLA/OLA breach',
+                dueAt: breached.dueAt || ticketEarliestDueAt(ticket),
+                alertText: actionText,
+                reasonLabel: breached.label,
+            };
+        }
+        const risk = entries.find((entry) => entry.dueAt && entry.dueAt - now <= SLA_RISK_WINDOW_MS);
+        if (risk) {
+            return {
+                level: 'risk',
+                label: 'SLA/OLA риск',
+                dueAt: risk.dueAt,
+                alertText: risk.label,
+                reasonLabel: risk.label,
+            };
+        }
+        const dueAt = ticketEarliestDueAt(ticket);
+        if (dueAt) {
+            return { level: 'healthy', label: 'SLA/OLA в норме', dueAt, alertText: '', reasonLabel: '' };
+        }
+        return { level: 'none', label: 'SLA/OLA не задан', dueAt: 0, alertText: '', reasonLabel: '' };
+    }
+
     function compareTickets(left, right) {
         if (state.ticketSort === 'sla_risk') {
             const score = { breach: 0, risk: 1, healthy: 2, none: 3 };
-            const leftState = ticketSlaState(left);
-            const rightState = ticketSlaState(right);
+            const leftState = ticketSignalState(left);
+            const rightState = ticketSignalState(right);
             const levelDiff = score[leftState.level] - score[rightState.level];
             if (levelDiff !== 0) {
                 return levelDiff;
@@ -820,8 +1016,12 @@
     }
 
     function renderSlaChipMarkup(ticket) {
-        const slaState = ticketSlaState(ticket);
-        return '<span class="sla-chip" data-sla-level="' + escapeHtml(slaState.level) + '">' + escapeHtml(slaState.label) + '</span>';
+        const slaState = ticketSignalState(ticket);
+        const chipClass = slaState.level === 'breach' ? 'sla-chip is-breach-alert' : 'sla-chip';
+        const title = slaState.reasonLabel
+            ? (slaState.reasonLabel + ': ' + (slaState.alertText || slaState.label))
+            : slaState.label;
+        return '<span class="' + chipClass + '" data-sla-level="' + escapeHtml(slaState.level) + '" title="' + escapeHtml(title) + '">' + escapeHtml(slaState.label) + '</span>';
     }
 
     function renderTicketFilterChips() {
@@ -840,7 +1040,7 @@
         const chatCounters = ticket.chat_counters || {};
         const unreadForSupport = Number(chatCounters.support_unread_user_messages || 0);
         const pendingUser = Number(chatCounters.support_pending_user_messages || 0);
-        const slaState = ticketSlaState(ticket);
+        const slaState = ticketSignalState(ticket);
         const expandedDetails = [
             'ID: ' + (ticket.ticket_id || '—'),
             'Устройство: ' + (ticket.device_id || 'Не привязано'),
@@ -897,6 +1097,7 @@
         if (!listNode || !metaNode) {
             return;
         }
+        captureScrollPosition('ticketList');
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const hiddenClosedNote = state.hiddenClosedCount > 0
@@ -957,6 +1158,7 @@
                 await takeTicketSelf(ticketId);
             });
         });
+        restoreScrollPosition('ticketList');
     }
 
     function renderSelectedMeta(ticket, snapshot) {
@@ -1022,11 +1224,24 @@
         return actions;
     }
 
+    function queuePrimaryAction(ticket) {
+        if (!ticket) {
+            return null;
+        }
+        if (canTakeSelf(ticket)) {
+            return { id: 'take_self', label: 'Взять в работу', kind: 'primary' };
+        }
+        if (ticket.assignee_id) {
+            return { id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' };
+        }
+        return null;
+    }
+
     function renderStageHeader() {
         const ticket = selectedTicket();
         const snapshot = state.selectedSnapshot;
         const titleNode = byId('selectedTicketTitle');
-        const actionsNode = byId('stageQuickActions');
+        const actionsNode = byId('ticketCommandDock');
         if (!titleNode || !actionsNode) {
             return;
         }
@@ -1065,7 +1280,7 @@
         const unread = visible.filter((ticket) => Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0).length;
         const waiting = visible.filter((ticket) => isWaitingMineTicket(ticket)).length;
         const slaRisk = visible.filter((ticket) => {
-            const level = ticketSlaState(ticket).level;
+            const level = ticketSignalState(ticket).level;
             return level === 'risk' || level === 'breach';
         }).length;
         return [
@@ -1079,19 +1294,21 @@
     }
 
     function queueActionButtonMarkup(action, attrName) {
-        const btnClass = action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
-        return '<button type="button" class="' + btnClass + '" ' + attrName + '="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>';
+        const btnClass = (action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary') + (action.extraClass ? (' ' + action.extraClass) : '');
+        const titleAttr = action.title ? ' title="' + escapeHtml(action.title) + '"' : '';
+        return '<button type="button" class="' + btnClass + '" ' + attrName + '="' + escapeHtml(action.id) + '"' + titleAttr + '>' + escapeHtml(action.label) + '</button>';
     }
 
     function queueCardActions(ticket) {
-        return quickActionButtons(ticket).filter((action) => action.id !== 'refresh');
+        const primary = queuePrimaryAction(ticket);
+        return primary ? [primary] : [];
     }
 
     function queueTicketSlaRows(ticket, snapshot) {
         const ola = snapshot?.ola || ticket?.ola || {};
         const requester = snapshot?.requester_profile || {};
         return [
-            ['Состояние', ticketSlaState(ticket).label],
+            ['Состояние', ticketSignalState(ticket).label],
             ['SLA первого ответа', ticket.first_response_due_at ? formatDate(ticket.first_response_due_at) : 'не задан'],
             ['SLA решения', ticket.resolution_due_at ? formatDate(ticket.resolution_due_at) : 'не задан'],
             ['OLA принятия', ola.ola_ack_due_at ? formatDate(ola.ola_ack_due_at) : 'не задан'],
@@ -1114,9 +1331,17 @@
         ];
     }
 
-    function queueExpanderMarkup(title, hint, rows, open) {
+    function queueExpanderMarkup(ticketId, sectionKey, title, hint, rows, open) {
+        if (Array.isArray(title)) {
+            open = hint;
+            rows = title;
+            hint = sectionKey;
+            title = ticketId;
+            ticketId = '';
+            sectionKey = '';
+        }
         return `
-            <details class="queue-ticket-expander"${open ? ' open' : ''}>
+            <details class="queue-ticket-expander" data-expander-ticket-id="${escapeHtml(ticketId)}" data-expander-section="${escapeHtml(sectionKey)}"${open ? ' open' : ''}>
                 <summary>
                     <span class="queue-ticket-expander-title">${escapeHtml(title)}</span>
                     <span class="queue-ticket-expander-hint">${escapeHtml(hint)}</span>
@@ -1139,10 +1364,17 @@
         const counters = ticket.chat_counters || {};
         const unreadForSupport = Number(counters.support_unread_user_messages || 0);
         const pendingUser = Number(counters.support_pending_user_messages || 0);
-        const slaState = ticketSlaState(ticket);
+        const slaState = ticketSignalState(ticket);
         const actions = queueCardActions(ticket);
+        const primaryAction = actions[0] || null;
+        const breachAlert = slaState.level === 'breach' && slaState.alertText
+            ? '<div class="queue-ticket-alert">' + escapeHtml(slaState.alertText) + '</div>'
+            : '';
+        const primaryActionMarkup = primaryAction
+            ? queueActionButtonMarkup({ ...primaryAction, extraClass: 'queue-ticket-primary-action' }, 'data-queue-ticket-action')
+            : '';
         return `
-            <article class="queue-ticket-card${selected ? ' active' : ''}" data-ticket-id="${escapeHtml(ticket.ticket_id)}" data-sla-level="${escapeHtml(slaState.level)}">
+            <article class="queue-ticket-card${selected ? ' active' : ''}${slaState.level === 'breach' ? ' is-breach-alert' : ''}" data-ticket-id="${escapeHtml(ticket.ticket_id)}" data-sla-level="${escapeHtml(slaState.level)}">
                 <div class="queue-ticket-card-head">
                     <div>
                         <div class="queue-ticket-card-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
@@ -1150,6 +1382,7 @@
                         <div class="queue-ticket-card-meta">${escapeHtml(buildTicketMetaLine(ticket))}</div>
                     </div>
                     <div class="queue-ticket-card-side">
+                        ${primaryActionMarkup ? '<div class="queue-ticket-card-side-top">' + primaryActionMarkup + '</div>' : ''}
                         <div class="queue-ticket-card-side-top">
                             ${renderSlaChipMarkup(ticket)}
                             <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
@@ -1162,6 +1395,7 @@
                     </div>
                 </div>
                 <div class="queue-ticket-card-description">${escapeHtml(ticket.description || 'Описание заявки пока не заполнено.')}</div>
+                ${breachAlert}
                 <div class="queue-ticket-card-grid">
                     <div class="queue-ticket-metric">
                         <span class="queue-ticket-metric-label">Обновлён</span>
@@ -1179,9 +1413,6 @@
                         <span class="queue-ticket-metric-label">Ждут разбора</span>
                         <div class="queue-ticket-metric-value">${escapeHtml(String(pendingUser))}</div>
                     </div>
-                </div>
-                <div class="quick-action-row">
-                    ${actions.map((action) => queueActionButtonMarkup(action, 'data-queue-ticket-action')).join('')}
                 </div>
                 <div class="queue-ticket-expanders">
                     ${queueExpanderMarkup('SLA / OLA / маршрут', selected ? 'Разворачивается с live-контекстом' : 'Выберите тикет для деталей', queueTicketSlaRows(ticket, snapshot), Boolean(selected))}
@@ -1214,11 +1445,13 @@
 
     function renderQueueDesk() {
         const summaryNode = byId('queueHeadSummaryStrip') || byId('queueSummaryStrip');
+        const controlNode = byId('queueHeadControlDock');
         const filterNode = byId('queueHeadFilterDock') || byId('queueFilterDock');
         const sortNode = byId('queueHeadSortDock') || byId('queueSortDock');
         const actionNode = byId('queueActionDock');
         const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
+        const slaHelpText = 'SLA показывает внешний срок для пользователя: первый ответ и решение. OLA показывает внутренние сроки очереди: взять тикет в работу и продвинуть обработку. Сортировка SLA / OLA поднимает наверх просроченные и ближайшие дедлайны.';
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const ticket = selectedTicket();
@@ -1245,6 +1478,47 @@
             { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
             { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
         ];
+
+        if (controlNode) {
+            controlNode.innerHTML = `
+                <div class="queue-control-cluster">
+                    <span class="queue-control-label">Р¤РёР»СЊС‚СЂ</span>
+                    <div class="quick-action-row">
+                        ${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}
+                    </div>
+                </div>
+                <div class="queue-control-cluster">
+                    <span class="queue-control-label">РЎРѕСЂС‚РёСЂРѕРІРєР°</span>
+                    <div class="quick-action-row">
+                        ${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}
+                    </div>
+                </div>
+                <button type="button" class="btn btn-secondary queue-info-btn" data-queue-info="sla-help" title="${escapeHtml(slaHelpText)}">SLA / OLA ?</button>
+            `;
+            controlNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
+                    renderTicketList();
+                    renderQueueDesk();
+                });
+            });
+            controlNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
+                    const sortSelect = byId('ticketSortSelect');
+                    if (sortSelect) {
+                        sortSelect.value = state.ticketSort;
+                    }
+                    renderTicketList();
+                    renderQueueDesk();
+                });
+            });
+            controlNode.querySelectorAll('[data-queue-info="sla-help"]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    showToast(slaHelpText);
+                });
+            });
+        }
 
         if (filterNode) {
             filterNode.innerHTML = filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('');
@@ -1323,6 +1597,7 @@
         if (!boardListNode) {
             return;
         }
+        captureScrollPosition('queueBoardList');
         if (!tickets.length) {
             boardListNode.innerHTML = '<div class="activity-item">По текущему фильтру нет тикетов. Попробуйте сменить фильтр или строку поиска.</div>';
             return;
@@ -1371,6 +1646,27 @@
                 await executeQueueCardAction(ticketId, button.getAttribute('data-queue-ticket-action') || '');
             });
         });
+        boardListNode.querySelectorAll('.queue-ticket-card').forEach((card) => {
+            const ticketId = card.getAttribute('data-ticket-id') || '';
+            const expanders = card.querySelectorAll('.queue-ticket-expander');
+            expanders.forEach((details, index) => {
+                const section = index === 0 ? 'sla' : 'context';
+                if (ticketId) {
+                    details.setAttribute('data-expander-ticket-id', ticketId);
+                }
+                details.setAttribute('data-expander-section', section);
+                if (ticketId) {
+                    details.open = queueExpanderOpen(ticketId, section, details.open);
+                }
+                details.addEventListener('toggle', () => {
+                    if (!ticketId) {
+                        return;
+                    }
+                    setQueueExpanderOpen(ticketId, section, details.open);
+                });
+            });
+        });
+        restoreScrollPosition('queueBoardList');
     }
 
     function historyItemsFromSnapshot(snapshot) {
@@ -1571,6 +1867,7 @@
             setEmbeddedTicketLoading(true, 'Загрузка чата тикета...');
             return;
         }
+        applyChatWindowSize();
         ensureEmbeddedTicketFrame(ticket.ticket_id);
     }
 
@@ -1938,6 +2235,47 @@
                 </div>
             </article>
         `;
+        const accordionHints = {
+            0: 'Код, статус, очередь, инициатор, SLA',
+            1: 'Правила очереди и автоназначение',
+            2: 'Текст заявки, профиль, приоритет, устройство',
+            3: 'Внешние и внутренние дедлайны',
+        };
+        const accordionIds = {
+            0: 'current_context',
+            1: 'queue_assignment',
+            2: 'routing_factors',
+            3: 'sla_calendar_ola',
+        };
+        const cards = Array.from(panel.querySelectorAll('.drawer-card'));
+        panel.innerHTML = cards.map((card, index) => {
+            const title = card.querySelector('h3')?.textContent?.trim() || 'Контекст';
+            const body = Array.from(card.children)
+                .filter((node) => !node.classList?.contains('card-head'))
+                .map((node) => node.outerHTML)
+                .join('');
+            const sectionId = accordionIds[index] || ('context_section_' + index);
+            return `
+                <details class="context-accordion" data-context-section="${escapeHtml(sectionId)}"${contextAccordionOpen(sectionId, false) ? ' open' : ''}>
+                    <summary>
+                        <span class="context-accordion-title">${escapeHtml(title)}</span>
+                        <span class="context-accordion-hint">${escapeHtml(accordionHints[index] || 'Разверните, чтобы посмотреть детали')}</span>
+                    </summary>
+                    <div class="context-accordion-body">
+                        ${body}
+                    </div>
+                </details>
+            `;
+        }).join('');
+        panel.querySelectorAll('.context-accordion').forEach((details) => {
+            details.addEventListener('toggle', () => {
+                const sectionId = details.getAttribute('data-context-section') || '';
+                if (!sectionId) {
+                    return;
+                }
+                setContextAccordionOpen(sectionId, details.open);
+            });
+        });
     }
 
     function scenarioForTool(tool) {
@@ -2403,6 +2741,7 @@
         if (!toolsPanel || !pipelinePanel || !contextPanel) {
             return;
         }
+        sessionStorage.setItem(DRAWER_TAB_KEY, state.drawerTab);
         contextPanel.classList.toggle('hidden', state.drawerTab !== 'context');
         toolsPanel.classList.toggle('hidden', state.drawerTab !== 'tools');
         pipelinePanel.classList.toggle('hidden', state.drawerTab !== 'pipeline');
@@ -2446,6 +2785,7 @@
         updateAuthBadge();
         updateSwitchRoleLink();
         applyLayoutClasses();
+        applyChatWindowSize();
         if (byId('ticketSortSelect')) {
             byId('ticketSortSelect').value = state.ticketSort;
         }
@@ -2502,6 +2842,20 @@
                 await renderToolPanels();
             });
         });
+        const chatShell = byId('chatWindowShell');
+        if (chatShell && typeof window.ResizeObserver === 'function') {
+            const resizeObserver = new ResizeObserver(() => {
+                if (chatWindowResizeTimer) {
+                    window.clearTimeout(chatWindowResizeTimer);
+                }
+                chatWindowResizeTimer = window.setTimeout(() => {
+                    rememberChatWindowSize();
+                }, 120);
+            });
+            resizeObserver.observe(chatShell);
+        } else if (chatShell) {
+            window.addEventListener('mouseup', rememberChatWindowSize);
+        }
         byId('toolSearchInput')?.addEventListener('input', async () => {
             state.toolSearch = String(byId('toolSearchInput')?.value || '').trim();
             await renderToolPanels();
