@@ -1229,10 +1229,10 @@
             return null;
         }
         if (canTakeSelf(ticket)) {
-            return { id: 'take_self', label: 'Взять в работу', kind: 'primary' };
+            return { id: 'take_self', label: '\u0412\u0437\u044f\u0442\u044c \u0432 \u0440\u0430\u0431\u043e\u0442\u0443', kind: 'primary' };
         }
         if (ticket.assignee_id) {
-            return { id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' };
+            return { id: 'open_ticket_desk', label: '\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0440\u0430\u0431\u043e\u0447\u0438\u0439 \u0442\u0438\u043a\u0435\u0442', kind: 'primary' };
         }
         return null;
     }
@@ -1451,7 +1451,9 @@
         const actionNode = byId('queueActionDock');
         const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
-        const slaHelpText = 'SLA показывает внешний срок для пользователя: первый ответ и решение. OLA показывает внутренние сроки очереди: взять тикет в работу и продвинуть обработку. Сортировка SLA / OLA поднимает наверх просроченные и ближайшие дедлайны.';
+        const queueFilterLabel = '\u0424\u0438\u043b\u044c\u0442\u0440';
+        const queueSortLabel = '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430';
+        const slaHelpText = 'SLA \u2014 \u0432\u043d\u0435\u0448\u043d\u0438\u0439 \u0434\u0435\u0434\u043b\u0430\u0439\u043d \u0434\u043b\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f, OLA \u2014 \u0432\u043d\u0443\u0442\u0440\u0435\u043d\u043d\u0438\u0439 \u0434\u0435\u0434\u043b\u0430\u0439\u043d \u043e\u0447\u0435\u0440\u0435\u0434\u0438. \u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430 SLA / OLA \u043f\u043e\u0434\u043d\u0438\u043c\u0430\u0435\u0442 \u043d\u0430\u0432\u0435\u0440\u0445 \u043f\u0440\u043e\u0441\u0440\u043e\u0447\u0435\u043d\u043d\u044b\u0435 \u0438 \u0431\u043b\u0438\u0436\u0430\u0439\u0448\u0438\u0435 \u0441\u0440\u043e\u043a\u0438.';
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const ticket = selectedTicket();
@@ -1482,13 +1484,13 @@
         if (controlNode) {
             controlNode.innerHTML = `
                 <div class="queue-control-cluster">
-                    <span class="queue-control-label">Р¤РёР»СЊС‚СЂ</span>
+                    <span class="queue-control-label">${queueFilterLabel}</span>
                     <div class="quick-action-row">
                         ${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}
                     </div>
                 </div>
                 <div class="queue-control-cluster">
-                    <span class="queue-control-label">РЎРѕСЂС‚РёСЂРѕРІРєР°</span>
+                    <span class="queue-control-label">${queueSortLabel}</span>
                     <div class="quick-action-row">
                         ${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}
                     </div>
@@ -2236,10 +2238,10 @@
             </article>
         `;
         const accordionHints = {
-            0: 'Код, статус, очередь, инициатор, SLA',
-            1: 'Правила очереди и автоназначение',
-            2: 'Текст заявки, профиль, приоритет, устройство',
-            3: 'Внешние и внутренние дедлайны',
+            0: '\u041a\u043e\u0434, \u0441\u0442\u0430\u0442\u0443\u0441, \u043e\u0447\u0435\u0440\u0435\u0434\u044c, \u0438\u043d\u0438\u0446\u0438\u0430\u0442\u043e\u0440, SLA',
+            1: '\u041f\u0440\u0430\u0432\u0438\u043b\u0430 \u043e\u0447\u0435\u0440\u0435\u0434\u0438 \u0438 \u0430\u0432\u0442\u043e\u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435',
+            2: '\u0422\u0435\u043a\u0441\u0442 \u0437\u0430\u044f\u0432\u043a\u0438, \u043f\u0440\u043e\u0444\u0438\u043b\u044c, \u043f\u0440\u0438\u043e\u0440\u0438\u0442\u0435\u0442, \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e',
+            3: '\u0412\u043d\u0435\u0448\u043d\u0438\u0435 \u0438 \u0432\u043d\u0443\u0442\u0440\u0435\u043d\u043d\u0438\u0435 \u0434\u0435\u0434\u043b\u0430\u0439\u043d\u044b',
         };
         const accordionIds = {
             0: 'current_context',
@@ -2249,7 +2251,7 @@
         };
         const cards = Array.from(panel.querySelectorAll('.drawer-card'));
         panel.innerHTML = cards.map((card, index) => {
-            const title = card.querySelector('h3')?.textContent?.trim() || 'Контекст';
+            const title = card.querySelector('h3')?.textContent?.trim() || '\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442';
             const body = Array.from(card.children)
                 .filter((node) => !node.classList?.contains('card-head'))
                 .map((node) => node.outerHTML)
@@ -2259,7 +2261,7 @@
                 <details class="context-accordion" data-context-section="${escapeHtml(sectionId)}"${contextAccordionOpen(sectionId, false) ? ' open' : ''}>
                     <summary>
                         <span class="context-accordion-title">${escapeHtml(title)}</span>
-                        <span class="context-accordion-hint">${escapeHtml(accordionHints[index] || 'Разверните, чтобы посмотреть детали')}</span>
+                        <span class="context-accordion-hint">${escapeHtml(accordionHints[index] || '\u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0438\u0442\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u0434\u0435\u0442\u0430\u043b\u0438')}</span>
                     </summary>
                     <div class="context-accordion-body">
                         ${body}
