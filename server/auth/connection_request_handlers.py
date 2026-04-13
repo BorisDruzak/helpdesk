@@ -63,6 +63,32 @@ async def handle_connection_request(request: web.Request) -> web.Response:
     metadata = data.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
+    machine_id = str(metadata.get("machine_id") or "").strip()
+    install_id = str(metadata.get("install_id") or "").strip()
+    if machine_id and machine_id != device_id:
+        return web.json_response(
+            {"status": "error", "error": "metadata.machine_id must match device_id"},
+            status=400,
+        )
+    if machine_id:
+        try:
+            uuid_lib.UUID(machine_id)
+        except ValueError:
+            return web.json_response(
+                {"status": "error", "error": "Invalid metadata.machine_id"},
+                status=400,
+            )
+    if install_id:
+        try:
+            uuid_lib.UUID(install_id)
+        except ValueError:
+            return web.json_response(
+                {"status": "error", "error": "Invalid metadata.install_id"},
+                status=400,
+            )
+    if metadata:
+        metadata = dict(metadata)
+    metadata["machine_id"] = device_id
     ip_address = _get_client_ip(request)
 
     state = request.app["state"]

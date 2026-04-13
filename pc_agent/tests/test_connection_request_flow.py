@@ -44,6 +44,8 @@ class _FakeSession:
     def __init__(self, post_responses, get_responses):
         self._post_responses = list(post_responses)
         self._get_responses = list(get_responses)
+        self.post_calls = []
+        self.get_calls = []
 
     async def __aenter__(self):
         return self
@@ -52,6 +54,7 @@ class _FakeSession:
         return False
 
     async def post(self, *args, **kwargs):
+        self.post_calls.append((args, kwargs))
         if not self._post_responses:
             raise RuntimeError("no more post responses")
         item = self._post_responses.pop(0)
@@ -60,6 +63,7 @@ class _FakeSession:
         return item
 
     async def get(self, *args, **kwargs):
+        self.get_calls.append((args, kwargs))
         if not self._get_responses:
             raise RuntimeError("no more get responses")
         item = self._get_responses.pop(0)
@@ -220,4 +224,30 @@ async def test_connection_request_post_error_returns_false(monkeypatch):
     )
 
     assert (ok, rejected) == (False, False)
+
+
+@pytest.mark.asyncio
+async def test_connection_request_sends_identity_metadata(monkeypatch):
+    db = _FakeDb()
+    bus = _FakeEventBus()
+    identity = _FakeIdentity()
+    session = _FakeSession([_FakeResponse(200, {"status": "approved", "token": "tok-6"})], [])
+
+    monkeypatch.setattr(flow_mod, "ClientSession", lambda: session)
+
+    ok, rejected = await flow_mod.run_connection_request_flow(
+        api_url="http://example/api",
+        device_id="dev-6",
+        hostname="host-6",
+        metadata={"machine_id": "dev-6", "install_id": "install-6", "identity_scheme": "machine_id_v1"},
+        db_manager=db,
+        identity_manager=identity,
+        event_bus=bus,
+        wait_seconds=30,
+    )
+
+    assert (ok, rejected) == (True, False)
+    first_post = session.post_calls[0][1]["json"]
+    assert first_post["metadata"]["machine_id"] == "dev-6"
+    assert first_post["metadata"]["install_id"] == "install-6"
 

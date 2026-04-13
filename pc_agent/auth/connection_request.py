@@ -28,6 +28,7 @@ async def run_connection_request_flow(
     identity_manager: Any,
     event_bus: Any,
     wait_seconds: int,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> tuple[bool, bool]:
     """
     Запрос авторизации у сервера (connection request flow).
@@ -44,6 +45,8 @@ async def run_connection_request_flow(
     if not device_id:
         logger.error("request_connection_flow: device_id отсутствует")
         return (False, False)
+    if metadata is None:
+        metadata = {}
 
     async with ClientSession() as session:
         try:
@@ -52,7 +55,7 @@ async def run_connection_request_flow(
                 json={
                     "device_id": device_id,
                     "hostname": hostname,
-                    "metadata": {},
+                    "metadata": metadata,
                 },
                 timeout=aiohttp.ClientTimeout(total=15),
             )
@@ -112,7 +115,7 @@ async def run_connection_request_flow(
                         json={
                             "device_id": device_id,
                             "hostname": hostname,
-                            "metadata": {},
+                            "metadata": metadata,
                         },
                         timeout=aiohttp.ClientTimeout(total=5),
                     )

@@ -305,12 +305,16 @@ async def handle_handshake(
     
     # Извлекаем device_id из payload для отслеживания попыток подключения
     # Проверяем в разных местах: корень сообщения, payload, meta
+    payload = data.get("payload", {}) or {}
     payload_device_id = (
-        data.get("device_id") or 
-        data.get("payload", {}).get("device_id") or
-        data.get("payload", {}).get("uuid") or
-        data.get("uuid")
+        data.get("device_id")
+        or payload.get("machine_id")
+        or payload.get("device_id")
+        or payload.get("uuid")
+        or data.get("uuid")
     )
+    payload_install_id = payload.get("install_id")
+    payload_machine_id_source = payload.get("machine_id_source")
     
     connection_request_service = ConnectionRequestService()
     if not token:
@@ -381,7 +385,6 @@ async def handle_handshake(
     authenticated = True
     
     # Проверяем, что device_id из payload совпадает с токеном (если указан)
-    payload_device_id = data.get("device_id")
     if payload_device_id and payload_device_id != device_id:
         logger.warning(
             f"🔴 Device ID mismatch: token={device_id}, payload={payload_device_id}. "
@@ -405,6 +408,11 @@ async def handle_handshake(
     }
     payload_pre = data.get("payload", {}) or data.get("meta", {})
     metadata["os_type"] = payload_pre.get("os_type") or payload_pre.get("os")
+    metadata["machine_id"] = device_id
+    if payload_install_id is not None:
+        metadata["install_id"] = payload_install_id
+    if payload_machine_id_source is not None:
+        metadata["machine_id_source"] = payload_machine_id_source
     if payload_pre.get("applied_update_version") is not None:
         metadata["applied_update_version"] = payload_pre["applied_update_version"]
     if payload_pre.get("last_update_operation_id") is not None:
@@ -454,7 +462,15 @@ async def handle_handshake(
                 os_info = payload.get("os") or meta.get("os")
                 tools_version = payload.get("tools_version") or meta.get("tools_version")
                 modules = payload.get("modules") or data.get("modules", [])
-                metadata_db = {"modules": modules}
+                metadata_db = {
+                    "modules": modules,
+                    "machine_id": device_id,
+                    "identity_scheme": "machine_id_v1",
+                }
+                if payload.get("install_id") is not None:
+                    metadata_db["install_id"] = payload.get("install_id")
+                if payload.get("machine_id_source") is not None:
+                    metadata_db["machine_id_source"] = payload.get("machine_id_source")
                 if payload.get("applied_update_version") is not None:
                     metadata_db["applied_update_version"] = payload["applied_update_version"]
                 if payload.get("last_update_operation_id") is not None:

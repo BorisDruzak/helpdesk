@@ -22,6 +22,7 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
   "request_id": "uuid",
   "device_id": "uuid",
   "protocol_version": "ws_ticket_v3",
+  "token": "auth-token",
   "trace_id": "uuid",
   "ticket_id": "uuid",
   "job_id": "uuid",
@@ -126,7 +127,9 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
   "protocol_version": "ws_ticket_v3",
   "trace_id": "uuid",
   "payload": {
-    "token": "auth-token",
+    "machine_id": "uuid",
+    "install_id": "install-uuid",
+    "machine_id_source": "windows_machine_guid",
     "hostname": "hostname",
     "os": "Linux",
     "agent_version": "3.0.0",
@@ -145,6 +148,13 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
   }
 }
 ```
+
+Identity v1 invariants for handshake:
+
+- top-level `device_id` is the canonical `machine_id`;
+- `payload.machine_id` must match `device_id`;
+- `payload.install_id` identifies the current installation only and may change after reinstall or after deleting `identity.json`;
+- top-level `token` remains the authentication token source of truth for the handshake.
 
 Если launcher успешно применил self-update, агент добавляет в следующий `handshake`:
 - `payload.applied_update_version` — версия, которую launcher реально активировал;
@@ -511,9 +521,14 @@ RPC-вызовы для выполнения методов (альтернат�
 - Сервер может закрыть соединение с кодом **4003** при невалидном токене.
 - Агент при 4003 очищает токен и предлагает повторную авторизацию (GUI или консоль).
 
-### device_id (UUIDv4)
+### device_id / machine_id / install_id
 
-Protocol V3 (замечание 1.7): `device_id` всегда должен быть **UUIDv4**. IdentityManager валидирует и регенерирует при невалидном формате.
+Protocol V3 identity v1:
+
+- `device_id` is always the canonical `machine_id`;
+- `machine_id` must remain stable for the same physical machine;
+- `install_id` is secondary metadata for the local installation and is allowed to change independently;
+- deleting `identity.json` must not create a new logical device on the server if the agent can still resolve the same `machine_id`.
 
 **Подробнее:** [AUTHENTICATION.md](AUTHENTICATION.md)
 

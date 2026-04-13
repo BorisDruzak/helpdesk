@@ -39,6 +39,7 @@
 - В handshake обязательно поле **token** (сырой токен агента).
 - Токен проверяется через БД (`AuthService.verify_agent_token`). При отсутствии или невалидном токене соединение закрывается с кодом **4003** («Token required» или «Invalid token»).
 - **device_id** для всего последующего обмена берётся **только из записи токена в БД**, не из payload.
+- Identity v1: `device_id` на сервере трактуется как канонический `machine_id`. Если агент прислал `payload.machine_id`, он должен совпадать с top-level `device_id`; `payload.install_id` хранится только как secondary metadata.
 - Исключение: controlled reprovision. Если токен был выдан на новый placeholder-`device_id`, а агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает сам токен к существующему устройству и только потом завершает handshake.
 - Если payload `device_id` не подходит под controlled reprovision, используется device_id из токена и пишется предупреждение в лог.
 
@@ -135,6 +136,8 @@ Wire-contract Protocol V3 при этом не меняется: формат en
 ## Сильные и слабые стороны (сервер)
 
 **Сильные:** строгая проверка protocol_version и capabilities; device_id только из токена (БД); device binding для тикетов; дедупликация по (device_id, ticket_id, agent_seq) и (device_id, device_seq); tool_call_started до отправки run_tool; нормализация command_result и защита terminal состояний (COMMAND_RESULT_LIFECYCLE); единый run_tool backend-фасад (`ToolExecutionService`) для API/админки/smoke.
+
+В identity v1 это даёт важный prod-инвариант: удаление локального `identity.json` у агента не должно создавать новый логический device record, если OS-level machine identity не изменилась.
 
 **Слабые/ограничения:** state остается single-process runtime-реестром; `send_ws_command` по-прежнему синхронно ждёт `command_result` по timeout.  
 С версии цикла 2026-03-18 `/ws` работает как transport-only loop с `AgentMessageRouter` и сервисами (`HandshakeService`, `CommandAckService`, `CommandResultService`, `OutboxIngestService`, `AgentCommandService`).  

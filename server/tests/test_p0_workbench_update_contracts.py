@@ -69,6 +69,9 @@ async def test_devices_contract_includes_provisioning_and_update_summary(test_cl
     await _insert_device(
         device_id,
         metadata={
+            "install_id": str(uuid.uuid4()),
+            "machine_id_source": "windows_machine_guid",
+            "identity_scheme": "machine_id_v1",
             "applied_update_version": "2.1.0",
             "last_update_operation_id": "op-123",
         },
@@ -81,8 +84,13 @@ async def test_devices_contract_includes_provisioning_and_update_summary(test_cl
     assert data["devices"]
 
     row = next(d for d in data["devices"] if d["device_id"] == device_id)
+    assert "identity_summary" in row
     assert "provisioning_summary" in row
     assert "update_summary" in row
+    assert row["identity_summary"]["machine_id"] == device_id
+    assert row["identity_summary"]["machine_id_source"] == "windows_machine_guid"
+    assert row["identity_summary"]["identity_scheme"] == "machine_id_v1"
+    assert row["identity_summary"]["install_id"]
     assert row["update_summary"]["applied_update_version"] == "2.1.0"
     assert row["update_summary"]["last_update_operation_id"] == "op-123"
 

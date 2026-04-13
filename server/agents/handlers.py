@@ -66,6 +66,15 @@ def _serialize_update_summary(
     }
 
 
+def _serialize_identity_summary(*, device_id: str, device_metadata: dict) -> dict:
+    return {
+        "machine_id": device_id,
+        "install_id": device_metadata.get("install_id"),
+        "machine_id_source": device_metadata.get("machine_id_source"),
+        "identity_scheme": device_metadata.get("identity_scheme"),
+    }
+
+
 def _serialize_problem_log_row(item: dict) -> dict:
     return {
         "id": item.get("id"),
@@ -289,6 +298,10 @@ async def handle_get_devices(request):
                     "online": is_online,
                     "capabilities": device.capabilities if isinstance(device.capabilities, (list, dict)) else [],
                     "modules": modules_list,
+                    "identity_summary": _serialize_identity_summary(
+                        device_id=device.device_id,
+                        device_metadata=device_meta,
+                    ),
                     "provisioning_summary": provisioning_summary,
                     "update_summary": update_summary,
                     "is_deleted": bool(device.deleted_at),
@@ -408,6 +421,10 @@ async def handle_get_device(request):
                     "tools_version": device.tools_version,
                     "capabilities": device.capabilities if isinstance(device.capabilities, (list, dict)) else [],
                     "modules": modules_list,
+                    "identity_summary": _serialize_identity_summary(
+                        device_id=device.device_id,
+                        device_metadata=device_meta,
+                    ),
                     "first_seen_at": device.first_seen_at.isoformat() if device.first_seen_at else None,
                     "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
                     "last_handshake_at": device.last_handshake_at.isoformat() if device.last_handshake_at else None,

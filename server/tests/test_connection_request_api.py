@@ -240,3 +240,49 @@ async def test_connection_request_missing_device_id(test_client):
     """POST without device_id returns 400."""
     r = await test_client.post("/api/connection_request", json={})
     assert r.status == 400
+
+
+@pytest.mark.asyncio
+async def test_connection_request_rejects_mismatched_metadata_machine_id(test_client):
+    device_id = str(uuid.uuid4())
+    other_machine_id = str(uuid.uuid4())
+    r = await test_client.post(
+        "/api/connection_request",
+        json={
+            "device_id": device_id,
+            "metadata": {
+                "machine_id": other_machine_id,
+                "install_id": str(uuid.uuid4()),
+            },
+        },
+    )
+    assert r.status == 400
+    payload = await r.json()
+    assert payload.get("error") == "metadata.machine_id must match device_id"
+
+
+@pytest.mark.asyncio
+async def test_connection_request_list_keeps_identity_metadata(test_client, test_engine):
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+    install_id = str(uuid.uuid4())
+    await test_client.post(
+        "/api/connection_request",
+        json={
+            "device_id": device_id,
+            "hostname": "meta-pc",
+            "metadata": {
+                "machine_id": device_id,
+                "install_id": install_id,
+                "machine_id_source": "env_uuid",
+                "identity_scheme": "machine_id_v1",
+            },
+        },
+    )
+
+    r = await test_client.get("/api/admin/connection_requests", headers=_admin_headers())
+    assert r.status == 200
+    data = await r.json()
+    request_row = next(req for req in data.get("connection_requests") or [] if req.get("device_id") == device_id)
+    assert request_row["metadata"]["machine_id"] == device_id
+    assert request_row["metadata"]["install_id"] == install_id

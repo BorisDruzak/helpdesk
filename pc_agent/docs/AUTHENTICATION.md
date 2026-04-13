@@ -48,12 +48,43 @@ python ws_agent.py --no-gui
 ```json
 {
   "uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "machine_id": "550e8400-e29b-41d4-a716-446655440000",
+  "install_id": "11111111-2222-4333-8444-555555555555",
+  "machine_id_source": "windows_machine_guid",
   "token": null
 }
 ```
 
-- **uuid** — обязателен, должен быть валидным UUIDv4 (иначе регенерируется).
-- **token** — устаревший способ хранения. Рекомендуется использовать БД.
+- **machine_id** — канонический стабильный идентификатор устройства. Именно он используется как `device_id` в handshake и как ключ в локальной таблице `auth_tokens`.
+- **uuid** — обратнос совместимый алиас, должен совпадать с `machine_id`.
+- **install_id** — вторичный идентификатор конкретной инсталляции. Не используется как primary auth identity и может меняться при переустановке или удалении `identity.json`.
+- **machine_id_source** — откуда получен machine seed (`windows_machine_guid`, `linux_machine_id`, `env`, `fallback_file`).
+- **token** — legacy-поле; основной persistent storage токена остаётся в SQLite.
+
+### Каноническая identity-модель
+
+Начиная с production identity v1 агент использует схему:
+
+- `machine_id` — каноническая identity устройства;
+- `install_id` — secondary identity конкретной установки;
+- top-level `device_id` в Protocol V3 всегда равен `machine_id`.
+
+Это означает:
+
+1. Удаление `identity.json` больше не должно создавать новый логический агент на том же устройстве.
+2. При повторной регистрации после удаления `identity.json` агент должен прийти с тем же `machine_id`, но с новым `install_id`.
+3. Сервер может использовать `install_id` только для диагностики, аудита, controlled reprovision и UI summary, но не как источник auth identity.
+
+### Как агент получает machine_id
+
+Приоритет источников стабильного `machine_id`:
+
+1. `PC_AGENT_MACHINE_ID` — явный override для тестов и управляемых инсталляций;
+2. Windows: `HKLM\\SOFTWARE\\Microsoft\\Cryptography\\MachineGuid`;
+3. Linux: `/etc/machine-id` или `/var/lib/dbus/machine-id`;
+4. fallback file вне `identity.json`, если системный источник недоступен.
+
+`identity.json` больше не является источником machine identity. Он хранит только локальный снимок уже вычисленного `machine_id` и текущий `install_id`.
 
 ## Handshake и аутентификация
 
@@ -66,8 +97,10 @@ python ws_agent.py --no-gui
   "device_id": "uuid",
   "protocol_version": "ws_ticket_v3",
   "payload": {
-    "token": "bearer_token_here",
     "uuid": "device_uuid",
+    "machine_id": "device_uuid",
+    "install_id": "install_uuid",
+    "machine_id_source": "windows_machine_guid",
     "hostname": "my-pc",
     "os": "Linux",
     "agent_version": "3.0.0",
@@ -81,8 +114,10 @@ python ws_agent.py --no-gui
 ```
 
 **Критично:**
-- Токен передаётся в `payload.token` (и в legacy-поле `token` для совместимости).
-- При отсутствии токена `payload.token` может быть `null` — сервер зарегистрирует попытку подключения.
+- Токен передаётся в top-level поле `token`.
+- `device_id` и `payload.machine_id` должны описывать одно и то же устройство.
+- `payload.install_id` передаётся как secondary metadata и не должен использоваться сервером как primary identity.
+- При отсутствии токена поле `token` может быть `null` — сервер зарегистрирует попытку подключения.
 
 ## Обработка ошибок аутентификации
 
@@ -110,13 +145,14 @@ python ws_agent.py --no-gui
 - При успехе (200/404) токен сохраняется в БД через `save_auth_token_sync`.
 - Агент запускается с уже загруженным токеном.
 
-## device_id и UUID
+## device_id, machine_id и install_id
 
-**Protocol V3 (замечание 1.7):** `device_id` всегда **UUIDv4**.
+**Protocol V3 (identity v1):**
 
-- Генерируется при первом запуске.
-- Валидируется при загрузке; при невалидном формате — регенерация.
-- IdentityManager: `validate_device_id()`, `is_valid_uuid()`.
+- `device_id` всегда равен каноническому `machine_id`;
+- `machine_id` должен быть стабильным UUID и переживать удаление `identity.json`;
+- `install_id` тоже UUID, но допускает смену при переустановке/перерегистрации инсталляции;
+- IdentityManager валидирует оба значения, но primary identity сервера строится только по `machine_id`.
 
 Подробнее: [core/identity.py](../core/identity.py).
 

@@ -71,6 +71,7 @@
   - `ticket_event` ⇔ `agent_seq IS NOT NULL AND device_seq IS NULL`
 - Серверный handshake требует `protocol_version === "ws_ticket_v3"`, capabilities `protocol_v3`, `envelope_v3`, `outbox_ack_v3` и token.
 - `device_id` для сессии сервер берёт из записи токена в БД; payload не источник истины.
+- Каноническая identity-модель агента: `machine_id` как стабильный идентификатор устройства, `install_id` как вторичный идентификатор конкретной инсталляции. В Protocol V3 top-level `device_id` и payload `machine_id` должны совпадать и описывать одно и то же устройство; `install_id` используется только для диагностики, аудита и controlled reprovision.
 - `tool_call_started` создаётся сервером до отправки `run_tool` и идемпотентен по `(ticket_id, operation_id, event_type)`.
 
 ## Безопасность
@@ -87,6 +88,25 @@
 - Полный server-flow: `python scripts/release_server_to_remote.py`
 - Отдельный deploy закоммиченного состояния: `python scripts/deploy_workspace_to_remote.py`
 - Smoke/API helpers: `python scripts/smoke_test.py`, `python scripts/admin_run_tool.py`
+
+## Agent update canon
+
+- Если задача затрагивает self-update, launcher, release build, `ui_bridge`, Agent Updates UI или rollout, начинать с:
+  - `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`
+  - `pc_agent/docs/SELF_UPDATE.md`
+  - `server/docs/AGENT_UPDATES_API.md`
+  - `pc_agent/docs/CODEMAP.md`
+- Для таких задач использовать проектный skill `pc-client-agent-updates`.
+- Если меняется распространяемый бинарь агента или launcher, обязательно обновлять `pc_agent/version.py`.
+- Не выпускать новый build под старым номером версии как обычный сценарий.
+- Каноническая Windows release-сборка: `python pc_agent/build_windows_release_v2.py`
+- Для локального canary через `manage_local_agent.py start <name> --launcher` существующий полный versioned install layout instance должен сохраняться; не превращать canary-instance в текущую repo-версию автоматически.
+- После сборки проверять:
+  - `pc_agent/dist/launcher.exe`
+  - `pc_agent/dist/pc_agent/pc_agent.exe`
+  - `pc_agent/dist/release/windows_amd64/stable/<version>/pc_agent-windows_amd64-<version>.zip`
+- Rollout делать по цепочке: upload build -> canary update -> diagnostics/handshake verify -> bulk rollout.
+- `scheduled` не считать подтверждением успешного обновления; успех подтверждается следующим handshake новой версии.
 
 Замечание по server runtime:
 
@@ -122,6 +142,12 @@
   - поднять Linux-стенд через штатный pipeline;
   - отдельно проверить `python scripts/manage_remote_stack.py status control`;
   - в браузере пройти tech-panel сценарий со статусом, health, логами и confirm для lifecycle actions.
+- Если менялись `pc_agent/launcher/*`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/*`, `pc_agent/ui_gui/*` или server-side Agent Updates flow:
+  - прогнать `python -m pytest pc_agent/tests/ -v --tb=short`;
+  - точечно прогнать update-контракты сервера, если менялась серверная часть;
+  - собрать новый release build;
+  - проверить canary update хотя бы на одном устройстве или локальном launcher-instance;
+  - зафиксировать, чем именно подтверждён успех: handshake, diagnostics, update history, admin UI.
 - `python scripts/release_server_to_remote.py --skip-verify` допустим только как исключение:
   - если тот же commit уже прошёл локальный `python scripts/verify_workspace.py` и релевантный pytest;
   - если текущая dirty-состояние воркспейса относится к другому локальному WIP и не должно попасть на Linux;

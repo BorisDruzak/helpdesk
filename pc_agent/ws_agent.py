@@ -343,7 +343,7 @@ class WSAgent:
             self.identity_manager.load_or_create()
             
             # Используем UUID из identity файла как device_id
-            self.device_id = self.identity_manager.uuid
+            self.device_id = self.identity_manager.device_id
             logger.success("✅ Менеджер идентификации инициализирован")
             logger.info(f"🆔 Device ID установлен из identity: {self.device_id}")
 
@@ -2148,7 +2148,7 @@ class WSAgent:
                 waited += 1
                 try:
                     if self.db_manager:
-                        token = await self.db_manager.get_auth_token(self.identity_manager.uuid)
+                        token = await self.db_manager.get_auth_token(self.identity_manager.device_id)
                         if token:
                             logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
                             return token
@@ -2196,8 +2196,9 @@ class WSAgent:
         hostname = socket.gethostname() if hasattr(socket, "gethostname") else None
         ok, rejected = await run_connection_request_flow(
             api_url=get_config().server.api_url or "",
-            device_id=self.device_id or self.identity_manager.uuid,
+            device_id=self.device_id or self.identity_manager.device_id,
             hostname=hostname,
+            metadata=self.identity_manager.get_identity_metadata() if self.identity_manager else {},
             db_manager=self.db_manager,
             identity_manager=self.identity_manager,
             event_bus=self.event_bus,
@@ -2218,7 +2219,7 @@ class WSAgent:
         self.identity_manager.clear_token()
         if self.db_manager:
             try:
-                await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                await self.db_manager.clear_auth_token(self.identity_manager.device_id)
             except Exception as e:
                 logger.warning(f"⚠️ Не удалось очистить токен в БД: {e}")
 
@@ -2413,8 +2414,11 @@ class WSAgent:
                                 "trace_id": handshake_trace_id,
                                 "payload": {
                                     "token": handshake_data.get("token"),
-                                    "uuid": handshake_data.get("uuid"),  # Для обратной совместимости и отслеживания попыток подключения
-                                    "device_id": self.device_id,  # Дублируем для удобства
+                                    "uuid": handshake_data.get("uuid"),  # Backward-compatible alias of machine_id
+                                    "device_id": self.device_id,  # Canonical machine_id
+                                    "machine_id": handshake_data.get("machine_id"),
+                                    "install_id": handshake_data.get("install_id"),
+                                    "machine_id_source": handshake_data.get("machine_id_source"),
                                     "hostname": handshake_data.get("hostname"),
                                     "os": handshake_data.get("os"),
                                     "agent_version": AGENT_VERSION,
@@ -2488,7 +2492,7 @@ class WSAgent:
                             has_tok = bool(handshake_data.get("token"))
                             logger.info(f"🤝 Отправлен handshake с аутентификацией")
                             logger.debug(f"   Токен в handshake: {'да' if has_tok else 'нет'}" + (f" ({handshake_data['token'][:12]}...)" if has_tok else ""))
-                            logger.debug(f"   UUID: {handshake_data['uuid'][:8]}...")
+                            logger.debug(f"   Device ID: {handshake_data['uuid'][:8]}...")
                             logger.debug(f"   Hostname: {handshake_data['hostname']}")
                             logger.debug(f"   Protocol: ws_mcp_v1")
                             
@@ -2517,7 +2521,7 @@ class WSAgent:
                                         self.identity_manager.clear_token()
                                         if self.db_manager:
                                             try:
-                                                await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                                                await self.db_manager.clear_auth_token(self.identity_manager.device_id)
                                             except Exception as e:
                                                 logger.debug(f"Не удалось очистить токен из БД: {e}")
                                         
@@ -2526,7 +2530,7 @@ class WSAgent:
                                         logger.info("💡 Инструкция:")
                                         logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
                                         logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-                                        logger.info(f"   3. Введите device UUID: {self.device_id}")
+                                        logger.info(f"   3. Введите canonical device ID: {self.device_id}")
                                         logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                         logger.info("=" * 70)
                                         
@@ -2620,7 +2624,7 @@ class WSAgent:
                                             self.identity_manager.clear_token()
                                             if self.db_manager:
                                                 try:
-                                                    await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                                                    await self.db_manager.clear_auth_token(self.identity_manager.device_id)
                                                 except Exception as e:
                                                     logger.debug(f"Не удалось очистить токен из БД: {e}")
                                             
@@ -2629,7 +2633,7 @@ class WSAgent:
                                             logger.info("💡 Инструкция:")
                                             logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
                                             logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-                                            logger.info(f"   3. Введите device UUID: {self.device_id}")
+                                            logger.info(f"   3. Введите canonical device ID: {self.device_id}")
                                             logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                             logger.info("=" * 70)
                                             
@@ -2669,7 +2673,7 @@ class WSAgent:
                                         self.identity_manager.clear_token()
                                         if self.db_manager:
                                             try:
-                                                await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                                                await self.db_manager.clear_auth_token(self.identity_manager.device_id)
                                             except Exception as e:
                                                 logger.debug(f"Не удалось очистить токен из БД: {e}")
                                         
@@ -2678,7 +2682,7 @@ class WSAgent:
                                         logger.info("💡 Инструкция:")
                                         logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
                                         logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-                                        logger.info(f"   3. Введите device UUID: {self.device_id}")
+                                        logger.info(f"   3. Введите canonical device ID: {self.device_id}")
                                         logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                         logger.info("=" * 70)
                                         
@@ -2711,7 +2715,7 @@ class WSAgent:
                                         self.identity_manager.clear_token()
                                         if self.db_manager:
                                             try:
-                                                await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                                                await self.db_manager.clear_auth_token(self.identity_manager.device_id)
                                             except Exception as e:
                                                 logger.debug(f"Не удалось очистить токен из БД: {e}")
                                         
@@ -2720,7 +2724,7 @@ class WSAgent:
                                         logger.info("💡 Инструкция:")
                                         logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
                                         logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-                                        logger.info(f"   3. Введите device UUID: {self.device_id}")
+                                        logger.info(f"   3. Введите canonical device ID: {self.device_id}")
                                         logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                         logger.info("=" * 70)
                                         
@@ -2783,7 +2787,7 @@ class WSAgent:
                             self.identity_manager.clear_token()
                             if self.db_manager:
                                 try:
-                                    await self.db_manager.clear_auth_token(self.identity_manager.uuid)
+                                    await self.db_manager.clear_auth_token(self.identity_manager.device_id)
                                 except Exception as db_err:
                                     logger.debug(f"Не удалось очистить токен из БД: {db_err}")
                             
@@ -2792,7 +2796,7 @@ class WSAgent:
                             logger.info("💡 Инструкция:")
                             logger.info("   1. Откройте admin панель сервера: http://server:8666/admin")
                             logger.info("   2. Перейдите в раздел 'Generate Agent Token'")
-                            logger.info(f"   3. Введите device UUID: {self.device_id}")
+                            logger.info(f"   3. Введите canonical device ID: {self.device_id}")
                             logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                             logger.info("=" * 70)
                             
@@ -3027,9 +3031,9 @@ async def main_async(
     async def sync_agent_token_from_db(*, retries: int = 1, delay: float = 0.0, log_reason: str) -> Optional[str]:
         token_from_db_local = None
         try:
-            if agent.db_manager and agent.identity_manager.uuid:
+            if agent.db_manager and agent.identity_manager.device_id:
                 for attempt in range(max(1, retries)):
-                    token_from_db_local = await agent.db_manager.get_auth_token(agent.identity_manager.uuid)
+                    token_from_db_local = await agent.db_manager.get_auth_token(agent.identity_manager.device_id)
                     if token_from_db_local:
                         break
                     if delay > 0 and attempt + 1 < max(1, retries):

@@ -14,7 +14,8 @@
 |------|------------------|-------|
 | Handshake / outbox / ACK | `pc_agent/ws_agent.py` | `pc_agent/core/sender.py`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / команды | `pc_agent/core/orchestrator.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
-| Auth / bootstrap | `pc_agent/auth/token_source.py` | `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
+| Auth / bootstrap | `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py` | `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
+| Self-update / launcher / rollout | `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` | `pc_agent/docs/SELF_UPDATE.md`, `pc_agent/launcher/installer.py`, `server/docs/AGENT_UPDATES_API.md` |
 | GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py` | `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_bridge/api_server.py` |
 | Модули / registry | `pc_agent/core/module_manager.py` | `pc_agent/core/loader.py`, `pc_agent/docs/MODULES.md` |
 
@@ -28,6 +29,7 @@
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI |
+| `pc_agent/build_windows_release_v2.py` | Каноническая Windows release-сборка: launcher.exe + versioned agent layout + update ZIP |
 
 ---
 
@@ -40,7 +42,8 @@
 | `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries |
-| `pc_agent/core/identity.py` | device_id, AUTH_TOKEN, auth_tokens, legacy |
+| `pc_agent/core/identity.py` | Каноническая identity агента: `machine_id` -> `device_id`, вторичный `install_id`, миграция legacy `identity.json`, handshake metadata |
+| `pc_agent/core/machine_identity.py` | Разрешение стабильного `machine_id` из OS/runtime (Windows MachineGuid, Linux machine-id, env override, fallback file) |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |
 | `pc_agent/core/registry.py` | Дескрипторы инструментов, alias→method, call_tool() |
@@ -77,7 +80,7 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP) |
-| `pc_agent/ui_bridge/event_bus.py` | События между core и GUI |
+| `pc_agent/ui_bridge/event_bus.py` | События между core и GUI; хранит sticky `connection_state` для поздних SSE-подписчиков |
 | `pc_agent/ui_bridge/models.py` | Модели данных для UI |
 | `pc_agent/ui_bridge/settings_service.py` | Настройки для GUI |
 
@@ -120,9 +123,10 @@
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
 - **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
-- **аутентификация, токен** — `core/identity.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
+- **аутентификация, machine_id, install_id, токен** — `core/identity.py`, `core/machine_identity.py`, `auth/token_source.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
 - **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
+- **self-update, pending_update, update_history, launcher rollback** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`
 - **SQLite, миграции схемы** — `core/database.py` (DB_SCHEMA_VERSION), `docs/DATABASE.md`
 

@@ -16,12 +16,13 @@ async def load_auth_token(
     3) Опциональный GUI callback ожидания токена
     """
     env_token = os.getenv("AUTH_TOKEN")
+    device_id = getattr(identity_manager, "device_id", None) or getattr(identity_manager, "uuid", None)
     if env_token:
         logger.info("✅ Токен найден в переменной окружения AUTH_TOKEN")
         identity_manager.token = env_token
         if db_manager:
             try:
-                await db_manager.save_auth_token(env_token, identity_manager.uuid)
+                await db_manager.save_auth_token(env_token, device_id)
                 logger.info("✅ Токен из ENV сохранен в БД агента")
             except Exception as e:
                 logger.warning(f"⚠️ Не удалось сохранить токен в БД: {e}")
@@ -29,7 +30,7 @@ async def load_auth_token(
 
     try:
         if db_manager:
-            token = await db_manager.get_auth_token(identity_manager.uuid)
+            token = await db_manager.get_auth_token(device_id)
             if token:
                 logger.info("✅ Токен найден в БД агента")
                 identity_manager.token = token

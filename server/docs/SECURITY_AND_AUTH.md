@@ -70,9 +70,10 @@
 3. Сервер проверяет токен через `AuthService.verify_agent_token(token)` (БД).
 4. При невалидном токене соединение закрывается с кодом 4003, «Invalid token».
 5. **Критично:** `device_id` берётся **только из записи токена в БД**, не из payload.
-6. **Controlled reprovision:** если токен был выдан на свежий placeholder-`device_id`, но агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает этот токен к уже существующему `device_id`, а затем продолжает handshake. Это нужно, чтобы новый токен не создавал дубль агента.
-7. Если payload `device_id` не подходит под controlled reprovision, используется `device_id` из токена и пишется предупреждение в лог.
-8. После успешной проверки создаётся `AuthContext(actor_id=device_id, actor_role="agent", auth_type=AuthType.AGENT_TOKEN)` и сохраняется в метаданных соединения.
+6. Identity v1: сервер трактует `device_id` как канонический `machine_id`. Поля `payload.machine_id` и `payload.install_id` принимаются как metadata; `payload.machine_id` должен совпадать с top-level `device_id`, а `install_id` не должен использоваться как primary auth identity.
+7. **Controlled reprovision:** если токен был выдан на свежий placeholder-`device_id`, но агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает этот токен к уже существующему `device_id`, а затем продолжает handshake. Это нужно, чтобы новый токен не создавал дубль агента.
+8. Если payload `device_id` не подходит под controlled reprovision, используется `device_id` из токена и пишется предупреждение в лог.
+9. После успешной проверки создаётся `AuthContext(actor_id=device_id, actor_role="agent", auth_type=AuthType.AGENT_TOKEN)` и сохраняется в метаданных соединения.
 
 Попытки подключения без токена или с невалидным токеном при известном `device_id` записываются в `state.pending_connections` (для отображения в админке).
 
@@ -162,12 +163,14 @@
 - **Тело:** `{"uuid": "<device_id>"}` (device_id в формате UUID).
 - Логин/пароль **не** используются. Валидация UUID обязательна.
 - При успехе сервер при необходимости создаёт placeholder-запись в `devices`, затем пишет запись в `agent_tokens` (hash + prefix), а клиенту возвращает сырой токен и `device_id`. Срок действия по умолчанию — 180 дней. Для архивированного устройства выдача нового agent token запрещена до явного восстановления или выбора нового `device_id`.
+- В production identity-модели этот `device_id` должен быть каноническим `machine_id`, а не случайным install-local UUID.
 - Если такой токен потом вводит уже существующий агент, controlled reprovision на handshake должен перевести токен на уже известное устройство вместо создания нового дубля.
 - При превышении лимита активных токенов (2 на device_id) — **429** и сообщение «Token limit exceeded. Please revoke old tokens first.»
 
 ### 5.1.1 Agent provisioning: `POST /api/connection_request`
 
 - Используется no-token bootstrap-потоком агента, когда локального токена ещё нет или он был очищен после `401 / Invalid token`.
+- Identity v1: `POST /api/connection_request` должен приходить с каноническим `device_id == machine_id`; в `request_metadata` агент дополнительно передаёт `machine_id`, `install_id` и `machine_id_source` для аудита и UI.
 - Политика берётся из `server_config.connection_policy` (`reject_all`, `accept_all`, `manual`). Если политика явно не задана, P0-режимом по умолчанию считается `accept_all`.
 - При `accept_all` сервер:
   - выпускает новый agent token;

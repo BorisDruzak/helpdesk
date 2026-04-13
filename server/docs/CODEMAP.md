@@ -39,7 +39,7 @@
 |------|------------|
 | `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter` |
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
-| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), включая controlled reprovision токена на уже известный `device_id` |
+| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata и controlled reprovision токена на уже известный `device_id` |
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
 | `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
@@ -86,7 +86,7 @@
 | `server/app/repos/modules_repo.py` | Модули в БД |
 | `server/app/repos/device_modules_repo.py` | Установленные модули на устройстве |
 | `server/app/repos/device_desired_modules_repo.py` | Желаемое состояние модулей |
-| `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа; проверка, ротация, controlled rebind токена агента |
+| `server/app/repos/auth_tokens_repo.py` | Токены устройств/UI и public-session токены requester-доступа; проверка, ротация, controlled rebind токена агента по canonical `machine_id` |
 | `server/app/repos/devices_repo.py` | Реестр устройств: handshake upsert, last_seen/toolset update, soft-delete/архивирование устройства с сохранением истории, отзывом token и остановкой pending runtime/provisioning |
 | `server/app/repos/connection_requests_repo.py` | Запросы на подключение устройств, политика (reject_all/accept_all/manual) |
 | Остальные repos | artifacts, notifications, playbook, tickets, agents, jobs, ui_users и др. — см. `server/app/repos/`. |
@@ -160,9 +160,9 @@
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
-- **обновление агента (builds, upload, update, mass, diagnostics)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
+- **обновление агента (builds, upload, update, mass, diagnostics)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
-- **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary` и `update_summary`)
+- **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 
 ---
 
