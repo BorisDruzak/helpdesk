@@ -620,43 +620,74 @@ body {
     overflow: hidden;
 }
 
+.support-layout.queue-mode {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.support-layout.queue-mode .ticket-inbox {
+    display: none;
+}
+
 .queue-desk {
+    gap: 16px;
     min-height: 0;
 }
 
-.queue-desk-layout {
+.queue-summary-strip {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.queue-toolbar-card {
+    display: grid;
+    gap: 16px;
+}
+
+.queue-toolbar-head {
+    align-items: end;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.queue-toolbar-groups {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
+}
+
+.queue-toolbar-group,
+.queue-action-dock,
+.queue-summary-list {
+    display: grid;
+    gap: 10px;
+}
+
+.queue-desk-grid {
     display: grid;
     flex: 1;
     gap: 16px;
-    grid-template-columns: minmax(250px, 292px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
     min-height: 0;
     overflow: hidden;
 }
 
-.queue-control-rail {
-    display: grid;
-    gap: 16px;
-    min-height: 0;
-    overflow: auto;
-    padding-right: 4px;
-}
-
-.queue-rail-card,
+.queue-side-rail,
+.queue-side-card,
 .queue-board-card {
     min-height: 0;
 }
 
-.queue-action-dock,
-.queue-summary-list {
-    display: grid;
-    gap: 14px;
+.queue-side-card {
+    display: flex;
+    flex-direction: column;
 }
 
-.queue-filter-stack,
-.queue-sort-stack,
-.queue-cta-stack {
-    display: grid;
-    gap: 10px;
+.queue-action-dock {
+    flex: 1;
+    overflow: auto;
+    padding-right: 4px;
 }
 
 .queue-stack-title {
@@ -687,6 +718,10 @@ body {
     border-left-color: #c96b27;
 }
 
+.queue-summary-line[data-tone="default"] {
+    border-left-color: rgba(29, 92, 84, 0.54);
+}
+
 .queue-summary-line-label {
     color: var(--support-muted);
     font-size: 12px;
@@ -711,10 +746,6 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-}
-
-.queue-board-head {
-    align-items: end;
 }
 
 .queue-board-list {
@@ -1533,6 +1564,10 @@ body {
         --ticket-workbench-width: clamp(292px, 25vw, 344px);
     }
 
+    .queue-summary-strip {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .ticket-desk-layout {
         grid-template-columns: minmax(0, 1fr) var(--ticket-workbench-width);
     }
@@ -1555,10 +1590,15 @@ body {
     .workspace-shell-head,
     .ticket-toolbar-row,
     .ticket-desk-layout,
-    .queue-desk-layout,
+    .queue-toolbar-groups,
+    .queue-desk-grid,
     .queue-ticket-card-grid,
     .queue-ticket-expander-body {
         grid-template-columns: 1fr;
+    }
+
+    .queue-summary-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .stage-quick-actions {

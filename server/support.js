@@ -11,7 +11,7 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260413a';
+    const SUPPORT_SHELL_VERSION = '20260413b';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -384,9 +384,11 @@
         if (!layout) {
             return;
         }
+        layout.classList.toggle('queue-mode', state.workspaceView === WORKSPACE_VIEWS.QUEUE);
         layout.dataset.sidebarMode = state.sidebarMode;
         const sidebarToggleBtn = byId('sidebarToggleBtn');
         if (sidebarToggleBtn) {
+            sidebarToggleBtn.classList.toggle('hidden', state.workspaceView === WORKSPACE_VIEWS.QUEUE);
             const isCollapsed = state.sidebarMode === PANEL_MODES.COLLAPSED;
             sidebarToggleBtn.textContent = isCollapsed ? '☰' : '⟨';
             sidebarToggleBtn.title = isCollapsed ? 'Развернуть список тикетов' : 'Полностью свернуть список тикетов';
@@ -713,25 +715,28 @@
         return [...tickets].sort(compareTickets);
     }
 
-    function ticketSections(filterName) {
+    function ticketSections(filterName, options) {
         const filter = normalizeTicketFilter(filterName);
+        const opts = options || {};
+        const includeUnassignedInMine = Boolean(opts.includeUnassignedInMine);
         const visible = ticketsMatchingCurrentQuery();
         if (filter === 'mine') {
-            return [
-                {
-                    id: 'mine',
-                    title: 'Мои тикеты',
-                    note: 'Назначенные на вас',
-                    tickets: sortTickets(visible.filter((ticket) => isMineTicket(ticket))),
-                },
-                {
+            const sections = [{
+                id: 'mine',
+                title: 'Мои тикеты',
+                note: 'Назначенные на вас',
+                tickets: sortTickets(visible.filter((ticket) => isMineTicket(ticket))),
+            }];
+            if (includeUnassignedInMine) {
+                sections.push({
                     id: 'unassigned',
                     title: 'Неназначенные',
                     note: 'Очередь без исполнителя',
                     tickets: sortTickets(visible.filter((ticket) => isUnassignedTicket(ticket))),
                     secondary: true,
-                },
-            ].filter((section) => section.tickets.length);
+                });
+            }
+            return sections.filter((section) => section.tickets.length);
         }
         if (filter === 'unassigned') {
             return [{
@@ -765,8 +770,8 @@
         }];
     }
 
-    function filteredTickets() {
-        return ticketSections(state.currentFilter).flatMap((section) => section.tickets);
+    function filteredTickets(options) {
+        return ticketSections(state.currentFilter, options).flatMap((section) => section.tickets);
     }
 
     function countForFilter(filterName) {
@@ -892,7 +897,7 @@
         if (!listNode || !metaNode) {
             return;
         }
-        const sections = ticketSections(state.currentFilter);
+        const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: true });
         const tickets = sections.flatMap((section) => section.tickets);
         const hiddenClosedNote = state.hiddenClosedCount > 0
             ? (' • Закрытые старше 1 дня скрыты: ' + state.hiddenClosedCount)
@@ -1209,10 +1214,12 @@
 
     function renderQueueDesk() {
         const summaryNode = byId('queueSummaryStrip');
+        const filterNode = byId('queueFilterDock');
+        const sortNode = byId('queueSortDock');
         const actionNode = byId('queueActionDock');
         const boardMetaNode = byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
-        const sections = ticketSections(state.currentFilter);
+        const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const ticket = selectedTicket();
 
@@ -1226,48 +1233,33 @@
             `).join('');
         }
 
-        if (actionNode) {
-            const filterActions = [
-                { id: 'mine', label: 'Мои', kind: state.currentFilter === 'mine' ? 'primary' : 'secondary' },
-                { id: 'actionable', label: 'Нужны действия', kind: state.currentFilter === 'actionable' ? 'primary' : 'secondary' },
-                { id: 'waiting', label: 'Ждут пользователя', kind: state.currentFilter === 'waiting' ? 'primary' : 'secondary' },
-                { id: 'unassigned', label: 'Неназначенные', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
-            ];
-            const sortActions = [
-                { id: 'updated_desc', label: 'Свежие', kind: state.ticketSort === 'updated_desc' ? 'primary' : 'secondary' },
-                { id: 'sla_risk', label: 'SLA / OLA', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
-                { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
-                { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
-            ];
-            const ctaActions = [{ id: 'refresh', label: 'Обновить очередь', kind: 'secondary' }];
-            if (ticket) {
-                ctaActions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
-                if (canTakeSelf(ticket)) {
-                    ctaActions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
-                }
-            }
-            actionNode.innerHTML = `
-                <section class="queue-filter-stack">
-                    <div class="queue-stack-title">Фильтр списка</div>
-                    <div class="quick-action-row">${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}</div>
-                </section>
-                <section class="queue-sort-stack">
-                    <div class="queue-stack-title">Сортировка</div>
-                    <div class="quick-action-row">${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}</div>
-                </section>
-                <section class="queue-cta-stack">
-                    <div class="queue-stack-title">Быстрые действия</div>
-                    <div class="quick-action-row">${ctaActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
-                </section>
-            `;
-            actionNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
+        const filterActions = [
+            { id: 'mine', label: 'Мои', kind: state.currentFilter === 'mine' ? 'primary' : 'secondary' },
+            { id: 'actionable', label: 'Нужны действия', kind: state.currentFilter === 'actionable' ? 'primary' : 'secondary' },
+            { id: 'waiting', label: 'Ждут пользователя', kind: state.currentFilter === 'waiting' ? 'primary' : 'secondary' },
+            { id: 'unassigned', label: 'Неназначенные', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
+        ];
+        const sortActions = [
+            { id: 'updated_desc', label: 'Свежие', kind: state.ticketSort === 'updated_desc' ? 'primary' : 'secondary' },
+            { id: 'sla_risk', label: 'SLA / OLA', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
+            { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
+            { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
+        ];
+
+        if (filterNode) {
+            filterNode.innerHTML = filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('');
+            filterNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
                 button.addEventListener('click', () => {
                     state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
                     renderTicketList();
                     renderQueueDesk();
                 });
             });
-            actionNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
+        }
+
+        if (sortNode) {
+            sortNode.innerHTML = sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('');
+            sortNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
                 button.addEventListener('click', () => {
                     state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
                     const sortSelect = byId('ticketSortSelect');
@@ -1278,6 +1270,39 @@
                     renderQueueDesk();
                 });
             });
+        }
+
+        if (actionNode) {
+            const sideActions = [{ id: 'refresh', label: 'Обновить очередь', kind: 'secondary' }];
+            if (ticket) {
+                sideActions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
+                if (canTakeSelf(ticket)) {
+                    sideActions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
+                }
+                if (shouldWorkTicket(ticket) && canWrite() && ticket.status !== 'in_progress') {
+                    sideActions.push({ id: 'to_in_progress', label: 'В работу', kind: 'secondary' });
+                }
+            }
+            actionNode.innerHTML = ticket ? `
+                <section class="queue-cta-stack">
+                    <div class="queue-stack-title">Выбранный тикет</div>
+                    <div class="activity-item">
+                        <strong>${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</strong>
+                        <div class="timeline-meta">${escapeHtml(ticket.title || 'Без названия')}</div>
+                        <div class="timeline-meta">${escapeHtml(buildTicketMetaLine(ticket))}</div>
+                    </div>
+                </section>
+                <section class="queue-cta-stack">
+                    <div class="queue-stack-title">Быстрые действия</div>
+                    <div class="quick-action-row">${sideActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
+                </section>
+            ` : `
+                <section class="queue-cta-stack">
+                    <div class="queue-stack-title">Панель очереди</div>
+                    <div class="activity-item">Выберите тикет на доске, чтобы управлять им отсюда.</div>
+                    <div class="quick-action-row">${sideActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
+                </section>
+            `;
             actionNode.querySelectorAll('[data-queue-action]').forEach((button) => {
                 button.addEventListener('click', async () => {
                     const actionId = button.getAttribute('data-queue-action') || '';
@@ -1607,7 +1632,7 @@
         renderTicketList();
         if (!state.selectedTicketId) {
             const preferred = visibleTickets.find((ticket) => ticket.ticket_id === sessionStorage.getItem(LAST_TICKET_KEY))
-                || filteredTickets()[0]
+                || filteredTickets({ includeUnassignedInMine: state.workspaceView === WORKSPACE_VIEWS.TICKET })[0]
                 || visibleTickets[0]
                 || null;
             if (preferred) {

@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260413a">
+    <link rel="stylesheet" href="/support.css?v=20260413b">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -101,33 +101,41 @@
                 </section>
 
                 <section id="queueDesk" class="workspace-desk queue-desk">
-                    <div class="queue-desk-layout">
-                        <aside class="queue-control-rail">
-                            <article class="support-card queue-rail-card">
+                    <div id="queueSummaryStrip" class="queue-summary-strip"></div>
+
+                    <section class="support-card queue-toolbar-card">
+                        <div class="queue-toolbar-head">
+                            <div>
+                                <p class="section-eyebrow">Очередь тикетов</p>
+                                <h3>Рабочая доска</h3>
+                            </div>
+                            <div id="queueBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
+                        </div>
+                        <div class="queue-toolbar-groups">
+                            <div class="queue-toolbar-group">
+                                <span class="queue-stack-title">Фильтр списка</span>
+                                <div id="queueFilterDock" class="quick-action-row"></div>
+                            </div>
+                            <div class="queue-toolbar-group">
+                                <span class="queue-stack-title">Сортировка</span>
+                                <div id="queueSortDock" class="quick-action-row"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="queue-desk-grid">
+                        <section class="support-card queue-board-card">
+                            <div id="queueBoardList" class="queue-board-list" aria-live="polite"></div>
+                        </section>
+
+                        <aside class="queue-side-rail">
+                            <article class="support-card queue-side-card">
                                 <div class="card-head">
                                     <h3>Панель очереди</h3>
                                 </div>
                                 <div id="queueActionDock" class="queue-action-dock"></div>
                             </article>
-
-                            <article class="support-card queue-rail-card">
-                                <div class="card-head">
-                                    <h3>Сводка по очереди</h3>
-                                </div>
-                                <div id="queueSummaryStrip" class="queue-summary-list"></div>
-                            </article>
                         </aside>
-
-                        <section class="support-card queue-board-card">
-                            <div class="card-head queue-board-head">
-                                <div>
-                                    <p class="section-eyebrow">Очередь тикетов</p>
-                                    <h3>Рабочая доска</h3>
-                                </div>
-                                <div id="queueBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
-                            </div>
-                            <div id="queueBoardList" class="queue-board-list" aria-live="polite"></div>
-                        </section>
                     </div>
                 </section>
 
@@ -294,6 +302,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260413a"></script>
+    <script src="/support.js?v=20260413b"></script>
 </body>
 </html>
