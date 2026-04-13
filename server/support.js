@@ -11,7 +11,7 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260411a';
+    const SUPPORT_SHELL_VERSION = '20260413a';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -105,6 +105,10 @@
 
     function normalizeWorkspaceView(value) {
         return value === WORKSPACE_VIEWS.TICKET ? WORKSPACE_VIEWS.TICKET : WORKSPACE_VIEWS.QUEUE;
+    }
+
+    function normalizeTicketFilter(value) {
+        return ['mine', 'unassigned', 'actionable', 'waiting'].includes(value) ? value : 'mine';
     }
 
     function getToken() {
@@ -539,6 +543,22 @@
         );
     }
 
+    function isMineTicket(ticket) {
+        return Boolean(ticket && ticket.assignee_id === state.userLogin);
+    }
+
+    function isUnassignedTicket(ticket) {
+        return Boolean(ticket && !ticket.assignee_id);
+    }
+
+    function isActionableMineTicket(ticket) {
+        return isMineTicket(ticket) && isNeedsAction(ticket);
+    }
+
+    function isWaitingMineTicket(ticket) {
+        return isMineTicket(ticket) && ticket.status === 'waiting_on_user';
+    }
+
     function ticketMatchesQuery(ticket, query) {
         if (!query) {
             return true;
@@ -562,22 +582,20 @@
     }
 
     function ticketPassesFilter(ticket, filterName) {
-        if (!ticket) {
-            return false;
+        const filter = normalizeTicketFilter(filterName);
+        if (filter === 'mine') {
+            return isMineTicket(ticket);
         }
-        if (filterName === 'mine') {
-            return ticket.assignee_id === state.userLogin;
+        if (filter === 'unassigned') {
+            return isUnassignedTicket(ticket);
         }
-        if (filterName === 'unassigned') {
-            return !ticket.assignee_id;
+        if (filter === 'actionable') {
+            return isActionableMineTicket(ticket);
         }
-        if (filterName === 'actionable') {
-            return isNeedsAction(ticket);
+        if (filter === 'waiting') {
+            return isWaitingMineTicket(ticket);
         }
-        if (filterName === 'waiting') {
-            return ticket.status === 'waiting_on_user';
-        }
-        return true;
+        return isMineTicket(ticket);
     }
 
     function closeTimestampForWorkspace(ticket) {
@@ -687,14 +705,72 @@
         return numericTimestamp(right?.updated_at || right?.created_at) - numericTimestamp(left?.updated_at || left?.created_at);
     }
 
+    function ticketsMatchingCurrentQuery() {
+        return state.tickets.filter((ticket) => ticketMatchesQuery(ticket, state.ticketQuery));
+    }
+
+    function sortTickets(tickets) {
+        return [...tickets].sort(compareTickets);
+    }
+
+    function ticketSections(filterName) {
+        const filter = normalizeTicketFilter(filterName);
+        const visible = ticketsMatchingCurrentQuery();
+        if (filter === 'mine') {
+            return [
+                {
+                    id: 'mine',
+                    title: 'Мои тикеты',
+                    note: 'Назначенные на вас',
+                    tickets: sortTickets(visible.filter((ticket) => isMineTicket(ticket))),
+                },
+                {
+                    id: 'unassigned',
+                    title: 'Неназначенные',
+                    note: 'Очередь без исполнителя',
+                    tickets: sortTickets(visible.filter((ticket) => isUnassignedTicket(ticket))),
+                    secondary: true,
+                },
+            ].filter((section) => section.tickets.length);
+        }
+        if (filter === 'unassigned') {
+            return [{
+                id: 'unassigned',
+                title: 'Неназначенные',
+                note: 'Очередь без исполнителя',
+                tickets: sortTickets(visible.filter((ticket) => isUnassignedTicket(ticket))),
+            }];
+        }
+        if (filter === 'actionable') {
+            return [{
+                id: 'actionable',
+                title: 'Нужны действия',
+                note: 'Только по вашим тикетам',
+                tickets: sortTickets(visible.filter((ticket) => isActionableMineTicket(ticket))),
+            }];
+        }
+        if (filter === 'waiting') {
+            return [{
+                id: 'waiting',
+                title: 'Ждут пользователя',
+                note: 'Только по вашим тикетам',
+                tickets: sortTickets(visible.filter((ticket) => isWaitingMineTicket(ticket))),
+            }];
+        }
+        return [{
+            id: 'mine',
+            title: 'Мои тикеты',
+            note: 'Назначенные на вас',
+            tickets: sortTickets(visible.filter((ticket) => isMineTicket(ticket))),
+        }];
+    }
+
     function filteredTickets() {
-        return state.tickets
-            .filter((ticket) => ticketPassesFilter(ticket, state.currentFilter) && ticketMatchesQuery(ticket, state.ticketQuery))
-            .sort(compareTickets);
+        return ticketSections(state.currentFilter).flatMap((section) => section.tickets);
     }
 
     function countForFilter(filterName) {
-        return state.tickets.filter((ticket) => ticketPassesFilter(ticket, filterName)).length;
+        return ticketsMatchingCurrentQuery().filter((ticket) => ticketPassesFilter(ticket, filterName)).length;
     }
 
     function canTakeSelf(ticket) {
@@ -738,90 +814,109 @@
         return parts.join(' • ');
     }
 
+    function renderSlaChipMarkup(ticket) {
+        const slaState = ticketSlaState(ticket);
+        return '<span class="sla-chip" data-sla-level="' + escapeHtml(slaState.level) + '">' + escapeHtml(slaState.label) + '</span>';
+    }
+
     function renderTicketFilterChips() {
         const chips = document.querySelectorAll('#ticketFilterChips .filter-chip');
         chips.forEach((chip) => {
-            const filterName = chip.getAttribute('data-filter') || 'all';
+            const filterName = normalizeTicketFilter(chip.getAttribute('data-filter') || 'mine');
             const baseLabel = chip.textContent.replace(/\s+\(\d+\)$/u, '');
             chip.classList.toggle('active', filterName === state.currentFilter);
             chip.textContent = baseLabel + ' (' + countForFilter(filterName) + ')';
         });
     }
 
+    function ticketRowMarkup(ticket) {
+        const active = ticket.ticket_id === state.selectedTicketId ? ' active' : '';
+        const requester = ticket.requester_display_name || ticket.requester_id || '—';
+        const chatCounters = ticket.chat_counters || {};
+        const unreadForSupport = Number(chatCounters.support_unread_user_messages || 0);
+        const pendingUser = Number(chatCounters.support_pending_user_messages || 0);
+        const slaState = ticketSlaState(ticket);
+        const expandedDetails = [
+            'ID: ' + (ticket.ticket_id || '—'),
+            'Устройство: ' + (ticket.device_id || 'Не привязано'),
+            'Создан: ' + formatDate(ticket.created_at),
+        ];
+        const descriptionPreview = String(ticket.description || '').trim();
+        const modeBadge = shouldWorkTicket(ticket)
+            ? '<span class="mode-badge">Работа</span>'
+            : (shouldObserveTicket(ticket) ? '<span class="mode-badge mode-badge-observe">Наблюдение</span>' : '<span class="mode-badge">Просмотр</span>');
+        const actionMarker = isActionableMineTicket(ticket) ? '<span class="chip">Нужно действие</span>' : '';
+        const unreadMarker = unreadForSupport > 0
+            ? '<span class="chip">Ответ пользователя: ' + unreadForSupport + '</span>'
+            : (pendingUser > 0 ? '<span class="chip">Ждут разбора: ' + pendingUser + '</span>' : '');
+        const takeSelfButton = canTakeSelf(ticket)
+            ? '<button type="button" class="btn btn-secondary ticket-take-btn" data-ticket-action="take" data-ticket-id="' + escapeHtml(ticket.ticket_id) + '">Взять себе</button>'
+            : '';
+        return `
+            <article class="ticket-row${active}" data-ticket-id="${escapeHtml(ticket.ticket_id)}" data-sla-level="${escapeHtml(slaState.level)}">
+                <div class="ticket-row-head">
+                    <div>
+                        <div class="ticket-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
+                        <div class="ticket-title">${escapeHtml(ticket.title || 'Без названия')}</div>
+                    </div>
+                    ${modeBadge}
+                </div>
+                <div class="ticket-row-body">
+                    <div>${escapeHtml(requester)}</div>
+                    <div class="ticket-meta-line">${escapeHtml(buildTicketMetaLine(ticket))}</div>
+                    <div class="ticket-row-foot">Обновлён: ${escapeHtml(formatDate(ticket.updated_at || ticket.created_at))} • Возраст: ${escapeHtml(formatAge(ticket.created_at))}</div>
+                    <div class="ticket-row-expanded">
+                        <div class="ticket-row-expanded-grid">
+                            ${expandedDetails.map((item) => '<div class="ticket-row-expanded-item">' + escapeHtml(item) + '</div>').join('')}
+                        </div>
+                        ${descriptionPreview ? '<div class="ticket-row-description">' + escapeHtml(descriptionPreview) + '</div>' : ''}
+                    </div>
+                </div>
+                <div class="ticket-row-actions">
+                    <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
+                    ${ticket.priority_class ? '<span class="chip">' + escapeHtml(ticket.priority_class) + '</span>' : ''}
+                    ${renderSlaChipMarkup(ticket)}
+                    ${unreadMarker}
+                    ${actionMarker}
+                    ${takeSelfButton}
+                </div>
+            </article>
+        `;
+    }
+
     function renderTicketList() {
+        state.currentFilter = normalizeTicketFilter(state.currentFilter);
         renderTicketFilterChips();
         const listNode = byId('ticketList');
         const metaNode = byId('ticketListMeta');
         if (!listNode || !metaNode) {
             return;
         }
-        const tickets = filteredTickets();
+        const sections = ticketSections(state.currentFilter);
+        const tickets = sections.flatMap((section) => section.tickets);
         const hiddenClosedNote = state.hiddenClosedCount > 0
             ? (' • Закрытые старше 1 дня скрыты: ' + state.hiddenClosedCount)
             : '';
-        metaNode.textContent = 'Показано ' + tickets.length + ' из ' + state.tickets.length;
+        const sectionSummary = sections.length
+            ? sections.map((section) => section.title + ': ' + section.tickets.length).join(' • ')
+            : 'Тикеты не найдены';
+        metaNode.textContent = 'Показано ' + tickets.length + ' из ' + state.tickets.length + ' • ' + sectionSummary;
         metaNode.textContent += hiddenClosedNote;
         if (!tickets.length) {
             listNode.innerHTML = '<div class="activity-item">По выбранным фильтрам тикеты не найдены.</div>';
             return;
         }
-        listNode.innerHTML = tickets.map((ticket) => {
-            const active = ticket.ticket_id === state.selectedTicketId ? ' active' : '';
-            const requester = ticket.requester_display_name || ticket.requester_id || '—';
-            const chatCounters = ticket.chat_counters || {};
-            const unreadForSupport = Number(chatCounters.support_unread_user_messages || 0);
-            const pendingUser = Number(chatCounters.support_pending_user_messages || 0);
-            const slaState = ticketSlaState(ticket);
-            const expandedDetails = [
-                'ID: ' + (ticket.ticket_id || '—'),
-                'Устройство: ' + (ticket.device_id || 'Не привязано'),
-                'Создан: ' + formatDate(ticket.created_at),
-            ];
-            const descriptionPreview = String(ticket.description || '').trim();
-            const modeBadge = shouldWorkTicket(ticket)
-                ? '<span class="mode-badge">Work</span>'
-                : (shouldObserveTicket(ticket) ? '<span class="mode-badge mode-badge-observe">Observe</span>' : '<span class="mode-badge">Preview</span>');
-            const actionMarker = isNeedsAction(ticket) ? '<span class="chip">Нужно действие</span>' : '';
-            const unreadMarker = unreadForSupport > 0
-                ? '<span class="chip">Ответ пользователя: ' + unreadForSupport + '</span>'
-                : (pendingUser > 0 ? '<span class="chip">Ждут разбора: ' + pendingUser + '</span>' : '');
-            const slaMarker = slaState.level === 'breach'
-                ? '<span class="chip">SLA/OLA breach</span>'
-                : (slaState.level === 'risk' ? '<span class="chip">SLA/OLA риск</span>' : '');
-            const takeSelfButton = canTakeSelf(ticket)
-                ? '<button type="button" class="btn btn-secondary ticket-take-btn" data-ticket-action="take" data-ticket-id="' + escapeHtml(ticket.ticket_id) + '">Взять себе</button>'
-                : '';
-            return `
-                <article class="ticket-row${active}" data-ticket-id="${escapeHtml(ticket.ticket_id)}">
-                    <div class="ticket-row-head">
-                        <div>
-                            <div class="ticket-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
-                            <div class="ticket-title">${escapeHtml(ticket.title || 'Без названия')}</div>
-                        </div>
-                        ${modeBadge}
-                    </div>
-                    <div class="ticket-row-body">
-                        <div>${escapeHtml(requester)}</div>
-                        <div class="ticket-meta-line">${escapeHtml(buildTicketMetaLine(ticket))}</div>
-                        <div class="ticket-row-foot">Обновлён: ${escapeHtml(formatDate(ticket.updated_at || ticket.created_at))} • Возраст: ${escapeHtml(formatAge(ticket.created_at))}</div>
-                        <div class="ticket-row-expanded">
-                            <div class="ticket-row-expanded-grid">
-                                ${expandedDetails.map((item) => '<div class="ticket-row-expanded-item">' + escapeHtml(item) + '</div>').join('')}
-                            </div>
-                            ${descriptionPreview ? '<div class="ticket-row-description">' + escapeHtml(descriptionPreview) + '</div>' : ''}
-                        </div>
-                    </div>
-                    <div class="ticket-row-actions">
-                        <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
-                        ${ticket.priority_class ? '<span class="chip">' + escapeHtml(ticket.priority_class) + '</span>' : ''}
-                        ${slaMarker}
-                        ${unreadMarker}
-                        ${actionMarker}
-                        ${takeSelfButton}
-                    </div>
-                </article>
-            `;
-        }).join('');
+        listNode.innerHTML = sections.map((section) => `
+            <section class="ticket-section${section.secondary ? ' ticket-section-secondary' : ''}">
+                <div class="ticket-section-head">
+                    <div class="ticket-section-title">${escapeHtml(section.title)}</div>
+                    <div class="ticket-section-note">${escapeHtml(section.note)} • ${section.tickets.length}</div>
+                </div>
+                <div class="ticket-section-list">
+                    ${section.tickets.map((ticket) => ticketRowMarkup(ticket)).join('')}
+                </div>
+            </section>
+        `).join('');
         listNode.querySelectorAll('.ticket-row').forEach((row) => {
             row.addEventListener('click', async (event) => {
                 if (event.target instanceof Element && event.target.closest('[data-ticket-action="take"]')) {
@@ -896,7 +991,7 @@
         }
         const actions = [];
         if (state.workspaceView !== WORKSPACE_VIEWS.TICKET) {
-            actions.push({ id: 'open_ticket_desk', label: 'Открыть тикет', kind: 'primary' });
+            actions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
         }
         if (canTakeSelf(ticket)) {
             actions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
@@ -958,24 +1053,23 @@
     }
 
     function queueSummaryStats() {
-        const filtered = filteredTickets();
-        const actionable = filtered.filter((ticket) => isNeedsAction(ticket)).length;
-        const unassigned = filtered.filter((ticket) => !ticket.assignee_id).length;
-        const mine = filtered.filter((ticket) => ticket.assignee_id === state.userLogin).length;
-        const unread = filtered.filter((ticket) => Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0).length;
-        const waiting = filtered.filter((ticket) => ticket.status === 'waiting_on_user').length;
-        const slaRisk = filtered.filter((ticket) => {
+        const visible = ticketsMatchingCurrentQuery();
+        const actionable = visible.filter((ticket) => isActionableMineTicket(ticket)).length;
+        const unassigned = visible.filter((ticket) => isUnassignedTicket(ticket)).length;
+        const mine = visible.filter((ticket) => isMineTicket(ticket)).length;
+        const unread = visible.filter((ticket) => Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0).length;
+        const waiting = visible.filter((ticket) => isWaitingMineTicket(ticket)).length;
+        const slaRisk = visible.filter((ticket) => {
             const level = ticketSlaState(ticket).level;
             return level === 'risk' || level === 'breach';
         }).length;
         return [
-            { label: 'Видимые тикеты', value: String(filtered.length), note: 'С учётом текущего фильтра и поиска', tone: 'default' },
-            { label: 'Нужны действия', value: String(actionable), note: 'Статус, ответ пользователя или подтверждение решения', tone: 'action' },
-            { label: 'Без исполнителя', value: String(unassigned), note: 'Можно быстро забрать в работу', tone: 'default' },
-            { label: 'SLA / OLA риск', value: String(slaRisk), note: 'Есть риск или breach по ближайшему дедлайну', tone: 'risk' },
+            { label: 'Мои тикеты', value: String(mine), note: 'Назначенные на вас', tone: 'default' },
+            { label: 'Нужны действия', value: String(actionable), note: 'Только по вашим тикетам', tone: 'action' },
+            { label: 'Ждут пользователя', value: String(waiting), note: 'Только по вашим тикетам', tone: 'default' },
+            { label: 'Неназначенные', value: String(unassigned), note: 'Отдельная нижняя секция очереди', tone: 'default' },
+            { label: 'SLA / OLA риск', value: String(slaRisk), note: 'Жёлтые и красные дедлайны', tone: 'risk' },
             { label: 'Ответы пользователя', value: String(unread), note: 'Есть новые сообщения от инициатора', tone: 'action' },
-            { label: 'Ждут пользователя', value: String(waiting), note: 'Контроль по возврату к работе', tone: 'default' },
-            { label: 'Мои в выборке', value: String(mine), note: 'Тикеты, закреплённые за вами', tone: 'default' },
         ];
     }
 
@@ -984,51 +1078,181 @@
         return '<button type="button" class="' + btnClass + '" ' + attrName + '="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</button>';
     }
 
+    function queueCardActions(ticket) {
+        return quickActionButtons(ticket).filter((action) => action.id !== 'refresh');
+    }
+
+    function queueTicketSlaRows(ticket, snapshot) {
+        const ola = snapshot?.ola || ticket?.ola || {};
+        const requester = snapshot?.requester_profile || {};
+        return [
+            ['Состояние', ticketSlaState(ticket).label],
+            ['SLA первого ответа', ticket.first_response_due_at ? formatDate(ticket.first_response_due_at) : 'не задан'],
+            ['SLA решения', ticket.resolution_due_at ? formatDate(ticket.resolution_due_at) : 'не задан'],
+            ['OLA принятия', ola.ola_ack_due_at ? formatDate(ola.ola_ack_due_at) : 'не задан'],
+            ['OLA обработки', ola.ola_processing_due_at ? formatDate(ola.ola_processing_due_at) : 'не задан'],
+            ['Маршрут', [ticket.queue_code, requester.building, requester.room].filter(Boolean).join(' • ') || (ticket.queue_code || 'Маршрут не рассчитан')],
+        ];
+    }
+
+    function queueTicketContextRows(ticket, snapshot) {
+        const presence = snapshot?.presence || {};
+        const deviceSummary = snapshot?.device_summary || {};
+        const requesterProfile = snapshot?.requester_profile || {};
+        return [
+            ['Инициатор', snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—'],
+            ['Исполнитель', ticket.assignee_id || 'Не назначен'],
+            ['Устройство', ticket.device_id || 'Не привязано'],
+            ['Инициатор в чате', snapshot ? formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, 'онлайн', 'офлайн') : 'Откройте тикет для live-статуса'],
+            ['Агент', snapshot ? formatPresenceState(Boolean(deviceSummary.online), deviceSummary.last_seen_at, 'онлайн', 'офлайн') : 'Откройте тикет для live-статуса'],
+            ['Контекст', [requesterProfile.phone, requesterProfile.building, requesterProfile.room].filter(Boolean).join(' • ') || 'Контекст появится после выбора тикета'],
+        ];
+    }
+
+    function queueExpanderMarkup(title, hint, rows, open) {
+        return `
+            <details class="queue-ticket-expander"${open ? ' open' : ''}>
+                <summary>
+                    <span class="queue-ticket-expander-title">${escapeHtml(title)}</span>
+                    <span class="queue-ticket-expander-hint">${escapeHtml(hint)}</span>
+                </summary>
+                <div class="queue-ticket-expander-body">
+                    ${rows.map(([label, value]) => `
+                        <div class="queue-ticket-expander-item">
+                            <span class="queue-ticket-expander-label">${escapeHtml(label)}</span>
+                            <div class="queue-ticket-expander-value">${escapeHtml(value)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </details>
+        `;
+    }
+
+    function queueTicketCardMarkup(ticket) {
+        const selected = ticket.ticket_id === state.selectedTicketId;
+        const snapshot = selected ? state.selectedSnapshot : null;
+        const counters = ticket.chat_counters || {};
+        const unreadForSupport = Number(counters.support_unread_user_messages || 0);
+        const pendingUser = Number(counters.support_pending_user_messages || 0);
+        const slaState = ticketSlaState(ticket);
+        const actions = queueCardActions(ticket);
+        return `
+            <article class="queue-ticket-card${selected ? ' active' : ''}" data-ticket-id="${escapeHtml(ticket.ticket_id)}" data-sla-level="${escapeHtml(slaState.level)}">
+                <div class="queue-ticket-card-head">
+                    <div>
+                        <div class="queue-ticket-card-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
+                        <div class="queue-ticket-card-title">${escapeHtml(ticket.title || 'Без названия')}</div>
+                        <div class="queue-ticket-card-meta">${escapeHtml(buildTicketMetaLine(ticket))}</div>
+                    </div>
+                    <div class="queue-ticket-card-side">
+                        <div class="queue-ticket-card-side-top">
+                            ${renderSlaChipMarkup(ticket)}
+                            <span class="status-chip ${statusClass(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span>
+                        </div>
+                        <div class="queue-ticket-card-side-top">
+                            ${ticket.priority_class ? '<span class="chip">' + escapeHtml(priorityLabel(ticket.priority_class)) + '</span>' : ''}
+                            ${isActionableMineTicket(ticket) ? '<span class="chip">Нужно действие</span>' : ''}
+                            ${unreadForSupport > 0 ? '<span class="chip">Ответ пользователя: ' + unreadForSupport + '</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="queue-ticket-card-description">${escapeHtml(ticket.description || 'Описание заявки пока не заполнено.')}</div>
+                <div class="queue-ticket-card-grid">
+                    <div class="queue-ticket-metric">
+                        <span class="queue-ticket-metric-label">Обновлён</span>
+                        <div class="queue-ticket-metric-value">${escapeHtml(formatDate(ticket.updated_at || ticket.created_at))}</div>
+                    </div>
+                    <div class="queue-ticket-metric">
+                        <span class="queue-ticket-metric-label">Возраст</span>
+                        <div class="queue-ticket-metric-value">${escapeHtml(formatAge(ticket.created_at))}</div>
+                    </div>
+                    <div class="queue-ticket-metric">
+                        <span class="queue-ticket-metric-label">Непрочитано</span>
+                        <div class="queue-ticket-metric-value">${escapeHtml(String(unreadForSupport))}</div>
+                    </div>
+                    <div class="queue-ticket-metric">
+                        <span class="queue-ticket-metric-label">Ждут разбора</span>
+                        <div class="queue-ticket-metric-value">${escapeHtml(String(pendingUser))}</div>
+                    </div>
+                </div>
+                <div class="quick-action-row">
+                    ${actions.map((action) => queueActionButtonMarkup(action, 'data-queue-ticket-action')).join('')}
+                </div>
+                <div class="queue-ticket-expanders">
+                    ${queueExpanderMarkup('SLA / OLA / маршрут', selected ? 'Разворачивается с live-контекстом' : 'Выберите тикет для деталей', queueTicketSlaRows(ticket, snapshot), Boolean(selected))}
+                    ${queueExpanderMarkup('Контекст и присутствие', selected ? 'Есть live-статус инициатора и агента' : 'Выберите тикет для live-статуса', queueTicketContextRows(ticket, snapshot), false)}
+                </div>
+            </article>
+        `;
+    }
+
+    async function executeQueueCardAction(ticketId, actionId) {
+        if (!ticketId || !actionId) {
+            return;
+        }
+        if (actionId === 'take_self') {
+            await takeTicketSelf(ticketId);
+            return;
+        }
+        if (actionId === 'open_ticket_desk') {
+            await selectTicket(ticketId, { view: WORKSPACE_VIEWS.TICKET });
+            if (state.sidebarMode === PANEL_MODES.FULL) {
+                setSidebarMode(PANEL_MODES.HALF);
+            }
+            return;
+        }
+        if (ticketId !== state.selectedTicketId) {
+            await selectTicket(ticketId);
+        }
+        await handleQuickAction(actionId);
+    }
+
     function renderQueueDesk() {
         const summaryNode = byId('queueSummaryStrip');
         const actionNode = byId('queueActionDock');
-        const focusNode = byId('queueFocusPanel');
-        const contextNode = byId('queueContextPanel');
-        const insightNode = byId('queueInsightPanel');
+        const boardMetaNode = byId('queueBoardMeta');
+        const boardListNode = byId('queueBoardList');
+        const sections = ticketSections(state.currentFilter);
+        const tickets = sections.flatMap((section) => section.tickets);
         const ticket = selectedTicket();
-        const snapshot = state.selectedSnapshot;
+
         if (summaryNode) {
             summaryNode.innerHTML = queueSummaryStats().map((item) => `
-                <article class="queue-summary-card" data-tone="${escapeHtml(item.tone || 'default')}">
-                    <div class="queue-summary-label">${escapeHtml(item.label)}</div>
-                    <div class="queue-summary-value">${escapeHtml(item.value)}</div>
-                    <div class="queue-summary-note">${escapeHtml(item.note)}</div>
-                </article>
+                <div class="queue-summary-line" data-tone="${escapeHtml(item.tone || 'default')}">
+                    <span class="queue-summary-line-label">${escapeHtml(item.label)}</span>
+                    <strong class="queue-summary-line-value">${escapeHtml(item.value)}</strong>
+                    <span class="queue-summary-line-note">${escapeHtml(item.note)}</span>
+                </div>
             `).join('');
         }
+
         if (actionNode) {
             const filterActions = [
                 { id: 'mine', label: 'Мои', kind: state.currentFilter === 'mine' ? 'primary' : 'secondary' },
                 { id: 'actionable', label: 'Нужны действия', kind: state.currentFilter === 'actionable' ? 'primary' : 'secondary' },
-                { id: 'unassigned', label: 'Без исполнителя', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
                 { id: 'waiting', label: 'Ждут пользователя', kind: state.currentFilter === 'waiting' ? 'primary' : 'secondary' },
-                { id: 'all', label: 'Вся очередь', kind: state.currentFilter === 'all' ? 'primary' : 'secondary' },
+                { id: 'unassigned', label: 'Неназначенные', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
             ];
             const sortActions = [
                 { id: 'updated_desc', label: 'Свежие', kind: state.ticketSort === 'updated_desc' ? 'primary' : 'secondary' },
-                { id: 'sla_risk', label: 'SLA риск', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
+                { id: 'sla_risk', label: 'SLA / OLA', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
                 { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
                 { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
             ];
             const ctaActions = [{ id: 'refresh', label: 'Обновить очередь', kind: 'secondary' }];
             if (ticket) {
-                ctaActions.push({ id: 'open_ticket_desk', label: 'Открыть Ticket Desk', kind: 'primary' });
+                ctaActions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
                 if (canTakeSelf(ticket)) {
                     ctaActions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
                 }
             }
             actionNode.innerHTML = `
                 <section class="queue-filter-stack">
-                    <div class="queue-stack-title">Пресеты очереди</div>
+                    <div class="queue-stack-title">Фильтр списка</div>
                     <div class="quick-action-row">${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}</div>
                 </section>
                 <section class="queue-sort-stack">
-                    <div class="queue-stack-title">Сортировка списка</div>
+                    <div class="queue-stack-title">Сортировка</div>
                     <div class="quick-action-row">${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}</div>
                 </section>
                 <section class="queue-cta-stack">
@@ -1038,7 +1262,7 @@
             `;
             actionNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
                 button.addEventListener('click', () => {
-                    state.currentFilter = button.getAttribute('data-queue-filter') || 'all';
+                    state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
                     renderTicketList();
                     renderQueueDesk();
                 });
@@ -1056,95 +1280,72 @@
             });
             actionNode.querySelectorAll('[data-queue-action]').forEach((button) => {
                 button.addEventListener('click', async () => {
-                    await handleQuickAction(button.getAttribute('data-queue-action') || '');
+                    const actionId = button.getAttribute('data-queue-action') || '';
+                    if (actionId === 'take_self' && ticket) {
+                        await takeTicketSelf(ticket.ticket_id);
+                        return;
+                    }
+                    await handleQuickAction(actionId);
                 });
             });
         }
-        if (focusNode) {
-            if (!ticket) {
-                focusNode.innerHTML = '<div class="activity-item">Выберите тикет слева, чтобы увидеть triage-контекст, SLA и быстрые действия.</div>';
-            } else {
-                const queueActions = quickActionButtons(ticket);
-                const counters = ticket.chat_counters || {};
-                focusNode.innerHTML = `
-                    <div class="queue-focus-title">Текущий focus</div>
-                    <article class="queue-focus-shell">
-                        <div class="queue-focus-header">
-                            <div>
-                                <div class="queue-focus-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</div>
-                                <div class="queue-focus-name">${escapeHtml(ticket.title || 'Без названия')}</div>
-                            </div>
-                            <span class="mode-badge">${escapeHtml(currentMode() === 'work' ? 'Work' : (currentMode() === 'observe' ? 'Observe' : 'Preview'))}</span>
-                        </div>
-                        <div class="queue-focus-description">${escapeHtml(ticket.description || 'Описание заявки пока не заполнено.')}</div>
-                        <div class="queue-focus-meta">
-                            <div class="queue-focus-stat">
-                                <div class="queue-focus-stat-label">Инициатор</div>
-                                <div class="queue-focus-stat-value">${escapeHtml(snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—')}</div>
-                            </div>
-                            <div class="queue-focus-stat">
-                                <div class="queue-focus-stat-label">Статус и очередь</div>
-                                <div class="queue-focus-stat-value">${escapeHtml(statusLabel(ticket.status))} • ${escapeHtml(ticket.queue_code || snapshot?.queue_code || '—')}</div>
-                            </div>
-                            <div class="queue-focus-stat">
-                                <div class="queue-focus-stat-label">Исполнитель</div>
-                                <div class="queue-focus-stat-value">${escapeHtml(ticket.assignee_id || 'Не назначен')}</div>
-                            </div>
-                            <div class="queue-focus-stat">
-                                <div class="queue-focus-stat-label">Ответ пользователя</div>
-                                <div class="queue-focus-stat-value">${escapeHtml(String(counters.support_unread_user_messages || 0))}</div>
-                            </div>
-                        </div>
-                        <div class="quick-action-row">${queueActions.map((action) => queueActionButtonMarkup(action, 'data-queue-quick-action')).join('')}</div>
-                    </article>
-                `;
-                focusNode.querySelectorAll('[data-queue-quick-action]').forEach((button) => {
-                    button.addEventListener('click', async () => {
-                        await handleQuickAction(button.getAttribute('data-queue-quick-action') || '');
+
+        if (boardMetaNode) {
+            const summary = sections.map((section) => section.title + ': ' + section.tickets.length).join(' • ') || 'Тикеты не найдены';
+            boardMetaNode.textContent = summary;
+        }
+
+        if (!boardListNode) {
+            return;
+        }
+        if (!tickets.length) {
+            boardListNode.innerHTML = '<div class="activity-item">По текущему фильтру нет тикетов. Попробуйте сменить фильтр или строку поиска.</div>';
+            return;
+        }
+        boardListNode.innerHTML = sections.map((section) => `
+            <section class="queue-board-section${section.secondary ? ' queue-board-section-secondary' : ''}">
+                <div class="queue-board-section-head">
+                    <div class="queue-board-section-title">${escapeHtml(section.title)}</div>
+                    <div class="queue-board-section-note">${escapeHtml(section.note)} • ${section.tickets.length}</div>
+                </div>
+                <div class="queue-board-section-list">
+                    ${section.tickets.map((item) => queueTicketCardMarkup(item)).join('')}
+                </div>
+            </section>
+        `).join('');
+        boardListNode.querySelectorAll('.queue-ticket-card').forEach((card) => {
+            card.addEventListener('click', async (event) => {
+                if (event.target instanceof Element && event.target.closest('button, summary, details')) {
+                    return;
+                }
+                const ticketId = card.getAttribute('data-ticket-id') || '';
+                if (!ticketId) {
+                    return;
+                }
+                if (state.ticketClickTimer) {
+                    window.clearTimeout(state.ticketClickTimer);
+                    state.ticketClickTimer = 0;
+                }
+                if (event.detail > 1) {
+                    await selectTicket(ticketId, { view: WORKSPACE_VIEWS.TICKET });
+                    return;
+                }
+                state.ticketClickTimer = window.setTimeout(() => {
+                    state.ticketClickTimer = 0;
+                    selectTicket(ticketId).catch((error) => {
+                        console.error('Failed to select ticket from queue board', error);
                     });
-                });
-            }
-        }
-        if (contextNode) {
-            if (!ticket) {
-                contextNode.innerHTML = '<div class="activity-item">Нет выбранного тикета.</div>';
-            } else {
-                const presence = snapshot?.presence || {};
-                const deviceSummary = snapshot?.device_summary || {};
-                const requesterProfile = snapshot?.requester_profile || {};
-                const contextRows = [
-                    ['Код', ticket.ticket_code || ticket.ticket_id],
-                    ['Приоритет', ticket.priority_class ? priorityLabel(ticket.priority_class) : '—'],
-                    ['Инициатор в чате', formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, 'онлайн', 'офлайн')],
-                    ['Агент', formatPresenceState(Boolean(deviceSummary.online), deviceSummary.last_seen_at, 'онлайн', 'офлайн')],
-                    ['Телефон', requesterProfile.phone || '—'],
-                    ['Корпус / кабинет', [requesterProfile.building, requesterProfile.room].filter(Boolean).join(' / ') || '—'],
-                ];
-                contextNode.innerHTML = '<dl class="key-value-list">' + contextRows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('') + '</dl>';
-            }
-        }
-        if (insightNode) {
-            if (!ticket) {
-                insightNode.innerHTML = '<div class="activity-item">SLA, OLA и маршрут появятся после выбора тикета.</div>';
-            } else {
-                const requester = snapshot?.requester_profile || {};
-                const ola = snapshot?.ola || ticket?.ola || {};
-                const facts = [
-                    ['SLA первого ответа', snapshot?.first_response_due_at ? formatDate(snapshot.first_response_due_at) : (ticket.first_response_due_at ? formatDate(ticket.first_response_due_at) : 'не задан')],
-                    ['SLA решения', snapshot?.resolution_due_at ? formatDate(snapshot.resolution_due_at) : (ticket.resolution_due_at ? formatDate(ticket.resolution_due_at) : 'не задан')],
-                    ['OLA принятия', ola.ola_ack_due_at ? formatDate(ola.ola_ack_due_at) : 'не задан'],
-                    ['OLA обработки', ola.ola_processing_due_at ? formatDate(ola.ola_processing_due_at) : 'не задан'],
-                    ['Риск', ticketSlaState(ticket).label],
-                    ['Маршрутный профиль', [requester.full_name, requester.building, requester.room].filter(Boolean).join(' • ') || 'базовый профиль'],
-                ];
-                insightNode.innerHTML = facts.map(([label, value]) => `
-                    <div class="support-fact">
-                        <span class="support-fact-label">${escapeHtml(label)}</span>
-                        <div class="support-fact-value">${escapeHtml(value)}</div>
-                    </div>
-                `).join('');
-            }
-        }
+                }, 220);
+            });
+        });
+        boardListNode.querySelectorAll('[data-queue-ticket-action]').forEach((button) => {
+            button.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                const card = button.closest('[data-ticket-id]');
+                const ticketId = card?.getAttribute('data-ticket-id') || '';
+                await executeQueueCardAction(ticketId, button.getAttribute('data-queue-ticket-action') || '');
+            });
+        });
     }
 
     function historyItemsFromSnapshot(snapshot) {
@@ -1155,7 +1356,7 @@
     function renderPreviewPane() {
         const ticket = selectedTicket();
         const snapshot = state.selectedSnapshot;
-        byId('previewModeBadge').textContent = currentMode() === 'observe' ? 'Observe' : 'Preview';
+        byId('previewModeBadge').textContent = currentMode() === 'observe' ? 'Наблюдение' : 'Предпросмотр';
         byId('previewDescription').textContent = (snapshot?.description || ticket?.description || 'Описание пока не заполнено.');
         const requesterProfile = snapshot?.requester_profile || {};
         const requesterRows = [
@@ -2253,7 +2454,7 @@
         });
         document.querySelectorAll('#ticketFilterChips .filter-chip').forEach((button) => {
             button.addEventListener('click', () => {
-                state.currentFilter = button.getAttribute('data-filter') || 'all';
+                state.currentFilter = normalizeTicketFilter(button.getAttribute('data-filter') || 'mine');
                 renderTicketList();
                 renderQueueDesk();
             });
