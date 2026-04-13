@@ -1,0 +1,62 @@
+# AGENT_RUNTIME_ALWAYS_ON
+
+Документ описывает канонический runtime-сценарий агента после перехода на always-on GUI с tray и runtime-логами.
+
+## Цель
+
+- Закрытие основного окна не должно останавливать агент.
+- GUI должен быть thin-слоем поверх локального `ui_bridge`, а runtime должен продолжать жить в фоне.
+- Логи должны быть пригодны для long-running режима: управляемый уровень, rotation, retention, compression.
+
+## Каноническая модель
+
+1. `pc_agent/ws_agent.py` поднимает runtime, `ui_bridge` и GUI.
+2. `pc_agent/ui_gui/main.py` открывает главное окно, но при закрытии окна по умолчанию прячет GUI в tray.
+3. Полный выход агента идёт только через явный shutdown path:
+   - tray action `Выход`
+   - локальный `POST /ui/agent/shutdown`
+   - controlled restart/update flow
+4. `pc_agent/ui_bridge/api_server.py` считается локальной control/diagnostics поверхностью для GUI и локальных проверок.
+
+## Tray и окно
+
+- `ui.tray_enabled=true` включает tray-слой.
+- `ui.minimize_to_tray=true` делает `CloseMainWindow()` сворачиванием в tray вместо остановки агента.
+- `ui.start_hidden=true` разрешает запуск скрытым с доступом через tray.
+- Если tray недоступен на платформе, агент не должен падать: GUI просто работает обычным окном.
+
+## Runtime logs
+
+- Канонический helper: `pc_agent/core/runtime_logging.py`
+- Базовый production-профиль:
+  - `logging.level=INFO`
+  - `logging.console_level=INFO`
+  - `logging.rotation=20 MB`
+  - `logging.retention=14 days`
+  - `logging.compression=zip`
+- Источники диагностики:
+  - `GET /ui/agent/status`
+  - `GET /ui/agent/logs?source=agent|launcher|memory`
+
+## Что проверять после правок
+
+Минимум:
+
+1. `python scripts/verify_workspace.py`
+2. `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`
+3. `python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short`
+
+Живой локальный сценарий через именованный инстанс:
+
+1. `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`
+2. Проверить `http://127.0.0.1:<port>/ui/agent/status`
+3. Программно закрыть окно `Maria Agent`
+4. Убедиться, что процесс жив, а `ui_bridge` всё ещё отвечает
+5. Завершить агент через `POST /ui/agent/shutdown`
+
+## Инварианты
+
+- `CloseMainWindow()` для главного окна при включённом tray не считается shutdown-сигналом.
+- Runtime-диагностика должна быть доступна даже когда окно скрыто.
+- Полный выход агента должен быть явным и воспроизводимым через локальный control path.
+- Изменения в `pc_agent/ws_agent.py`, `pc_agent/ui_gui/*`, `pc_agent/ui_bridge/*`, `pc_agent/core/runtime_logging.py` синхронно отражаются в `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` и skill/правилах.

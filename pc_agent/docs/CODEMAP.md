@@ -16,7 +16,8 @@
 | `run_tool` / команды | `pc_agent/core/orchestrator.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
 | Auth / bootstrap | `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py` | `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
 | Self-update / launcher / rollout | `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` | `pc_agent/docs/SELF_UPDATE.md`, `pc_agent/launcher/installer.py`, `server/docs/AGENT_UPDATES_API.md` |
-| GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py` | `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_bridge/api_server.py` |
+| Always-on / tray / runtime logs | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` | `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/tray_manager.py` |
+| GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py` | `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` |
 | Модули / registry | `pc_agent/core/module_manager.py` | `pc_agent/core/loader.py`, `pc_agent/docs/MODULES.md` |
 
 ---
@@ -25,10 +26,10 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; `chat_raise()` теперь возвращает и `job_id`, и `ticket_id`; до запуска parser/logging принудительно включает UTF-8 для stdout/stderr на Windows; в handshake передаёт последний success/failure report self-update |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
-| `pc_agent/ui_gui/main.py` | Запуск Qt GUI |
+| `pc_agent/ui_gui/main.py` | Запуск Qt GUI, lifecycle окна, minimize-to-tray, start-hidden, явный exit path и cleanup локальных SSE/API ресурсов |
 | `pc_agent/build_windows_release_v2.py` | Каноническая Windows release-сборка: launcher.exe + versioned agent layout + update ZIP |
 
 ---
@@ -52,6 +53,7 @@
 | `pc_agent/core/artifacts.py` | Артефакты (screenshot/record) |
 | `pc_agent/core/recording_controller.py` | Управление записью |
 | `pc_agent/core/job_manager.py` | Джобы |
+| `pc_agent/core/runtime_logging.py` | Единая настройка runtime-логирования: loguru sink, rotation/retention/compression, чтение tail для diagnostics |
 | `pc_agent/core/runtime_paths.py` | Пути данных/модулей |
 | `pc_agent/core/single_instance.py` | Один экземпляр приложения |
 
@@ -79,7 +81,7 @@
 ### 2.4 UI bridge (core ↔ GUI)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP) |
+| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP), settings + local agent control/diagnostics (`/ui/agent/status`, `/ui/agent/logs`, `/ui/agent/shutdown`) |
 | `pc_agent/ui_bridge/event_bus.py` | События между core и GUI; хранит sticky `connection_state` для поздних SSE-подписчиков |
 | `pc_agent/ui_bridge/models.py` | Модели данных для UI |
 | `pc_agent/ui_bridge/settings_service.py` | Настройки для GUI |
@@ -87,13 +89,14 @@
 ### 2.5 GUI (Qt)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы |
+| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics |
 | `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, mark-read, локальные профили инициатора; detail refresh разделён на initial tail load, forward catch-up через `since_event_id` и reverse pagination вверх через `before_event_id`, с prepend history и сохранением viewport; список тикетов на `QListView` + модель |
 | `pc_agent/ui_gui/tickets_list_model.py` | `TicketsListModel` и `TicketCardDelegate` — обновление строк без полного `clear()`, отрисовка карточек |
 | `pc_agent/ui_gui/ticket_format.py` | Подписи/цвета статусов, формат дат, отпечаток строки тикета для диффа модели |
 | `pc_agent/ui_gui/theme.py` | Общая тёплая палитра и QSS-фрагменты для `ChatPanel` и боковой панели профиля |
 | `pc_agent/ui_gui/server_api.py` | Обращение к серверу из GUI, отправка `reply_to`/message metadata, вызов `mark_ticket_read()` и ticket history API с `get_ticket(..., since_event_id=..., before_event_id=..., limit=...)` |
 | `pc_agent/ui_gui/sse_client.py` | SSE-клиент к ui_bridge |
+| `pc_agent/ui_gui/tray_manager.py` | Тонкая cross-platform обёртка над `QSystemTrayIcon`: открыть окно, открыть логи, restart agent, exit agent |
 | `pc_agent/ui_gui/consent_dialog.py` | Диалог согласия на операцию |
 | `pc_agent/ui_gui/token_dialog.py` | Диалог токена |
 
@@ -124,6 +127,7 @@
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
 - **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
 - **аутентификация, machine_id, install_id, токен** — `core/identity.py`, `core/machine_identity.py`, `auth/token_source.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
+- **always-on, tray, runtime logs, локальный shutdown/status/logs** — `docs/AGENT_RUNTIME_ALWAYS_ON.md`, `ws_agent.py`, `core/runtime_logging.py`, `ui_gui/main.py`, `ui_gui/tray_manager.py`, `ui_bridge/api_server.py`
 - **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
 - **self-update, pending_update, update_history, launcher rollback** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`

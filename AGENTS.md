@@ -97,6 +97,11 @@
   - `server/docs/AGENT_UPDATES_API.md`
   - `pc_agent/docs/CODEMAP.md`
 - Для таких задач использовать проектный skill `pc-client-agent-updates`.
+- Если задача затрагивает always-on runtime, tray, локальный GUI shutdown/restart, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/*` или `pc_agent/ui_bridge/*`, начинать с:
+  - `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`
+  - `pc_agent/docs/CODEMAP.md`
+  - `docs/QUICK_LOOKUP.md`
+- Для таких задач использовать проектный skill `pc-client-agent-runtime`.
 - Если меняется распространяемый бинарь агента или launcher, обязательно обновлять `pc_agent/version.py`.
 - Не выпускать новый build под старым номером версии как обычный сценарий.
 - Каноническая Windows release-сборка: `python pc_agent/build_windows_release_v2.py`
@@ -148,6 +153,12 @@
   - собрать новый release build;
   - проверить canary update хотя бы на одном устройстве или локальном launcher-instance;
   - зафиксировать, чем именно подтверждён успех: handshake, diagnostics, update history, admin UI.
+- Если менялись `pc_agent/ws_agent.py`, `pc_agent/ui_gui/*`, `pc_agent/ui_bridge/*` или `pc_agent/core/runtime_logging.py`:
+  - прогнать `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`;
+  - прогнать `python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short`;
+  - поднять именованный локальный инстанс через `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`;
+  - проверить `GET /ui/agent/status`, затем закрыть окно `Maria Agent` и подтвердить, что процесс и локальный API живы;
+  - завершить инстанс через `POST /ui/agent/shutdown` или штатный stop path и зафиксировать результат.
 - `python scripts/release_server_to_remote.py --skip-verify` допустим только как исключение:
   - если тот же commit уже прошёл локальный `python scripts/verify_workspace.py` и релевантный pytest;
   - если текущая dirty-состояние воркспейса относится к другому локальному WIP и не должно попасть на Linux;

@@ -86,6 +86,18 @@ def _read_agent_version() -> str:
     return match.group(1)
 
 
+def _read_install_current_version(install_root: Path) -> str | None:
+    current_path = install_root / "current.json"
+    if not current_path.exists():
+        return None
+    try:
+        payload = json.loads(current_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    version = str(payload.get("version") or "").strip()
+    return version or None
+
+
 def _venv_exists() -> bool:
     return VENV_PYTHON.exists()
 
@@ -169,9 +181,12 @@ def _seed_release_install(name: str, build_root: Path) -> str:
     version_dir = install_root / "versions" / version
     current_path = install_root / "current.json"
     launcher_dst = install_root / "launcher.exe"
+    existing_version = _read_install_current_version(install_root)
 
-    if current_path.exists() and launcher_dst.exists() and version_dir.exists():
-        return version
+    if current_path.exists() and launcher_dst.exists() and existing_version:
+        existing_version_dir = install_root / "versions" / existing_version
+        if existing_version_dir.exists():
+            return existing_version
 
     install_root.mkdir(parents=True, exist_ok=True)
     (install_root / "versions").mkdir(parents=True, exist_ok=True)

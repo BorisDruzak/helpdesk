@@ -203,3 +203,10 @@ Body:
 - `recent_operations` — последние `agent_update` операции с target/channel/version/reason/status;
 - `timeline` — runtime-audit события `update_*` и timeout-сигналы;
 - `problem_logs` — последние warning/error записи из tech log buffer по `device_id`/hostname.
+
+## Канонический workflow
+
+Для production-сценария "как выпускать новую версию агента, какие проверки обязательны, когда bump-ать version и как делать canary/bulk rollout" используйте:
+
+- [../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md](../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md)
+- [../../pc_agent/docs/SELF_UPDATE.md](../../pc_agent/docs/SELF_UPDATE.md)

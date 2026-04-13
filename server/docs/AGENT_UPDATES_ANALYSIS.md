@@ -109,5 +109,6 @@
 
 - API и wire contract: [AGENT_UPDATES_API.md](AGENT_UPDATES_API.md)
 - Launcher/apply/rollback: [../../pc_agent/docs/SELF_UPDATE.md](../../pc_agent/docs/SELF_UPDATE.md)
+- Канонический release/rollout playbook: [../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md](../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md)
 - Handshake/report fields: [../../pc_agent/docs/PROTOCOL_V3.md](../../pc_agent/docs/PROTOCOL_V3.md)
 - Навигация по модулям: [CODEMAP.md](CODEMAP.md), [../../pc_agent/docs/CODEMAP.md](../../pc_agent/docs/CODEMAP.md)

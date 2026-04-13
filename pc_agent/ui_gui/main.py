@@ -5,14 +5,16 @@
 import asyncio
 import aiohttp
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from loguru import logger
 
+from pc_agent.core import runtime_paths
 from .main_window import MainWindow
 from .sse_client import SseClient
 from .token_dialog import TokenDialog
+from .tray_manager import TrayManager
 from .wait_for_auth_dialog import WaitForAuthDialog
 
 
@@ -22,14 +24,17 @@ class EventHandler(QObject):
     """
     event_received = Signal(dict)
     
-    def __init__(self, window: MainWindow):
+    def __init__(self, window: MainWindow, after_event: Optional[Callable[[dict], None]] = None):
         super().__init__()
         self.window = window
+        self.after_event = after_event
         self.event_received.connect(self._on_event)
     
     def _on_event(self, event: dict):
         """Обработчик события в Qt контексте."""
         self.window.handle_event(event)
+        if self.after_event:
+            self.after_event(event)
 
 
 async def verify_token_on_server(api_url: str, token: str) -> bool:
@@ -489,7 +494,6 @@ async def run_gui(
     # Создаем главное окно ТОЛЬКО после успешной авторизации
     # Передаем токен в MainWindow для использования в API клиенте
     window = MainWindow(host, port, auth_token=valid_token)
-    window.show()
     
     # Не включаем quit при закрытии окна — завершение через stop_event и main_async cleanup,
     # затем app.quit() в ws_agent.main(), чтобы не останавливать event loop до завершения main_async
@@ -498,8 +502,73 @@ async def run_gui(
         app.setQuitOnLastWindowClosed(False)
         logger.debug("✅ setQuitOnLastWindowClosed(False) — выход по закрытию окна обрабатывается в main_async")
     
+    cfg = get_config()
+    tray_config = cfg.ui if cfg and cfg.ui else None
+    try:
+        from pc_agent.config.config_loader import get_config_base
+
+        data_root = get_config_base() or Path.cwd()
+    except Exception:
+        data_root = Path.cwd()
+    logs_dir = runtime_paths.resolve_logs_dir(Path(data_root))
+
+    exit_requested = False
+    tray_hidden_once = False
+    tray_manager: Optional[TrayManager] = None
+
+    async def request_agent_restart_from_tray() -> None:
+        url = f"http://{host}:{port}/ui/agent/restart"
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.post(url, json={"reason": "tray", "delay_sec": 0.8}) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError(await resp.text())
+
+    def show_window_from_tray() -> None:
+        if not window.isVisible():
+            window.show()
+        if window.isMinimized():
+            window.showNormal()
+        window.raise_()
+        window.activateWindow()
+
+    def restart_agent_from_tray() -> None:
+        asyncio.create_task(request_agent_restart_from_tray())
+
+    def exit_agent_from_tray() -> None:
+        nonlocal exit_requested
+        exit_requested = True
+        window.close()
+
+    if tray_config and tray_config.tray_enabled:
+        tray_manager = TrayManager(
+            tooltip="Maria Agent",
+            logs_dir=logs_dir,
+            notifications_enabled=bool(tray_config.notifications_enabled),
+            on_show_window=show_window_from_tray,
+            on_restart_agent=restart_agent_from_tray,
+            on_exit_agent=exit_agent_from_tray,
+        )
+        if tray_manager.available:
+            tray_manager.show()
+        else:
+            tray_manager = None
+
+    def after_event(event: dict) -> None:
+        if not tray_manager:
+            return
+        event_type = str(event.get("event_type") or "")
+        if event_type != "connection_state":
+            return
+        payload = event.get("data") or {}
+        state = str(payload.get("state") or "unknown")
+        detail = str(payload.get("detail") or "").strip()
+        tooltip = f"Maria Agent — {state}"
+        if detail:
+            tooltip += f" ({detail})"
+        tray_manager.set_tooltip(tooltip)
+
     # Создаем обработчик событий
-    event_handler = EventHandler(window)
+    event_handler = EventHandler(window, after_event=after_event)
     
     # Создаем SSE клиент (только если есть шанс, что на порту именно UiApiServer)
     base_url = f"http://{host}:{port}"
@@ -586,7 +655,7 @@ async def run_gui(
         window.set_bridge_connected(False)
         window.set_connection_state("disconnected", "мост UI недоступен")
     
-    # Обработчик закрытия окна
+    # Обработчик финального закрытия окна
     def on_window_closed():
         nonlocal window_closing, sse_stop_task
         if window_closing:
@@ -609,24 +678,42 @@ async def run_gui(
         logger.info("GUI закрывается, останавливаю SSE клиент...")
         sse_client.stop()
         try:
-            sse_stop_task = asyncio.create_task(sse_client.stop_async(), name="gui.sse_stop")
+            loop = asyncio.get_running_loop()
+            if not loop.is_closed():
+                sse_stop_task = loop.create_task(sse_client.stop_async(), name="gui.sse_stop")
         except Exception as e:
             logger.debug(f"Не удалось создать задачу остановки SSE: {e}")
         if sse_task_obj is not None:
             sse_task_obj.cancel()
-        window_closed.set()
-        if stop_event:
+        try:
+            window_closed.set()
+        except RuntimeError as e:
+            logger.debug(f"Не удалось сигнализировать window_closed: {e}")
+        if stop_event and exit_requested:
             stop_event.set()
     
     # Подключаем обработчик к сигналу destroyed() окна
-    window.destroyed.connect(on_window_closed)
-    
     # Также переопределяем closeEvent для корректной обработки закрытия
     # Сохраняем оригинальный метод
     original_close_event = window.closeEvent
     
     # Создаем новый метод, который вызывает обработчик и оригинальный метод
     def close_event_handler(event):
+        nonlocal tray_hidden_once
+        if (
+            tray_manager
+            and tray_manager.available
+            and tray_config
+            and tray_config.minimize_to_tray
+            and not exit_requested
+        ):
+            event.ignore()
+            window.hide()
+            if not tray_hidden_once:
+                tray_hidden_once = True
+                tray_manager.notify("Maria Agent", "Агент продолжает работать в трее.")
+            logger.info("GUI скрыт в tray; агент продолжает работать")
+            return
         on_window_closed()
         if original_close_event:
             original_close_event(event)
@@ -635,12 +722,53 @@ async def run_gui(
     
     # Переопределяем метод
     window.closeEvent = close_event_handler
+    if tray_manager:
+        tray_manager.set_tooltip("Maria Agent — запуск GUI")
+
+    if tray_config and tray_config.start_hidden and tray_manager and tray_manager.available:
+        window.hide()
+        tray_manager.notify("Maria Agent", "Агент запущен в фоне и доступен из трея.")
+    else:
+        window.show()
+
+    async def cleanup_gui_resources() -> None:
+        if not window_closed.is_set():
+            on_window_closed()
+
+        if hasattr(window, "chat_panel") and window.chat_panel:
+            cp = window.chat_panel
+            if getattr(cp, "ticket_client", None):
+                try:
+                    await cp.ticket_client.close()
+                except Exception as e:
+                    logger.debug(f"Р—Р°РєСЂС‹С‚РёРµ ticket_client: {e}")
+            if getattr(cp, "client", None):
+                try:
+                    await cp.client.close()
+                except Exception as e:
+                    logger.debug(f"Р—Р°РєСЂС‹С‚РёРµ client: {e}")
+        if sse_stop_task:
+            try:
+                await asyncio.wait_for(sse_stop_task, timeout=1.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                logger.debug("РћСЃС‚Р°РЅРѕРІРєР° SSE РєР»РёРµРЅС‚Р° РїСЂРµРІС‹СЃРёР»Р° С‚Р°Р№РјР°СѓС‚")
+        if sse_task_obj is not None:
+            try:
+                await asyncio.wait_for(sse_task_obj, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                logger.debug("РћР¶РёРґР°РЅРёРµ Р·Р°РІРµСЂС€РµРЅРёСЏ SSE Р·Р°РґР°С‡Рё РїСЂРµРІС‹СЃРёР»Рѕ С‚Р°Р№РјР°СѓС‚")
+        if tray_manager:
+            tray_manager.cleanup()
     
     logger.success(f"GUI запущен на {host}:{port}")
     
     # В qasync event loop уже запущен, поэтому не вызываем app.exec()
     # Вместо этого ждем, пока окно не закроется
-    await window_closed.wait()
+    try:
+        await window_closed.wait()
+    finally:
+        await cleanup_gui_resources()
+    return
 
     # Закрываем сессии API-клиентов и даём SSE-задаче завершиться (избегаем Unclosed client session)
     if hasattr(window, "chat_panel") and window.chat_panel:
@@ -665,3 +793,5 @@ async def run_gui(
             await asyncio.wait_for(sse_task_obj, timeout=2.0)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             logger.debug("Ожидание завершения SSE задачи превысило таймаут")
+    if tray_manager:
+        tray_manager.cleanup()

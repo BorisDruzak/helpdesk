@@ -12,6 +12,8 @@ description: Checklist before pushing pc_client to GitHub. Use when preparing to
 1. **Правки** — только в локальной копии `C:\Users\admin-2\CodexProjects\pc_client`.
 2. **Локальные проверки:**  
    `python scripts/verify_workspace.py` + релевантные pytest (`server/tests/`, `pc_agent/tests/`) по области изменений.
+   Если меняется agent release/update flow — следовать скиллу `pc-client-agent-updates` и не выпускать изменённый бинарь под старой версией.
+   Если меняется always-on runtime / tray / runtime logs — следовать скиллу `pc-client-agent-runtime` и не закрывать задачу без живого E2E через `manage_local_agent.py`.
 3. **Локальный коммит** — после успешных проверок.
 4. **Deploy на Linux** (если нужен прогон на стенде):  
    `python scripts/deploy_workspace_to_remote.py`  

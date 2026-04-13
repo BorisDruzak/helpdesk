@@ -18,17 +18,18 @@ TEXT_SUFFIXES = {
     ".html",
     ".css",
     ".md",
+    ".mdc",
     ".json",
     ".toml",
     ".txt",
     ".yml",
     ".yaml",
+    ".ps1",
 }
 PY_COMPILE_BATCH_SIZE = 120
 SKIP_DIRS = {
     ".git",
     ".run",
-    ".cursor",
     ".vscode",
     ".venvs",
     ".local-agent",
@@ -42,6 +43,11 @@ SKIP_DIRS = {
     "reports",
     "temp",
 }
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def parse_args() -> argparse.Namespace:

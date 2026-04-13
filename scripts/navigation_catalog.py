@@ -301,7 +301,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, SSE bridge, initiator profiles and local GUI integration.",
+        summary="Qt GUI, SSE bridge, initiator profiles and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -309,6 +309,7 @@ TOPICS: tuple[Topic, ...] = (
             "chat panel",
             "main window",
             "initiator profile",
+            "connection_state",
         ),
         first_files=(
             "pc_agent/ui_gui/main_window.py",
@@ -319,9 +320,11 @@ TOPICS: tuple[Topic, ...] = (
         related_docs=(
             "docs/QUICK_LOOKUP.md",
             "pc_agent/docs/CODEMAP.md",
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
         ),
         suggested_commands=(
             'python scripts/agent_find.py "ui bridge" --dir pc_agent',
+            'python scripts/agent_find.py "connection_state" --dir pc_agent',
             "python scripts/diff_context.py",
         ),
         path_prefixes=(
@@ -329,6 +332,47 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ui_bridge/",
         ),
         exact_paths=("pc_agent/ui_gui/main.py",),
+    ),
+    Topic(
+        key="agent_runtime",
+        title="Agent runtime / tray / logs",
+        summary="Always-on runtime lifecycle, tray behavior and runtime diagnostics/logging.",
+        aliases=(
+            "always-on",
+            "always on",
+            "tray",
+            "runtime logs",
+            "runtime logging",
+            "agent shutdown",
+            "close to tray",
+        ),
+        first_files=(
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+            "pc_agent/ws_agent.py",
+            "pc_agent/core/runtime_logging.py",
+            "pc_agent/ui_gui/main.py",
+        ),
+        related_docs=(
+            "docs/QUICK_LOOKUP.md",
+            "pc_agent/docs/CODEMAP.md",
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+            ".cursor/skills/pc-client-agent-runtime/SKILL.md",
+        ),
+        suggested_commands=(
+            'python scripts/agent_find.py "tray" --dir pc_agent',
+            'python scripts/agent_find.py "runtime_logging" --dir pc_agent',
+            "python scripts/manage_local_agent.py status",
+        ),
+        exact_paths=(
+            "pc_agent/ws_agent.py",
+            "pc_agent/core/runtime_logging.py",
+            "pc_agent/ui_gui/main.py",
+            "pc_agent/ui_gui/tray_manager.py",
+        ),
+        path_prefixes=(
+            "pc_agent/ui_gui/",
+            "pc_agent/ui_bridge/",
+        ),
     ),
     Topic(
         key="database",

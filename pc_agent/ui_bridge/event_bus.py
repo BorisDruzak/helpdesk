@@ -6,7 +6,8 @@ EventBus для публикации и подписки на UI-события.
 """
 
 import asyncio
-from typing import Dict, Any, Set
+import copy
+from typing import Dict, Any, Set, List
 from loguru import logger
 
 
@@ -21,6 +22,7 @@ class EventBus:
     def __init__(self):
         """Инициализация EventBus."""
         self._subscribers: Set[asyncio.Queue] = set()
+        self._sticky_events: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         # Не логируем инициализацию, чтобы избежать бесконечного цикла логов
     
@@ -42,6 +44,7 @@ class EventBus:
             })
         """
         async with self._lock:
+            self._remember_sticky_event(event)
             if not self._subscribers:
                 # Не логируем отсутствие подписчиков, чтобы избежать бесконечного цикла логов
                 return
@@ -61,7 +64,13 @@ class EventBus:
                 # Не логируем удаление подписчиков, чтобы избежать бесконечного цикла логов
             
             # Не логируем публикацию событий, чтобы избежать бесконечного цикла логов
-    
+
+    def _remember_sticky_event(self, event: Dict[str, Any]) -> None:
+        """Запоминает последнее критичное UI-состояние для поздних подписчиков."""
+        event_type = str(event.get("event_type") or "").strip().lower()
+        if event_type == "connection_state":
+            self._sticky_events[event_type] = copy.deepcopy(event)
+
     def subscribe(self) -> asyncio.Queue[Dict[str, Any]]:
         """
         Создает новую подписку на события.
@@ -79,6 +88,18 @@ class EventBus:
         self._subscribers.add(queue)
         # Не логируем добавление подписчиков, чтобы избежать бесконечного цикла логов
         return queue
+
+    def get_replay_events(self) -> List[Dict[str, Any]]:
+        """
+        Возвращает события-снимки для новых подписчиков.
+
+        Сейчас sticky-реплей нужен прежде всего для connection_state, чтобы GUI,
+        подписавшийся уже после handshake_ack, сразу увидел актуальный статус.
+        """
+        snapshot = self._sticky_events.get("connection_state")
+        if not snapshot:
+            return []
+        return [copy.deepcopy(snapshot)]
     
     async def unsubscribe(self, queue: asyncio.Queue) -> None:
         """
@@ -121,4 +142,3 @@ class EventBus:
                     await queue.put({"_shutdown": True})
                 except Exception:
                     pass
-

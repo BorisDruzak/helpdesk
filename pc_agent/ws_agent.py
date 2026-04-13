@@ -50,6 +50,7 @@ from core.job_manager import JobManager
 from core.http_client import AioHttpClient
 from pc_agent.config.config_loader import get_config, init_config
 from pc_agent.core import runtime_paths
+from pc_agent.core.runtime_logging import RuntimeLogBuffer, configure_runtime_logging, read_log_tail, format_log_tail
 from network.uploader import get_uploader
 from ui_bridge import EventBus, UiApiServer
 from ui_bridge.models import ConsentDecision
@@ -169,6 +170,11 @@ class WSAgent:
         self.ui_api_task: Optional[asyncio.Task] = None
         self.settings_service: Optional[AgentSettingsService] = None
         self._restart_task: Optional[asyncio.Task] = None
+        self._runtime_log_buffer = RuntimeLogBuffer(limit=400)
+        self._logging_runtime: Dict[str, Any] = {}
+        self._last_connection_state: str = "initializing"
+        self._last_connection_detail: str = ""
+        self._last_connection_changed_at: Optional[str] = None
         
         # Очередь и задача для публикации логов в EventBus
         # Используем обычную queue.Queue для синхронного sink
@@ -254,6 +260,9 @@ class WSAgent:
             )
 
     async def _publish_connection_state(self, state: str, detail: str = "") -> None:
+        self._last_connection_state = str(state or "").strip() or "unknown"
+        self._last_connection_detail = str(detail or "").strip()
+        self._last_connection_changed_at = datetime.now(timezone.utc).isoformat()
         if not self.event_bus:
             return
         try:
@@ -261,10 +270,10 @@ class WSAgent:
                 {
                     "event_type": "connection_state",
                     "data": {
-                        "state": state,
-                        "detail": detail,
+                        "state": self._last_connection_state,
+                        "detail": self._last_connection_detail,
                     },
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": self._last_connection_changed_at,
                 }
             )
         except Exception as exc:
@@ -304,6 +313,55 @@ class WSAgent:
                         )
                     else:
                         logger.warning(f"[connectivity] {endpoint} unreachable: {exc}")
+
+    def get_runtime_status(self) -> Dict[str, Any]:
+        data_root = self._data_root or runtime_paths.resolve_data_root()
+        logs_dir = runtime_paths.resolve_logs_dir(Path(data_root))
+        return {
+            "device_id": self.device_id,
+            "started_at": datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat(),
+            "uptime_seconds": max(0, int(time.time() - self.start_time)),
+            "connection_state": self._last_connection_state,
+            "connection_detail": self._last_connection_detail,
+            "connection_changed_at": self._last_connection_changed_at,
+            "has_auth_token": bool(self.auth_token),
+            "ui_bridge_running": bool(self.ui_api_server and getattr(self.ui_api_server, "_listening", False)),
+            "log_runtime": dict(self._logging_runtime),
+            "logs_dir": str(logs_dir),
+            "event_bus_subscribers": self.event_bus.get_subscriber_count() if self.event_bus else 0,
+        }
+
+    def get_runtime_logs(self, source: str = "agent", lines: int = 120) -> Dict[str, Any]:
+        normalized_source = str(source or "agent").strip().lower()
+        max_lines = max(1, min(int(lines), 400))
+        data_root = self._data_root or runtime_paths.resolve_data_root()
+        logs_dir = runtime_paths.resolve_logs_dir(Path(data_root))
+        launcher_candidates = [
+            Path(data_root).parent / "launcher.log",
+            Path(data_root) / "launcher.log",
+        ]
+        if normalized_source == "memory":
+            return {
+                "source": "memory",
+                "path": None,
+                "lines": self._runtime_log_buffer.snapshot(max_lines),
+                "text": format_log_tail(self._runtime_log_buffer.snapshot(max_lines)),
+            }
+
+        file_map = {
+            "agent": Path(self._logging_runtime.get("file") or (logs_dir / "agent.log")),
+            "launcher": next((candidate for candidate in launcher_candidates if candidate.exists()), launcher_candidates[0]),
+        }
+        log_path = file_map.get(normalized_source)
+        if log_path is None:
+            raise ValueError(f"Unknown log source: {source}")
+        tail_lines = read_log_tail(log_path, max_lines)
+        return {
+            "source": normalized_source,
+            "path": str(log_path),
+            "lines": [line.rstrip("\n") for line in tail_lines],
+            "text": format_log_tail(tail_lines),
+        }
     
     async def initialize(self):
         """
@@ -317,25 +375,18 @@ class WSAgent:
                 data_root = Path(__file__).resolve().parent / cfg.paths.data_dir
             data_root = data_root.resolve()
 
-            # Настраиваем логирование из конфига (но принудительно ставим DEBUG для отладки)
-            logger.remove()  # Удаляем стандартный обработчик
-            logger.add(
-                sys.stderr,
-                level="DEBUG",  # Принудительно DEBUG для детального логирования
-                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+            # Настраиваем production-friendly runtime logging из конфига.
+            self._logging_runtime = configure_runtime_logging(
+                data_root=data_root,
+                logging_config=cfg.logging,
+                role_name="agent",
+                memory_buffer=self._runtime_log_buffer,
             )
-            # Лог-файл: data_root/logs/agent.log
-            logs_dir = runtime_paths.resolve_logs_dir(data_root)
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            log_file = logs_dir / "agent.log"
-            logger.add(
-                log_file,
-                level="DEBUG",  # Принудительно DEBUG для детального логирования
-                rotation="10 MB",
-                retention="7 days",
-                encoding="utf-8"
+            logger.success(
+                "✅ Логирование настроено: "
+                f"level={self._logging_runtime['level']}, "
+                f"file={self._logging_runtime['file']}"
             )
-            logger.success(f"✅ Логирование настроено: уровень DEBUG (для отладки)")
             
             # Инициализируем менеджер идентификации: data_root/identity.json
             identity_path = data_root / "identity.json"
@@ -457,7 +508,7 @@ class WSAgent:
             # Добавляем sink для EventBus (используем enqueue=True для thread-safe)
             logger.add(
                 log_sink,
-                level="DEBUG",
+                level=self._logging_runtime.get("level", "INFO"),
                 enqueue=True,  # Thread-safe очередь
                 format="{message}"
             )
@@ -605,6 +656,18 @@ class WSAgent:
             async def on_restart_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
                 return await self.schedule_restart(payload)
 
+            def on_get_runtime_status() -> Dict[str, Any]:
+                return self.get_runtime_status()
+
+            def on_get_runtime_logs(payload: Dict[str, Any]) -> Dict[str, Any]:
+                source = str(payload.get("source") or "agent")
+                lines_raw = payload.get("lines", 120)
+                try:
+                    lines = int(lines_raw)
+                except (TypeError, ValueError):
+                    lines = 120
+                return self.get_runtime_logs(source=source, lines=lines)
+
             async def on_chat_send(
                 ticket_id: str,
                 text: str,
@@ -640,6 +703,8 @@ class WSAgent:
                 on_update_settings=on_update_settings,
                 on_test_connection=on_test_connection,
                 on_restart_agent=on_restart_agent,
+                on_get_runtime_status=on_get_runtime_status,
+                on_get_runtime_logs=on_get_runtime_logs,
                 on_chat_send=on_chat_send,
             )
             logger.success(f"✅ UiApiServer создан на {ui_host}:{ui_port}")
@@ -3027,13 +3092,15 @@ async def main_async(
     
     # Событие для остановки
     stop_event = asyncio.Event()
+    stop_wait_task: Optional[asyncio.Task] = None
     
     async def sync_agent_token_from_db(*, retries: int = 1, delay: float = 0.0, log_reason: str) -> Optional[str]:
         token_from_db_local = None
         try:
-            if agent.db_manager and agent.identity_manager.device_id:
+            identity_device_id = getattr(agent.identity_manager, "device_id", None) or getattr(agent.identity_manager, "uuid", None)
+            if agent.db_manager and identity_device_id:
                 for attempt in range(max(1, retries)):
-                    token_from_db_local = await agent.db_manager.get_auth_token(agent.identity_manager.device_id)
+                    token_from_db_local = await agent.db_manager.get_auth_token(identity_device_id)
                     if token_from_db_local:
                         break
                     if delay > 0 and attempt + 1 < max(1, retries):
@@ -3051,6 +3118,17 @@ async def main_async(
     try:
         # Инициализация
         await agent.initialize()
+
+        async def on_shutdown_agent(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            reason = str((payload or {}).get("reason") or "ui_shutdown")
+            logger.warning(f"🛑 Получен запрос на полное завершение агента (reason={reason})")
+            agent._requested_exit_code = 0
+            await agent._publish_connection_state("shutting_down", reason)
+            stop_event.set()
+            return {"accepted": True, "reason": reason}
+
+        if agent.ui_api_server:
+            agent.ui_api_server.on_shutdown_agent = on_shutdown_agent
         
         # Выводим Device ID после инициализации (когда он уже установлен из identity)
         logger.info(f"🆔 Device ID: {agent.device_id}")
@@ -3160,43 +3238,58 @@ async def main_async(
             logger.info("💡 Агент при run() попытается загрузить токен из БД в authenticate()")
         
         agent_task = asyncio.create_task(agent.run(), name="agent.run")
-        
-        # Ждем либо остановки GUI, либо завершения агента
-        tasks_to_wait = [agent_task]
-        if gui_task:
-            tasks_to_wait.append(gui_task)
-        
-        done, pending = await asyncio.wait(
-            tasks_to_wait,
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
-        # Если GUI закрылся, останавливаем агента
-        if stop_event.is_set() or (gui_task and gui_task in done):
-            logger.info("🛑 Получен сигнал остановки от GUI, завершаю работу...")
-            agent_task.cancel()
-            try:
-                await asyncio.wait_for(agent_task, timeout=5.0)
-            except asyncio.CancelledError:
-                pass
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ Агент не завершился за 5 секунд после закрытия GUI")
+        stop_wait_task = asyncio.create_task(stop_event.wait(), name="agent.stop_wait")
 
-        # Если агент завершился, останавливаем GUI
-        if agent_task in done:
-            try:
-                await agent_task
-            except asyncio.CancelledError:
-                exit_code = agent.requested_exit_code or 0
+        while True:
+            tasks_to_wait = [agent_task, stop_wait_task]
             if gui_task:
-                logger.info("🛑 Агент завершился, останавливаю GUI...")
-                gui_task.cancel()
+                tasks_to_wait.append(gui_task)
+
+            done, pending = await asyncio.wait(
+                tasks_to_wait,
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if stop_wait_task in done:
+                logger.info("🛑 Получен явный запрос на завершение агента")
+                agent_task.cancel()
                 try:
-                    await asyncio.wait_for(gui_task, timeout=3.0)
+                    await asyncio.wait_for(agent_task, timeout=5.0)
                 except asyncio.CancelledError:
                     pass
                 except asyncio.TimeoutError:
-                    logger.warning("⚠️ GUI не завершился за 3 секунды после остановки агента")
+                    logger.warning("⚠️ Агент не завершился за 5 секунд после сигнала shutdown")
+                break
+
+            if gui_task and gui_task in done:
+                try:
+                    await gui_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as gui_error:
+                    logger.error(f"❌ GUI завершился с ошибкой: {gui_error}")
+                    logger.exception(gui_error)
+                if stop_event.is_set():
+                    continue
+                logger.warning("⚠️ GUI завершился, агент продолжает работать в background/headless режиме")
+                gui_task = None
+                continue
+
+            if agent_task in done:
+                try:
+                    await agent_task
+                except asyncio.CancelledError:
+                    exit_code = agent.requested_exit_code or 0
+                if gui_task:
+                    logger.info("🛑 Агент завершился, останавливаю GUI...")
+                    gui_task.cancel()
+                    try:
+                        await asyncio.wait_for(gui_task, timeout=3.0)
+                    except asyncio.CancelledError:
+                        pass
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ GUI не завершился за 3 секунды после остановки агента")
+                break
         
     except KeyboardInterrupt:
         logger.info("⛔ Получен сигнал остановки (Ctrl+C)")
@@ -3206,6 +3299,12 @@ async def main_async(
         logger.exception(e)
     finally:
         # Очистка
+        if stop_wait_task and not stop_wait_task.done():
+            stop_wait_task.cancel()
+            try:
+                await stop_wait_task
+            except asyncio.CancelledError:
+                pass
         if auth_state_machine:
             try:
                 await auth_state_machine.cleanup()

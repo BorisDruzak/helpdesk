@@ -16,6 +16,8 @@ alwaysApply: false
 | Новые маршруты, API, структура пакетов, контракты | **3. Доки + CODEMAP** |
 | «Что прогнать после правок», выбор pytest по изменённым файлам | **4. Тесты по диффу** |
 | Коммит, deploy на Linux, smoke, браузер, stop server, push | **5. Release / deploy** |
+| Launcher, self-update, Agent Updates UI, build upload, canary/bulk rollout | **6. Agent updates / rollout** |
+| Always-on runtime, tray, local GUI shutdown/restart, runtime logs/diagnostics | **7. Agent runtime / tray / logs** |
 
 ---
 
@@ -109,6 +111,62 @@ alwaysApply: false
 
 ---
 
+## 6. Режим «Agent updates / rollout»
+
+**Когда:** изменения в `pc_agent/launcher/*`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/*`, `pc_agent/ui_gui/*`, server-side update API/diagnostics или admin UI раздел Agent Updates.
+
+**Назначение:** выпускать agent/launcher изменения по versioned release-сценарию, а не “подменой exe”, и подтверждать успех только после handshake/diagnostics.
+
+**Делать:**
+
+- Читать и держать под рукой:
+  - `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`
+  - `pc_agent/docs/SELF_UPDATE.md`
+  - `server/docs/AGENT_UPDATES_API.md`
+  - `pc_agent/docs/CODEMAP.md`
+- Использовать skill **pc-client-agent-updates**.
+- Если меняется распространяемый бинарь, bump-ать `pc_agent/version.py`.
+- После правок прогонять verify + agent pytest + точечные server update-contract tests, если затронута серверная часть.
+- Собирать новый release через `python pc_agent/build_windows_release_v2.py`.
+- Делать upload нового build, затем canary update, затем проверять diagnostics/timeline/problem logs и только после этого запускать bulk rollout.
+
+**Не делать:**
+
+- Не выпускать новый ZIP под старой версией как обычный путь.
+- Не считать `scheduled` финальным успехом.
+- Не ограничиваться только логом агента без проверки launcher/update history/admin diagnostics.
+
+---
+
+## 7. Режим «Agent runtime / tray / logs»
+
+**Когда:** изменения в `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/*`, `pc_agent/ui_bridge/*`, lifecycle главного окна, tray, local shutdown/restart path или runtime diagnostics.
+
+**Назначение:** удержать канонический always-on сценарий: закрытие окна не останавливает агент, а runtime status/logs доступны через локальный `ui_bridge`.
+
+**Делать:**
+
+- Читать:
+  - `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`
+  - `pc_agent/docs/CODEMAP.md`
+  - `docs/QUICK_LOOKUP.md`
+- После правок прогонять:
+  - `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`
+  - `python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short`
+- Делать живой локальный сценарий через `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`:
+  - проверить `GET /ui/agent/status`
+  - закрыть окно `Maria Agent`
+  - подтвердить, что процесс и локальный API продолжают жить
+  - завершить агент через `POST /ui/agent/shutdown`
+
+**Не делать:**
+
+- Не считать `CloseMainWindow()` штатным shutdown path.
+- Не оставлять forced `DEBUG` логирование как production default.
+- Не выпускать изменения lifecycle без живой локальной проверки.
+
+---
+
 ## Сочетание режимов
 
-Задачи бывают составными: тогда порядок типично такой: **миграции или протокол/код** → **доки+CODEMAP** → **тесты по диффу** → **release**. Для одного короткого запроса держать один основной режим.
+Задачи бывают составными: тогда порядок типично такой: **миграции или протокол/код** → **agent updates / docs+CODEMAP** → **тесты по диффу** → **release**. Для одного короткого запроса держать один основной режим.

@@ -4,6 +4,8 @@ PC Agent поддерживает удалённое обновление чер
 
 **Модель v2:** агент запускается через **launcher**. Агент только скачивает артефакт и пишет `pending_update.json`, затем завершается с кодом 42. Launcher применяет обновление (распаковка, verify, переключение версии или rollback).
 
+Для операционного сценария "что менять, как версионировать, что проверять и как катить rollout" используйте канонический playbook: [AGENT_UPDATE_WORKFLOW.md](AGENT_UPDATE_WORKFLOW.md).
+
 ## Layout (per-user)
 
 - **install_root** (по умолчанию: Windows `%LOCALAPPDATA%\PCClientAgent\install`, Linux `~/.local/opt/pcclient-agent`):
@@ -72,6 +74,7 @@ PC Agent поддерживает удалённое обновление чер
 - `data_root/updates/last_failed_pending_update.json` — последний провалившийся pending payload и текст ошибки.
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
+- Если update "успешен" по логам агента, но GUI показывает `Сервер: подключение...`, проверьте локальный `ui_bridge`: поздний SSE-подписчик должен сразу получать последнее `connection_state`; см. `pc_agent/ui_bridge/event_bus.py`, `pc_agent/ui_bridge/api_server.py`.
 
 ## Распространение (exe / rpm) и готовность к обновлению
 

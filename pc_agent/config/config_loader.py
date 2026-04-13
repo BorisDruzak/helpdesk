@@ -64,6 +64,11 @@ class LoggingConfig(BaseModel):
     """Конфигурация логирования."""
     level: str = Field(default="INFO", description="Уровень логирования")
     file: str = Field(default="logs/agent.log", description="Файл логов")
+    console_level: str = Field(default="INFO", description="Уровень логирования в консоли")
+    rotation: str = Field(default="20 MB", description="Ротация файла логов")
+    retention: str = Field(default="14 days", description="Срок хранения архивных логов")
+    compression: str = Field(default="zip", description="Сжатие архивных логов")
+    enqueue: bool = Field(default=True, description="Асинхронная запись логов")
     
     @field_validator('level')
     @classmethod
@@ -82,6 +87,10 @@ class UiConfig(BaseModel):
     host: str = Field(default="127.0.0.1", description="Хост для UI API сервера")
     port: int = Field(default=8765, ge=1, le=65535, description="Порт для UI API сервера")
     autostart_gui: bool = Field(default=False, description="Автоматически запускать GUI при старте")
+    tray_enabled: bool = Field(default=True, description="Включить system tray для always-on режима")
+    minimize_to_tray: bool = Field(default=True, description="При закрытии окна сворачивать его в tray")
+    start_hidden: bool = Field(default=False, description="Запускать GUI скрытым в tray")
+    notifications_enabled: bool = Field(default=True, description="Показывать tray-уведомления")
 
 
 class ModulesConfig(BaseModel):

@@ -16,6 +16,11 @@ paths:
 logging:
   level: "INFO"
   file: "logs/agent.log"
+  console_level: "INFO"
+  rotation: "20 MB"
+  retention: "14 days"
+  compression: "zip"
+  enqueue: true
 
 enabled_modules:
   - "system"
@@ -27,4 +32,7 @@ ui:
   host: "127.0.0.1"
   port: 8766
   autostart_gui: true
-
+  tray_enabled: true
+  minimize_to_tray: true
+  start_hidden: false
+  notifications_enabled: true

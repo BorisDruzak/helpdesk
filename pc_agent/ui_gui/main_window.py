@@ -12,8 +12,10 @@ from PySide6.QtWidgets import (
     QStatusBar, QLabel, QGroupBox, QHBoxLayout, QPushButton,
     QMessageBox, QApplication, QDialog, QLineEdit, QFormLayout,
     QCheckBox, QSpinBox, QSplitter, QScrollArea, QFrame,
+    QComboBox, QPlainTextEdit,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from loguru import logger
 
 from .consent_dialog import ConsentDialog
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
         self._bridge_connected: bool = False
         self._server_connection_state: str = "starting"
         self._server_connection_detail: str = ""
+        self._runtime_logs_dir: Optional[str] = None
         
         self.setWindowTitle(f"Maria Agent v{AGENT_VERSION}")
         self.setMinimumSize(1200, 760)
@@ -241,6 +244,58 @@ class MainWindow(QMainWindow):
         ui_bridge_outer.addWidget(self.ui_bridge_hint)
         settings_layout.addWidget(ui_bridge_group)
 
+        runtime_group = QGroupBox("Always-on и логи")
+        runtime_outer = QVBoxLayout(runtime_group)
+        runtime_form = QFormLayout()
+        runtime_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.ui_tray_enabled_checkbox = QCheckBox("Включить tray")
+        self.ui_minimize_to_tray_checkbox = QCheckBox("Закрытие окна сворачивает в tray")
+        self.ui_start_hidden_checkbox = QCheckBox("Запускать окно скрытым в tray")
+        self.ui_notifications_checkbox = QCheckBox("Показывать tray-уведомления")
+        self.logging_level_combo = QComboBox()
+        self.logging_console_level_combo = QComboBox()
+        for level_name in ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]:
+            self.logging_level_combo.addItem(level_name)
+            self.logging_console_level_combo.addItem(level_name)
+        self.logging_rotation_input = QLineEdit()
+        self.logging_retention_input = QLineEdit()
+        self.logging_compression_input = QLineEdit()
+        runtime_form.addRow("", self.ui_tray_enabled_checkbox)
+        runtime_form.addRow("", self.ui_minimize_to_tray_checkbox)
+        runtime_form.addRow("", self.ui_start_hidden_checkbox)
+        runtime_form.addRow("", self.ui_notifications_checkbox)
+        runtime_form.addRow("Уровень файла:", self.logging_level_combo)
+        runtime_form.addRow("Уровень консоли:", self.logging_console_level_combo)
+        runtime_form.addRow("Rotation:", self.logging_rotation_input)
+        runtime_form.addRow("Retention:", self.logging_retention_input)
+        runtime_form.addRow("Compression:", self.logging_compression_input)
+        runtime_outer.addLayout(runtime_form)
+        diagnostics_actions = QHBoxLayout()
+        self.refresh_runtime_btn = QPushButton("Обновить диагностику")
+        self.refresh_runtime_btn.setObjectName("SecondaryButton")
+        self.refresh_runtime_btn.clicked.connect(self._on_refresh_runtime_clicked)
+        diagnostics_actions.addWidget(self.refresh_runtime_btn)
+        self.open_logs_btn = QPushButton("Открыть папку логов")
+        self.open_logs_btn.setObjectName("SecondaryButton")
+        self.open_logs_btn.clicked.connect(self._on_open_logs_clicked)
+        diagnostics_actions.addWidget(self.open_logs_btn)
+        diagnostics_actions.addStretch()
+        runtime_outer.addLayout(diagnostics_actions)
+        self.runtime_status_label = QLabel("Диагностика ещё не загружена.")
+        self.runtime_status_label.setWordWrap(True)
+        self.runtime_status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.runtime_status_label.setStyleSheet(
+            f"padding: 8px; background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; "
+            f"border-radius: 10px; color: {theme.TEXT_SECONDARY};"
+        )
+        runtime_outer.addWidget(self.runtime_status_label)
+        self.runtime_logs_view = QPlainTextEdit()
+        self.runtime_logs_view.setReadOnly(True)
+        self.runtime_logs_view.setMinimumHeight(180)
+        self.runtime_logs_view.setPlaceholderText("Последние строки agent.log появятся здесь.")
+        runtime_outer.addWidget(self.runtime_logs_view)
+        settings_layout.addWidget(runtime_group)
+
         paths_group = QGroupBox("Пути (относительно data_root)")
         paths_form = QFormLayout(paths_group)
         self.data_dir_input = QLineEdit()
@@ -336,6 +391,15 @@ class MainWindow(QMainWindow):
         self.ui_port_spin.valueChanged.connect(self._on_settings_field_changed)
         self.ui_enabled_checkbox.toggled.connect(self._on_settings_field_changed)
         self.ui_autostart_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.ui_tray_enabled_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.ui_minimize_to_tray_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.ui_start_hidden_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.ui_notifications_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.logging_level_combo.currentIndexChanged.connect(self._on_settings_field_changed)
+        self.logging_console_level_combo.currentIndexChanged.connect(self._on_settings_field_changed)
+        self.logging_rotation_input.textChanged.connect(self._on_settings_field_changed)
+        self.logging_retention_input.textChanged.connect(self._on_settings_field_changed)
+        self.logging_compression_input.textChanged.connect(self._on_settings_field_changed)
         self.data_dir_input.textChanged.connect(self._on_settings_field_changed)
         self.enabled_modules_input.textChanged.connect(self._on_settings_field_changed)
         self.allow_remote_code_checkbox.toggled.connect(self._on_settings_field_changed)
@@ -496,12 +560,23 @@ class MainWindow(QMainWindow):
                 "paths": {
                     "data_dir": self.data_dir_input.text().strip(),
                 },
+                "logging": {
+                    "level": self.logging_level_combo.currentText().strip() or "INFO",
+                    "console_level": self.logging_console_level_combo.currentText().strip() or "INFO",
+                    "rotation": self.logging_rotation_input.text().strip() or "20 MB",
+                    "retention": self.logging_retention_input.text().strip() or "14 days",
+                    "compression": self.logging_compression_input.text().strip() or "zip",
+                },
                 "enabled_modules": modules,
                 "ui": {
                     "enabled": bool(self.ui_enabled_checkbox.isChecked()),
                     "host": self.ui_host_input.text().strip() or "127.0.0.1",
                     "port": int(self.ui_port_spin.value()),
                     "autostart_gui": bool(self.ui_autostart_checkbox.isChecked()),
+                    "tray_enabled": bool(self.ui_tray_enabled_checkbox.isChecked()),
+                    "minimize_to_tray": bool(self.ui_minimize_to_tray_checkbox.isChecked()),
+                    "start_hidden": bool(self.ui_start_hidden_checkbox.isChecked()),
+                    "notifications_enabled": bool(self.ui_notifications_checkbox.isChecked()),
                 },
             }
         }
@@ -571,6 +646,40 @@ class MainWindow(QMainWindow):
                     return {"status": "ok", "result": data}
                 return data
 
+    def _on_refresh_runtime_clicked(self) -> None:
+        asyncio.create_task(self._async_load_runtime_diagnostics())
+
+    async def _async_load_runtime_diagnostics(self) -> None:
+        try:
+            status_data = await self._async_ui_request("GET", "/ui/agent/status")
+            logs_data = await self._async_ui_request("GET", "/ui/agent/logs?source=agent&lines=120")
+        except Exception as e:
+            self.runtime_status_label.setText(self._repair_text(f"Ошибка диагностики: {e}"))
+            self.runtime_logs_view.setPlainText("")
+            return
+
+        runtime = status_data
+        log_runtime = runtime.get("log_runtime") if isinstance(runtime, dict) else {}
+        self._runtime_logs_dir = str(runtime.get("logs_dir") or "") if isinstance(runtime, dict) else None
+        summary_lines = [
+            f"Device ID: {runtime.get('device_id', '—')}",
+            f"Connection: {runtime.get('connection_state', '—')} / {runtime.get('connection_detail', '')}".strip(),
+            f"Changed at: {runtime.get('connection_changed_at', '—')}",
+            f"Uptime: {runtime.get('uptime_seconds', '—')} сек",
+            f"UI bridge: {'up' if runtime.get('ui_bridge_running') else 'down'}",
+            f"Subscribers: {runtime.get('event_bus_subscribers', 0)}",
+            f"Log level: {log_runtime.get('level', '—')} (console {log_runtime.get('console_level', '—')})",
+            f"Log file: {log_runtime.get('file', '—')}",
+        ]
+        self.runtime_status_label.setText(self._repair_text("\n".join(summary_lines)))
+        self.runtime_logs_view.setPlainText(str(logs_data.get("text") or ""))
+
+    def _on_open_logs_clicked(self) -> None:
+        if not self._runtime_logs_dir:
+            QMessageBox.information(self, "Логи", "Сначала обновите диагностику, чтобы получить путь к логам.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self._runtime_logs_dir))
+
     def _format_installed_modules_text(self, modules_data: Any) -> str:
         if not isinstance(modules_data, list) or not modules_data:
             return "Нет установленных модулей."
@@ -609,6 +718,7 @@ class MainWindow(QMainWindow):
         server = settings.get("server", {})
         security = settings.get("security", {})
         paths = settings.get("paths", {})
+        logging_cfg = settings.get("logging", {}) or {}
         ui_cfg = settings.get("ui", {}) or {}
         enabled_modules = settings.get("enabled_modules", [])
         installed_modules = settings.get("installed_modules", [])
@@ -623,6 +733,15 @@ class MainWindow(QMainWindow):
         self.ui_port_spin.setValue(int(ui_cfg.get("port", 8765) or 8765))
         self.ui_enabled_checkbox.setChecked(bool(ui_cfg.get("enabled", False)))
         self.ui_autostart_checkbox.setChecked(bool(ui_cfg.get("autostart_gui", False)))
+        self.ui_tray_enabled_checkbox.setChecked(bool(ui_cfg.get("tray_enabled", True)))
+        self.ui_minimize_to_tray_checkbox.setChecked(bool(ui_cfg.get("minimize_to_tray", True)))
+        self.ui_start_hidden_checkbox.setChecked(bool(ui_cfg.get("start_hidden", False)))
+        self.ui_notifications_checkbox.setChecked(bool(ui_cfg.get("notifications_enabled", True)))
+        self.logging_level_combo.setCurrentText(str(logging_cfg.get("level", "INFO")))
+        self.logging_console_level_combo.setCurrentText(str(logging_cfg.get("console_level", "INFO")))
+        self.logging_rotation_input.setText(str(logging_cfg.get("rotation", "20 MB")))
+        self.logging_retention_input.setText(str(logging_cfg.get("retention", "14 days")))
+        self.logging_compression_input.setText(str(logging_cfg.get("compression", "zip")))
         self.data_dir_input.setText(str(paths.get("data_dir", "")))
         self.enabled_modules_input.setText(", ".join(enabled_modules if isinstance(enabled_modules, list) else []))
         self.installed_modules_label.setText(self._repair_text(self._format_installed_modules_text(installed_modules)))
@@ -633,6 +752,7 @@ class MainWindow(QMainWindow):
         token_masked = auth.get("token_masked") or self._repair_text("нет")
         self.token_hint_label.setText(self._repair_text(f"Текущий токен: {token_masked}"))
         self.config_path_label.setText(str(meta.get("config_path", "—")))
+        self._runtime_logs_dir = None
         self._repair_widget_texts(self.settings_dialog)
 
         self._settings_snapshot = self._collect_settings_payload(include_auth=False).get("settings", {})
@@ -646,6 +766,7 @@ class MainWindow(QMainWindow):
             if data.get("status") != "ok":
                 raise Exception(data.get("error", "Не удалось загрузить настройки"))
             self._apply_settings_to_form(data)
+            await self._async_load_runtime_diagnostics()
             self._set_settings_status("Настройки загружены.", error=False)
         except Exception as e:
             logger.error(f"Ошибка загрузки настроек: {e}")

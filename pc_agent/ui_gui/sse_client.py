@@ -131,7 +131,10 @@ class SseClient:
                 logger.info("SSE клиент получил сигнал отмены")
                 break
             except aiohttp.ClientError as e:
-                logger.error(f"Ошибка подключения к SSE: {e}")
+                if self._running:
+                    logger.error(f"Ошибка подключения к SSE: {e}")
+                else:
+                    logger.info(f"SSE клиент завершил transport во время shutdown: {e}")
             except Exception as e:
                 logger.error(f"Неожиданная ошибка в SSE клиенте: {e}")
             finally:
@@ -159,7 +162,6 @@ class SseClient:
         """Останавливает SSE клиент и сразу рвёт текущее соединение."""
         self._running = False
         await self._close_transport()
-
 
 
 

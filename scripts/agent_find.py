@@ -41,7 +41,7 @@ EXCLUDED_DIR_NAMES = {
     "dist",
     "build",
 }
-DEFAULT_EXTENSIONS = ("py", "js", "ts", "tsx", "md", "yaml", "yml", "json")
+DEFAULT_EXTENSIONS = ("py", "js", "ts", "tsx", "md", "mdc", "toml", "yaml", "yml", "json", "ps1")
 
 
 def decode_subprocess_output(data: bytes) -> str:
@@ -271,7 +271,7 @@ def main() -> int:
     parser.add_argument(
         "--ext",
         default=",".join(DEFAULT_EXTENSIONS),
-        help="Расширения через запятую (по умолчанию py,js,ts,tsx,md,yaml,yml,json)",
+        help="Расширения через запятую (по умолчанию py,js,ts,tsx,md,mdc,toml,yaml,yml,json,ps1)",
     )
     parser.add_argument("-n", "--max", type=int, default=0, help="Максимум строк вывода (0 = без лимита)")
     parser.add_argument("--fixed-strings", action="store_true", help="Искать как обычную строку, а не regex")

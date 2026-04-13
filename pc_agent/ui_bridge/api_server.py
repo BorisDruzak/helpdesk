@@ -8,6 +8,7 @@ HTTP API сервер для UI Bridge.
 """
 
 import asyncio
+import inspect
 import errno
 import json
 from typing import Callable, Optional, Dict, Any, Union, Awaitable, List, Set
@@ -48,6 +49,9 @@ class UiApiServer:
         on_update_settings: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_test_connection: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_restart_agent: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_shutdown_agent: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_get_runtime_status: Optional[Callable[[], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_get_runtime_logs: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_chat_send: Optional[
             Callable[..., Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]
         ] = None,
@@ -70,6 +74,9 @@ class UiApiServer:
         self.on_update_settings = on_update_settings
         self.on_test_connection = on_test_connection
         self.on_restart_agent = on_restart_agent
+        self.on_shutdown_agent = on_shutdown_agent
+        self.on_get_runtime_status = on_get_runtime_status
+        self.on_get_runtime_logs = on_get_runtime_logs
         self.on_chat_send = on_chat_send
         self.app = web.Application()
         self.runner: Optional[web.AppRunner] = None
@@ -98,6 +105,9 @@ class UiApiServer:
         self.app.router.add_post("/ui/settings", self.handle_update_settings)
         self.app.router.add_post("/ui/settings/test_connection", self.handle_test_connection)
         self.app.router.add_post("/ui/agent/restart", self.handle_restart_agent)
+        self.app.router.add_post("/ui/agent/shutdown", self.handle_shutdown_agent)
+        self.app.router.add_get("/ui/agent/status", self.handle_runtime_status)
+        self.app.router.add_get("/ui/agent/logs", self.handle_runtime_logs)
         
         # Health check
         self.app.router.add_get("/health", self.handle_health)
@@ -165,6 +175,10 @@ class UiApiServer:
             
             # Отправляем начальное сообщение
             await response.write(b": connected\n\n")
+            for replay_event in self.event_bus.get_replay_events():
+                event_json = json.dumps(replay_event, ensure_ascii=False)
+                message = f"data: {event_json}\n\n"
+                await response.write(message.encode("utf-8"))
             
             while True:
                 try:
@@ -296,7 +310,7 @@ class UiApiServer:
             
             # Вызываем callback если он установлен
             if self.on_consent_decision:
-                if asyncio.iscoroutinefunction(self.on_consent_decision):
+                if inspect.iscoroutinefunction(self.on_consent_decision):
                     await self.on_consent_decision(decision)
                 else:
                     self.on_consent_decision(decision)
@@ -471,7 +485,7 @@ class UiApiServer:
         """Вызывает callback, поддерживая sync/async варианты."""
         if func is None:
             return None
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return await func(*args)
         result = func(*args)
         if asyncio.iscoroutine(result):
@@ -601,6 +615,92 @@ class UiApiServer:
                 status=500,
                 headers={"Access-Control-Allow-Origin": "*"},
             )
+
+    async def handle_shutdown_agent(self, request: Request) -> Response:
+        """Обработчик POST /ui/agent/shutdown."""
+        if not self.on_shutdown_agent:
+            return web.json_response(
+                {"status": "error", "error": "shutdown handler not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        try:
+            result = await self._invoke_maybe_async(self.on_shutdown_agent, payload)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except ValueError as e:
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=400,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+    async def handle_runtime_status(self, request: Request) -> Response:
+        """Обработчик GET /ui/agent/status."""
+        if not self.on_get_runtime_status:
+            return web.json_response(
+                {"status": "error", "error": "runtime status provider not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        try:
+            result = await self._invoke_maybe_async(self.on_get_runtime_status)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+    async def handle_runtime_logs(self, request: Request) -> Response:
+        """Обработчик GET /ui/agent/logs."""
+        if not self.on_get_runtime_logs:
+            return web.json_response(
+                {"status": "error", "error": "runtime logs provider not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        payload = {
+            "source": request.query.get("source", "agent"),
+            "lines": request.query.get("lines", "120"),
+        }
+        try:
+            result = await self._invoke_maybe_async(self.on_get_runtime_logs, payload)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except ValueError as e:
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=400,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
     
     async def _abort_start(self) -> None:
         """Откат после неудачного bind (иначе runner течёт и повторный start снова падает)."""
@@ -643,6 +743,9 @@ class UiApiServer:
             logger.info(f"   - POST /ui/settings (как PATCH)")
             logger.info(f"   - POST /ui/settings/test_connection")
             logger.info(f"   - POST /ui/agent/restart")
+            logger.info(f"   - POST /ui/agent/shutdown")
+            logger.info(f"   - GET  /ui/agent/status")
+            logger.info(f"   - GET  /ui/agent/logs")
             logger.info(f"   - GET  /health")
             return True
 

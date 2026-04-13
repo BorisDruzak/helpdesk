@@ -22,6 +22,8 @@ description: Run the right tests for pc_client changes. Use when running local c
 | **Любая** | `python scripts/verify_workspace.py` |
 | **Сервер (server/)** | `python -m pytest server/tests/ -v --tb=short` (или точечно: `server/tests/test_*.py`) |
 | **Агент (pc_agent/)** | `python -m pytest pc_agent/tests/ -v --tb=short` |
+| **Agent self-update / launcher / Agent Updates UI** | `python -m pytest pc_agent/tests/ -v --tb=short`, `python -m pytest server/tests/test_p0_workbench_update_contracts.py -v --tb=short`, при затронутом `ui_bridge` — точечно `pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`, затем rebuild release artifact и canary update по playbook `pc-client-agent-updates` |
+| **Always-on / tray / runtime logs** | `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`, `python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short`, затем живой E2E через `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>` и проверка close-to-tray + `POST /ui/agent/shutdown` |
 | **Только быстрые тесты сервера** | `python -m pytest server/tests/ -v --tb=short -m "not slow"` (если помечены) или выбрать конкретные файлы |
 | **Smoke по живому серверу** | `python scripts/manage_remote_stack.py status control`, затем `python scripts/manage_remote_stack.py smoke server` (сервер на Linux уже запущен) или локально: `python scripts/smoke_test.py` с `BASE_URL=...` |
 | **Админ / run_tool** | После smoke — сценарий в браузере по `http://192.168.100.17:8666/admin` (см. скилл pc-client-browser-check). |
