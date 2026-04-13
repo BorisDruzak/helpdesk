@@ -4113,7 +4113,7 @@
         }
 
         async function loadTechControlPanels() {
-            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'warning,error,critical';
+            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'debug,info,notice,warning,error,critical';
             const limitValue = document.getElementById('techServerLogsLimit')?.value || '200';
             const searchValue = document.getElementById('techServerLogsSearch')?.value || '';
             const headers = techControlHeaders();
@@ -4212,7 +4212,7 @@
         }
 
         async function techDownloadServerLogs() {
-            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'warning,error,critical';
+            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'debug,info,notice,warning,error,critical';
             const limitValue = document.getElementById('techServerLogsLimit')?.value || '200';
             const searchValue = document.getElementById('techServerLogsSearch')?.value || '';
             const response = await fetch(

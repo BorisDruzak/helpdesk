@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -164,6 +165,36 @@ def _parse_optional_int(raw: str | None) -> int | None:
     return value if value > 0 else None
 
 
+def _to_utc_iso(timestamp: datetime) -> str:
+    value = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _parse_systemd_timestamp(raw: str | None) -> str | None:
+    text = str(raw or "").strip()
+    if not text or text.lower() in {"n/a", "0"}:
+        return None
+    parsed_usec = _parse_optional_int(text)
+    if parsed_usec:
+        return datetime.fromtimestamp(parsed_usec / 1_000_000, tz=timezone.utc).isoformat()
+    normalized_text = re.sub(r"([+-]\d{2})$", lambda match: f"{match.group(1)}00", text)
+    for candidate in (text, normalized_text):
+        for pattern in (
+        "%a %Y-%m-%d %H:%M:%S %z",
+        "%a %Y-%m-%d %H:%M:%S %Z",
+        "%Y-%m-%d %H:%M:%S %z",
+        "%Y-%m-%d %H:%M:%S %Z",
+        ):
+            try:
+                return _to_utc_iso(datetime.strptime(candidate, pattern))
+            except ValueError:
+                continue
+    try:
+        return _to_utc_iso(datetime.fromisoformat(text))
+    except ValueError:
+        return None
+
+
 def _parse_usec_timestamp(raw: str | None) -> str | None:
     usec = _parse_optional_int(raw)
     if not usec:
@@ -209,14 +240,18 @@ def get_unit_status(target: str, *, pending_action: str | None = None) -> dict[s
             "Result",
             "ExecMainPID",
             "MainPID",
+            "ActiveEnterTimestamp",
             "ActiveEnterTimestampUSec",
+            "InactiveEnterTimestamp",
             "InactiveEnterTimestampUSec",
             "ExecMainStatus",
             "UnitFileState",
             "FragmentPath",
         ),
     )
-    started_at = _parse_usec_timestamp(show.get("ActiveEnterTimestampUSec"))
+    started_at = _parse_systemd_timestamp(show.get("ActiveEnterTimestampUSec")) or _parse_systemd_timestamp(
+        show.get("ActiveEnterTimestamp")
+    )
     active_state = str(show.get("ActiveState") or "").strip().lower() or "unknown"
     sub_state = str(show.get("SubState") or "").strip().lower() or "unknown"
     main_pid = _parse_optional_int(show.get("ExecMainPID")) or _parse_optional_int(show.get("MainPID"))
@@ -229,7 +264,8 @@ def get_unit_status(target: str, *, pending_action: str | None = None) -> dict[s
         "result": str(show.get("Result") or "").strip() or None,
         "main_pid": main_pid,
         "started_at": started_at,
-        "stopped_at": _parse_usec_timestamp(show.get("InactiveEnterTimestampUSec")),
+        "stopped_at": _parse_systemd_timestamp(show.get("InactiveEnterTimestampUSec"))
+        or _parse_systemd_timestamp(show.get("InactiveEnterTimestamp")),
         "uptime_sec": _uptime_seconds(started_at) if active_state == "active" else None,
         "exec_main_status": _parse_optional_int(show.get("ExecMainStatus")),
         "unit_file_state": str(show.get("UnitFileState") or "").strip() or None,
