@@ -62,7 +62,7 @@ from pc_agent.core.single_instance import SingleInstanceLock
 from pc_agent.auth.connection_request import run_connection_request_flow
 from pc_agent.auth.gui_auth_state_machine import GuiAuthStateMachine
 from pc_agent.auth.rejected_flag import connection_rejected_flag_path
-from pc_agent.auth.token_source import load_auth_token
+from pc_agent.auth.token_source import load_auth_token, load_auth_token_from_db
 
 
 def _configure_utf8_stdio() -> None:
@@ -2213,7 +2213,7 @@ class WSAgent:
                 waited += 1
                 try:
                     if self.db_manager:
-                        token = await self.db_manager.get_auth_token(self.identity_manager.device_id)
+                        token = await load_auth_token_from_db(self.db_manager, self.identity_manager)
                         if token:
                             logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
                             return token
@@ -2392,11 +2392,15 @@ class WSAgent:
             ok, rejected = await self.request_connection_flow()
             if not ok:
                 if rejected:
-                    try:
-                        flag_path.parent.mkdir(parents=True, exist_ok=True)
-                        flag_path.write_text("rejected", encoding="utf-8")
-                    except Exception as e:
-                        logger.warning(f"Не удалось записать флаг отклонения: {e}")
+                    error_code = getattr(self.identity_manager, "last_connection_request_error_code", None)
+                    if error_code != "DEVICE_ARCHIVED":
+                        try:
+                            flag_path.parent.mkdir(parents=True, exist_ok=True)
+                            flag_path.write_text("rejected", encoding="utf-8")
+                        except Exception as e:
+                            logger.warning(f"Не удалось записать флаг отклонения: {e}")
+                    else:
+                        logger.info("Локальный reject-флаг не записан: устройство архивировано на сервере")
                 return
             # Токен получен и сохранён в request_connection_flow(), продолжаем
 
@@ -3100,7 +3104,7 @@ async def main_async(
             identity_device_id = getattr(agent.identity_manager, "device_id", None) or getattr(agent.identity_manager, "uuid", None)
             if agent.db_manager and identity_device_id:
                 for attempt in range(max(1, retries)):
-                    token_from_db_local = await agent.db_manager.get_auth_token(identity_device_id)
+                    token_from_db_local = await load_auth_token_from_db(agent.db_manager, agent.identity_manager)
                     if token_from_db_local:
                         break
                     if delay > 0 and attempt + 1 < max(1, retries):

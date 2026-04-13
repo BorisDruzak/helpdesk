@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Protocol, Tuple
 
 from loguru import logger
+from pc_agent.auth.token_source import load_auth_token_from_db
 
 
 class _AgentProtocol(Protocol):
@@ -65,12 +66,16 @@ class GuiAuthStateMachine:
                     return
                 if rejected:
                     self.transition(GuiAuthState.REJECTED, "server rejected device")
-                    flag_path = self.agent._connection_rejected_flag_path()
-                    try:
-                        flag_path.parent.mkdir(parents=True, exist_ok=True)
-                        flag_path.write_text("rejected", encoding="utf-8")
-                    except Exception as exc:
-                        logger.warning(f"[GuiAuthStateMachine] failed to persist reject flag: {exc}")
+                    error_code = getattr(self.agent.identity_manager, "last_connection_request_error_code", None)
+                    if error_code != "DEVICE_ARCHIVED":
+                        flag_path = self.agent._connection_rejected_flag_path()
+                        try:
+                            flag_path.parent.mkdir(parents=True, exist_ok=True)
+                            flag_path.write_text("rejected", encoding="utf-8")
+                        except Exception as exc:
+                            logger.warning(f"[GuiAuthStateMachine] failed to persist reject flag: {exc}")
+                    else:
+                        logger.info("[GuiAuthStateMachine] archived-device rejection is not persisted as local reject flag")
                     return
                 self.transition(GuiAuthState.POLLING, "request flow ended without token")
             except asyncio.CancelledError:
@@ -91,11 +96,10 @@ class GuiAuthStateMachine:
     async def load_token_from_db(self, retries: int = 10, delay: float = 0.1) -> Optional[str]:
         if not getattr(self.agent, "db_manager", None) or not getattr(self.agent, "identity_manager", None):
             return None
-        device_id = getattr(self.agent.identity_manager, "uuid", None)
-        if not device_id:
+        if not getattr(self.agent.identity_manager, "device_id", None):
             return None
         for _ in range(max(1, retries)):
-            token = await self.agent.db_manager.get_auth_token(device_id)
+            token = await load_auth_token_from_db(self.agent.db_manager, self.agent.identity_manager)
             if token:
                 self.transition(GuiAuthState.TOKEN_READY, "token loaded from DB")
                 return token
@@ -109,4 +113,3 @@ class GuiAuthStateMachine:
                 await self._connection_task
             except asyncio.CancelledError:
                 pass
-

@@ -167,6 +167,7 @@ async def _resolve_handshake_device_id(
     *,
     token_info: dict[str, Any],
     payload_device_id: Optional[str],
+    payload_install_id: Optional[str] = None,
 ) -> str:
     token_device_id = token_info["device_id"]
     if not payload_device_id or payload_device_id == token_device_id:
@@ -184,6 +185,35 @@ async def _resolve_handshake_device_id(
             tokens_repo = AuthTokensRepo(session)
 
             payload_device = await devices_repo.get_by_device_id(payload_device_id)
+            if payload_install_id and payload_install_id == token_device_id:
+                if payload_device and getattr(payload_device, "deleted_at", None) is not None:
+                    return token_device_id
+                if not payload_device:
+                    await devices_repo.ensure_device_exists(payload_device_id)
+                rebound = await tokens_repo.rebind_agent_token(
+                    token_hash=token_info["token_hash"],
+                    new_device_id=payload_device_id,
+                )
+                if not rebound:
+                    return token_device_id
+
+                logger.warning(
+                    f"🔃 Rebound legacy install-based agent token {token_info.get('token_prefix', '')} "
+                    f"from device_id={token_device_id} to canonical machine_id={payload_device_id}"
+                )
+                await write_agent_runtime_audit(
+                    device_id=payload_device_id,
+                    event_type="token_rebound",
+                    severity="warning",
+                    source="handshake",
+                    details_json={
+                        "from_device_id": token_device_id,
+                        "token_prefix": token_info.get("token_prefix"),
+                        "reason": "legacy_install_id_migration",
+                        "install_id": payload_install_id,
+                    },
+                )
+                return payload_device_id
             if not payload_device or _is_provision_stub(payload_device):
                 return token_device_id
 
@@ -370,6 +400,7 @@ async def handle_handshake(
     device_id = await _resolve_handshake_device_id(
         token_info=token_info,
         payload_device_id=payload_device_id,
+        payload_install_id=payload_install_id,
     )
     agent_id = device_id
     

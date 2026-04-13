@@ -71,7 +71,7 @@
 4. При невалидном токене соединение закрывается с кодом 4003, «Invalid token».
 5. **Критично:** `device_id` берётся **только из записи токена в БД**, не из payload.
 6. Identity v1: сервер трактует `device_id` как канонический `machine_id`. Поля `payload.machine_id` и `payload.install_id` принимаются как metadata; `payload.machine_id` должен совпадать с top-level `device_id`, а `install_id` не должен использоваться как primary auth identity.
-7. **Controlled reprovision:** если токен был выдан на свежий placeholder-`device_id`, но агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает этот токен к уже существующему `device_id`, а затем продолжает handshake. Это нужно, чтобы новый токен не создавал дубль агента.
+7. **Controlled reprovision / migration:** если токен был выдан на свежий placeholder-`device_id`, но агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает этот токен к уже существующему `device_id`, а затем продолжает handshake. Тот же контролируемый путь допускается для миграции legacy install-based token binding: когда token-bound `device_id == payload.install_id`, а канонический `payload.device_id` уже равен `machine_id`, сервер может один раз перебиндить токен на canonical `machine_id`, записав это в runtime audit как migration.
 8. Если payload `device_id` не подходит под controlled reprovision, используется `device_id` из токена и пишется предупреждение в лог.
 9. После успешной проверки создаётся `AuthContext(actor_id=device_id, actor_role="agent", auth_type=AuthType.AGENT_TOKEN)` и сохраняется в метаданных соединения.
 
@@ -178,6 +178,7 @@
   - обязательно закрывает все существующие `pending` записи в `connection_requests` для этого `device_id`, чтобы не копились ложные stale-request алерты в техпанели.
 - При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а токен выдаётся только после ручного approve оператором.
 - При `reject_all` токен не выдаётся, а агент получает `403 CONNECTION_REJECTED`.
+- Если pending-запрос отклонён по причине архивированного устройства, status API должен возвращать `error_code=DEVICE_ARCHIVED`, чтобы агент не сохранял вечный локальный reject-флаг и мог повторить provisioning после административного восстановления устройства.
 
 ### 5.2 UI token: POST /api/ui_login
 

@@ -26,7 +26,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown; при auth bootstrap умеет fallback lookup токена по `machine_id -> install_id -> legacy uuid` и не фиксирует вечный local reject при `DEVICE_ARCHIVED` |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI, lifecycle окна, minimize-to-tray, start-hidden, явный exit path и cleanup локальных SSE/API ресурсов |
@@ -73,8 +73,8 @@
 ### 2.3.1 Аутентификация и bootstrap подключения
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/auth/token_source.py` | Источник токена: `AUTH_TOKEN` → `auth_tokens` → optional GUI callback |
-| `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus |
+| `pc_agent/auth/token_source.py` | Источник токена: `AUTH_TOKEN` → `auth_tokens` → optional GUI callback; controlled migration локального токена с legacy install-based ID на canonical `machine_id` |
+| `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus; различает обычный reject и `DEVICE_ARCHIVED`, чтобы не оставлять agent в вечном локальном rejected-state |
 | `pc_agent/auth/gui_auth_state_machine.py` | Явные состояния GUI-авторизации (`NoToken -> RequestSent -> Polling -> TokenReady/WsConnecting`) |
 | `pc_agent/auth/rejected_flag.py` | Путь к локальному флагу `connection_rejected.flag` |
 
@@ -126,7 +126,7 @@
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`
 - **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
 - **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
-- **аутентификация, machine_id, install_id, токен** — `core/identity.py`, `core/machine_identity.py`, `auth/token_source.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен)
+- **аутентификация, machine_id, install_id, токен** — `core/identity.py`, `core/machine_identity.py`, `auth/token_source.py`, `auth/connection_request.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен; migration lookup идёт по `machine_id -> install_id -> legacy uuid`)
 - **always-on, tray, runtime logs, локальный shutdown/status/logs** — `docs/AGENT_RUNTIME_ALWAYS_ON.md`, `ws_agent.py`, `core/runtime_logging.py`, `ui_gui/main.py`, `ui_gui/tray_manager.py`, `ui_bridge/api_server.py`
 - **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from loguru import logger
 
+from pc_agent.auth.token_source import load_auth_token_from_db
 from pc_agent.core import runtime_paths
 from .main_window import MainWindow
 from .sse_client import SseClient
@@ -106,7 +107,7 @@ async def get_stored_token() -> Optional[str]:
         device_uuid = identity_data.get('uuid')
         
         if device_uuid and db_manager:
-            token = await db_manager.get_auth_token(device_uuid)
+            token = await load_auth_token_from_db(db_manager, identity_manager)
             if token:
                 logger.debug("✅ Токен найден в БД агента")
                 return token

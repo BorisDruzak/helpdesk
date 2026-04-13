@@ -28,6 +28,7 @@ class _FakeEventBus:
 class _FakeIdentity:
     def __init__(self):
         self.token = None
+        self.last_connection_request_error_code = None
 
 
 class _FakeResponse:
@@ -202,6 +203,68 @@ async def test_connection_request_pending_then_rejected(monkeypatch):
 
     assert (ok, rejected) == (False, True)
     assert any(e["event_type"] == "connection_rejected" for e in bus.events)
+    assert identity.last_connection_request_error_code == "CONNECTION_REJECTED"
+
+
+@pytest.mark.asyncio
+async def test_connection_request_pending_then_archived(monkeypatch):
+    bus = _FakeEventBus()
+    identity = _FakeIdentity()
+
+    monkeypatch.setattr(
+        flow_mod,
+        "ClientSession",
+        lambda: _FakeSession(
+            [
+                _FakeResponse(200, {"status": "pending"}),
+                _FakeResponse(200, {"status": "pending"}),
+            ],
+            [_FakeResponse(200, {"status": "rejected", "error_code": "DEVICE_ARCHIVED", "message": "Device archived"})],
+        ),
+    )
+
+    async def _fast_sleep(_):
+        return None
+
+    monkeypatch.setattr(flow_mod.asyncio, "sleep", _fast_sleep)
+
+    ok, rejected = await flow_mod.run_connection_request_flow(
+        api_url="http://example/api",
+        device_id="dev-archived",
+        hostname="host-archived",
+        db_manager=None,
+        identity_manager=identity,
+        event_bus=bus,
+        wait_seconds=30,
+    )
+
+    assert (ok, rejected) == (False, True)
+    assert identity.last_connection_request_error_code == "DEVICE_ARCHIVED"
+
+
+@pytest.mark.asyncio
+async def test_connection_request_archived_409(monkeypatch):
+    bus = _FakeEventBus()
+    identity = _FakeIdentity()
+
+    monkeypatch.setattr(
+        flow_mod,
+        "ClientSession",
+        lambda: _FakeSession([_FakeResponse(409, {"status": "rejected", "error_code": "DEVICE_ARCHIVED", "message": "Device archived"})], []),
+    )
+
+    ok, rejected = await flow_mod.run_connection_request_flow(
+        api_url="http://example/api",
+        device_id="dev-archived-409",
+        hostname="host-archived-409",
+        db_manager=None,
+        identity_manager=identity,
+        event_bus=bus,
+        wait_seconds=30,
+    )
+
+    assert (ok, rejected) == (False, True)
+    assert identity.last_connection_request_error_code == "DEVICE_ARCHIVED"
 
 
 @pytest.mark.asyncio

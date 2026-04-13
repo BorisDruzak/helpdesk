@@ -130,3 +130,60 @@ async def test_handshake_rebinds_fresh_token_to_existing_device(test_client):
     assert rebound_token.device_id == existing_device_id
     assert rebound_device is not None
     assert phantom_device is None
+
+
+@pytest.mark.asyncio
+async def test_handshake_rebinds_legacy_install_token_to_machine_id(test_client):
+    legacy_install_id = str(uuid.uuid4())
+    canonical_machine_id = str(uuid.uuid4())
+    await _insert_real_device(legacy_install_id, hostname="legacy-install-host")
+
+    auth_service = AuthService(test_client.app["state"])
+    token = await auth_service.generate_agent_token(
+        device_id=legacy_install_id,
+        expires_hours=24,
+    )
+
+    ws = _HandshakeWsStub()
+    request = SimpleNamespace(remote="127.0.0.1", headers={"User-Agent": "pytest"})
+    handshake_message = {
+        "type": "handshake",
+        "protocol_version": "ws_ticket_v3",
+        "device_id": canonical_machine_id,
+        "token": token,
+        "meta": {"capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
+        "payload": {
+            "uuid": canonical_machine_id,
+            "machine_id": canonical_machine_id,
+            "install_id": legacy_install_id,
+            "hostname": "canonical-host",
+            "agent_version": "3.1.0",
+            "os": "Windows",
+            "os_type": "windows",
+            "modules": [],
+        },
+    }
+
+    _, _, resolved_device_id, authenticated = await handle_handshake(
+        ws=ws,
+        data=handshake_message,
+        request=request,
+        state=test_client.app["state"],
+    )
+
+    assert authenticated is True
+    assert ws.closed is False
+    assert resolved_device_id == canonical_machine_id
+
+    async with get_session() as session:
+        rebound_token = (
+            await session.execute(
+                select(AgentToken).where(AgentToken.token_hash == AuthTokensRepo.hash_token(token))
+            )
+        ).scalar_one()
+        canonical_device = await session.get(Device, canonical_machine_id)
+        legacy_device = await session.get(Device, legacy_install_id)
+
+    assert rebound_token.device_id == canonical_machine_id
+    assert canonical_device is not None
+    assert legacy_device is not None

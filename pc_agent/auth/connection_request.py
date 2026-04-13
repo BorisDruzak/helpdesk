@@ -20,6 +20,15 @@ async def _publish_event(event_bus: Any, event_type: str, data: dict[str, Any]) 
     )
 
 
+def _set_last_error_code(identity_manager: Any, error_code: Optional[str]) -> None:
+    if identity_manager is None:
+        return
+    try:
+        setattr(identity_manager, "last_connection_request_error_code", error_code)
+    except Exception:
+        pass
+
+
 async def run_connection_request_flow(
     api_url: str,
     device_id: str,
@@ -35,8 +44,8 @@ async def run_connection_request_flow(
 
     Returns:
         (True, False) — токен получен и сохранён, можно подключаться по WS.
-        (False, True) — явно отклонено администратором (нужно записать флаг).
-        (False, False) — ошибка или таймаут ожидания (флаг не ставить).
+        (False, True) — явно отклонено администратором или соединение заблокировано.
+        (False, False) — ошибка или таймаут ожидания.
     """
     api_url = (api_url or "").rstrip("/")
     if not api_url:
@@ -47,6 +56,7 @@ async def run_connection_request_flow(
         return (False, False)
     if metadata is None:
         metadata = {}
+    _set_last_error_code(identity_manager, None)
 
     async with ClientSession() as session:
         try:
@@ -65,11 +75,23 @@ async def run_connection_request_flow(
 
         if resp.status == 403:
             data = await resp.json() if resp.content_type == "application/json" else {}
+            _set_last_error_code(identity_manager, data.get("error_code") or "CONNECTION_REJECTED")
             logger.warning(f"Администратор отклонил подключение: {data.get('message', '')}")
             await _publish_event(
                 event_bus,
                 "connection_rejected",
                 {"message": "Администратор отклонил подключение"},
+            )
+            return (False, True)
+
+        if resp.status == 409:
+            data = await resp.json() if resp.content_type == "application/json" else {}
+            _set_last_error_code(identity_manager, data.get("error_code") or "CONNECTION_BLOCKED")
+            logger.warning(f"Запрос на подключение заблокирован: {data.get('message', '')}")
+            await _publish_event(
+                event_bus,
+                "connection_rejected",
+                {"message": data.get("message") or "Запрос на подключение заблокирован"},
             )
             return (False, True)
 
@@ -102,13 +124,10 @@ async def run_connection_request_flow(
                 {"message": "Дождитесь авторизации от Администратора"},
             )
             logger.info("Запрос на подключение в ожидании; ожидаю одобрения/отклонения администратором...")
-            # Ожидаем одобрения/отклонения: каждые 5 сек обновляем запрос (POST) и опрашиваем статус (GET)
-            # — чтобы в админке запрос отображался только пока агент активен
             poll_interval = 5
             deadline = time.monotonic() + wait_seconds
             while time.monotonic() < deadline:
                 await asyncio.sleep(poll_interval)
-                # Heartbeat: POST обновляет last_request_at на сервере (запрос остаётся в списке админки)
                 try:
                     await session.post(
                         f"{api_url}/connection_request",
@@ -147,11 +166,12 @@ async def run_connection_request_flow(
                         await _publish_event(event_bus, "connection_approved", {})
                         return (True, False)
                 elif st == "rejected":
+                    _set_last_error_code(identity_manager, status_data.get("error_code") or "CONNECTION_REJECTED")
                     logger.warning("Администратор отклонил подключение")
                     await _publish_event(
                         event_bus,
                         "connection_rejected",
-                        {"message": "Администратор отклонил подключение"},
+                        {"message": status_data.get("message") or "Администратор отклонил подключение"},
                     )
                     return (False, True)
             logger.warning("Таймаут ожидания одобрения администратором")

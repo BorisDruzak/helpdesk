@@ -7,9 +7,11 @@ Tests for connection request API (device authorization flow).
 - GET /api/admin/connection_requests, POST approve/reject (admin)
 """
 import uuid
+from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select, text
-from app.db.models import ConnectionRequest
+from app.db.models import ConnectionRequest, Device
+from app.db import get_session
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
@@ -211,6 +213,41 @@ async def test_admin_reject_request(test_client, test_engine):
     assert r2.status == 200
     data2 = await r2.json()
     assert data2.get("status") == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_connection_request_status_reports_archived_rejection(test_client, test_engine):
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+    await test_client.post("/api/connection_request", json={"device_id": device_id})
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                first_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc),
+                last_handshake_at=datetime.now(timezone.utc),
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.0",
+                hostname="archived-host",
+                os="Windows",
+                capabilities={},
+                tools_version=None,
+                current_toolset_hash=None,
+                device_metadata={},
+            )
+        )
+        await session.commit()
+
+    await test_client.delete(f"/api/devices/{device_id}", headers=_admin_headers())
+
+    response = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    payload = await response.json()
+
+    assert response.status == 200
+    assert payload["status"] == "rejected"
+    assert payload["error_code"] == "DEVICE_ARCHIVED"
 
 
 @pytest.mark.asyncio

@@ -39,7 +39,7 @@
 |------|------------|
 | `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter` |
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
-| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata и controlled reprovision токена на уже известный `device_id` |
+| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata, controlled reprovision токена на уже известный `device_id` и migration rebind legacy install-based token binding -> canonical `machine_id` |
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
 | `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
@@ -113,7 +113,7 @@
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
 | `server/uploads/` | handlers |
-| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service; `handlers.py` также содержит UI login/session endpoints |
+| `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств, включая `DEVICE_ARCHIVED` status/error_code для агента), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service; `handlers.py` также содержит UI login/session endpoints |
 | `server/playbook_handlers.py` | Старт playbook run |
 | `server/static_pages/` | handlers для login/admin/support/ticket/public_queue/help и их CSS/JS shell-файлов |
 
@@ -145,7 +145,7 @@
 
 Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
 
-- **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md`
+- **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md` (включая migration rebind legacy install-based token -> canonical `machine_id`)
 - **outbox_ack, outbox_nack** — `websocket/agent_services.py`, `websocket/outbox_ingest_components.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
 - **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`)

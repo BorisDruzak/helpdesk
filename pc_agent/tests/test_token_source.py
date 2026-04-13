@@ -9,21 +9,35 @@ from pc_agent.auth.token_source import load_auth_token
 
 
 class _FakeDb:
-    def __init__(self, token=None):
+    def __init__(self, token=None, tokens=None):
         self._token = token
+        self._tokens = dict(tokens or {})
         self.saved = []
 
-    async def get_auth_token(self, _device_id):
+    async def get_auth_token(self, device_id):
+        if self._tokens:
+            return self._tokens.get(device_id)
         return self._token
 
     async def save_auth_token(self, token, device_id):
         self.saved.append((token, device_id))
+        if self._tokens is not None:
+            self._tokens[device_id] = token
 
 
 class _FakeIdentity:
-    def __init__(self, uid="dev-1"):
+    def __init__(self, uid="dev-1", install_id=None):
         self.uuid = uid
+        self.machine_id = uid
+        self.install_id = install_id
+        self.device_id = uid
         self.token = None
+
+    def auth_lookup_ids(self):
+        result = [self.device_id]
+        if self.install_id:
+            result.append(self.install_id)
+        return result
 
 
 @pytest.mark.asyncio
@@ -85,4 +99,17 @@ async def test_load_auth_token_returns_none_when_missing_everywhere(monkeypatch)
 
     assert token is None
     assert identity.token is None
+
+
+@pytest.mark.asyncio
+async def test_load_auth_token_falls_back_to_legacy_install_id_and_migrates(monkeypatch):
+    monkeypatch.delenv("AUTH_TOKEN", raising=False)
+    identity = _FakeIdentity("machine-dev", install_id="legacy-install")
+    db = _FakeDb(tokens={"legacy-install": "legacy-token"})
+
+    token = await load_auth_token(db, identity)
+
+    assert token == "legacy-token"
+    assert identity.token == "legacy-token"
+    assert db.saved == [("legacy-token", "machine-dev")]
 

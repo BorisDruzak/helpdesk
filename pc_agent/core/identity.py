@@ -43,6 +43,7 @@ class IdentityManager:
         self.uuid: Optional[str] = None
         self.machine_id: Optional[str] = None
         self.install_id: Optional[str] = None
+        self.legacy_uuid: Optional[str] = None
         self.machine_id_source: Optional[str] = None
         self.token: Optional[str] = None
 
@@ -106,6 +107,8 @@ class IdentityManager:
         self.machine_id = machine_id
         self.uuid = machine_id
         self.install_id = install_id
+        legacy_uuid = previous_data.get("legacy_uuid")
+        self.legacy_uuid = legacy_uuid if self.is_valid_uuid(legacy_uuid) else None
         self.machine_id_source = machine_id_source
         self.token = None
 
@@ -161,6 +164,31 @@ class IdentityManager:
             "machine_id_source": self.machine_id_source,
             "identity_scheme": "machine_id_v1",
         }
+
+    def auth_lookup_ids(self) -> list[str]:
+        """
+        Candidate device IDs for local auth token lookup.
+
+        During migration from legacy install-based identity to canonical
+        machine_id identity, existing local tokens may still be stored under
+        install_id (former device_id). We look up those IDs as fallbacks so the
+        runtime can reuse the token and let the server perform controlled
+        rebinding on first successful handshake.
+        """
+        candidates = [
+            self.device_id,
+            self.install_id,
+            self.legacy_uuid,
+            self.uuid,
+        ]
+        result: list[str] = []
+        for item in candidates:
+            if not self.is_valid_uuid(item):
+                continue
+            normalized = str(item).lower()
+            if normalized not in result:
+                result.append(normalized)
+        return result
 
     def clear_token(self) -> None:
         self.token = None

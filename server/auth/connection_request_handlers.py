@@ -217,6 +217,11 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
         status = await repo.get_status(device_id)
+        latest_request = await repo.get_latest_by_device_id(device_id)
+        archived_reject = False
+        if latest_request and status == "rejected":
+            metadata = latest_request.request_metadata if isinstance(latest_request.request_metadata, dict) else {}
+            archived_reject = bool(metadata.get("archived_at"))
 
     if not status:
         return web.json_response({
@@ -229,6 +234,12 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
             "message": "Already approved; token was delivered earlier. Request a new connection if needed.",
         })
     if status == "rejected":
+        if archived_reject:
+            return web.json_response({
+                "status": "rejected",
+                "message": "Device archived by administrator",
+                "error_code": "DEVICE_ARCHIVED",
+            })
         return web.json_response({
             "status": "rejected",
             "message": "Administrator rejected connection",

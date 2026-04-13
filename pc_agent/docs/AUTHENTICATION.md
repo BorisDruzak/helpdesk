@@ -11,7 +11,7 @@ PC Agent использует **Bearer-токен аутентификацию**
 | № | Источник | Описание |
 |---|----------|----------|
 | 1 | **ENV `AUTH_TOKEN`** | Переменная окружения. Наивысший приоритет. При наличии сохраняется в БД агента. |
-| 2 | **Таблица `auth_tokens`** | Основной персистентный источник. Хранит токены в SQLite `storage.db`. |
+| 2 | **Таблица `auth_tokens`** | Основной персистентный источник. Хранит токены в SQLite `storage.db`; lookup идёт сначала по каноническому `machine_id`, а затем по legacy secondary ID (`install_id`, исторический `uuid`) для controlled migration. |
 | 3 | **identity.json** | Legacy. Токен в поле `token`. Не рекомендуется — основной источник теперь БД. |
 
 ### Переменная окружения AUTH_TOKEN
@@ -39,6 +39,10 @@ python ws_agent.py --no-gui
 - `DatabaseManager.save_auth_token(token, device_id)` — сохранить/обновить токен
 - `DatabaseManager.get_auth_token(device_id)` — получить активный токен
 - `DatabaseManager.clear_auth_token(device_id)` — очистить токен при ошибке авторизации
+
+**Migration rule:**
+- После перехода на canonical `machine_id` агент при чтении локального токена обязан проверять цепочку `machine_id -> install_id -> legacy uuid`.
+- Если активный токен найден под legacy install-based ID, агент локально дублирует его под канонический `machine_id`, чтобы следующий запуск уже шёл без fallback.
 
 Подробнее: [DATABASE.md](DATABASE.md#таблица-auth_tokens).
 
@@ -74,6 +78,7 @@ python ws_agent.py --no-gui
 1. Удаление `identity.json` больше не должно создавать новый логический агент на том же устройстве.
 2. При повторной регистрации после удаления `identity.json` агент должен прийти с тем же `machine_id`, но с новым `install_id`.
 3. Сервер может использовать `install_id` только для диагностики, аудита, controlled reprovision и UI summary, но не как источник auth identity.
+4. Если локальная БД ещё хранит токен под legacy install-based ID, агент должен корректно мигрировать его на канонический `machine_id` без запроса нового токена у пользователя.
 
 ### Как агент получает machine_id
 
@@ -119,6 +124,16 @@ python ws_agent.py --no-gui
 - `payload.install_id` передаётся как secondary metadata и не должен использоваться сервером как primary identity.
 - При отсутствии токена поле `token` может быть `null` — сервер зарегистрирует попытку подключения.
 
+### Controlled migration legacy install-based token -> machine_id
+
+Во время перехода со старой install-based identity на canonical `machine_id` допустим специальный серверный путь:
+
+- в записи токена в БД сервера `device_id` ещё равен legacy `install_id`;
+- агент в top-level `device_id` и `payload.machine_id` уже передаёт канонический `machine_id`;
+- `payload.install_id` совпадает с `device_id` токена.
+
+В этом случае сервер во время handshake имеет право один раз перепривязать активный token binding с legacy `install_id` на canonical `machine_id`, записать это в runtime audit и продолжить handshake без ручного перевыпуска токена. Это миграционный сценарий, а не новая постоянная identity-модель.
+
 ## Обработка ошибок аутентификации
 
 Сервер может закрыть WebSocket с кодом **4003** при невалидном токене:
@@ -135,6 +150,14 @@ python ws_agent.py --no-gui
 2. Сервер регистрирует попытку подключения (например, в `pending_connections`).
 3. Администратор может выдать токен через панель сервера.
 4. Пользователь вводит токен через GUI или ENV и переподключается.
+
+### Архивированное устройство и повторный provisioning
+
+Если сервер отклоняет connection request с причиной `DEVICE_ARCHIVED`, агент должен:
+
+- показать пользователю понятное сообщение об архивированном устройстве;
+- не создавать «вечную» локальную блокировку через `connection_rejected.flag`;
+- позволить повторный provisioning после административного восстановления устройства или смены identity на новом устройстве.
 
 ## GUI и диалог авторизации
 
