@@ -580,10 +580,7 @@ body {
 }
 
 .workspace-shell-head {
-    display: grid;
-    gap: 16px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
+    display: block;
 }
 
 .workspace-mode-switch {
@@ -623,6 +620,7 @@ body {
     display: grid;
     gap: 14px;
     grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
     padding: 16px 18px;
 }
 
@@ -656,7 +654,7 @@ body {
     display: grid;
     gap: 14px;
     grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
 }
 
 .queue-inline-group {
@@ -747,7 +745,7 @@ body {
     display: grid;
     flex: 1;
     gap: 16px;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
     min-height: 0;
     overflow: hidden;
 }
@@ -756,6 +754,14 @@ body {
 .queue-side-card,
 .queue-board-card {
     min-height: 0;
+}
+
+.queue-side-rail {
+    order: 0;
+}
+
+.queue-board-card {
+    order: 1;
 }
 
 .queue-side-card {
