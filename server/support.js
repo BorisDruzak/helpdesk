@@ -11,7 +11,7 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260413c';
+    const SUPPORT_SHELL_VERSION = '20260413d';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -897,7 +897,7 @@
         if (!listNode || !metaNode) {
             return;
         }
-        const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: true });
+        const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const hiddenClosedNote = state.hiddenClosedCount > 0
             ? (' • Закрытые старше 1 дня скрыты: ' + state.hiddenClosedCount)
@@ -1632,7 +1632,7 @@
         renderTicketList();
         if (!state.selectedTicketId) {
             const preferred = visibleTickets.find((ticket) => ticket.ticket_id === sessionStorage.getItem(LAST_TICKET_KEY))
-                || filteredTickets({ includeUnassignedInMine: state.workspaceView === WORKSPACE_VIEWS.TICKET })[0]
+                || filteredTickets({ includeUnassignedInMine: false })[0]
                 || visibleTickets[0]
                 || null;
             if (preferred) {
