@@ -220,6 +220,24 @@ body {
     padding: 14px 18px;
 }
 
+.support-topbar-copy {
+    display: grid;
+    gap: 4px;
+    max-width: 720px;
+}
+
+.support-topbar-copy h2 {
+    font-family: var(--support-heading-font);
+    font-size: 24px;
+    margin: 0;
+}
+
+.support-topbar-copy-text {
+    color: var(--support-muted);
+    line-height: 1.45;
+    margin: 0;
+}
+
 .support-brand h1 {
     font-size: 22px;
 }
@@ -562,21 +580,10 @@ body {
 }
 
 .workspace-shell-head {
-    align-items: start;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.68), rgba(240, 245, 240, 0.58));
-    border: 1px solid rgba(185, 175, 155, 0.38);
-    border-radius: 22px;
     display: grid;
     gap: 16px;
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 18px 20px;
-}
-
-.workspace-shell-text {
-    color: var(--support-muted);
-    line-height: 1.6;
-    margin: 10px 0 0;
-    max-width: 760px;
+    align-items: start;
 }
 
 .workspace-mode-switch {
@@ -612,6 +619,73 @@ body {
     color: #fff;
 }
 
+.queue-command-deck {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 16px 18px;
+}
+
+.queue-command-head {
+    align-items: end;
+    display: flex;
+    gap: 12px;
+    grid-column: 1;
+    justify-content: space-between;
+}
+
+.queue-command-deck > #workspaceModeSwitch {
+    align-self: start;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+}
+
+.queue-command-title h3 {
+    font-family: var(--support-heading-font);
+    font-size: 24px;
+    margin: 0;
+}
+
+.queue-command-head > h2,
+.queue-command-head > .workspace-shell-text {
+    display: none;
+}
+
+.queue-command-tools {
+    display: grid;
+    gap: 14px;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+}
+
+.queue-inline-group {
+    display: grid;
+    gap: 10px;
+}
+
+#queueHeadSummaryStrip {
+    grid-column: 1 / -1;
+}
+
+.support-layout:not(.queue-mode) .queue-command-deck {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+}
+
+.support-layout:not(.queue-mode) .queue-command-head,
+.support-layout:not(.queue-mode) #queueHeadSummaryStrip,
+.support-layout:not(.queue-mode) .queue-command-tools {
+    display: none;
+}
+
+.support-layout:not(.queue-mode) .queue-command-deck > #workspaceModeSwitch {
+    grid-column: 1;
+    justify-self: end;
+}
+
 .workspace-desk {
     display: flex;
     flex: 1;
@@ -637,6 +711,11 @@ body {
     display: grid;
     gap: 12px;
     grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.queue-desk > #queueSummaryStrip,
+.queue-desk > .queue-toolbar-card {
+    display: none;
 }
 
 .queue-toolbar-card {
@@ -707,7 +786,8 @@ body {
     display: grid;
     gap: 2px 12px;
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 12px 14px;
+    min-height: 84px;
+    padding: 10px 12px;
 }
 
 .queue-summary-line[data-tone="risk"] {
@@ -731,7 +811,7 @@ body {
 .queue-summary-line-value {
     color: var(--support-text);
     font-family: var(--support-heading-font);
-    font-size: 26px;
+    font-size: 24px;
     line-height: 1;
 }
 
@@ -1560,6 +1640,21 @@ body {
         --sidebar-width: clamp(280px, 24vw, 340px);
     }
 
+    .support-topbar {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .support-topbar-main,
+    .support-topbar-actions {
+        width: 100%;
+    }
+
+    .support-topbar-main {
+        align-items: start;
+        flex-wrap: wrap;
+    }
+
     .workspace-shell {
         --ticket-workbench-width: clamp(292px, 25vw, 344px);
     }
@@ -1590,7 +1685,7 @@ body {
     .workspace-shell-head,
     .ticket-toolbar-row,
     .ticket-desk-layout,
-    .queue-toolbar-groups,
+    .queue-command-tools,
     .queue-desk-grid,
     .queue-ticket-card-grid,
     .queue-ticket-expander-body {
@@ -1616,6 +1711,16 @@ body {
     .workspace-mode-switch {
         flex-wrap: wrap;
         width: 100%;
+    }
+
+    .queue-command-deck {
+        grid-template-columns: 1fr;
+    }
+
+    .queue-command-deck > #workspaceModeSwitch {
+        grid-column: 1;
+        grid-row: auto;
+        justify-self: stretch;
     }
 
     .workspace-mode-chip {

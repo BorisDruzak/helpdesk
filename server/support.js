@@ -11,7 +11,7 @@
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260413b';
+    const SUPPORT_SHELL_VERSION = '20260413c';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -1213,11 +1213,11 @@
     }
 
     function renderQueueDesk() {
-        const summaryNode = byId('queueSummaryStrip');
-        const filterNode = byId('queueFilterDock');
-        const sortNode = byId('queueSortDock');
+        const summaryNode = byId('queueHeadSummaryStrip') || byId('queueSummaryStrip');
+        const filterNode = byId('queueHeadFilterDock') || byId('queueFilterDock');
+        const sortNode = byId('queueHeadSortDock') || byId('queueSortDock');
         const actionNode = byId('queueActionDock');
-        const boardMetaNode = byId('queueBoardMeta');
+        const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);

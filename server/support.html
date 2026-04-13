@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260413b">
+    <link rel="stylesheet" href="/support.css?v=20260413c">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -40,6 +40,11 @@
                 <div class="support-brand">
                     <p class="support-brand-eyebrow">Help Desk</p>
                     <h1>Support Workspace</h1>
+                </div>
+                <div class="support-topbar-copy">
+                    <p class="section-eyebrow">Workspace</p>
+                    <h2>Операционная панель поддержки</h2>
+                    <p class="support-topbar-copy-text">Сначала разбирайте очередь и риски по SLA/OLA, затем переключайтесь в режим точечной работы по выбранному тикету.</p>
                 </div>
             </div>
             <div class="support-topbar-actions">
@@ -89,14 +94,30 @@
 
             <main id="workspaceShell" class="workspace-shell">
                 <section class="workspace-shell-head">
-                    <div class="workspace-shell-copy">
-                        <p class="section-eyebrow">Workspace</p>
+                    <section id="queueCommandDeck" class="support-card queue-command-deck">
+                        <div class="queue-command-head">
+                            <div class="queue-command-title">
+                                <p class="section-eyebrow">Очередь тикетов</p>
+                                <h3>Панель очереди</h3>
+                            </div>
+                            <div id="queueHeadBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         <h2>Операционная панель поддержки</h2>
                         <p class="workspace-shell-text">Сначала разбирайте очередь и риски по SLA/OLA, затем переключайтесь в режим точечной работы по выбранному тикету.</p>
                     </div>
                     <div id="workspaceModeSwitch" class="workspace-mode-switch" role="tablist" aria-label="Режим работы поддержки">
                         <button class="workspace-mode-chip active" type="button" data-workspace-view="queue">Очередь тикетов</button>
                         <button class="workspace-mode-chip" type="button" data-workspace-view="ticket">Рабочий тикет</button>
+                    </div>
+                    <div id="queueHeadSummaryStrip" class="queue-summary-strip"></div>
+                    <div class="queue-command-tools">
+                        <div class="queue-inline-group">
+                            <span class="queue-stack-title">Фильтр списка</span>
+                            <div id="queueHeadFilterDock" class="quick-action-row"></div>
+                        </div>
+                        <div class="queue-inline-group">
+                            <span class="queue-stack-title">Сортировка</span>
+                            <div id="queueHeadSortDock" class="quick-action-row"></div>
+                        </div>
                     </div>
                 </section>
 
@@ -302,6 +323,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260413b"></script>
+    <script src="/support.js?v=20260413c"></script>
 </body>
 </html>
