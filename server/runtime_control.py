@@ -321,15 +321,16 @@ def start_target(target: str) -> subprocess.CompletedProcess[str]:
 
 def stop_target(target: str) -> subprocess.CompletedProcess[str]:
     if target == "server":
-        _run([str(SERVER_PYTHON), "scripts/stop_server.py"], cwd=WORKSPACE_ROOT, check=False)
         _stop_unit(SERVER_UNIT)
+        _reset_failed(SERVER_UNIT)
         return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
     if target == "agent":
-        _run([str(AGENT_PYTHON), "scripts/stop_agent.py"], cwd=WORKSPACE_ROOT, check=False)
         _stop_unit(AGENT_UNIT)
+        _reset_failed(AGENT_UNIT)
         return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
     if target == "control":
         _stop_unit(CONTROL_UNIT)
+        _reset_failed(CONTROL_UNIT)
         return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
     raise ValueError(f"Unsupported target: {target}")
 
