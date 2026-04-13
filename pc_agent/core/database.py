@@ -2574,11 +2574,24 @@ class DatabaseManager:
                     WHERE device_id = ? AND is_active = 1
                 """, (device_id,))
                 
-                # Сохраняем новый токен
-                await db.execute("""
-                    INSERT INTO auth_tokens (token, device_id, created_at, is_active)
-                    VALUES (?, ?, ?, 1)
-                """, (token, device_id, time.time()))
+                # Если такой токен уже существует под legacy device_id,
+                # перепривязываем его к каноническому device_id вместо вставки.
+                cursor = await db.execute("""
+                    SELECT token FROM auth_tokens WHERE token = ?
+                """, (token,))
+                existing = await cursor.fetchone()
+
+                if existing:
+                    await db.execute("""
+                        UPDATE auth_tokens
+                        SET device_id = ?, is_active = 1, created_at = ?
+                        WHERE token = ?
+                    """, (device_id, time.time(), token))
+                else:
+                    await db.execute("""
+                        INSERT INTO auth_tokens (token, device_id, created_at, is_active)
+                        VALUES (?, ?, ?, 1)
+                    """, (token, device_id, time.time()))
                 
                 await db.commit()
                 logger.info(f"[DatabaseManager] Токен сохранен для device_id={device_id[:8]}...")

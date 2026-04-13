@@ -2609,12 +2609,11 @@ class WSAgent:
                                             should_exit = True
                                             break
                                     else:
-                                        # GUI включен - не очищаем токен, просто ждем авторизации через GUI
-                                        logger.info("🖥️ GUI включен, ожидаю авторизации через GUI...")
-                                        logger.info("💡 Если вы вставили токен в identity.json вручную, перезапустите агент")
-                                        # Не завершаем работу - GUI должен показать диалог при следующем запуске
-                                        should_exit = True
-                                        break
+                                        logger.info("🖥️ GUI включен, запускаю automatic reprovision flow...")
+                                        if not await self._request_token_from_console():
+                                            logger.error("❌ Не удалось получить токен. Завершение работы.")
+                                            should_exit = True
+                                            break
                                     
                                     logger.info("✅ Токен получен. Переподключаемся...")
                                     continue  # Переподключаемся
@@ -2755,12 +2754,8 @@ class WSAgent:
                                         logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                         logger.info("=" * 70)
                                         
-                                        gui_enabled = get_config().ui and get_config().ui.enabled
-                                        if not gui_enabled:
-                                            if not await self._request_token_from_console():
-                                                logger.error("❌ Не удалось получить токен. Завершение работы.")
-                                                should_exit = True
-                                        else:
+                                        if not await self._request_token_from_console():
+                                            logger.error("❌ Не удалось получить токен. Завершение работы.")
                                             should_exit = True
                                     else:
                                         logger.error(f"❌ Ошибка при чтении сообщений: {read_error}")
@@ -2797,12 +2792,8 @@ class WSAgent:
                                         logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                                         logger.info("=" * 70)
                                         
-                                        gui_enabled = get_config().ui and get_config().ui.enabled
-                                        if not gui_enabled:
-                                            if not await self._request_token_from_console():
-                                                logger.error("❌ Не удалось получить токен. Завершение работы.")
-                                                should_exit = True
-                                        else:
+                                        if not await self._request_token_from_console():
+                                            logger.error("❌ Не удалось получить токен. Завершение работы.")
                                             should_exit = True
                             
                             # Останавливаем flusher при разрыве соединения
@@ -2869,13 +2860,8 @@ class WSAgent:
                             logger.info("   4. Скопируйте токен и вставьте его в диалог ниже")
                             logger.info("=" * 70)
                             
-                            gui_enabled = get_config().ui and get_config().ui.enabled
-                            if not gui_enabled:
-                                if not await self._request_token_from_console():
-                                    logger.error("❌ Не удалось получить токен. Завершение работы.")
-                                    should_exit = True
-                                    break
-                            else:
+                            if not await self._request_token_from_console():
+                                logger.error("❌ Не удалось получить токен. Завершение работы.")
                                 should_exit = True
                                 break
                             
