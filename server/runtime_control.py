@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -177,6 +177,24 @@ def _parse_systemd_timestamp(raw: str | None) -> str | None:
     parsed_usec = _parse_optional_int(text)
     if parsed_usec:
         return datetime.fromtimestamp(parsed_usec / 1_000_000, tz=timezone.utc).isoformat()
+    offset_match = re.match(
+        r"^(?P<head>(?:[A-Za-z]{3}\s+)?\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<sign>[+-])(?P<hours>\d{2})(?::?(?P<minutes>\d{2}))?$",
+        text,
+    )
+    if offset_match:
+        head = offset_match.group("head")
+        offset_hours = int(offset_match.group("hours"))
+        offset_minutes = int(offset_match.group("minutes") or "0")
+        total_minutes = offset_hours * 60 + offset_minutes
+        if offset_match.group("sign") == "-":
+            total_minutes *= -1
+        tzinfo = timezone(timezone.utc.utcoffset(None) + timedelta(minutes=total_minutes))
+        for pattern in ("%a %Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(head, pattern).replace(tzinfo=tzinfo)
+                return _to_utc_iso(parsed)
+            except ValueError:
+                continue
     normalized_text = re.sub(r"([+-]\d{2})$", lambda match: f"{match.group(1)}00", text)
     for candidate in (text, normalized_text):
         for pattern in (

@@ -15,5 +15,9 @@ def test_parse_systemd_timestamp_supports_textual_systemctl_value():
     assert _parse_systemd_timestamp("Mon 2026-04-13 19:29:18 +05") == "2026-04-13T14:29:18+00:00"
 
 
+def test_parse_systemd_timestamp_supports_textual_offset_with_colon():
+    assert _parse_systemd_timestamp("2026-04-13 19:29:18 +05:00") == "2026-04-13T14:29:18+00:00"
+
+
 def test_parse_systemd_timestamp_ignores_na():
     assert _parse_systemd_timestamp("n/a") is None
