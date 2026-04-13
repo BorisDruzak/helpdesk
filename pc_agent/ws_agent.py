@@ -56,7 +56,7 @@ from ui_bridge.models import ConsentDecision
 from ui_gui.server_api import TicketApiClient
 from ui_bridge.settings_service import AgentSettingsService
 from core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
-from pc_agent.version import AGENT_VERSION
+from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
 from pc_agent.core.single_instance import SingleInstanceLock
 from pc_agent.auth.connection_request import run_connection_request_flow
 from pc_agent.auth.gui_auth_state_machine import GuiAuthStateMachine
@@ -177,6 +177,9 @@ class WSAgent:
         self._housekeeping_task: Optional[asyncio.Task] = None
         self._consent_cleanup_task: Optional[asyncio.Task] = None
         self._scheduler_task: Optional[asyncio.Task] = None
+        self._shutdown_task: Optional[asyncio.Task] = None
+        self._run_task: Optional[asyncio.Task] = None
+        self._requested_exit_code: int = 0
         
         # Process-local dedupe: command_id -> Future с результатом (для in_progress без дубля)
         self._running_commands: Dict[str, asyncio.Future] = {}
@@ -198,8 +201,8 @@ class WSAgent:
         self._current_ticket_id: Optional[str] = None
         self._current_job_id: Optional[str] = None
 
-    def _get_latest_applied_update_confirmation(self) -> Optional[Dict[str, str]]:
-        """Returns the latest successful launcher-applied update for handshake confirmation."""
+    def _get_latest_update_handshake_payload(self) -> Optional[Dict[str, str]]:
+        """Returns the latest launcher-applied update result for handshake diagnostics."""
         try:
             data_root = self._data_root or runtime_paths.resolve_data_root()
             history_path = Path(data_root) / "updates" / "update_history.json"
@@ -208,21 +211,37 @@ class WSAgent:
             history_raw = jsonlib.loads(history_path.read_text(encoding="utf-8"))
             if not isinstance(history_raw, list):
                 return None
-            successful = [
-                item for item in history_raw
-                if isinstance(item, dict) and item.get("success") is True and item.get("version") and item.get("operation_id")
-            ]
-            if not successful:
+            entries = [item for item in history_raw if isinstance(item, dict)]
+            if not entries:
                 return None
-            successful.sort(key=lambda item: item.get("at") or "", reverse=True)
-            latest = successful[0]
-            return {
-                "applied_update_version": str(latest["version"]),
-                "last_update_operation_id": str(latest["operation_id"]),
+            entries.sort(key=lambda item: item.get("at") or "", reverse=True)
+            latest = entries[0]
+            version = latest.get("version")
+            operation_id = latest.get("operation_id")
+            if not version or not operation_id:
+                return None
+            if latest.get("success") is True:
+                return {
+                    "applied_update_version": str(version),
+                    "last_update_operation_id": str(operation_id),
+                }
+            payload = {
+                "failed_update_version": str(version),
+                "failed_update_operation_id": str(operation_id),
+                "failed_update_reason": str(latest.get("reason") or "update_failed"),
             }
+            if latest.get("at"):
+                payload["failed_update_at"] = str(latest["at"])
+            if latest.get("message"):
+                payload["failed_update_message"] = str(latest["message"])
+            return payload
         except Exception as exc:
             logger.debug(f"[update] latest applied update confirmation unavailable: {exc}")
             return None
+
+    @property
+    def requested_exit_code(self) -> int:
+        return self._requested_exit_code
 
     def _validate_server_config(self, ws_url: str, api_url: str) -> None:
         """Предупреждает о потенциальной misconfig target-host."""
@@ -350,6 +369,7 @@ class WSAgent:
                 enabled_modules=cfg.enabled_modules,
                 identity_manager=self.identity_manager,
                 data_root=data_root,
+                schedule_update_exit=self.schedule_update_shutdown,
             )
             
             # Инициализируем оркестратор (загружает модули)
@@ -769,6 +789,72 @@ class WSAgent:
             "delay_sec": delay_sec,
             "reason": reason,
         }
+
+    async def schedule_update_shutdown(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Планирует clean shutdown с exit code 42, чтобы launcher применил pending update.
+        """
+        payload = payload or {}
+        delay_sec_raw = payload.get("delay_sec", 2)
+        reason = str(payload.get("reason") or "self_update")
+        version = str(payload.get("version") or "")
+        operation_id = str(payload.get("operation_id") or "")
+        try:
+            delay_sec = float(delay_sec_raw)
+        except (TypeError, ValueError):
+            delay_sec = 2.0
+        delay_sec = max(0.2, min(delay_sec, 60.0))
+
+        if self._shutdown_task and not self._shutdown_task.done():
+            return {
+                "status": "ok",
+                "scheduled": True,
+                "already_scheduled": True,
+                "delay_sec": delay_sec,
+                "exit_code": EXIT_UPDATE_PENDING,
+            }
+
+        self._requested_exit_code = EXIT_UPDATE_PENDING
+        self._shutdown_task = asyncio.create_task(
+            self._shutdown_for_update(
+                delay_sec=delay_sec,
+                reason=reason,
+                version=version,
+                operation_id=operation_id,
+            ),
+            name="agent.update_shutdown",
+        )
+        logger.warning(
+            f"♻️ Запланирован clean shutdown под update через {delay_sec:.1f}с "
+            f"(version={version or '—'}, operation_id={(operation_id[:8] + '...') if operation_id else '—'})"
+        )
+        return {
+            "status": "ok",
+            "scheduled": True,
+            "delay_sec": delay_sec,
+            "reason": reason,
+            "exit_code": EXIT_UPDATE_PENDING,
+        }
+
+    async def _shutdown_for_update(
+        self,
+        *,
+        delay_sec: float,
+        reason: str,
+        version: str,
+        operation_id: str,
+    ) -> None:
+        await asyncio.sleep(delay_sec)
+        try:
+            await self._publish_connection_state("restarting", f"self-update: {version or 'pending'}")
+        except Exception:
+            pass
+        logger.warning(
+            f"♻️ Выполняю clean shutdown под update "
+            f"(reason={reason}, version={version or '—'}, operation_id={(operation_id[:8] + '...') if operation_id else '—'})"
+        )
+        if self._run_task and not self._run_task.done():
+            self._run_task.cancel()
 
     async def _restart_self(self, delay_sec: float, reason: str) -> None:
         """Выполняет self-restart через os.execv."""
@@ -2262,6 +2348,7 @@ class WSAgent:
         if not self._http_session:
             self._http_session = ClientSession()
         
+        self._run_task = asyncio.current_task()
         try:
             async with ClientSession() as session:
                 while True:
@@ -2281,7 +2368,7 @@ class WSAgent:
                             handshake_data = self.identity_manager.get_handshake_data()
                             handshake_request_id = str(uuid.uuid4())
                             handshake_trace_id = str(uuid.uuid4())
-                            latest_update_confirmation = self._get_latest_applied_update_confirmation()
+                            latest_update_confirmation = self._get_latest_update_handshake_payload()
                             
                             # Получить tools_list через orchestrator для toolset_hash
                             try:
@@ -2391,9 +2478,8 @@ class WSAgent:
                             if latest_update_confirmation:
                                 handshake_message["payload"].update(latest_update_confirmation)
                                 logger.info(
-                                    "[update] Including applied update confirmation in handshake: "
-                                    f"version={latest_update_confirmation['applied_update_version']} "
-                                    f"operation_id={latest_update_confirmation['last_update_operation_id'][:8]}..."
+                                    "[update] Including latest update report in handshake: "
+                                    + ", ".join(f"{key}={value}" for key, value in latest_update_confirmation.items())
                                 )
 
                             self._current_trace_id = handshake_trace_id
@@ -2740,7 +2826,10 @@ class WSAgent:
                     await asyncio.sleep(get_config().server.reconnect_interval)
         
         except asyncio.CancelledError:
-            logger.info("🛑 Получен сигнал отмены, выполняю clean shutdown...")
+            if self._requested_exit_code == EXIT_UPDATE_PENDING:
+                logger.info("🛑 Получен сигнал update shutdown, выполняю clean shutdown под launcher exit code 42...")
+            else:
+                logger.info("🛑 Получен сигнал отмены, выполняю clean shutdown...")
             # Закрываем WebSocket соединение явно, иначе выход из ws_connect может зависать на closing handshake.
             if self._agent_ws and not self._agent_ws.closed:
                 try:
@@ -2771,6 +2860,8 @@ class WSAgent:
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     logger.debug("Ожидание остановки WSOutboxFlusher превысило таймаут")
             raise
+        finally:
+            self._run_task = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2905,7 +2996,7 @@ async def main_async(
     enable_gui: bool = True,
     data_root: Optional[Path] = None,
     install_root: Optional[Path] = None,
-):
+) -> int:
     """
     Главная асинхронная функция.
 
@@ -2928,6 +3019,7 @@ async def main_async(
     logger.info("=" * 70)
 
     agent = WSAgent(data_root=data_root, install_root=install_root)
+    exit_code = 0
     
     # Событие для остановки
     stop_event = asyncio.Event()
@@ -3085,9 +3177,13 @@ async def main_async(
                 pass
             except asyncio.TimeoutError:
                 logger.warning("⚠️ Агент не завершился за 5 секунд после закрытия GUI")
-        
+
         # Если агент завершился, останавливаем GUI
         if agent_task in done:
+            try:
+                await agent_task
+            except asyncio.CancelledError:
+                exit_code = agent.requested_exit_code or 0
             if gui_task:
                 logger.info("🛑 Агент завершился, останавливаю GUI...")
                 gui_task.cancel()
@@ -3101,6 +3197,7 @@ async def main_async(
     except KeyboardInterrupt:
         logger.info("⛔ Получен сигнал остановки (Ctrl+C)")
     except Exception as e:
+        exit_code = 1
         logger.error(f"❌ Критическая ошибка: {e}")
         logger.exception(e)
     finally:
@@ -3115,6 +3212,7 @@ async def main_async(
         except asyncio.TimeoutError:
             logger.warning("⚠️ Очистка агента превысила таймаут 8 секунд")
         logger.info("👋 Завершение работы агента")
+    return exit_code
 
 
 def main():
@@ -3158,10 +3256,11 @@ def main():
             # Создаем qasync event loop
             loop = qasync.QEventLoop(app)
             asyncio.set_event_loop(loop)
+            exit_code = 0
             
             # Запускаем главную функцию в qasync loop
             with loop:
-                loop.run_until_complete(main_async(enable_gui=True, data_root=data_root, install_root=install_root))
+                exit_code = loop.run_until_complete(main_async(enable_gui=True, data_root=data_root, install_root=install_root))
                 # После возврата main_async завершаем приложение. app.quit() только ставит событие в очередь;
                 # без повторного запуска цикла процесс зависал. Ждём фактического выхода (aboutToQuit).
                 quit_done = loop.create_future()
@@ -3177,18 +3276,19 @@ def main():
                     loop.run_until_complete(asyncio.wait_for(quit_done, timeout=3.0))
                 except asyncio.TimeoutError:
                     pass
+            raise SystemExit(exit_code)
         except ImportError:
             logger.error("❌ qasync или PySide6 не установлены. Установите: pip install qasync PySide6")
             logger.info("💡 Запускаю без GUI...")
-            asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root))
+            raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
         except Exception as e:
             logger.error(f"❌ Ошибка запуска GUI: {e}")
             logger.exception(e)
             logger.info("💡 Запускаю без GUI...")
-            asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root))
+            raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
     else:
         try:
-            asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root))
+            raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
         except KeyboardInterrupt:
             pass
 

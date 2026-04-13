@@ -152,6 +152,15 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
 
 Сервер использует эти поля как post-restart confirmation и только после этого переводит `agent_update` в `succeeded`.
 
+Если launcher не смог применить update и оставил текущую версию, агент добавляет в следующий `handshake`:
+- `payload.failed_update_version`
+- `payload.failed_update_operation_id`
+- `payload.failed_update_reason`
+- `payload.failed_update_at`
+- `payload.failed_update_message`
+
+Сервер использует эти поля как post-restart failure report и переводит соответствующий `agent_update` в `failed` без ожидания watchdog timeout.
+
 **От сервера к агенту (handshake_ack):**
 ```json
 {
@@ -564,4 +573,3 @@ Protocol V3 (замечание 1.7): `device_id` всегда должен бы
 - [WSOutboxFlusher документация](SENDER.md) — детали отправки событий
 - [AgentOrchestrator документация](ORCHESTRATOR.md) — обработка команд
 - [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) — узкие места и риски проекта
-

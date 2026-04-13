@@ -17,7 +17,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Awaitable, Callable, Dict, Any, List, Optional
 from time import perf_counter
 from loguru import logger as _logger
 import hashlib
@@ -102,6 +102,7 @@ class AgentOrchestrator:
         agent_uuid: Optional[str] = None,
         identity_manager: Optional[IdentityManager] = None,
         data_root: Optional[Path] = None,
+        schedule_update_exit: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
     ):
         """
         Инициализация оркестратора.
@@ -122,6 +123,7 @@ class AgentOrchestrator:
         self.identity_manager = identity_manager
         self.job_manager: Optional[JobManager] = None
         self._data_root = data_root
+        self.schedule_update_exit = schedule_update_exit
 
         # Для tools_changed event (Этап B, C)
         self.device_id = agent_uuid  # device_id совпадает с agent_uuid
@@ -1652,6 +1654,7 @@ class AgentOrchestrator:
                 "received_at": received_at,
                 "operation_id": operation_id,
                 "requested_by": requested_by,
+                "requested_reason": command.get("reason"),
                 "sha256": dl_sha256,
                 "size": dl_size,
             }
@@ -1662,8 +1665,18 @@ class AgentOrchestrator:
             if isinstance(restart_delay_sec, int) and 0 <= restart_delay_sec <= 60:
                 restart_delay = restart_delay_sec
             try:
-                loop = asyncio.get_running_loop()
-                loop.call_later(restart_delay, lambda: os._exit(EXIT_UPDATE_PENDING))
+                if self.schedule_update_exit is not None:
+                    await self.schedule_update_exit(
+                        {
+                            "delay_sec": restart_delay,
+                            "reason": "self_update",
+                            "version": version,
+                            "operation_id": operation_id,
+                        }
+                    )
+                else:
+                    loop = asyncio.get_running_loop()
+                    loop.call_later(restart_delay, lambda: os._exit(EXIT_UPDATE_PENDING))
             except Exception as e:
                 logger.warning(f"[update] Failed to schedule exit: {e}")
 

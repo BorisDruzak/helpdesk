@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import AgentBuild, Artifact, Device, Operation, Ticket, TicketEvent
+from app.db.models import AgentBuild, AgentRuntimeAudit, Artifact, Device, DeviceOutbox, Operation, Ticket, TicketEvent
 from app.db.engine import async_sessionmaker
 from app.repos.operations_repo import OperationsRepo
-from tests.conftest import TEST_UI_ADMIN_TOKEN
+from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 from websocket.agent_handshake import handle_handshake
 from websocket.agent_services import CommandResultService
 from websocket.contexts import AgentConnectionContext
@@ -113,6 +113,30 @@ async def test_single_update_response_has_operation_object(test_client):
     assert data["operation"]["operation_id"] == data["operation_id"]
     assert data["operation"]["status"] == "queued"
     assert data["build"]["target"] == "windows_amd64"
+
+    async with get_session() as session:
+        op_repo = OperationsRepo(session)
+        operation = await op_repo.get_by_operation_id(data["operation_id"])
+        assert operation is not None
+        assert operation.deadline_at is not None
+        assert int((operation.deadline_at - operation.queued_at).total_seconds()) >= 110
+
+
+@pytest.mark.asyncio
+async def test_list_agent_builds_returns_archive_metadata_for_authorized_role(test_client):
+    version = await _insert_build(target="windows_amd64")
+
+    resp = await test_client.get(
+        "/api/agent_builds?limit=10",
+        headers={"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"},
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    build = next(item for item in data["builds"] if item["version"] == version)
+    assert build["archive_type"] == "zip"
+    assert build["mime_type"] == "application/zip"
+    assert build["artifact_filename"].endswith(".zip")
 
 
 @pytest.mark.asyncio
@@ -255,6 +279,8 @@ async def test_agent_update_marked_succeeded_only_after_handshake_confirm(test_c
         assert operation is not None
         assert operation.status == "running"
         assert operation.finished_at is None
+        assert operation.deadline_at is not None
+        assert int((operation.deadline_at - operation.started_at).total_seconds()) >= 1700
 
     # 3) Simulate reconnect handshake confirming applied version and operation id.
     policy_resp = await test_client.patch(
@@ -302,6 +328,150 @@ async def test_agent_update_marked_succeeded_only_after_handshake_confirm(test_c
         assert operation is not None
         assert operation.status == "succeeded"
         assert operation.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_agent_update_marked_failed_from_handshake_failed_report(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    version = await _insert_build(target="windows_amd64")
+
+    test_client.app["state"].is_agent_online = lambda _device_id: True
+    with patch("agents.agent_builds_handlers.enqueue_command_async") as mocked_enqueue:
+        async def _noop(**kwargs):
+            return "ok"
+        mocked_enqueue.side_effect = _noop
+        update_resp = await test_client.post(
+            f"/api/devices/{device_id}/agent/update",
+            headers={**_admin_headers(), "Content-Type": "application/json"},
+            json={"target": "windows_amd64", "channel": "stable", "version": version, "reason": "prod hardening"},
+        )
+    assert update_resp.status == 202
+    operation_id = (await update_resp.json())["operation_id"]
+
+    policy_resp = await test_client.patch(
+        "/api/admin/connection_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"policy": "accept_all"},
+    )
+    assert policy_resp.status == 200
+    req_resp = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "agent_version": "1.0.0", "os_type": "windows"},
+    )
+    assert req_resp.status == 200
+    token = (await req_resp.json())["token"]
+
+    ws = _HandshakeWsStub()
+    request = SimpleNamespace(remote="127.0.0.1", headers={"User-Agent": "pytest"})
+    handshake_message = {
+        "type": "handshake",
+        "protocol_version": "ws_ticket_v3",
+        "token": token,
+        "meta": {"capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
+        "payload": {
+            "device_id": device_id,
+            "agent_version": "1.0.0",
+            "os": "Windows",
+            "os_type": "windows",
+            "modules": [],
+            "failed_update_version": version,
+            "failed_update_operation_id": operation_id,
+            "failed_update_reason": "VERIFY_FAILED",
+            "failed_update_message": "launcher verify failed",
+        },
+    }
+    _, _, _, authenticated = await handle_handshake(
+        ws=ws,
+        data=handshake_message,
+        request=request,
+        state=test_client.app["state"],
+    )
+    assert authenticated is True
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        op_repo = OperationsRepo(session)
+        operation = await op_repo.get_by_operation_id(operation_id)
+        assert operation is not None
+        assert operation.status == "failed"
+        assert operation.error_code == "VERIFY_FAILED"
+        assert "launcher verify failed" in (operation.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_update_diagnostics_endpoint_returns_recent_operations_and_timeline(test_client):
+    device_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    await _insert_device(
+        device_id,
+        os_name="Windows",
+        metadata={
+            "applied_update_version": "2.1.0",
+            "last_update_operation_id": "op-old",
+            "last_failed_update_version": "2.0.9",
+            "last_failed_update_operation_id": "op-failed",
+            "last_failed_update_reason": "VERIFY_FAILED",
+            "last_failed_update_message": "verify failed",
+        },
+    )
+
+    operation_id = str(uuid.uuid4())
+    async with get_session() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                kind="agent_update",
+                actor_role="admin",
+                trace_id=str(uuid.uuid4()),
+                status="running",
+                queued_at=now,
+                sent_at=now,
+                accepted_at=now,
+                started_at=now,
+                deadline_at=now,
+            )
+        )
+        session.add(
+            DeviceOutbox(
+                device_id=device_id,
+                command_id=operation_id,
+                command="update",
+                params={
+                    "target": "windows_amd64",
+                    "channel": "stable",
+                    "version": "2.1.0",
+                    "reason": "prod rollout",
+                },
+                status="sent",
+                actor_role="admin",
+            )
+        )
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                event_type="update_requested",
+                severity="info",
+                source="agent_update_api",
+                operation_id=operation_id,
+                details_json={"version": "2.1.0"},
+            )
+        )
+        await session.commit()
+
+    resp = await test_client.get(
+        f"/api/devices/{device_id}/agent/update_diagnostics",
+        headers=_admin_headers(),
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    diag = data["diagnostics"]
+    assert diag["update_summary"]["last_failed_update_reason"] == "VERIFY_FAILED"
+    assert diag["recent_operations"][0]["version"] == "2.1.0"
+    assert diag["recent_operations"][0]["reason"] == "prod rollout"
+    assert diag["timeline"][0]["event_type"] == "update_requested"
 
 
 @pytest.mark.asyncio

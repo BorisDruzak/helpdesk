@@ -160,7 +160,7 @@
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
-- **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
+- **обновление агента (builds, upload, update, mass, diagnostics)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary` и `update_summary`)
 

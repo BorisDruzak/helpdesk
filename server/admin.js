@@ -782,6 +782,8 @@
         let workbenchTicketId = null;
         let pendingCanaryOperationId = null;
         let confirmedCanaryOperationId = null;
+        let agentUpdateDiagnosticsPollTimer = null;
+        let agentUpdateConfirmAction = null;
 
         function setPendingAgentUpdateOperation(opId, deviceId) {
             pendingAgentUpdateOperationId = opId;
@@ -803,16 +805,20 @@
                 if (resultEl && resultContent) {
                     resultEl.style.display = 'block';
                     if (status === 'succeeded') {
-                        resultContent.innerHTML = '<p class="success-message">Успех. Агент перезапустится и подключится с новой версией.</p>';
+                        resultContent.innerHTML = '<p class="success-message">Успех. Обновление подтверждено после reconnect-handshake.</p>';
+                    } else if (status === 'running' || status === 'accepted' || status === 'sent' || status === 'queued') {
+                        resultContent.innerHTML = '<p>Операция в процессе: ' + agentUpdateStatusBadge(status) + ' Ожидается download, restart и подтверждение новой версии.</p>';
                     } else {
                         resultContent.innerHTML = '<p class="error-message">Ошибка: ' + escapeHtml(errMsg || status || 'Неизвестно') + '</p>';
                     }
                 }
-                if (pendingAgentUpdateDeviceId && queueWs && queueWs.readyState === WebSocket.OPEN) {
+                if ((status === 'succeeded' || status === 'failed' || status === 'timed_out') && pendingAgentUpdateDeviceId && queueWs && queueWs.readyState === WebSocket.OPEN) {
                     try { queueWs.send(JSON.stringify({ type: 'unsubscribe_device', device_id: pendingAgentUpdateDeviceId })); } catch (e) {}
                 }
-                pendingAgentUpdateOperationId = null;
-                pendingAgentUpdateDeviceId = null;
+                if (status === 'succeeded' || status === 'failed' || status === 'timed_out') {
+                    pendingAgentUpdateOperationId = null;
+                    pendingAgentUpdateDeviceId = null;
+                }
             }
             if (opId && agentUpdatesBulkRows.some(function(r) { return r.operation_id === opId; })) {
                 agentUpdatesBulkStatus[opId] = { status: status, error_message: errMsg };
@@ -824,6 +830,7 @@
                 confirmedCanaryOperationId = opId;
                 pendingCanaryOperationId = null;
             }
+            loadAgentUpdateDiagnostics(false);
         }
 
         function renderAgentUpdatesBulkResult() {
@@ -841,6 +848,181 @@
                 html += '<div style="margin-bottom: 6px;"><code>' + escapeHtml((r.device_id || '').slice(0, 8)) + '...</code> ' + buildStr + ' — ' + statusHtml + '</div>';
             });
             container.innerHTML = html || '<p class="muted">Нет записей.</p>';
+        }
+
+        function formatAgentUpdateTime(iso) {
+            if (!iso) return '—';
+            try { return new Date(iso).toLocaleString('ru-RU'); } catch (e) { return iso; }
+        }
+
+        function agentUpdateStatusBadge(status) {
+            const normalized = String(status || '').trim().toLowerCase();
+            if (!normalized || normalized === 'pending') return '<span class="badge badge-secondary">Ожидание</span>';
+            if (normalized === 'succeeded') return '<span class="badge badge-success">Успех</span>';
+            if (normalized === 'failed' || normalized === 'timed_out') return '<span class="badge badge-danger">' + escapeHtml(normalized === 'timed_out' ? 'Таймаут' : 'Ошибка') + '</span>';
+            if (normalized === 'running' || normalized === 'accepted' || normalized === 'sent' || normalized === 'queued') return '<span class="badge badge-warning">' + escapeHtml(normalized) + '</span>';
+            return '<span class="badge badge-secondary">' + escapeHtml(normalized) + '</span>';
+        }
+
+        function clearAgentUpdateDiagnosticsPoll() {
+            if (agentUpdateDiagnosticsPollTimer) {
+                clearInterval(agentUpdateDiagnosticsPollTimer);
+                agentUpdateDiagnosticsPollTimer = null;
+            }
+        }
+
+        function ensureAgentUpdateDiagnosticsPoll() {
+            clearAgentUpdateDiagnosticsPoll();
+            const tab = document.getElementById('tab-agent-updates');
+            const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
+            const deviceId = deviceSelect && deviceSelect.value ? deviceSelect.value.trim() : '';
+            if (!tab || !tab.classList.contains('active') || !deviceId) return;
+            agentUpdateDiagnosticsPollTimer = setInterval(function() {
+                loadAgentUpdateDiagnostics(false);
+            }, 10000);
+        }
+
+        function closeAgentUpdateConfirmModal() {
+            const modal = document.getElementById('agentUpdateConfirmModal');
+            if (modal) modal.style.display = 'none';
+            agentUpdateConfirmAction = null;
+        }
+
+        function openAgentUpdateConfirmModal(options) {
+            const modal = document.getElementById('agentUpdateConfirmModal');
+            const titleEl = document.getElementById('agentUpdateConfirmTitle');
+            const bodyEl = document.getElementById('agentUpdateConfirmBody');
+            const reasonEl = document.getElementById('agentUpdateConfirmReason');
+            if (!modal || !titleEl || !bodyEl || !reasonEl) return false;
+            titleEl.textContent = options.title || 'Подтвердите действие';
+            bodyEl.textContent = options.body || 'Подтвердите запуск обновления агента.';
+            reasonEl.value = options.reason || '';
+            agentUpdateConfirmAction = typeof options.onConfirm === 'function' ? options.onConfirm : null;
+            modal.style.display = 'flex';
+            try { reasonEl.focus(); } catch (e) {}
+            return true;
+        }
+
+        function renderAgentUpdateDiagnostics(data) {
+            const emptyEl = document.getElementById('agentUpdateDiagnosticsEmpty');
+            const contentEl = document.getElementById('agentUpdateDiagnosticsContent');
+            const metaEl = document.getElementById('agentUpdateDiagnosticsMeta');
+            const summaryEl = document.getElementById('agentUpdateDiagnosticsSummary');
+            const statusEl = document.getElementById('agentUpdateDiagnosticsStatus');
+            const opsBodyEl = document.getElementById('agentUpdateDiagnosticsOperationsBody');
+            const timelineEl = document.getElementById('agentUpdateDiagnosticsTimeline');
+            const logsEl = document.getElementById('agentUpdateDiagnosticsLogs');
+            const diag = data && data.diagnostics ? data.diagnostics : null;
+            const device = diag && diag.device ? diag.device : null;
+            const summary = diag && diag.update_summary ? diag.update_summary : {};
+            const recentOps = diag && Array.isArray(diag.recent_operations) ? diag.recent_operations : [];
+            const timeline = diag && Array.isArray(diag.timeline) ? diag.timeline : [];
+            const problemLogs = diag && Array.isArray(diag.problem_logs) ? diag.problem_logs : [];
+            if (!emptyEl || !contentEl || !metaEl || !summaryEl || !statusEl || !opsBodyEl || !timelineEl || !logsEl) return;
+
+            if (!diag || !device) {
+                emptyEl.style.display = 'block';
+                contentEl.style.display = 'none';
+                metaEl.textContent = 'Выберите устройство, чтобы увидеть статус, историю операций и логи обновления.';
+                return;
+            }
+
+            emptyEl.style.display = 'none';
+            contentEl.style.display = 'block';
+            metaEl.textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU') + ' · ' + (device.hostname || device.device_id || '—');
+
+            const summaryCards = [
+                { title: 'Устройство', value: (device.hostname || '—') + ' / ' + ((device.device_id || '').slice(0, 8) || '—') + '…' },
+                { title: 'Онлайн', value: device.online ? 'Да' : 'Нет' },
+                { title: 'Текущая версия', value: device.agent_version || '—' },
+                { title: 'Применённая версия', value: summary.applied_update_version || '—' },
+                { title: 'Последний провал', value: summary.last_failed_update_version || '—' },
+                { title: 'Handshake', value: formatAgentUpdateTime(device.last_handshake_at) },
+            ];
+            summaryEl.innerHTML = summaryCards.map(function(card) {
+                return '<div class="result-panel" style="display:block; margin:0;"><div class="muted" style="font-size:12px;">' + escapeHtml(card.title) + '</div><div style="font-size:16px; font-weight:600; margin-top:4px;">' + escapeHtml(card.value || '—') + '</div></div>';
+            }).join('');
+
+            let statusHtml = '<p><strong>Статус операции:</strong> ' + agentUpdateStatusBadge(summary.last_update_operation_status) + '</p>';
+            if (summary.last_update_operation_id) statusHtml += '<p><strong>Операция:</strong> <code>' + escapeHtml(summary.last_update_operation_id) + '</code></p>';
+            if (summary.last_update_error_code || summary.last_update_error_message) {
+                statusHtml += '<p class="error-message"><strong>Ошибка:</strong> ' + escapeHtml(summary.last_update_error_code || '') + ' ' + escapeHtml(summary.last_update_error_message || '') + '</p>';
+            }
+            if (summary.last_failed_update_reason || summary.last_failed_update_message) {
+                statusHtml += '<p class="error-message"><strong>Последний провал launcher/apply:</strong> ' + escapeHtml(summary.last_failed_update_reason || '') + (summary.last_failed_update_message ? ' — ' + escapeHtml(summary.last_failed_update_message) : '') + '</p>';
+            }
+            if (summary.last_update_result_summary) {
+                statusHtml += '<p><strong>Результат:</strong> ' + escapeHtml(summary.last_update_result_summary) + '</p>';
+            }
+            statusHtml += '<p><strong>Завершено:</strong> ' + escapeHtml(formatAgentUpdateTime(summary.last_update_finished_at)) + '</p>';
+            statusEl.innerHTML = statusHtml;
+
+            opsBodyEl.innerHTML = recentOps.map(function(op) {
+                const build = [op.target || '—', op.channel || '—', op.version || '—'].join(' / ');
+                const reason = op.reason || '—';
+                const finished = formatAgentUpdateTime(op.finished_at || op.started_at || op.queued_at);
+                const err = op.error_message ? '<div class="muted" style="margin-top:4px;">' + escapeHtml(op.error_message) + '</div>' : '';
+                return '<tr>'
+                    + '<td><code>' + escapeHtml((op.operation_id || '').slice(0, 8)) + '…</code></td>'
+                    + '<td>' + escapeHtml(build) + err + '</td>'
+                    + '<td>' + agentUpdateStatusBadge(op.status) + '</td>'
+                    + '<td>' + escapeHtml(reason) + '</td>'
+                    + '<td>' + escapeHtml(finished) + '</td>'
+                    + '</tr>';
+            }).join('') || '<tr><td colspan="5" class="muted">Операций обновления пока нет.</td></tr>';
+
+            timelineEl.innerHTML = timeline.map(function(item) {
+                const details = item.details && typeof item.details === 'object'
+                    ? Object.entries(item.details).slice(0, 4).map(function(pair) { return escapeHtml(pair[0]) + ': ' + escapeHtml(String(pair[1])); }).join(' · ')
+                    : '';
+                return '<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.08);">'
+                    + '<div><strong>' + escapeHtml(item.event_type || 'event') + '</strong> ' + agentUpdateStatusBadge(item.severity === 'warning' || item.severity === 'error' ? 'failed' : 'succeeded') + '</div>'
+                    + '<div class="muted" style="font-size:12px;">' + escapeHtml(formatAgentUpdateTime(item.created_at)) + (item.operation_id ? ' · <code>' + escapeHtml((item.operation_id || '').slice(0, 8)) + '…</code>' : '') + '</div>'
+                    + (details ? '<div class="muted" style="margin-top:4px;">' + details + '</div>' : '')
+                    + '</div>';
+            }).join('') || '<div class="muted">Событий обновления пока нет.</div>';
+
+            logsEl.textContent = problemLogs.length
+                ? problemLogs.map(function(item) {
+                    return '[' + formatAgentUpdateTime(item.timestamp) + '] ' + String(item.level || 'info').toUpperCase() + ' ' + (item.message || '');
+                }).join('\n\n')
+                : 'Проблемных логов по устройству пока нет.';
+        }
+
+        async function loadAgentUpdateDiagnostics(showLoading) {
+            const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
+            const errorEl = document.getElementById('agentUpdateDiagnosticsError');
+            const emptyEl = document.getElementById('agentUpdateDiagnosticsEmpty');
+            const contentEl = document.getElementById('agentUpdateDiagnosticsContent');
+            const metaEl = document.getElementById('agentUpdateDiagnosticsMeta');
+            const deviceId = deviceSelect && deviceSelect.value ? deviceSelect.value.trim() : '';
+            if (errorEl) errorEl.style.display = 'none';
+            if (!deviceId) {
+                if (emptyEl) emptyEl.style.display = 'block';
+                if (contentEl) contentEl.style.display = 'none';
+                if (metaEl) metaEl.textContent = 'Выберите устройство, чтобы увидеть статус, историю операций и логи обновления.';
+                clearAgentUpdateDiagnosticsPoll();
+                return;
+            }
+            if (showLoading !== false && metaEl) metaEl.textContent = 'Загрузка диагностики...';
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/agent/update_diagnostics', { headers: getAuthHeaders() });
+                const data = await r.json();
+                if (!r.ok) {
+                    if (errorEl) {
+                        errorEl.textContent = data.error || 'Не удалось загрузить диагностику обновления';
+                        errorEl.style.display = 'block';
+                    }
+                    return;
+                }
+                renderAgentUpdateDiagnostics(data);
+                ensureAgentUpdateDiagnosticsPoll();
+            } catch (e) {
+                if (errorEl) {
+                    errorEl.textContent = 'Ошибка: ' + e.message;
+                    errorEl.style.display = 'block';
+                }
+            }
         }
 
         function queueStatusLabel(status) {
@@ -2038,6 +2220,7 @@
                 loadUsersTab();
             } else if (tabName === 'agent-updates') {
                 loadAgentUpdatesTab();
+                ensureAgentUpdateDiagnosticsPoll();
             } else if (tabName === 'settings') {
                 initSettingsTab();
                 loadSettingsTab();
@@ -2058,6 +2241,9 @@
             if (tabName !== 'tech' && techPollTimer) {
                 clearInterval(techPollTimer);
                 techPollTimer = null;
+            }
+            if (tabName !== 'agent-updates') {
+                clearAgentUpdateDiagnosticsPoll();
             }
         }
 
@@ -5175,12 +5361,15 @@
             const buildSelect = document.getElementById('agentUpdatesBuildSelect');
             const refreshBuildsBtn = document.getElementById('agentUpdatesRefreshBuilds');
             const triggerBtn = document.getElementById('agentUpdatesTriggerBtn');
+            const diagnosticsRefreshBtn = document.getElementById('agentUpdatesDiagnosticsRefreshBtn');
             if (!deviceSelect || !buildSelect) return;
 
             if (!agentUpdatesTabInitialized) {
                 agentUpdatesTabInitialized = true;
                 if (refreshBuildsBtn) refreshBuildsBtn.addEventListener('click', () => loadAgentUpdatesBuilds(true));
                 if (triggerBtn) triggerBtn.addEventListener('click', triggerAgentUpdate);
+                if (diagnosticsRefreshBtn) diagnosticsRefreshBtn.addEventListener('click', function() { loadAgentUpdateDiagnostics(true); });
+                deviceSelect.addEventListener('change', function() { loadAgentUpdateDiagnostics(true); });
                 const uploadForm = document.getElementById('agentBuildUploadForm');
                 if (uploadForm) uploadForm.addEventListener('submit', submitAgentBuildUpload);
                 const uploadFile = document.getElementById('agentBuildUploadFile');
@@ -5190,12 +5379,31 @@
                 if (bulkAllEl && bulkDevicesWrap) bulkAllEl.addEventListener('change', function() { bulkDevicesWrap.style.display = this.checked ? 'none' : 'block'; });
                 const bulkBtn = document.getElementById('agentUpdatesBulkBtn');
                 if (bulkBtn) bulkBtn.addEventListener('click', triggerBulkAgentUpdate);
+                const confirmCancelBtn = document.getElementById('agentUpdateConfirmCancelBtn');
+                const confirmSubmitBtn = document.getElementById('agentUpdateConfirmSubmitBtn');
+                const confirmModal = document.getElementById('agentUpdateConfirmModal');
+                if (confirmCancelBtn) confirmCancelBtn.addEventListener('click', closeAgentUpdateConfirmModal);
+                if (confirmModal) {
+                    confirmModal.addEventListener('click', function(e) {
+                        if (e.target === confirmModal) closeAgentUpdateConfirmModal();
+                    });
+                }
+                if (confirmSubmitBtn) {
+                    confirmSubmitBtn.addEventListener('click', async function() {
+                        const reasonEl = document.getElementById('agentUpdateConfirmReason');
+                        const reason = reasonEl ? String(reasonEl.value || '').trim() : '';
+                        const action = agentUpdateConfirmAction;
+                        closeAgentUpdateConfirmModal();
+                        if (action) await action(reason);
+                    });
+                }
             }
 
             // Устройства — из /api/agents (только онлайн)
             try {
                 const r = await fetch('/api/agents', { headers: getAuthHeaders() });
                 const data = await r.json();
+                const previousDeviceId = deviceSelect.value;
                 deviceSelect.innerHTML = '<option value="">— Выберите устройство —</option>';
                 if (r.ok && data.agents && data.agents.length > 0) {
                     data.agents.forEach(agent => {
@@ -5214,12 +5422,16 @@
                             bulkDevicesEl.appendChild(opt);
                         });
                     }
+                    if (previousDeviceId && data.agents.some(function(agent) { return agent.device_id === previousDeviceId; })) {
+                        deviceSelect.value = previousDeviceId;
+                    }
                 }
             } catch (e) {
                 console.error('Agent updates: load agents', e);
             }
 
             loadAgentUpdatesBuilds(false);
+            loadAgentUpdateDiagnostics(false);
         }
 
         async function triggerBulkAgentUpdate() {
@@ -5256,6 +5468,69 @@
                     return;
                 }
                 body.device_ids = [canaryDeviceIds[0]];
+            }
+            const targetsCount = body.device_ids ? body.device_ids.length : null;
+            const confirmBody = rolloutMode === 'canary'
+                ? 'Будет запущен canary rollout для одного выбранного устройства. После подтверждения операция попадёт в очередь обновления.'
+                : 'Будет запущено массовое обновление ' + (targetsCount ? ('для ' + targetsCount + ' устройств') : 'для всех онлайн-агентов') + '. Проверьте канал и версию перед запуском.';
+            if (openAgentUpdateConfirmModal({
+                title: rolloutMode === 'canary' ? 'Подтвердите canary rollout' : 'Подтвердите массовое обновление',
+                body: confirmBody,
+                onConfirm: async function(reason) {
+                    if (reason) body.reason = reason;
+                    if (resultEl) { resultEl.style.display = 'block'; resultContent.innerHTML = 'Отправка запроса...'; }
+                    try {
+                        const r = await fetch('/api/agents/update_bulk', {
+                            method: 'POST',
+                            headers: getAuthHeaders(true),
+                            body: JSON.stringify(body)
+                        });
+                        const data = await r.json();
+                        if (!r.ok) {
+                            resultContent.innerHTML = '<p class="error-message">' + (data.error || 'Ошибка запроса') + '</p>';
+                            return;
+                        }
+                        const ops = data.operations || [];
+                        const errs = data.errors || [];
+                        const skipped = data.skipped || [];
+                        setBulkPendingOperations(ops);
+                        if (ops.length === 0 && errs.length === 0) {
+                            resultContent.innerHTML = '<p class="muted">Нет устройств для обновления (выберите устройства или «Все онлайн»).</p>';
+                            return;
+                        }
+                        let msg = ops.length ? 'Запущено обновлений: ' + ops.length + '.' : '';
+                        if (errs.length) msg += ' Ошибки: ' + errs.length + ' (' + errs.map(function(e) { return e.device_id ? (e.device_id.slice(0, 8) + '...') : ''; }).join(', ') + ').';
+                        if (skipped.length) msg += ' Пропущено: ' + skipped.length + '.';
+                        resultContent.innerHTML = '<p>' + msg + ' Ожидание результатов...</p>';
+                        if (reason) {
+                            resultContent.innerHTML += '<p class="muted">Причина: ' + escapeHtml(reason) + '</p>';
+                        }
+                        if (skipped.length) {
+                            resultContent.innerHTML += '<div style="margin-top:8px;">' + skipped.map(function(item) {
+                                return '<div><code>' + escapeHtml((item.device_id || '').slice(0, 8)) + '...</code> — <span class="muted">' + escapeHtml(item.reason || item.error_code || 'skipped') + '</span></div>';
+                            }).join('') + '</div>';
+                        }
+                        if (rolloutMode === 'canary' && ops.length > 0 && canaryConfirmedEl) {
+                            canaryConfirmedEl.checked = false;
+                            confirmedCanaryOperationId = null;
+                            pendingCanaryOperationId = ops[0].operation_id || null;
+                        }
+                        agentUpdatesBulkRows = ops;
+                        agentUpdatesBulkStatus = {};
+                        renderAgentUpdatesBulkResult();
+                        if (queueWs && queueWs.readyState === WebSocket.OPEN && ops.length) {
+                            const deviceIds = {};
+                            ops.forEach(function(o) { if (o.device_id) deviceIds[o.device_id] = true; });
+                            Object.keys(deviceIds).forEach(function(deviceId) {
+                                try { queueWs.send(JSON.stringify({ type: 'subscribe_device', device_id: deviceId })); } catch (e) {}
+                            });
+                        }
+                    } catch (e) {
+                        resultContent.innerHTML = '<p class="error-message">Ошибка: ' + escapeHtml(e.message) + '</p>';
+                    }
+                }
+            })) {
+                return;
             }
             if (resultEl) { resultEl.style.display = 'block'; resultContent.innerHTML = 'Отправка запроса...'; }
             try {
@@ -5336,14 +5611,15 @@
                     const val = [b.target, b.channel, b.version].join(valueSep);
                     const opt = document.createElement('option');
                     opt.value = val;
-                    opt.textContent = `${b.target} / ${b.channel} / ${b.version}`;
+                    opt.textContent = `${b.target} / ${b.channel} / ${b.version} / ${b.archive_type || '—'}`;
                     buildSelect.appendChild(opt);
                 });
 
                 tbodyEl.innerHTML = builds.map(b => {
                     const sizeKb = b.size != null ? Math.round(b.size / 1024) + ' КБ' : '—';
                     const created = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU') : '—';
-                    return `<tr><td>${b.target}</td><td>${b.channel}</td><td>${b.version}</td><td>${sizeKb}</td><td>${created}</td></tr>`;
+                    const shaShort = b.sha256 ? b.sha256.slice(0, 12) + '…' : '—';
+                    return `<tr><td>${b.target}</td><td>${b.channel}</td><td>${b.version}</td><td>${b.archive_type || '—'}</td><td>${sizeKb}</td><td><code>${shaShort}</code></td><td>${created}</td></tr>`;
                 }).join('');
                 if (containerEl) containerEl.style.display = 'block';
             } catch (e) {
@@ -5385,36 +5661,48 @@
             if (!isNaN(restart_delay_sec) && restart_delay_sec >= 0) body.restart_delay_sec = restart_delay_sec;
 
             if (errorEl) errorEl.style.display = 'none';
-            if (resultEl) { resultEl.style.display = 'block'; resultContent.textContent = 'Отправка запроса...'; }
+            const selectedDeviceLabel = deviceSelect.options[deviceSelect.selectedIndex] ? deviceSelect.options[deviceSelect.selectedIndex].textContent : deviceId;
+            const confirmBody = 'Устройство: ' + selectedDeviceLabel + '. Билд: ' + target + ' / ' + channel + ' / ' + version + '. После подтверждения агент скачает архив, завершится и launcher применит обновление.';
+            if (openAgentUpdateConfirmModal({
+                title: 'Подтвердите обновление агента',
+                body: confirmBody,
+                onConfirm: async function(reason) {
+                    if (reason) body.reason = reason;
+                    if (resultEl) { resultEl.style.display = 'block'; resultContent.textContent = 'Отправка запроса...'; }
+                    try {
+                        const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/agent/update', {
+                            method: 'POST',
+                            headers: getAuthHeaders(true),
+                            body: JSON.stringify(body)
+                        });
+                        const data = await r.json();
 
-            try {
-                const r = await fetch('/api/devices/' + encodeURIComponent(deviceId) + '/agent/update', {
-                    method: 'POST',
-                    headers: getAuthHeaders(true),
-                    body: JSON.stringify(body)
-                });
-                const data = await r.json();
-
-                if (r.ok && data.status === 'accepted') {
-                    const opId = data.operation_id || '';
-                    const buildStr = data.build ? (data.build.target + ' / ' + data.build.channel + ' / ' + data.build.version) : '—';
-                    resultContent.innerHTML = `
-                        <p class="success-message">Обновление принято в очередь. Ожидание результата...</p>
-                        <p><strong>ID операции:</strong> <code>${opId}</code></p>
-                        <p><strong>Билд:</strong> ${buildStr}</p>
-                    `;
-                    if (typeof queueWs !== 'undefined' && queueWs && queueWs.readyState === WebSocket.OPEN && deviceId) {
-                        try { queueWs.send(JSON.stringify({ type: 'subscribe_device', device_id: deviceId })); } catch (e) {}
-                        if (typeof setPendingAgentUpdateOperation === 'function') setPendingAgentUpdateOperation(opId, deviceId);
+                        if (r.ok && data.status === 'accepted') {
+                            const opId = data.operation_id || '';
+                            const buildStr = data.build ? (data.build.target + ' / ' + data.build.channel + ' / ' + data.build.version) : '—';
+                            resultContent.innerHTML = `
+                                <p class="success-message">Обновление принято в очередь. Ожидание результата...</p>
+                                <p><strong>ID операции:</strong> <code>${opId}</code></p>
+                                <p><strong>Билд:</strong> ${buildStr}</p>
+                                ${reason ? `<p class="muted"><strong>Причина:</strong> ${escapeHtml(reason)}</p>` : ''}
+                            `;
+                            if (typeof queueWs !== 'undefined' && queueWs && queueWs.readyState === WebSocket.OPEN && deviceId) {
+                                try { queueWs.send(JSON.stringify({ type: 'subscribe_device', device_id: deviceId })); } catch (e) {}
+                                if (typeof setPendingAgentUpdateOperation === 'function') setPendingAgentUpdateOperation(opId, deviceId);
+                            }
+                            loadAgentUpdateDiagnostics(true);
+                        } else {
+                            resultContent.innerHTML = `
+                                <p class="error-message">${data.error || 'Ошибка запроса'}</p>
+                                ${data.error_code ? `<p><code>${data.error_code}</code></p>` : ''}
+                            `;
+                        }
+                    } catch (e) {
+                        resultContent.innerHTML = '<p class="error-message">Ошибка: ' + e.message + '</p>';
                     }
-                } else {
-                    resultContent.innerHTML = `
-                        <p class="error-message">${data.error || 'Ошибка запроса'}</p>
-                        ${data.error_code ? `<p><code>${data.error_code}</code></p>` : ''}
-                    `;
                 }
-            } catch (e) {
-                resultContent.innerHTML = '<p class="error-message">Ошибка: ' + e.message + '</p>';
+            })) {
+                return;
             }
         }
 

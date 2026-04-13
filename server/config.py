@@ -243,6 +243,11 @@ OPERATION_ACCEPTED_TIMEOUT = 60  # 1 минута
 # command: list_tools и др. — увеличиваем accepted_timeout/execution_timeout,
 # чтобы убрать доминирование list_tools в timeout-метрике (accepted→running часто дольше 60s)
 OPERATION_SLA_OVERRIDES = {
+    "agent_update": {
+        "delivery_timeout": 120,
+        "execution_timeout": 1800,  # 30 минут на download + restart + handshake confirm
+        "accepted_timeout": 300,
+    },
     "command": {
         "delivery_timeout": 60,
         "execution_timeout": 120,

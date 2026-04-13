@@ -46,6 +46,13 @@ def _safe_str(v: Optional[str]) -> str:
     return (v or "").strip()
 
 
+def _sanitize_update_reason(value: Optional[str]) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:500]
+
+
 async def handle_upload_agent_build(request: web.Request) -> web.Response:
     """
     POST /api/agent_builds/upload
@@ -244,6 +251,9 @@ async def handle_list_agent_builds(request: web.Request) -> web.Response:
                         "target": b.target,
                         "channel": b.channel,
                         "version": b.version,
+                        "artifact_filename": b.artifact_filename,
+                        "archive_type": b.archive_type,
+                        "mime_type": b.mime_type,
                         "sha256": b.sha256,
                         "size": b.size,
                         "notes": b.notes,
@@ -370,6 +380,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
     channel = _safe_str(data.get("channel")).lower() or "stable"
     version = _safe_str(data.get("version")) or None
     restart_delay_sec = data.get("restart_delay_sec")
+    reason = _sanitize_update_reason(data.get("reason"))
 
     if not target:
         return web.json_response({"status": "error", "error": "Missing target"}, status=400)
@@ -435,6 +446,8 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
         }
         if isinstance(restart_delay_sec, int):
             params["restart_delay_sec"] = restart_delay_sec
+        if reason:
+            params["reason"] = reason
 
         await enqueue_command_async(
             state=state,
@@ -456,7 +469,12 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
         operation_id=op_id,
         actor_id=auth_context.actor_id,
         actor_role=auth_context.actor_role,
-        details_json={"target": build.target, "channel": build.channel, "version": build.version},
+        details_json={
+            "target": build.target,
+            "channel": build.channel,
+            "version": build.version,
+            "reason": reason,
+        },
     )
     return web.json_response(
         {
@@ -517,6 +535,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
     channel = _safe_str(data.get("channel")).lower() or "stable"
     version = _safe_str(data.get("version")) or None
     restart_delay_sec = data.get("restart_delay_sec")
+    reason = _sanitize_update_reason(data.get("reason"))
     rollout_mode = _safe_str(data.get("rollout_mode")).lower() or "bulk"
     require_canary_confirmed = bool(data.get("require_canary_confirmed", False))
     canary_confirmed = bool(data.get("canary_confirmed", False))
@@ -603,6 +622,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
     operations_result = []
     skipped_result = []
     errors_result = []
+    audit_records: list[dict[str, str | None]] = []
 
     async with get_session() as session:
         repo = AgentBuildsRepo(session)
@@ -675,6 +695,8 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
             }
             if isinstance(restart_delay_sec, int):
                 params["restart_delay_sec"] = restart_delay_sec
+            if reason:
+                params["reason"] = reason
 
             await enqueue_command_async(
                 state=state,
@@ -693,8 +715,35 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 "channel": build.channel,
                 "build": {"target": build.target, "channel": build.channel, "version": build.version},
             })
+            audit_records.append(
+                {
+                    "device_id": device_id,
+                    "operation_id": op_id,
+                    "target": build.target,
+                    "channel": build.channel,
+                    "version": build.version,
+                }
+            )
 
         await session.commit()
+
+    for record in audit_records:
+        await write_agent_runtime_audit(
+            device_id=str(record["device_id"]),
+            event_type="update_requested",
+            severity="info",
+            source="agent_update_bulk_api",
+            operation_id=str(record["operation_id"]),
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            details_json={
+                "target": record["target"],
+                "channel": record["channel"],
+                "version": record["version"],
+                "rollout_mode": rollout_mode,
+                "reason": reason,
+            },
+        )
 
     return web.json_response({
         "status": "ok",
@@ -703,4 +752,3 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
         "skipped": skipped_result,
         "errors": errors_result,
     })
-

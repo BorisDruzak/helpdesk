@@ -1101,6 +1101,7 @@
                         </div>
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary" id="agentUpdatesTriggerBtn">Запустить обновление</button>
+                            <button type="button" class="btn btn-secondary" id="agentUpdatesDiagnosticsRefreshBtn">Обновить диагностику</button>
                         </div>
                     </div>
                     <div id="agentUpdatesResult" class="result-panel" style="display: none; margin-top: 16px;">
@@ -1108,6 +1109,49 @@
                         <div id="agentUpdatesResultContent"></div>
                     </div>
                     <div id="agentUpdatesError" class="error-message" style="display: none; margin-top: 12px;"></div>
+                </div>
+
+                <div class="section">
+                    <h2>Диагностика обновления по устройству</h2>
+                    <div class="form-actions" style="margin-bottom: 12px;">
+                        <span id="agentUpdateDiagnosticsMeta" class="muted">Выберите устройство, чтобы увидеть статус, историю операций и логи обновления.</span>
+                    </div>
+                    <div id="agentUpdateDiagnosticsError" class="error-message" style="display: none; margin-bottom: 12px;"></div>
+                    <div id="agentUpdateDiagnosticsEmpty" class="muted">Устройство ещё не выбрано.</div>
+                    <div id="agentUpdateDiagnosticsContent" style="display: none;">
+                        <div id="agentUpdateDiagnosticsSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+                        <div class="result-panel" style="display: block; margin-bottom: 16px;">
+                            <h4>Последний статус</h4>
+                            <div id="agentUpdateDiagnosticsStatus"></div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); gap: 16px; align-items: start;">
+                            <div class="result-panel" style="display: block;">
+                                <h4>Последние операции обновления</h4>
+                                <div style="overflow-x: auto;">
+                                    <table class="queue-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Операция</th>
+                                                <th>Билд</th>
+                                                <th>Статус</th>
+                                                <th>Причина</th>
+                                                <th>Завершено</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="agentUpdateDiagnosticsOperationsBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="result-panel" style="display: block;">
+                                <h4>Лента обновления</h4>
+                                <div id="agentUpdateDiagnosticsTimeline" class="muted">Событий пока нет.</div>
+                            </div>
+                        </div>
+                        <div class="result-panel" style="display: block; margin-top: 16px;">
+                            <h4>Последние проблемные логи</h4>
+                            <pre id="agentUpdateDiagnosticsLogs" style="white-space: pre-wrap; margin: 0; max-height: 260px; overflow: auto;">Логов пока нет.</pre>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="section">
@@ -1214,7 +1258,9 @@
                                     <th>Target</th>
                                     <th>Канал</th>
                                     <th>Версия</th>
+                                    <th>Тип</th>
                                     <th>Размер</th>
+                                    <th>SHA256</th>
                                     <th>Загружен</th>
                                 </tr>
                             </thead>
@@ -1227,6 +1273,25 @@
     </div> <!-- End of app-layout -->
     </div> <!-- End of mainContent -->
 
-    <script src="/admin.js?v=20260331e"></script>
+    <div id="agentUpdateConfirmModal" class="queue-modal" style="display: none;">
+        <div class="queue-modal-card" style="max-width: 560px;">
+            <div class="queue-modal-header">
+                <div>
+                    <h3 id="agentUpdateConfirmTitle">Подтвердите обновление</h3>
+                    <p class="queue-modal-hint" id="agentUpdateConfirmBody">—</p>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="agentUpdateConfirmReason">Причина</label>
+                <textarea id="agentUpdateConfirmReason" rows="3" placeholder="Например: раскатить verified build после smoke / canary для одного устройства / исправление критичной ошибки"></textarea>
+            </div>
+            <div class="queue-modal-actions">
+                <button type="button" class="btn btn-secondary" id="agentUpdateConfirmCancelBtn">Отмена</button>
+                <button type="button" class="btn btn-danger" id="agentUpdateConfirmSubmitBtn">Подтвердить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/admin.js?v=20260413a"></script>
 </body>
 </html>

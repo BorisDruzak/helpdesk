@@ -28,6 +28,7 @@ from agents.handlers import (
     handle_get_agents,
     handle_get_devices,
     handle_get_device,
+    handle_get_device_update_diagnostics,
     handle_get_pending_connections,
     handle_device_check,
     handle_delete_device,
@@ -311,6 +312,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/devices', handle_get_devices),
         web.get('/api/list_devices', handle_get_devices),  # Alias for compatibility
         web.get('/api/devices/{device_id}', handle_get_device),  # Single device (agent page)
+        web.get('/api/devices/{device_id}/agent/update_diagnostics', handle_get_device_update_diagnostics),
         web.post('/api/devices/{device_id}/check', handle_device_check),  # Force check (list_tools)
         web.delete('/api/devices/{device_id}', handle_delete_device),  # Delete device from DB
         web.get('/api/devices/{device_id}/tokens', handle_get_device_tokens),  # Get device tokens

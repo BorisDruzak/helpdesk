@@ -42,6 +42,22 @@
 - Исключение: controlled reprovision. Если токен был выдан на новый placeholder-`device_id`, а агент пришёл с payload `device_id`, который уже известен серверу как реальное устройство, сервер сначала перепривязывает сам токен к существующему устройству и только потом завершает handshake.
 - Если payload `device_id` не подходит под controlled reprovision, используется device_id из токена и пишется предупреждение в лог.
 
+### 3.1 Update-report поля в handshake
+
+После self-update launcher/агента сервер дополнительно принимает в handshake launcher-driven report о последней попытке обновления:
+
+- success-report:
+  - `applied_update_version`
+  - `last_update_operation_id`
+- failure-report:
+  - `failed_update_version`
+  - `failed_update_operation_id`
+  - `failed_update_reason`
+  - `failed_update_at`
+  - `failed_update_message`
+
+Эти поля используются только как post-update confirmation. Для `agent_update` операция считается завершённой именно после такого handshake-report, а не в момент `command_result` со стадией `scheduled`.
+
 ### 4. Device binding
 
 - Каждый тикет привязан к одному `device_id`. События от другого устройства для этого тикета отклоняются с **outbox_nack** и кодом `DEVICE_MISMATCH` (non-retryable).

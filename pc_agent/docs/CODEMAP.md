@@ -24,7 +24,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; `chat_raise()` теперь возвращает и `job_id`, и `ticket_id`; до запуска parser/logging принудительно включает UTF-8 для stdout/stderr на Windows |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; `chat_raise()` теперь возвращает и `job_id`, и `ticket_id`; до запуска parser/logging принудительно включает UTF-8 для stdout/stderr на Windows; в handshake передаёт последний success/failure report self-update |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI |

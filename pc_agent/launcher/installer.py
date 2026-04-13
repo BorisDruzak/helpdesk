@@ -10,11 +10,15 @@ import tarfile
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 import os
 import sys
 
 # Без зависимостей от pc_agent при импорте (launcher может быть отдельным бинарем)
+
+UPDATE_HISTORY_LIMIT = 100
+DOWNLOAD_RETENTION_LIMIT = 8
+DB_BACKUP_RETENTION_LIMIT = 10
 
 
 def _safe_join(base: Path, path: str) -> Path:
@@ -106,6 +110,86 @@ def backup_storage_db(data_root: Path, db_backups_dir: Path) -> Path:
     return backup_path
 
 
+def _read_history(history_path: Path) -> list[dict[str, Any]]:
+    if not history_path.exists():
+        return []
+    try:
+        raw = json.loads(history_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _write_history(history_path: Path, items: list[dict[str, Any]]) -> None:
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    trimmed = items[-UPDATE_HISTORY_LIMIT:]
+    history_path.write_text(json.dumps(trimmed, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _append_history(history_path: Path, entry: dict[str, Any]) -> None:
+    history = _read_history(history_path)
+    history.append(entry)
+    _write_history(history_path, history)
+
+
+def _archive_failed_pending(
+    pending_path: Path,
+    updates_dir: Path,
+    *,
+    payload: Optional[dict[str, Any]],
+    error_message: str,
+) -> None:
+    archive_path = updates_dir / "last_failed_pending_update.json"
+    raw_pending = None
+    try:
+        raw_pending = pending_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        raw_pending = None
+    archive_payload = {
+        "failed_at": datetime.now(timezone.utc).isoformat(),
+        "error_message": error_message,
+        "pending_payload": payload or {},
+        "pending_text": raw_pending,
+    }
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    archive_path.write_text(json.dumps(archive_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        pending_path.unlink()
+    except Exception:
+        pass
+
+
+def _prune_paths(paths: list[Path], keep: int) -> None:
+    if keep < 0:
+        keep = 0
+    existing = [path for path in paths if path.exists()]
+    existing.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in existing[keep:]:
+        try:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _cleanup_update_artifacts(updates_dir: Path, artifact_path: Optional[Path]) -> None:
+    if artifact_path and artifact_path.exists():
+        try:
+            artifact_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    downloads_dir = updates_dir / "downloads"
+    db_backups_dir = updates_dir / "db_backups"
+    if downloads_dir.exists():
+        _prune_paths(list(downloads_dir.glob("*")), keep=DOWNLOAD_RETENTION_LIMIT)
+    if db_backups_dir.exists():
+        _prune_paths(list(db_backups_dir.glob("storage.db.*")), keep=DB_BACKUP_RETENTION_LIMIT)
+
+
 def run_verify(
     binary_path: Path,
     data_root: Path,
@@ -149,23 +233,49 @@ def apply_update(
         if log_message:
             log_message(msg)
 
+    updates_dir = data_root / "updates"
+    history_path = updates_dir / "update_history.json"
     if not pending_path.exists():
         return False, "pending_update.json not found"
     try:
         payload = json.loads(pending_path.read_text(encoding="utf-8"))
     except Exception as e:
+        _archive_failed_pending(
+            pending_path,
+            updates_dir,
+            payload=None,
+            error_message=f"Invalid pending_update.json: {e}",
+        )
         return False, f"Invalid pending_update.json: {e}"
     version = payload.get("version")
     archive_type = payload.get("archive_type", "zip")
     artifact_path = Path(payload.get("artifact_path", ""))
-    if not version or not artifact_path.exists():
-        return False, "Missing version or artifact_path"
-    staging = install_root / "versions" / "_staging" / version
     versions_dir = install_root / "versions"
     current_path = install_root / "current.json"
-    updates_dir = data_root / "updates"
     db_backups_dir = updates_dir / "db_backups"
-    history_path = updates_dir / "update_history.json"
+    staging = install_root / "versions" / "_staging" / str(version or "_unknown")
+
+    def fail_update(reason: str, message: str) -> Tuple[bool, str]:
+        entry = {
+            "version": version,
+            "success": False,
+            "at": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            "message": message,
+            "operation_id": payload.get("operation_id"),
+            "requested_by": payload.get("requested_by"),
+            "requested_reason": payload.get("requested_reason"),
+            "target": payload.get("target"),
+            "channel": payload.get("channel"),
+        }
+        _append_history(history_path, entry)
+        _archive_failed_pending(pending_path, updates_dir, payload=payload, error_message=message)
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        return False, message
+
+    if not version or not artifact_path.exists():
+        return fail_update("invalid_payload", "Missing version or artifact_path")
 
     # Очистить staging
     if staging.exists():
@@ -175,7 +285,7 @@ def apply_update(
         extract_artifact(archive_type, artifact_path, staging)
     except Exception as e:
         log(f"Extract failed: {e}")
-        return False, str(e)
+        return fail_update("extract_failed", str(e))
 
     # Backup DB
     backup_storage_db(data_root, db_backups_dir)
@@ -186,74 +296,53 @@ def apply_update(
         binary_path = _find_agent_binary(staging)
     except FileNotFoundError as e:
         log(str(e))
-        return False, "Agent binary not found in extracted archive"
+        return fail_update("binary_not_found", "Agent binary not found in extracted archive")
     if not run_verify(binary_path, data_root, install_root):
         log("Verify failed, rolling back DB")
         # Restore DB from latest backup
         backups = sorted(db_backups_dir.glob("storage.db.*"), key=lambda p: p.stat().st_mtime, reverse=True)
         if backups:
             shutil.copy2(backups[0], data_root / "storage.db")
-        # Append to history (failure)
-        history = []
-        if history_path.exists():
-            try:
-                history = json.loads(history_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        history.append({
-            "version": version,
-            "success": False,
-            "at": datetime.now(timezone.utc).isoformat(),
-            "reason": "verify_failed",
-            "operation_id": payload.get("operation_id"),
-            "requested_by": payload.get("requested_by"),
-            "target": payload.get("target"),
-            "channel": payload.get("channel"),
-        })
-        history_path.parent.mkdir(parents=True, exist_ok=True)
-        history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
-        return False, "Verify failed"
+        return fail_update("verify_failed", "Verify failed")
     # Publish: move staging -> versions/<version>
-    target_version_dir = versions_dir / version
-    if target_version_dir.exists():
-        shutil.rmtree(target_version_dir, ignore_errors=True)
-    shutil.move(str(staging), str(target_version_dir))
-    # Update current.json
     previous = None
     if current_path.exists():
         try:
             current = json.loads(current_path.read_text(encoding="utf-8"))
             previous = current.get("version")
         except Exception:
-            pass
-    current_path.write_text(
-        json.dumps({"version": version, "previous": previous or version}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+            previous = None
+    try:
+        target_version_dir = versions_dir / version
+        if target_version_dir.exists():
+            shutil.rmtree(target_version_dir, ignore_errors=True)
+        shutil.move(str(staging), str(target_version_dir))
+        current_path.write_text(
+            json.dumps({"version": version, "previous": previous or version}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        log(f"Publish failed: {e}")
+        return fail_update("publish_failed", f"Publish failed: {e}")
+    _append_history(
+        history_path,
+        {
+            "version": version,
+            "success": True,
+            "at": datetime.now(timezone.utc).isoformat(),
+            "operation_id": payload.get("operation_id"),
+            "requested_by": payload.get("requested_by"),
+            "requested_reason": payload.get("requested_reason"),
+            "target": payload.get("target"),
+            "channel": payload.get("channel"),
+            "previous_version": previous,
+        },
     )
-    # History
-    history = []
-    if history_path.exists():
-        try:
-            history = json.loads(history_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    history.append({
-        "version": version,
-        "success": True,
-        "at": datetime.now(timezone.utc).isoformat(),
-        "operation_id": payload.get("operation_id"),
-        "requested_by": payload.get("requested_by"),
-        "target": payload.get("target"),
-        "channel": payload.get("channel"),
-    })
-    history_path.parent.mkdir(parents=True, exist_ok=True)
-    history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     # Remove or move pending
     try:
         pending_path.unlink()
     except Exception:
         pass
+    _cleanup_update_artifacts(updates_dir, artifact_path)
     log(f"Update to {version} applied")
     return True, version

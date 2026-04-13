@@ -2,7 +2,7 @@
 HTTP handlers for agents/devices read API.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from aiohttp import web
 from loguru import logger
 import time
@@ -58,6 +58,48 @@ def _serialize_update_summary(
         "last_update_error_message": op.get("error_message"),
         "last_update_result_summary": op.get("result_summary"),
         "last_update_finished_at": op.get("finished_at"),
+        "last_failed_update_version": device_metadata.get("last_failed_update_version"),
+        "last_failed_update_operation_id": device_metadata.get("last_failed_update_operation_id"),
+        "last_failed_update_reason": device_metadata.get("last_failed_update_reason"),
+        "last_failed_update_at": device_metadata.get("last_failed_update_at"),
+        "last_failed_update_message": device_metadata.get("last_failed_update_message"),
+    }
+
+
+def _serialize_problem_log_row(item: dict) -> dict:
+    return {
+        "id": item.get("id"),
+        "timestamp": item.get("timestamp"),
+        "level": item.get("level"),
+        "message": item.get("message"),
+        "module": item.get("module"),
+        "function": item.get("function"),
+        "file_path": item.get("file_path"),
+        "line": item.get("line"),
+    }
+
+
+def _serialize_update_operation(operation, params: dict | None) -> dict:
+    params = params if isinstance(params, dict) else {}
+    return {
+        "operation_id": operation.operation_id,
+        "status": operation.status,
+        "error_code": operation.error_code,
+        "error_message": operation.error_message,
+        "result_summary": operation.result_summary,
+        "queued_at": operation.queued_at.isoformat() if operation.queued_at else None,
+        "sent_at": operation.sent_at.isoformat() if operation.sent_at else None,
+        "accepted_at": operation.accepted_at.isoformat() if operation.accepted_at else None,
+        "started_at": operation.started_at.isoformat() if operation.started_at else None,
+        "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
+        "deadline_at": operation.deadline_at.isoformat() if operation.deadline_at else None,
+        "target": params.get("target"),
+        "channel": params.get("channel"),
+        "version": params.get("version"),
+        "archive_type": params.get("archive_type"),
+        "artifact_name": params.get("artifact_name"),
+        "restart_delay_sec": params.get("restart_delay_sec"),
+        "reason": params.get("reason"),
     }
 
 
@@ -392,6 +434,126 @@ async def handle_get_device(request):
             "status": "error",
             "error": str(e)
         }, status=500)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_get_device_update_diagnostics(request):
+    """
+    GET /api/devices/{device_id}/agent/update_diagnostics
+
+    Возвращает расширенную диагностику обновлений агента для admin UI.
+    """
+    try:
+        from app.repos import DevicesRepo
+        from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+        from app.repos.device_outbox_repo import DeviceOutboxRepo
+        from app.repos.operations_repo import OperationsRepo
+        from tech.log_buffer import list_log_records
+
+        device_id = request.match_info["device_id"]
+        now = datetime.now(timezone.utc)
+        state = request.app["state"]
+
+        async with get_session() as session:
+            devices_repo = DevicesRepo(session)
+            operations_repo = OperationsRepo(session)
+            outbox_repo = DeviceOutboxRepo(session)
+            audit_repo = AgentRuntimeAuditRepo(session)
+
+            device = await devices_repo.get_by_device_id(device_id)
+            if not device:
+                return web.json_response({"status": "error", "error": "Устройство не найдено"}, status=404)
+
+            device_meta = device.device_metadata if isinstance(device.device_metadata, dict) else {}
+            recent_updates = await operations_repo.get_recent_operations(
+                device_id=device_id,
+                kinds=["agent_update"],
+                limit=10,
+            )
+            latest_op = recent_updates[0] if recent_updates else None
+            update_summary = _serialize_update_summary(
+                device_metadata=device_meta,
+                recent_update_operation={
+                    "status": getattr(latest_op, "status", None),
+                    "error_code": getattr(latest_op, "error_code", None),
+                    "error_message": getattr(latest_op, "error_message", None),
+                    "result_summary": getattr(latest_op, "result_summary", None),
+                    "finished_at": latest_op.finished_at.isoformat() if latest_op and latest_op.finished_at else None,
+                } if latest_op else None,
+            )
+            update_operation_ids = {op.operation_id for op in recent_updates}
+            recent_operation_rows = []
+            for operation in recent_updates:
+                outbox_entry = await outbox_repo.get_by_command_id(operation.operation_id)
+                params = outbox_entry.params if outbox_entry and isinstance(outbox_entry.params, dict) else {}
+                recent_operation_rows.append(_serialize_update_operation(operation, params))
+
+            events = await audit_repo.list_feed(device_id=device_id, limit=120)
+            serialized_events = []
+            for item in events:
+                if str(item.event_type or "").startswith("update_") or (
+                    item.event_type == "operation_timed_out" and item.operation_id in update_operation_ids
+                ):
+                    serialized_events.append(
+                        {
+                            "id": item.id,
+                            "event_type": item.event_type,
+                            "severity": item.severity,
+                            "source": item.source,
+                            "operation_id": item.operation_id,
+                            "created_at": item.created_at.isoformat() if item.created_at else None,
+                            "details": item.details_json if isinstance(item.details_json, dict) else {},
+                        }
+                    )
+
+            problem_logs = [
+                _serialize_problem_log_row(item)
+                for item in list_log_records(
+                    levels=("warning", "error", "critical"),
+                    limit=30,
+                    contains=device_id,
+                )
+            ]
+            if not problem_logs and device.hostname:
+                problem_logs = [
+                    _serialize_problem_log_row(item)
+                    for item in list_log_records(
+                        levels=("warning", "error", "critical"),
+                        limit=30,
+                        contains=device.hostname,
+                    )
+                ]
+
+        return web.json_response(
+            {
+                "status": "ok",
+                "diagnostics": {
+                    "device": {
+                        "device_id": device.device_id,
+                        "hostname": device.hostname,
+                        "agent_version": device.agent_version,
+                        "online": bool(state.is_agent_online(device_id)),
+                        "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+                        "last_handshake_at": device.last_handshake_at.isoformat() if device.last_handshake_at else None,
+                        "last_seen_age_sec": (
+                            int((now - device.last_seen_at).total_seconds()) if device.last_seen_at else None
+                        ),
+                        "last_handshake_age_sec": (
+                            int((now - device.last_handshake_at).total_seconds()) if device.last_handshake_at else None
+                        ),
+                        "stale": bool(device.last_seen_at and device.last_seen_at < (now - timedelta(minutes=5))),
+                    },
+                    "update_summary": update_summary,
+                    "recent_operations": recent_operation_rows,
+                    "timeline": serialized_events,
+                    "problem_logs": problem_logs,
+                },
+            }
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения диагностики обновлений: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
 
 
 async def handle_device_check(request):

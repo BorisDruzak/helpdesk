@@ -54,15 +54,52 @@ async def _confirm_update_operation_from_handshake(
     device_id: str,
     applied_update_version: Optional[str],
     last_update_operation_id: Optional[str],
+    failed_update_version: Optional[str],
+    failed_update_operation_id: Optional[str],
+    failed_update_reason: Optional[str],
+    failed_update_message: Optional[str],
 ) -> None:
-    if not applied_update_version or not last_update_operation_id:
-        return
     from app.repos.operations_repo import OperationsRepo
     from app.repos.device_outbox_repo import DeviceOutboxRepo
     from app.services.operation_service import OperationService
 
     op_repo = OperationsRepo(session)
     outbox_repo = DeviceOutboxRepo(session)
+    op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
+
+    if failed_update_version and failed_update_operation_id:
+        failed_operation = await op_repo.get_by_operation_id(failed_update_operation_id)
+        if (
+            failed_operation
+            and failed_operation.device_id == device_id
+            and failed_operation.kind == "agent_update"
+        ):
+            failed_code = str(failed_update_reason or "UPDATE_APPLY_FAILED").strip().upper() or "UPDATE_APPLY_FAILED"
+            failed_message = (
+                failed_update_message
+                or f"Launcher reported failed update apply for version {failed_update_version}"
+            )
+            await op_service.mark_failed(
+                operation_id=failed_update_operation_id,
+                error_code=failed_code,
+                error_message=failed_message,
+                expected_statuses=["running", "accepted", "sent", "queued"],
+            )
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="update_failed",
+                severity="warning",
+                source="handshake",
+                operation_id=failed_update_operation_id,
+                details_json={
+                    "reason": failed_update_reason or "update_apply_failed",
+                    "failed_update_version": failed_update_version,
+                    "message": failed_message,
+                },
+            )
+
+    if not applied_update_version or not last_update_operation_id:
+        return
     operation = await op_repo.get_by_operation_id(last_update_operation_id)
     if not operation:
         return
@@ -73,8 +110,6 @@ async def _confirm_update_operation_from_handshake(
     expected_version = None
     if outbox_entry and isinstance(outbox_entry.params, dict):
         expected_version = outbox_entry.params.get("version")
-
-    op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
     if expected_version and expected_version != applied_update_version:
         await op_service.mark_failed(
             operation_id=last_update_operation_id,
@@ -374,6 +409,16 @@ async def handle_handshake(
         metadata["applied_update_version"] = payload_pre["applied_update_version"]
     if payload_pre.get("last_update_operation_id") is not None:
         metadata["last_update_operation_id"] = payload_pre["last_update_operation_id"]
+    if payload_pre.get("failed_update_version") is not None:
+        metadata["last_failed_update_version"] = payload_pre["failed_update_version"]
+    if payload_pre.get("failed_update_operation_id") is not None:
+        metadata["last_failed_update_operation_id"] = payload_pre["failed_update_operation_id"]
+    if payload_pre.get("failed_update_reason") is not None:
+        metadata["last_failed_update_reason"] = payload_pre["failed_update_reason"]
+    if payload_pre.get("failed_update_at") is not None:
+        metadata["last_failed_update_at"] = payload_pre["failed_update_at"]
+    if payload_pre.get("failed_update_message") is not None:
+        metadata["last_failed_update_message"] = payload_pre["failed_update_message"]
     state.register_agent(agent_id, ws, metadata)
     
     logger.success(f"✅ Агент зарегистрирован: {device_id}")
@@ -414,6 +459,16 @@ async def handle_handshake(
                     metadata_db["applied_update_version"] = payload["applied_update_version"]
                 if payload.get("last_update_operation_id") is not None:
                     metadata_db["last_update_operation_id"] = payload["last_update_operation_id"]
+                if payload.get("failed_update_version") is not None:
+                    metadata_db["last_failed_update_version"] = payload["failed_update_version"]
+                if payload.get("failed_update_operation_id") is not None:
+                    metadata_db["last_failed_update_operation_id"] = payload["failed_update_operation_id"]
+                if payload.get("failed_update_reason") is not None:
+                    metadata_db["last_failed_update_reason"] = payload["failed_update_reason"]
+                if payload.get("failed_update_at") is not None:
+                    metadata_db["last_failed_update_at"] = payload["failed_update_at"]
+                if payload.get("failed_update_message") is not None:
+                    metadata_db["last_failed_update_message"] = payload["failed_update_message"]
                 if payload.get("os_type") is not None:
                     metadata_db["os_type"] = payload["os_type"]
                 if not metadata_db.get("os_type") and os_info:
@@ -436,6 +491,10 @@ async def handle_handshake(
                     device_id=device_id,
                     applied_update_version=payload.get("applied_update_version"),
                     last_update_operation_id=payload.get("last_update_operation_id"),
+                    failed_update_version=payload.get("failed_update_version"),
+                    failed_update_operation_id=payload.get("failed_update_operation_id"),
+                    failed_update_reason=payload.get("failed_update_reason"),
+                    failed_update_message=payload.get("failed_update_message"),
                 )
                 
                 # Get or create config

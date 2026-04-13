@@ -1,96 +1,113 @@
-# Анализ: обновление агента через сервер (remote self-update)
+# Анализ: production-ready обновление агента через сервер
 
-**Дата:** 2026-02-22  
-**Цель:** оценка готовности к тестированию и перечень доработок.
-
----
-
-## 1. Что уже реализовано
-
-### 1.1 Сервер
-
-| Компонент | Статус | Описание |
-|-----------|--------|----------|
-| **POST /api/agent_builds/upload** | ✅ | Загрузка ZIP/tar.gz, проверка `archive_type`, сохранение в `AGENT_BUILDS_STORAGE_DIR`, запись в `agent_builds`. Только admin. |
-| **GET /api/agent_builds** | ⚠️ | Список билдов по target/channel/limit. **Нет проверки auth** (в доке указано «Auth: обязателен»). |
-| **GET /api/agent_builds/{target}/{channel}/{version}/download** | ✅ | Выдача файла, Bearer auth, ETag, audit в `agent_build_download_audit`. |
-| **POST /api/devices/{device_id}/agent/update** | ✅ | Проверка online, policy system_write (admin), выбор билда (latest или по version), создание операции `agent_update`, `enqueue_command_async("update", params, actor_role)`. Ответ 202 + operation_id. |
-| **БД** | ✅ | Таблицы `agent_builds`, `agent_build_download_audit`, миграции 016 и 017 (artifact_filename, archive_type, mime_type). |
-| **Доставка команды** | ✅ | Команда `update` попадает в `device_outbox`, отправляется агенту через DeviceOutboxSender в payload: `command`, `params`, `actor_role`. |
-| **Обработка command_result** | ✅ | Общая логика: success → mark_succeeded, обновление операции. Специальной обработки для `update` не требуется. |
-
-### 1.2 Агент
-
-| Компонент | Статус | Описание |
-|-----------|--------|----------|
-| **Приём команды `update`** | ✅ | В `orchestrator_commands`, маршрутизация в `_handle_update(command, meta)`. |
-| **Валидация** | ✅ | Проверка actor_role == admin, наличие version/download_url/sha256, archive_type in (zip, tar.gz). |
-| **Скачивание** | ✅ | `_download_file_to_path`: Bearer из `identity_manager.token`, проверка 200/401, streaming SHA256 и size. |
-| **pending_update.json** | ✅ | Пишется в `data_root/updates/`, поля: version, target, channel, archive_type, artifact_path, received_at, operation_id, requested_by, sha256, size. |
-| **Завершение** | ✅ | command_result "scheduled", затем `loop.call_later(restart_delay, lambda: os._exit(EXIT_UPDATE_PENDING))` (код 42). |
-| **Режим --verify** | ✅ | В `ws_agent.py`: `_run_verify_mode`, используется launcher’ом для проверки новой версии перед переключением. |
-
-### 1.3 Launcher
-
-| Компонент | Статус | Описание |
-|-----------|--------|----------|
-| **launcher_main.py** | ✅ | Запуск версии из current.json, при exit 42 или наличии pending_update.json — `apply_update`. |
-| **launcher_portable_main.py** | ✅ | То же для portable-режима, авто-определение install_root/data_root. |
-| **installer.apply_update** | ✅ | Чтение pending_update.json, распаковка в _staging, backup БД, run_verify, при успехе — переименование staging → versions/<ver>, current.json, update_history.json, удаление pending. При провале verify — восстановление БД, запись в history, rollback. |
-| **Формат pending_update** | ✅ | Совместим с тем, что пишет оркестратор (version, archive_type, artifact_path и т.д.). |
-
-### 1.4 Документация
-
-| Файл | Статус |
-|------|--------|
-| **server/docs/AGENT_UPDATES_API.md** | ✅ Описание API и WS-команды |
-| **pc_agent/docs/SELF_UPDATE.md** | ✅ Модель v2, layout, поведение агента и launcher |
+**Дата обновления:** 2026-04-13  
+**Цель:** зафиксировать текущее production-состояние remote self-update после hardening launcher/API/UI и описать, что считается обязательной проверкой перед релизом.
 
 ---
 
-## 2. Что нужно доработать
+## 1. Что теперь считается канонической схемой
 
-### 2.1 Критично для тестирования
+Обновление агента в production идёт не через замену работающего `exe` "на месте", а через связку:
 
-1. **Auth для GET /api/agent_builds**  
-   В документации указано: «Auth: обязателен». В коде (`handle_list_agent_builds`) проверки `auth_context` нет — любой неавторизованный запрос может получить список билдов.  
-   **Действие:** добавить проверку auth (и при необходимости ограничение по роли, как в upload).
+1. Сервер хранит versioned build-артефакты и выдаёт их по защищённому HTTP download.
+2. Сервер создаёт materialized operation `agent_update` и кладёт команду `update` в `device_outbox`.
+3. Агент скачивает артефакт, пишет `pending_update.json`, отправляет `command_result=status=success` со стадией `scheduled` и инициирует **graceful shutdown** с exit code `42`.
+4. Launcher, живущий отдельно от основного бинаря агента, видит `pending_update.json` или exit `42`, применяет update через staging, делает `--verify`, публикует новую версию или выполняет rollback.
+5. После следующего handshake агент сообщает серверу итог последней попытки self-update:
+   - success: `applied_update_version`, `last_update_operation_id`
+   - failure: `failed_update_version`, `failed_update_operation_id`, `failed_update_reason`, `failed_update_at`, `failed_update_message`
+6. Только после этого сервер финализирует `agent_update` операцию как `succeeded` или `failed`.
 
-### 2.2 Важно для удобства и отладки
-
-2. **UI для запуска обновления**  
-   В админке/интерфейсе нет кнопки или формы «Обновить агента на устройстве» (выбор устройства, target/channel/version, запуск POST .../agent/update).  
-   **Действие:** добавить в админку раздел или модальное окно: выбор устройства (online), выбор билда (target/channel/version или «latest»), кнопка «Обновить» → вызов API, отображение operation_id и статуса операции.
-
-3. **UI для загрузки билдов (опционально)**  
-   Загрузка билда сейчас только через API (curl/Postman). Для тестирования удобно иметь форму в админке: выбор файла, target, channel, version, archive_type, кнопка «Загрузить».
-
-4. **Отображение операций agent_update**  
-   Операции с kind=agent_update создаются и обновляются через общий command_result. Стоит убедиться, что в списке операций/тикетов они отображаются с понятным названием (например «Обновление агента») и что после успешного «scheduled» статус операции переходит в succeeded.
-
-### 2.3 Улучшения (по желанию)
-
-5. **Логирование токена при download**  
-   В оркестраторе: `logger.debug(f"[UpdateDownload] Using token: {token[:8]}...")` — префикс уже есть, убедиться, что нигде не логируется полный токен.
-
-6. **Тесты**  
-   Нет автотестов на сервере для POST .../agent/update (мок агента online, вызов API, проверка записи в outbox и создания операции). Нет E2E: загрузка билда → триггер update → агент получает команду, скачивает, пишет pending, выходит 42 → launcher применяет (такой сценарий можно оформить как ручной или отдельный E2E).
-
-7. **Конфигурация SERVER_PUBLIC_BASE_URL**  
-   Download URL строится из `config.SERVER_PUBLIC_BASE_URL`. Если агент в другой сети, этот URL должен быть доступен с устройства. В доке/конфиге явно описать необходимость настройки для продакшена.
+Это значит, что реальным подтверждением обновления считается **не момент постановки команды**, а **следующий handshake новой или откатившейся версии**.
 
 ---
 
-## 3. Готовность к тестированию
+## 2. Что уже доведено до production-ready уровня
 
-| Аспект | Готовность |
-|--------|------------|
-| **Сценарий «админ дергает API вручную»** | ✅ Готов: upload (curl), list (curl), POST .../agent/update (curl) при подключённом агенте. Ожидаемое поведение: команда в outbox → агент скачивает, пишет pending, выходит 42 → launcher применяет обновление. |
-| **Проверка прав** | ✅ Policy и проверка admin на сервере и в агенте есть. |
-| **Безопасность** | ⚠️ List builds без auth — лучше закрыть до тестов. |
-| **Удобное тестирование через браузер** | ❌ Нет UI для update и (опционально) для upload. |
+### 2.1 Сервер
 
-**Итог:** бэкенд и агент реализованы и согласованы с документацией. Для целенаправленного тестирования достаточно:  
-1) добавить auth для GET /api/agent_builds;  
-2) провести ручной E2E (upload → update → проверка на агенте с launcher).  
-UI в админке — следующий шаг для удобства, но не блокер для проверки сценария через API.
+| Компонент | Статус | Что важно |
+|-----------|--------|-----------|
+| `POST /api/agent_builds/upload` | ✅ | Только `admin`, upload ZIP/tar.gz, валидация `archive_type`, запись метаданных в БД. |
+| `GET /api/agent_builds` | ✅ | Требует auth, отдаёт build metadata для UI: `artifact_filename`, `archive_type`, `mime_type`, `sha256`, `size`. |
+| `GET /api/agent_builds/{target}/{channel}/{version}/download` | ✅ | Bearer auth, `ETag`, `Content-Disposition`, audit download. |
+| `POST /api/devices/{device_id}/agent/update` | ✅ | Создаёт `agent_update`, кладёт `update` в outbox, принимает `reason`, отдаёт operation object. |
+| `POST /api/agents/update_bulk` | ✅ | Массовый rollout с canary-gate, audit, optional `reason`, per-device operations. |
+| `GET /api/devices/{device_id}/agent/update_diagnostics` | ✅ | Возвращает статус устройства, update summary, recent operations, timeline runtime audit и problem logs. |
+| Handshake finalization | ✅ | Операция закрывается только на handshake success/failure-report от launcher/агента. |
+| SLA для `agent_update` | ✅ | Увеличены `accepted/execution` timeout'ы под длительный update-flow. |
+
+### 2.2 Агент
+
+| Компонент | Статус | Что важно |
+|-----------|--------|-----------|
+| Приём команды `update` | ✅ | Проверка роли, download URL, `sha256`, `archive_type`, optional `reason`. |
+| Download артефакта | ✅ | Bearer из device token, проверка `sha256` и размера. |
+| `pending_update.json` | ✅ | Хранит `operation_id`, `requested_by`, `requested_reason`, target/channel/version и путь к артефакту. |
+| Shutdown под update | ✅ | Вместо жёсткого `os._exit()` используется управляемый shutdown path с exit code `42`. |
+| Handshake report | ✅ | На новом подключении агент сообщает последний success/failure update-result. |
+
+### 2.3 Launcher
+
+| Компонент | Статус | Что важно |
+|-----------|--------|-----------|
+| Versioned install layout | ✅ | `install_root/versions/<version>/`, а не in-place замена текущего бинаря. |
+| `apply_update()` | ✅ | Распаковка в staging, backup БД, `--verify`, publish новой версии, rollback при fail. |
+| `update_history.json` | ✅ | Хранит success/failure историю с `operation_id`, причиной и временем. |
+| Обработка failed pending | ✅ | Битый/неприменимый `pending_update.json` архивируется в `last_failed_pending_update.json` и не ретраится бесконечно. |
+| Cleanup policy | ✅ | Чистятся старые downloads/backups, чтобы update-flow не разрастался бесконтрольно. |
+
+### 2.4 Admin UI
+
+В `http://192.168.100.17:8666/admin` раздел Agent Updates теперь включает:
+
+- загрузку билдов;
+- запуск single-device update;
+- bulk/canary rollout;
+- confirm modal с причиной действия;
+- живую диагностику выбранного устройства;
+- summary последнего update-state;
+- recent operations по `agent_update`;
+- timeline runtime audit;
+- problem logs по устройству/hostname;
+- отображение ошибок запроса и ошибок последней неуспешной попытки update.
+
+---
+
+## 3. Что теперь считается обязательным для прода
+
+### 3.1 Инварианты релизной схемы
+
+- Всегда запускать агент через launcher, а не напрямую бинарём версии.
+- Не считать `command_result scheduled` подтверждением успешного обновления.
+- Финализировать `agent_update` только после handshake success/failure-report.
+- Не ретраить один и тот же битый `pending_update.json` бесконечно.
+- Для массового rollout использовать canary-first.
+- В UI и API обязательно передавать `reason` для ручных rollout-операций, когда это осмысленно.
+
+### 3.2 Обязательные проверки перед выкладкой
+
+1. Upload build и list build metadata.
+2. Single-device update с новым `operation_id`.
+3. Переход операции: `queued/running` -> `succeeded` только после handshake.
+4. Негативный сценарий: verify failure или invalid pending -> операция становится `failed`, причина видна в diagnostics/UI.
+5. Canary rollout и затем bulk rollout с подтверждением.
+6. Проверка admin UI: confirm modal, diagnostics, timeline, logs, error rendering.
+
+---
+
+## 4. Остаточные риски и что контролировать в эксплуатации
+
+- `SERVER_PUBLIC_BASE_URL` обязан быть доступен с устройства агента, иначе download-stage упадёт до применения update.
+- Подпись бинарей и/или manifest signature остаётся желательной следующей ступенью hardening, если будет нужен более строгий supply-chain контроль.
+- Если устройство нестабильно по сети, важнее смотреть не только operation status, но и timeline/problem logs в diagnostics.
+- Для реального production rollout сначала выпускать build в `beta/dev` или через canary на ограниченный пул устройств.
+
+---
+
+## 5. Где смотреть детали
+
+- API и wire contract: [AGENT_UPDATES_API.md](AGENT_UPDATES_API.md)
+- Launcher/apply/rollback: [../../pc_agent/docs/SELF_UPDATE.md](../../pc_agent/docs/SELF_UPDATE.md)
+- Handshake/report fields: [../../pc_agent/docs/PROTOCOL_V3.md](../../pc_agent/docs/PROTOCOL_V3.md)
+- Навигация по модулям: [CODEMAP.md](CODEMAP.md), [../../pc_agent/docs/CODEMAP.md](../../pc_agent/docs/CODEMAP.md)

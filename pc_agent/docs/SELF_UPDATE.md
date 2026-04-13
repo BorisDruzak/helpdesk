@@ -42,9 +42,9 @@ PC Agent поддерживает удалённое обновление чер
 ## Что делает агент (при команде update)
 
 1. Скачивает артефакт в `data_root/updates/downloads/build.<ext>` с проверкой sha256/size.
-2. Пишет `data_root/updates/pending_update.json` (version, target, archive_type, artifact_path, received_at, operation_id, requested_by, sha256, size).
+2. Пишет `data_root/updates/pending_update.json` (version, target, archive_type, artifact_path, received_at, operation_id, requested_by, requested_reason, sha256, size).
 3. Отправляет command_result со статусом "scheduled".
-4. Через короткую задержку завершает процесс с **exit code 42** (`EXIT_UPDATE_PENDING`). Агент **не** запускает in-place updater и **не** меняет свои файлы.
+4. Через короткую задержку выполняет **clean shutdown** и завершает процесс с **exit code 42** (`EXIT_UPDATE_PENDING`). Агент **не** запускает in-place updater и **не** меняет свои файлы.
 
 ## Что делает launcher
 
@@ -57,7 +57,9 @@ PC Agent поддерживает удалённое обновление чер
   - backup `storage.db` в `data_root/updates/db_backups/`;
   - **verify**: запуск новой версии с `--verify` (таймаут 60–90 с);
   - при успехе: атомарное переименование staging → `versions/<version>`, обновление `current.json`, запись в `update_history.json`, удаление `pending_update.json`;
-  - при провале verify: восстановление БД из backup, запись ошибки в `update_history`, откат (current.json не меняется).
+  - при провале extract / verify / publish: восстановление БД при необходимости, запись ошибки в `update_history`, сохранение `last_failed_pending_update.json`, удаление `pending_update.json` и откат (current.json не меняется).
+
+Важно: failed `pending_update.json` больше не ретраится бесконечно на каждом цикле launcher. После terminal failure требуется новый явный запрос на update с сервера.
 
 ## Режим агента --verify
 
@@ -67,6 +69,7 @@ PC Agent поддерживает удалённое обновление чер
 
 - `data_root/updates/pending_update.json` — параметры ожидающего обновления.
 - `data_root/updates/update_history.json` — история применённых/неудачных обновлений.
+- `data_root/updates/last_failed_pending_update.json` — последний провалившийся pending payload и текст ошибки.
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
 

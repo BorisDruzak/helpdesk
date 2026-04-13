@@ -46,6 +46,30 @@
 
 **Auth:** обязателен.
 
+Ответ:
+
+```json
+{
+  "status": "ok",
+  "builds": [
+    {
+      "target": "windows_amd64",
+      "channel": "stable",
+      "version": "3.1.0",
+      "artifact_filename": "pc_agent-windows_amd64-3.1.0.zip",
+      "archive_type": "zip",
+      "mime_type": "application/zip",
+      "sha256": "…",
+      "size": 123456,
+      "notes": null,
+      "created_at": "2026-04-13T08:30:00+00:00",
+      "download_path": "/api/agent_builds/windows_amd64/stable/3.1.0/download"
+    }
+  ],
+  "count": 1
+}
+```
+
 ## Download build
 
 `GET /api/agent_builds/{target}/{channel}/{version}/download`
@@ -74,9 +98,12 @@ Body:
   "target": "windows_amd64",
   "channel": "stable",
   "version": "3.1.0",
-  "restart_delay_sec": 2
+  "restart_delay_sec": 2,
+  "reason": "manual canary rollout after smoke"
 }
 ```
+
+- `reason` — опциональная человекочитаемая причина запуска; попадает в audit/timeline и в `pending_update.json`.
 
 Если `version` не задан — берётся **latest** build для `(target, channel)`.
 
@@ -102,7 +129,8 @@ Body:
   "size": 123456,
   "archive_type": "zip",
   "artifact_name": "pc_agent-windows_amd64-3.1.0.zip",
-  "restart_delay_sec": 2
+  "restart_delay_sec": 2,
+  "reason": "manual canary rollout after smoke"
 }
 ```
 
@@ -120,7 +148,8 @@ Body:
   "device_ids": ["uuid1", "uuid2"],
   "channel": "stable",
   "version": "3.1.0",
-  "restart_delay_sec": 2
+  "restart_delay_sec": 2,
+  "reason": "bulk rollout after verified canary"
 }
 ```
 
@@ -150,3 +179,27 @@ Body:
 - `last_update_operation_id` — ID операции обновления.
 
 Сервер сохраняет эти поля в `device_metadata` устройства и отдаёт в `GET /api/devices/{device_id}`. По ним можно убедиться, что агент реально перешёл на новую версию.
+
+Если launcher не смог применить обновление и перезапустил старую версию, агент передаёт в следующий `handshake`:
+
+- `failed_update_version`
+- `failed_update_operation_id`
+- `failed_update_reason`
+- `failed_update_at`
+- `failed_update_message`
+
+Сервер использует эти поля, чтобы перевести `agent_update` в `failed` без ожидания watchdog timeout, и сохраняет их в `device_metadata`.
+
+## Диагностика обновления по устройству
+
+`GET /api/devices/{device_id}/agent/update_diagnostics`
+
+**Auth:** `admin`, `support`, `auditor`.
+
+Возвращает расширенную диагностическую сводку для admin UI:
+
+- `device` — online/offline, last_seen/last_handshake, stale;
+- `update_summary` — последняя успешная/неуспешная информация, включая launcher-side failure report;
+- `recent_operations` — последние `agent_update` операции с target/channel/version/reason/status;
+- `timeline` — runtime-audit события `update_*` и timeout-сигналы;
+- `problem_logs` — последние warning/error записи из tech log buffer по `device_id`/hostname.
