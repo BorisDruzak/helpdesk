@@ -35,7 +35,7 @@ async def control_client(patched_get_session, monkeypatch):
     monkeypatch.setattr("control_plane.extract_token_from_header", fake_extract_token_from_header)
     monkeypatch.setattr("control_plane.AuthService.verify_agent_token", fake_verify_agent_token)
     monkeypatch.setattr("control_plane.AuthService.verify_ui_token", fake_verify_ui_token)
-    app = create_control_app()
+    app = create_control_app(initialize_db=False)
     async with TestClient(TestServer(app)) as client:
         yield client
 

@@ -122,6 +122,10 @@
   - поднять Linux-стенд через штатный pipeline;
   - отдельно проверить `python scripts/manage_remote_stack.py status control`;
   - в браузере пройти tech-panel сценарий со статусом, health, логами и confirm для lifecycle actions.
+- `python scripts/release_server_to_remote.py --skip-verify` допустим только как исключение:
+  - если тот же commit уже прошёл локальный `python scripts/verify_workspace.py` и релевантный pytest;
+  - если текущая dirty-состояние воркспейса относится к другому локальному WIP и не должно попасть на Linux;
+  - если deploy идёт вместе с `--allow-local-dirty`, то есть на Linux уходит именно последний проверенный commit.
 - В итоговом отчёте всегда фиксировать:
   - что изменено;
   - что проверено;

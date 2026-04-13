@@ -3975,7 +3975,7 @@
             return `<span class="tech-status-chip ${escapeHtml(state || 'unknown')}">${escapeHtml(label || 'unknown')}</span>`;
         }
 
-        function techRenderServerStatus(server, errorMessage) {
+        function renderTechServerStatus(server, errorMessage) {
             const host = document.getElementById('techServerStatusCard');
             if (!host) return;
             if (errorMessage) {

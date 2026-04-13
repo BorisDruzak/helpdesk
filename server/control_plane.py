@@ -10,11 +10,12 @@ import aiohttp
 from aiohttp import web
 from loguru import logger
 
-from app.db import get_session
+from app.db import get_session, init_db, shutdown_db
 from app.repos.ui_users_repo import UiUsersRepo
 from auth.context import AuthContext, AuthType
 from auth.middleware import extract_token_from_header
 from auth.service import AuthService
+from config import DATABASE_URL
 from runtime_control import (
     SERVER_UNIT,
     controller_allowed_origins,
@@ -59,7 +60,13 @@ def _apply_cors(request: web.Request, response: web.StreamResponse) -> web.Strea
 async def control_cors_middleware(request: web.Request, handler):
     if request.method == "OPTIONS":
         return _apply_cors(request, web.Response(status=204))
-    response = await handler(request)
+    try:
+        response = await handler(request)
+    except web.HTTPException as exc:
+        response = exc
+    except Exception:
+        logger.exception("[control_plane] unhandled request error")
+        response = web.json_response({"status": "error", "error": "Internal server error"}, status=500)
     return _apply_cors(request, response)
 
 
@@ -308,12 +315,23 @@ async def handle_options(_: web.Request) -> web.Response:
     return web.Response(status=204)
 
 
-def create_control_app() -> web.Application:
+async def _startup_control_plane(_: web.Application) -> None:
+    await init_db(DATABASE_URL)
+
+
+async def _cleanup_control_plane(_: web.Application) -> None:
+    await shutdown_db()
+
+
+def create_control_app(*, initialize_db: bool = True) -> web.Application:
     app = web.Application(middlewares=[control_cors_middleware, control_auth_middleware])
     app[STATE_KEY] = SimpleNamespace(users={})
     app[STARTED_AT_KEY] = _now_iso()
     app[ACTION_LOCK_KEY] = asyncio.Lock()
     app[RUNTIME_STATE_KEY] = {"current_action": None}
+    if initialize_db:
+        app.on_startup.append(_startup_control_plane)
+        app.on_cleanup.append(_cleanup_control_plane)
     app.router.add_route("OPTIONS", "/{tail:.*}", handle_options)
     app.router.add_get(f"{CONTROL_API_PREFIX}/server/status", handle_control_status)
     app.router.add_get(f"{CONTROL_API_PREFIX}/server/logs", handle_control_logs)
