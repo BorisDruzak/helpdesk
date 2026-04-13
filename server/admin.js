@@ -3670,6 +3670,11 @@
             itemId: null,
             relatedLogId: null,
         };
+        let techServerControlState = {
+            status: null,
+            logs: [],
+        };
+        let techServerConfirmState = null;
 
         function techStatusClass(kind) {
             if (kind === 'ok') return 'ok';
@@ -3694,6 +3699,15 @@
             if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин назад`;
             if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч назад`;
             return `${Math.floor(diffSec / 86400)} дн назад`;
+        }
+
+        function techFormatDurationSec(totalSec) {
+            const value = Number(totalSec);
+            if (!Number.isFinite(value) || value < 0) return 'вЂ”';
+            if (value < 60) return `${Math.floor(value)} сек`;
+            if (value < 3600) return `${Math.floor(value / 60)} мин`;
+            if (value < 86400) return `${Math.floor(value / 3600)} ч`;
+            return `${Math.floor(value / 86400)} д`;
         }
 
         function techIsStale(lastSeenAt, thresholdSec = 300) {
@@ -3912,11 +3926,381 @@
             await loadTechPanel(true);
         }
 
+        function getTechControlBaseUrl() {
+            return `${window.location.protocol}//${window.location.hostname}:8667`;
+        }
+
+        function techControlHeaders(includeContentType) {
+            return getAuthHeaders(includeContentType);
+        }
+
+        function techBuildControlUrl(path, query) {
+            const url = new URL(path, getTechControlBaseUrl());
+            if (query && typeof query === 'object') {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value == null || value === '') return;
+                    url.searchParams.set(key, value);
+                });
+            }
+            return url.toString();
+        }
+
+        function techControlBadge(text, kind) {
+            const el = document.getElementById('techControlAvailability');
+            if (!el) return;
+            el.textContent = text || 'Control-plane';
+            el.className = 'settings-mode-badge ' + (
+                kind === 'ok'
+                    ? 'settings-mode-badge-ok'
+                    : kind === 'bad'
+                        ? 'settings-mode-badge-bad'
+                        : 'settings-mode-badge-neutral'
+            );
+        }
+
+        function techControlNote(text, isError) {
+            const el = document.getElementById('techServerActionState');
+            if (!el) return;
+            el.textContent = text || '';
+            el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+        }
+
+        function techSetServerActionButtonsDisabled(disabled) {
+            document.querySelectorAll('[data-server-action]').forEach((button) => {
+                button.disabled = !!disabled;
+            });
+        }
+
+        function techStatusChip(label, state) {
+            return `<span class="tech-status-chip ${escapeHtml(state || 'unknown')}">${escapeHtml(label || 'unknown')}</span>`;
+        }
+
+        function techRenderServerStatus(server, errorMessage) {
+            const host = document.getElementById('techServerStatusCard');
+            if (!host) return;
+            if (errorMessage) {
+                host.innerHTML = `<div class="tech-agent-detail"><div class="error-message">${escapeHtml(errorMessage)}</div></div>`;
+                return;
+            }
+            const lastAction = server?.last_action || {};
+            const currentAction = server?.current_action || null;
+            const mainHealth = server?.main_server_health || {};
+            const mainOverview = mainHealth.overview || {};
+            const startedAt = server?.started_at || null;
+            const lastReason = lastAction.reason || server?.last_restart_reason || '—';
+            const poolStatus = mainOverview.postgres_health?.pool_status || '—';
+            techSetServerActionButtonsDisabled(!!currentAction);
+            host.innerHTML = `
+                <div class="tech-agent-detail">
+                    <div class="tech-agent-head">
+                        <div>
+                            <h3>pc-client-server</h3>
+                            <div class="tech-agent-subtitle">unit: <code>${escapeHtml(server?.unit || 'pc-client-server')}</code></div>
+                        </div>
+                        <div class="tech-inline-list">
+                            ${techStatusChip(server?.display_state || 'unknown', server?.display_state || 'unknown')}
+                            ${mainHealth.reachable ? techPill('main API ok', 'ok') : techPill('main API недоступен', 'bad')}
+                        </div>
+                    </div>
+                    <div class="tech-server-status-grid">
+                        <div class="tech-kpi-card"><label>PID</label><value>${escapeHtml(String(server?.main_pid || '—'))}</value></div>
+                        <div class="tech-kpi-card"><label>Uptime</label><value>${escapeHtml(server?.uptime_sec != null ? techFormatDurationSec(server.uptime_sec) : '—')}</value></div>
+                        <div class="tech-kpi-card"><label>Active/Sub</label><value>${escapeHtml(`${server?.active_state || '—'} / ${server?.sub_state || '—'}`)}</value></div>
+                        <div class="tech-kpi-card"><label>PostgreSQL pool</label><value>${escapeHtml(poolStatus || '—')}</value></div>
+                    </div>
+                    <div class="tech-inline-list">
+                        ${techPill(`Started: ${startedAt ? techFormatDate(startedAt) : '—'}`, server?.display_state === 'running' ? 'ok' : 'neutral')}
+                        ${techPill(`Last reason: ${lastReason}`, lastAction.status === 'error' ? 'bad' : 'neutral')}
+                        ${currentAction ? techPill(`Action: ${currentAction.action}`, 'warn') : techPill('Action: idle', 'ok')}
+                    </div>
+                    <div class="tech-json-preview">${escapeHtml(server?.status_excerpt || 'Статус unit пока недоступен.')}</div>
+                </div>`;
+        }
+
+        function techSerializeServerLogs(logs) {
+            return (logs || []).map((entry) => {
+                const parts = [
+                    `[${entry.timestamp || '-'}]`,
+                    `[${String(entry.level || 'info').toUpperCase()}]`,
+                    `[${entry.identifier || 'server'}${entry.pid ? ` pid=${entry.pid}` : ''}]`,
+                    entry.message || '',
+                ];
+                return parts.join(' ');
+            }).join('\n');
+        }
+
+        function renderTechServerLogs(logs, errorMessage) {
+            const host = document.getElementById('techServerLogsTable');
+            const statusEl = document.getElementById('techServerLogsStatus');
+            if (!host || !statusEl) return;
+            if (errorMessage) {
+                statusEl.textContent = errorMessage;
+                statusEl.style.color = 'var(--danger)';
+                host.innerHTML = '<div class="tech-table-wrap"><div class="tech-agent-detail"><div class="tech-empty-note">Логи control-plane недоступны.</div></div></div>';
+                return;
+            }
+            statusEl.style.color = 'var(--muted)';
+            statusEl.textContent = logs?.length
+                ? `Показано ${logs.length} строк. Автообновление идёт вместе с техпанелью.`
+                : 'По текущим фильтрам журнал пуст.';
+            if (!logs || !logs.length) {
+                host.innerHTML = '<div class="tech-table-wrap"><div class="tech-agent-detail"><div class="tech-empty-note">Нет записей для текущих фильтров.</div></div></div>';
+                return;
+            }
+            host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                <thead><tr><th>Время</th><th>Уровень</th><th>Источник</th><th>Сообщение</th></tr></thead>
+                <tbody>${logs.map((entry) => `<tr>
+                    <td>${escapeHtml(techFormatDate(entry.timestamp))}</td>
+                    <td><span class="tech-log-level ${escapeHtml(entry.level || '')}">${escapeHtml(String(entry.level || 'info').toUpperCase())}</span></td>
+                    <td>${escapeHtml(`${entry.identifier || 'server'}${entry.pid ? ` · pid ${entry.pid}` : ''}`)}</td>
+                    <td class="tech-server-log-message">${escapeHtml(entry.message || '—')}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>`;
+        }
+
+        async function loadTechMainPanels() {
+            const headers = getAuthHeaders();
+            const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
+                fetch('/api/admin/tech/overview', { headers }),
+                fetch('/api/admin/tech/alerts', { headers }),
+                fetch('/api/admin/tech/logs?limit=50', { headers }),
+                fetch('/api/devices', { headers }),
+                fetch('/api/admin/tech/agents/audit?limit=50', { headers }),
+                fetch('/api/admin/tech/users/audit?limit=50', { headers }),
+                fetch('/api/admin/tech/operations/stuck', { headers }),
+            ]);
+            const overviewData = await responseToJson(overviewRes);
+            const alertsData = await responseToJson(alertsRes);
+            const logsData = await responseToJson(logsRes);
+            const devicesData = await responseToJson(devicesRes);
+            const agentsData = await responseToJson(agentsAuditRes);
+            const usersData = await responseToJson(usersAuditRes);
+            const stuckData = await responseToJson(stuckOpsRes);
+            const overview = overviewData.overview || {};
+            renderTechOverviewCards(overview);
+            renderTechAlerts(alertsData.alerts || overview.alerts || []);
+            renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
+            techDevicesCache = devicesData.devices || [];
+            renderTechAgentsTable(techDevicesCache);
+            renderTechAuditTable('techAgentsAuditTable', agentsData.events || [], 'agent');
+            renderTechAuditTable('techUsersAuditTable', usersData.events || [], 'user');
+            renderTechStuckOpsTable(stuckData.operations || []);
+            if (!techSelectedDeviceId && techDevicesCache.length) {
+                const preferred = techDevicesCache.find(item => item.online) || techDevicesCache[0];
+                techSelectedDeviceId = preferred.device_id;
+            } else if (techSelectedDeviceId && !techDevicesCache.some(item => item.device_id === techSelectedDeviceId)) {
+                techSelectedDeviceId = techDevicesCache[0]?.device_id || null;
+            }
+            if (techSelectedDeviceId) {
+                loadTechAgentDetail(techSelectedDeviceId);
+            }
+        }
+
+        function renderTechMainUnavailable(errorMessage) {
+            const message = errorMessage || 'Main server tech API временно недоступен.';
+            const overviewHost = document.getElementById('techOverviewCards');
+            if (overviewHost) {
+                overviewHost.innerHTML = `<div class="tech-main-degraded">${escapeHtml(message)} Данные вернутся после следующего успешного poll.</div>`;
+            }
+            const alertsHost = document.getElementById('techAlertsList');
+            if (alertsHost) {
+                alertsHost.innerHTML = `<div class="tech-main-degraded">${escapeHtml(message)}</div>`;
+            }
+            const logsHost = document.getElementById('techProblemLogsTable');
+            if (logsHost) {
+                logsHost.innerHTML = `<div class="tech-main-degraded">${escapeHtml(message)}</div>`;
+            }
+        }
+
+        async function loadTechControlPanels() {
+            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'warning,error,critical';
+            const limitValue = document.getElementById('techServerLogsLimit')?.value || '200';
+            const searchValue = document.getElementById('techServerLogsSearch')?.value || '';
+            const headers = techControlHeaders();
+            const [statusRes, logsRes] = await Promise.all([
+                fetch(techBuildControlUrl('/api/control/server/status'), { headers, mode: 'cors' }),
+                fetch(
+                    techBuildControlUrl('/api/control/server/logs', {
+                        limit: limitValue,
+                        levels: levelValue,
+                        contains: searchValue,
+                    }),
+                    { headers, mode: 'cors' }
+                ),
+            ]);
+            const statusData = await responseToJson(statusRes);
+            const logsData = await responseToJson(logsRes);
+            if (!statusRes.ok || statusData.status !== 'ok') {
+                throw new Error(statusData.error || 'Control-plane status error');
+            }
+            if (!logsRes.ok || logsData.status !== 'ok') {
+                throw new Error(logsData.error || 'Control-plane logs error');
+            }
+            techServerControlState.status = statusData.server || null;
+            techServerControlState.logs = logsData.logs || [];
+            renderTechServerStatus(techServerControlState.status);
+            renderTechServerLogs(techServerControlState.logs);
+            techControlBadge('control-plane online', 'ok');
+            const currentAction = techServerControlState.status?.current_action;
+            if (currentAction) {
+                techControlNote(`Выполняется ${currentAction.action}. Причина: ${currentAction.reason || 'не указана'}.`, false);
+            } else {
+                techControlNote('Выберите действие. Для stop/restart будет показано подтверждение с причиной.', false);
+            }
+        }
+
+        function techOpenServerConfirm(action) {
+            const overlay = document.getElementById('techServerConfirmOverlay');
+            const title = document.getElementById('techServerConfirmTitle');
+            const body = document.getElementById('techServerConfirmBody');
+            const reason = document.getElementById('techServerConfirmReason');
+            const submit = document.getElementById('techServerConfirmSubmitBtn');
+            if (!overlay || !title || !body || !reason || !submit) return;
+            const labels = {
+                start: ['Запустить сервер?', 'Будет поднят unit pc-client-server. Используйте причину, чтобы потом было понятно, зачем был ручной запуск.'],
+                stop: ['Остановить сервер?', 'Main server станет недоступен до следующего запуска. Останавливайте его только осознанно, когда проверки уже завершены или нужна ручная диагностика.'],
+                restart: ['Перезапустить сервер?', 'Текущие HTTP/WS-соединения будут разорваны. Control-plane останется жить и покажет возврат сервера.'],
+                smoke: ['Запустить smoke?', 'Будет выполнен штатный smoke-тест удалённого сервера через control-plane.'],
+            };
+            techServerConfirmState = action;
+            title.textContent = labels[action]?.[0] || 'Подтвердите действие';
+            body.textContent = labels[action]?.[1] || 'Подтвердите действие над сервером.';
+            reason.value = '';
+            submit.textContent = action === 'stop' ? 'Остановить' : action === 'restart' ? 'Перезапустить' : action === 'start' ? 'Запустить' : 'Запустить smoke';
+            overlay.style.display = 'flex';
+            reason.focus();
+        }
+
+        function techCloseServerConfirm() {
+            const overlay = document.getElementById('techServerConfirmOverlay');
+            const reason = document.getElementById('techServerConfirmReason');
+            techServerConfirmState = null;
+            if (reason) reason.value = '';
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        async function techRunServerAction(action, reason) {
+            const headers = techControlHeaders(true);
+            techSetServerActionButtonsDisabled(true);
+            try {
+                const response = await fetch(techBuildControlUrl('/api/control/server/actions'), {
+                    method: 'POST',
+                    headers,
+                    mode: 'cors',
+                    body: JSON.stringify({ action, reason }),
+                });
+                const data = await responseToJson(response);
+                if (!response.ok || data.status !== 'ok') {
+                    throw new Error(data.error || 'Control-plane action failed');
+                }
+                techControlNote(`Команда ${action} принята.`, false);
+                await loadTechControlPanels();
+            } catch (error) {
+                techSetServerActionButtonsDisabled(false);
+                throw error;
+            }
+        }
+
+        async function techCopyServerLogs() {
+            const text = techSerializeServerLogs(techServerControlState.logs || []);
+            if (!text) {
+                techControlNote('Нечего копировать: журнал пуст.', true);
+                return;
+            }
+            await navigator.clipboard.writeText(text);
+            techControlNote('Журнал скопирован в буфер обмена.', false);
+        }
+
+        async function techDownloadServerLogs() {
+            const levelValue = document.getElementById('techServerLogsLevel')?.value || 'warning,error,critical';
+            const limitValue = document.getElementById('techServerLogsLimit')?.value || '200';
+            const searchValue = document.getElementById('techServerLogsSearch')?.value || '';
+            const response = await fetch(
+                techBuildControlUrl('/api/control/server/logs/download', {
+                    limit: limitValue,
+                    levels: levelValue,
+                    contains: searchValue,
+                }),
+                {
+                    headers: techControlHeaders(),
+                    mode: 'cors',
+                }
+            );
+            if (!response.ok) {
+                throw new Error('Не удалось скачать журнал сервера');
+            }
+            const blob = await response.blob();
+            const href = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = 'pc-client-server.log';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(href);
+            techControlNote('Журнал подготовлен к скачиванию.', false);
+        }
+
         function initTechTab() {
             const refreshBtn = document.getElementById('techRefreshBtn');
             if (refreshBtn) refreshBtn.addEventListener('click', () => loadTechPanel(true));
             const lifecycleBtn = document.getElementById('techLoadLifecycleBtn');
             if (lifecycleBtn) lifecycleBtn.addEventListener('click', () => loadTechLifecycle());
+            const logsRefreshBtn = document.getElementById('techServerLogsRefreshBtn');
+            if (logsRefreshBtn) logsRefreshBtn.addEventListener('click', () => loadTechControlPanels().catch((e) => {
+                techControlBadge('control-plane offline', 'bad');
+                renderTechServerStatus(null, e.message || String(e));
+                renderTechServerLogs(null, e.message || String(e));
+            }));
+            const logsCopyBtn = document.getElementById('techServerLogsCopyBtn');
+            if (logsCopyBtn) logsCopyBtn.addEventListener('click', () => techCopyServerLogs().catch((e) => techControlNote(e.message || String(e), true)));
+            const logsDownloadBtn = document.getElementById('techServerLogsDownloadBtn');
+            if (logsDownloadBtn) logsDownloadBtn.addEventListener('click', () => techDownloadServerLogs().catch((e) => techControlNote(e.message || String(e), true)));
+            const logsSearch = document.getElementById('techServerLogsSearch');
+            if (logsSearch) logsSearch.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    loadTechControlPanels().catch((err) => techControlNote(err.message || String(err), true));
+                }
+            });
+            ['techServerLogsLevel', 'techServerLogsLimit'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', () => loadTechControlPanels().catch((e) => techControlNote(e.message || String(e), true)));
+            });
+            document.querySelectorAll('[data-server-action]').forEach((button) => {
+                button.addEventListener('click', () => techOpenServerConfirm(button.getAttribute('data-server-action')));
+            });
+            const confirmCancel = document.getElementById('techServerConfirmCancelBtn');
+            if (confirmCancel) confirmCancel.addEventListener('click', () => techCloseServerConfirm());
+            const confirmOverlay = document.getElementById('techServerConfirmOverlay');
+            if (confirmOverlay) {
+                confirmOverlay.addEventListener('click', (e) => {
+                    if (e.target === confirmOverlay) techCloseServerConfirm();
+                });
+            }
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && techServerConfirmState) {
+                    techCloseServerConfirm();
+                }
+            });
+            const confirmSubmit = document.getElementById('techServerConfirmSubmitBtn');
+            if (confirmSubmit) {
+                confirmSubmit.addEventListener('click', async () => {
+                    const action = techServerConfirmState;
+                    const reason = document.getElementById('techServerConfirmReason')?.value || '';
+                    if (!action) return;
+                    if ((action === 'stop' || action === 'restart') && !reason.trim()) {
+                        techControlNote('Для stop/restart укажите короткую причину, чтобы избежать случайного клика и сохранить аудит.', true);
+                        return;
+                    }
+                    try {
+                        await techRunServerAction(action, reason);
+                        techCloseServerConfirm();
+                    } catch (e) {
+                        techControlNote(e.message || String(e), true);
+                    }
+                });
+            }
             techEnsureContextMenu();
             const tabTech = document.getElementById('tab-tech');
             if (tabTech) {
@@ -3969,45 +4353,16 @@
         async function loadTechPanel(force) {
             const isActive = document.getElementById('tab-tech')?.classList.contains('active');
             if (!isActive && !force) return;
-            const headers = getAuthHeaders();
-            try {
-                const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
-                    fetch('/api/admin/tech/overview', { headers }),
-                    fetch('/api/admin/tech/alerts', { headers }),
-                    fetch('/api/admin/tech/logs?limit=50', { headers }),
-                    fetch('/api/devices', { headers }),
-                    fetch('/api/admin/tech/agents/audit?limit=50', { headers }),
-                    fetch('/api/admin/tech/users/audit?limit=50', { headers }),
-                    fetch('/api/admin/tech/operations/stuck', { headers }),
-                ]);
-                const overviewData = await responseToJson(overviewRes);
-                const alertsData = await responseToJson(alertsRes);
-                const logsData = await responseToJson(logsRes);
-                const devicesData = await responseToJson(devicesRes);
-                const agentsData = await responseToJson(agentsAuditRes);
-                const usersData = await responseToJson(usersAuditRes);
-                const stuckData = await responseToJson(stuckOpsRes);
-                const overview = overviewData.overview || {};
-                renderTechOverviewCards(overview);
-                renderTechAlerts(alertsData.alerts || overview.alerts || []);
-                renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
-                techDevicesCache = devicesData.devices || [];
-                renderTechAgentsTable(techDevicesCache);
-                renderTechAuditTable('techAgentsAuditTable', agentsData.events || [], 'agent');
-                renderTechAuditTable('techUsersAuditTable', usersData.events || [], 'user');
-                renderTechStuckOpsTable(stuckData.operations || []);
-                if (!techSelectedDeviceId && techDevicesCache.length) {
-                    const preferred = techDevicesCache.find(item => item.online) || techDevicesCache[0];
-                    techSelectedDeviceId = preferred.device_id;
-                } else if (techSelectedDeviceId && !techDevicesCache.some(item => item.device_id === techSelectedDeviceId)) {
-                    techSelectedDeviceId = techDevicesCache[0]?.device_id || null;
-                }
-                if (techSelectedDeviceId) {
-                    loadTechAgentDetail(techSelectedDeviceId);
-                }
-            } catch (e) {
-                const shell = document.getElementById('techAgentDetailShell');
-                if (shell) shell.innerHTML = `<div class="tech-agent-detail"><div class="error-message">Ошибка загрузки техпанели: ${escapeHtml(e.message || String(e))}</div></div>`;
+            const results = await Promise.allSettled([loadTechMainPanels(), loadTechControlPanels()]);
+            if (results[0]?.status === 'rejected') {
+                renderTechMainUnavailable(results[0].reason?.message || String(results[0].reason || 'Main server API error'));
+            }
+            if (results[1]?.status === 'rejected') {
+                const message = results[1].reason?.message || String(results[1].reason || 'Control-plane error');
+                techControlBadge('control-plane offline', 'bad');
+                renderTechServerStatus(null, message);
+                renderTechServerLogs(null, message);
+                techControlNote(message, true);
             }
             if (techPollTimer) clearInterval(techPollTimer);
             techPollTimer = setInterval(() => {
@@ -4087,15 +4442,16 @@
             const ops = overview.operations_health || {};
             const upd = overview.update_health || {};
             const svc = overview.service_health || {};
+            const stuckTotal = (ops.queued_stuck ?? 0) + (ops.sent_stuck ?? 0) + (ops.in_progress_stuck ?? 0);
             const cards = [
-                { title: 'PostgreSQL', value: pg.reachable ? `${pg.latency_ms ?? '—'} мс` : 'Недоступно', cls: (!pg.reachable ? 'health-red' : (Number(pg.latency_ms || 0) > 250 ? 'health-yellow' : 'health-green')) },
-                { title: 'Агенты в сети', value: `${agent.online_count ?? 0} / ${agent.offline_count ?? 0}`, cls: ((agent.offline_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
-                { title: 'Нужна перепривязка', value: `${agent.reprovision_required_count ?? 0}`, cls: ((agent.reprovision_required_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
-                { title: 'Неактивные агенты', value: `${agent.stale_count ?? 0}`, cls: ((agent.stale_count ?? 0) > 0 ? 'health-red' : 'health-green') },
-                { title: 'Подключения UI', value: `${svc.ui_ws_connections ?? 0}`, cls: 'health-green' },
-                { title: 'Обновления', value: `${upd.in_progress ?? 0}`, cls: ((upd.awaiting_handshake_confirm ?? 0) > 0 ? 'health-yellow' : 'health-green') },
-                { title: 'Застрявшие операции', value: `${(ops.queued_stuck ?? 0) + (ops.sent_stuck ?? 0) + (ops.in_progress_stuck ?? 0)}`, cls: (((ops.queued_stuck ?? 0) + (ops.sent_stuck ?? 0) + (ops.in_progress_stuck ?? 0)) > 0 ? 'health-red' : 'health-green') },
-                { title: 'Watchdog операций', value: `${svc.operation_watchdog ?? 'unknown'}`, cls: (svc.operation_watchdog === 'ok' ? 'health-green' : 'health-red') },
+                { title: 'PostgreSQL latency', value: pg.reachable ? `${pg.latency_ms ?? '—'} мс` : 'Недоступно', cls: (!pg.reachable ? 'health-red' : (Number(pg.latency_ms || 0) > 250 ? 'health-yellow' : 'health-green')) },
+                { title: 'PostgreSQL pool', value: pg.pool_status || '—', cls: (pg.pool_status ? 'health-green' : 'health-yellow') },
+                { title: 'WS UI connections', value: `${svc.ui_ws_connections ?? 0}`, cls: 'health-green' },
+                { title: 'WS agent connections', value: `${svc.agent_ws_connections ?? 0}`, cls: ((svc.agent_ws_connections ?? 0) > 0 ? 'health-green' : 'health-yellow') },
+                { title: 'Stuck operations', value: `${stuckTotal}`, cls: (stuckTotal > 0 ? 'health-red' : 'health-green') },
+                { title: 'Pending updates', value: `${upd.in_progress ?? 0}`, cls: ((upd.awaiting_handshake_confirm ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Agents online/offline', value: `${agent.online_count ?? 0} / ${agent.offline_count ?? 0}`, cls: ((agent.offline_count ?? 0) > 0 ? 'health-yellow' : 'health-green') },
+                { title: 'Operation watchdog', value: `${svc.operation_watchdog ?? 'unknown'}`, cls: (svc.operation_watchdog === 'ok' ? 'health-green' : 'health-red') },
             ];
             host.innerHTML = cards.map(c => `<div class="tech-card ${c.cls}"><h4>${escapeHtml(c.title)}</h4><div class="tech-value">${escapeHtml(String(c.value))}</div></div>`).join('');
         }

@@ -10,6 +10,7 @@
    - `pc_agent/docs/CODEMAP.md`
 3. Для точечного поиска используйте `python scripts/agent_find.py "<ключевое слово>"`.
 4. Перед коммитом проверяйте, не забыты ли docs/CODEMAP: `python scripts/docs_drift_check.py`.
+5. Если задача длинная или многосоставная, обновите `PLANS.md`.
 
 ## Темы
 
@@ -20,10 +21,11 @@
 | Auth / token bootstrap | `server/auth/`, `server/app/repos/auth_tokens_repo.py`, `pc_agent/auth/token_source.py`, `pc_agent/core/identity.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` | `python scripts/agent_find.py "auth" --dir server`, `python scripts/agent_find.py "token" --dir pc_agent` |
 | Tickets / chat / queue | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/chat/`, `server/api/events.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CHAT_MESSAGE_CONTRACT.md`, `server/docs/CODEMAP.md` | `python scripts/agent_find.py "ticket" --dir server`, `python scripts/agent_find.py "since_event_id" --dir server`, `python scripts/agent_find.py "before_event_id" --dir server`, `python scripts/agent_find.py "message_read" --dir server`, `python scripts/agent_find.py "presence" --dir server`, `python scripts/agent_find.py "chat_raise" --dir server` |
 | Modules / reconcile | `server/modules/service.py`, `server/websocket/modules_sync.py`, `pc_agent/core/module_manager.py`, `pc_agent/core/registry.py` | `server/docs/MODULES_API.md`, `server/docs/MODULES_DRIFT_AND_SNAPSHOTS.md`, `pc_agent/docs/MODULES.md` | `python scripts/agent_find.py "modules" --dir server`, `python scripts/agent_find.py "module_manager" --dir pc_agent` |
-| Server UI / admin pages | `server/support.js`, `server/admin.js`, `server/tech/handlers.py`, `server/ticket.js`, `server/static_pages/`, `server/routes.py` | `server/docs/CODEMAP.md` | `python scripts/diff_context.py`, затем browser check через MCP на `http://192.168.100.17:8666/admin` |
+| Server UI / admin pages | `server/admin.js`, `server/tech/handlers.py`, `server/control_plane.py`, `server/runtime_control.py`, `server/ticket.js`, `server/static_pages/`, `server/routes.py` | `server/docs/CODEMAP.md`, `server/docs/SECURITY_AND_AUTH.md` | `python scripts/diff_context.py`, затем browser check через MCP на `http://192.168.100.17:8666/admin` |
 | Agent GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py`, `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/server_api.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_bridge/event_bus.py` | `pc_agent/docs/CODEMAP.md` | `python scripts/agent_find.py "ui bridge" --dir pc_agent`, `python scripts/agent_find.py "since_event_id" --dir pc_agent`, `python scripts/agent_find.py "before_event_id" --dir pc_agent`, `python scripts/agent_find.py "chat_raise" --dir pc_agent` |
 | Database / migrations | `server/app/db/models.py`, `server/app/db/migrations/versions/`, `pc_agent/core/database.py` | `server/docs/DATABASE.md`, `pc_agent/docs/DATABASE.md` | `python scripts/agent_find.py "alembic" --dir server`, `python scripts/agent_find.py "DB_SCHEMA_VERSION" --dir pc_agent` |
-| Release / deploy / smoke | `scripts/verify_workspace.py`, `scripts/release_server_to_remote.py`, `scripts/manage_remote_stack.py` | `AGENTS.md`, оба `CODEMAP` | `python scripts/verify_workspace.py`, `python scripts/release_server_to_remote.py` |
+| Planning / handoff | `PLANS.md`, `AGENTS.md` | `PLANS.md`, `.cursor/skills/pc-client-plans/SKILL.md`, `.cursor/skills/pc-client-release/SKILL.md` | `python scripts/verify_workspace.py` |
+| Release / deploy / smoke | `scripts/verify_workspace.py`, `scripts/release_server_to_remote.py`, `scripts/manage_remote_stack.py`, `scripts/runtime_stack.py` | `AGENTS.md`, оба `CODEMAP`, `docs/LOCAL_WORKFLOW.md` | `python scripts/verify_workspace.py`, `python scripts/release_server_to_remote.py`, `python scripts/manage_remote_stack.py status control` |
 
 ## Когда обновлять этот файл
 
@@ -32,4 +34,5 @@
 - ключевые точки входа, стартовые файлы или канонический путь для темы;
 - cross-cutting темы, по которым раньше приходилось долго искать руками;
 - скрипты навигации и проверки (`agent_find.py`, `diff_context.py`, `docs_drift_check.py`, `verify_workspace.py`);
+- long-horizon workflow (`PLANS.md`, handoff, verification state);
 - общие правила быстрого поиска, которые полезны и серверу, и агенту.

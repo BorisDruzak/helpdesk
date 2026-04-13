@@ -133,6 +133,10 @@ def _label_audit_event(event_type: Optional[str]) -> str:
         "user_deactivated": "Пользователь деактивирован",
         "login_success": "Успешный вход",
         "login_failed": "Неудачная попытка входа",
+        "server_runtime_start": "Запуск сервера",
+        "server_runtime_stop": "Остановка сервера",
+        "server_runtime_restart": "Перезапуск сервера",
+        "server_runtime_smoke": "Smoke-проверка сервера",
     }
     key = str(event_type or "").strip()
     if key in mapping:
@@ -896,6 +900,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     "api": "ok",
                     "ws_ui": "ok",
                     "ui_ws_connections": int(len(state.ui_connections)),
+                    "agent_ws_connections": int(len(state.connected_agents)),
                     "device_dispatch": "ok" if request.app.get("outbox_sender") else "degraded",
                     "operation_watchdog": "ok" if getattr(request.app.get("operation_watchdog"), "_running", False) else "down",
                     "ticket_sla_watchdog": "ok" if getattr(request.app.get("ticket_sla_watchdog"), "_running", False) else "down",
@@ -949,6 +954,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                 "api": "degraded",
                 "ws_ui": "unknown",
                 "ui_ws_connections": int(len(state.ui_connections)),
+                "agent_ws_connections": int(len(state.connected_agents)),
                 "device_dispatch": "ok",
                 "operation_watchdog": "unknown",
                 "ticket_sla_watchdog": "unknown",

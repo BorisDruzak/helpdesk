@@ -278,6 +278,16 @@ async def test_tech_audit_and_logs_are_localized(test_client):
 
 
 @pytest.mark.asyncio
+async def test_tech_overview_exposes_ui_and_agent_ws_counts(test_client):
+    overview_resp = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    overview = await overview_resp.json()
+
+    assert overview_resp.status == 200
+    assert "ui_ws_connections" in overview["overview"]["service_health"]
+    assert "agent_ws_connections" in overview["overview"]["service_health"]
+
+
+@pytest.mark.asyncio
 async def test_tech_direct_log_dismiss_removes_log_from_panel(test_client):
     now = datetime.now(timezone.utc)
     append_log_record(

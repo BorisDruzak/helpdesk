@@ -16,7 +16,7 @@
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
 | Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
-| Admin / support / ticket UI | `server/support.js`, `server/admin.js` или `server/ticket.js` | `server/static_pages/`, browser check на `http://192.168.100.17:8666/admin` |
+| Admin / support / ticket UI | `server/admin.js`, `server/control_plane.py`, `server/runtime_control.py` или `server/ticket.js` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
 
 ---
 
@@ -25,8 +25,10 @@
 | Файл | Назначение |
 |------|------------|
 | `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake |
+| `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket` и session endpoint `GET /api/ui_session` |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
+| `server/runtime_control.py` | Канонический runtime-control слой для `systemctl`/`journalctl`, control-plane state, smoke/status/log filtering и unit-level lifecycle |
 
 ---
 
@@ -61,6 +63,7 @@
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
 | `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
+| `server/control_plane.py` | Внешний runtime API `/api/control/server/*`: status, full journal logs, download logs, lifecycle actions `start/stop/restart/smoke` |
 
 ### 2.2.1 Tools / единый путь run_tool
 | Файл | Назначение |
@@ -128,6 +131,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
+| `server/control_plane.py`, `server/runtime_control.py` | Control-plane и runtime orchestration для техпанели: статус сервера, health summary main API, полные логи, подтверждённые lifecycle actions с аудитом |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
 | `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь тикетов` + `Рабочий тикет`. Переключатель режимов вынесен в верхний action-bar рядом с `Обновить / Выйти / Войти как admin`, чтобы оба режима воспринимались как единый workspace. В `Очереди тикетов` левый inbox скрывается, управление очередью собрано в компактную верхнюю панель (summary, фильтры, сортировка), а основной экран отдан широкой доске тикетов; левая колонка используется под действия по очереди и выбранному тикету. Карточки тикетов раскрывают `SLA / OLA / маршрут` и `Контекст и присутствие`. В `Рабочем тикете` левый inbox снова показывается, при этом фильтр `Мои` показывает только назначенные на текущего support-оператора тикеты, а фильтры `Нужны действия` и `Ждут пользователя` считаются только по своим тикетам. Для работы по тикету используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`). Для закрытия тикета использует встроенную форму кодов решения вместо prompt. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
 | `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Основная рабочая область тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read, подтверждение решения, редактирование профиля инициатора, очередь/исполнитель по составу очереди, SLA/OLA и ручной reroute по правилам; поддерживает `embed=1` для встраивания в support workspace |
@@ -157,7 +161,7 @@
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass)** — `agents/agent_builds_handlers.py`, `docs/AGENT_UPDATES_API.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`
-- **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` (overview, alerts, logs, agent timeline/actions, audits)
+- **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary` и `update_summary`)
 
 ---
@@ -196,7 +200,7 @@
 ## 6. Тесты и скрипты
 
 - `server/tests/` — интеграционные/регрессионные тесты.
-- Корень проекта: `scripts/run_server.py`, `scripts/stop_server.py`, `scripts/restart_server.py`, `scripts/smoke_test.py`, `scripts/admin_run_tool.py`.
+- Корень проекта: `scripts/run_server.py`, `scripts/stop_server.py`, `scripts/restart_server.py`, `scripts/run_control_plane.py`, `scripts/runtime_stack.py`, `scripts/manage_remote_stack.py`, `scripts/release_server_to_remote.py`, `scripts/smoke_test.py`, `scripts/admin_run_tool.py`.
 - `server/scripts/` — `run_subagents.py`, `subagent_worker_server.py`, `subagent_worker_agent.py`.
 
 ---

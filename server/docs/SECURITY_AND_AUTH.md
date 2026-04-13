@@ -2,7 +2,7 @@
 
 Документация по безопасности, аутентификации и авторизации сервера PC Agent.
 
-**Дата обновления:** 2026-03-30
+**Дата обновления:** 2026-04-13
 
 ---
 
@@ -11,6 +11,7 @@
 - **Агенты:** аутентификация по токену (agent token) при WebSocket handshake и при HTTP API.
 - **UI:** аутентификация по логину/паролю с выдачей UI токена; WebSocket UI требует `ui_hello` с токеном.
 - **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token).
+- **Control-plane:** отдельный сервис на порту `8667` использует те же Bearer UI/agent токены, но имеет собственный middleware, CORS-ограничение по origin и отдельный RBAC для runtime actions.
 - **Роли и контекст:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для роли.
 
 ---
@@ -110,6 +111,20 @@
 - `GET /api/health` — (зарезервировано для проверки здоровья сервиса; endpoint может быть добавлен отдельно).
 
 Все остальные `/api/*` требуют валидный токен (agent или UI).
+
+### 4.2.1 Control-plane runtime API (`:8667`)
+
+- Отдельный `aiohttp`-сервис `server/control_plane.py` слушает порт `8667` и предназначен только для server runtime control.
+- Control-plane принимает те же схемы токена, что и основной HTTP middleware: `Authorization: Bearer`, `Authorization: Token`, `X-Auth-Token`.
+- Верификация токена выполняется через `AuthService.verify_ui_token()` и `AuthService.verify_agent_token()`, после чего request получает control-plane auth context.
+- CORS разрешён только для origin'ов из `runtime_control.controller_allowed_origins()`; штатный origin для техпанели — `http://192.168.100.17:8666`.
+- Маршруты:
+  - `GET /api/control/server/status` — доступ `admin`, `support`, `auditor`;
+  - `GET /api/control/server/logs` — доступ `admin`, `support`, `auditor`;
+  - `GET /api/control/server/logs/download` — доступ `admin`, `support`, `auditor`;
+  - `POST /api/control/server/actions` (`start`, `stop`, `restart`, `smoke`) — только `admin`.
+- Для `stop/restart` UI обязан передавать reason; control-plane пишет это в аудит `ui_user_audit` как `server_runtime_*`.
+- Runtime actions идут через внешний слой `server/runtime_control.py`, а не через self-restart основного aiohttp server, поэтому техпанель может пережить `stop/restart`.
 
 ### 4.3 Роли и декоратор require_auth
 

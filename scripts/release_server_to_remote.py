@@ -133,6 +133,7 @@ def main() -> None:
             "--remote",
             args.remote,
         ]
+        run_step([*remote_command_base, "start", "control"], cwd=workspace, label="start-control")
         run_step([*remote_command_base, "start", "server"], cwd=workspace, label="start")
         started_server = True
 

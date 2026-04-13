@@ -1,0 +1,30 @@
+---
+name: pc-client-release
+description: Checklist before pushing pc_client to GitHub. Use when preparing to push or to document what was verified.
+---
+
+# PC Client — чеклист перед push в GitHub
+
+Пуш в GitHub только для **проверенных** изменений.
+
+## Что должно быть сделано
+
+1. **Правки** — только в локальной копии `C:\Users\admin-2\CodexProjects\pc_client`.
+2. **Локальные проверки:**  
+   `python scripts/verify_workspace.py` + релевантные pytest (`server/tests/`, `pc_agent/tests/`) по области изменений.
+3. **Локальный коммит** — после успешных проверок.
+4. **Deploy на Linux** (если нужен прогон на стенде):  
+   `python scripts/deploy_workspace_to_remote.py`  
+   затем при необходимости: start `control` → start server → smoke → browser check → stop server.
+5. **Фиксация в отчёте:** что изменено, что проверено, что не проверено, остаточные риски.
+6. Если задача велась в несколько шагов или сессий — обновить `PLANS.md` перед handoff.
+
+## Что не пушить
+
+- Непроверенный код.
+- Секреты, сырые токены, пароли в коде (допустим только префикс токена в логах).
+- Временные отладочные правки без последующей очистки.
+
+## Перед push
+
+- Кратко зафиксировать: какие тесты/сценарии прошли, затронута ли веб-часть (и проверена ли в браузере по `http://192.168.100.17:8666/admin`), проверялись ли status/health/full logs/confirm в техпанели, поднят ли `control-plane`, остановлен ли сервер на Linux после проверок (если не оставлен специально).

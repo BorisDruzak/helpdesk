@@ -917,6 +917,41 @@
         .tech-log-level.warning { color: #8a5a00; }
         .tech-log-level.error, .tech-log-level.critical { color: #b42318; }
         .tech-subsection-title { font-size: 14px; margin: 0 0 8px; }
+        .tech-control-grid { display: grid; grid-template-columns: minmax(340px, 1.1fr) minmax(280px, 0.9fr); gap: 16px; align-items: start; }
+        .tech-server-status-card, .tech-server-actions-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+        .tech-server-actions-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+        .tech-server-actions-card h3 { margin: 0; font-size: 16px; }
+        .tech-server-actions-bar .btn { min-width: 132px; }
+        .tech-control-note { font-size: 13px; color: var(--muted); }
+        .tech-server-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+        .tech-status-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+        .tech-status-chip.running { background: #e7f7ee; color: #0f6a35; }
+        .tech-status-chip.starting, .tech-status-chip.restarting { background: #fff3d6; color: #8a5a00; }
+        .tech-status-chip.stopping, .tech-status-chip.failed { background: #ffe3e3; color: #b42318; }
+        .tech-status-chip.stopped, .tech-status-chip.unknown { background: #eef2f7; color: #42526b; }
+        .tech-server-logs-toolbar { display: grid; grid-template-columns: 140px 120px minmax(220px, 1fr) auto; gap: 12px; align-items: end; margin-bottom: 12px; }
+        .tech-server-logs-toolbar .form-group { margin-bottom: 0; }
+        .tech-server-logs-search input, .tech-server-logs-toolbar select, .tech-control-modal textarea { width: 100%; }
+        .tech-server-logs-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .tech-server-log-message { white-space: pre-wrap; word-break: break-word; font-family: Consolas, Monaco, monospace; font-size: 12px; }
+        .tech-control-modal { max-width: 560px; width: min(560px, 92vw); }
+        .tech-control-modal textarea { min-height: 86px; resize: vertical; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
+        .tech-main-degraded { border: 1px dashed #f7b0b0; border-radius: 10px; padding: 12px 14px; background: #fff6f6; color: #8f1d1d; margin-bottom: 12px; }
+
+        @media (max-width: 1180px) {
+            .tech-control-grid,
+            .tech-split-grid,
+            .tech-agents-layout {
+                grid-template-columns: 1fr;
+            }
+            .tech-server-logs-toolbar {
+                grid-template-columns: 1fr 1fr;
+            }
+            .tech-server-logs-search,
+            .tech-server-logs-actions {
+                grid-column: 1 / -1;
+            }
+        }
 
         .sidebar-menu-item-with-help {
             display: grid;

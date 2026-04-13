@@ -913,8 +913,76 @@
                     </div>
                 </div>
                 <div class="section">
+                    <div class="tech-section-head">
+                        <div>
+                            <h2>Управление сервером</h2>
+                            <p class="muted" style="margin-top: 6px;">Отдельный control-plane следит за unit, журналом и lifecycle main server. Действия требуют подтверждения и пишутся в аудит.</p>
+                        </div>
+                        <div class="header-actions">
+                            <span id="techControlAvailability" class="settings-mode-badge settings-mode-badge-neutral">Проверка control-plane…</span>
+                        </div>
+                    </div>
+                    <div class="tech-control-grid">
+                        <div id="techServerStatusCard" class="tech-server-status-card">
+                            <div class="tech-agent-detail">
+                                <div class="loading">Загрузка статуса сервера…</div>
+                            </div>
+                        </div>
+                        <div class="tech-server-actions-card">
+                            <h3>Действия</h3>
+                            <p class="muted">Доступно только admin. После `stop/restart` страница остаётся жить за счёт отдельного control-plane и может дождаться возврата сервера.</p>
+                            <div class="tech-actions-bar tech-server-actions-bar">
+                                <button type="button" class="btn btn-secondary" id="techServerStartBtn" data-server-action="start">Запустить</button>
+                                <button type="button" class="btn btn-danger" id="techServerStopBtn" data-server-action="stop">Остановить</button>
+                                <button type="button" class="btn btn-primary" id="techServerRestartBtn" data-server-action="restart">Перезапустить</button>
+                                <button type="button" class="btn btn-secondary" id="techServerSmokeBtn" data-server-action="smoke">Smoke</button>
+                            </div>
+                            <div id="techServerActionState" class="tech-control-note">Выберите действие. Для stop/restart будет показано подтверждение с причиной.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
                     <h2>Общий обзор</h2>
                     <div id="techOverviewCards" class="tech-cards"></div>
+                </div>
+                <div class="section">
+                    <div class="tech-section-head">
+                        <div>
+                            <h2>Полные логи сервера</h2>
+                            <p class="muted" style="margin-top: 6px;">Tail по `journalctl --user -u pc-client-server` с фильтрами, поиском, автообновлением и экспортом.</p>
+                        </div>
+                    </div>
+                    <div class="tech-server-logs-toolbar">
+                        <div class="form-group">
+                            <label for="techServerLogsLevel">Уровень</label>
+                            <select id="techServerLogsLevel">
+                                <option value="">Все</option>
+                                <option value="debug,info,notice,warning,error,critical">Info+</option>
+                                <option value="warning,error,critical" selected>Warning+</option>
+                                <option value="error,critical">Error+</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="techServerLogsLimit">Строк</label>
+                            <select id="techServerLogsLimit">
+                                <option value="100">100</option>
+                                <option value="200" selected>200</option>
+                                <option value="400">400</option>
+                            </select>
+                        </div>
+                        <div class="form-group tech-server-logs-search">
+                            <label for="techServerLogsSearch">Поиск</label>
+                            <input type="text" id="techServerLogsSearch" placeholder="message / logger / pid">
+                        </div>
+                        <div class="tech-server-logs-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" id="techServerLogsRefreshBtn">Обновить</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="techServerLogsCopyBtn">Копировать</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="techServerLogsDownloadBtn">Скачать</button>
+                        </div>
+                    </div>
+                    <div id="techServerLogsStatus" class="tech-control-note">Журнал ещё не загружен.</div>
+                    <div id="techServerLogsTable"></div>
                 </div>
                 <div class="section">
                     <div class="tech-split-grid">
@@ -985,6 +1053,21 @@
                         <summary>Сырой JSON (отладка)</summary>
                         <pre id="techLifecycleJson" style="white-space: pre-wrap;"></pre>
                     </details>
+                </div>
+            </div>
+
+            <div id="techServerConfirmOverlay" class="queue-modal-overlay" style="display:none;">
+                <div class="queue-modal tech-control-modal">
+                    <h3 id="techServerConfirmTitle">Подтвердите действие</h3>
+                    <p class="queue-modal-hint" id="techServerConfirmBody">—</p>
+                    <div class="form-group">
+                        <label for="techServerConfirmReason">Причина</label>
+                        <textarea id="techServerConfirmReason" rows="3" placeholder="Например: применить новый код после release / снять зависший процесс / ручная диагностика"></textarea>
+                    </div>
+                    <div class="queue-modal-actions">
+                        <button type="button" class="btn btn-secondary" id="techServerConfirmCancelBtn">Отмена</button>
+                        <button type="button" class="btn btn-danger" id="techServerConfirmSubmitBtn">Подтвердить</button>
+                    </div>
                 </div>
             </div>
 

@@ -1,208 +1,137 @@
 # AGENTS.md — инструкции для Codex и Cursor (pc_client)
 
-## Где находится код
+## Источник истины
 
-- Локальная рабочая копия для правок и коммитов: `C:\Users\admin-2\CodexProjects\pc_client`
-- Сетевая шара для зеркала и обмена: `\\192.168.100.17\NTFS_Share\pc_client`
-- Удалённый Linux-runtime для запуска сервера: `altserver@192.168.100.17:/var/chat_bot/pc_client`
+- Все правки, проверки, временные файлы и коммиты делать только в локальной рабочей копии `C:\Users\admin-2\CodexProjects\pc_client`.
+- Сетевая шара `\\192.168.100.17\NTFS_Share\pc_client` — зеркало и точка обмена, не основная среда редактирования.
+- Linux working copy `/var/chat_bot/pc_client` — стенд и зеркало закоммиченного состояния ветки после deploy.
+- Для кода и документации канон один: локальная Windows-копия.
 
-Критично:
+## Обязательный рабочий цикл
 
-- Для Codex источником истины при изменении кода является **локальная рабочая копия** `C:\Users\admin-2\CodexProjects\pc_client`.
-- Сетевая шара **не** является основной средой редактирования.
-- Серверный runtime **не** запускается как основной стенд на Windows-машине, а запускается на удалённом Linux-хосте.
-
-## Основная рабочая копия Codex
-
-- Для правок, коммитов и проверок использовать локальную рабочую копию: `C:\Users\admin-2\CodexProjects\pc_client`.
-- Сетевая шара `\\192.168.100.17\NTFS_Share\pc_client` используется как зеркало/точка обмена и не должна быть основной средой редактирования.
-- Базовый поток работы: правки локально → проверка локально → локальный commit → deploy проверенного состояния на Linux → запуск и smoke/browser-проверка на Linux → остановка сервера → push только проверенных изменений.
-- Если локальная копия отсутствует или устарела, обновлять её через проектные скрипты из `scripts/`.
-- На 17 марта 2026 года более свежая версия была разово подтянута с Linux-runtime в локальный Windows-репозиторий. После этой синхронизации единственным источником истины считается локальная копия на Windows.
-- Git remote для Linux-хоста: bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`. Для локального Windows-репозитория использовать remote `linux`, а Linux working copy в `/var/chat_bot/pc_client` работает от `origin`.
-
-## Канонический pipeline работы
-
-1. Открывать и менять код только в `C:\Users\admin-2\CodexProjects\pc_client`.
-2. Вносить изменения локально в `server/...` и `pc_agent/...`.
-3. Если меняются контракты, маршруты, структура или ключевые точки входа, синхронно обновлять `docs` и `CODEMAP`.
-4. Прогонять локальные проверки: минимум `python scripts/verify_workspace.py`, плюс релевантные тесты и проверки по задаче.
-5. Если затрагивается агент на этой машине, запускать его только через `python scripts/manage_local_agent.py ...` как отдельный именованный инстанс.
+1. Открывать и менять код только в локальной копии.
+2. Если задача длинная, затрагивает несколько подсистем или требует нескольких заходов, завести и поддерживать `PLANS.md`.
+3. Перед правками собрать контекст:
+   - если есть diff или локальные правки — `python scripts/diff_context.py`;
+   - если задача широкая — `docs/QUICK_LOOKUP.md`;
+   - если тема уже ясна — соответствующий `CODEMAP` и затем точечный `python scripts/agent_find.py "<паттерн>" --dir server|pc_agent`.
+4. При изменении структуры, маршрутов, контрактов или ключевых потоков синхронно обновлять код, docs и канонический `CODEMAP`.
+5. Перед коммитом прогонять минимум `python scripts/verify_workspace.py`, затем релевантные `pytest` и нужные smoke/browser-проверки.
 6. После локальной проверки делать локальный commit.
-7. После локального commit и проверки выкладывать код на Linux через `python scripts/deploy_workspace_to_remote.py`.
-   - `python scripts/deploy_workspace_to_remote.py` переносит на Linux только закоммиченное Git-состояние текущей ветки.
-   - Если локальная рабочая копия `dirty`, скрипт по умолчанию должен останавливаться; сначала commit/stash, потом deploy.
-   - Флаг `--allow-local-dirty` использовать только осознанно, когда нужно выложить именно последний commit, а незакоммиченные локальные правки не должны попадать на Linux.
-   - Не копировать файлы вручную прямо в `/var/chat_bot/pc_client/...`; это делает Linux working copy `dirty` и ломает следующий Git-deploy.
-   - Для стандартного полного server-flow предпочитать `python scripts/release_server_to_remote.py`: он делает verify → deploy → start server → smoke → stop server.
-8. Сервер запускать на Linux только через `python scripts/manage_remote_stack.py start server`.
-9. После запуска выполнять `python scripts/manage_remote_stack.py smoke server`, а если менялся веб, дополнительно проверять GUI через MCP по `http://192.168.100.17:8666/admin`.
-10. После проверок останавливать сервер на Linux через `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
-11. В GitHub отправлять только изменения, которые уже прошли проверки и были проверены на нужном сценарии.
-12. Если нужно передать код на Linux через Git, делать это по цепочке `git commit` локально → `git push linux <branch>` → на Linux в `/var/chat_bot/pc_client` выполнять `git pull --ff-only origin <branch>`.
-    Если удалённая рабочая копия уже `dirty`, сначала вернуть эти изменения в локальную Windows-копию или явно отбросить их на Linux, и только потом запускать штатный deploy.
+7. Для выкладки на Linux использовать только штатные скрипты:
+   - `python scripts/deploy_workspace_to_remote.py`
+   - `python scripts/release_server_to_remote.py`
+   - `python scripts/manage_remote_stack.py start|stop|restart|status|smoke|logs server|agent|control`
+8. После всех проверок на Linux останавливать сервер: `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
+9. В GitHub публиковать только проверенное состояние.
 
-## Документация: канон и зеркала
+## Контекст и слои
 
-- **Канон при правках:** документация в **локальной рабочей копии** монорепо (`server/docs/`, `pc_agent/docs/`, при необходимости корневой `docs/`).
-- **Сетевая шара** `\\192.168.100.17\NTFS_Share\pc_client\...` — зеркало/обмен; не считать её основной средой редактирования (см. выше про код).
-- **Linux working copy** `/var/chat_bot/pc_client` после deploy — зеркало закоммиченного состояния ветки на стенде.
+- Root `AGENTS.md` хранит только инварианты проекта, pipeline и safety-правила.
+- `server/AGENTS.md` и `pc_agent/AGENTS.md` — короткие leaf-правила для конкретной части монорепо.
+- `docs/QUICK_LOOKUP.md` — короткий навигационный индекс.
+- `server/docs/CODEMAP.md` и `pc_agent/docs/CODEMAP.md` — канонические карты кода.
+- `.cursor/rules/` — короткие правила-маршрутизаторы и playbook-и.
+- `.cursor/skills/` — узкие repeatable workflow skills.
+- `.codex/config.toml` — repo-local defaults для Codex.
 
-Если правим протокол/контракты — обновляем документацию синхронно с кодом.
+## Канонические пути и артефакты
 
-## CODEMAP (навигация по кодовой базе)
+- Серверный CODEMAP: `server/docs/CODEMAP.md`
+- Агентский CODEMAP: `pc_agent/docs/CODEMAP.md`
+- Навигационный индекс: `docs/QUICK_LOOKUP.md`
+- Машиночитаемый каталог навигации и drift-правил: `scripts/navigation_catalog.py`
+- Long-horizon артефакт: `PLANS.md`
 
-Карта кода у каждой части монорепо — **ровно один файл** в её `docs/`:
+Если меняется структура кода, маршруты, ключевые entrypoints или cross-cutting flow, синхронно обновлять:
 
-- Сервер: `server/docs/CODEMAP.md`
-- Агент: `pc_agent/docs/CODEMAP.md`
+- затронутый `CODEMAP`;
+- `docs/QUICK_LOOKUP.md`;
+- при необходимости `scripts/navigation_catalog.py`;
+- при необходимости `PLANS.md`, если задача ведётся в несколько шагов.
 
-Для быстрого понимания структуры/точек входа сначала открывать соответствующий файл. Отдельного CODEMAP в корневом `docs/` для сервера/агента нет.
-- При изменении структуры кода, маршрутов, ключевых модулей или потоков выполнения **обязательно** обновлять канонический CODEMAP затронутой части (`server/docs/CODEMAP.md` или `pc_agent/docs/CODEMAP.md`) синхронно с кодом. Критерии — в `.cursor/rules/codemap.mdc` и в разделах «Когда обновлять этот CODEMAP» в конце каждого файла.
-- **Режимы работы (виртуальные субагенты):** когда задача про миграции, Protocol V3, только доки/CODEMAP, выбор тестов по диффу или полный release/deploy — следовать `.cursor/rules/subagents-pc-client.mdc` (какой режим включить и чего в нём не делать).
+## Work Modes
 
-## QUICK_LOOKUP и навигационные скрипты
+- Для типовых режимов работы использовать `.cursor/rules/subagents-pc-client.mdc`.
+- Это не настоящие субагенты, а playbook-и: миграции, Protocol V3, docs sync, тесты по диффу, release.
+- Не держать этот playbook как always-on контекст; подключать только по совпадению задачи.
 
-Новый общий навигационный слой для `pc_client`:
+## Repo-local Codex Config
 
-- `docs/QUICK_LOOKUP.md` — короткая карта «тема -> открыть сначала -> связанные документы -> быстрые команды».
-- `scripts/diff_context.py` — контекст по текущему diff: какие темы затронуты, что открыть, какие docs проверить, какие проверки запустить.
-- `scripts/agent_find.py` — быстрый поиск по коду; теперь умеет ещё и тематические подсказки (`--topics-only`).
-- `scripts/docs_drift_check.py` — проверка, что при чувствительных изменениях не забыты `CODEMAP`/доки.
-- `scripts/navigation_catalog.py` — единый машиночитаемый каталог тем и правил дрифта; менять его вместе с `docs/QUICK_LOOKUP.md`, если меняется навигационный канон.
+- Repo-local defaults хранятся в `.codex/config.toml`.
+- Если проекту нужны другие модель/effort/defaults, менять их там, а не раздувать `AGENTS.md`.
+- Глобальные MCP-сервера и общие настройки остаются в `C:\Users\admin-2\.codex\config.toml`.
 
-Как использовать:
+## Protocol V3: инварианты
 
-1. Если задача начинается с уже существующего diff или локальных правок — сначала `python scripts/diff_context.py`.
-2. Если задача широкая или неясно, сервер это или агент — открыть `docs/QUICK_LOOKUP.md`.
-3. Если тема уже понятна — открыть нужный `CODEMAP`, затем точечно искать через `python scripts/agent_find.py "<паттерн>" --dir server|pc_agent`.
-4. Перед коммитом и перед release запускать минимум `python scripts/verify_workspace.py`; он уже включает `docs_drift_check`.
-
-Когда поддерживать актуальность:
-
-- Обновлять `docs/QUICK_LOOKUP.md`, если меняются стартовые файлы, канонические точки входа или список связанных документов по теме.
-- Обновлять `scripts/navigation_catalog.py`, если меняются темы, эвристики `diff_context.py` или правила `docs_drift_check.py`.
-- Если поменялась структура, маршруты, ключевые entrypoints или cross-cutting flow, синхронно обновлять:
-  - затронутый `CODEMAP`;
-  - `docs/QUICK_LOOKUP.md`;
-  - при необходимости `scripts/navigation_catalog.py`.
-- Если поменялись только формулировки в доках без смены канонических путей, `navigation_catalog.py` можно не трогать.
-
-Совместимость с Cursor:
-
-- Да, это рассчитано и на Cursor тоже: `AGENTS.md`, `docs/QUICK_LOOKUP.md` и `.cursor/rules/*.mdc` читаются Cursor как проектный контекст.
-- Скрипты `python scripts/diff_context.py`, `python scripts/agent_find.py`, `python scripts/docs_drift_check.py` работают из локальной рабочей копии и не завязаны на Codex-only API.
-- Ограничение только одно: Cursor сам по себе не «магически» использует эти файлы, если их не открыть или не сослаться на них; поэтому при сложных задачах лучше явно прикреплять `@docs/QUICK_LOOKUP.md`, `@server/docs/CODEMAP.md`, `@pc_agent/docs/CODEMAP.md` и `@AGENTS.md`.
-
-## Критичные инварианты Protocol V3 (ws_ticket_v3)
-
-- **Контракт:** полная спецификация — `pc_agent/docs/PROTOCOL_V3.md`; требования сервера и коды ошибок — `server/docs/PROTOCOL_V3.md` (дата обновления в документе). При расхождении приоритет у серверной документации для серверного кода, у агентской — для агента.
-- Тип события определяется ТОЛЬКО по `device_seq` vs `agent_seq` (а не по `ticket_id`):
+- Контракт: `pc_agent/docs/PROTOCOL_V3.md` и `server/docs/PROTOCOL_V3.md`.
+- При расхождении приоритет у серверной документации для серверного кода и у агентской — для агента.
+- Тип события определяется только по `device_seq` vs `agent_seq`:
   - `device_event` ⇔ `device_seq IS NOT NULL AND agent_seq IS NULL`
   - `ticket_event` ⇔ `agent_seq IS NOT NULL AND device_seq IS NULL`
-- Сервер на handshake требует `protocol_version === "ws_ticket_v3"`, обязательные capabilities (`protocol_v3`, `envelope_v3`, `outbox_ack_v3`) и token (см. `server/docs/PROTOCOL_V3.md`).
-- `device_id` для сессии берётся сервером из записи токена в БД (payload не является источником истины).
-- `tool_call_started` создаётся сервером до отправки `run_tool` и идемпотентен по `(ticket_id, operation_id, event_type)` (см. `server/docs/TOOL_CALL_STARTED_INVARIANT.md`).
+- Серверный handshake требует `protocol_version === "ws_ticket_v3"`, capabilities `protocol_v3`, `envelope_v3`, `outbox_ack_v3` и token.
+- `device_id` для сессии сервер берёт из записи токена в БД; payload не источник истины.
+- `tool_call_started` создаётся сервером до отправки `run_tool` и идемпотентен по `(ticket_id, operation_id, event_type)`.
 
 ## Безопасность
 
-- Не логировать сырой токен. Допустимо только префикс.
-- Роли/actor контекст берём только из проверенного токена и `AuthContext` (см. `server/docs/SECURITY_AND_AUTH.md`).
+- Не логировать сырой токен; допустим только префикс.
+- Роли и actor context брать только из проверенного токена и `AuthContext`.
+- Не использовать ad-hoc команды вместо штатных скриптов, если сценарий уже покрыт `scripts/`.
 
-## Подсказка по контексту для Codex и Cursor
+## Скрипты: канон
 
-Когда задача про:
-- протокол/WS: начать с `pc_agent/docs/PROTOCOL_V3.md` и `server/docs/PROTOCOL_V3.md`
-- аутентификацию: `server/docs/SECURITY_AND_AUTH.md` и `pc_agent/docs/AUTHENTICATION.md`
-- outbox/ACK: `pc_agent/docs/DATABASE.md`, `pc_agent/docs/SENDER.md`, `server/docs/COMMAND_RESULT_LIFECYCLE.md`
-- чат/сообщения: `server/docs/CHAT_MESSAGE_CONTRACT.md`
-- модули: `server/docs/MODULES_API.md`, `server/docs/MODULES_DRIFT_AND_SNAPSHOTS.md`, `pc_agent/docs/MODULES.md`
-- playbook/runbook: `server/docs/PLAYBOOK_*.md`, `server/docs/PLAYBOOK_API.md`, `server/docs/RUNBOOK_*.md`
-- артефакты: `server/docs/ARTIFACTS_API.md`
-- узкие места и риски: `docs/BOTTLENECKS_AND_RISKS.md`
+- Локальный агент на Windows: только `python scripts/manage_local_agent.py ...`
+- Runtime control на Linux: `python scripts/runtime_stack.py start|stop|restart|status|smoke|logs server|agent|control|all`
+- Удалённый сервер на Linux из Windows: только `python scripts/manage_remote_stack.py ...` как SSH-обёртка над `scripts/runtime_stack.py`
+- Полный server-flow: `python scripts/release_server_to_remote.py`
+- Отдельный deploy закоммиченного состояния: `python scripts/deploy_workspace_to_remote.py`
+- Smoke/API helpers: `python scripts/smoke_test.py`, `python scripts/admin_run_tool.py`
 
-Автоматизация (перезапуск сервера/агента, тесты в браузере, вызов run_tool): `.cursor/rules/automation.mdc` (при наличии — задачи в `.vscode/tasks.json`).
+Замечание по server runtime:
 
-Правило запуска:
+- Основной HTTP/WS сервер и внешний `control-plane` теперь считаются разными сервисами.
+- `control-plane` живёт отдельно от main server, отвечает за `start/stop/restart/status/logs/smoke` и нужен для надёжной техпанели.
+- Для lifecycle-операций над сервером нельзя делать ad-hoc self-restart из основного aiohttp-процесса.
+- `python scripts/release_server_to_remote.py` обязан поднимать `control-plane` до запуска main server.
 
-- Локальный тестовый агент на Windows: только через `python scripts/manage_local_agent.py ...`.
-- Удалённый сервер на Linux: только через `python scripts/manage_remote_stack.py start|stop|restart|smoke server`.
-- Удалённый агент на Linux: только через `python scripts/manage_remote_stack.py start|stop|restart|logs agent`, если это часть задачи.
-- Прямые ad-hoc команды вместо проектных скриптов не использовать, если уже есть штатный сценарий.
+Запрещено:
 
-Тесты: `scripts/smoke_test.py`, `scripts/admin_run_tool.py`. Поиск по коду (один вызов вместо нескольких grep): `python scripts/agent_find.py "<шаблон>"` (опции: `--dir server|pc_agent`, `-n N`); см. `docs/CURSOR_TOKEN_EFFICIENCY.md`.
+- копировать файлы вручную в `/var/chat_bot/pc_client/...`;
+- собирать вручную цепочки из `git push`, `ssh`, `git pull`, `run_server.py`, `stop_server.py`, если хватает штатных скриптов;
+- запускать сервер на Windows как основной стенд.
 
-## Единый URL веб-интерфейса
+## Browser Canon
 
-- Для браузерных проверок использовать **только**: `http://192.168.100.17:8666/admin`.
-- Не использовать `127.0.0.1` или другие адреса без явного запроса пользователя.
+- Для браузерных проверок использовать только `http://192.168.100.17:8666/admin`.
+- Любые изменения веб-интерфейса сервера проверять в браузере через MCP, а не только smoke-тестом.
+- Если менялась техпанель или server-control flow, в браузере обязательно проверить:
+  - блок статуса сервера (`running/stopped/restarting`, uptime, unit/PID, last restart reason);
+  - health block (`PostgreSQL`, latency, pool, WS UI/agent connections, stuck operations);
+  - полные логи сервера (tail, level filter, поиск, refresh/copy/download);
+  - confirm-модалку для `stop/restart` и аудит с причиной;
+  - что техпанель переживает `restart` за счёт внешнего control-plane.
 
-## Скрипты и когда использовать
+## Проверки и handoff
 
-- `python scripts/release_server_to_remote.py`
-  Использовать для стандартного проверенного server-flow без ручной путаницы: локальная verify, Git-deploy на Linux, запуск сервера, smoke-check и остановка сервера в конце.
-- `python scripts/release_server_to_remote.py --leave-running`
-  Использовать, если после штатного deploy/проверки сервер нужно оставить поднятым для следующего шага.
-- `python scripts/release_server_to_remote.py --skip-smoke`
-  Использовать только если smoke сознательно заменён другим сценарием проверки.
-- `python scripts/release_server_to_remote.py --skip-verify`
-  Использовать редко, только если локальная verify уже была прогнана в этом же состоянии и повтор не нужен.
-- `python scripts/deploy_workspace_to_remote.py`
-  Использовать, когда нужно только обновить код в `/var/chat_bot/pc_client` без запуска и остановки сервера.
-- `python scripts/deploy_workspace_to_remote.py --allow-local-dirty`
-  Использовать только осознанно: на Linux уйдёт последний commit, а незакоммиченные локальные правки останутся только на Windows.
-- `python scripts/manage_remote_stack.py start server`
-  Использовать, когда код на Linux уже обновлён и нужен только запуск сервера.
-- `python scripts/manage_remote_stack.py smoke server`
-  Использовать, когда сервер уже запущен и нужен отдельный smoke-check.
-- `python scripts/manage_remote_stack.py stop server`
-  Использовать после проверок, если сервер не нужно оставлять запущенным.
-- `python scripts/manage_remote_stack.py logs server`
-  Использовать для чтения логов и разбора падений без ad-hoc SSH-команд.
-- Если менялся веб-интерфейс сервера, после `release_server_to_remote.py` или после ручного `start + smoke` обязательно дополнительно проверить GUI через MCP по `http://192.168.100.17:8666/admin`.
-- Не собирать вручную цепочки из `git push`, `ssh`, `git pull`, `run_server.py` и `stop_server.py`, если задача укладывается в штатные скрипты выше.
+- Минимум перед коммитом: `python scripts/verify_workspace.py`
+- Затем — релевантные `pytest` по затронутой области.
+- Если менялся веб — browser check через MCP.
+- Если менялись `server/control_plane.py`, `server/runtime_control.py`, `server/admin.*`, `server/tech/handlers.py` или runtime-скрипты:
+  - последовательно прогнать verify + релевантный pytest;
+  - поднять Linux-стенд через штатный pipeline;
+  - отдельно проверить `python scripts/manage_remote_stack.py status control`;
+  - в браузере пройти tech-panel сценарий со статусом, health, логами и confirm для lifecycle actions.
+- В итоговом отчёте всегда фиксировать:
+  - что изменено;
+  - что проверено;
+  - что не проверено;
+  - остаточные риски.
 
-## Миграции PostgreSQL
+## UTF-8 и Windows shell
 
-- Обновления и миграции БД проводить **самостоятельно**: при наличии MCP с доступом к PostgreSQL на запись — применять миграции через MCP; иначе — из каталога `server` выполнять `alembic upgrade head` (см. `server/docs/DATABASE.md`, `server/docs/README.md`). SQL-скрипты в `server/docs/migrations/` — при необходимости применять вручную или через MCP. После изменений схемы при необходимости проверять состояние БД (MCP или psql).
-
-## Браузер (GUI сервера)
-
-- Изменения в веб-интерфейсе сервера (админка, страницы тикетов, статика) **обязательно** проверять в браузере через MCP (navigate, snapshot, click, fill). Не ограничиваться только smoke_test или перезапуском сервера.
-
-## Остановка сервера после проверок
-
-- После запуска сервера на Linux и всех запланированных проверок (тесты, сценарии в браузере, ручные проверки) **обязательно** останавливать сервер: `python scripts/manage_remote_stack.py stop server`. Не оставлять процесс запущенным без явной необходимости пользователя.
-
-## Git и проверенные изменения
-
-- В GitHub публиковать только проверенные изменения: код должен пройти релевантные тесты, smoke-check и обязательные ручные/браузерные проверки для затронутой области.
-- Локальные промежуточные коммиты допустимы как черновики восстановления или этапы работы, но `push` в GitHub делать только после проверки работоспособности.
-- Локальный commit является частью стандартного pipeline перед deploy на Linux. Не пропускать этот шаг при нормальной работе.
-- Если `python scripts/deploy_workspace_to_remote.py` сообщает про `Local workspace has uncommitted changes`, это не ошибка скрипта, а защита от неполного deploy: такие изменения не попадут на Linux, пока их не закоммитить или не убрать.
-- Режим `python scripts/deploy_workspace_to_remote.py --allow-local-dirty` допустим только для осознанного деплоя последнего commit без локального WIP.
-- Ручной перенос файлов в `/var/chat_bot/pc_client` поверх Git-рабочей копии запрещён; для исправления remote-state нужно либо очистить Linux working copy, либо перенести нужные правки обратно в локальный репозиторий и деплоить штатно.
-- Перед публикацией изменений кратко фиксировать, что именно было проверено: например `py_compile`, unit/smoke tests, запуск сервера, сценарий в браузере, проверка агента.
-- Если изменение не удалось проверить до конца, его нельзя публиковать в GitHub как готовое. В таком случае оставить его локально, явно пометить как непроверенное и сначала добить проверку.
-
-## Законы работы Codex и Cursor для pc_client
-
-- Закон 1. Правки, анализ, временные файлы и коммиты делать только в локальной рабочей копии `C:\Users\admin-2\CodexProjects\pc_client`.
-- Закон 2. Сетевую шару `\\192.168.100.17\NTFS_Share\pc_client` не использовать как основную среду редактирования. На шару отправлять только уже проверенное состояние.
-- Закон 3. Сервер запускать только на удалённом Linux-хосте. Windows-машина используется как рабочее место для изменений, браузерных проверок и локальных тестовых агентов.
-- Закон 4. Для запуска и остановки использовать проектные скрипты из `scripts/`. Не делать ad-hoc запусков произвольными командами, если для сценария уже есть штатный скрипт.
-- Закон 5. Каждый отдельный локальный агент запускать только как именованный инстанс с собственными `data_dir` и `install_root` через `scripts/manage_local_agent.py`.
-- Закон 6. Перед локальным коммитом выполнять релевантные проверки. Перед `push` в GitHub выполнять полный набор проверок для изменённой области.
-- Закон 7. Перед выкладкой на Linux сначала проверять локальную рабочую копию, потом деплоить на Linux, затем запускать сервер и проводить smoke/browser-проверку.
-- Закон 8. После всех проверок сервер на Linux останавливать, если пользователь явно не попросил оставить его запущенным.
-- Закон 9. В каждом отчёте фиксировать, что было проверено, что не проверено и какие есть остаточные риски.
-
-## Кодировка и символы
-
-- Во всех ответах, документации и изменениях файлов использовать корректную UTF-8 кодировку.
-- В Python-коде не полагаться на системную кодировку Windows: при чтении/записи текстовых файлов явно указывать `encoding="utf-8"` (или `Path.read_text(..., encoding="utf-8")` / `Path.write_text(..., encoding="utf-8")`).
-- Для вывода/обработки текста из subprocess на Windows по возможности не полагаться на локальную ANSI/OEM кодировку: предпочтительно работать с байтами и декодировать явно в UTF-8 с контролируемым fallback.
-- `mojibake` (кракозябры вида `Р...`, `Ð...`, `Ñ...`) **запрещён** в ответах и файлах проекта.
-- Если в тексте обнаружен `mojibake`, перед отправкой/сохранением обязательно исправлять кодировку и перечитывать файл в UTF-8.
-- Перед отправкой сообщений на русском проверять отсутствие mojibake/«кракозябр» вида `Р...`.
-- Не использовать инструменты/команды с несуществующими namespace без проверки доступности в текущей среде.
+- Во всех файлах и ответах использовать корректный UTF-8.
+- В Python при чтении и записи текста явно указывать `encoding="utf-8"`.
+- Для subprocess на Windows предпочитать байты + явную декодировку в UTF-8 с контролируемым fallback.
+- Перед работе с русским текстом в PowerShell запускать `.\scripts\bootstrap_shell_utf8.ps1`.
+- `mojibake` (`Р...`, `Ð...`, `Ñ...`) запрещён и должен исправляться до сохранения или отправки.

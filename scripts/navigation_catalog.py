@@ -13,6 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 QUICK_LOOKUP_PATH = Path("docs/QUICK_LOOKUP.md")
 SERVER_CODEMAP_PATH = Path("server/docs/CODEMAP.md")
 AGENT_CODEMAP_PATH = Path("pc_agent/docs/CODEMAP.md")
+PLANS_PATH = Path("PLANS.md")
+CODEX_CONFIG_PATH = Path(".codex/config.toml")
 
 
 @dataclass(frozen=True)
@@ -250,7 +252,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_server",
         title="Server UI / admin pages",
-        summary="Admin, ticket and public pages plus static route handlers.",
+        summary="Admin, ticket and public pages plus control-plane backed tech panel and static route handlers.",
         aliases=(
             "admin ui",
             "admin page",
@@ -258,9 +260,13 @@ TOPICS: tuple[Topic, ...] = (
             "public queue",
             "help page",
             "browser check",
+            "tech panel",
+            "control plane",
         ),
         first_files=(
             "server/admin.js",
+            "server/control_plane.py",
+            "server/runtime_control.py",
             "server/ticket.js",
             "server/static_pages/",
             "server/routes.py",
@@ -268,9 +274,11 @@ TOPICS: tuple[Topic, ...] = (
         related_docs=(
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
+            "server/docs/SECURITY_AND_AUTH.md",
         ),
         suggested_commands=(
             "python scripts/diff_context.py",
+            "python scripts/manage_remote_stack.py status control",
             "GUI check via MCP at http://192.168.100.17:8666/admin",
         ),
         path_prefixes=("server/static_pages/",),
@@ -278,6 +286,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/admin.html",
             "server/admin.js",
             "server/admin.css",
+            "server/control_plane.py",
+            "server/runtime_control.py",
             "server/ticket.html",
             "server/ticket.js",
             "server/ticket.css",
@@ -353,9 +363,39 @@ TOPICS: tuple[Topic, ...] = (
         exact_paths=("pc_agent/core/database.py",),
     ),
     Topic(
+        key="planning",
+        title="Planning / handoff",
+        summary="Long-horizon plan, verification state and handoff between sessions.",
+        aliases=(
+            "plan",
+            "plans.md",
+            "handoff",
+            "verification",
+            "residual risk",
+            "long task",
+        ),
+        first_files=(
+            "PLANS.md",
+            "AGENTS.md",
+        ),
+        related_docs=(
+            "PLANS.md",
+            "AGENTS.md",
+            ".cursor/skills/pc-client-plans/SKILL.md",
+            ".cursor/skills/pc-client-release/SKILL.md",
+        ),
+        suggested_commands=(
+            "python scripts/verify_workspace.py",
+        ),
+        exact_paths=(
+            "PLANS.md",
+            ".codex/config.toml",
+        ),
+    ),
+    Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, deploy to Linux, smoke and browser checks.",
+        summary="Local verification, deploy to Linux, runtime control, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
@@ -369,15 +409,20 @@ TOPICS: tuple[Topic, ...] = (
             "scripts/deploy_workspace_to_remote.py",
             "scripts/release_server_to_remote.py",
             "scripts/manage_remote_stack.py",
+            "scripts/runtime_stack.py",
         ),
         related_docs=(
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
             "pc_agent/docs/CODEMAP.md",
+            "PLANS.md",
+            ".cursor/skills/pc-client-release/SKILL.md",
+            ".cursor/skills/pc-client-tests/SKILL.md",
         ),
         suggested_commands=(
             "python scripts/verify_workspace.py",
             "python scripts/release_server_to_remote.py",
+            "python scripts/manage_remote_stack.py status control",
         ),
         path_prefixes=("scripts/",),
         exact_paths=(),
@@ -386,6 +431,63 @@ TOPICS: tuple[Topic, ...] = (
 
 
 DRIFT_RULES: tuple[DriftRule, ...] = (
+    DriftRule(
+        key="navigation_harness",
+        title="Navigation harness changed",
+        reason="Navigation scripts and rules should stay aligned with AGENTS and QUICK_LOOKUP.",
+        exact_paths=(
+            "scripts/navigation_catalog.py",
+            "scripts/diff_context.py",
+            "scripts/agent_find.py",
+            "scripts/docs_drift_check.py",
+        ),
+        required_docs=(
+            "AGENTS.md",
+            "docs/QUICK_LOOKUP.md",
+            ".cursor/rules/navigation-tools.mdc",
+        ),
+    ),
+    DriftRule(
+        key="workflow_harness",
+        title="Workflow or verification harness changed",
+        reason="Deploy, verification and shell bootstrap flows should stay aligned across docs and skills.",
+        exact_paths=(
+            "scripts/verify_workspace.py",
+            "scripts/deploy_workspace_to_remote.py",
+            "scripts/release_server_to_remote.py",
+            "scripts/manage_remote_stack.py",
+            "scripts/runtime_stack.py",
+            "scripts/run_control_plane.py",
+            "scripts/bootstrap_shell_utf8.ps1",
+        ),
+        required_docs=(
+            "AGENTS.md",
+            "docs/LOCAL_WORKFLOW.md",
+            ".cursor/skills/pc-client-release/SKILL.md",
+            ".cursor/skills/pc-client-tests/SKILL.md",
+        ),
+    ),
+    DriftRule(
+        key="server_runtime_control",
+        title="Server runtime control changed",
+        reason="Control-plane, runtime lifecycle scripts and tech panel contracts must stay aligned with docs and browser verification rules.",
+        exact_paths=(
+            "server/control_plane.py",
+            "server/runtime_control.py",
+            "server/admin.html",
+            "server/admin.js",
+            "server/admin.css",
+            "server/tech/handlers.py",
+        ),
+        required_docs=(
+            "AGENTS.md",
+            "docs/QUICK_LOOKUP.md",
+            "server/docs/CODEMAP.md",
+            "server/docs/SECURITY_AND_AUTH.md",
+            ".cursor/rules/automation.mdc",
+            ".cursor/skills/pc-client-browser-check/SKILL.md",
+        ),
+    ),
     DriftRule(
         key="server_entrypoints",
         title="Server entrypoints or routes changed",
