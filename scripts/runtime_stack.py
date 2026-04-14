@@ -81,6 +81,15 @@ def main() -> None:
                     f"{target}: {status['display_state']} "
                     f"(active={status['active_state']}, sub={status['sub_state']}, pid={status['main_pid'] or '-'})"
                 )
+                if status.get("external_listener_detected"):
+                    listener = status.get("port_listener") or {}
+                    print(
+                        "  external_listener="
+                        f"{listener.get('pid') or '-'} "
+                        f"ppid={listener.get('ppid') or '-'} "
+                        f"cwd={listener.get('cwd') or '-'} "
+                        f"cmd={listener.get('cmd') or '-'}"
+                    )
                 if status.get("uptime_sec") is not None:
                     print(f"  uptime_sec={status['uptime_sec']}")
                 if status.get("status_excerpt"):

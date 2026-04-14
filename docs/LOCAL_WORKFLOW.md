@@ -78,6 +78,8 @@ python scripts/manage_remote_stack.py start server
 python scripts/manage_remote_stack.py smoke server
 ```
 
+`manage_remote_stack.py status server` и `scripts/runtime_stack.py status server` теперь дополнительно показывают `external_listener`, если порт `8666` занят не тем процессом, который считает своим systemd-unit. Для `start server` и `stop server` canonical runtime сначала вычищает stray `server.py` из этого workspace, чтобы ручной запуск в shell не ломал transient-unit.
+
 12. Если менялся GUI сервера, дополнительно проверить:
 
 - [admin](http://192.168.100.17:8666/admin)
@@ -127,5 +129,6 @@ git status --short
 8. Только после локальной проверки выкладывать состояние на Linux через `python scripts/deploy_workspace_to_remote.py`.
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
-11. Если менялся веб-интерфейс, обязательно открыть [admin](http://192.168.100.17:8666/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
-12. В GitHub публиковать только изменения, которые уже прошли проверки и были запущены по нужному сценарию.
+11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
+12. Если менялся веб-интерфейс, обязательно открыть [admin](http://192.168.100.17:8666/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
+13. В GitHub публиковать только изменения, которые уже прошли проверки и были запущены по нужному сценарию.

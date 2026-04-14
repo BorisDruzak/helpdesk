@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from config import SERVER_DATA_ROOT
+from config import SERVER_DATA_ROOT, SERVER_PORT
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 SERVER_PYTHON = WORKSPACE_ROOT / "server" / "venv" / "bin" / "python"
@@ -273,7 +273,7 @@ def get_unit_status(target: str, *, pending_action: str | None = None) -> dict[s
     active_state = str(show.get("ActiveState") or "").strip().lower() or "unknown"
     sub_state = str(show.get("SubState") or "").strip().lower() or "unknown"
     main_pid = _parse_optional_int(show.get("ExecMainPID")) or _parse_optional_int(show.get("MainPID"))
-    return {
+    status = {
         "target": target,
         "unit": unit,
         "display_state": display_state_for_unit(active_state, sub_state, pending_action=pending_action),
@@ -290,6 +290,14 @@ def get_unit_status(target: str, *, pending_action: str | None = None) -> dict[s
         "fragment_path": str(show.get("FragmentPath") or "").strip() or None,
         "status_excerpt": _status_excerpt(unit),
     }
+    if target == "server":
+        listener = _get_server_port_listener()
+        status["port_listener"] = listener
+        status["external_listener_detected"] = bool(
+            listener
+            and (main_pid is None or (listener.get("pid") != main_pid and listener.get("ppid") != main_pid))
+        )
+    return status
 
 
 def _reset_failed(unit: str) -> None:
@@ -300,8 +308,54 @@ def _stop_unit(unit: str) -> None:
     _run(["systemctl", "--user", "stop", unit], cwd=WORKSPACE_ROOT, check=False)
 
 
+def _stop_workspace_server_processes() -> subprocess.CompletedProcess[str]:
+    return _run(
+        [str(SERVER_PYTHON), "scripts/stop_server.py"],
+        cwd=WORKSPACE_ROOT,
+        check=False,
+    )
+
+
+def _read_proc_cmdline(pid: int) -> str | None:
+    completed = _run(["/bin/cat", f"/proc/{pid}/cmdline"], cwd=WORKSPACE_ROOT, check=False)
+    raw = completed.stdout.replace("\x00", " ").strip()
+    return raw or None
+
+
+def _read_proc_cwd(pid: int) -> str | None:
+    completed = _run(["/usr/bin/readlink", "-f", f"/proc/{pid}/cwd"], cwd=WORKSPACE_ROOT, check=False)
+    value = completed.stdout.strip()
+    return value or None
+
+
+def _read_proc_ppid(pid: int) -> int | None:
+    completed = _run(["/usr/bin/ps", "-o", "ppid=", "-p", str(pid)], cwd=WORKSPACE_ROOT, check=False)
+    return _parse_optional_int(completed.stdout.strip())
+
+
+def _get_server_port_listener() -> dict[str, Any] | None:
+    completed = _run(
+        ["/usr/bin/ss", "-ltnp", f"( sport = :{SERVER_PORT} )"],
+        cwd=WORKSPACE_ROOT,
+        check=False,
+    )
+    match = re.search(r"pid=(\d+)", completed.stdout)
+    if not match:
+        return None
+    pid = int(match.group(1))
+    return {
+        "pid": pid,
+        "ppid": _read_proc_ppid(pid),
+        "cmd": _read_proc_cmdline(pid),
+        "cwd": _read_proc_cwd(pid),
+        "port": SERVER_PORT,
+    }
+
+
 def start_target(target: str) -> subprocess.CompletedProcess[str]:
     unit = unit_name(target)
+    if target == "server":
+        _stop_workspace_server_processes()
     _reset_failed(unit)
     _stop_unit(unit)
     return _run(
@@ -321,6 +375,7 @@ def start_target(target: str) -> subprocess.CompletedProcess[str]:
 
 def stop_target(target: str) -> subprocess.CompletedProcess[str]:
     if target == "server":
+        _stop_workspace_server_processes()
         _stop_unit(SERVER_UNIT)
         _reset_failed(SERVER_UNIT)
         return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
