@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260413e">
+    <link rel="stylesheet" href="/support.css?v=20260414a">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -36,17 +36,9 @@
     <div id="supportApp" class="support-shell hidden">
         <header class="support-topbar">
             <div class="support-topbar-main">
-                <button id="sidebarToggleBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">☰</button>
                 <div class="support-brand">
                     <p class="support-brand-eyebrow">Help Desk</p>
                     <h1>Support Workspace</h1>
-                </div>
-            </div>
-
-            <div class="support-topbar-center">
-                <div id="workspaceModeSwitch" class="workspace-mode-switch workspace-mode-switch-topbar" role="tablist" aria-label="Режим работы поддержки">
-                    <button class="workspace-mode-chip active" type="button" data-workspace-view="queue">Очередь тикетов</button>
-                    <button class="workspace-mode-chip" type="button" data-workspace-view="ticket">Рабочий тикет</button>
                 </div>
             </div>
 
@@ -60,44 +52,22 @@
         </header>
 
         <div id="supportLayout" class="support-layout">
-            <aside id="ticketInbox" class="ticket-inbox">
-                <div class="ticket-inbox-head">
-                    <div>
-                        <p class="section-eyebrow">Inbox</p>
-                        <h2>Тикеты</h2>
-                    </div>
-                    <button id="collapseInboxBtn" class="topbar-icon-btn" type="button" title="Развернуть список тикетов">⤢</button>
-                </div>
-
-                <div class="ticket-inbox-toolbar">
-                    <div class="ticket-toolbar-row">
-                        <input id="ticketSearchInput" class="support-search" type="search" placeholder="Поиск по коду, описанию, инициатору">
-                        <label class="support-select-wrap" for="ticketSortSelect">
-                            <span>Сортировка</span>
-                            <select id="ticketSortSelect" class="support-select">
-                                <option value="updated_desc">Свежие сверху</option>
-                                <option value="sla_risk">SLA / OLA риск</option>
-                                <option value="priority">По приоритету</option>
-                                <option value="requester_reply">По ответу пользователя</option>
-                                <option value="age_desc">Старые сверху</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div id="ticketFilterChips" class="filter-chip-row">
-                        <button class="filter-chip active" type="button" data-filter="mine">Мои</button>
-                        <button class="filter-chip" type="button" data-filter="unassigned">Неназначенные</button>
-                        <button class="filter-chip" type="button" data-filter="actionable">Нужны действия</button>
-                        <button class="filter-chip" type="button" data-filter="waiting">Ждут пользователя</button>
-                    </div>
-                </div>
-
-                <div id="ticketListMeta" class="ticket-list-meta">Загрузка списка тикетов…</div>
-                <div id="ticketList" class="ticket-list" aria-live="polite"></div>
-            </aside>
-
             <main id="workspaceShell" class="workspace-shell">
                 <section class="workspace-shell-head">
                     <section id="queueCommandDeck" class="support-card queue-command-deck">
+                        <div id="workspaceModeSwitch" class="workspace-mode-board" role="tablist" aria-label="Режим работы поддержки">
+                            <button class="workspace-mode-board-card active" type="button" data-workspace-view="queue">
+                                <span class="workspace-mode-board-label">Очередь тикетов</span>
+                                <strong class="workspace-mode-board-title">Рабочая доска</strong>
+                                <span class="workspace-mode-board-note">Фильтры, поиск, сортировка и вся очередь на одном полотне.</span>
+                            </button>
+                            <button class="workspace-mode-board-card workspace-mode-board-card-ticket" type="button" data-workspace-view="ticket">
+                                <span class="workspace-mode-board-label">Рабочий тикет</span>
+                                <strong id="selectedTicketTitle" class="workspace-mode-board-title">Тикет не выбран</strong>
+                                <span class="workspace-mode-board-note">Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.</span>
+                                <div id="selectedTicketMeta" class="selected-ticket-meta workspace-ticket-meta"></div>
+                            </button>
+                        </div>
                         <div class="queue-command-head">
                             <div class="queue-command-title">
                                 <p class="section-eyebrow">Очередь тикетов</p>
@@ -105,40 +75,21 @@
                             </div>
                             <div id="queueHeadBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
+                        <div id="queueHeadScopeDock" class="queue-scope-dock"></div>
                         <div id="queueHeadSummaryStrip" class="queue-summary-strip"></div>
-                        <div class="queue-command-tools">
-                            <div class="queue-inline-group queue-inline-group-wide">
-                                <div class="queue-controls-head">
-                                    <span class="queue-stack-title">Фильтр и порядок</span>
-                                    <span class="queue-controls-note">Сначала отберите нужный срез очереди, затем выберите порядок карточек.</span>
-                                </div>
-                                <div id="queueHeadControlDock" class="queue-control-dock"></div>
-                            </div>
-                        </div>
                     </section>
                 </section>
 
                 <section id="queueDesk" class="workspace-desk queue-desk">
-                    <div id="queueSummaryStrip" class="queue-summary-strip"></div>
-
-                    <section class="support-card queue-toolbar-card">
+                    <section class="support-card queue-search-sort-card">
                         <div class="queue-toolbar-head">
                             <div>
-                                <p class="section-eyebrow">Очередь тикетов</p>
-                                <h3>Рабочая доска</h3>
+                                <p class="section-eyebrow">Поиск и порядок</p>
+                                <h3>Найти нужный тикет</h3>
                             </div>
                             <div id="queueBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
-                        <div class="queue-toolbar-groups">
-                            <div class="queue-toolbar-group">
-                                <span class="queue-stack-title">Фильтр списка</span>
-                                <div id="queueFilterDock" class="quick-action-row"></div>
-                            </div>
-                            <div class="queue-toolbar-group">
-                                <span class="queue-stack-title">Сортировка</span>
-                                <div id="queueSortDock" class="quick-action-row"></div>
-                            </div>
-                        </div>
+                        <div id="queueSearchSortDock" class="queue-search-sort-dock"></div>
                     </section>
 
                     <div class="queue-desk-grid">
@@ -149,21 +100,13 @@
                 </section>
 
                 <section id="ticketDesk" class="workspace-desk ticket-desk hidden">
-                    <section id="stageHeader" class="stage-header">
-                        <div class="stage-title-block">
-                            <p class="section-eyebrow">Выбранный тикет</p>
-                            <h2 id="selectedTicketTitle">Тикет не выбран</h2>
-                            <div id="selectedTicketMeta" class="selected-ticket-meta"></div>
-                        </div>
-                    </section>
-
                     <div class="ticket-desk-layout">
                         <div class="ticket-desk-main">
                             <section id="stageEmpty" class="stage-empty">
                                 <div class="stage-empty-card">
                                     <div class="stage-empty-icon">🧭</div>
                                     <h3>Выберите тикет</h3>
-                                    <p>Слева находится inbox саппорта. Одинарный клик обновляет triage-контекст, двойной клик открывает полноценный рабочий тикет.</p>
+                                    <p>Вернитесь в очередь, выберите карточку и переключитесь в рабочий режим. Активный тикет всегда виден в верхней панели.</p>
                                 </div>
                             </section>
 
@@ -312,6 +255,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260413e"></script>
+    <script src="/support.js?v=20260414a"></script>
 </body>
 </html>

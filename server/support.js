@@ -10,12 +10,13 @@
     const LAST_TICKET_KEY = 'support_workspace_last_ticket';
     const SIDEBAR_MODE_KEY = 'support_workspace_sidebar_mode';
     const WORKSPACE_VIEW_KEY = 'support_workspace_view';
+    const QUEUE_SCOPE_KEY = 'support_workspace_queue_scope';
     const DRAWER_TAB_KEY = 'support_workspace_drawer_tab';
     const QUEUE_EXPANDERS_KEY = 'support_workspace_queue_expanders';
     const CONTEXT_ACCORDIONS_KEY = 'support_workspace_context_accordions';
     const CHAT_WINDOW_SIZE_KEY = 'support_workspace_chat_window_size';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260413e';
+    const SUPPORT_SHELL_VERSION = '20260414a';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -27,6 +28,10 @@
     const WORKSPACE_VIEWS = Object.freeze({
         QUEUE: 'queue',
         TICKET: 'ticket',
+    });
+    const TICKET_SCOPES = Object.freeze({
+        MINE: 'mine',
+        ALL: 'all',
     });
     const ACTIVE_WORK_STATUSES = new Set(['triaged', 'in_progress', 'waiting_on_user', 'waiting_on_vendor', 'resolved']);
     const STATUS_LABELS = {
@@ -71,6 +76,7 @@
     const state = {
         actorRole: '',
         userLogin: '',
+        ticketScope: TICKET_SCOPES.MINE,
         currentFilter: 'mine',
         ticketQuery: '',
         ticketSort: 'updated_desc',
@@ -223,7 +229,11 @@
     }
 
     function normalizeTicketFilter(value) {
-        return ['mine', 'unassigned', 'actionable', 'waiting'].includes(value) ? value : 'mine';
+        return ['mine', 'actionable', 'waiting', 'sla_risk', 'requester_reply'].includes(value) ? value : 'mine';
+    }
+
+    function normalizeTicketScope(value) {
+        return value === TICKET_SCOPES.ALL ? TICKET_SCOPES.ALL : TICKET_SCOPES.MINE;
     }
 
     function getToken() {
@@ -499,23 +509,13 @@
         if (!layout) {
             return;
         }
-        layout.classList.toggle('queue-mode', state.workspaceView === WORKSPACE_VIEWS.QUEUE);
-        layout.dataset.sidebarMode = state.sidebarMode;
-        const sidebarToggleBtn = byId('sidebarToggleBtn');
-        if (sidebarToggleBtn) {
-            sidebarToggleBtn.classList.toggle('hidden', state.workspaceView === WORKSPACE_VIEWS.QUEUE);
-            const isCollapsed = state.sidebarMode === PANEL_MODES.COLLAPSED;
-            sidebarToggleBtn.textContent = isCollapsed ? '☰' : '⟨';
-            sidebarToggleBtn.title = isCollapsed ? 'Развернуть список тикетов' : 'Полностью свернуть список тикетов';
-        }
-        const inboxResizeBtn = byId('collapseInboxBtn');
-        if (inboxResizeBtn) {
-            const isFull = state.sidebarMode === PANEL_MODES.FULL;
-            inboxResizeBtn.textContent = isFull ? '⤡' : '⤢';
-            inboxResizeBtn.title = isFull ? 'Вернуть стандартную ширину списка тикетов' : 'Развернуть список тикетов на всю ширину';
-        }
-        document.querySelectorAll('[data-workspace-view]').forEach((button) => {
-            button.classList.toggle('active', button.getAttribute('data-workspace-view') === state.workspaceView);
+        layout.dataset.workspaceView = state.workspaceView;
+        const hasTicket = Boolean(selectedTicket());
+        document.querySelectorAll('#workspaceModeSwitch [data-workspace-view]').forEach((button) => {
+            const view = button.getAttribute('data-workspace-view');
+            const disabled = view === WORKSPACE_VIEWS.TICKET && !hasTicket;
+            button.classList.toggle('active', view === state.workspaceView);
+            button.setAttribute('data-disabled', disabled ? 'true' : 'false');
         });
         byId('queueDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.QUEUE);
         byId('ticketDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.TICKET);
@@ -566,6 +566,7 @@
         sessionStorage.removeItem(LAST_TICKET_KEY);
         sessionStorage.removeItem(SIDEBAR_MODE_KEY);
         sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+        sessionStorage.removeItem(QUEUE_SCOPE_KEY);
         sessionStorage.removeItem(DRAWER_TAB_KEY);
         sessionStorage.removeItem(QUEUE_EXPANDERS_KEY);
         sessionStorage.removeItem(CONTEXT_ACCORDIONS_KEY);
@@ -577,6 +578,7 @@
         clearStoredSession();
         state.actorRole = '';
         state.userLogin = '';
+        state.ticketScope = TICKET_SCOPES.MINE;
         state.currentFilter = 'mine';
         state.ticketQuery = '';
         state.ticketSort = 'updated_desc';
@@ -603,6 +605,7 @@
         state.selectedTicketId = sessionStorage.getItem(LAST_TICKET_KEY) || '';
         state.sidebarMode = normalizePanelMode(sessionStorage.getItem(SIDEBAR_MODE_KEY));
         state.workspaceView = normalizeWorkspaceView(sessionStorage.getItem(WORKSPACE_VIEW_KEY));
+        state.ticketScope = normalizeTicketScope(sessionStorage.getItem(QUEUE_SCOPE_KEY));
         state.drawerTab = ['context', 'tools', 'pipeline'].includes(sessionStorage.getItem(DRAWER_TAB_KEY))
             ? sessionStorage.getItem(DRAWER_TAB_KEY)
             : 'context';
@@ -690,6 +693,23 @@
         return isMineTicket(ticket) && ticket.status === 'waiting_on_user';
     }
 
+    function hasRequesterReply(ticket) {
+        return Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0
+            || Number(ticket?.chat_counters?.support_pending_user_messages || 0) > 0;
+    }
+
+    function isRequesterReplyMineTicket(ticket) {
+        return isMineTicket(ticket) && hasRequesterReply(ticket);
+    }
+
+    function isSlaRiskMineTicket(ticket) {
+        if (!isMineTicket(ticket)) {
+            return false;
+        }
+        const level = ticketSignalState(ticket).level;
+        return level === 'risk' || level === 'breach';
+    }
+
     function ticketMatchesQuery(ticket, query) {
         if (!query) {
             return true;
@@ -717,14 +737,17 @@
         if (filter === 'mine') {
             return isMineTicket(ticket);
         }
-        if (filter === 'unassigned') {
-            return isUnassignedTicket(ticket);
-        }
         if (filter === 'actionable') {
             return isActionableMineTicket(ticket);
         }
         if (filter === 'waiting') {
             return isWaitingMineTicket(ticket);
+        }
+        if (filter === 'sla_risk') {
+            return isSlaRiskMineTicket(ticket);
+        }
+        if (filter === 'requester_reply') {
+            return isRequesterReplyMineTicket(ticket);
         }
         return isMineTicket(ticket);
     }
@@ -897,8 +920,16 @@
                 return rightPending - leftPending;
             }
         }
-        if (state.ticketSort === 'age_desc') {
-            return numericTimestamp(left?.created_at) - numericTimestamp(right?.created_at);
+        if (state.ticketSort === 'updated_asc') {
+            return numericTimestamp(left?.updated_at || left?.created_at) - numericTimestamp(right?.updated_at || right?.created_at);
+        }
+        if (state.ticketSort === 'title_asc') {
+            const leftTitle = String(left?.title || left?.ticket_code || left?.ticket_id || '');
+            const rightTitle = String(right?.title || right?.ticket_code || right?.ticket_id || '');
+            const diff = leftTitle.localeCompare(rightTitle, 'ru');
+            if (diff !== 0) {
+                return diff;
+            }
         }
         return numericTimestamp(right?.updated_at || right?.created_at) - numericTimestamp(left?.updated_at || left?.created_at);
     }
@@ -913,33 +944,13 @@
 
     function ticketSections(filterName, options) {
         const filter = normalizeTicketFilter(filterName);
-        const opts = options || {};
-        const includeUnassignedInMine = Boolean(opts.includeUnassignedInMine);
         const visible = ticketsMatchingCurrentQuery();
-        if (filter === 'mine') {
-            const sections = [{
-                id: 'mine',
-                title: 'Мои тикеты',
-                note: 'Назначенные на вас',
-                tickets: sortTickets(visible.filter((ticket) => isMineTicket(ticket))),
-            }];
-            if (includeUnassignedInMine) {
-                sections.push({
-                    id: 'unassigned',
-                    title: 'Неназначенные',
-                    note: 'Очередь без исполнителя',
-                    tickets: sortTickets(visible.filter((ticket) => isUnassignedTicket(ticket))),
-                    secondary: true,
-                });
-            }
-            return sections.filter((section) => section.tickets.length);
-        }
-        if (filter === 'unassigned') {
+        if (state.ticketScope === TICKET_SCOPES.ALL) {
             return [{
-                id: 'unassigned',
-                title: 'Неназначенные',
-                note: 'Очередь без исполнителя',
-                tickets: sortTickets(visible.filter((ticket) => isUnassignedTicket(ticket))),
+                id: 'all',
+                title: 'Все тикеты',
+                note: 'Общая очередь, неназначенные и чужие тикеты',
+                tickets: sortTickets(visible),
             }];
         }
         if (filter === 'actionable') {
@@ -954,8 +965,24 @@
             return [{
                 id: 'waiting',
                 title: 'Ждут пользователя',
-                note: 'Только по вашим тикетам',
+                note: 'Ожидают ответ от инициатора',
                 tickets: sortTickets(visible.filter((ticket) => isWaitingMineTicket(ticket))),
+            }];
+        }
+        if (filter === 'sla_risk') {
+            return [{
+                id: 'sla_risk',
+                title: 'SLA / OLA риск',
+                note: 'Только мои тикеты с риском или breach',
+                tickets: sortTickets(visible.filter((ticket) => isSlaRiskMineTicket(ticket))),
+            }];
+        }
+        if (filter === 'requester_reply') {
+            return [{
+                id: 'requester_reply',
+                title: 'Ответы пользователя',
+                note: 'Есть новые сообщения от инициатора',
+                tickets: sortTickets(visible.filter((ticket) => isRequesterReplyMineTicket(ticket))),
             }];
         }
         return [{
@@ -1242,17 +1269,27 @@
         const snapshot = state.selectedSnapshot;
         const titleNode = byId('selectedTicketTitle');
         const actionsNode = byId('ticketCommandDock');
+        const ticketModeButton = document.querySelector('#workspaceModeSwitch [data-workspace-view="ticket"]');
+        const ticketModeNote = ticketModeButton?.querySelector('.workspace-mode-board-note');
         if (!titleNode || !actionsNode) {
             return;
         }
         if (!ticket) {
             titleNode.textContent = 'Тикет не выбран';
+            if (ticketModeNote) {
+                ticketModeNote.textContent = 'Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.';
+            }
             actionsNode.innerHTML = '';
             renderSelectedMeta(null, null);
+            applyLayoutClasses();
             return;
         }
         titleNode.textContent = (ticket.ticket_code || ticket.ticket_id) + ' • ' + (ticket.title || 'Без названия');
+        if (ticketModeNote) {
+            ticketModeNote.textContent = buildTicketMetaLine(ticket);
+        }
         renderSelectedMeta(ticket, snapshot);
+        applyLayoutClasses();
         const actions = quickActionButtons(ticket);
         actionsNode.innerHTML = actions.length ? `
             <div class="stage-actions-card">
@@ -1275,21 +1312,16 @@
     function queueSummaryStats() {
         const visible = ticketsMatchingCurrentQuery();
         const actionable = visible.filter((ticket) => isActionableMineTicket(ticket)).length;
-        const unassigned = visible.filter((ticket) => isUnassignedTicket(ticket)).length;
         const mine = visible.filter((ticket) => isMineTicket(ticket)).length;
-        const unread = visible.filter((ticket) => Number(ticket?.chat_counters?.support_unread_user_messages || 0) > 0).length;
+        const unread = visible.filter((ticket) => isRequesterReplyMineTicket(ticket)).length;
         const waiting = visible.filter((ticket) => isWaitingMineTicket(ticket)).length;
-        const slaRisk = visible.filter((ticket) => {
-            const level = ticketSignalState(ticket).level;
-            return level === 'risk' || level === 'breach';
-        }).length;
+        const slaRisk = visible.filter((ticket) => isSlaRiskMineTicket(ticket)).length;
         return [
-            { label: 'Мои тикеты', value: String(mine), note: 'Назначенные на вас', tone: 'default' },
-            { label: 'Нужны действия', value: String(actionable), note: 'Только по вашим тикетам', tone: 'action' },
-            { label: 'Ждут пользователя', value: String(waiting), note: 'Только по вашим тикетам', tone: 'default' },
-            { label: 'Неназначенные', value: String(unassigned), note: 'Отдельная нижняя секция очереди', tone: 'default' },
-            { label: 'SLA / OLA риск', value: String(slaRisk), note: 'Жёлтые и красные дедлайны', tone: 'risk' },
-            { label: 'Ответы пользователя', value: String(unread), note: 'Есть новые сообщения от инициатора', tone: 'action' },
+            { id: 'mine', hotkey: 'Мои', label: 'Мои тикеты', value: String(mine), note: 'Все назначенные на вас тикеты', tone: 'default' },
+            { id: 'actionable', hotkey: 'Действия', label: 'Нужны действия', value: String(actionable), note: 'Только мои тикеты, где нужно вмешательство', tone: 'action' },
+            { id: 'waiting', hotkey: 'Ожидание', label: 'Ждут пользователя', value: String(waiting), note: 'Ожидаем ответ от инициатора', tone: 'default' },
+            { id: 'sla_risk', hotkey: 'SLA', label: 'SLA / OLA риск', value: String(slaRisk), note: 'Мои тикеты с жёлтым или красным дедлайном', tone: 'risk' },
+            { id: 'requester_reply', hotkey: 'Чат', label: 'Ответы пользователя', value: String(unread), note: 'Есть непрочитанные сообщения от инициатора', tone: 'action' },
         ];
     }
 
@@ -1432,9 +1464,6 @@
         }
         if (actionId === 'open_ticket_desk') {
             await selectTicket(ticketId, { view: WORKSPACE_VIEWS.TICKET });
-            if (state.sidebarMode === PANEL_MODES.FULL) {
-                setSidebarMode(PANEL_MODES.HALF);
-            }
             return;
         }
         if (ticketId !== state.selectedTicketId) {
@@ -1445,155 +1474,114 @@
 
     function renderQueueDesk() {
         const summaryNode = byId('queueHeadSummaryStrip') || byId('queueSummaryStrip');
-        const controlNode = byId('queueHeadControlDock');
-        const filterNode = byId('queueHeadFilterDock') || byId('queueFilterDock');
-        const sortNode = byId('queueHeadSortDock') || byId('queueSortDock');
-        const actionNode = byId('queueActionDock');
+        const scopeNode = byId('queueHeadScopeDock');
+        const searchSortNode = byId('queueSearchSortDock');
         const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
-        const queueFilterLabel = '\u0424\u0438\u043b\u044c\u0442\u0440';
-        const queueSortLabel = '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430';
-        const slaHelpText = 'SLA \u2014 \u0432\u043d\u0435\u0448\u043d\u0438\u0439 \u0434\u0435\u0434\u043b\u0430\u0439\u043d \u0434\u043b\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f, OLA \u2014 \u0432\u043d\u0443\u0442\u0440\u0435\u043d\u043d\u0438\u0439 \u0434\u0435\u0434\u043b\u0430\u0439\u043d \u043e\u0447\u0435\u0440\u0435\u0434\u0438. \u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430 SLA / OLA \u043f\u043e\u0434\u043d\u0438\u043c\u0430\u0435\u0442 \u043d\u0430\u0432\u0435\u0440\u0445 \u043f\u0440\u043e\u0441\u0440\u043e\u0447\u0435\u043d\u043d\u044b\u0435 \u0438 \u0431\u043b\u0438\u0436\u0430\u0439\u0448\u0438\u0435 \u0441\u0440\u043e\u043a\u0438.';
+        const slaHelpText = 'SLA — внешний дедлайн для пользователя, OLA — внутренний дедлайн очереди. Вверх поднимаются breach и ближайшие сроки.';
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
-        const ticket = selectedTicket();
+        const summaryItems = queueSummaryStats();
+        const summaryDisabled = state.ticketScope === TICKET_SCOPES.ALL;
+        const sortActions = [
+            { id: 'updated_desc', label: 'Свежие' },
+            { id: 'updated_asc', label: 'Старые' },
+            { id: 'sla_risk', label: 'SLA / OLA' },
+            { id: 'priority', label: 'Приоритет' },
+            { id: 'requester_reply', label: 'Ответ пользователя' },
+            { id: 'title_asc', label: 'А-Я' },
+        ];
 
         if (summaryNode) {
-            summaryNode.innerHTML = queueSummaryStats().map((item) => `
-                <div class="queue-summary-line" data-tone="${escapeHtml(item.tone || 'default')}">
+            summaryNode.innerHTML = summaryItems.map((item) => `
+                <button type="button" class="queue-summary-line" data-queue-filter="${escapeHtml(item.id)}" data-tone="${escapeHtml(item.tone || 'default')}" data-active="${state.ticketScope === TICKET_SCOPES.MINE && state.currentFilter === item.id ? 'true' : 'false'}" data-disabled="${summaryDisabled ? 'true' : 'false'}" data-hotkey="${escapeHtml(item.hotkey || '')}">
                     <span class="queue-summary-line-label">${escapeHtml(item.label)}</span>
                     <strong class="queue-summary-line-value">${escapeHtml(item.value)}</strong>
                     <span class="queue-summary-line-note">${escapeHtml(item.note)}</span>
-                </div>
+                </button>
             `).join('');
-        }
-
-        const filterActions = [
-            { id: 'mine', label: 'Мои', kind: state.currentFilter === 'mine' ? 'primary' : 'secondary' },
-            { id: 'actionable', label: 'Нужны действия', kind: state.currentFilter === 'actionable' ? 'primary' : 'secondary' },
-            { id: 'waiting', label: 'Ждут пользователя', kind: state.currentFilter === 'waiting' ? 'primary' : 'secondary' },
-            { id: 'unassigned', label: 'Неназначенные', kind: state.currentFilter === 'unassigned' ? 'primary' : 'secondary' },
-        ];
-        const sortActions = [
-            { id: 'updated_desc', label: 'Свежие', kind: state.ticketSort === 'updated_desc' ? 'primary' : 'secondary' },
-            { id: 'sla_risk', label: 'SLA / OLA', kind: state.ticketSort === 'sla_risk' ? 'primary' : 'secondary' },
-            { id: 'priority', label: 'Приоритет', kind: state.ticketSort === 'priority' ? 'primary' : 'secondary' },
-            { id: 'requester_reply', label: 'Ответ пользователя', kind: state.ticketSort === 'requester_reply' ? 'primary' : 'secondary' },
-        ];
-
-        if (controlNode) {
-            controlNode.innerHTML = `
-                <div class="queue-control-cluster">
-                    <span class="queue-control-label">${queueFilterLabel}</span>
-                    <div class="quick-action-row">
-                        ${filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('')}
-                    </div>
-                </div>
-                <div class="queue-control-cluster">
-                    <span class="queue-control-label">${queueSortLabel}</span>
-                    <div class="quick-action-row">
-                        ${sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('')}
-                    </div>
-                </div>
-                <button type="button" class="btn btn-secondary queue-info-btn" data-queue-info="sla-help" title="${escapeHtml(slaHelpText)}">SLA / OLA ?</button>
-            `;
-            controlNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
+            summaryNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
                 button.addEventListener('click', () => {
+                    if (state.ticketScope === TICKET_SCOPES.ALL) {
+                        showToast('Личные плитки работают в режиме "Мои тикеты".');
+                        return;
+                    }
                     state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
                     renderTicketList();
                     renderQueueDesk();
                 });
             });
-            controlNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
+        }
+
+        if (scopeNode) {
+            scopeNode.innerHTML = `
+                <div class="queue-scope-toggle" role="tablist" aria-label="Область очереди">
+                    <button type="button" class="queue-scope-btn${state.ticketScope === TICKET_SCOPES.MINE ? ' active' : ''}" data-queue-scope="${TICKET_SCOPES.MINE}">Мои тикеты</button>
+                    <button type="button" class="queue-scope-btn${state.ticketScope === TICKET_SCOPES.ALL ? ' active' : ''}" data-queue-scope="${TICKET_SCOPES.ALL}">Все тикеты</button>
+                </div>
+                <div class="queue-scope-note">${escapeHtml(state.ticketScope === TICKET_SCOPES.MINE
+                    ? 'Плитки ниже работают как быстрые фильтры только по вашим тикетам.'
+                    : 'Показана вся очередь, включая неназначенные и чужие тикеты. Личные плитки ниже становятся индикаторами и не фильтруют список.')}</div>
+            `;
+            scopeNode.querySelectorAll('[data-queue-scope]').forEach((button) => {
                 button.addEventListener('click', () => {
-                    state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
-                    const sortSelect = byId('ticketSortSelect');
-                    if (sortSelect) {
-                        sortSelect.value = state.ticketSort;
+                    const nextScope = normalizeTicketScope(button.getAttribute('data-queue-scope') || TICKET_SCOPES.MINE);
+                    if (nextScope === state.ticketScope) {
+                        return;
                     }
+                    state.ticketScope = nextScope;
+                    sessionStorage.setItem(QUEUE_SCOPE_KEY, state.ticketScope);
                     renderTicketList();
                     renderQueueDesk();
                 });
             });
-            controlNode.querySelectorAll('[data-queue-info="sla-help"]').forEach((button) => {
+        }
+
+        if (searchSortNode) {
+            searchSortNode.innerHTML = `
+                <section class="queue-search-shell">
+                    <span class="queue-stack-title">Поиск по тикетам</span>
+                    <input id="queueTicketSearchInput" class="support-search" type="search" placeholder="Код, тема, инициатор, исполнитель, устройство" value="${escapeHtml(state.ticketQuery)}">
+                    <div class="queue-search-meta">
+                        <span class="queue-search-caption">Найдено: ${escapeHtml(String(tickets.length))} из ${escapeHtml(String(state.tickets.length))}</span>
+                        <span class="queue-search-caption">${escapeHtml(state.ticketScope === TICKET_SCOPES.MINE ? 'Режим: мои тикеты' : 'Режим: все тикеты')}</span>
+                    </div>
+                </section>
+                <section class="queue-sort-shell">
+                    <span class="queue-stack-title">Сортировка</span>
+                    <div class="queue-sort-chip-row">
+                        ${sortActions.map((action) => `<button type="button" class="queue-sort-chip${state.ticketSort === action.id ? ' active' : ''}" data-queue-sort="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join('')}
+                        <button type="button" class="queue-sort-chip" data-queue-info="sla-help" title="${escapeHtml(slaHelpText)}">SLA / OLA ?</button>
+                    </div>
+                    <div class="queue-search-caption">SLA/OLA: сначала breach, затем ближайшие дедлайны. Поиск работает по коду, теме, пользователю, очереди и устройству.</div>
+                </section>
+            `;
+            searchSortNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
+                    renderTicketList();
+                    renderQueueDesk();
+                });
+            });
+            searchSortNode.querySelectorAll('[data-queue-info="sla-help"]').forEach((button) => {
                 button.addEventListener('click', () => {
                     showToast(slaHelpText);
                 });
             });
-        }
-
-        if (filterNode) {
-            filterNode.innerHTML = filterActions.map((action) => queueActionButtonMarkup(action, 'data-queue-filter')).join('');
-            filterNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
-                button.addEventListener('click', () => {
-                    state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
+            const searchInput = byId('queueTicketSearchInput');
+            if (searchInput) {
+                searchInput.addEventListener('input', () => {
+                    state.ticketQuery = String(searchInput.value || '').trim();
                     renderTicketList();
                     renderQueueDesk();
                 });
-            });
-        }
-
-        if (sortNode) {
-            sortNode.innerHTML = sortActions.map((action) => queueActionButtonMarkup(action, 'data-queue-sort')).join('');
-            sortNode.querySelectorAll('[data-queue-sort]').forEach((button) => {
-                button.addEventListener('click', () => {
-                    state.ticketSort = button.getAttribute('data-queue-sort') || 'updated_desc';
-                    const sortSelect = byId('ticketSortSelect');
-                    if (sortSelect) {
-                        sortSelect.value = state.ticketSort;
-                    }
-                    renderTicketList();
-                    renderQueueDesk();
-                });
-            });
-        }
-
-        if (actionNode) {
-            const sideActions = [{ id: 'refresh', label: 'Обновить очередь', kind: 'secondary' }];
-            if (ticket) {
-                sideActions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
-                if (canTakeSelf(ticket)) {
-                    sideActions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
-                }
-                if (shouldWorkTicket(ticket) && canWrite() && ticket.status !== 'in_progress') {
-                    sideActions.push({ id: 'to_in_progress', label: 'В работу', kind: 'secondary' });
-                }
             }
-            actionNode.innerHTML = ticket ? `
-                <section class="queue-cta-stack">
-                    <div class="queue-stack-title">Выбранный тикет</div>
-                    <div class="activity-item">
-                        <strong>${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</strong>
-                        <div class="timeline-meta">${escapeHtml(ticket.title || 'Без названия')}</div>
-                        <div class="timeline-meta">${escapeHtml(buildTicketMetaLine(ticket))}</div>
-                    </div>
-                </section>
-                <section class="queue-cta-stack">
-                    <div class="queue-stack-title">Быстрые действия</div>
-                    <div class="quick-action-row">${sideActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
-                </section>
-            ` : `
-                <section class="queue-cta-stack">
-                    <div class="queue-stack-title">Панель очереди</div>
-                    <div class="activity-item">Выберите тикет на доске, чтобы управлять им отсюда.</div>
-                    <div class="quick-action-row">${sideActions.map((action) => queueActionButtonMarkup(action, 'data-queue-action')).join('')}</div>
-                </section>
-            `;
-            actionNode.querySelectorAll('[data-queue-action]').forEach((button) => {
-                button.addEventListener('click', async () => {
-                    const actionId = button.getAttribute('data-queue-action') || '';
-                    if (actionId === 'take_self' && ticket) {
-                        await takeTicketSelf(ticket.ticket_id);
-                        return;
-                    }
-                    await handleQuickAction(actionId);
-                });
-            });
         }
 
         if (boardMetaNode) {
+            const queryNote = state.ticketQuery ? (' • поиск: ' + state.ticketQuery) : '';
             const summary = sections.map((section) => section.title + ': ' + section.tickets.length).join(' • ') || 'Тикеты не найдены';
-            boardMetaNode.textContent = summary;
+            boardMetaNode.textContent = summary + queryNote;
         }
 
         if (!boardListNode) {
@@ -2788,9 +2776,6 @@
         updateSwitchRoleLink();
         applyLayoutClasses();
         applyChatWindowSize();
-        if (byId('ticketSortSelect')) {
-            byId('ticketSortSelect').value = state.ticketSort;
-        }
         renderTicketList();
         renderStage();
         renderContextPanel();
@@ -2809,32 +2794,13 @@
                 showToast(error.message || 'Не удалось обновить workspace', true);
             }
         });
-        byId('ticketSearchInput')?.addEventListener('input', () => {
-            state.ticketQuery = String(byId('ticketSearchInput')?.value || '').trim();
-            renderTicketList();
-            renderQueueDesk();
-        });
-        byId('ticketSortSelect')?.addEventListener('change', () => {
-            state.ticketSort = String(byId('ticketSortSelect')?.value || 'updated_desc');
-            renderTicketList();
-            renderQueueDesk();
-        });
-        document.querySelectorAll('#ticketFilterChips .filter-chip').forEach((button) => {
+        document.querySelectorAll('#workspaceModeSwitch [data-workspace-view]').forEach((button) => {
             button.addEventListener('click', () => {
-                state.currentFilter = normalizeTicketFilter(button.getAttribute('data-filter') || 'mine');
-                renderTicketList();
-                renderQueueDesk();
-            });
-        });
-        byId('sidebarToggleBtn')?.addEventListener('click', () => {
-            setSidebarMode(state.sidebarMode === PANEL_MODES.COLLAPSED ? PANEL_MODES.HALF : PANEL_MODES.COLLAPSED);
-        });
-        byId('collapseInboxBtn')?.addEventListener('click', () => {
-            setSidebarMode(state.sidebarMode === PANEL_MODES.FULL ? PANEL_MODES.HALF : PANEL_MODES.FULL);
-        });
-        document.querySelectorAll('[data-workspace-view]').forEach((button) => {
-            button.addEventListener('click', () => {
-                setWorkspaceView(button.getAttribute('data-workspace-view') || WORKSPACE_VIEWS.QUEUE);
+                const nextView = button.getAttribute('data-workspace-view') || WORKSPACE_VIEWS.QUEUE;
+                if (nextView === WORKSPACE_VIEWS.TICKET && !selectedTicket()) {
+                    return;
+                }
+                setWorkspaceView(nextView);
                 renderStage();
             });
         });
