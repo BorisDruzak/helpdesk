@@ -35,6 +35,7 @@ def test_main_refuses_dirty_workspace_without_override(monkeypatch: pytest.Monke
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=False,
+            skip_ci_check=True,
         ),
     )
     monkeypatch.setattr(deploy, "git_env", lambda: {})
@@ -64,6 +65,7 @@ def test_main_allows_dirty_workspace_with_override(
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=True,
+            skip_ci_check=True,
         ),
     )
     monkeypatch.setattr(deploy, "git_env", lambda: {})
@@ -90,3 +92,35 @@ def test_main_allows_dirty_workspace_with_override(
     out = capsys.readouterr().out
     assert "WARNING: local workspace is dirty" in out
     assert any(len(command) >= 2 and command[1] == "push" for command in calls)
+
+
+def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        deploy,
+        "parse_args",
+        lambda: argparse.Namespace(
+            workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+            remote_name="linux",
+            remote_host="altserver@192.168.100.17",
+            remote_worktree="/var/chat_bot/pc_client",
+            branch="main",
+            allow_local_dirty=False,
+            skip_ci_check=False,
+        ),
+    )
+    monkeypatch.setattr(deploy, "git_env", lambda: {})
+    monkeypatch.setattr(deploy, "get_local_dirty_entries", lambda workspace, env, *, git_binary: [])
+    monkeypatch.setattr(deploy, "detect_commit", lambda workspace: "abc123")
+
+    recorded: list[tuple[Path, str]] = []
+
+    def fake_require_green(workspace: Path, commit: str) -> Path:
+        recorded.append((workspace, commit))
+        return workspace / "artifacts" / "ci" / commit / "summary.json"
+
+    monkeypatch.setattr(deploy, "require_green_ci_artifact", fake_require_green)
+    monkeypatch.setattr(deploy, "run", lambda command, *, cwd, env=None: "ok")
+
+    deploy.main()
+
+    assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]

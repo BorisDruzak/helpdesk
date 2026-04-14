@@ -682,6 +682,7 @@ class OperationService:
         )
         
         if success:
+            await self.repo.clear_cancel_tracking(operation_id)
             logger.info(
                 f"[OperationService] Marked operation as canceled: "
                 f"operation_id={operation_id}"
@@ -733,6 +734,7 @@ class OperationService:
         )
         
         if success:
+            await self.repo.clear_cancel_tracking(operation_id)
             logger.info(
                 f"[OperationService] Rolled back cancel request: "
                 f"operation_id={operation_id} restored_status={operation.status_before_cancel}"

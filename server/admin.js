@@ -1,3 +1,9 @@
+        const shared = window.PcClientWebShared;
+        if (!shared) {
+            throw new Error('PcClientWebShared is required');
+        }
+
+        const AUTH_TOKEN_KEY = 'admin_auth_token';
         let pollInterval = null;
         let currentTools = [];
         let selectedTool = null;
@@ -7,23 +13,19 @@
         
         // Auth header for API calls (admin uses admin_auth_token from localStorage)
         function getAuthHeaders(includeContentType) {
-            const token = localStorage.getItem('admin_auth_token');
-            const headers = {};
-            if (token) headers['Authorization'] = 'Bearer ' + token;
-            if (includeContentType) headers['Content-Type'] = 'application/json';
-            return headers;
+            return shared.authHeaders(includeContentType, AUTH_TOKEN_KEY);
         }
 
         /** Безопасный разбор ответа как JSON (избегает ошибки при HTML/не-JSON). */
         async function responseToJson(response) {
-            const text = await response.text();
-            if (!text || !text.trim()) return {};
-            try {
-                return JSON.parse(text);
-            } catch (e) {
-                const preview = text.slice(0, 120).replace(/\s+/g, ' ');
-                throw new Error('Сервер вернул не JSON (возможно, требуется вход в панель). ' + (preview ? ' Ответ: ' + preview : ''));
-            }
+            return shared.responseToJson(
+                response,
+                'Сервер вернул не JSON (возможно, требуется вход в панель). Ответ:'
+            );
+        }
+
+        function escapeHtml(value) {
+            return shared.escapeHtml(value);
         }
         
         // Initialize (will be called after successful login)
@@ -5976,12 +5978,6 @@
             }
         }
 
-        function escapeHtml(s) {
-            const div = document.createElement('div');
-            div.textContent = s;
-            return div.innerHTML;
-        }
-
         function setDeviceIdForModulesTab(deviceId) {
             window._selectedDeviceIdForModules = deviceId;
         }
@@ -7204,13 +7200,6 @@
             }
         });
 
-        function escapeHtml(s) {
-            if (!s) return '';
-            const d = document.createElement('div');
-            d.textContent = s;
-            return d.innerHTML;
-        }
-
         // Upload form handler
         document.getElementById('upload-form-modules')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -7490,7 +7479,6 @@
             checkPreflightModules();
         });
 
-        const AUTH_TOKEN_KEY = 'admin_auth_token';
         const USER_LOGIN_KEY = 'admin_user_login';
         const ROLE_KEY = 'admin_actor_role';
         const LOGIN_SHELL_VERSION = '20260330a';

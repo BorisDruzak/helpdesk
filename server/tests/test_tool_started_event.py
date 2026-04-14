@@ -11,7 +11,7 @@ from app.db.engine import async_sessionmaker
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.operations_repo import OperationsRepo
 from app.db.models import TicketEvent
-from tests.test_helpers import create_test_ticket
+from tests.test_helpers import TEST_ECHO_TOOL, create_test_ticket
 
 
 @pytest.mark.asyncio
@@ -29,7 +29,7 @@ async def test_tool_call_started_created_before_command(test_client, test_agent,
     
     # Запускаем tool (async mode, не ждём ответа от агента)
     tool_resp = await test_client.post("/api/tools/run", json={
-        "tool_name": "echo",
+        "tool_name": TEST_ECHO_TOOL,
         "params": {"message": "test"},
         "device_id": device_id,
         "ticket_id": ticket_id
@@ -75,7 +75,7 @@ async def test_tool_call_started_created_before_command(test_client, test_agent,
         # Проверки payload
         payload = started_event.payload
         assert payload.get("event") == "tool_call_started"
-        assert payload.get("tool_name") == "echo"
+        assert payload.get("tool_name") == TEST_ECHO_TOOL
         assert payload.get("params", {}).get("message") == "test"
         assert payload.get("actor_role") == "support"
         
@@ -128,7 +128,7 @@ async def test_tool_call_started_idempotency(test_engine):
             event_type="tool_call_started",
             payload={
                 "event": "tool_call_started",
-                "tool_name": "echo",
+                "tool_name": TEST_ECHO_TOOL,
                 "params": {"message": "test"}
             },
             trace_id=trace_id,
@@ -150,7 +150,7 @@ async def test_tool_call_started_idempotency(test_engine):
             event_type="tool_call_started",
             payload={
                 "event": "tool_call_started",
-                "tool_name": "echo",
+                "tool_name": TEST_ECHO_TOOL,
                 "params": {"message": "test2"}  # Даже с другим payload
             },
             trace_id=str(uuid.uuid4()),  # Даже с другим trace_id
@@ -221,7 +221,7 @@ async def test_tool_call_started_with_different_operation_ids(test_engine):
             device_id=device_id,
             agent_seq=None,
             event_type="tool_call_started",
-            payload={"event": "tool_call_started", "tool_name": "echo"},
+            payload={"event": "tool_call_started", "tool_name": TEST_ECHO_TOOL},
             trace_id=trace_id1,
             event_id=None,
             operation_id=operation_id1
@@ -237,7 +237,7 @@ async def test_tool_call_started_with_different_operation_ids(test_engine):
             device_id=device_id,
             agent_seq=None,
             event_type="tool_call_started",
-            payload={"event": "tool_call_started", "tool_name": "echo"},
+            payload={"event": "tool_call_started", "tool_name": TEST_ECHO_TOOL},
             trace_id=trace_id2,
             event_id=None,
             operation_id=operation_id2
@@ -259,4 +259,3 @@ async def test_tool_call_started_with_different_operation_ids(test_engine):
         operation_ids = {e.operation_id for e in events}
         assert operation_id1 in operation_ids
         assert operation_id2 in operation_ids
-

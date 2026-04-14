@@ -1,90 +1,68 @@
-# Protocol V3 Integration Tests
+# Server Tests
 
-Интеграционные тесты для Protocol V3 системы.
+Актуальный pytest-контур для server-side integration и contract tests.
 
-## Подготовка БД
+## Canonical baseline
 
-1. Создайте тестовую БД:
-```bash
-cd server/tests
-./setup_test_db.sh
+- Корневой pytest config: [pytest.ini](/C:/Users/admin-2/CodexProjects/pc_client/pytest.ini)
+- Server markers: [server/pytest.ini](/C:/Users/admin-2/CodexProjects/pc_client/server/pytest.ini)
+- Main fixtures: [server/tests/conftest.py](/C:/Users/admin-2/CodexProjects/pc_client/server/tests/conftest.py)
+- CI runner: [scripts/run_ci_suite.py](/C:/Users/admin-2/CodexProjects/pc_client/scripts/run_ci_suite.py)
+
+## Markers
+
+- `unit` — unit-like tests without full integration harness.
+- `integration` — integration tests against aiohttp app / DB / in-process agent.
+- `no_db` — fixture cleanup and migrations не нужны.
+- `manual` — не попадает в обычный `pytest -m "not manual"`.
+
+## Test database
+
+По умолчанию server suite больше не должен использовать общий `pc_support_test`.
+
+Канонические env vars:
+
+- `TEST_DATABASE_ADMIN_URL` — admin DSN для create/drop ephemeral DB.
+- `TEST_DATABASE_URL` — явный DSN test DB, если нужен override.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1` — разрешает legacy shared DB только явно.
+
+Поведение по умолчанию:
+
+1. `conftest.py` создаёт уникальную БД вида `pc_support_test_<runid>`.
+2. Применяет Alembic migrations один раз на сессию.
+3. Держит один session-scoped async engine.
+4. Перед каждым DB-backed test делает `TRUNCATE ... RESTART IDENTITY CASCADE`.
+
+Если локальная среда не даёт создать ephemeral DB, для точечных прогонов можно временно использовать shared DB:
+
+```powershell
+$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'
+python -m pytest server/tests/test_cancel_operations.py -q
 ```
 
-Или вручную:
-```bash
-createdb -U chatbot pc_support_test
+## Recommended runs
+
+Минимум по server-side после изменений:
+
+```powershell
+python -m pytest server/tests -m "not manual"
 ```
 
-2. Убедитесь, что переменная окружения `TEST_DATABASE_URL` указывает на тестовую БД:
-```bash
-export TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test"
+Для точечных регрессий:
+
+```powershell
+python -m pytest server/tests/test_tools_async_response_contract.py -q
+python -m pytest server/tests/test_cancel_operations.py -q
 ```
 
-## Запуск тестов
+Для полного локального CI-прогона:
 
-```bash
-cd server
-pytest tests/ -v
+```powershell
+python scripts/run_ci_suite.py
 ```
 
-Или с явным указанием БД:
-```bash
-TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test" pytest tests/ -v
-```
+## Notes
 
-## Структура тестов
-
-- `conftest.py` - фикстуры pytest (migrations, cleanup, test_app, test_client, test_agent)
-- `test_helpers.py` - вспомогательные функции (wait_for_operation_terminal, create_test_ticket)
-- `test_modules/` - тестовые модули (echo, fail)
-- `test_integration_p0.py` - P0 (Critical) тесты
-- `test_integration_p1.py` - P1 (Important) тесты (TODO)
-
-## Тестовые модули
-
-- `test_echo` - модуль с tool `echo(message)` возвращает `{"echo": message}`
-- `test_fail` - модуль с tool `fail(error_code)` выбрасывает исключение
-
-## Важные замечания
-
-1. **БД Guard**: Все тесты проверяют, что `TEST_DATABASE_URL` указывает на `pc_support_test`
-2. **Cleanup**: Перед каждым тестом выполняется `TRUNCATE ... RESTART IDENTITY CASCADE`
-3. **Migrations**: Миграции применяются один раз на сессию через фикстуру `run_migrations`
-4. **Agent**: WSAgent запускается in-process с патченным config для использования тестовых модулей
-
-## Известные проблемы и исправления
-
-### Исправленные ошибки
-
-1. ✅ **Импорты в test_integration_p0.py** - исправлен импорт `test_helpers`
-2. ✅ **Импорты в test_modules** - добавлен путь к `pc_agent` перед импортом `BaseCollector`
-3. ✅ **Pytest сбор тестов** - создан `pytest.ini` для исключения `test_modules` из автоматического сбора
-
-### Требует внимания
-
-⚠️ **Права на схему public** - в PostgreSQL 15+ требуется явно выдать права на схему public:
-
-```bash
-# Вариант 1: Использовать скрипт (требует sudo):
-cd server/tests
-sudo ./fix_permissions.sh
-
-# Вариант 2: Вручную через суперпользователя:
-sudo -u postgres psql -d pc_support_test <<EOF
-GRANT CREATE ON SCHEMA public TO chatbot;
-GRANT USAGE ON SCHEMA public TO chatbot;
-ALTER SCHEMA public OWNER TO chatbot;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO chatbot;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO chatbot;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO chatbot;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO chatbot;
-EOF
-```
-
-**Проверка прав:**
-```bash
-PGPASSWORD=chatbot psql -h 192.168.100.17 -p 5432 -U chatbot -d pc_support_test -c "SELECT has_schema_privilege('chatbot', 'public', 'CREATE') as can_create;"
-# Должно вернуть: can_create = t (true)
-```
-
-Подробные результаты тестирования см. в [TEST_RESULTS.md](TEST_RESULTS.md).
+- `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не должен попадать в обычный suite.
+- `/api/tools/run` теперь канонически async: default response — `202 Accepted` с `operation_id` и `poll_url`; sync path только через явный `wait=1`.
+- Исторические point-in-time отчёты о тестах вынесены в [docs/archive/server-tests](../../docs/archive/server-tests/README.md) и не являются каноном.

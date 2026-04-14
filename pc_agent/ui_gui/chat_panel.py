@@ -44,7 +44,7 @@ from loguru import logger
 
 from pc_agent.core.runtime_paths import resolve_data_root
 
-from .server_api import ServerApiClient, TicketApiClient
+from .server_api import TicketApiClient
 from . import theme
 from .ticket_format import (
     format_ts_short,
@@ -561,7 +561,7 @@ class ChatPanel(QWidget):
 
     def __init__(
         self,
-        client: Optional[ServerApiClient] = None,
+        ticket_client: Optional[TicketApiClient] = None,
         base_url: Optional[str] = None,
         device_id: str = "test_pc_01",
         actor_role: str = "support",
@@ -569,20 +569,6 @@ class ChatPanel(QWidget):
         parent=None,
     ):
         super().__init__(parent)
-
-        if client is not None:
-            self.client = client
-        else:
-            if base_url is None:
-                try:
-                    from pc_agent.config.config_loader import get_config
-
-                    base_url = get_config().server.api_url
-                except Exception:
-                    from pc_agent.config.config_loader import ServerConfig
-
-                    base_url = ServerConfig().api_url
-            self.client = ServerApiClient(base_url, device_id, actor_role)
 
         if base_url is None:
             try:
@@ -604,7 +590,12 @@ class ChatPanel(QWidget):
             logger.warning(f"Не удалось загрузить identity: {exc}")
 
         self.user_display_name = socket.gethostname() or "User"
-        self.ticket_client = TicketApiClient(base_url, self.device_id, self.user_display_name, auth_token=auth_token)
+        self.ticket_client = ticket_client or TicketApiClient(
+            base_url,
+            self.device_id,
+            self.user_display_name,
+            auth_token=auth_token,
+        )
 
         self.active_ticket_id: Optional[str] = None
         self.current_job_id: Optional[str] = None

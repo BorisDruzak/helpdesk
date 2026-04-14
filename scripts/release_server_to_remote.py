@@ -9,6 +9,12 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_SMOKE_ATTEMPTS = 10
 DEFAULT_SMOKE_DELAY_SECONDS = 2.0
@@ -31,6 +37,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-verify",
         action="store_true",
         help="Skip local workspace verification before deploy.",
+    )
+    parser.add_argument(
+        "--skip-ci-check",
+        action="store_true",
+        help="Skip the green CI artifact requirement for the target commit.",
     )
     parser.add_argument(
         "--skip-smoke",
@@ -113,6 +124,11 @@ def main() -> None:
     started_server = False
 
     try:
+        commit = detect_commit(workspace)
+        if not args.skip_ci_check:
+            summary_path = require_green_ci_artifact(workspace, commit)
+            print(f"[ci] using green artifact {summary_path}")
+
         if not args.skip_verify:
             run_step(
                 [sys.executable, str(workspace / "scripts" / "verify_workspace.py")],

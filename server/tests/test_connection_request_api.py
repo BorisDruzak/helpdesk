@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select, text
 from app.db.models import ConnectionRequest, Device
 from app.db import get_session
+from app_keys import STATE_APP_KEY, replace_bound_app_value
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
@@ -263,7 +264,12 @@ async def test_status_token_is_db_backed_not_state(test_client, test_engine):
     )
 
     # Simulate process-local state loss: DB path must still work.
-    test_client.app["state"] = test_client.app["state"].__class__()
+    replace_bound_app_value(
+        test_client.app,
+        key=STATE_APP_KEY,
+        legacy_name="state",
+        value=test_client.app["state"].__class__(),
+    )
 
     r = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
     assert r.status == 200

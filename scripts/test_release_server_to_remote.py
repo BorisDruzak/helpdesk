@@ -14,6 +14,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
         "remote": "altserver@192.168.100.17",
         "allow_local_dirty": False,
         "skip_verify": False,
+        "skip_ci_check": False,
         "skip_smoke": False,
         "leave_running": False,
         "smoke_attempts": 10,
@@ -24,7 +25,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
 
 
 def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(release, "parse_args", lambda: make_args())
+    monkeypatch.setattr(release, "parse_args", lambda: make_args(skip_ci_check=True))
     calls: list[tuple[str, list[str]]] = []
 
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
@@ -35,16 +36,17 @@ def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
 
     release.main()
 
-    assert [label for label, _command in calls] == ["verify", "deploy", "start", "smoke", "stop"]
+    assert [label for label, _command in calls] == ["verify", "deploy", "start-control", "start", "smoke", "stop"]
     assert "verify_workspace.py" in calls[0][1][1]
     assert "deploy_workspace_to_remote.py" in calls[1][1][1]
-    assert calls[2][1][-2:] == ["start", "server"]
-    assert calls[3][1][-2:] == ["smoke", "server"]
-    assert calls[4][1][-2:] == ["stop", "server"]
+    assert calls[2][1][-2:] == ["start", "control"]
+    assert calls[3][1][-2:] == ["start", "server"]
+    assert calls[4][1][-2:] == ["smoke", "server"]
+    assert calls[5][1][-2:] == ["stop", "server"]
 
 
 def test_main_passes_allow_local_dirty_to_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(release, "parse_args", lambda: make_args(allow_local_dirty=True))
+    monkeypatch.setattr(release, "parse_args", lambda: make_args(allow_local_dirty=True, skip_ci_check=True))
     calls: list[tuple[str, list[str]]] = []
 
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
@@ -63,7 +65,7 @@ def test_main_skips_optional_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         release,
         "parse_args",
-        lambda: make_args(skip_verify=True, skip_smoke=True, leave_running=True),
+        lambda: make_args(skip_verify=True, skip_smoke=True, leave_running=True, skip_ci_check=True),
     )
     calls: list[tuple[str, list[str]]] = []
 
@@ -74,11 +76,11 @@ def test_main_skips_optional_steps(monkeypatch: pytest.MonkeyPatch) -> None:
 
     release.main()
 
-    assert [label for label, _command in calls] == ["deploy", "start"]
+    assert [label for label, _command in calls] == ["deploy", "start-control", "start"]
 
 
 def test_main_stops_server_when_smoke_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(release, "parse_args", lambda: make_args())
+    monkeypatch.setattr(release, "parse_args", lambda: make_args(skip_ci_check=True))
     calls: list[str] = []
 
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
@@ -94,7 +96,7 @@ def test_main_stops_server_when_smoke_fails(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(subprocess.CalledProcessError):
         release.main()
 
-    assert calls == ["verify", "deploy", "start", "smoke", "stop"]
+    assert calls == ["verify", "deploy", "start-control", "start", "smoke", "stop"]
 
 
 def test_run_smoke_with_retries_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,3 +128,26 @@ def test_run_smoke_with_retries_retries_until_success(monkeypatch: pytest.Monkey
     release.run_smoke_with_retries(["smoke"], cwd=Path("."), attempts=3, delay_seconds=0.1)
 
     assert calls == [["smoke"], ["smoke"], ["smoke"]]
+
+
+def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release, "parse_args", lambda: make_args())
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+
+    def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
+        calls.append((label, command))
+
+    recorded: list[tuple[Path, str]] = []
+
+    def fake_require_green(workspace: Path, commit: str) -> Path:
+        recorded.append((workspace, commit))
+        return workspace / "artifacts" / "ci" / commit / "summary.json"
+
+    monkeypatch.setattr(release, "require_green_ci_artifact", fake_require_green)
+    monkeypatch.setattr(release, "run_step", fake_run_step)
+    monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
+
+    release.main()
+
+    assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]

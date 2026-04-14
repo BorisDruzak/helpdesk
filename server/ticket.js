@@ -3,6 +3,10 @@
  * Один таймлайн (чат + события), WS /ws_ui, slash-команды, public/internal.
  */
 (function () {
+    const shared = window.PcClientWebShared;
+    if (!shared) {
+        throw new Error('PcClientWebShared is required');
+    }
     const AUTH_TOKEN_KEY = 'admin_auth_token';
     const POLL_FALLBACK_MS = 25000;
     const WS_PING_INTERVAL_MS = 10000;
@@ -74,11 +78,7 @@
         return (t && typeof t === 'string') ? t.trim() : '';
     }
     function authHeaders(json) {
-        const h = {};
-        const token = getToken();
-        if (token) h['Authorization'] = 'Bearer ' + token;
-        if (json) h['Content-Type'] = 'application/json';
-        return h;
+        return shared.authHeaders(json, AUTH_TOKEN_KEY);
     }
     function el(id) { return document.getElementById(id); }
 
@@ -148,17 +148,9 @@
 
     function statusLabel(s) { return s ? (STATUS_LABELS[s] || s) : '—'; }
     function priorityLabel(p) { return p ? ((PRIORITY_LABELS[p] || p) + ' (' + p + ')') : '—'; }
-    function boolLabel(v) { return v ? 'Да' : 'Нет'; }
+    function boolLabel(v) { return shared.boolLabel(v); }
     function parseServerDate(ts) {
-        if (!ts) return null;
-        if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? null : ts;
-        const raw = String(ts).trim();
-        if (!raw) return null;
-        let normalized = raw;
-        // Python often sends 6-digit micros; JS Date supports up to milliseconds.
-        normalized = normalized.replace(/\.(\d{3})\d+([+-]\d{2}:\d{2}|Z)$/i, '.$1$2');
-        const d = new Date(normalized);
-        return Number.isNaN(d.getTime()) ? null : d;
+        return shared.parseServerDate(ts);
     }
     function formatTime(ts) {
         const d = parseServerDate(ts);
@@ -173,9 +165,7 @@
         });
     }
     function formatDate(ts) {
-        const d = parseServerDate(ts);
-        if (!d) return '—';
-        return d.toLocaleString('ru-RU');
+        return shared.formatDate(ts);
     }
     function formatSla(iso) {
         if (!iso) return '—';
@@ -184,8 +174,7 @@
         return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
     function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return shared.escapeHtml(str);
     }
 
     function resolveSenderRole(payload) {

@@ -1,40 +1,71 @@
 # QUICK_LOOKUP
 
-Короткий навигационный индекс для `pc_client`: с чего начинать поиск, какие файлы открывать первыми и какие документы проверять до широкого grep.
+Короткий канонический навигатор по проекту `pc_client`.
 
-## Как использовать
+## С чего начинать
 
-1. Если задача начинается с диффа, сначала запустите `python scripts/diff_context.py`.
-2. Если тема пока неясна, откройте нужный `CODEMAP` и этот файл:
+1. Если задача начинается с локального diff, сначала запустите `python scripts/diff_context.py`.
+2. Если затронуты и сервер, и агент, сначала откройте оба CODEMAP:
    - `server/docs/CODEMAP.md`
    - `pc_agent/docs/CODEMAP.md`
-3. Для точечного поиска используйте `python scripts/agent_find.py "<ключевое слово>"`.
-4. Перед коммитом проверяйте, не забыты ли docs/CODEMAP: `python scripts/docs_drift_check.py`.
-5. Если задача длинная или многосоставная, обновите `PLANS.md`.
+3. Для точечного поиска используйте `python scripts/agent_find.py "<pattern>" --dir server|pc_agent`.
+4. Для длинной задачи синхронно ведите `PLANS.md`.
 
-## Темы
+## Canonical docs only
 
-| Тема | Открыть сначала | Связанные документы | Быстрые команды |
-|------|------------------|---------------------|-----------------|
-| Protocol V3 / handshake | `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `pc_agent/ws_agent.py`, `pc_agent/core/sender.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md`, `server/docs/COMMAND_RESULT_LIFECYCLE.md`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` | `python scripts/agent_find.py "handshake"`, `python scripts/agent_find.py "outbox_ack"` |
-| `run_tool` / consent | `server/tools/service.py`, `server/tools/handlers.py`, `server/app/services/operation_service.py`, `pc_agent/core/orchestrator.py` | `server/docs/TOOL_CALL_STARTED_INVARIANT.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md` | `python scripts/agent_find.py "run_tool" --dir server` |
-| Auth / token bootstrap | `server/auth/`, `server/app/repos/auth_tokens_repo.py`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py` | `server/docs/SECURITY_AND_AUTH.md`, `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/AUTHENTICATION.md`, `pc_agent/docs/PROTOCOL_V3.md` | `python scripts/agent_find.py "machine_id"`, `python scripts/agent_find.py "install_id"`, `python scripts/agent_find.py "connection_request" --dir server` |
-| Tickets / chat / queue | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/chat/`, `server/api/events.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CHAT_MESSAGE_CONTRACT.md`, `server/docs/CODEMAP.md` | `python scripts/agent_find.py "ticket" --dir server`, `python scripts/agent_find.py "since_event_id" --dir server`, `python scripts/agent_find.py "before_event_id" --dir server`, `python scripts/agent_find.py "message_read" --dir server`, `python scripts/agent_find.py "presence" --dir server`, `python scripts/agent_find.py "chat_raise" --dir server` |
-| Modules / reconcile | `server/modules/service.py`, `server/websocket/modules_sync.py`, `pc_agent/core/module_manager.py`, `pc_agent/core/registry.py` | `server/docs/MODULES_API.md`, `server/docs/MODULES_DRIFT_AND_SNAPSHOTS.md`, `pc_agent/docs/MODULES.md` | `python scripts/agent_find.py "modules" --dir server`, `python scripts/agent_find.py "module_manager" --dir pc_agent` |
-| Server UI / admin pages | `server/admin.js`, `server/tech/handlers.py`, `server/control_plane.py`, `server/runtime_control.py`, `server/ticket.js`, `server/static_pages/`, `server/routes.py` | `server/docs/CODEMAP.md`, `server/docs/SECURITY_AND_AUTH.md` | `python scripts/diff_context.py`, затем browser check через MCP на `http://192.168.100.17:8666/admin`; если `status server` расходится с живым UI, смотреть `external_listener` в runtime status |
-| Agent updates / launcher | `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `server/agents/agent_builds_handlers.py`, `server/websocket/agent_handshake.py`, `pc_agent/launcher/installer.py`, `pc_agent/ws_agent.py` | `server/docs/AGENT_UPDATES_API.md`, `server/docs/AGENT_UPDATES_ANALYSIS.md`, `pc_agent/docs/SELF_UPDATE.md`, `pc_agent/docs/PROTOCOL_V3.md`, `.cursor/skills/pc-client-agent-updates/SKILL.md` | `python scripts/agent_find.py "agent_update" --dir server`, `python scripts/agent_find.py "pending_update" --dir pc_agent`, `python pc_agent/build_windows_release_v2.py` |
-| Agent GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py`, `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/server_api.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_bridge/event_bus.py` | `pc_agent/docs/CODEMAP.md`, `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` | `python scripts/agent_find.py "ui bridge" --dir pc_agent`, `python scripts/agent_find.py "connection_state" --dir pc_agent`, `python scripts/agent_find.py "chat_raise" --dir pc_agent` |
-| Agent runtime / tray / logs | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/tray_manager.py` | `pc_agent/docs/CODEMAP.md`, `.cursor/skills/pc-client-agent-runtime/SKILL.md` | `python scripts/agent_find.py "tray" --dir pc_agent`, `python scripts/agent_find.py "runtime_logging" --dir pc_agent`, `python scripts/manage_local_agent.py status` |
-| Database / migrations | `server/app/db/models.py`, `server/app/db/migrations/versions/`, `pc_agent/core/database.py` | `server/docs/DATABASE.md`, `pc_agent/docs/DATABASE.md` | `python scripts/agent_find.py "alembic" --dir server`, `python scripts/agent_find.py "DB_SCHEMA_VERSION" --dir pc_agent` |
-| Planning / handoff | `PLANS.md`, `AGENTS.md` | `PLANS.md`, `.cursor/skills/pc-client-plans/SKILL.md`, `.cursor/skills/pc-client-release/SKILL.md` | `python scripts/verify_workspace.py` |
-| Release / deploy / smoke | `scripts/verify_workspace.py`, `scripts/release_server_to_remote.py`, `scripts/manage_remote_stack.py`, `scripts/runtime_stack.py` | `AGENTS.md`, оба `CODEMAP`, `docs/LOCAL_WORKFLOW.md` | `python scripts/verify_workspace.py`, `python scripts/release_server_to_remote.py`, `python scripts/manage_remote_stack.py status control`, `python scripts/manage_remote_stack.py status server` |
+Источник истины для структуры и runtime:
 
-## Когда обновлять этот файл
+- `AGENTS.md`
+- `docs/QUICK_LOOKUP.md`
+- `server/docs/CODEMAP.md`
+- `pc_agent/docs/CODEMAP.md`
+- protocol/auth/runtime/update docs рядом с кодом
+
+Historical docs больше не канон:
+
+- `docs/TICKET_CRM_GAP_ANALYSIS.md`
+- `docs/TICKET_AND_AGENT_UPDATE_ROADMAP.md`
+- `docs/BOTTLENECKS_AND_RISKS.md`
+
+Их актуальные архивные копии лежат в `docs/archive/`.
+
+## Truth baseline
+
+Минимальный production-hardening baseline:
+
+- `python scripts/verify_workspace.py`
+- `python -m pytest pc_agent/tests -m "not manual"`
+- `python -m pytest server/tests -m "not manual"`
+
+CI / release:
+
+- `python scripts/run_ci_suite.py`
+- `python scripts/run_ci_in_temp_workspace.py`
+- artifacts layout: `artifacts/ci/<sha>/summary.json`, `junit*.xml`, `logs/...`
+- release/deploy scripts по умолчанию требуют green CI artifact
+
+Test DB env vars:
+
+- `TEST_DATABASE_ADMIN_URL`
+- `TEST_DATABASE_URL`
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB`
+
+## Fast map
+
+| Topic | Open first | Then |
+|------|------------|------|
+| Protocol V3 / handshake | `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
+| Tool execution / operations | `server/tools/service.py`, `server/tools/handlers.py`, `server/app/services/operation_service.py`, `pc_agent/core/orchestrator.py`, `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py` | `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
+| Ticket flows / helpdesk | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md` |
+| Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
+| Agent runtime / UI bridge | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/chat_panel.py` | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/CODEMAP.md` |
+| Release / deploy / CI | `scripts/run_ci_suite.py`, `scripts/run_ci_in_temp_workspace.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md` |
+
+## When to update this file
 
 Обновляйте `docs/QUICK_LOOKUP.md`, если меняются:
 
-- ключевые точки входа, стартовые файлы или канонический путь для темы;
-- cross-cutting темы, по которым раньше приходилось долго искать руками;
-- скрипты навигации и проверки (`agent_find.py`, `diff_context.py`, `docs_drift_check.py`, `verify_workspace.py`);
-- long-horizon workflow (`PLANS.md`, handoff, verification state);
-- общие правила быстрого поиска, которые полезны и серверу, и агенту.
+- ключевые entrypoints;
+- канонический test/release workflow;
+- структура CODEMAP navigation;
+- статус canonical vs historical docs.

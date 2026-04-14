@@ -8,6 +8,14 @@ import os
 import subprocess
 from pathlib import Path
 
+try:
+    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_REMOTE_NAME = "linux"
 DEFAULT_REMOTE_HOST = "altserver@192.168.100.17"
@@ -31,6 +39,11 @@ def parse_args() -> argparse.Namespace:
             "Deploy only the last committed Git revision even if the local workspace has "
             "uncommitted changes. Those local changes will stay only on Windows."
         ),
+    )
+    parser.add_argument(
+        "--skip-ci-check",
+        action="store_true",
+        help="Skip the green CI artifact requirement for the target commit.",
     )
     return parser.parse_args()
 
@@ -142,6 +155,10 @@ def main() -> None:
 
     branch = args.branch or detect_branch(args.workspace, env)
     print(f"Deploy branch: {branch}")
+    commit = detect_commit(args.workspace)
+    if not args.skip_ci_check:
+        summary_path = require_green_ci_artifact(args.workspace, commit)
+        print(f"Using green CI artifact: {summary_path}")
 
     try:
         run([git_binary, "push", args.remote_name, branch], cwd=args.workspace, env=env)

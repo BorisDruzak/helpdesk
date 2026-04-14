@@ -10,6 +10,10 @@ from app.db.engine import async_sessionmaker
 from app.repos.operations_repo import OperationsRepo
 from app.db.models import TicketEvent, Operation
 
+TEST_ECHO_TOOL = "test_echo.echo"
+TEST_FAIL_TOOL = "test_fail.fail"
+TEST_SLOW_ECHO_TOOL = "test_slow_echo.slow_echo"
+
 
 async def find_operation_by_call_id(test_engine: AsyncEngine, ticket_id: str, call_id: str) -> Optional[str]:
     """
@@ -123,6 +127,36 @@ async def wait_for_operation_terminal(test_engine: AsyncEngine, operation_id: st
     )
 
 
+async def start_tool_operation(
+    client,
+    *,
+    device_id: str,
+    ticket_id: str,
+    tool_name: str,
+    params: Optional[dict] = None,
+    query: Optional[str] = None,
+) -> tuple[dict, str]:
+    """Run POST /api/tools/run and return payload plus canonical operation_id."""
+    url = "/api/tools/run"
+    if query:
+        url = f"{url}?{query}"
+
+    resp = await client.post(
+        url,
+        json={
+            "tool_name": tool_name,
+            "params": params or {},
+            "device_id": device_id,
+            "ticket_id": ticket_id,
+        },
+    )
+    assert resp.status in {200, 202}, f"Unexpected tools/run status: {resp.status} body={await resp.text()}"
+    payload = await resp.json()
+    operation_id = payload.get("operation_id")
+    assert operation_id, f"tools/run did not return operation_id: {payload}"
+    return payload, operation_id
+
+
 async def create_test_ticket(client, device_id: str, user_display_name: str = "Test User"):
     """
     Создает тестовый ticket и возвращает ticket_id, device_id.
@@ -145,4 +179,3 @@ async def create_test_ticket(client, device_id: str, user_display_name: str = "T
     data = await resp.json()
     ticket_id = data["ticket"]["ticket_id"]
     return ticket_id, device_id
-

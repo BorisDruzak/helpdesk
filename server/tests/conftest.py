@@ -1,93 +1,247 @@
-"""
-Pytest configuration and fixtures for Protocol V3 integration tests.
-"""
-import os
-import sys
-import pytest
+"""Pytest configuration and fixtures for Protocol V3 integration tests."""
+
 import asyncio
 import importlib
+import os
+import re
+import sys
 import types
-from pathlib import Path
-from urllib.parse import urlparse
+import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import patch
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import text
+import pytest
 from aiohttp.test_utils import TestClient, TestServer
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # Add server directory to path
 server_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(server_dir))
 
 from server import create_app
-from app.db.engine import get_engine, get_session, init_db
+from app_keys import OUTBOX_SENDER_APP_KEY, bind_app_value
+from app.db import engine as db_engine_module
 from tech.dismiss_store import clear_dismissed_alerts
 from tech.log_buffer import clear_log_records
 
-# Test database URL
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
+DEFAULT_SHARED_TEST_DATABASE_URL = (
     "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test"
 )
+DEFAULT_TEST_DATABASE_ADMIN_URL = (
+    "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres"
+)
+TEST_DATABASE_PREFIX = "pc_support_test_"
+SHARED_TEST_DATABASE_NAME = "pc_support_test"
+
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
 
 
-def verify_test_database():
-    """Проверка что БД == pc_support_test перед destructive операциями."""
-    parsed = urlparse(TEST_DATABASE_URL)
-    db_name = parsed.path.lstrip('/')
-    if db_name != "pc_support_test":
+def _clear_agent_runtime_modules() -> None:
+    prefixes = (
+        "modules.",
+        "config.",
+        "pc_agent.",
+        "ui_bridge",
+        "ui_gui",
+        "network.",
+        "utils.",
+        "core.",
+    )
+    exact = {
+        "modules",
+        "config",
+        "pc_agent",
+        "ws_agent",
+        "network",
+        "utils",
+        "core",
+    }
+    for mod_name in list(sys.modules.keys()):
+        if mod_name in exact or mod_name.startswith(prefixes):
+            sys.modules.pop(mod_name, None)
+
+
+def _shared_test_db_allowed() -> bool:
+    return os.getenv("PC_CLIENT_ALLOW_SHARED_TEST_DB") == "1"
+
+
+def _render_url(url) -> str:
+    return url.render_as_string(hide_password=False)
+
+
+def _resolve_admin_url(test_db_url: str) -> str:
+    explicit_admin = os.getenv("TEST_DATABASE_ADMIN_URL")
+    if explicit_admin:
+        return explicit_admin
+    url = make_url(test_db_url)
+    admin_db_name = os.getenv("TEST_DATABASE_ADMIN_DB", "postgres")
+    return _render_url(url.set(database=admin_db_name))
+
+
+def verify_test_database(test_database_url: str, *, allow_shared: bool | None = None) -> None:
+    """Guard destructive test fixtures from touching non-test databases."""
+    db_name = make_url(test_database_url).database or ""
+    if allow_shared is None:
+        allow_shared = _shared_test_db_allowed()
+    if allow_shared:
+        if db_name != SHARED_TEST_DATABASE_NAME:
+            raise RuntimeError(
+                "PC_CLIENT_ALLOW_SHARED_TEST_DB=1 requires TEST_DATABASE_URL to point to "
+                f"{SHARED_TEST_DATABASE_NAME}, got: {db_name}"
+            )
+        return
+    if not db_name.startswith(TEST_DATABASE_PREFIX):
         raise RuntimeError(
-            f"TEST_DATABASE_URL must point to pc_support_test, got: {db_name}"
+            "TEST_DATABASE_URL must point to an isolated test database named "
+            f"{TEST_DATABASE_PREFIX}<runid>, got: {db_name}"
         )
 
+
+def _validate_test_database_name(db_name: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9_]+", db_name):
+        raise RuntimeError(f"Unsafe test database name: {db_name}")
+
+
+def _resolve_test_database_urls() -> tuple[str, str, bool]:
+    explicit_test_url = os.getenv("TEST_DATABASE_URL")
+    if _shared_test_db_allowed():
+        shared_url = explicit_test_url or DEFAULT_SHARED_TEST_DATABASE_URL
+        verify_test_database(shared_url, allow_shared=True)
+        return shared_url, _resolve_admin_url(shared_url), True
+
+    if explicit_test_url:
+        verify_test_database(explicit_test_url, allow_shared=False)
+        return explicit_test_url, _resolve_admin_url(explicit_test_url), False
+
+    admin_url = os.getenv("TEST_DATABASE_ADMIN_URL", DEFAULT_TEST_DATABASE_ADMIN_URL)
+    generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
+    test_url = _render_url(make_url(admin_url).set(database=generated_name))
+    return test_url, admin_url, False
+
+
+async def _run_admin_sql(admin_database_url: str, sql: str, **params) -> None:
+    engine = create_async_engine(
+        admin_database_url,
+        echo=False,
+        isolation_level="AUTOCOMMIT",
+        pool_pre_ping=True,
+    )
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text(sql), params)
+    finally:
+        await engine.dispose()
+
+
+async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
+    _validate_test_database_name(db_name)
+    await _run_admin_sql(
+        admin_database_url,
+        """
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = :db_name
+          AND pid <> pg_backend_pid()
+        """,
+        db_name=db_name,
+    )
+    await _run_admin_sql(admin_database_url, f'DROP DATABASE IF EXISTS "{db_name}"')
+
+
+async def _create_test_database(admin_database_url: str, db_name: str) -> None:
+    _validate_test_database_name(db_name)
+    await _run_admin_sql(admin_database_url, f'CREATE DATABASE "{db_name}"')
+
+
 @pytest.fixture(scope="session")
-def run_migrations():
-    """Применяет Alembic миграции один раз на сессию (sync fixture)."""
-    verify_test_database()
-    
-    from alembic.config import Config
+def test_database_url() -> str:
+    test_db_url, admin_db_url, is_shared = _resolve_test_database_urls()
+    verify_test_database(test_db_url, allow_shared=is_shared)
+    original_test_url = os.environ.get("TEST_DATABASE_URL")
+    original_admin_url = os.environ.get("TEST_DATABASE_ADMIN_URL")
+    os.environ["TEST_DATABASE_URL"] = test_db_url
+    os.environ["TEST_DATABASE_ADMIN_URL"] = admin_db_url
+
+    db_name = make_url(test_db_url).database or ""
+    if not is_shared:
+        asyncio.run(_drop_test_database(admin_db_url, db_name))
+        asyncio.run(_create_test_database(admin_db_url, db_name))
+
+    try:
+        yield test_db_url
+    finally:
+        if original_test_url is None:
+            os.environ.pop("TEST_DATABASE_URL", None)
+        else:
+            os.environ["TEST_DATABASE_URL"] = original_test_url
+        if original_admin_url is None:
+            os.environ.pop("TEST_DATABASE_ADMIN_URL", None)
+        else:
+            os.environ["TEST_DATABASE_ADMIN_URL"] = original_admin_url
+        if not is_shared:
+            asyncio.run(_drop_test_database(admin_db_url, db_name))
+
+
+@pytest.fixture(scope="session")
+def run_migrations(test_database_url: str):
+    """Apply Alembic migrations once per pytest session."""
+    verify_test_database(test_database_url)
+
     from alembic import command
-    
-    # Вычисляем путь относительно файла conftest.py
+    from alembic.config import Config
+
     conftest_path = Path(__file__).resolve()
-    server_dir = conftest_path.parents[1]  # server/tests -> server
-    alembic_ini = server_dir / "alembic.ini"
-    
+    server_root = conftest_path.parents[1]
+    alembic_ini = server_root / "alembic.ini"
+
     if not alembic_ini.exists():
         raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
-    
+
     alembic_cfg = Config(str(alembic_ini))
-    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    # Resolve script_location relative to server dir (alembic resolves relative to CWD otherwise)
-    script_path = server_dir / "app" / "db" / "migrations"
+    alembic_cfg.set_main_option("sqlalchemy.url", test_database_url)
+    script_path = server_root / "app" / "db" / "migrations"
     if script_path.exists():
         alembic_cfg.set_main_option("script_location", str(script_path))
-    
-    # Alembic env.py prefers DATABASE_URL from process environment.
-    # create_app/server import can preload server/.env with the production URL,
-    # so pin DATABASE_URL to the test DSN for the whole migration run.
-    with patch.dict(os.environ, {"DATABASE_URL": TEST_DATABASE_URL}):
+
+    with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
         command.upgrade(alembic_cfg, "head")
 
 
-@pytest.fixture
-def test_engine():
-    """Создает тестовый engine для патчинга get_session."""
-    verify_test_database()
-    
+@pytest.fixture(scope="session")
+def test_engine(test_database_url: str, run_migrations):
+    """Single async engine shared across the full server pytest session."""
+    verify_test_database(test_database_url)
     engine = create_async_engine(
-        TEST_DATABASE_URL,
+        test_database_url,
         echo=False,
         pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
+        poolclass=NullPool,
     )
-    yield engine
-    asyncio.run(engine.dispose())
+    session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
+    previous_engine = db_engine_module._engine
+    previous_session_maker = db_engine_module._session_maker
+    db_engine_module._engine = engine
+    db_engine_module._session_maker = session_maker
+
+    try:
+        yield engine
+    finally:
+        db_engine_module._engine = previous_engine
+        db_engine_module._session_maker = previous_session_maker
+        asyncio.run(engine.dispose())
 
 
 @pytest.fixture(autouse=True)
@@ -95,26 +249,24 @@ def ensure_db_ready(request):
     """Ensure migrations are applied before DB-backed tests run."""
     if request.node.get_closest_marker("no_db"):
         return
-
-    verify_test_database()
     request.getfixturevalue("run_migrations")
 
 
 @pytest.fixture(autouse=True)
-async def cleanup_db(request, test_engine):
+async def cleanup_db(request):
     """Clean test data before each DB-backed test."""
     if request.node.get_closest_marker("no_db"):
         return
 
-    verify_test_database()
+    test_database_url = request.getfixturevalue("test_database_url")
+    test_engine = request.getfixturevalue("test_engine")
+    verify_test_database(test_database_url)
     clear_log_records()
     clear_dismissed_alerts()
 
     async with test_engine.begin() as conn:
-        # Один statement TRUNCATE с RESTART IDENTITY CASCADE
-        # RESTART IDENTITY критично - иначе автоинкремент id "уплывает"
         await conn.execute(text("""
-            TRUNCATE TABLE 
+            TRUNCATE TABLE
                 operations,
                 device_outbox,
                 ticket_events,
@@ -145,14 +297,14 @@ async def cleanup_db(request, test_engine):
 
 @pytest.fixture
 def patched_get_session(test_engine):
-    """Патчит app.db.get_session и app.db.engine.get_session для использования тестового engine."""
+    """Compatibility fixture for tests that still depend on patched_get_session."""
     session_maker = async_sessionmaker(
         test_engine,
         expire_on_commit=False,
         autocommit=False,
-        autoflush=False
+        autoflush=False,
     )
-    
+
     @asynccontextmanager
     async def test_get_session():
         async with session_maker() as session:
@@ -162,21 +314,27 @@ def patched_get_session(test_engine):
             except Exception:
                 await session.rollback()
                 raise
-    
-    # Патчим оба пути импорта
-    with patch('app.db.get_session', test_get_session), \
-         patch('app.db.engine.get_session', test_get_session):
+
+    with patch("app.db.get_session", test_get_session), \
+         patch("app.db.engine.get_session", test_get_session):
         yield
 
 
 @pytest.fixture
-async def test_app(patched_get_session, test_engine):
-    """Создает aiohttp app через create_app() с патченным get_session."""
-    from app.db.engine import init_db
-    from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
+async def test_app(patched_get_session, test_engine, test_database_url: str):
+    """Создаёт aiohttp app через create_app() с session-scoped test engine."""
+    from auth import middleware as auth_middleware_module
     from auth.context import AuthContext, AuthType
     from auth.service import AuthService
-    from auth import middleware as auth_middleware_module
+    import config as server_config
+    import tools.service as tools_service_module
+    from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
+
+    test_builtin_modules = set(server_config.AGENT_BUILTIN_MODULES) | {
+        "test_echo",
+        "test_fail",
+        "test_slow_echo",
+    }
 
     async def fake_verify_ui_token(self, token: str):
         if token == TEST_UI_SUPPORT_TOKEN:
@@ -230,42 +388,35 @@ async def test_app(patched_get_session, test_engine):
                 auth_type=AuthType.UI_TOKEN,
                 token=token,
             )
-        # Legacy интеграционные тесты не передают токен; считаем их support-сценариями.
         return AuthContext(
             actor_id="support-test",
             actor_role="support",
             auth_type=AuthType.UI_TOKEN,
             token="implicit-test-auth",
         )
-    
+
     with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
-         patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context):
+         patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
+         patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
+         patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
         app = create_app()
-        # Инициализируем БД вручную для тестов
-        await init_db(TEST_DATABASE_URL)
+        verify_test_database(test_database_url)
 
-        # КРИТИЧНО: Запускаем DeviceOutboxSender вручную для тестов
-        # (startup hooks очищаются, но sender нужен для доставки команд)
-        state = app['state']
-
-        # Recover pending commands
+        state = app["state"]
         await recover_pending_commands(state)
 
-        # Start device outbox sender
-        sender = DeviceOutboxSender(state, poll_interval=0.5)  # Более частый polling для тестов
+        sender = DeviceOutboxSender(state, poll_interval=0.5)
         sender.start()
-        app['outbox_sender'] = sender
+        bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
 
-        # Disable startup hooks that require real DB (уже инициализировали выше)
         app.on_startup.clear()
         app.on_cleanup.clear()
 
-        # Но сохраняем cleanup для остановки sender
         async def test_cleanup(app):
-            if 'outbox_sender' in app:
-                app['outbox_sender'].stop()
-        app.on_cleanup.append(test_cleanup)
+            if "outbox_sender" in app:
+                app["outbox_sender"].stop()
 
+        app.on_cleanup.append(test_cleanup)
         yield app
 
 
@@ -282,41 +433,32 @@ async def test_agent(tmp_path, test_client):
     import sys
     from pathlib import Path
     from unittest.mock import patch
-    
-    # Временный SQLite
+
     agent_db = tmp_path / "agent_test.db"
-    
-    # Путь к тестовым tools
     test_modules_path = Path(__file__).parent / "test_modules"
-    
-    # Add pc_agent to path (в начало, чтобы приоритет был у pc_agent)
-    # Важно: удаляем server из пути, чтобы не было конфликта с server/modules
     project_root = Path(__file__).resolve().parent.parent.parent
     pc_agent_dir = project_root / "pc_agent"
     server_dir = Path(__file__).resolve().parent.parent
-    
-    # Временно удаляем server из пути и очищаем кэш модулей
+
     server_path_str = str(server_dir)
     server_in_path = server_path_str in sys.path
+    project_root_str = str(project_root)
+    project_root_in_path = project_root_str in sys.path
+    pc_agent_dir_str = str(pc_agent_dir)
+    pc_agent_dir_in_path = pc_agent_dir_str in sys.path
     if server_in_path:
         sys.path.remove(server_path_str)
-    
-    # Очищаем кэш модулей, чтобы избежать конфликтов
-    import importlib
-    # Очищаем все модули, которые могут конфликтовать
-    modules_to_clear = [k for k in list(sys.modules.keys()) if k.startswith(('modules.', 'config.', 'pc_agent.')) or k in ('modules', 'config', 'pc_agent')]
-    for mod_name in modules_to_clear:
-        del sys.modules[mod_name]
-    
-    try:
-        # Добавляем родительский каталог проекта в начало для абсолютных импортов pc_agent.*
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        # Также добавляем pc_agent_dir для относительных импортов
-        if str(pc_agent_dir) not in sys.path:
-            sys.path.insert(0, str(pc_agent_dir))
 
-        # Алиасим top-level package `core` на `pc_agent/core`, иначе его затмевает `server/core`.
+    import importlib
+
+    _clear_agent_runtime_modules()
+
+    try:
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+        if pc_agent_dir_str not in sys.path:
+            sys.path.insert(0, pc_agent_dir_str)
+
         sys.modules.pop("core", None)
         for mod_name in [name for name in list(sys.modules.keys()) if name.startswith("core.")]:
             sys.modules.pop(mod_name, None)
@@ -331,54 +473,45 @@ async def test_agent(tmp_path, test_client):
             config_module = importlib.util.module_from_spec(config_spec)
             config_spec.loader.exec_module(config_module)
             sys.modules["config"] = config_module
-        
-        # КРИТИЧНО: Получаем URL тестового сервера
+
         test_api_url = str(test_client.make_url("/api")).rstrip("/")
         test_ws_url = str(test_client.make_url("/ws")).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
-        
-        # КРИТИЧНО: Патчим config в модуле config_loader ДО импорта ws_agent
-        # Это необходимо, потому что ws_agent импортирует config напрямую при импорте
+
         import pc_agent.config.config_loader as config_loader_module
-        config_loader = config_loader_module.ConfigLoader()
-        # Если config уже загружен, обновляем его
-        if config_loader._config:
-            config_loader._config.server.ws_url = test_ws_url
-            config_loader._config.server.api_url = test_api_url
-            config_loader._config.paths.data_dir = str(tmp_path)
-            config_loader._config.enabled_modules = ["echo", "fail"]
-            if not hasattr(config_loader._config, 'modules'):
-                from types import SimpleNamespace
-                config_loader._config.modules = SimpleNamespace()
-            config_loader._config.modules.extra_paths = [str(test_modules_path)]
-            config_loader._config.ui.port = 0
-        
-        # Создаем WSAgent с переопределенными путями
+
+        config_loader_module.ConfigLoader._instance = None
+        config_loader_module.ConfigLoader._config = None
+
+        from auth.service import AuthService
         from ws_agent import WSAgent
         from pc_agent.config.config_loader import ConfigLoader, init_config
 
-        # Точечный патч config: загружаем реальный config и переопределяем поля
         original_load = ConfigLoader.load
-        
+
         def patched_load(self, config_path, create_dirs=True):
-            """Патч ConfigLoader.load() для возврата модифицированного config."""
+            """Return config overridden for the in-process test agent."""
             config = original_load(self, config_path, create_dirs=create_dirs)
-            # Переопределяем только нужные поля
             config.paths.data_dir = str(tmp_path)
-            # ВАЖНО: ModuleFactory добавляет префикс "test_" к имени модуля при загрузке из extra_paths
-            # Поэтому указываем имена без префикса: "echo", "fail"
-            config.enabled_modules = ["echo", "fail", "slow_echo"]  # тестовые tools
-            if not hasattr(config, 'modules'):
-                # Создаем объект modules если его нет
+            config.enabled_modules = ["echo", "fail", "slow_echo"]
+            if not hasattr(config, "modules"):
                 from types import SimpleNamespace
+
                 config.modules = SimpleNamespace()
             config.modules.extra_paths = [str(test_modules_path)]
-            config.ui.port = 0  # Случайный порт для UiApiServer
-            # Используем правильный URL тестового сервера
+            config.ui.port = 0
             config.server.ws_url = test_ws_url
             config.server.api_url = test_api_url
             return config
-        
-        with patch.object(ConfigLoader, 'load', patched_load):
+
+        with patch.dict(
+            os.environ,
+            {
+                "PC_AGENT_WS_URL": test_ws_url,
+                "PC_AGENT_API_URL": test_api_url,
+                "PC_AGENT_UI_PORT": "0",
+                "PC_AGENT_DATA_DIR": str(tmp_path),
+            },
+        ), patch.object(ConfigLoader, "load", patched_load):
             loader = ConfigLoader()
             if loader._config is None:
                 init_config(tmp_path)
@@ -388,68 +521,73 @@ async def test_agent(tmp_path, test_client):
                 cfg.server.api_url = test_api_url
                 cfg.paths.data_dir = str(tmp_path)
                 cfg.enabled_modules = ["echo", "fail", "slow_echo"]
-                if not hasattr(cfg, 'modules'):
+                if not hasattr(cfg, "modules"):
                     from types import SimpleNamespace
+
                     cfg.modules = SimpleNamespace()
                 cfg.modules.extra_paths = [str(test_modules_path)]
                 cfg.ui.port = 0
 
-            # КРИТИЧНО: Обновляем cached config перед созданием агента
-            if cfg is not None and not hasattr(cfg, 'modules'):
+            if cfg is not None and not hasattr(cfg, "modules"):
                 from types import SimpleNamespace
+
                 cfg.modules = SimpleNamespace()
             if cfg is not None:
                 cfg.modules.extra_paths = [str(test_modules_path)]
-            
-            # КРИТИЧНО: Сбрасываем singleton DatabaseManager перед созданием агента
-            # чтобы использовать правильный путь к БД
+
             from pc_agent.core.database import DatabaseManager
+
             DatabaseManager._instance = None
-            
-            agent = WSAgent()
-            
-            # Инициализация (db_manager создается в initialize() с путем из config.paths.data_dir)
+
+            agent = WSAgent(data_root=tmp_path)
             await agent.initialize()
-            
-            # Проверяем, что БД создана по правильному пути
+
+            auth_service = AuthService(test_client.app["state"])
+            agent_token = await auth_service.generate_agent_token(device_id=agent.device_id, expires_hours=24)
+            os.environ["AUTH_TOKEN"] = agent_token
+
             if agent.db_manager:
                 expected_db_path = Path(tmp_path) / "storage.db"
                 if agent.db_manager._db_path != expected_db_path:
-                    # Если путь не совпадает, переинициализируем
                     agent.db_manager._db_path = expected_db_path
                     agent.db_manager._initialized = False
                     await agent.db_manager.init_db()
-            
-            # Также обновляем HTTP клиент если он уже создан
-            if hasattr(agent, 'http') and agent.http:
+                await agent.db_manager.save_auth_token(agent_token, agent.device_id)
+
+            if hasattr(agent, "http") and agent.http:
                 agent.http.base_url = test_api_url
 
-            # Запуск в фоне
             agent_task = asyncio.create_task(agent.run())
-            
-            # Ждем подключения агента к серверу (до 10 секунд)
+
             from loguru import logger
+
             max_wait = 10
             waited = 0
             while waited < max_wait:
                 if agent._agent_ws and not agent._agent_ws.closed:
-                    logger.info(f"✅ Агент подключен к серверу после {waited:.1f}s")
+                    logger.info(f"Agent connected to test server after {waited:.1f}s")
                     break
                 await asyncio.sleep(0.5)
                 waited += 0.5
             else:
-                logger.warning(f"⚠️ Агент не подключился за {max_wait}s, продолжаем тест")
-            
+                logger.warning(f"Agent did not connect within {max_wait}s, continuing test")
+
             yield agent
-            
-            # Cleanup
+
             agent_task.cancel()
             try:
                 await agent_task
             except asyncio.CancelledError:
                 pass
             await agent.cleanup()
+            _clear_agent_runtime_modules()
     finally:
-        # Восстанавливаем server в пути
+        _clear_agent_runtime_modules()
+        if not pc_agent_dir_in_path:
+            while pc_agent_dir_str in sys.path:
+                sys.path.remove(pc_agent_dir_str)
+        if not project_root_in_path:
+            while project_root_str in sys.path:
+                sys.path.remove(project_root_str)
         if server_in_path and server_path_str not in sys.path:
             sys.path.insert(0, server_path_str)

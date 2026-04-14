@@ -10,13 +10,20 @@
 - Если тема затрагивает сервер и агент или формулировка пока широкая, откройте `docs/QUICK_LOOKUP.md`.
 - Для точечного поиска по серверу используйте `python scripts/agent_find.py "<ключевое слово>" --dir server`.
 
+### Truth baseline
+
+- Корневой pytest-контур: `pytest.ini` (markers `unit`, `integration`, `manual`, `no_db`).
+- Server harness: `server/tests/conftest.py`, `server/tests/README.md`.
+- CI runner: `scripts/run_ci_suite.py`; isolated temp checkout runner: `scripts/run_ci_in_temp_workspace.py`.
+- Канонические test/CI env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`.
+
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
 | Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
-| Admin / support / ticket UI | `server/admin.js`, `server/control_plane.py`, `server/runtime_control.py` или `server/ticket.js` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
+| Admin / support / ticket UI | `server/admin.js`, `server/support.js`, `server/ticket.js`, `server/web_shared.js`, `server/control_plane.py`, `server/runtime_control.py` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
 
 ---
 
@@ -24,7 +31,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake |
+| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
 | `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket` и session endpoint `GET /api/ui_session` |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
@@ -69,7 +76,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, отправка команды агенту |
-| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService` |
+| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService`; `/api/tools/run` по умолчанию возвращает async `202 Accepted` + `operation_id` + `poll_url`, sync path допускается только через явный `wait=1` |
 | `server/app/services/operation_service.py` | Ветка consent: `approve_consent()` переводит operation `waiting_consent -> queued` и enqueue `run_tool` в `device_outbox` (исполнение после явного approve) |
 | `server/websocket/protocol.py` | Транспорт: `send_ws_command(..., wait_for_result=...)` enqueue в `device_outbox` + опционально ожидание `command_result` |
 
@@ -115,7 +122,7 @@
 | `server/uploads/` | handlers |
 | `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств, включая `DEVICE_ARCHIVED` status/error_code для агента), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service; `handlers.py` также содержит UI login/session endpoints |
 | `server/playbook_handlers.py` | Старт playbook run |
-| `server/static_pages/` | handlers для login/admin/support/ticket/public_queue/help и их CSS/JS shell-файлов |
+| `server/static_pages/` | handlers для login/admin/support/ticket/public_queue/help и их CSS/JS shell-файлов, включая общий `web_shared.js` |
 
 ### 2.6 Утилиты (модули/manifest)
 | Файл | Назначение |
@@ -130,11 +137,11 @@
 ### 2.7 UI (статика)
 | Файл | Назначение |
 |------|------------|
-| `server/admin.html`, `server/admin.js`, `server/admin.css` | Админка (модули, устройства, run_tool, bind тикета к агенту, бейджи непрочитанных сообщений/вызовов в очереди тикетов) |
+| `server/admin.html`, `server/admin.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket |
 | `server/control_plane.py`, `server/runtime_control.py` | Control-plane и runtime orchestration для техпанели: статус сервера (включая `started_at`/`uptime` из systemd и его timezone-offset timestamps вида `+05`), корректный `stop -> stopped/inactive` без ложного `failed`, health summary main API, полные логи (по умолчанию `Info+`), подтверждённые lifecycle actions с аудитом |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
-| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь тикетов` + `Рабочий тикет`. Переключатель режимов вынесен в верхний action-bar рядом с `Обновить / Выйти / Войти как admin`, чтобы оба режима воспринимались как единый workspace. В `Очереди тикетов` левый inbox скрывается, управление очередью собрано в компактную верхнюю панель (summary, фильтры, сортировка), а основной экран отдан широкой доске тикетов; левая колонка используется под действия по очереди и выбранному тикету. Карточки тикетов раскрывают `SLA / OLA / маршрут` и `Контекст и присутствие`. В `Рабочем тикете` левый inbox снова показывается, при этом фильтр `Мои` показывает только назначенные на текущего support-оператора тикеты, а фильтры `Нужны действия` и `Ждут пользователя` считаются только по своим тикетам. Для работы по тикету используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`). Для закрытия тикета использует встроенную форму кодов решения вместо prompt. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
-| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Основная рабочая область тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read, подтверждение решения, редактирование профиля инициатора, очередь/исполнитель по составу очереди, SLA/OLA и ручной reroute по правилам; поддерживает `embed=1` для встраивания в support workspace |
+| `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь тикетов` + `Рабочий тикет`; runtime теперь опирается на `web_shared.js` для общих auth/date/html helpers, чтобы не дублировать базовый shell-код. Переключатель режимов вынесен в верхний action-bar рядом с `Обновить / Выйти / Войти как admin`, чтобы оба режима воспринимались как единый workspace. В `Очереди тикетов` левый inbox скрывается, управление очередью собрано в компактную верхнюю панель (summary, фильтры, сортировка), а основной экран отдан широкой доске тикетов; левая колонка используется под действия по очереди и выбранному тикету. Карточки тикетов раскрывают `SLA / OLA / маршрут` и `Контекст и присутствие`. В `Рабочем тикете` левый inbox снова показывается, при этом фильтр `Мои` показывает только назначенные на текущего support-оператора тикеты, а фильтры `Нужны действия` и `Ждут пользователя` считаются только по своим тикетам. Для работы по тикету используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`). Для закрытия тикета использует встроенную форму кодов решения вместо prompt. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
+| `server/ticket.html`, `server/ticket.js`, `server/ticket.css` | Основная рабочая область тикета: чат, reply-to баннер/ссылки на исходное сообщение, mark-read, подтверждение решения, редактирование профиля инициатора, очередь/исполнитель по составу очереди, SLA/OLA и ручной reroute по правилам; поддерживает `embed=1` для встраивания в support workspace и использует `web_shared.js` для базовых shell helpers |
 | `server/public_queue.html`, `server/public_queue.js` | Публичная очередь со ссылками на requester-вход в тикет |
 | `server/help.html`, `server/help.js`, `server/help.css` | Публичная страница requester: создание тикета, вход по коду, чат |
 | `server/static_pages/` | Обработчики страниц и статики |
@@ -199,7 +206,13 @@
 
 ## 6. Тесты и скрипты
 
+- `pytest.ini` — корневой test harness и markers для всего монорепо.
 - `server/tests/` — интеграционные/регрессионные тесты.
+- `server/tests/conftest.py` — isolated DB-per-run, session-scoped engine, in-process agent harness.
+- `server/tests/README.md` — канон по локальному server baseline и env vars.
+- `scripts/run_ci_suite.py` — канонический локальный/self-hosted CI run с artifact layout `artifacts/ci/<sha>/`.
+- `scripts/run_ci_in_temp_workspace.py` — hook-friendly runner для self-hosted CI в отдельном checkout/venv.
+- `requirements-ci.txt` — минимальный CI dependency set.
 - Корень проекта: `scripts/run_server.py`, `scripts/stop_server.py`, `scripts/restart_server.py`, `scripts/run_control_plane.py`, `scripts/runtime_stack.py`, `scripts/manage_remote_stack.py`, `scripts/release_server_to_remote.py`, `scripts/smoke_test.py`, `scripts/admin_run_tool.py`.
 - `server/scripts/` — `run_subagents.py`, `subagent_worker_server.py`, `subagent_worker_agent.py`.
 

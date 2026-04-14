@@ -63,6 +63,22 @@ from pc_agent.auth.connection_request import run_connection_request_flow
 from pc_agent.auth.gui_auth_state_machine import GuiAuthStateMachine
 from pc_agent.auth.rejected_flag import connection_rejected_flag_path
 from pc_agent.auth.token_source import load_auth_token, load_auth_token_from_db
+from pc_agent.ws_agent_runtime_helpers import (
+    authenticate as helper_authenticate,
+    connection_rejected_flag_path_for,
+    execute_scheduled_task as helper_execute_scheduled_task,
+    format_uptime as helper_format_uptime,
+    handle_scheduler_rpc as helper_handle_scheduler_rpc,
+    request_connection_flow as helper_request_connection_flow,
+    request_token_from_console as helper_request_token_from_console,
+    restart_self as helper_restart_self,
+    schedule_restart as helper_schedule_restart,
+    schedule_update_shutdown as helper_schedule_update_shutdown,
+    scheduler_error as helper_scheduler_error,
+    scheduler_runtime_loop as helper_scheduler_runtime_loop,
+    scheduler_success as helper_scheduler_success,
+    shutdown_for_update as helper_shutdown_for_update,
+)
 
 
 def _configure_utf8_stdio() -> None:
@@ -189,6 +205,7 @@ class WSAgent:
         
         # Process-local dedupe: command_id -> Future с результатом (для in_progress без дубля)
         self._running_commands: Dict[str, asyncio.Future] = {}
+        self._background_command_tasks: set[asyncio.Task] = set()
         
         # WebSocket соединение с сервером (для chat_raise и других команд)
         self._agent_ws: Optional[ClientWebSocketResponse] = None
@@ -772,7 +789,15 @@ class WSAgent:
                     pass
                 self._scheduler_task = None
                 logger.info("✅ Scheduler runtime task остановлен")
-            
+
+            if self._background_command_tasks:
+                logger.info("🛑 Останавливаю фоновые задачи command dispatch...")
+                for task in list(self._background_command_tasks):
+                    task.cancel()
+                await asyncio.gather(*list(self._background_command_tasks), return_exceptions=True)
+                self._background_command_tasks.clear()
+                logger.info("✅ Фоновые задачи command dispatch остановлены")
+             
             # Останавливаем UI API сервер
             if self.ui_api_server and self.ui_api_task:
                 logger.info("🛑 Останавливаю UI API сервер...")
@@ -820,86 +845,10 @@ class WSAgent:
             logger.error(f"❌ Ошибка при очистке: {e}")
 
     async def schedule_restart(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Планирует перезапуск текущего процесса агента.
-
-        Возвращает успешный ответ сразу, а перезапуск выполняется асинхронно
-        с небольшой задержкой, чтобы HTTP-ответ успел вернуться в GUI.
-        """
-        payload = payload or {}
-        delay_sec_raw = payload.get("delay_sec", 0.8)
-        reason = str(payload.get("reason") or "settings_changed")
-        try:
-            delay_sec = float(delay_sec_raw)
-        except (TypeError, ValueError):
-            delay_sec = 0.8
-        delay_sec = max(0.2, min(delay_sec, 30.0))
-
-        if self._restart_task and not self._restart_task.done():
-            return {
-                "status": "ok",
-                "scheduled": True,
-                "already_scheduled": True,
-                "delay_sec": delay_sec,
-            }
-
-        self._restart_task = asyncio.create_task(
-            self._restart_self(delay_sec=delay_sec, reason=reason),
-            name="agent.self_restart",
-        )
-        logger.warning(f"♻️ Перезапуск агента запланирован через {delay_sec:.1f}с (reason={reason})")
-        return {
-            "status": "ok",
-            "scheduled": True,
-            "delay_sec": delay_sec,
-            "reason": reason,
-        }
+        return await helper_schedule_restart(self, payload)
 
     async def schedule_update_shutdown(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Планирует clean shutdown с exit code 42, чтобы launcher применил pending update.
-        """
-        payload = payload or {}
-        delay_sec_raw = payload.get("delay_sec", 2)
-        reason = str(payload.get("reason") or "self_update")
-        version = str(payload.get("version") or "")
-        operation_id = str(payload.get("operation_id") or "")
-        try:
-            delay_sec = float(delay_sec_raw)
-        except (TypeError, ValueError):
-            delay_sec = 2.0
-        delay_sec = max(0.2, min(delay_sec, 60.0))
-
-        if self._shutdown_task and not self._shutdown_task.done():
-            return {
-                "status": "ok",
-                "scheduled": True,
-                "already_scheduled": True,
-                "delay_sec": delay_sec,
-                "exit_code": EXIT_UPDATE_PENDING,
-            }
-
-        self._requested_exit_code = EXIT_UPDATE_PENDING
-        self._shutdown_task = asyncio.create_task(
-            self._shutdown_for_update(
-                delay_sec=delay_sec,
-                reason=reason,
-                version=version,
-                operation_id=operation_id,
-            ),
-            name="agent.update_shutdown",
-        )
-        logger.warning(
-            f"♻️ Запланирован clean shutdown под update через {delay_sec:.1f}с "
-            f"(version={version or '—'}, operation_id={(operation_id[:8] + '...') if operation_id else '—'})"
-        )
-        return {
-            "status": "ok",
-            "scheduled": True,
-            "delay_sec": delay_sec,
-            "reason": reason,
-            "exit_code": EXIT_UPDATE_PENDING,
-        }
+        return await helper_schedule_update_shutdown(self, payload)
 
     async def _shutdown_for_update(
         self,
@@ -909,28 +858,16 @@ class WSAgent:
         version: str,
         operation_id: str,
     ) -> None:
-        await asyncio.sleep(delay_sec)
-        try:
-            await self._publish_connection_state("restarting", f"self-update: {version or 'pending'}")
-        except Exception:
-            pass
-        logger.warning(
-            f"♻️ Выполняю clean shutdown под update "
-            f"(reason={reason}, version={version or '—'}, operation_id={(operation_id[:8] + '...') if operation_id else '—'})"
+        await helper_shutdown_for_update(
+            self,
+            delay_sec=delay_sec,
+            reason=reason,
+            version=version,
+            operation_id=operation_id,
         )
-        if self._run_task and not self._run_task.done():
-            self._run_task.cancel()
 
     async def _restart_self(self, delay_sec: float, reason: str) -> None:
-        """Выполняет self-restart через os.execv."""
-        await asyncio.sleep(delay_sec)
-        try:
-            argv = [sys.executable] + (sys.argv if sys.argv else ["-m", "pc_agent.ws_agent"])
-            logger.warning(f"♻️ Выполняю self-restart через os.execv (reason={reason})")
-            os.execv(sys.executable, argv)
-        except Exception as e:
-            logger.exception(e)
-            logger.error(f"❌ Не удалось выполнить self-restart: {e}")
+        await helper_restart_self(self, delay_sec, reason)
     
     def normalize_envelope(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1126,6 +1063,94 @@ class WSAgent:
         logger.debug(
             f"📤 [V3] Отправлен envelope: type={msg_type}, request_id={request_id}, "
             f"trace_id={trace_id}, ticket_id={ticket_id or self._current_ticket_id}"
+        )
+
+    def _track_background_command_task(self, task: asyncio.Task) -> None:
+        """Keeps a strong reference to detached command tasks until completion."""
+        self._background_command_tasks.add(task)
+        task.add_done_callback(self._background_command_tasks.discard)
+
+    def _should_run_command_in_background(self, command: Optional[str]) -> bool:
+        """Commands that can take noticeable time should not block the WS receive loop."""
+        return command in {"run_tool", "call_tool"}
+
+    async def _execute_command_and_send_result(
+        self,
+        ws: ClientWebSocketResponse,
+        *,
+        command: str,
+        params: Dict[str, Any],
+        request_id: str,
+        command_id: str,
+        device_id: Optional[str],
+        actor_role: Optional[str],
+        trace_id: Optional[str],
+        ticket_id_ctx: Optional[str],
+        job_id_ctx: Optional[str],
+        actor_role_meta: Optional[str],
+    ) -> None:
+        """Executes a command, persists idempotency, and sends command_result."""
+        command_result_payload: Optional[Dict[str, Any]] = None
+        try:
+            tool_response = await self.execute_command(
+                command,
+                params,
+                request_id=request_id,
+                device_id=device_id,
+                actor_role=actor_role,
+            )
+            command_result_payload = {
+                "status": tool_response.get("status", "error"),
+                "data": tool_response.get("data", {}),
+                "error": tool_response.get("error"),
+                "meta": tool_response.get("meta", {}),
+            }
+            if self.db_manager:
+                status = "success" if command_result_payload["status"] == "success" else "error"
+                result_json = jsonlib.dumps(command_result_payload, ensure_ascii=False)
+                was_updated = await self.db_manager.mark_command_seen(
+                    command_id=command_id,
+                    status=status,
+                    result_json=result_json,
+                )
+                if was_updated:
+                    logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status={status})")
+                else:
+                    logger.debug(f"⚠️  Команда {command_id} уже была success, не перезаписали")
+        except Exception as e:
+            logger.exception(e)
+            command_result_payload = {
+                "status": "error",
+                "data": {},
+                "error": {"message": str(e)},
+                "meta": {},
+            }
+        finally:
+            future = self._running_commands.pop(command_id, None)
+            if future and not future.done():
+                future.set_result(
+                    command_result_payload or {
+                        "status": "error",
+                        "data": {},
+                        "error": {"message": "Unknown"},
+                        "meta": {},
+                    }
+                )
+
+        logger.debug(f"📤 Отправка ответа: {command_result_payload}")
+        await self.send_envelope(
+            ws,
+            "command_result",
+            request_id,
+            command_result_payload,
+            trace_id=trace_id,
+            ticket_id=ticket_id_ctx,
+            job_id=job_id_ctx,
+            actor_role=actor_role_meta,
+        )
+        logger.success(
+            f"✅ [V3] Команда {command} выполнена "
+            f"(request_id={request_id}, trace_id={trace_id}, command_id={command_id})"
         )
     
     async def handle_message(self, ws: ClientWebSocketResponse, message: str) -> None:
@@ -1534,66 +1559,31 @@ class WSAgent:
                 # Process-local dedupe: другие запросы с тем же command_id будут ждать этот Future
                 run_future = asyncio.get_event_loop().create_future()
                 self._running_commands[command_id] = run_future
-                command_result_payload = None
-                try:
-                    # Выполняем команду
-                    tool_response = await self.execute_command(
-                        command,
-                        params,
-                        request_id=request_id,
-                        device_id=envelope.get("device_id"),
-                        actor_role=actor_role
+                execution_kwargs = {
+                    "command": command,
+                    "params": params,
+                    "request_id": request_id,
+                    "command_id": command_id,
+                    "device_id": envelope.get("device_id"),
+                    "actor_role": actor_role,
+                    "trace_id": envelope.get("trace_id"),
+                    "ticket_id_ctx": envelope.get("ticket_id"),
+                    "job_id_ctx": envelope.get("job_id"),
+                    "actor_role_meta": envelope.get("meta", {}).get("actor_role", "agent"),
+                }
+                if self._should_run_command_in_background(command):
+                    task = asyncio.create_task(
+                        self._execute_command_and_send_result(ws, **execution_kwargs),
+                        name=f"agent.command.{command_id}",
                     )
-                    # КРИТИЧНО: Сохраняем только payload (status + data), не весь tool_response
-                    command_result_payload = {
-                        "status": tool_response.get("status", "error"),
-                        "data": tool_response.get("data", {}),
-                        "error": tool_response.get("error"),
-                        "meta": tool_response.get("meta", {})
-                    }
-                    # Сохраняем результат в seen_commands (идемпотентность)
-                    if self.db_manager:
-                        status = "success" if command_result_payload["status"] == "success" else "error"
-                        result_json = jsonlib.dumps(command_result_payload, ensure_ascii=False)
-                        was_updated = await self.db_manager.mark_command_seen(
-                            command_id=command_id,
-                            status=status,
-                            result_json=result_json
-                        )
-                        if was_updated:
-                            logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status={status})")
-                        else:
-                            logger.debug(f"⚠️  Команда {command_id} уже была success, не перезаписали")
-                except Exception as e:
-                    logger.exception(e)
-                    command_result_payload = {
-                        "status": "error",
-                        "data": {},
-                        "error": {"message": str(e)},
-                        "meta": {},
-                    }
-                finally:
-                    if command_id in self._running_commands:
-                        self._running_commands[command_id].set_result(
-                            command_result_payload or {
-                                "status": "error", "data": {}, "error": {"message": "Unknown"}, "meta": {}
-                            }
-                        )
-                        del self._running_commands[command_id]
-                
-                logger.debug(f"📤 Отправка ответа: {command_result_payload}")
-                trace_id = envelope.get("trace_id")
-                ticket_id_ctx = envelope.get("ticket_id")
-                job_id_ctx = envelope.get("job_id")
-                actor_role_meta = envelope.get("meta", {}).get("actor_role", "agent")
-                await self.send_envelope(
-                    ws, "command_result", request_id, command_result_payload,
-                    trace_id=trace_id,
-                    ticket_id=ticket_id_ctx,
-                    job_id=job_id_ctx,
-                    actor_role=actor_role_meta
-                )
-                logger.success(f"✅ [V3] Команда {command} выполнена (request_id={request_id}, trace_id={trace_id}, command_id={command_id})")
+                    self._track_background_command_task(task)
+                    logger.debug(
+                        f"📦 Команда {command} переведена в background dispatch "
+                        f"(command_id={command_id})"
+                    )
+                    return
+
+                await self._execute_command_and_send_result(ws, **execution_kwargs)
                 return
             
             # Command result - ответ на команду, отправленную агентом серверу (например, chat_raise)
@@ -1707,77 +1697,20 @@ class WSAgent:
             logger.debug(f"📋 request_id: {request_id}, device_id: {device_id}, actor_role: {actor_role}")
             
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # ОБРАБОТКА cancel_operation (PR#7: Timeout/Cancel)
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            
-            if command == "cancel_operation":
-                """
-                Обработка команды cancel_operation от сервера.
-                
-                Попытаться отменить операцию (если она выполняется).
-                Если операция уже завершена - вернуть success (no-op).
-                Если операция не найдена - вернуть success (no-op, так как она уже не выполняется).
-                """
-                from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
-                from datetime import datetime, timezone
-                
-                operation_id = params.get("operation_id")
-                
-                logger.info(f"🛑 Получена команда cancel_operation: operation_id={operation_id}")
-                
-                meta = ToolMeta(
-                    timestamp_iso=datetime.now(timezone.utc).isoformat(),
-                    command=command,
-                    request_id=request_id,
-                    agent_id=None,
-                    duration_ms=None
-                )
-                
-                # Проверка наличия operation_id
-                if not operation_id:
-                    from core.tool_response import fail
-                    response = fail(
-                        code="INVALID_REQUEST",
-                        message="operation_id is required",
-                        meta=meta,
-                        retriable=False
-                    )
-                    return response.model_dump()
-                
-                # Попытаться отменить операцию
-                # В текущей реализации агент не отслеживает активные операции
-                # Поэтому просто возвращаем success (no-op)
-                # В будущем здесь можно добавить логику отслеживания активных операций
-                
-                logger.info(f"✅ Операция {operation_id} отменена (или уже завершена)")
-                
-                observations = {
-                    "operation_id": operation_id,
-                    "message": "Operation canceled or already completed"
-                }
-                
-                # Согласно плану, canceled должен быть на верхнем уровне data
-                data = ToolData(observations=observations)
-                # Добавляем canceled на верхний уровень data через model_dump и модификацию
-                response_dict = ok(data=data, meta=meta).model_dump()
-                # Добавляем canceled в data (не в observations)
-                if "data" not in response_dict:
-                    response_dict["data"] = {}
-                response_dict["data"]["canceled"] = True
-                return response_dict
-            
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             # КОМАНДЫ ОРКЕСТРАТОРА (делегируем через handle_command)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
-            orchestrator_commands = ["ping", "collect", "list_modules", "update", "install_module_package", "exec_script", "get_manifest", "list_tools", "run_tool", "call_tool", "list_installed_modules", "activate_module", "rollback_module", "deactivate_module", "remove_module_version", "remove_module", "start_job", "stop_job", "get_job_status", "list_jobs", "job_send_event", "ui_notify"]
+            orchestrator_commands = ["ping", "collect", "list_modules", "update", "install_module_package", "exec_script", "get_manifest", "list_tools", "run_tool", "call_tool", "list_installed_modules", "activate_module", "rollback_module", "deactivate_module", "remove_module_version", "remove_module", "start_job", "stop_job", "get_job_status", "list_jobs", "job_send_event", "ui_notify", "cancel_operation"]
             
             if command in orchestrator_commands:
                 logger.info(f"📨 Делегирую команду '{command}' оркестратору")   
                 
                 # Формируем команду для оркестратора
                 orchestrator_cmd = {"cmd": command}
-                orchestrator_cmd.update(params)  # Добавляем все параметры
+                if command == "cancel_operation":
+                    orchestrator_cmd["params"] = dict(params)
+                else:
+                    orchestrator_cmd.update(params)  # Добавляем все параметры
                 
                 # Фикс для run_tool: переименовываем tool_name в tool
                 if command == "run_tool" and "tool_name" in orchestrator_cmd:
@@ -1970,25 +1903,10 @@ class WSAgent:
             return response.model_dump()
 
     def _scheduler_success(self, observations: Dict[str, Any], request_id: Optional[str]) -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "data": {"observations": observations},
-            "meta": {
-                "request_id": request_id,
-                "timestamp_iso": datetime.now(timezone.utc).isoformat(),
-            },
-        }
+        return helper_scheduler_success(observations, request_id)
 
     def _scheduler_error(self, code: str, message: str, request_id: Optional[str]) -> Dict[str, Any]:
-        return {
-            "status": "error",
-            "error": {"code": code, "message": message},
-            "data": {},
-            "meta": {
-                "request_id": request_id,
-                "timestamp_iso": datetime.now(timezone.utc).isoformat(),
-            },
-        }
+        return helper_scheduler_error(code, message, request_id)
 
     async def _handle_scheduler_rpc(
         self,
@@ -1996,308 +1914,28 @@ class WSAgent:
         params: Dict[str, Any],
         request_id: Optional[str],
     ) -> Dict[str, Any]:
-        if not self.db_manager:
-            return self._scheduler_error("DB_UNAVAILABLE", "Database is not initialized", request_id)
-
-        try:
-            if method == "schedule_task":
-                kind = str(params.get("kind") or "").strip()
-                schedule = str(params.get("schedule") or "").strip()
-                task_params = params.get("params")
-                if not isinstance(task_params, dict):
-                    task_params = {}
-
-                if kind != "run_tool":
-                    return self._scheduler_error(
-                        "VALIDATION_ERROR",
-                        "Scheduler MVP supports only kind='run_tool'",
-                        request_id,
-                    )
-
-                if schedule not in {"minutely", "hourly", "daily", "weekly"}:
-                    return self._scheduler_error(
-                        "VALIDATION_ERROR",
-                        "Unsupported schedule. Allowed: minutely, hourly, daily, weekly",
-                        request_id,
-                    )
-
-                tool_name = str(task_params.get("tool_name") or "").strip()
-                if not tool_name:
-                    return self._scheduler_error(
-                        "VALIDATION_ERROR",
-                        "params.tool_name is required for kind='run_tool'",
-                        request_id,
-                    )
-
-                task_id = str(uuid.uuid4())
-                await self.db_manager.create_scheduled_task(
-                    task_id=task_id,
-                    kind=kind,
-                    schedule=schedule,
-                    params=task_params,
-                    enabled=True,
-                )
-                task = await self.db_manager.get_scheduled_task(task_id)
-                return self._scheduler_success(
-                    {
-                        "task_id": task_id,
-                        "created": True,
-                        "task": task,
-                    },
-                    request_id,
-                )
-
-            if method == "cancel_task":
-                task_id = str(params.get("task_id") or "").strip()
-                if not task_id:
-                    return self._scheduler_error("VALIDATION_ERROR", "task_id is required", request_id)
-                updated = await self.db_manager.disable_scheduled_task(task_id)
-                if not updated:
-                    return self._scheduler_error("NOT_FOUND", f"Task not found: {task_id}", request_id)
-                task = await self.db_manager.get_scheduled_task(task_id)
-                return self._scheduler_success(
-                    {"task_id": task_id, "canceled": True, "task": task},
-                    request_id,
-                )
-
-            if method == "list_tasks":
-                tasks = await self.db_manager.list_scheduled_tasks()
-                return self._scheduler_success(
-                    {"tasks": tasks, "count": len(tasks)},
-                    request_id,
-                )
-
-            if method == "task_run_now":
-                task_id = str(params.get("task_id") or "").strip()
-                if not task_id:
-                    return self._scheduler_error("VALIDATION_ERROR", "task_id is required", request_id)
-                updated = await self.db_manager.request_scheduled_task_run_now(task_id)
-                if not updated:
-                    return self._scheduler_error("NOT_FOUND", f"Task not found: {task_id}", request_id)
-                task = await self.db_manager.get_scheduled_task(task_id)
-                return self._scheduler_success(
-                    {"task_id": task_id, "queued_for_immediate_run": True, "task": task},
-                    request_id,
-                )
-
-            return self._scheduler_error("UNKNOWN_METHOD", f"Unknown scheduler method: {method}", request_id)
-        except ValueError as exc:
-            return self._scheduler_error("VALIDATION_ERROR", str(exc), request_id)
-        except Exception as exc:
-            logger.error(f"Scheduler RPC error: method={method}, error={exc}", exc_info=True)
-            return self._scheduler_error("SCHEDULER_ERROR", str(exc), request_id)
+        return await helper_handle_scheduler_rpc(self, method, params, request_id)
 
     async def _scheduler_runtime_loop(self) -> None:
-        """Периодически выполняет due scheduled tasks (MVP)."""
-        while True:
-            try:
-                await asyncio.sleep(1.0)
-                if not self.db_manager:
-                    continue
-                due_tasks = await self.db_manager.get_due_scheduled_tasks()
-                if not due_tasks:
-                    continue
-
-                for task in due_tasks:
-                    try:
-                        await self._execute_scheduled_task(task)
-                    except Exception as exc:
-                        logger.error(
-                            f"Failed to execute scheduled task: task_id={task.get('task_id')} error={exc}",
-                            exc_info=True,
-                        )
-                    finally:
-                        task_id = str(task.get("task_id") or "")
-                        if task_id:
-                            await self.db_manager.update_scheduled_task_after_run(task_id)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error(f"Scheduler loop error: {exc}", exc_info=True)
-                await asyncio.sleep(2.0)
+        await helper_scheduler_runtime_loop(self)
 
     async def _execute_scheduled_task(self, task: Dict[str, Any]) -> None:
-        """Выполняет одну scheduled task через обычный command/orchestrator path."""
-        if not self.db_manager:
-            return
-
-        task_id = str(task.get("task_id") or "")
-        kind = str(task.get("kind") or "")
-        if kind != "run_tool":
-            logger.warning(f"Skip unsupported scheduled task kind: task_id={task_id} kind={kind}")
-            return
-
-        task_params = task.get("params")
-        if not isinstance(task_params, dict):
-            task_params = {}
-
-        tool_name = str(task_params.get("tool_name") or "").strip()
-        if not tool_name:
-            logger.warning(f"Skip scheduled task without tool_name: task_id={task_id}")
-            return
-
-        run_tool_params = {
-            "tool_name": tool_name,
-            "params": task_params.get("params") if isinstance(task_params.get("params"), dict) else {},
-            "ticket_id": task_params.get("ticket_id"),
-        }
-        run_tool_params = {k: v for k, v in run_tool_params.items() if v is not None}
-
-        logger.info(f"Scheduler executing run_tool: task_id={task_id} tool_name={tool_name}")
-        await self.execute_command(
-            command="run_tool",
-            params=run_tool_params,
-            request_id=f"scheduler-{task_id}-{uuid.uuid4()}",
-            device_id=self.device_id,
-            actor_role="agent",
-        )
+        await helper_execute_scheduled_task(self, task)
     
     def _format_uptime(self, seconds: float) -> str:
-        """
-        Форматирует uptime в человекочитаемый формат.
-        
-        Args:
-            seconds: Количество секунд uptime
-        
-        Returns:
-            Строка вида "1д 2ч 30м 15с"
-        """
-        days = int(seconds // 86400)
-        hours = int((seconds % 86400) // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        
-        parts = []
-        if days > 0:
-            parts.append(f"{days}д")
-        if hours > 0:
-            parts.append(f"{hours}ч")
-        if minutes > 0:
-            parts.append(f"{minutes}м")
-        if secs > 0 or not parts:
-            parts.append(f"{secs}с")
-        
-        return " ".join(parts)
+        return helper_format_uptime(seconds)
     
     async def authenticate(self) -> bool:
-        """
-        Загружает токен аутентификации если он доступен.
-        
-        Проверяет токен в следующем порядке:
-        1. ENV переменная AUTH_TOKEN
-        2. БД агента (auth_tokens таблица)
-        3. identity.json (legacy)
-        
-        ВАЖНО: Не блокирует запуск если токена нет!
-        Агент подключится к серверу, и сервер зарегистрирует попытку подключения.
-        
-        Returns:
-            True если токен найден, False если нужно запросить у пользователя
-        """
-        async def _wait_token_from_gui_if_enabled() -> Optional[str]:
-            # GUI покажет диалог авторизации ДО запуска агента, поэтому здесь только короткое ожидание.
-            try:
-                from PySide6.QtWidgets import QApplication
-            except ImportError:
-                return None
-
-            app = QApplication.instance()
-            if app is None:
-                return None
-
-            logger.info("🖥️ GUI включен, проверяю авторизацию через GUI...")
-            max_wait = 50  # Максимум 5 секунд
-            waited = 0
-            while waited < max_wait:
-                await asyncio.sleep(0.1)
-                waited += 1
-                try:
-                    if self.db_manager:
-                        token = await load_auth_token_from_db(self.db_manager, self.identity_manager)
-                        if token:
-                            logger.info("✅ Токен найден в БД после ожидания GUI авторизации")
-                            return token
-                except Exception as e:
-                    logger.debug(f"Ошибка проверки токена в БД: {e}")
-
-            logger.warning("⚠️ GUI включен, но токен не найден после ожидания")
-            logger.info("💡 Возможно, авторизация еще не завершена или была отменена")
-            logger.info("💡 Агент попытается подключиться к серверу для регистрации попытки")
-            return None
-
-        token = await load_auth_token(
-            db_manager=self.db_manager,
-            identity_manager=self.identity_manager,
-            gui_wait_callback=_wait_token_from_gui_if_enabled,
-        )
-        if token:
-            self.auth_token = token
-            self.identity_manager.token = token
-            return True
-
-        # Токен не найден - логируем информацию
-        # НЕ запрашиваем ввод здесь - агент должен подключиться к серверу сначала
-        # Сервер зарегистрирует попытку подключения в pending_connections
-        logger.info("💡 Токен не найден")
-        logger.info("💡 Агент попытается подключиться к серверу")
-        logger.info("💡 После регистрации на сервере админ может сгенерировать токен")
-        return False
+        return await helper_authenticate(self)
     
     def _connection_rejected_flag_path(self) -> Path:
-        """Путь к файлу-флагу «подключение отклонено» (не отправлять запросы повторно)."""
-        return connection_rejected_flag_path(self._data_root)
+        return connection_rejected_flag_path_for(self)
 
     async def request_connection_flow(self, wait_for_approval_seconds: int = 600) -> Tuple[bool, bool]:
-        """
-        Запрос авторизации у сервера (connection request flow).
-        Вызывается при отсутствии токена. POST /api/connection_request;
-        при status pending — ожидает одобрения/отклонения опросом (poll), не выходит сразу.
-
-        Returns:
-            (True, False) — токен получен и сохранён, можно подключаться по WS.
-            (False, True) — явно отклонено администратором (нужно записать флаг).
-            (False, False) — ошибка или таймаут ожидания (флаг не ставить).
-        """
-        hostname = socket.gethostname() if hasattr(socket, "gethostname") else None
-        ok, rejected = await run_connection_request_flow(
-            api_url=get_config().server.api_url or "",
-            device_id=self.device_id or self.identity_manager.device_id,
-            hostname=hostname,
-            metadata=self.identity_manager.get_identity_metadata() if self.identity_manager else {},
-            db_manager=self.db_manager,
-            identity_manager=self.identity_manager,
-            event_bus=self.event_bus,
-            wait_seconds=wait_for_approval_seconds,
-        )
-        if ok and self.identity_manager and self.identity_manager.token:
-            self.auth_token = self.identity_manager.token
-        return (ok, rejected)
+        return await helper_request_connection_flow(self, wait_for_approval_seconds)
 
     async def _request_token_from_console(self) -> bool:
-        """
-        Legacy name: now runs automatic reprovision flow.
-        Используется после Invalid token: очищает локальный токен и
-        запускает стандартный connection_request flow без ручного ввода.
-        Returns:
-            True если новый токен получен и сохранён, False в остальных случаях.
-        """
-        self.identity_manager.clear_token()
-        if self.db_manager:
-            try:
-                await self.db_manager.clear_auth_token(self.identity_manager.device_id)
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось очистить токен в БД: {e}")
-
-        await self._publish_connection_state("reprovision_required", "повторный provisioning после invalid token")
-        ok, rejected = await self.request_connection_flow()
-        if rejected:
-            logger.error("❌ Reprovision отклонён администратором")
-            return False
-        if not ok:
-            logger.error("❌ Reprovision неуспешен")
-            return False
-        logger.info("✅ Reprovision завершен, токен обновлён")
-        return True
+        return await helper_request_token_from_console(self)
     
     async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> dict[str, str] | None:
         """

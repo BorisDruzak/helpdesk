@@ -12,7 +12,8 @@ WebSocket сервер для управления удалёнными PC аг�
 выполняется на стороне агента через ws_agent.py и AgentOrchestrator.
 
 РЕСТРУКТУРИЗАЦИЯ: Код разделён на модули для улучшения читаемости и поддержки.
-Оригинальная версия сохранена в server_old.py.
+Архивный legacy runtime-path удалён из активного дерева; источник истины по структуре
+и потокам теперь в CODEMAP/документации рядом с кодом.
 """
 
 import sys
@@ -35,6 +36,7 @@ from config import (
 # Этап 7.2: очистка истёкших артефактов
 ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
 from state_manager import StateManager
+from app_keys import STATE_APP_KEY, OUTBOX_SENDER_APP_KEY, bind_app_value
 from routes import setup_routes
 
 # Import database initialization
@@ -199,7 +201,7 @@ async def on_startup(app: web.Application):
             logger.info("🚀 Starting device outbox sender...")
             sender = DeviceOutboxSender(app['state'], poll_interval=1.0)
             sender.start()
-            app['outbox_sender'] = sender
+            bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
             logger.success("✅ Device outbox sender started")
             
             # PR#7: Start operation watchdog (Этап 5: set_app для advance_after_terminal при timeout)
@@ -343,7 +345,7 @@ def create_app() -> web.Application:
     state = StateManager()
     
     # Сохраняем state в app для доступа из обработчиков
-    app['state'] = state
+    bind_app_value(app, key=STATE_APP_KEY, legacy_name="state", value=state)
     
     # Регистрируем lifecycle hooks
     app.on_startup.append(on_startup)
@@ -420,8 +422,8 @@ def main():
     logger.info("=" * 70)
     
     logger.warning("⚠️  ВНИМАНИЕ: Некоторые модули содержат упрощенные реализации.")
-    logger.warning("    Требуется доработка WebSocket handlers и других компонентов.")
-    logger.warning("    Оригинальная версия сохранена в server_old.py")
+    logger.warning("    Runtime legacy-path уже удалён; ориентируйтесь на CODEMAP и актуальные docs.")
+    logger.warning("    Перед release обязателен green baseline: verify_workspace + pytest + CI artifact.")
     logger.info("=" * 70)
     
     # Создаём и запускаем приложение

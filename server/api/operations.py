@@ -8,11 +8,13 @@ from aiohttp import web
 from loguru import logger
 
 from app.db import get_session
+from app.db.models import DeviceOutbox
 from app.repos.operations_repo import OperationsRepo
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
+from websocket.device_outbox_sender import _send_single_command
 
 
 async def handle_get_operations(request: web.Request) -> web.Response:
@@ -319,7 +321,7 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             
             # Отправить команду cancel_operation через device_outbox
             outbox_repo = DeviceOutboxRepo(session)
-            await outbox_repo.enqueue_command(
+            cancel_outbox_id = await outbox_repo.enqueue_command(
                 device_id=target_op.device_id,
                 command_id=cancel_operation_id,  # command_id == operation_id для cancel-op
                 command="cancel_operation",
@@ -334,7 +336,37 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             )
             
             await session.commit()
-            
+
+            # Best-effort fast path: if the agent is online, push cancel immediately
+            # instead of waiting for the next dispatch cycle.
+            state = request.app.get("state")
+            agent_info = state.get_agent(target_op.device_id) if state else None
+            if agent_info:
+                try:
+                    async with get_session() as send_session:
+                        send_repo = DeviceOutboxRepo(send_session)
+                        cancel_entry = await send_session.get(DeviceOutbox, cancel_outbox_id)
+                        if cancel_entry is not None and cancel_entry.status == "pending":
+                            metadata = agent_info.get("metadata", {}) or {}
+                            agent_device_id = metadata.get("device_id", target_op.device_id)
+                            await _send_single_command(
+                                state_manager=state,
+                                ws=agent_info["ws"],
+                                agent_device_id=agent_device_id,
+                                cmd=cancel_entry,
+                                repo=send_repo,
+                            )
+                            await send_session.commit()
+                            logger.info(
+                                f"[handle_cancel_operation] Immediate dispatch sent for cancel_operation "
+                                f"cancel_operation_id={cancel_operation_id}"
+                            )
+                except Exception as dispatch_exc:
+                    logger.warning(
+                        f"[handle_cancel_operation] Immediate dispatch skipped for "
+                        f"cancel_operation_id={cancel_operation_id}: {dispatch_exc}"
+                    )
+             
             logger.info(
                 f"[handle_cancel_operation] Cancel requested: "
                 f"target_operation_id={operation_id} cancel_operation_id={cancel_operation_id}"

@@ -21,12 +21,16 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 # Добавляем путь к модулям PC Agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.database import DatabaseManager
 from core.job_manager import JobManager
 from loguru import logger
+
+pytestmark = pytest.mark.manual
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -408,7 +412,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 
 
 

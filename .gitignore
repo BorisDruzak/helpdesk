@@ -27,6 +27,7 @@ pc_agent/build/
 pc_agent/dist/
 .venvs/
 .local-agent/
+artifacts/ci/
 src/venv/
 .env
 *.env

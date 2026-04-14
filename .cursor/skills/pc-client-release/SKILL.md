@@ -14,12 +14,16 @@ description: Checklist before pushing pc_client to GitHub. Use when preparing to
    `python scripts/verify_workspace.py` + релевантные pytest (`server/tests/`, `pc_agent/tests/`) по области изменений.
    Если меняется agent release/update flow — следовать скиллу `pc-client-agent-updates` и не выпускать изменённый бинарь под старой версией.
    Если меняется always-on runtime / tray / runtime logs — следовать скиллу `pc-client-agent-runtime` и не закрывать задачу без живого E2E через `manage_local_agent.py`.
-3. **Локальный коммит** — после успешных проверок.
-4. **Deploy на Linux** (если нужен прогон на стенде):  
+3. **Green CI artifact для коммита:**  
+   `python scripts/run_ci_suite.py`  
+   или self-hosted runner `python scripts/run_ci_in_temp_workspace.py`.
+4. **Локальный коммит** — после успешных проверок.
+5. **Deploy на Linux** (если нужен прогон на стенде):  
    `python scripts/deploy_workspace_to_remote.py`  
    затем при необходимости: start `control` → start server → smoke → browser check → stop server.
-5. **Фиксация в отчёте:** что изменено, что проверено, что не проверено, остаточные риски.
-6. Если задача велась в несколько шагов или сессий — обновить `PLANS.md` перед handoff.
+   По умолчанию deploy/release scripts требуют green CI artifact; emergency bypass только через `--skip-ci-check`.
+6. **Фиксация в отчёте:** что изменено, что проверено, что не проверено, остаточные риски.
+7. Если задача велась в несколько шагов или сессий — обновить `PLANS.md` перед handoff.
 
 ## Что не пушить
 

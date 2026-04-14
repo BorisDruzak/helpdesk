@@ -43,6 +43,15 @@ from core.job_manager import JobManager
 from core.recording_controller import get_recording_controller
 from pc_agent.config.config_loader import CORE_ENABLED_MODULES, get_config
 from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
+from pc_agent.core.orchestrator_collect_helpers import handle_collect as helper_handle_collect
+from pc_agent.core.orchestrator_job_helpers import (
+    format_uptime as helper_format_uptime,
+    handle_get_job_status as helper_handle_get_job_status,
+    handle_job_send_event as helper_handle_job_send_event,
+    handle_list_jobs as helper_handle_list_jobs,
+    handle_start_job as helper_handle_start_job,
+    handle_stop_job as helper_handle_stop_job,
+)
 from utils.toolset_hash import compute_toolset_hash
 import inspect
 import os
@@ -485,7 +494,12 @@ class AgentOrchestrator:
                     # Обработка команды cancel_operation
                     params = command.get("params", {})
                     target_operation_id = params.get("target_operation_id") or params.get("operation_id")
-                    result = await self._handle_cancel_operation(target_operation_id, meta)
+                    result = await self._handle_cancel_operation(
+                        target_operation_id,
+                        meta,
+                        ticket_id=ticket_id,
+                        device_id=device_id,
+                    )
                     
                 case 'run_tool' | 'call_tool':
                     # Поддержка обоих форматов: tool в корне или в params
@@ -724,6 +738,7 @@ class AgentOrchestrator:
             raise
     
     async def _handle_collect(self, modules: Optional[List[str]], meta: ToolMeta) -> ToolResponse:
+        return await helper_handle_collect(self, modules, meta)
         """
         Обработка команды 'collect' - сбор данных с модулей.
         
@@ -1501,7 +1516,10 @@ class AgentOrchestrator:
     async def _handle_cancel_operation(
         self,
         target_operation_id: Optional[str],
-        meta: ToolMeta
+        meta: ToolMeta,
+        *,
+        ticket_id: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> ToolResponse:
         """
         Отменяет выполняющуюся операцию.
@@ -1550,18 +1568,18 @@ class AgentOrchestrator:
             # событие от агента позволит довести operation до canceled ("вторая линия")
             
             # Извлекаем ticket_id из meta если доступен
-            ticket_id = getattr(meta, 'ticket_id', None)
-            device_id = getattr(meta, 'device_id', None) or self.device_id
-            
-            if ticket_id and self.db_manager:
+            event_ticket_id = ticket_id
+            event_device_id = device_id or self.device_id
+
+            if event_ticket_id and self.db_manager:
                 try:
                     await self.db_manager.enqueue_job_event(
                         job_id=None,  # Может быть None для операций без job
                         request_id=target_operation_id,
-                        device_id=device_id,
+                        device_id=event_device_id,
                         event_payload={
                             "event": "tool_call_result",  # или "agent_action"
-                            "ticket_id": ticket_id,
+                            "ticket_id": event_ticket_id,
                             "operation_id": target_operation_id,
                             "status": "canceled",
                             "cancel_status": cancel_status
@@ -1571,10 +1589,12 @@ class AgentOrchestrator:
                     logger.error(f"[cancel_operation] Failed to publish canceled event: {e}")
             
             return ok(
-                data={
-                    "cancel_status": cancel_status,
-                    "target_operation_id": target_operation_id
-                },
+                data=ToolData(
+                    observations={
+                        "cancel_status": cancel_status,
+                        "target_operation_id": target_operation_id,
+                    }
+                ),
                 meta=meta
             )
         else:
@@ -3618,6 +3638,7 @@ class AgentOrchestrator:
         device_id: Optional[str],
         meta: ToolMeta
     ) -> ToolResponse:
+        return await helper_handle_start_job(self, job_type, params, actor_role, device_id, meta)
         """
         Обработка команды 'start_job' - запуск фоновой задачи.
         
@@ -3713,6 +3734,7 @@ class AgentOrchestrator:
         actor_role: str,
         meta: ToolMeta
     ) -> ToolResponse:
+        return await helper_handle_stop_job(self, job_id, actor_role, meta)
         """
         Обработка команды 'stop_job' - остановка фоновой задачи.
         
@@ -3790,6 +3812,7 @@ class AgentOrchestrator:
         job_id: Optional[str],
         meta: ToolMeta
     ) -> ToolResponse:
+        return await helper_handle_get_job_status(self, job_id, meta)
         """
         Обработка команды 'get_job_status' - получение статуса задачи.
         
@@ -3856,6 +3879,7 @@ class AgentOrchestrator:
         limit: int,
         meta: ToolMeta
     ) -> ToolResponse:
+        return await helper_handle_list_jobs(self, limit, meta)
         """
         Обработка команды 'list_jobs' - получение списка задач.
         
@@ -3908,6 +3932,7 @@ class AgentOrchestrator:
         actor_role: str,
         meta: ToolMeta
     ) -> ToolResponse:
+        return await helper_handle_job_send_event(self, job_id, event, actor_role, meta)
         """
         Обработка команды 'job_send_event' - доставка события в задачу.
         
@@ -3987,6 +4012,7 @@ class AgentOrchestrator:
             )
     
     def _format_uptime(self, seconds: float) -> str:
+        return helper_format_uptime(seconds)
         """
         Форматирует uptime в человекочитаемый формат.
         

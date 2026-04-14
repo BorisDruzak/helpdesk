@@ -242,6 +242,43 @@ class OperationLifecycleService:
                             expected_statuses=["running"],
                             result_summary=(result_summary or "scheduled")[:500],
                         )
+                    elif operation and operation.kind == "cancel_operation":
+                        cancel_status = (
+                            normalized.data_payload.get("cancel_status")
+                            or (observations or {}).get("cancel_status")
+                        )
+                        target_operation_id = (
+                            operation.cancel_target_operation_id
+                            or normalized.data_payload.get("target_operation_id")
+                            or (observations or {}).get("target_operation_id")
+                        )
+                        await op_service.mark_succeeded(
+                            operation_id=operation_id,
+                            result_summary=(result_summary or str(cancel_status or "completed"))[:500],
+                            expected_statuses=expected_statuses,
+                        )
+                        if target_operation_id and cancel_status == "canceled":
+                            await op_service.mark_canceled(
+                                operation_id=target_operation_id,
+                                expected_statuses=["cancel_requested", "running", "accepted", "waiting_consent"],
+                            )
+                            if operation.ticket_id:
+                                from app.repos.ticket_events_repo import TicketEventsRepo
+
+                                events_repo = TicketEventsRepo(session)
+                                await events_repo.add_event(
+                                    ticket_id=operation.ticket_id,
+                                    device_id=operation.device_id,
+                                    agent_seq=None,
+                                    event_type="op_canceled",
+                                    payload={
+                                        "operation_id": target_operation_id,
+                                        "cancel_operation_id": operation.operation_id,
+                                        "cancel_status": cancel_status,
+                                    },
+                                    trace_id=operation.trace_id,
+                                    operation_id=target_operation_id,
+                                )
                     else:
                         await op_service.mark_succeeded(
                             operation_id=operation_id,

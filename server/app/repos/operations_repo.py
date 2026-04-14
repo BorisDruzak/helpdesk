@@ -276,6 +276,19 @@ class OperationsRepo:
             )
         
         return updated
+
+    async def clear_cancel_tracking(self, operation_id: str) -> bool:
+        """Clears transient cancel bookkeeping fields after terminal resolution."""
+        stmt = (
+            update(Operation)
+            .where(Operation.operation_id == operation_id)
+            .values(
+                status_before_cancel=None,
+                active_cancel_operation_id=None,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0
     
     async def get_operations(
         self,

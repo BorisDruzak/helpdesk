@@ -20,6 +20,8 @@ description: Run the right tests for pc_client changes. Use when running local c
 | Область | Команды (из корня репо) |
 |--------|--------------------------|
 | **Любая** | `python scripts/verify_workspace.py` |
+| **Полный локальный CI baseline** | `python scripts/run_ci_suite.py` |
+| **Self-hosted CI в отдельном checkout** | `python scripts/run_ci_in_temp_workspace.py` |
 | **Сервер (server/)** | `python -m pytest server/tests/ -v --tb=short` (или точечно: `server/tests/test_*.py`) |
 | **Агент (pc_agent/)** | `python -m pytest pc_agent/tests/ -v --tb=short` |
 | **Agent self-update / launcher / Agent Updates UI** | `python -m pytest pc_agent/tests/ -v --tb=short`, `python -m pytest server/tests/test_p0_workbench_update_contracts.py -v --tb=short`, при затронутом `ui_bridge` — точечно `pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`, затем rebuild release artifact и canary update по playbook `pc-client-agent-updates` |
@@ -31,7 +33,7 @@ description: Run the right tests for pc_client changes. Use when running local c
 
 ## Pytest — важное
 
-- **Сервер:** тесты в `server/tests/`, фикстуры и миграции в `server/tests/conftest.py`. Для интеграционных тестов нужна тестовая БД: `TEST_DATABASE_URL` (по умолчанию `postgresql+asyncpg://...@127.0.0.1:5432/pc_support_test`). Миграции применяются фикстурой `run_migrations`.
+- **Сервер:** тесты в `server/tests/`, фикстуры и миграции в `server/tests/conftest.py`. Канонические env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`. По умолчанию harness создаёт isolated БД `pc_support_test_<runid>`; shared DB разрешается только явно через `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`.
 - **Агент:** тесты в `pc_agent/tests/`, без БД сервера.
 - Запуск из корня: `python -m pytest server/tests/` или `python -m pytest pc_agent/tests/` — так корректно резолвятся импорты.
 - Если падают только отдельные тесты — запустить точечно: `python -m pytest server/tests/test_integration_p0.py -v`.
@@ -40,6 +42,7 @@ description: Run the right tests for pc_client changes. Use when running local c
 
 1. `python scripts/verify_workspace.py`
 2. Pytest по затронутой области (server и/или pc_agent)
-3. При необходимости: deploy → start control/server на Linux → smoke → browser check → stop server
+3. При необходимости: `python scripts/run_ci_suite.py`
+4. При необходимости: deploy → start control/server на Linux → smoke → browser check → stop server
 
-Не пушить в GitHub без успешного минимума (verify + релевантные тесты).
+Не пушить в GitHub без успешного минимума (verify + релевантные тесты), а для deploy/release — без green CI artifact.

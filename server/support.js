@@ -4,6 +4,10 @@
  * but presents them as two operator-oriented workflows.
  */
 (function () {
+    const shared = window.PcClientWebShared;
+    if (!shared) {
+        throw new Error('PcClientWebShared is required');
+    }
     const AUTH_TOKEN_KEY = 'admin_auth_token';
     const USER_LOGIN_KEY = 'admin_user_login';
     const ROLE_KEY = 'admin_actor_role';
@@ -258,15 +262,7 @@
     }
 
     function authHeaders(includeContentType) {
-        const headers = {};
-        const token = getToken();
-        if (token) {
-            headers.Authorization = 'Bearer ' + token;
-        }
-        if (includeContentType) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return shared.authHeaders(includeContentType, AUTH_TOKEN_KEY);
     }
 
     function resolutionCodeMeaning(code) {
@@ -282,7 +278,7 @@
     }
 
     function boolLabel(value) {
-        return value ? 'Да' : 'Нет';
+        return shared.boolLabel(value);
     }
 
     async function ensureResolutionCodesLoaded() {
@@ -354,36 +350,15 @@
     }
 
     async function responseToJson(response) {
-        const text = await response.text();
-        if (!text || !text.trim()) {
-            return {};
-        }
-        try {
-            return JSON.parse(text);
-        } catch (error) {
-            const preview = text.slice(0, 120).replace(/\s+/g, ' ');
-            throw new Error('Сервер вернул не JSON. ' + preview);
-        }
+        return shared.responseToJson(response, 'Сервер вернул не JSON.');
     }
 
     function escapeHtml(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+        return shared.escapeHtml(value);
     }
 
     function parseServerDate(value) {
-        if (!value) {
-            return null;
-        }
-        const normalized = String(value)
-            .trim()
-            .replace(/\.(\d{3})\d+([+-]\d{2}:\d{2}|Z)$/i, '.$1$2');
-        const date = new Date(normalized);
-        return Number.isNaN(date.getTime()) ? null : date;
+        return shared.parseServerDate(value);
     }
 
     function dedupeTicketsById(tickets) {
@@ -403,11 +378,7 @@
     }
 
     function formatDate(value) {
-        const date = parseServerDate(value);
-        if (!date) {
-            return '—';
-        }
-        return date.toLocaleString('ru-RU');
+        return shared.formatDate(value);
     }
 
     function formatPresenceState(online, lastSeenAt, onlineText, offlineText) {

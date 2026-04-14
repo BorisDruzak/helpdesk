@@ -11,9 +11,12 @@ from aiohttp import FormData
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+import routes as routes_module
 from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module
 from utils.module_builder import build_module_package
 from utils.module_preflight import preflight_module_zip
+
+ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 
 @pytest.mark.asyncio
@@ -195,12 +198,19 @@ async def test_rollback_updates_desired_state(test_client, test_engine):
             }
         }
 
-    with patch('modules.handlers.send_ws_command', fake_send_ws_command):
-        response = await test_client.post('/api/rollback_module', json={
-            'device_id': device_id,
-            'name': module_name,
-            'actor_role': 'admin',
-        })
+    with patch.dict(
+        routes_module.handle_rollback_module.__globals__,
+        {"send_ws_command": fake_send_ws_command},
+    ):
+        response = await test_client.post(
+            '/api/rollback_module',
+            json={
+                'device_id': device_id,
+                'name': module_name,
+                'actor_role': 'admin',
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response.status == 200, await response.text()
     data = await response.json()
@@ -270,18 +280,25 @@ async def test_bulk_install_sets_desired_state_and_followup_sync(test_client, te
         issued_commands.append(kwargs["command"])
         return f'op-{len(issued_commands)}'
 
-    with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
-         patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)), \
-         patch('modules.handlers.MODULES_STORAGE_DIR', tmp_path):
-        module_path = tmp_path / module_name / '2.0.0' / 'module.zip'
-        module_path.parent.mkdir(parents=True, exist_ok=True)
-        module_path.write_bytes(zip_bytes)
-        response = await test_client.post('/api/modules/bulk_install', json={
-            'module_name': module_name,
-            'version': '2.0.0',
-            'device_ids': [device_id],
-            'replace_if_exists': False,
-        })
+    storage_root = routes_module.handle_bulk_install_modules.__globals__["MODULES_STORAGE_DIR"]
+    module_path = storage_root / module_name / '2.0.0' / 'module.zip'
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_bytes(zip_bytes)
+
+    with patch.dict(
+        routes_module.handle_bulk_install_modules.__globals__,
+        {"enqueue_command_async": fake_enqueue_command_async},
+    ):
+        response = await test_client.post(
+            '/api/modules/bulk_install',
+            json={
+                'module_name': module_name,
+                'version': '2.0.0',
+                'device_ids': [device_id],
+                'replace_if_exists': False,
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response.status == 202, await response.text()
     data = await response.json()
@@ -342,10 +359,14 @@ async def test_install_module_returns_conflict_when_archive_missing(test_client,
 
     with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
          patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
-        response = await test_client.post(f'/api/devices/{device_id}/modules/install', json={
-            'module_name': module_name,
-            'version': '1.0.0',
-        })
+        response = await test_client.post(
+            f'/api/devices/{device_id}/modules/install',
+            json={
+                'module_name': module_name,
+                'version': '1.0.0',
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response.status == 409, await response.text()
     data = await response.json()
@@ -382,10 +403,14 @@ async def test_install_builtin_module_is_noop(test_client, test_engine):
 
     with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
          patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
-        response = await test_client.post(f'/api/devices/{device_id}/modules/install', json={
-            'module_name': 'screen',
-            'version': '1.0.0',
-        })
+        response = await test_client.post(
+            f'/api/devices/{device_id}/modules/install',
+            json={
+                'module_name': 'screen',
+                'version': '1.0.0',
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response.status == 202, await response.text()
     data = await response.json()
@@ -423,11 +448,15 @@ async def test_bulk_install_builtin_module_is_noop(test_client, test_engine):
 
     with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async), \
          patch('modules.handlers.PolicyEngine.check_policy', return_value=SimpleNamespace(allow=True, reason=None, required_role=None)):
-        response = await test_client.post('/api/modules/bulk_install', json={
-            'module_name': 'screen',
-            'version': '1.0.0',
-            'device_ids': [device_id],
-        })
+        response = await test_client.post(
+            '/api/modules/bulk_install',
+            json={
+                'module_name': 'screen',
+                'version': '1.0.0',
+                'device_ids': [device_id],
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response.status == 202, await response.text()
     data = await response.json()
@@ -485,12 +514,19 @@ async def test_remove_last_version_marks_desired_absent(test_client, test_engine
         return f'op-{len(issued_commands)}'
 
     response = None
-    with patch('modules.handlers.enqueue_command_async', fake_enqueue_command_async):
-        response = await test_client.post(f'/api/devices/{device_id}/modules/remove_version', json={
-            'module_name': module_name,
-            'version': '1.0.0',
-            'actor_role': 'admin',
-        })
+    with patch.dict(
+        routes_module.handle_remove_module_version.__globals__,
+        {"enqueue_command_async": fake_enqueue_command_async},
+    ):
+        response = await test_client.post(
+            f'/api/devices/{device_id}/modules/remove_version',
+            json={
+                'module_name': module_name,
+                'version': '1.0.0',
+                'actor_role': 'admin',
+            },
+            headers=ADMIN_HEADERS,
+        )
 
     assert response is not None
     assert response.status == 202, await response.text()

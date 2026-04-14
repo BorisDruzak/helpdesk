@@ -1,74 +1,75 @@
 # PLANS.md
 
-Этот файл — канонический long-horizon артефакт для задач, которые:
+## Goal
 
-- идут дольше одного короткого сеанса;
-- затрагивают несколько подсистем;
-- требуют согласованных решений до правок;
-- нуждаются в handoff между запусками агента.
+- Довести первую production-волну hardening/modularization до состояния, где проект можно проверять и выпускать без ручной магии.
+- Получить предсказуемый baseline для `verify_workspace`, `server/tests`, `pc_agent/tests`, isolated test DB, self-hosted CI gate и актуальной документации.
 
-## Когда вести этот файл
+## Scope
 
-- Крупная фича или рефакторинг.
-- Миграции + код + docs + release.
-- Исследование, где решения принимаются не сразу.
-- Любая задача, для которой важно сохранить не чат, а актуальное состояние работы.
+- Входит:
+  - корневой pytest-контур и маркировка `unit` / `integration` / `manual` / `no_db`;
+  - isolated test DB с canonical env vars;
+  - CI artifacts и release/deploy gate;
+  - docs sync и архивирование устаревших roadmap/gap-analysis документов;
+  - удаление unreachable legacy runtime paths;
+  - точечная modularization самых перегруженных runtime-path.
+- Не входит:
+  - новые продуктовые helpdesk/LLM features;
+  - browser E2E в CI;
+  - смена основных HTTP/WS контрактов сверх уже закреплённого async `/api/tools/run`.
 
-## Как вести
+## Constraints
 
-Обновлять файл по мере движения задачи. Держать его коротким и практичным: только то, что помогает продолжить работу без восстановления контекста из диалога.
-
-## Шаблон
-
-### Goal
-
-- Что нужно получить в итоге.
-- Надёжная техпанель с внешним control-plane: server status, health block, полные логи, lifecycle API/actions и подтверждения в GUI.
-
-### Scope
-
-- Что входит в задачу.
-- Что явно не входит.
-- Входит: `server/control_plane.py`, `server/runtime_control.py`, техпанель `server/admin.*`, runtime-скрипты, docs/rules/skills, обязательные local + remote + browser проверки.
-- Не входит: новый отдельный desktop launcher вне Linux-runtime; управление сторонними сервисами вне server/agent/control.
-
-### Constraints
-
-- Инварианты, окружение, риски, правила deploy/verification.
 - Источник истины для правок: `C:\Users\admin-2\CodexProjects\pc_client`.
-- Linux lifecycle только через штатные скрипты; browser checks только на `http://192.168.100.17:8666/admin`.
-- После проверок основной сервер на Linux остановить, если не нужна явная работа дальше.
+- Linux-хост `altserver@192.168.100.17` остаётся местом self-hosted CI/release gate.
+- Обратную совместимость сохраняем только там, где она нужна для миграции уже существующих установок, токенов и SQLite-схем.
+- Любое новое release/deploy ограничение должно иметь явный emergency bypass.
 
-### Context
+## Decisions
 
-- Какие файлы, документы и скрипты канонические для этой задачи.
+- Shared DB `pc_support_test` больше не канон: по умолчанию тесты должны работать на уникальной БД `pc_support_test_<runid>`.
+- Shared test DB разрешается только при явном `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`.
+- Канонические test/CI env vars:
+  - `TEST_DATABASE_ADMIN_URL`
+  - `TEST_DATABASE_URL`
+  - `PC_CLIENT_ALLOW_SHARED_TEST_DB`
+- CI artifacts живут в `artifacts/ci/<sha>/`.
+- `deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию требуют green CI artifact; bypass только через `--skip-ci-check`.
+- Stale roadmap/gap-analysis документы выносятся в `docs/archive/` и больше не считаются каноном.
 
-### Decisions
+## Current State
 
-- Принятые решения и почему.
-- Runtime lifecycle вынесен в отдельный control-plane на `:8667`, чтобы `stop/restart` не убивали HTTP-обработчик, который сам же должен вернуть ответ.
-- Полные логи берутся из `journalctl` через runtime-control слой, а in-memory ring buffer остаётся быстрым источником alerts.
-- GUI требует confirm и reason для `stop/restart`, а все lifecycle actions пишутся в аудит.
+- Сделано:
+  - добавлен корневой `pytest.ini` и обновлены server markers;
+  - `pc_agent/tests/test_support_chat_reliability.py` выведен из auto-collection через `pytest.mark.manual`;
+  - `server/tests/conftest.py` переведён на isolated test DB-per-run и session-scoped engine;
+  - добавлены `requirements-ci.txt`, `scripts/ci_artifacts.py`, `scripts/run_ci_suite.py`;
+  - release/deploy scripts проверяют CI artifact;
+  - async contract `/api/tools/run` закреплён тестами;
+  - cancel-operation flow доведён до зелёного integration baseline;
+  - `server/server_old.py` и `server/tickets/service.py` удалены из активного runtime tree;
+  - docs archive/sync wave начата.
+- Осталось:
+  - синхронизировать канонические docs/CODEMAP после архивирования;
+  - прогнать `verify_workspace` и релевантные pytest после docs cleanup;
+  - отдельно оценить остаточные падения полного `server/tests` suite, если они ещё есть.
 
-### Plan
+## Verification
 
-- [x] Реализовать control-plane, runtime-control слой и CLI/remote wrappers.
-- [x] Расширить техпанель статусом сервера, health block, полными логами и confirm-модалкой.
-- [ ] Обновить docs/rules/skills и прогнать обязательные проверки.
+- Минимум:
+  - `python scripts/verify_workspace.py`
+  - `python -m pytest pc_agent/tests -m "not manual"`
+- Локально для server suite сейчас удобно:
+  - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/...`
+- Целевой CI baseline:
+  - `python scripts/run_ci_suite.py`
 
-### Verification
+## Handoff
 
-- Какие проверки обязательны.
-- Что уже прогнано.
-- Обязательные: `python scripts/verify_workspace.py`, релевантный pytest, remote deploy/start/smoke, browser check техпанели, stop server.
-- Уже прогнано: `py_compile`, `server/tests/test_admin_tech_api.py`, `server/tests/test_control_plane_api.py` (один параллельный прогон словил deadlock по test DB cleanup, нужен последовательный финальный rerun).
-
-### Handoff
-
-- Что сделано.
-- Что осталось.
-- Что блокирует.
-- Остаточные риски.
-- Сделано: основная реализация control-plane/runtime-control/GUI.
-- Осталось: финальные doc updates already in progress, затем последовательный verify/pytest и remote/browser-check.
-- Блокеров нет; есть только техническая оговорка про параллельный pytest на общей test DB.
+- Следующий пакет правок должен идти в порядке:
+  1. docs sync / CODEMAP / QUICK_LOOKUP;
+  2. `verify_workspace`;
+  3. выборочный или полный server pytest regression run;
+  4. только потом новые рефакторинги крупных файлов.
+- Ключевой риск: production-волна одновременно затрагивает тестовую инфраструктуру, release flow и крупные runtime-файлы, поэтому после каждого пакета изменений нужен повторный baseline-прогон.

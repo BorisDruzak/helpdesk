@@ -5,6 +5,8 @@ import pytest
 from websocket.agent_services import AgentMessageRouter
 from websocket.contexts import AgentConnectionContext, EnvelopeContext
 
+pytestmark = pytest.mark.no_db
+
 
 class _StubService:
     def __init__(self, result=None):
@@ -21,9 +23,10 @@ async def test_router_routes_handshake_to_service():
     handshake = _StubService(result=None)
     ack = _StubService()
     result = _StubService()
+    rpc = _StubService()
     outbox = _StubService()
     command = _StubService()
-    router = AgentMessageRouter(handshake, ack, result, outbox, command)
+    router = AgentMessageRouter(handshake, ack, result, rpc, outbox, command)
 
     ctx = AgentConnectionContext(
         ws=SimpleNamespace(),
@@ -44,6 +47,7 @@ async def test_router_returns_continue_for_outbox_true():
         handshake_service=_StubService(),
         command_ack_service=_StubService(),
         command_result_service=_StubService(),
+        rpc_response_service=_StubService(),
         outbox_ingest_service=_StubService(result=True),
         agent_command_service=_StubService(),
     )

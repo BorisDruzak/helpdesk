@@ -10,10 +10,17 @@
 - Если тема пересекает сервер и агент или неясно, где вход, откройте `docs/QUICK_LOOKUP.md`.
 - Для точечного поиска по агенту используйте `python scripts/agent_find.py "<ключевое слово>" --dir pc_agent`.
 
+### Truth baseline
+
+- Корневой pytest-контур: `pytest.ini` (markers `unit`, `integration`, `manual`, `no_db`).
+- Agent baseline: `python -m pytest pc_agent/tests -m "not manual"`.
+- Exploratory suite `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не входит в обычный CI.
+- Для совместного server+agent baseline используется `scripts/run_ci_suite.py`.
+
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|
-| Handshake / outbox / ACK | `pc_agent/ws_agent.py` | `pc_agent/core/sender.py`, `pc_agent/docs/PROTOCOL_V3.md` |
-| `run_tool` / команды | `pc_agent/core/orchestrator.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
+| Handshake / outbox / ACK | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py` | `pc_agent/core/sender.py`, `pc_agent/docs/PROTOCOL_V3.md` |
+| `run_tool` / команды | `pc_agent/core/orchestrator.py`, `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
 | Auth / bootstrap | `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py` | `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
 | Self-update / launcher / rollout | `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` | `pc_agent/docs/SELF_UPDATE.md`, `pc_agent/launcher/installer.py`, `server/docs/AGENT_UPDATES_API.md` |
 | Always-on / tray / runtime logs | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` | `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/tray_manager.py` |
@@ -26,7 +33,8 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown; при auth bootstrap умеет fallback lookup токена по `machine_id -> install_id -> legacy uuid`, после `Invalid token` переводит и GUI, и headless режим в automatic reprovision, и не фиксирует вечный local reject при `DEVICE_ARCHIVED` |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown; при auth bootstrap умеет fallback lookup токена по `machine_id -> install_id -> legacy uuid`, после `Invalid token` переводит и GUI, и headless режим в automatic reprovision, и не фиксирует вечный local reject при `DEVICE_ARCHIVED`; long-running `run_tool` / `call_tool` dispatch теперь уходит в background tasks, чтобы агент мог принять `cancel_operation` без блокировки WS loop |
+| `pc_agent/ws_agent_runtime_helpers.py` | Вынесенные runtime helper-блоки `WSAgent`: restart/update-shutdown, scheduler RPC/runtime loop, auth bootstrap, reprovision/request-connection flow, форматирование uptime |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
 | `pc_agent/ui_gui/main.py` | Запуск Qt GUI, lifecycle окна, minimize-to-tray, start-hidden, явный exit path и cleanup локальных SSE/API ресурсов |
@@ -39,7 +47,8 @@
 ### 2.1 Ядро (core/)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/core/orchestrator.py` | Обработка команд: run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей |
+| `pc_agent/core/orchestrator.py` | Фасад orchestrator-команд: dispatch, run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей; cancel-operation flow доведён до канонического agent-side terminal результата и ticket event publish |
+| `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py`, `pc_agent/core/orchestrator_shared.py` | Helper-слой распила orchestrator: collect/job handlers и общий mojibake-safe logger для новых выносов |
 | `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries |
@@ -90,7 +99,7 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics |
-| `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, mark-read, локальные профили инициатора; detail refresh разделён на initial tail load, forward catch-up через `since_event_id` и reverse pagination вверх через `before_event_id`, с prepend history и сохранением viewport; список тикетов на `QListView` + модель |
+| `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, mark-read, локальные профили инициатора; detail refresh разделён на initial tail load, forward catch-up через `since_event_id` и reverse pagination вверх через `before_event_id`, с prepend history и сохранением viewport; список тикетов на `QListView` + модель; runtime path больше не использует deprecated chat client и работает через `TicketApiClient` как канонический GUI contract |
 | `pc_agent/ui_gui/tickets_list_model.py` | `TicketsListModel` и `TicketCardDelegate` — обновление строк без полного `clear()`, отрисовка карточек |
 | `pc_agent/ui_gui/ticket_format.py` | Подписи/цвета статусов, формат дат, отпечаток строки тикета для диффа модели |
 | `pc_agent/ui_gui/theme.py` | Общая тёплая палитра и QSS-фрагменты для `ChatPanel` и боковой панели профиля |
