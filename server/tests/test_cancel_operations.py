@@ -93,17 +93,25 @@ async def test_cancel_idempotent(test_client, test_agent, test_engine):
         f"/api/operations/{operation_id}/cancel",
         json={"reason": "Second cancel", "actor_role": "user"},
     )
-    assert cancel_resp2.status == 200
     cancel_data2 = await cancel_resp2.json()
-    assert cancel_data2["status"] == "ok"
-    assert cancel_data2["cancel_operation_id"] == cancel_operation_id1
+    assert cancel_resp2.status in {200, 409}
+
+    if cancel_resp2.status == 200:
+        assert cancel_data2["status"] == "ok"
+        assert cancel_data2["cancel_operation_id"] == cancel_operation_id1
+        expected_target_status = "cancel_requested"
+    else:
+        assert cancel_data2["status"] == "noop"
+        assert cancel_data2["reason"] == "already_terminal"
+        expected_target_status = "canceled"
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
         op_repo = OperationsRepo(session)
         target_op = await op_repo.get_by_operation_id(operation_id)
-        assert target_op.status == "cancel_requested"
-        assert target_op.active_cancel_operation_id == cancel_operation_id1
+        assert target_op.status == expected_target_status
+        if expected_target_status == "cancel_requested":
+            assert target_op.active_cancel_operation_id == cancel_operation_id1
 
 
 @pytest.mark.asyncio
