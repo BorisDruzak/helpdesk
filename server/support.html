@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260414a">
+    <link rel="stylesheet" href="/support.css?v=20260414b">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -56,17 +56,22 @@
                 <section class="workspace-shell-head">
                     <section id="queueCommandDeck" class="support-card queue-command-deck">
                         <div id="workspaceModeSwitch" class="workspace-mode-board" role="tablist" aria-label="Режим работы поддержки">
-                            <button class="workspace-mode-board-card active" type="button" data-workspace-view="queue">
-                                <span class="workspace-mode-board-label">Очередь тикетов</span>
-                                <strong class="workspace-mode-board-title">Рабочая доска</strong>
-                                <span class="workspace-mode-board-note">Фильтры, поиск, сортировка и вся очередь на одном полотне.</span>
-                            </button>
-                            <button class="workspace-mode-board-card workspace-mode-board-card-ticket" type="button" data-workspace-view="ticket">
-                                <span class="workspace-mode-board-label">Рабочий тикет</span>
-                                <strong id="selectedTicketTitle" class="workspace-mode-board-title">Тикет не выбран</strong>
-                                <span class="workspace-mode-board-note">Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.</span>
+                            <section class="workspace-mode-board-card workspace-mode-board-card-queue" data-mode-card="queue">
+                                <button class="workspace-mode-board-toggle active" type="button" data-workspace-view="queue">
+                                    <span class="workspace-mode-board-label">Очередь тикетов</span>
+                                    <strong class="workspace-mode-board-title">Рабочая доска</strong>
+                                    <span class="workspace-mode-board-note">Фильтры, поиск, сортировка и вся очередь на одном полотне.</span>
+                                </button>
+                                <div id="queueHeadSummaryStrip" class="queue-summary-strip workspace-mode-summary"></div>
+                            </section>
+                            <section class="workspace-mode-board-card workspace-mode-board-card-ticket" data-mode-card="ticket">
+                                <button class="workspace-mode-board-toggle" type="button" data-workspace-view="ticket">
+                                    <span class="workspace-mode-board-label">Рабочий тикет</span>
+                                    <strong id="selectedTicketTitle" class="workspace-mode-board-title">Тикет не выбран</strong>
+                                    <span class="workspace-mode-board-note">Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.</span>
+                                </button>
                                 <div id="selectedTicketMeta" class="selected-ticket-meta workspace-ticket-meta"></div>
-                            </button>
+                            </section>
                         </div>
                         <div class="queue-command-head">
                             <div class="queue-command-title">
@@ -75,21 +80,19 @@
                             </div>
                             <div id="queueHeadBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
-                        <div id="queueHeadScopeDock" class="queue-scope-dock"></div>
-                        <div id="queueHeadSummaryStrip" class="queue-summary-strip"></div>
                     </section>
                 </section>
 
                 <section id="queueDesk" class="workspace-desk queue-desk">
                     <section class="support-card queue-search-sort-card">
                         <div class="queue-toolbar-head">
-                            <div>
-                                <p class="section-eyebrow">Поиск и порядок</p>
-                                <h3>Найти нужный тикет</h3>
-                            </div>
+                            <p class="section-eyebrow">Поиск и порядок</p>
                             <div id="queueBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
-                        <div id="queueSearchSortDock" class="queue-search-sort-dock"></div>
+                        <div class="queue-search-sort-rail">
+                            <div id="queueHeadScopeDock" class="queue-scope-dock queue-scope-dock-compact"></div>
+                            <div id="queueSearchSortDock" class="queue-search-sort-dock"></div>
+                        </div>
                     </section>
 
                     <div class="queue-desk-grid">
@@ -144,9 +147,12 @@
                             </section>
 
                             <section id="workPane" class="stage-pane hidden">
-                                <div id="chatWindowShell" class="embedded-ticket-shell">
-                                    <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета…</div>
-                                    <iframe id="embeddedTicketFrame" class="embedded-ticket-frame" title="Ticket Chat"></iframe>
+                                <div class="work-pane-layout">
+                                    <div id="chatWindowShell" class="embedded-ticket-shell">
+                                        <div id="embeddedTicketPlaceholder" class="embedded-ticket-placeholder">Загрузка чата тикета…</div>
+                                        <iframe id="embeddedTicketFrame" class="embedded-ticket-frame" title="Ticket Chat"></iframe>
+                                    </div>
+                                    <section id="ticketCommandDock" class="ticket-command-dock work-ticket-command-dock"></section>
                                 </div>
                             </section>
 
@@ -177,8 +183,6 @@
                                     <h2>Контекст и инструменты</h2>
                                 </div>
                             </div>
-
-                            <section id="ticketCommandDock" class="ticket-command-dock"></section>
 
                             <div class="drawer-tabs" id="drawerTabs">
                                 <button class="drawer-tab active" type="button" data-tab="context">Контекст</button>
@@ -255,6 +259,6 @@
 
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
-    <script src="/support.js?v=20260414a"></script>
+    <script src="/support.js?v=20260414b"></script>
 </body>
 </html>

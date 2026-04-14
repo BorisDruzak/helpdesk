@@ -16,7 +16,7 @@
     const CONTEXT_ACCORDIONS_KEY = 'support_workspace_context_accordions';
     const CHAT_WINDOW_SIZE_KEY = 'support_workspace_chat_window_size';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260414a';
+    const SUPPORT_SHELL_VERSION = '20260414b';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -203,6 +203,7 @@
         } else {
             shell.style.height = '';
         }
+        syncWorkbenchHeight();
     }
 
     function rememberChatWindowSize() {
@@ -215,6 +216,21 @@
             height: Math.round(shell.getBoundingClientRect().height),
         };
         writeSessionObject(CHAT_WINDOW_SIZE_KEY, state.chatWindowSize);
+        syncWorkbenchHeight();
+    }
+
+    function syncWorkbenchHeight() {
+        const shell = byId('chatWindowShell');
+        const workbench = byId('ticketWorkbench');
+        if (!workbench) {
+            return;
+        }
+        if (state.workspaceView !== WORKSPACE_VIEWS.TICKET || currentMode() !== 'work' || !shell) {
+            workbench.style.removeProperty('--ticket-panel-height');
+            return;
+        }
+        const height = Math.max(560, Math.round(shell.getBoundingClientRect().height || 0));
+        workbench.style.setProperty('--ticket-panel-height', height + 'px');
     }
 
     function normalizePanelMode(value) {
@@ -516,9 +532,15 @@
             const disabled = view === WORKSPACE_VIEWS.TICKET && !hasTicket;
             button.classList.toggle('active', view === state.workspaceView);
             button.setAttribute('data-disabled', disabled ? 'true' : 'false');
+            const parent = button.closest('.workspace-mode-board-card');
+            if (parent) {
+                parent.setAttribute('data-active', view === state.workspaceView ? 'true' : 'false');
+                parent.setAttribute('data-disabled', disabled ? 'true' : 'false');
+            }
         });
         byId('queueDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.QUEUE);
         byId('ticketDesk')?.classList.toggle('hidden', state.workspaceView !== WORKSPACE_VIEWS.TICKET);
+        syncWorkbenchHeight();
     }
 
     function setSidebarMode(mode, options) {
