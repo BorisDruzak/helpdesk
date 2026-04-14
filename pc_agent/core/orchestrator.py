@@ -19,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Any, List, Optional
 from time import perf_counter
-from loguru import logger as _logger
 import hashlib
 try:
     import aiohttp
@@ -52,9 +51,9 @@ from pc_agent.core.orchestrator_job_helpers import (
     handle_start_job as helper_handle_start_job,
     handle_stop_job as helper_handle_stop_job,
 )
+from pc_agent.core.orchestrator_shared import logger
 from utils.toolset_hash import compute_toolset_hash
 import inspect
-import os
 
 # Импорт ValidationError из pydantic (опционально)
 try:
@@ -63,35 +62,6 @@ except ImportError:
     ValidationError = None
 
 
-def _decode_mojibake_once(text: str) -> str:
-    if not isinstance(text, str):
-        return text
-    if not any(marker in text for marker in ("Ð", "Ñ", "â", "€", "™")):
-        return text
-    try:
-        return text.encode("latin-1").decode("utf-8")
-    except UnicodeError:
-        return text
-
-
-class _MojibakeFixingLogger:
-    def __init__(self, base_logger):
-        self._base_logger = base_logger
-
-    def __getattr__(self, name):
-        attr = getattr(self._base_logger, name)
-        if not callable(attr):
-            return attr
-
-        def wrapper(*args, **kwargs):
-            if args and isinstance(args[0], str):
-                args = (_decode_mojibake_once(args[0]), *args[1:])
-            return attr(*args, **kwargs)
-
-        return wrapper
-
-
-logger = _MojibakeFixingLogger(_logger)
 BUILTIN_PACKAGE_INSTALL_MODULES = {name.lower() for name in CORE_ENABLED_MODULES}
 
 
@@ -738,254 +708,9 @@ class AgentOrchestrator:
             raise
     
     async def _handle_collect(self, modules: Optional[List[str]], meta: ToolMeta) -> ToolResponse:
+        """Delegate collect handling to the extracted helper."""
         return await helper_handle_collect(self, modules, meta)
-        """
-        Обработка команды 'collect' - сбор данных с модулей.
-        
-        Args:
-            modules: Список имен модулей для сбора (опционально)
-                    Если None - собираются данные со всех модулей
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse с собранными данными от модулей
-        """
-        try:
-            warnings = []
-            
-            # Определяем, с каких модулей собирать данные
-            if modules:
-                # Фильтруем только запрошенные модули
-                collectors_to_run = [
-                    m for m in self.loaded_modules 
-                    if m.name in modules
-                ]
-                
-                # Проверяем, все ли модули найдены
-                missing_modules = set(modules) - {m.name for m in collectors_to_run}
-                if missing_modules:
-                    warning_msg = f"Модули не найдены: {missing_modules}"
-                    logger.warning(warning_msg)
-                    warnings.append(warning_msg)
-            else:
-                # Собираем данные со всех загруженных модулей
-                collectors_to_run = self.loaded_modules
-            
-            if not collectors_to_run:
-                return fail(
-                    code="COLLECT_FAILED",
-                    message='Нет доступных модулей для сбора данных',
-                    meta=meta
-                )
-            
-            logger.info(f"Запускаю сбор данных с модулей: {[m.name for m in collectors_to_run]}")
-            
-            # Собираем версии модулей для meta
-            module_versions = {}
-            for collector in collectors_to_run:
-                module_versions[collector.name] = collector.version()
-            
-            # Запускаем сбор данных параллельно
-            tasks = [collector.collect() for collector in collectors_to_run]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Формируем результат в структурированном формате
-            collected_data = {}
-            errors_list = []
-            success_count = 0
-            artifact_intents: list[ArtifactIntent] = []
-            cleanup_paths: list[pathlib.Path] = []
-            
-            for collector, result in zip(collectors_to_run, results):
-                if isinstance(result, Exception):
-                    # Модуль упал с ошибкой
-                    error_info = ErrorInfo(
-                        code="MODULE_COLLECT_FAILED",
-                        message=f"Модуль {collector.name} завершился с ошибкой: {str(result)}",
-                        details={
-                            "module_name": collector.name,
-                            "exception_type": type(result).__name__,
-                            "exception_message": str(result)
-                        },
-                        retriable=True
-                    )
-                    
-                    collected_data[collector.name] = {
-                        "ok": False,
-                        "observations": {},
-                        "error": error_info.model_dump()
-                    }
-                    
-                    error_msg = f"module {collector.name} failed: {str(result)}"
-                    logger.warning(error_msg)
-                    warnings.append(error_msg)
-                    errors_list.append(error_info)
-                else:
-                    # Модуль успешно собрал данные
-                    # Копируем result для обработки служебных ключей
-                    observations = result.copy() if isinstance(result, dict) else result
-                    
-                    # Обрабатываем _artifacts
-                    if isinstance(result, dict) and "_artifacts" in result:
-                        artifacts_data = result["_artifacts"]
-                        if isinstance(artifacts_data, list):
-                            for item in artifacts_data:
-                                if isinstance(item, dict) and "local_path" in item:
-                                    try:
-                                        artifact_intent = ArtifactIntent(
-                                            local_path=pathlib.Path(item["local_path"]),
-                                            name=item.get("name"),
-                                            mime=item.get("mime"),
-                                            kind=item.get("kind"),
-                                            ttl_seconds=item.get("ttl_seconds"),
-                                            meta=item.get("meta", {})
-                                        )
-                                        artifact_intents.append(artifact_intent)
-                                        logger.debug(f"Добавлен артефакт для загрузки: {item['local_path']}")
-                                    except Exception as e:
-                                        logger.warning(f"Ошибка создания ArtifactIntent для {item.get('local_path')}: {e}")
-                        # Удаляем служебный ключ из observations
-                        del observations["_artifacts"]
-                    
-                    # Обрабатываем _cleanup_paths
-                    if isinstance(result, dict) and "_cleanup_paths" in result:
-                        cleanup_data = result["_cleanup_paths"]
-                        if isinstance(cleanup_data, list):
-                            for path_str in cleanup_data:
-                                try:
-                                    cleanup_path = pathlib.Path(path_str)
-                                    cleanup_paths.append(cleanup_path)
-                                    logger.debug(f"Добавлен путь для очистки: {path_str}")
-                                except Exception as e:
-                                    logger.warning(f"Ошибка создания Path для cleanup: {path_str}: {e}")
-                        # Удаляем служебный ключ из observations
-                        del observations["_cleanup_paths"]
-                    
-                    collected_data[collector.name] = {
-                        "ok": True,
-                        "observations": observations
-                    }
-                    success_count += 1
-            
-            failed_count = len(errors_list)
-            logger.success(f"Собраны данные от {success_count}/{len(collectors_to_run)} модулей (успешно: {success_count}, ошибок: {failed_count})")
-            
-            # Обновляем meta с версиями модулей
-            meta.module_versions = module_versions
-            
-            observations = {
-                'results': collected_data
-            }
-            
-            # Загружаем артефакты, если они есть
-            uploaded_artifacts = []
-            upload_errors = []
-            
-            if artifact_intents:
-                try:
-                    # Создаем uploader и ArtifactManager
-                    if self.identity_manager:
-                        uploader = get_uploader(identity_manager=self.identity_manager)
-                    else:
-                        # Пытаемся использовать уже инициализированный uploader
-                        uploader = get_uploader()
-                    
-                    artifact_manager = ArtifactManager(uploader)
-                    
-                    logger.info(f"📤 Начинаю загрузку {len(artifact_intents)} артефактов...")
-                    uploaded_artifacts, upload_errors = await artifact_manager.upload_many(artifact_intents)
-                    
-                    logger.success(f"OK Загружено артефактов: {len(uploaded_artifacts)}/{len(artifact_intents)}")
-                    
-                    if upload_errors:
-                        logger.warning(f"вљ пёЏ  Ошибок загрузки: {len(upload_errors)}")
-                        # Добавляем ошибки загрузки в warnings и errors_list
-                        for upload_error in upload_errors:
-                            warnings.append(f"Ошибка загрузки артефакта: {upload_error.message}")
-                            errors_list.append(upload_error)
-                
-                except Exception as e:
-                    error_msg = f"Ошибка при загрузке артефактов: {e}"
-                    logger.error(f"ERROR {error_msg}")
-                    warnings.append(error_msg)
-                    upload_error_info = ErrorInfo(
-                        code="ARTIFACT_UPLOAD_SYSTEM_ERROR",
-                        message=error_msg,
-                        details={"exception_type": type(e).__name__, "exception_message": str(e)},
-                        retriable=True
-                    )
-                    errors_list.append(upload_error_info)
-            
-            # Очистка временных файлов
-            if cleanup_paths:
-                logger.info(f"Очистка {len(cleanup_paths)} временных файлов...")
-                for cleanup_path in cleanup_paths:
-                    try:
-                        if cleanup_path.exists():
-                            cleanup_path.unlink()
-                            logger.debug(f"OK Удален временный файл: {cleanup_path}")
-                        else:
-                            logger.debug(f"Файл уже не существует: {cleanup_path}")
-                    except Exception as e:
-                        # Ошибки удаления - только warning, не fail
-                        warning_msg = f"Не удалось удалить временный файл {cleanup_path}: {e}"
-                        logger.warning(warning_msg)
-                        warnings.append(warning_msg)
-            
-            # Определяем итоговый статус с учетом ошибок загрузки артефактов
-            # Если есть ошибки upload, но сбор данных есть - статус может стать partial
-            has_upload_errors = len(upload_errors) > 0
-            has_data = success_count > 0
-            
-            # Если есть ошибки, но хотя бы один модуль успешен - partial
-            # Если все модули упали - error
-            # Если все успешны - success
-            # Если есть ошибки загрузки артефактов, но данные есть - partial
-            if errors_list and success_count > 0:
-                # Частичный успех: есть и успешные, и неуспешные модули
-                data = ToolData(
-                    observations=observations,
-                    artifacts=uploaded_artifacts,
-                    warnings=warnings,
-                    errors=errors_list
-                )
-                result = partial(data=data, meta=meta, warnings=warnings, errors=errors_list)
-            elif errors_list and success_count == 0:
-                # Все модули упали
-                result = fail(
-                    code="ALL_MODULES_FAILED",
-                    message=f"Все модули завершились с ошибками ({len(errors_list)} модулей)",
-                    meta=meta,
-                    details={"module_errors": [e.model_dump() for e in errors_list]},
-                    retriable=True
-                )
-            elif has_upload_errors and has_data:
-                # Есть ошибки загрузки артефактов, но данные собраны - partial
-                data = ToolData(
-                    observations=observations,
-                    artifacts=uploaded_artifacts,
-                    warnings=warnings,
-                    errors=errors_list if errors_list else []
-                )
-                result = partial(data=data, meta=meta, warnings=warnings, errors=errors_list if errors_list else [])
-            else:
-                # Все модули успешны и артефакты загружены (или их нет)
-                data = ToolData(
-                    observations=observations,
-                    artifacts=uploaded_artifacts,
-                    warnings=warnings if warnings else []
-                )
-                result = ok(data=data, meta=meta)
-            
-            # Логирование для подтверждения отсутствия дублей в outbox
-            # Запись в outbox будет выполнена только один раз в handle_command
-            logger.info(f"Collect completed: modules_ok={success_count}, modules_failed={failed_count}, outbox_written=0 (будет записано в handle_command)")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Ошибка в _handle_collect: {e}")
-            raise
-    
+
     async def _handle_list_modules(self, meta: ToolMeta) -> ToolResponse:
         """
         Обработка команды 'list_modules' - возвращает список доступных модулей.
@@ -3638,293 +3363,34 @@ class AgentOrchestrator:
         device_id: Optional[str],
         meta: ToolMeta
     ) -> ToolResponse:
+        """Delegate job start handling to the extracted helper."""
         return await helper_handle_start_job(self, job_type, params, actor_role, device_id, meta)
-        """
-        Обработка команды 'start_job' - запуск фоновой задачи.
-        
-        Args:
-            job_type: Тип задачи (например, "chat_echo")
-            params: Параметры задачи
-            actor_role: Роль актора для проверки прав доступа
-            device_id: Идентификатор устройства
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse с результатом запуска задачи
-        """
-        try:
-            # Проверка прав доступа
-            # admin может запускать любые job
-            # support может запускать support_chat и support_ticket
-            # agent может запускать support_chat и support_ticket (для инициации чата с поддержкой)
-            if actor_role == "admin":
-                # admin имеет доступ ко всем job
-                pass
-            elif actor_role == "support" and job_type in ["support_chat", "support_ticket"]:
-                # support может запускать только support_chat и support_ticket
-                pass
-            elif actor_role == "agent" and job_type in ["support_chat", "support_ticket"]:
-                # agent может запускать support_chat и support_ticket для инициации чата
-                pass
-            else:
-                return fail(
-                    code="FORBIDDEN",
-                    message="Admin only" if actor_role not in ["support", "agent"] else f"{actor_role} role can only start support_chat and support_ticket jobs",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка наличия job_manager
-            if not self.job_manager:
-                return fail(
-                    code="JOB_MANAGER_NOT_ATTACHED",
-                    message="JobManager not attached to orchestrator",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка обязательных параметров
-            if not job_type:
-                return fail(
-                    code="INVALID_REQUEST",
-                    message='Не указан тип задачи (поле "job_type")',
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Используем device_id из параметра или fallback на agent_uuid
-            final_device_id = device_id or self.agent_uuid or "unknown"
-            
-            logger.info(f"Запуск задачи: job_type={job_type}, actor_role={actor_role}, device_id={final_device_id}")
-            
-            # Запускаем задачу через JobManager
-            job_result = await self.job_manager.start_job(
-                job_type=job_type,
-                device_id=final_device_id,
-                actor_role=actor_role,
-                params=params
-            )
-            
-            # Формируем ответ в требуемом формате: payload.data.result.job_id
-            result_data = {
-                "ok": True,
-                "job_id": job_result.get("job_id"),
-                "job_type": job_result.get("job_type")
-            }
-            
-            # Используем поле result вместо observations для прямого доступа к job_id
-            data = ToolData(result=result_data)
-            return ok(data=data, meta=meta)
-            
-        except Exception as e:
-            error_msg = f"Ошибка запуска задачи: {str(e)}"
-            logger.error(error_msg)
-            logger.exception(e)
-            return fail(
-                code="START_JOB_FAILED",
-                message=error_msg,
-                meta=meta,
-                details={"exception_type": type(e).__name__},
-                retriable=True
-            )
-    
+
     async def _handle_stop_job(
         self,
         job_id: Optional[str],
         actor_role: str,
         meta: ToolMeta
     ) -> ToolResponse:
+        """Delegate job stop handling to the extracted helper."""
         return await helper_handle_stop_job(self, job_id, actor_role, meta)
-        """
-        Обработка команды 'stop_job' - остановка фоновой задачи.
-        
-        Args:
-            job_id: Идентификатор задачи
-            actor_role: Роль актора для проверки прав доступа
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse с результатом остановки задачи
-        """
-        try:
-            # Проверка прав доступа: только admin
-            if actor_role != "admin":
-                return fail(
-                    code="FORBIDDEN",
-                    message="Admin only",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка наличия job_manager
-            if not self.job_manager:
-                return fail(
-                    code="JOB_MANAGER_NOT_ATTACHED",
-                    message="JobManager not attached to orchestrator",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка обязательных параметров
-            if not job_id:
-                return fail(
-                    code="INVALID_REQUEST",
-                    message='Не указан идентификатор задачи (поле "job_id")',
-                    meta=meta,
-                    retriable=False
-                )
-            
-            logger.info(f"Остановка задачи: job_id={job_id}, actor_role={actor_role}")
-            
-            # Останавливаем задачу через JobManager
-            result = await self.job_manager.stop_job(job_id)
-            
-            if "error" in result:
-                return fail(
-                    code="JOB_NOT_FOUND",
-                    message=f"Задача не найдена: {job_id}",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            observations = {
-                "job_id": result.get("job_id"),
-                "status": result.get("status")
-            }
-            
-            data = ToolData(observations=observations)
-            return ok(data=data, meta=meta)
-            
-        except Exception as e:
-            error_msg = f"Ошибка остановки задачи: {str(e)}"
-            logger.error(error_msg)
-            logger.exception(e)
-            return fail(
-                code="STOP_JOB_FAILED",
-                message=error_msg,
-                meta=meta,
-                details={"exception_type": type(e).__name__},
-                retriable=True
-            )
-    
+
     async def _handle_get_job_status(
         self,
         job_id: Optional[str],
         meta: ToolMeta
     ) -> ToolResponse:
+        """Delegate job status handling to the extracted helper."""
         return await helper_handle_get_job_status(self, job_id, meta)
-        """
-        Обработка команды 'get_job_status' - получение статуса задачи.
-        
-        Args:
-            job_id: Идентификатор задачи
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse с информацией о задаче
-        """
-        try:
-            # Проверка наличия job_manager
-            if not self.job_manager:
-                return fail(
-                    code="JOB_MANAGER_NOT_ATTACHED",
-                    message="JobManager not attached to orchestrator",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка обязательных параметров
-            if not job_id:
-                return fail(
-                    code="INVALID_REQUEST",
-                    message='Не указан идентификатор задачи (поле "job_id")',
-                    meta=meta,
-                    retriable=False
-                )
-            
-            logger.info(f"Получение статуса задачи: job_id={job_id}")
-            
-            # Получаем статус задачи через JobManager
-            job_data = await self.job_manager.get_job_status(job_id)
-            
-            if not job_data:
-                return fail(
-                    code="JOB_NOT_FOUND",
-                    message=f"Задача не найдена: {job_id}",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            observations = {
-                "job": job_data
-            }
-            
-            data = ToolData(observations=observations)
-            return ok(data=data, meta=meta)
-            
-        except Exception as e:
-            error_msg = f"Ошибка получения статуса задачи: {str(e)}"
-            logger.error(error_msg)
-            logger.exception(e)
-            return fail(
-                code="GET_JOB_STATUS_FAILED",
-                message=error_msg,
-                meta=meta,
-                details={"exception_type": type(e).__name__},
-                retriable=True
-            )
-    
+
     async def _handle_list_jobs(
         self,
         limit: int,
         meta: ToolMeta
     ) -> ToolResponse:
+        """Delegate list-jobs handling to the extracted helper."""
         return await helper_handle_list_jobs(self, limit, meta)
-        """
-        Обработка команды 'list_jobs' - получение списка задач.
-        
-        Args:
-            limit: Максимальное количество записей
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse со списком задач
-        """
-        try:
-            # Проверка наличия job_manager
-            if not self.job_manager:
-                return fail(
-                    code="JOB_MANAGER_NOT_ATTACHED",
-                    message="JobManager not attached to orchestrator",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            logger.info(f"Получение списка задач: limit={limit}")
-            
-            # Получаем список задач через JobManager
-            result = await self.job_manager.list_jobs(limit=limit)
-            
-            observations = {
-                "jobs": result.get("jobs", []),
-                "count": len(result.get("jobs", []))
-            }
-            
-            data = ToolData(observations=observations)
-            return ok(data=data, meta=meta)
-            
-        except Exception as e:
-            error_msg = f"Ошибка получения списка задач: {str(e)}"
-            logger.error(error_msg)
-            logger.exception(e)
-            return fail(
-                code="LIST_JOBS_FAILED",
-                message=error_msg,
-                meta=meta,
-                details={"exception_type": type(e).__name__},
-                retriable=True
-            )
-    
+
     async def _handle_job_send_event(
         self,
         job_id: Optional[str],
@@ -3932,113 +3398,13 @@ class AgentOrchestrator:
         actor_role: str,
         meta: ToolMeta
     ) -> ToolResponse:
+        """Delegate job event delivery to the extracted helper."""
         return await helper_handle_job_send_event(self, job_id, event, actor_role, meta)
-        """
-        Обработка команды 'job_send_event' - доставка события в задачу.
-        
-        Args:
-            job_id: Идентификатор задачи (chat_job_id, например support_chat job_id)
-            event: Словарь с событием
-            actor_role: Роль актора для проверки прав доступа
-            meta: Метаданные выполнения команды
-        
-        Returns:
-            ToolResponse с результатом доставки события
-        
-        Note:
-            Этот метод НЕ завершает job_id. Завершается только command_job_id
-            (job выполнения команды) в общем wrapper handle_command.
-        """
-        try:
-            # Проверка прав доступа: только admin или support
-            if actor_role != "admin" and actor_role != "support":
-                return fail(
-                    code="FORBIDDEN",
-                    message="Admin or support only",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка наличия job_manager
-            if not self.job_manager:
-                return fail(
-                    code="JOB_MANAGER_NOT_READY",
-                    message="JobManager not ready",
-                    meta=meta,
-                    retriable=False
-                )
-            
-            # Проверка обязательных параметров
-            if not job_id or event is None:
-                return fail(
-                    code="INVALID_REQUEST",
-                    message='Не указан job_id или event',
-                    meta=meta,
-                    retriable=False
-                )
-            
-            logger.info(f"Доставка события в задачу: job_id={job_id}, actor_role={actor_role}")
-            
-            # Доставляем событие через JobManager
-            res = await self.job_manager.deliver_event(job_id, event)
-            
-            if not res.get("ok", False):
-                error_code = res.get("error", "JOB_NOT_FOUND")
-                return fail(
-                    code=error_code,
-                    message=f"Задача не найдена: {job_id}",
-                    meta=meta,
-                    retriable=False,
-                    details={
-                        "chat_job_id": job_id,
-                        "message_id": event.get("message_id") if event else None
-                    }
-                )
-            
-            # Пробрасываем observations 1-в-1 из deliver_event
-            data = ToolData(observations=res)
-            return ok(data=data, meta=meta)
-            
-        except Exception as e:
-            error_msg = f"Ошибка доставки события: {str(e)}"
-            logger.error(error_msg)
-            logger.exception(e)
-            return fail(
-                code="JOB_SEND_EVENT_FAILED",
-                message=error_msg,
-                meta=meta,
-                details={"exception_type": type(e).__name__},
-                retriable=True
-            )
-    
+
     def _format_uptime(self, seconds: float) -> str:
+        """Delegate uptime formatting to the extracted helper."""
         return helper_format_uptime(seconds)
-        """
-        Форматирует uptime в человекочитаемый формат.
-        
-        Args:
-            seconds: Количество секунд uptime
-        
-        Returns:
-            Строка вида "1д 2ч 30м 15с"
-        """
-        days = int(seconds // 86400)
-        hours = int((seconds % 86400) // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        
-        parts = []
-        if days > 0:
-            parts.append(f"{days}Рґ")
-        if hours > 0:
-            parts.append(f"{hours}С‡")
-        if minutes > 0:
-            parts.append(f"{minutes}м")
-        if secs > 0 or not parts:
-            parts.append(f"{secs}с")
-        
-        return " ".join(parts)
-    
+
     async def shutdown(self) -> None:
         """
         Корректное завершение работы оркестратора.
