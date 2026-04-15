@@ -28,18 +28,25 @@ from app.db import engine as db_engine_module
 from tech.dismiss_store import clear_dismissed_alerts
 from tech.log_buffer import clear_log_records
 
-DEFAULT_SHARED_TEST_DATABASE_URL = (
-    "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test"
-)
-DEFAULT_TEST_DATABASE_ADMIN_URL = (
-    "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres"
-)
 TEST_DATABASE_PREFIX = "pc_support_test_"
 SHARED_TEST_DATABASE_NAME = "pc_support_test"
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
+
+
+def _default_runtime_database_url() -> str:
+    runtime_url = os.getenv("DATABASE_URL")
+    if runtime_url:
+        return runtime_url
+    if os.name == "nt":
+        return "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_client"
+    return "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_client"
+
+
+def _default_test_database_url(database_name: str) -> str:
+    return _render_url(make_url(_default_runtime_database_url()).set(database=database_name))
 
 
 def _clear_agent_runtime_modules() -> None:
@@ -111,7 +118,7 @@ def _validate_test_database_name(db_name: str) -> None:
 def _resolve_test_database_urls() -> tuple[str, str, bool]:
     explicit_test_url = os.getenv("TEST_DATABASE_URL")
     if _shared_test_db_allowed():
-        shared_url = explicit_test_url or DEFAULT_SHARED_TEST_DATABASE_URL
+        shared_url = explicit_test_url or _default_test_database_url(SHARED_TEST_DATABASE_NAME)
         verify_test_database(shared_url, allow_shared=True)
         return shared_url, _resolve_admin_url(shared_url), True
 
@@ -119,7 +126,7 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
         verify_test_database(explicit_test_url, allow_shared=False)
         return explicit_test_url, _resolve_admin_url(explicit_test_url), False
 
-    admin_url = os.getenv("TEST_DATABASE_ADMIN_URL", DEFAULT_TEST_DATABASE_ADMIN_URL)
+    admin_url = os.getenv("TEST_DATABASE_ADMIN_URL", _default_test_database_url("postgres"))
     generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
     test_url = _render_url(make_url(admin_url).set(database=generated_name))
     return test_url, admin_url, False

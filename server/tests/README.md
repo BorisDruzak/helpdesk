@@ -26,6 +26,9 @@
 - `TEST_DATABASE_URL` — явный DSN test DB, если нужен override.
 - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1` — разрешает legacy shared DB только явно.
 
+Если `TEST_DATABASE_*` не заданы, harness теперь по умолчанию наследует host/user/port от runtime `DATABASE_URL`.
+Это важно для Linux-стенда, где PostgreSQL доступен по loopback, а не по внешнему адресу хоста.
+
 Поведение по умолчанию:
 
 1. `conftest.py` создаёт уникальную БД вида `pc_support_test_<runid>`.
