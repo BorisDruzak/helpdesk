@@ -535,6 +535,15 @@
         select.value = TOOL_TEMPLATE_OPTIONS.some((item) => item.key === currentValue) ? currentValue : "blank";
     }
 
+    async function refreshOuterModuleInstallViews() {
+        if (typeof window.loadModulesList === "function") {
+            await window.loadModulesList();
+        }
+        if (typeof window.updateDeployModuleSelect === "function") {
+            window.updateDeployModuleSelect();
+        }
+    }
+
     function bindEvents() {
         populateToolTemplateOptions();
         byId("modules-workbench-refresh-btn")?.addEventListener("click", () => load());
@@ -1385,6 +1394,7 @@
             }
             setMessage("success", `Модуль ${data.module_name}/${data.version} сохранён в server registry.`);
             await load();
+            await refreshOuterModuleInstallViews();
             state.selectedFamily = data.module_name;
             state.selectedVersion = data.version;
             await loadVersionDetail(data.module_name, data.version);
@@ -1411,6 +1421,7 @@
             }
             setMessage("success", `Приоритетная версия для ${state.selectedFamily} обновлена: ${state.selectedVersion}.`);
             await load();
+            await refreshOuterModuleInstallViews();
         } catch (error) {
             setMessage("error", error.message);
         }
