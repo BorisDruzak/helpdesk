@@ -10,10 +10,20 @@ Implements policy checks based on:
 This is the first line of defense before creating operations.
 Agent-side policy check remains as second line of defense.
 """
+import sys
+from pathlib import Path
 from typing import Optional, Dict, Any
 from loguru import logger
 
 from core.tool_metadata import ToolMetadata, PolicyRiskLevel
+
+try:
+    from shared.tool_contracts import normalize_risk_level
+except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
+    repo_root = str(Path(__file__).resolve().parents[2])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from shared.tool_contracts import normalize_risk_level
 
 
 class PolicyDecision:
@@ -274,11 +284,9 @@ class PolicyEngine:
                         allow_roles = ["user", "agent", "llm", "support", "admin"]
                     requires_consent = False
                 return ToolMetadata(
-                    risk_level=metadata_dict.get("risk_level", "safe_read"),
+                    risk_level=normalize_risk_level(metadata_dict.get("risk_level", "safe_read")),
                     scopes=metadata_dict.get("scopes", []),
                     requires_consent=requires_consent,
                     allow_roles=allow_roles
                 )
         return None
-
-

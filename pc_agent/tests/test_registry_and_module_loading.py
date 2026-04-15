@@ -113,6 +113,9 @@ class RegistryAliasTests(unittest.TestCase):
         self.assertIn("network_basic.resolve", flat_entry["aliases"])
         self.assertIn("network_basic.resolve_dns", flat_entry["aliases"])
         self.assertEqual(flat_entry["spec"]["output_schema"]["type"], "object")
+        self.assertEqual(flat_entry["spec"]["contract_version"], "1.0.0")
+        self.assertEqual(flat_entry["spec"]["lifecycle"], "stable")
+        self.assertEqual(flat_entry["spec"]["dependencies"], {})
 
 
 class ModuleFactoryExtraPathsTests(unittest.TestCase):

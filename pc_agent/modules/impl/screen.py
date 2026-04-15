@@ -145,10 +145,25 @@ class ScreenCollector(BaseCollector):
                 },
             },
         ],
+        output_schema={
+            "type": "object",
+            "properties": {
+                "resolution": {"type": "string"},
+                "capture_mode": {"type": "string"},
+                "monitor": {"type": "integer"},
+                "region": {"type": "object"},
+            },
+        },
         metadata_risk_level="sensitive_read",
         metadata_scopes=["screen"],
         metadata_requires_consent=False,
         metadata_allow_roles=["user", "agent", "llm", "support", "admin"],
+        contract_version="1.0.0",
+        lifecycle="stable",
+        error_codes=["VALIDATION_ERROR", "TIMEOUT", "ACCESS_DENIED"],
+        artifact_types=[{"kind": "screenshot", "mime": "image/png", "sensitivity": "sensitive"}],
+        redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
+        resources={"max_runtime_sec": 30, "max_artifact_count": 1, "max_artifact_bytes": 52428800},
     )
     async def collect(
         self,
@@ -219,10 +234,24 @@ class ScreenCollector(BaseCollector):
             {"id": "short", "name": "30 sec", "description": "Short recording", "params": {"duration_sec": 30}},
             {"id": "long", "name": "5 min", "description": "Long recording", "params": {"duration_sec": 300}},
         ],
+        output_schema={
+            "type": "object",
+            "properties": {
+                "frames_captured": {"type": "integer"},
+                "duration_sec": {"type": "number"},
+                "file_size_bytes": {"type": "integer"},
+            },
+        },
         metadata_risk_level="sensitive_read",
         metadata_scopes=["screen"],
         metadata_requires_consent=False,
         metadata_allow_roles=["user", "agent", "llm", "support", "admin"],
+        contract_version="1.0.0",
+        lifecycle="stable",
+        error_codes=["VALIDATION_ERROR", "TIMEOUT", "DEPENDENCY_MISSING", "ACCESS_DENIED"],
+        artifact_types=[{"kind": "screen_recording", "mime": "video/mp4", "sensitivity": "sensitive"}],
+        redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
+        resources={"max_runtime_sec": 360, "max_artifact_count": 1, "max_artifact_bytes": 209715200},
     )
     async def record(
         self,

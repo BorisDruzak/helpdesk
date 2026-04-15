@@ -57,7 +57,7 @@
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |
 | `pc_agent/core/registry.py` | Дескрипторы инструментов, canonical tool id/alias → runtime method, `call_tool()`; public tool name может быть semantic key (`dns.resolve`), а legacy `module.tool` остаётся alias |
-| `pc_agent/core/tools.py` | Инструментальная подсистема и metadata-модель для server/agent policy/tool catalogs |
+| `pc_agent/core/tools.py` | Agent-side tool spec helpers над shared contract layer; legacy risk aliases живут здесь только как compatibility shim |
 | `pc_agent/core/policy_engine.py` | Политики выполнения |
 | `pc_agent/core/artifacts.py` | Артефакты (screenshot/record) |
 | `pc_agent/core/recording_controller.py` | Управление записью |
@@ -65,6 +65,7 @@
 | `pc_agent/core/runtime_logging.py` | Единая настройка runtime-логирования: loguru sink, rotation/retention/compression, чтение tail для diagnostics |
 | `pc_agent/core/runtime_paths.py` | Пути данных/модулей |
 | `pc_agent/core/single_instance.py` | Один экземпляр приложения |
+| `shared/tool_contracts.py` | Общий vocabulary для server+agent: canonical risk/lifecycle/error/artifact/dependency/execution-envelope models |
 
 ### 2.2 Модули (modules/)
 | Файл/каталог | Назначение |

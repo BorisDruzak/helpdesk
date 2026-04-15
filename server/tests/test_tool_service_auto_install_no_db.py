@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,9 +20,8 @@ async def _fake_session_ctx():
     yield _FakeSession()
 
 
-@pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_ensure_module_installed_reinstalls_when_snapshot_has_tool_but_active_version_is_old():
+def test_ensure_module_installed_reinstalls_when_snapshot_has_tool_but_active_version_is_old():
     service = ToolService(SimpleNamespace())
     desired_calls = []
     install_calls = []
@@ -72,16 +72,15 @@ async def test_ensure_module_installed_reinstalls_when_snapshot_has_tool_but_act
          patch("app.repos.devices_repo.DevicesRepo", FakeDevicesRepo), \
          patch("modules.reconcile.set_desired_installed", new=fake_set_desired_installed), \
          patch("websocket.protocol.send_ws_command", new=fake_send_ws_command):
-        result = await service._ensure_module_installed("device-1", "dns.resolve")
+        result = asyncio.run(service._ensure_module_installed("device-1", "dns.resolve"))
 
     assert result is None
     assert desired_calls and desired_calls[0]["desired_version"] == "1.1.0"
     assert install_calls and install_calls[0]["params"]["module_version"] == "1.1.0"
 
 
-@pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_ensure_module_installed_only_persists_desired_state_when_preferred_version_is_already_active():
+def test_ensure_module_installed_only_persists_desired_state_when_preferred_version_is_already_active():
     service = ToolService(SimpleNamespace())
     desired_calls = []
     module = SimpleNamespace(module_name="network_basic", version="2.0.0", sha256="b" * 64, size=2048)
@@ -130,7 +129,7 @@ async def test_ensure_module_installed_only_persists_desired_state_when_preferre
          patch("app.repos.devices_repo.DevicesRepo", FakeDevicesRepo), \
          patch("modules.reconcile.set_desired_installed", new=fake_set_desired_installed), \
          patch("websocket.protocol.send_ws_command", new=unexpected_send_ws_command):
-        result = await service._ensure_module_installed("device-1", "dns.resolve")
+        result = asyncio.run(service._ensure_module_installed("device-1", "dns.resolve"))
 
     assert result is None
     assert desired_calls and desired_calls[0]["desired_version"] == "2.0.0"

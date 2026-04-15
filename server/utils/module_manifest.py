@@ -6,12 +6,24 @@ from __future__ import annotations
 
 import copy
 import re
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from shared.tool_contracts import is_reserved_namespace, normalize_risk_level
+except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
+    repo_root = str(Path(__file__).resolve().parents[2])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from shared.tool_contracts import is_reserved_namespace, normalize_risk_level
 
 
 DEFAULT_ENTRYPOINT = "module:register"
 DEFAULT_PLATFORMS = ["any"]
 ALLOWED_PLATFORMS = {"any", "linux", "win32", "darwin"}
+ALLOWED_OWNER_SCOPES = {"core", "platform", "builtin", "vendor"}
+ALLOWED_LIFECYCLES = {"experimental", "stable", "deprecated", "removed"}
 MANIFEST_V2 = 2
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$")
 TOOL_KEY_RE = re.compile(r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
@@ -209,12 +221,76 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
         field_name=f"Tool '{tool_name}' metadata.timeout_sec",
         errors=errors,
     )
+    tool_kind = str(metadata.get("tool_kind") or ("remediation" if side_effects else "diagnostic")).strip().lower()
+    if tool_kind not in {"diagnostic", "remediation"}:
+        errors.append(f"Tool '{tool_name}' metadata.tool_kind must be diagnostic or remediation")
+        tool_kind = "diagnostic"
     domain = metadata.get("domain")
     if domain is not None and not isinstance(domain, str):
         errors.append(f"Tool '{tool_name}' metadata.domain must be a string")
     origin = metadata.get("origin")
     if origin is not None and not isinstance(origin, str):
         errors.append(f"Tool '{tool_name}' metadata.origin must be a string")
+    contract_version = str(raw_tool.get("contract_version") or "").strip()
+    if not contract_version:
+        errors.append(f"Tool '{tool_name}' is missing contract_version")
+        contract_version = "1.0.0"
+    elif not SEMVER_RE.match(contract_version):
+        errors.append(f"Tool '{tool_name}' contract_version must be semver")
+
+    dependencies = raw_tool.get("dependencies")
+    if not isinstance(dependencies, dict):
+        errors.append(f"Tool '{tool_name}' dependencies must be an object")
+        dependencies = {}
+    for dep_key in ("required_binaries", "required_python_packages", "required_services", "required_permissions"):
+        dep_value = dependencies.get(dep_key)
+        if dep_value is not None and (
+            not isinstance(dep_value, list) or any(not isinstance(item, str) or not item.strip() for item in dep_value)
+        ):
+            errors.append(f"Tool '{tool_name}' dependencies.{dep_key} must be a list of non-empty strings")
+    min_agent_version = dependencies.get("min_agent_version")
+    if min_agent_version is not None and (not isinstance(min_agent_version, str) or not SEMVER_RE.match(min_agent_version.strip())):
+        errors.append(f"Tool '{tool_name}' dependencies.min_agent_version must be semver")
+
+    lifecycle = str(raw_tool.get("lifecycle") or "").strip().lower()
+    if not lifecycle:
+        errors.append(f"Tool '{tool_name}' is missing lifecycle")
+        lifecycle = "stable"
+    elif lifecycle not in ALLOWED_LIFECYCLES:
+        errors.append(f"Tool '{tool_name}' lifecycle must be one of: {', '.join(sorted(ALLOWED_LIFECYCLES))}")
+
+    error_codes = raw_tool.get("error_codes")
+    if not isinstance(error_codes, list) or any(not isinstance(item, str) or not item.strip() for item in error_codes):
+        errors.append(f"Tool '{tool_name}' error_codes must be a list of non-empty strings")
+        error_codes = []
+
+    artifact_types = raw_tool.get("artifact_types")
+    if not isinstance(artifact_types, list):
+        errors.append(f"Tool '{tool_name}' artifact_types must be a list")
+        artifact_types = []
+    for index, artifact in enumerate(artifact_types, start=1):
+        if not isinstance(artifact, dict):
+            errors.append(f"Tool '{tool_name}' artifact_types[{index}] must be an object")
+            continue
+        if not isinstance(artifact.get("kind"), str) or not artifact.get("kind", "").strip():
+            errors.append(f"Tool '{tool_name}' artifact_types[{index}].kind is required")
+
+    redaction = raw_tool.get("redaction")
+    if not isinstance(redaction, dict):
+        errors.append(f"Tool '{tool_name}' redaction must be an object")
+        redaction = {}
+    if "enabled" not in redaction:
+        errors.append(f"Tool '{tool_name}' redaction.enabled is required")
+    if "allow_raw_sensitive_data" not in redaction:
+        errors.append(f"Tool '{tool_name}' redaction.allow_raw_sensitive_data is required")
+
+    resources = raw_tool.get("resources")
+    if not isinstance(resources, dict):
+        errors.append(f"Tool '{tool_name}' resources must be an object")
+        resources = {}
+    for required_key in ("max_runtime_sec", "max_artifact_count", "max_artifact_bytes"):
+        if required_key not in resources:
+            errors.append(f"Tool '{tool_name}' resources.{required_key} is required")
     normalized = {
         "tool": tool_name,
         "aliases": aliases,
@@ -227,7 +303,7 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
         "metadata": {
             "domain": str(domain or tool_name.split(".", 1)[0]).strip() or tool_name.split(".", 1)[0],
             "platforms": metadata_platforms,
-            "risk_level": str(metadata.get("risk_level") or raw_tool.get("risk_level") or "safe_readonly").strip() or "safe_readonly",
+            "risk_level": normalize_risk_level(metadata.get("risk_level") or raw_tool.get("risk_level") or "safe_read"),
             "requires_consent": requires_consent,
             "timeout_sec": timeout_sec,
             "idempotent": idempotent,
@@ -235,7 +311,15 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
             "allow_roles": allow_roles,
             "scopes": scopes,
             "origin": str(origin or "managed"),
+            "tool_kind": tool_kind,
         },
+        "contract_version": contract_version,
+        "dependencies": dependencies,
+        "lifecycle": lifecycle,
+        "error_codes": error_codes,
+        "artifact_types": artifact_types,
+        "redaction": redaction,
+        "resources": resources,
     }
 
     return normalized, warnings, errors
@@ -256,12 +340,21 @@ def manifest_summary_from_manifest(manifest_json: Dict[str, Any]) -> Dict[str, A
                 "capabilities": tool.get("capabilities") or [],
                 "aliases": tool.get("aliases") or [],
                 "metadata": tool.get("metadata") or {},
+                "contract_version": tool.get("contract_version") or "1.0.0",
+                "dependencies": tool.get("dependencies") or {},
+                "lifecycle": tool.get("lifecycle") or "stable",
+                "error_codes": tool.get("error_codes") or [],
+                "artifact_types": tool.get("artifact_types") or [],
+                "redaction": tool.get("redaction") or {},
+                "resources": tool.get("resources") or {},
             }
         )
 
     return {
         "module_name": manifest_json.get("module_name"),
         "module_version": manifest_json.get("module_version"),
+        "module_api_version": manifest_json.get("module_api_version"),
+        "owner_scope": manifest_json.get("owner_scope"),
         "entrypoint": manifest_json.get("entrypoint") or DEFAULT_ENTRYPOINT,
         "description": manifest_json.get("description") or "",
         "platforms": manifest_json.get("platforms") or list(DEFAULT_PLATFORMS),
@@ -295,6 +388,8 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
     source = copy.deepcopy(manifest)
     module_name = str(source.get("module_name") or "").strip()
     module_version = str(source.get("module_version") or "").strip()
+    module_api_version = str(source.get("module_api_version") or "").strip()
+    owner_scope = str(source.get("owner_scope") or "").strip().lower()
     entrypoint = str(source.get("entrypoint") or DEFAULT_ENTRYPOINT).strip() or DEFAULT_ENTRYPOINT
     if not module_name:
         validation["errors"]["manifest"].append("manifest.json: missing required field 'module_name'")
@@ -305,11 +400,17 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
     is_v2 = manifest_version == MANIFEST_V2
     if manifest_version not in (None, MANIFEST_V2):
         validation["errors"]["manifest"].append(f"Unsupported manifest_version: {manifest_version}")
+    if is_v2 and not module_api_version:
+        validation["errors"]["manifest"].append("manifest.json: missing required field 'module_api_version'")
+    if is_v2 and not owner_scope:
+        validation["errors"]["manifest"].append("manifest.json: missing required field 'owner_scope'")
 
     normalized: Dict[str, Any] = {
         "manifest_version": MANIFEST_V2,
         "module_name": module_name,
         "module_version": module_version,
+        "module_api_version": module_api_version or "1.0.0",
+        "owner_scope": owner_scope or "vendor",
         "description": str(source.get("description") or "").strip(),
         "entrypoint": entrypoint,
         "platforms": _normalize_platforms(source.get("platforms")),
@@ -319,6 +420,12 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
         "tools": [],
     }
     validation["errors"]["metadata"].extend(_validate_platforms(normalized["platforms"], "manifest.json platforms"))
+    if normalized["owner_scope"] not in ALLOWED_OWNER_SCOPES:
+        validation["errors"]["manifest"].append(
+            f"manifest.json: owner_scope must be one of: {', '.join(sorted(ALLOWED_OWNER_SCOPES))}"
+        )
+    if normalized["module_api_version"] and not SEMVER_RE.match(normalized["module_api_version"]):
+        validation["errors"]["manifest"].append("manifest.json: module_api_version must be semver")
 
     tools_raw = source.get("tools")
     if tools_raw is None:
@@ -365,6 +472,12 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                 validation["errors"]["tools"].append(
                     f"Alias '{alias}' for tool '{owner}' conflicts with canonical tool '{alias}'"
                 )
+        if normalized["owner_scope"] not in {"core", "platform", "builtin"}:
+            for tool in normalized["tools"]:
+                if is_reserved_namespace(str(tool.get("tool") or "")):
+                    validation["errors"]["tools"].append(
+                        f"Tool '{tool.get('tool')}' uses a reserved namespace and requires owner_scope=core|platform|builtin"
+                    )
 
     if not normalized["tools"]:
         fallback_tool_name = f"{module_name}.run" if module_name else "unknown.run"
@@ -381,7 +494,7 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                 "metadata": {
                     "domain": module_name or "unknown",
                     "platforms": normalized["platforms"],
-                    "risk_level": "safe_readonly",
+                    "risk_level": "safe_read",
                     "requires_consent": False,
                     "timeout_sec": None,
                     "idempotent": False,
@@ -389,6 +502,24 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                     "allow_roles": None,
                     "scopes": [],
                     "origin": "managed" if is_v2 else "legacy",
+                    "tool_kind": "diagnostic",
+                },
+                "contract_version": "1.0.0",
+                "dependencies": {},
+                "lifecycle": "stable",
+                "error_codes": [],
+                "artifact_types": [],
+                "redaction": {
+                    "enabled": True,
+                    "allow_raw_sensitive_data": False,
+                    "redact_headers": True,
+                    "redact_env": True,
+                    "redact_fields": [],
+                },
+                "resources": {
+                    "max_runtime_sec": 30,
+                    "max_artifact_count": 0,
+                    "max_artifact_bytes": 0,
                 },
             }
         )
@@ -456,6 +587,8 @@ def get_module_manifest(module: Any) -> Dict[str, Any]:
         "manifest_version": 1,
         "module_name": getattr(module, "module_name", None),
         "module_version": getattr(module, "version", None),
+        "module_api_version": "1.0.0",
+        "owner_scope": "vendor",
         "entrypoint": DEFAULT_ENTRYPOINT,
         "description": "",
         "platforms": list(DEFAULT_PLATFORMS),
@@ -491,6 +624,8 @@ def module_to_api_record(module: Any, include_detail: bool = False) -> Dict[str,
         "created_at": module.created_at.isoformat() if getattr(module, "created_at", None) else None,
         "uploaded_by": getattr(module, "uploaded_by", None),
         "manifest_version": 1 if validation_json.get("legacy_manifest") else manifest_json.get("manifest_version", MANIFEST_V2),
+        "module_api_version": manifest_json.get("module_api_version"),
+        "owner_scope": manifest_json.get("owner_scope"),
         "legacy_manifest": bool(validation_json.get("legacy_manifest")),
         "validation_status": validation_json.get("validation_status", "unknown"),
         "preflight_status": validation_json.get("preflight_status", "unknown"),

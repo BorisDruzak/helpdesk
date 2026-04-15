@@ -27,7 +27,9 @@ pc_agent/build/
 pc_agent/dist/
 .venvs/
 .local-agent/
+.codex/
 artifacts/ci/
+artifacts/gui-agent-update-check.png
 src/venv/
 .env
 *.env

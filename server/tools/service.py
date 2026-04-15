@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from .cache import ToolsCache
 from utils.module_manifest import get_module_manifest
-from utils.versioning import version_key
+from utils.versioning import compare_versions, version_key
 from config import (
     TOOL_EXECUTION_TIMEOUT,
     ENABLE_DB_PERSISTENCE,
@@ -310,9 +310,12 @@ class ToolService:
             tool_entry = resolution["tool_entry"]
             module_name = module.module_name
             version = module.version
-            mod_platforms = manifest.get("platforms") or ["any"]
+            tool_metadata = tool_entry.get("metadata") or {}
+            tool_dependencies = tool_entry.get("dependencies") or {}
+            mod_platforms = tool_metadata.get("platforms") or manifest.get("platforms") or ["any"]
+            devices_repo = DevicesRepo(session)
+            device = None
             if isinstance(mod_platforms, list) and len(mod_platforms) > 0 and "any" not in [str(p).lower() for p in mod_platforms]:
-                devices_repo = DevicesRepo(session)
                 device = await devices_repo.get_by_device_id(device_id)
                 if not device:
                     return {"status": "error", "error": f"Устройство {device_id} не найдено", "error_code": "DEVICE_NOT_FOUND"}
@@ -334,6 +337,32 @@ class ToolService:
                         "status": "error",
                         "error": f"Модуль не поддерживается на ОС устройства: device os={device_os!r}, модуль: {allowed}",
                         "error_code": "MODULE_PLATFORM_MISMATCH",
+                    }
+            min_agent_version = str(
+                tool_dependencies.get("min_agent_version")
+                or manifest.get("min_agent_version")
+                or ""
+            ).strip()
+            if min_agent_version:
+                if device is None:
+                    device = await devices_repo.get_by_device_id(device_id)
+                if not device:
+                    return {"status": "error", "error": f"Устройство {device_id} не найдено", "error_code": "DEVICE_NOT_FOUND"}
+                device_agent_version = str(device.agent_version or "").strip()
+                if not device_agent_version:
+                    return {
+                        "status": "error",
+                        "error": f"Неизвестна версия агента для {device_id}, требуется минимум {min_agent_version}",
+                        "error_code": "AGENT_VERSION_UNKNOWN",
+                    }
+                if compare_versions(device_agent_version, min_agent_version) < 0:
+                    return {
+                        "status": "error",
+                        "error": (
+                            f"Инструмент {tool_name!r} требует agent >= {min_agent_version}, "
+                            f"но устройство сообщает {device_agent_version}"
+                        ),
+                        "error_code": "AGENT_VERSION_TOO_OLD",
                     }
 
             snapshot_has_tool = False

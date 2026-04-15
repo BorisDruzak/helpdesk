@@ -1,51 +1,38 @@
-# Контракт list_tools и run_tool для Playbook и каталога команд
+# Playbook Tools Contract
 
-**Назначение:** закрепить обязательные метаданные инструментов и коды ошибок run_tool для этапов 9–11 (Capability Gate, каталог 100–150 команд).
+Playbook engine больше не должен опираться на физические `module.tool` имена как на source of truth.
 
----
+## Canonical reference
 
-## list_tools: метаданные на каждый tool
+Playbook steps должны ссылаться на canonical semantic tool ids:
 
-Рекомендуемые/целевые поля в каждом элементе списка инструментов (для capability gate и каталога):
+- `dns.resolve`
+- `network.ping`
+- `tcp.connect`
+- `screen.collect`
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| tool | string | Имя в формате `module.tool` (обязательно). |
-| domain | string | Домен: system, process, filesystem, network, service, security, diag, ui. |
-| platforms | string[] | Поддерживаемые платформы (например `["linux","windows"]`). |
-| risk_level | string | Уровень риска (например low, medium, high). |
-| requires_consent | bool | Требуется ли подтверждение перед выполнением. |
-| timeout_sec | int | Таймаут исполнения (секунды). |
-| idempotent | bool | Идемпотентность операции. |
-| allow_roles | string[] | Роли, которым разрешён вызов. |
-| scopes | string[] | Скоупы доступа. |
-| origin | string | Этап 10: `builtin` \| `managed` для drift (опционально). |
+Alias допустим только для compatibility resolution.
 
-Сервер при обработке list_tools snapshot валидирует обязательные поля (domain, platforms, risk_level, requires_consent, timeout_sec, idempotent). Команда без обязательных metadata не попадает в production catalog (см. `utils/tool_metadata_validation.py`). У старых агентов при пустом результате фильтрации в snapshot сохраняется полный список (обратная совместимость).
+## Expected step contract
 
----
+Каждый tool-backed шаг должен быть валидируемым через:
 
-## run_tool: коды ошибок
+- `params_schema`
+- `output_schema`
+- `contract_version`
+- `required_tool_version` / `required_contract_range` при необходимости
 
-Единые коды ошибок в ответе агента (error.code / error_json):
+## Runtime result
 
-| Код | Описание |
-|-----|----------|
-| INVALID_TOOL_FORMAT | Некорректный формат имени (требуется `module.tool`). |
-| TOOL_NOT_FOUND | Инструмент не найден. |
-| UNSUPPORTED_CAPABILITY | Инструмент недоступен или не поддерживается (в т.ч. платформа). |
-| CONSENT_REQUIRED | Требуется подтверждение пользователя. |
-| TIMEOUT | Превышен таймаут исполнения. |
-| COMMAND_FAILED | Команда выполнена с ошибкой (не таймаут, не consent). |
+Для playbook decisions канонический результат читается из `data.result` execution envelope, а не из произвольного `stdout` или ad-hoc fields.
 
-Сервер при Capability Gate до отправки команды может установить step_run в failed с кодами:
+## Risk and lifecycle
 
-- **UNSUPPORTED_CAPABILITY** — tool нет в toolset или не подходит платформа.
-- **TOOL_UNAVAILABLE** — нет snapshot toolset или устройство не найдено.
+Playbook compiler/runtime должны учитывать:
 
----
+- `risk_level`
+- `requires_consent`
+- `tool_kind`
+- `lifecycle`
 
-## Связанные документы
-
-- `PLAYBOOK_STAGES_7_12.md` — этапы 7–12.
-- `pc_agent/docs/TOOLS_CONTRACT.md` — контракт на стороне агента.
+Deprecated tools допустимы только как migration bridge и должны подсвечиваться предупреждением.

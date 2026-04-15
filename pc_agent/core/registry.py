@@ -4,8 +4,18 @@ Module Registry Service
 """
 
 import inspect
+import sys
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
 from functools import wraps
+
+try:
+    from shared.tool_contracts import normalize_risk_level, to_legacy_risk_level
+except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
+    repo_root = str(Path(__file__).resolve().parents[2])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from shared.tool_contracts import normalize_risk_level, to_legacy_risk_level
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -38,6 +48,13 @@ def exposed_tool(
     metadata_idempotent: Optional[bool] = None,
     metadata_origin: Optional[str] = None,
     metadata_side_effects: Optional[bool] = None,
+    contract_version: Optional[str] = None,
+    dependencies: Optional[Dict[str, Any]] = None,
+    lifecycle: Optional[str] = None,
+    error_codes: Optional[List[str]] = None,
+    artifact_types: Optional[List[Dict[str, Any]]] = None,
+    redaction: Optional[Dict[str, Any]] = None,
+    resources: Optional[Dict[str, Any]] = None,
 ) -> Callable:
     """
     Декоратор для пометки методов модуля как экспонируемых инструментов (tools) для MCP.
@@ -113,7 +130,7 @@ def exposed_tool(
         metadata_dict = {
             'domain': metadata_domain,
             'platforms': metadata_platforms,
-            'risk_level': metadata_risk_level if metadata_risk_level is not None else "safe_read",
+            'risk_level': normalize_risk_level(metadata_risk_level, "safe_read"),
             'scopes': metadata_scopes if metadata_scopes is not None else [],
             'requires_consent': metadata_requires_consent if metadata_requires_consent is not None else False,
             'allow_roles': metadata_allow_roles,
@@ -122,19 +139,27 @@ def exposed_tool(
             'origin': metadata_origin,
             'side_effects': metadata_side_effects if metadata_side_effects is not None else False,
         }
+        legacy_risk_level = to_legacy_risk_level(risk_level if risk_level is not None else metadata_dict["risk_level"])
         
         # Устанавливаем атрибуты для пометки функции
         func.__exposed_tool__ = True
         func.__tool_name__ = name if name is not None else func.__name__
         func.__tool_aliases__ = aliases if aliases is not None else []
         func.__tool_desc__ = description if description is not None else None
-        func.__tool_risk_level__ = risk_level if risk_level is not None else "safe_readonly"
+        func.__tool_risk_level__ = legacy_risk_level
         func.__tool_capabilities__ = capabilities if capabilities is not None else None
         func.__tool_params_model__ = params_model_value
         func.__tool_params_schema__ = params_schema_value
         func.__tool_output_schema__ = output_schema if isinstance(output_schema, dict) else {}
         func.__tool_presets__ = presets if presets is not None else []
         func.__tool_metadata__ = metadata_dict
+        func.__tool_contract_version__ = str(contract_version or "1.0.0")
+        func.__tool_dependencies__ = dependencies if isinstance(dependencies, dict) else {}
+        func.__tool_lifecycle__ = str(lifecycle or "stable")
+        func.__tool_error_codes__ = list(error_codes or [])
+        func.__tool_artifact_types__ = list(artifact_types or [])
+        func.__tool_redaction__ = redaction if isinstance(redaction, dict) else {}
+        func.__tool_resources__ = resources if isinstance(resources, dict) else {}
         
         # Проверяем, является ли функция асинхронной
         if inspect.iscoroutinefunction(func):
@@ -155,6 +180,13 @@ def exposed_tool(
             async_wrapper.__tool_output_schema__ = func.__tool_output_schema__
             async_wrapper.__tool_presets__ = func.__tool_presets__
             async_wrapper.__tool_metadata__ = func.__tool_metadata__
+            async_wrapper.__tool_contract_version__ = func.__tool_contract_version__
+            async_wrapper.__tool_dependencies__ = func.__tool_dependencies__
+            async_wrapper.__tool_lifecycle__ = func.__tool_lifecycle__
+            async_wrapper.__tool_error_codes__ = func.__tool_error_codes__
+            async_wrapper.__tool_artifact_types__ = func.__tool_artifact_types__
+            async_wrapper.__tool_redaction__ = func.__tool_redaction__
+            async_wrapper.__tool_resources__ = func.__tool_resources__
             return async_wrapper
         else:
             # Для sync функций создаем обычный wrapper
@@ -174,6 +206,13 @@ def exposed_tool(
             sync_wrapper.__tool_output_schema__ = func.__tool_output_schema__
             sync_wrapper.__tool_presets__ = func.__tool_presets__
             sync_wrapper.__tool_metadata__ = func.__tool_metadata__
+            sync_wrapper.__tool_contract_version__ = func.__tool_contract_version__
+            sync_wrapper.__tool_dependencies__ = func.__tool_dependencies__
+            sync_wrapper.__tool_lifecycle__ = func.__tool_lifecycle__
+            sync_wrapper.__tool_error_codes__ = func.__tool_error_codes__
+            sync_wrapper.__tool_artifact_types__ = func.__tool_artifact_types__
+            sync_wrapper.__tool_redaction__ = func.__tool_redaction__
+            sync_wrapper.__tool_resources__ = func.__tool_resources__
             return sync_wrapper
     
     return decorator
@@ -400,12 +439,13 @@ class ModuleRegistry:
                 'idempotent': False,
                 'origin': 'builtin',
                 'side_effects': False,
+                'tool_kind': 'diagnostic',
             }
         else:
             metadata_dict = {
                 'domain': metadata_dict.get('domain') or module_name,
                 'platforms': metadata_dict.get('platforms') or ['any'],
-                'risk_level': metadata_dict.get('risk_level', 'safe_read'),
+                'risk_level': normalize_risk_level(metadata_dict.get('risk_level'), 'safe_read'),
                 'scopes': metadata_dict.get('scopes', []),
                 'requires_consent': metadata_dict.get('requires_consent', False),
                 'allow_roles': metadata_dict.get('allow_roles'),
@@ -413,6 +453,7 @@ class ModuleRegistry:
                 'idempotent': metadata_dict.get('idempotent', False),
                 'origin': metadata_dict.get('origin', 'builtin'),
                 'side_effects': metadata_dict.get('side_effects', False),
+                'tool_kind': metadata_dict.get('tool_kind', 'diagnostic'),
             }
         
         return {
@@ -423,13 +464,20 @@ class ModuleRegistry:
             'description': method_doc,
             'parameters': arguments,  # Человеко-ориентированная информация
             'async': is_async,
-            'risk_level': risk_level,
+            'risk_level': to_legacy_risk_level(risk_level),
             'capabilities': capabilities,
             'params_model': params_model_name,  # Имя класса модели
             'params_schema': params_schema,  # Машинная JSON Schema
             'output_schema': output_schema,
             'presets': presets,  # Предустановленные конфигурации
-            'metadata': metadata_dict  # Метаданные для PolicyEngine
+            'metadata': metadata_dict,  # Метаданные для PolicyEngine
+            'contract_version': getattr(method, '__tool_contract_version__', "1.0.0"),
+            'dependencies': getattr(method, '__tool_dependencies__', {}),
+            'lifecycle': getattr(method, '__tool_lifecycle__', "stable"),
+            'error_codes': list(getattr(method, '__tool_error_codes__', []) or []),
+            'artifact_types': list(getattr(method, '__tool_artifact_types__', []) or []),
+            'redaction': getattr(method, '__tool_redaction__', {}) or {},
+            'resources': getattr(method, '__tool_resources__', {}) or {},
         }
     
     def get_all(self) -> Dict[str, Dict[str, Any]]:
@@ -505,6 +553,13 @@ class ModuleRegistry:
             'presets': tool_info.get('presets', []),
             'async': tool_info.get('async', False),
             'metadata': metadata,
+            'contract_version': tool_info.get('contract_version', '1.0.0'),
+            'dependencies': tool_info.get('dependencies', {}),
+            'lifecycle': tool_info.get('lifecycle', 'stable'),
+            'error_codes': tool_info.get('error_codes', []),
+            'artifact_types': tool_info.get('artifact_types', []),
+            'redaction': tool_info.get('redaction', {}),
+            'resources': tool_info.get('resources', {}),
         }
 
     def _rebuild_tool_index(self) -> None:

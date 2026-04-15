@@ -7,10 +7,17 @@ from __future__ import annotations
 import io
 import json
 import re
+import sys
 import textwrap
 import zipfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from shared.tool_contracts import normalize_risk_level, to_legacy_risk_level
+except ModuleNotFoundError:  # pragma: no cover - cwd-dependent import fallback
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from shared.tool_contracts import normalize_risk_level, to_legacy_risk_level
 from utils.module_manifest import manifest_summary_from_manifest
 
 MODULE_PY_TEMPLATE = """# Generated from admin create-module flow. Module: {module_name}
@@ -50,6 +57,13 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
         metadata_idempotent={metadata_idempotent_literal},
         metadata_origin={metadata_origin_literal},
         metadata_side_effects={metadata_side_effects_literal},
+        contract_version={contract_version_literal},
+        dependencies={dependencies_literal},
+        lifecycle={lifecycle_literal},
+        error_codes={error_codes_literal},
+        artifact_types={artifact_types_literal},
+        redaction={redaction_literal},
+        resources={resources_literal},
     )
     async def {method_name}(self, **kwargs) -> Dict[str, Any]:
         params = {{**{defaults_literal}, **kwargs}}
@@ -58,7 +72,7 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
         # user code ends
 """
 
-ALLOWED_RISK_LEVELS = ("safe_readonly", "safe_write", "dangerous")
+ALLOWED_RISK_LEVELS = ("safe_readonly", "safe_write", "dangerous", "safe_read", "sensitive_read", "system_write", "code_exec")
 DEFAULT_RISK_LEVEL = "safe_readonly"
 ALLOWED_PLATFORMS = ("linux", "win32", "darwin", "any")
 
@@ -232,7 +246,24 @@ def _normalize_tool_specs(
         )
         effective_platforms = tool_platforms if tool_platforms != ["any"] else module_platforms
         metadata_domain = str(tool_metadata.get("domain") or _tool_domain_from_name(canonical_tool_name, module_name))
-        metadata_risk_level = str(tool_metadata.get("risk_level") or tool_risk_level)
+        metadata_risk_level = normalize_risk_level(tool_metadata.get("risk_level") or tool_risk_level)
+        contract_version = str(raw_tool.get("contract_version") or "1.0.0").strip() or "1.0.0"
+        lifecycle = str(raw_tool.get("lifecycle") or "stable").strip() or "stable"
+        dependencies = raw_tool.get("dependencies") if isinstance(raw_tool.get("dependencies"), dict) else {}
+        error_codes = raw_tool.get("error_codes") if isinstance(raw_tool.get("error_codes"), list) else []
+        artifact_types = raw_tool.get("artifact_types") if isinstance(raw_tool.get("artifact_types"), list) else []
+        redaction = raw_tool.get("redaction") if isinstance(raw_tool.get("redaction"), dict) else {
+            "enabled": True,
+            "allow_raw_sensitive_data": False,
+            "redact_headers": True,
+            "redact_env": True,
+            "redact_fields": [],
+        }
+        resources = raw_tool.get("resources") if isinstance(raw_tool.get("resources"), dict) else {
+            "max_runtime_sec": int(tool_metadata.get("timeout_sec") or 30),
+            "max_artifact_count": 0,
+            "max_artifact_bytes": 0,
+        }
 
         normalized_tools.append(
             {
@@ -245,7 +276,14 @@ def _normalize_tool_specs(
                 "presets": tool_presets,
                 "capabilities": tool_capabilities,
                 "output_schema": tool_output_schema,
-                "risk_level": tool_risk_level,
+                "risk_level": to_legacy_risk_level(tool_risk_level),
+                "contract_version": contract_version,
+                "dependencies": dependencies,
+                "lifecycle": lifecycle,
+                "error_codes": error_codes,
+                "artifact_types": artifact_types,
+                "redaction": redaction,
+                "resources": resources,
                 "metadata": {
                     "domain": metadata_domain,
                     "platforms": effective_platforms,
@@ -257,6 +295,7 @@ def _normalize_tool_specs(
                     "allow_roles": tool_metadata.get("allow_roles"),
                     "scopes": tool_metadata.get("scopes") if isinstance(tool_metadata.get("scopes"), list) else [],
                     "origin": str(tool_metadata.get("origin") or "managed"),
+                    "tool_kind": str(tool_metadata.get("tool_kind") or ("remediation" if tool_metadata.get("side_effects") else "diagnostic")),
                 },
                 "user_function_body": body_text,
             }
@@ -288,6 +327,13 @@ def _render_tool_methods(tool_specs: List[Dict[str, Any]]) -> str:
                 metadata_idempotent_literal=repr(metadata["idempotent"]),
                 metadata_origin_literal=repr(metadata["origin"]),
                 metadata_side_effects_literal=repr(metadata["side_effects"]),
+                contract_version_literal=repr(tool["contract_version"]),
+                dependencies_literal=repr(tool["dependencies"]),
+                lifecycle_literal=repr(tool["lifecycle"]),
+                error_codes_literal=repr(tool["error_codes"]),
+                artifact_types_literal=repr(tool["artifact_types"]),
+                redaction_literal=repr(tool["redaction"]),
+                resources_literal=repr(tool["resources"]),
                 method_name=tool["method"],
                 defaults_literal=repr(tool["defaults"]),
                 user_function_body=tool["user_function_body"],
@@ -356,6 +402,8 @@ def build_module_package(
         "manifest_version": 2,
         "module_name": mod_name,
         "module_version": version.strip(),
+        "module_api_version": "1.0.0",
+        "owner_scope": "core",
         "entrypoint": "module:register",
         "description": str(description or tool_specs[0]["description"]).strip()[:500],
         "platforms": module_platforms,
@@ -373,6 +421,13 @@ def build_module_package(
                 "presets": tool["presets"],
                 "capabilities": tool["capabilities"],
                 "metadata": tool["metadata"],
+                "contract_version": tool["contract_version"],
+                "dependencies": tool["dependencies"],
+                "lifecycle": tool["lifecycle"],
+                "error_codes": tool["error_codes"],
+                "artifact_types": tool["artifact_types"],
+                "redaction": tool["redaction"],
+                "resources": tool["resources"],
             }
             for tool in tool_specs
         ],

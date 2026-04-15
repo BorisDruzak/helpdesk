@@ -14,7 +14,9 @@ import pathlib
 import base64
 import tempfile
 import os
+import shutil
 import sys
+import importlib.util
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Any, List, Optional
@@ -54,6 +56,13 @@ from pc_agent.core.orchestrator_job_helpers import (
 from pc_agent.core.orchestrator_shared import logger
 from utils.toolset_hash import compute_toolset_hash
 import inspect
+try:
+    from shared.tool_contracts import ToolExecutionEnvelope, ToolExecutionMetrics
+except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
+    repo_root = str(Path(__file__).resolve().parents[2])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from shared.tool_contracts import ToolExecutionEnvelope, ToolExecutionMetrics
 
 # Импорт ValidationError из pydantic (опционально)
 try:
@@ -2256,6 +2265,13 @@ class AgentOrchestrator:
                     'params_schema': params_schema,
                     'output_schema': spec.get('output_schema', {}),
                     'presets': presets,
+                    'contract_version': spec.get('contract_version', '1.0.0'),
+                    'dependencies': spec.get('dependencies', {}),
+                    'lifecycle': spec.get('lifecycle', 'stable'),
+                    'error_codes': spec.get('error_codes', []),
+                    'artifact_types': spec.get('artifact_types', []),
+                    'redaction': spec.get('redaction', {}),
+                    'resources': spec.get('resources', {}),
                     'metadata': {
                         'domain': metadata.get('domain', module_name),
                         'platforms': metadata.get('platforms', ['any']),
@@ -2267,6 +2283,7 @@ class AgentOrchestrator:
                         'idempotent': metadata.get('idempotent', False),
                         'origin': metadata.get('origin', 'builtin'),
                         'side_effects': metadata.get('side_effects', False),
+                        'tool_kind': metadata.get('tool_kind', 'diagnostic'),
                     }
                 }
             }
@@ -2367,6 +2384,13 @@ class AgentOrchestrator:
                 'capabilities': spec.get('capabilities'),
                 'async': spec.get('async', False),
                 'metadata': spec.get('metadata', {}),
+                'contract_version': spec.get('contract_version', '1.0.0'),
+                'dependencies': spec.get('dependencies', {}),
+                'lifecycle': spec.get('lifecycle', 'stable'),
+                'error_codes': spec.get('error_codes', []),
+                'artifact_types': spec.get('artifact_types', []),
+                'redaction': spec.get('redaction', {}),
+                'resources': spec.get('resources', {}),
             }
             
             logger.success(f"Инструмент найден: {tool_name}")
@@ -2451,6 +2475,33 @@ class AgentOrchestrator:
                 redacted[key] = value
         
         return redacted
+
+    def _redact_payload(self, payload: Any, *, redact_fields: Optional[List[str]] = None) -> Any:
+        fields = {item.lower() for item in (redact_fields or [])}
+        default_fields = {"authorization", "cookie", "token", "password", "secret", "api_key", "proxy_authorization"}
+        sensitive_fields = fields or default_fields
+        if isinstance(payload, dict):
+            redacted: Dict[str, Any] = {}
+            for key, value in payload.items():
+                key_lower = str(key).lower()
+                if any(marker in key_lower for marker in sensitive_fields):
+                    redacted[key] = "***REDACTED***"
+                else:
+                    redacted[key] = self._redact_payload(value, redact_fields=list(sensitive_fields))
+            return redacted
+        if isinstance(payload, list):
+            return [self._redact_payload(item, redact_fields=list(sensitive_fields)) for item in payload]
+        return payload
+
+    def _check_runtime_dependencies(self, spec: Dict[str, Any]) -> Optional[str]:
+        dependencies = spec.get("dependencies") or {}
+        for binary in dependencies.get("required_binaries") or []:
+            if not shutil.which(binary):
+                return f"Missing required binary: {binary}"
+        for package_name in dependencies.get("required_python_packages") or []:
+            if importlib.util.find_spec(package_name) is None:
+                return f"Missing required Python package: {package_name}"
+        return None
     
     async def _publish_chat_event(self, job_id: str, meta: ToolMeta, payload: dict, ticket_id: Optional[str] = None):
         if not job_id or not self.db_manager:
@@ -2787,6 +2838,23 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning(f"Ошибка создания ToolMetadata для {tool}: {e}, используем default")
                 metadata = ToolMetadata()
+            resources_policy = spec_dict.get("resources") or {}
+            redaction_policy = spec_dict.get("redaction") or {}
+            dependency_error = self._check_runtime_dependencies(spec_dict)
+            if dependency_error:
+                if chat_job_id:
+                    await self._publish_chat_event(chat_job_id, meta, {
+                        "event": "tool_result",
+                        "tool": tool,
+                        "ok": False,
+                        "error": f"DEPENDENCY_MISSING: {dependency_error}",
+                    }, ticket_id=ticket_id)
+                return fail(
+                    code="DEPENDENCY_MISSING",
+                    message=dependency_error,
+                    meta=meta,
+                    retriable=False,
+                )
             
             # Вызываем PolicyEngine для принятия решения
             decision = self.policy.decide(
@@ -2990,15 +3058,35 @@ class AgentOrchestrator:
             # Регистрируем task в running_tasks
             task = asyncio.create_task(_execute_tool())
             self.running_tasks[operation_id] = task
+            effective_timeout = metadata.timeout_sec or resources_policy.get("max_runtime_sec")
             
             try:
-                observations = await task
+                if effective_timeout:
+                    observations = await asyncio.wait_for(task, timeout=float(effective_timeout))
+                else:
+                    observations = await task
                 
                 # Убеждаемся, что результат - dict
                 if not isinstance(observations, dict):
                     # Если метод вернул не dict, оборачиваем в dict
                     observations = {"result": observations}
-                
+            except asyncio.TimeoutError:
+                task.cancel()
+                if chat_job_id:
+                    await self._publish_chat_event(chat_job_id, meta, {
+                        "event": "tool_result",
+                        "tool": tool,
+                        "ok": False,
+                        "error": f"TIMEOUT: exceeded {effective_timeout} sec",
+                    }, ticket_id=ticket_id)
+                await self._publish_screen_ui_done(tool, operation_id)
+                return fail(
+                    code="TIMEOUT",
+                    message=f'Инструмент "{tool}" превысил таймаут {effective_timeout} сек.',
+                    meta=meta,
+                    retriable=True,
+                )
+            
             except Exception as e:
                 error_msg = f'Ошибка выполнения инструмента "{tool}": {str(e)}'
                 logger.error(error_msg)
@@ -3084,6 +3172,31 @@ class AgentOrchestrator:
                 except Exception as e:
                     logger.warning(f"Ошибка создания Path для cleanup: {path_str}: {e}")
             
+            max_artifact_count = resources_policy.get("max_artifact_count")
+            if isinstance(max_artifact_count, int) and max_artifact_count >= 0 and len(artifact_intents) > max_artifact_count:
+                return fail(
+                    code="VALIDATION_ERROR",
+                    message=f'Инструмент "{tool}" превысил лимит артефактов ({len(artifact_intents)} > {max_artifact_count})',
+                    meta=meta,
+                    retriable=False,
+                )
+            max_artifact_bytes = resources_policy.get("max_artifact_bytes")
+            if isinstance(max_artifact_bytes, int) and max_artifact_bytes >= 0:
+                total_artifact_bytes = 0
+                for intent in artifact_intents:
+                    try:
+                        if intent.local_path.exists():
+                            total_artifact_bytes += intent.local_path.stat().st_size
+                    except Exception:
+                        continue
+                if total_artifact_bytes > max_artifact_bytes:
+                    return fail(
+                        code="VALIDATION_ERROR",
+                        message=f'Инструмент "{tool}" превысил лимит размера артефактов ({total_artifact_bytes} > {max_artifact_bytes})',
+                        meta=meta,
+                        retriable=False,
+                    )
+
             # Загружаем артефакты, если они есть
             uploaded_artifacts = []
             upload_errors = []
@@ -3136,9 +3249,31 @@ class AgentOrchestrator:
             warnings = []
             if upload_errors:
                 warnings.extend([f"Ошибка загрузки артефакта: {e.message}" for e in upload_errors])
+            redacted_output = self._redact_payload(
+                observations_clean,
+                redact_fields=redaction_policy.get("redact_fields") if isinstance(redaction_policy, dict) else None,
+            )
+            envelope = ToolExecutionEnvelope(
+                status="partial" if upload_errors else "ok",
+                output=redacted_output if isinstance(redacted_output, dict) else {"result": redacted_output},
+                error=None,
+                artifacts=[
+                    artifact.model_dump() if hasattr(artifact, "model_dump") else artifact
+                    for artifact in uploaded_artifacts
+                ],
+                metrics=ToolExecutionMetrics(
+                    duration_ms=duration_ms,
+                    attempt=1,
+                    request_id=meta.request_id,
+                    command=meta.command or "run_tool",
+                ),
+                changed=bool(metadata.side_effects),
+                confidence=1.0 if not upload_errors else 0.8,
+            )
             
             data = ToolData(
                 observations=observations_clean,
+                result=envelope.model_dump(),
                 artifacts=uploaded_artifacts,
                 warnings=warnings if warnings else []
             )

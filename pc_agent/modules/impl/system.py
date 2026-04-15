@@ -152,9 +152,23 @@ class SystemCollector(BaseCollector):
                 "params": {"preset": "full"},
             },
         ],
+        output_schema={
+            "type": "object",
+            "properties": {
+                "preset": {"type": "string"},
+                "selected_sections": {"type": "array", "items": {"type": "string"}},
+                "sections": {"type": "object"},
+            },
+            "required": ["preset", "selected_sections", "sections"],
+        },
         metadata_risk_level="safe_read",
         metadata_scopes=[],
         metadata_requires_consent=False,
+        contract_version="1.0.0",
+        lifecycle="stable",
+        error_codes=["VALIDATION_ERROR", "TIMEOUT"],
+        redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
+        resources={"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
     )
     async def collect(
         self,

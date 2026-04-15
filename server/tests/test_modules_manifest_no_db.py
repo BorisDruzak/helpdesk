@@ -1,0 +1,224 @@
+import pytest
+
+from utils.module_builder import build_module_package
+from utils.module_manifest import normalize_manifest
+from utils.module_preflight import preflight_module_zip
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_keeps_semantic_tool_name_and_legacy_alias():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "core",
+            "tools": [
+                {
+                    "canonical_name": "dns.resolve",
+                    "aliases": ["resolve_dns"],
+                    "method": "resolve_impl",
+                    "contract_version": "1.0.0",
+                    "dependencies": {
+                        "min_agent_version": "1.0.0",
+                        "required_binaries": [],
+                        "required_python_packages": [],
+                        "required_services": [],
+                        "required_permissions": [],
+                    },
+                    "lifecycle": "stable",
+                    "error_codes": ["DNS_NXDOMAIN"],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "output_schema": {"type": "object"},
+                    "metadata": {
+                        "domain": "network",
+                        "platforms": ["linux", "win32"],
+                        "risk_level": "safe_read",
+                        "requires_consent": False,
+                        "timeout_sec": 15,
+                        "idempotent": True,
+                    },
+                }
+            ],
+        }
+    )
+    assert not validation["errors"]["tools"]
+    assert normalized is not None
+    tool = normalized["tools"][0]
+    assert tool["tool"] == "dns.resolve"
+    assert "network_basic.resolve" in tool["aliases"]
+    assert "network_basic.resolve_dns" in tool["aliases"]
+    assert tool["output_schema"]["type"] == "object"
+    assert tool["contract_version"] == "1.0.0"
+    assert tool["metadata"]["risk_level"] == "safe_read"
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_rejects_duplicate_tool_alias_conflicts():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "core",
+            "tools": [
+                {
+                    "tool": "dns.resolve",
+                    "method": "resolve_dns",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": [],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "aliases": ["shared.alias"],
+                },
+                {
+                    "tool": "network.ping",
+                    "method": "ping_host",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": [],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "aliases": ["shared.alias", "dns.resolve"],
+                },
+            ],
+        }
+    )
+
+    assert normalized is None
+    assert any("shared.alias" in error for error in validation["errors"]["tools"])
+    assert any("dns.resolve" in error and "conflicts" in error for error in validation["errors"]["tools"])
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_rejects_reserved_namespace_for_vendor_scope():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "vendor_netkit",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "vendor",
+            "tools": [
+                {
+                    "tool": "dns.resolve",
+                    "method": "resolve_dns",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": [],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                }
+            ],
+        }
+    )
+
+    assert normalized is None
+    assert any("reserved namespace" in error for error in validation["errors"]["tools"])
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_allows_vendor_namespace_for_vendor_scope():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "vendor_netkit",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "vendor",
+            "tools": [
+                {
+                    "tool": "vendor_x.resolve",
+                    "method": "resolve_dns",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": ["VALIDATION_ERROR"],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                }
+            ],
+        }
+    )
+
+    assert normalized is not None
+    assert not validation["errors"]["tools"]
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_requires_contract_redaction_resources_and_dependencies():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "vendor_echo",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "vendor",
+            "tools": [
+                {
+                    "tool": "vendor.echo",
+                    "method": "run",
+                }
+            ],
+        }
+    )
+
+    assert normalized is None
+    joined = "\n".join(validation["errors"]["tools"])
+    assert "contract_version" in joined
+    assert "dependencies" in joined
+    assert "redaction" in joined
+    assert "resources" in joined
+
+
+@pytest.mark.no_db
+def test_build_module_package_supports_multi_tool_semantic_names():
+    zip_bytes, summary = build_module_package(
+        module_name="network_basic",
+        version="1.0.0",
+        tool_name="",
+        description="Network diagnostics",
+        user_function_body="",
+        platforms=["linux", "win32"],
+        tools=[
+            {
+                "tool_name": "dns.resolve",
+                "method_name": "resolve_dns",
+                "description": "Resolve DNS",
+                "params_schema": [{"name": "hostname", "type": "string", "required": True}],
+                "metadata": {"domain": "dns", "platforms": ["linux", "win32"], "idempotent": True},
+                "user_function_body": 'return {"ok": True, "best_ip": "127.0.0.1"}',
+            },
+            {
+                "tool_name": "network.ping",
+                "aliases": ["ping.host"],
+                "method_name": "ping_host",
+                "description": "Ping target",
+                "params_schema": [{"name": "target", "type": "string", "required": True}],
+                "metadata": {"domain": "network", "platforms": ["linux", "win32"], "idempotent": True},
+                "user_function_body": 'return {"ok": True, "reachable": True}',
+            },
+        ],
+    )
+
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+
+    assert ok is True
+    assert manifest_json is not None
+    assert [tool["tool"] for tool in manifest_json["tools"]] == ["dns.resolve", "network.ping"]
+    assert "network_basic.ping" in manifest_json["tools"][1]["aliases"]
+    assert "ping.host" in manifest_json["tools"][1]["aliases"]
+    assert manifest_summary == summary
+    assert validation_json["validation_status"] == "passed"

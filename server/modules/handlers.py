@@ -31,6 +31,13 @@ from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from modules.reconcile import set_desired_installed, set_desired_absent
+try:
+    from shared.tool_contracts import normalize_risk_level
+except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
+    repo_root = str(Path(__file__).resolve().parents[2])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from shared.tool_contracts import normalize_risk_level
 
 
 async def handle_modules_ping(_request: web.Request) -> web.Response:
@@ -229,7 +236,7 @@ def _check_module_policy(
     if not auth_context:
         return None, _module_auth_error_response()
     metadata = ToolMetadata(
-        risk_level=risk_level,
+        risk_level=normalize_risk_level(risk_level),
         requires_consent=False,
         allow_roles=None,
     )

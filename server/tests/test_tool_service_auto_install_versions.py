@@ -18,12 +18,21 @@ def _module_manifest(module_name: str, version: str) -> dict:
         "manifest_version": 2,
         "module_name": module_name,
         "module_version": version,
+        "module_api_version": "1.0.0",
+        "owner_scope": "core",
         "platforms": ["win32"],
         "tools": [
             {
                 "tool": "dns.resolve",
                 "aliases": [f"{module_name}.resolve"],
                 "method": "resolve_dns",
+                "contract_version": "1.0.0",
+                "dependencies": {"min_agent_version": "1.0.0"},
+                "lifecycle": "stable",
+                "error_codes": ["DNS_NXDOMAIN"],
+                "artifact_types": [],
+                "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
                 "description": "Resolve DNS",
                 "params_schema": {},
                 "output_schema": {},
@@ -32,7 +41,7 @@ def _module_manifest(module_name: str, version: str) -> dict:
                 "metadata": {
                     "domain": "dns",
                     "platforms": ["win32"],
-                    "risk_level": "safe_readonly",
+                    "risk_level": "safe_read",
                     "requires_consent": False,
                     "timeout_sec": 15,
                     "idempotent": True,
@@ -184,3 +193,22 @@ async def test_ensure_module_installed_persists_desired_state_without_reinstall_
         ).scalar_one()
         assert desired.desired_version == "2.0.0"
         assert desired.reason == "run_tool"
+
+
+@pytest.mark.asyncio
+async def test_ensure_module_installed_blocks_when_agent_version_too_old():
+    device_id = str(uuid.uuid4())
+    module_name = f"network_basic_{uuid.uuid4().hex[:8]}"
+    await _seed_device(device_id)
+    await _seed_module(module_name, "3.0.0")
+
+    async with get_session() as session:
+        device = await session.get(Device, device_id)
+        device.agent_version = "0.9.0"
+        await session.commit()
+
+    service = ToolService(SimpleNamespace())
+    result = await service._ensure_module_installed(device_id, "dns.resolve")
+
+    assert result is not None
+    assert result["error_code"] == "AGENT_VERSION_TOO_OLD"

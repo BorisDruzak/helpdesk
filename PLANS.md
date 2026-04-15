@@ -50,10 +50,17 @@
   - cancel-operation flow доведён до зелёного integration baseline;
   - `server/server_old.py` и `server/tickets/service.py` удалены из активного runtime tree;
   - docs archive/sync wave начата.
-- Осталось:
-  - синхронизировать канонические docs/CODEMAP после архивирования;
-  - прогнать `verify_workspace` и релевантные pytest после docs cleanup;
-  - отдельно оценить остаточные падения полного `server/tests` suite, если они ещё есть.
+
+## Next Steps
+
+- Синхронизировать канонические docs/CODEMAP после архивирования.
+- Прогнать `verify_workspace` и релевантные pytest после docs cleanup.
+- Отдельно оценить остаточные падения полного `server/tests` suite, если они ещё есть.
+- Следующий пакет правок должен идти в порядке:
+  1. docs sync / CODEMAP / QUICK_LOOKUP;
+  2. `verify_workspace`;
+  3. выборочный или полный server pytest regression run;
+  4. только потом новые рефакторинги крупных файлов.
 
 ## Verification
 
@@ -67,11 +74,6 @@
 
 ## Handoff
 
-- Следующий пакет правок должен идти в порядке:
-  1. docs sync / CODEMAP / QUICK_LOOKUP;
-  2. `verify_workspace`;
-  3. выборочный или полный server pytest regression run;
-  4. только потом новые рефакторинги крупных файлов.
 - Ключевой риск: production-волна одновременно затрагивает тестовую инфраструктуру, release flow и крупные runtime-файлы, поэтому после каждого пакета изменений нужен повторный baseline-прогон.
 
 ## 2026-04-14 Audit: Agent Update + Modules
@@ -106,6 +108,11 @@
 - Guardrails kept:
   - builtin screenshot path `screen.collect` and agent-side screen/system regressions were kept green;
   - artifact-heavy flows were not rewritten and remain on the current result/artifact path.
+- Unified standards rollout follow-up in the same in-place path:
+  - added shared `shared/tool_contracts.py` for canonical risk/lifecycle/error/artifact/dependency/runtime-envelope vocabulary used by both server and agent;
+  - tightened server manifest validation with `module_api_version`, `owner_scope`, `contract_version`, `dependencies`, `lifecycle`, `error_codes`, `artifact_types`, `redaction`, `resources`, plus reserved namespace governance;
+  - upgraded agent registry/orchestrator to expose the richer tool contract and to emit canonical execution envelope in `data.result` while keeping legacy `ToolResponse` transport shell compatible;
+  - rewired builtin `system` and `screen` tools to publish the same contract blocks as managed packs.
 - Verification snapshot:
   - passed: `python scripts/verify_workspace.py`
   - passed: `python -m pytest pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_builtin_modules_screen_system.py -v --tb=short`

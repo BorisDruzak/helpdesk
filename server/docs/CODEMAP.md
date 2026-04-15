@@ -127,12 +127,13 @@
 ### 2.6 Утилиты (модули/manifest)
 | Файл | Назначение |
 |------|------------|
-| `server/utils/module_manifest.py` | Manifest v2, нормализация и строгая validation typed tools: canonical semantic ids, aliases, metadata/platform conflicts, summary/detail |
+| `server/utils/module_manifest.py` | Manifest contract и strict validation для typed tools: canonical semantic ids, aliases, contract/dependencies/redaction/resources blocks, reserved namespace governance |
 | `server/utils/module_preflight.py` | Preflight ZIP, manifest_json, validation_json |
 | `server/utils/module_builder.py` | Сборка пакета для POST /api/modules/create: legacy single-tool и multi-tool module packs с canonical semantic tool ids |
 | `server/utils/module_storage.py` | Хранение модулей |
 | `server/utils/tool_metadata_validation.py` | Валидация метаданных инструментов |
 | `server/core/policy_engine.py` | Политики доступа |
+| `shared/tool_contracts.py` | Shared contract layer для server+agent: ToolMetadata, ToolExecutionEnvelope, ToolError, artifacts/dependencies/redaction/resources vocabulary |
 
 ### 2.7 UI (статика)
 | Файл | Назначение |

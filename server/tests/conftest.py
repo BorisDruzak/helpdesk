@@ -260,9 +260,7 @@ def ensure_db_ready(request):
     request.getfixturevalue("run_migrations")
 
 
-async def _cleanup_db_async(request) -> None:
-    test_database_url = request.getfixturevalue("test_database_url")
-    test_engine = request.getfixturevalue("test_engine")
+async def _cleanup_db_async(test_database_url: str, test_engine) -> None:
     verify_test_database(test_database_url)
     clear_log_records()
     clear_dismissed_alerts()
@@ -309,7 +307,9 @@ def cleanup_db(request):
     """Clean test data before each DB-backed test."""
     if request.node.get_closest_marker("no_db"):
         return
-    asyncio.run(_cleanup_db_async(request))
+    test_database_url = request.getfixturevalue("test_database_url")
+    test_engine = request.getfixturevalue("test_engine")
+    asyncio.run(_cleanup_db_async(test_database_url, test_engine))
 
 
 @pytest.fixture
