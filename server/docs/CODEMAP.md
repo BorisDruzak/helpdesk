@@ -236,3 +236,10 @@
 - новые точки входа или смена назначения существующих модулей.
 
 Проверка: ключевые термины и файлы из раздела «Быстрый поиск» и «Структура каталогов» должны соответствовать коду.
+---
+
+## 2026-04-15 Module workbench note
+
+- `server/modules/handlers.py` now exposes `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints.
+- `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
+- `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, API preview, and archive/source exploration in the admin UI.

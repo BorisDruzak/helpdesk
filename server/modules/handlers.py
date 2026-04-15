@@ -33,7 +33,7 @@ from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from modules.reconcile import set_desired_installed, set_desired_absent
-from modules.workbench_service import build_editable_spec
+from modules.workbench_service import build_editable_spec, build_editable_spec_from_archive_bytes
 try:
     from shared.tool_contracts import normalize_risk_level
 except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
@@ -195,97 +195,18 @@ async def _build_and_store_module_package(
     auth_context: AuthContext,
     payload: dict,
 ) -> tuple[int, dict]:
-    module_name = (payload.get("module_name") or "").strip()
-    version = (payload.get("version") or "").strip()
-    tool_name = (payload.get("tool_name") or "").strip()
-    method_name = (payload.get("method") or payload.get("method_name") or tool_name).strip()
-    description = (payload.get("description") or "").strip()
-    user_function_body = payload.get("user_function_body")
-    if user_function_body is None:
-        user_function_body = ""
-    risk_level = (payload.get("risk_level") or DEFAULT_RISK_LEVEL).strip()
-    overwrite = payload.get("overwrite") is True
-    params_schema = payload.get("params_schema")
-    presets = payload.get("presets")
-    platforms = payload.get("platforms")
-    capabilities = payload.get("capabilities")
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    output_schema = payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else None
-    aliases = payload.get("aliases") if isinstance(payload.get("aliases"), list) else None
-    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
-    requirements = payload.get("requirements") if isinstance(payload.get("requirements"), list) else None
-    optional_requirements = payload.get("optional_requirements") if isinstance(payload.get("optional_requirements"), list) else None
-    min_agent_version = payload.get("min_agent_version")
-    module_api_version = (payload.get("module_api_version") or "1.0.0").strip()
-    owner_scope = (payload.get("owner_scope") or "core").strip().lower()
-    entrypoint = (payload.get("entrypoint") or "module:register").strip()
-    set_preferred = payload.get("set_preferred") is True
+    status_code, response_payload, prepared = await _prepare_module_package_payload(payload)
+    if prepared is None:
+        return status_code, response_payload
 
-    if not module_name:
-        return 400, {"status": "error", "error": "Missing module_name"}
-    if not version:
-        return 400, {"status": "error", "error": "Missing version"}
-    if not tool_name and not tools:
-        return 400, {"status": "error", "error": "Missing tool_name or tools"}
-    if not description:
-        return 400, {"status": "error", "error": "Missing description"}
-
-    try:
-        zip_bytes, manifest_summary = build_module_package(
-            module_name=module_name,
-            version=version,
-            tool_name=tool_name,
-            description=description,
-            user_function_body=user_function_body,
-            risk_level=risk_level,
-            params_schema=params_schema if isinstance(params_schema, list) else None,
-            presets=presets if isinstance(presets, list) else None,
-            platforms=platforms if isinstance(platforms, list) else None,
-            method_name=method_name,
-            capabilities=capabilities if isinstance(capabilities, list) else None,
-            metadata=metadata,
-            output_schema=output_schema,
-            aliases=aliases,
-            tools=tools,
-            requirements=requirements,
-            optional_requirements=optional_requirements,
-            min_agent_version=min_agent_version,
-            module_api_version=module_api_version,
-            owner_scope=owner_scope,
-            entrypoint=entrypoint,
-        )
-    except ValueError as e:
-        return 400, {"status": "error", "error": str(e)}
-
-    preflight_ok, validation_json, manifest_json, _ = preflight_module_zip(zip_bytes)
-    if not preflight_ok:
-        return 400, {
-            "status": "error",
-            "error": "Module validation failed",
-            "preflight_status": "failed",
-            "preflight_errors": _flatten_validation_errors(validation_json),
-            "validation_json": validation_json,
-            "module_name": module_name,
-            "version": version,
-        }
-
-    smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_create_smoke_")
-    validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
-    if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
-        return 400, {
-            "status": "error",
-            "error": "Module smoke check failed",
-            "preflight_status": "failed",
-            "preflight_errors": smoke_errors or _flatten_validation_errors(validation_json),
-            "validation_json": validation_json,
-            "module_name": manifest_json["module_name"],
-            "version": manifest_json["module_version"],
-        }
-
-    manifest_summary = manifest_summary or {}
-    manifest_summary["tools"] = (manifest_json or {}).get("tools") or manifest_summary.get("tools") or []
-    name_final = manifest_json["module_name"]
-    version_final = manifest_json["module_version"]
+    name_final = prepared["module_name"]
+    version_final = prepared["version"]
+    zip_bytes = prepared["zip_bytes"]
+    manifest_json = prepared["manifest_json"]
+    validation_json = prepared["validation_json"]
+    manifest_summary = prepared["manifest_summary"]
+    overwrite = prepared["overwrite"]
+    set_preferred = prepared["set_preferred"]
 
     async with get_session() as session:
         modules_repo = ModulesRepo(session)
@@ -363,6 +284,116 @@ async def _build_and_store_module_package(
         "tools_count": len((manifest_json or {}).get("tools") or []),
         "validation_json": validation_json,
         "preferred_version": version_final if set_preferred else None,
+    }
+
+
+async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dict | None]:
+    module_name = (payload.get("module_name") or "").strip()
+    version = (payload.get("version") or "").strip()
+    tool_name = (payload.get("tool_name") or "").strip()
+    method_name = (payload.get("method") or payload.get("method_name") or tool_name).strip()
+    description = (payload.get("description") or "").strip()
+    user_function_body = payload.get("user_function_body")
+    if user_function_body is None:
+        user_function_body = ""
+    risk_level = (payload.get("risk_level") or DEFAULT_RISK_LEVEL).strip()
+    overwrite = payload.get("overwrite") is True
+    params_schema = payload.get("params_schema")
+    presets = payload.get("presets")
+    platforms = payload.get("platforms")
+    capabilities = payload.get("capabilities")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    output_schema = payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else None
+    aliases = payload.get("aliases") if isinstance(payload.get("aliases"), list) else None
+    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
+    requirements = payload.get("requirements") if isinstance(payload.get("requirements"), list) else None
+    optional_requirements = payload.get("optional_requirements") if isinstance(payload.get("optional_requirements"), list) else None
+    min_agent_version = payload.get("min_agent_version")
+    module_api_version = (payload.get("module_api_version") or "1.0.0").strip()
+    owner_scope = (payload.get("owner_scope") or "core").strip().lower()
+    entrypoint = (payload.get("entrypoint") or "module:register").strip()
+    set_preferred = payload.get("set_preferred") is True
+
+    if not module_name:
+        return 400, {"status": "error", "error": "Missing module_name"}, None
+    if not version:
+        return 400, {"status": "error", "error": "Missing version"}, None
+    if not tool_name and not tools:
+        return 400, {"status": "error", "error": "Missing tool_name or tools"}, None
+    if not description:
+        return 400, {"status": "error", "error": "Missing description"}, None
+
+    try:
+        zip_bytes, manifest_summary = build_module_package(
+            module_name=module_name,
+            version=version,
+            tool_name=tool_name,
+            description=description,
+            user_function_body=user_function_body,
+            risk_level=risk_level,
+            params_schema=params_schema if isinstance(params_schema, list) else None,
+            presets=presets if isinstance(presets, list) else None,
+            platforms=platforms if isinstance(platforms, list) else None,
+            method_name=method_name,
+            capabilities=capabilities if isinstance(capabilities, list) else None,
+            metadata=metadata,
+            output_schema=output_schema,
+            aliases=aliases,
+            tools=tools,
+            requirements=requirements,
+            optional_requirements=optional_requirements,
+            min_agent_version=min_agent_version,
+            module_api_version=module_api_version,
+            owner_scope=owner_scope,
+            entrypoint=entrypoint,
+        )
+    except ValueError as e:
+        return 400, {"status": "error", "error": str(e)}, None
+
+    preflight_ok, validation_json, manifest_json, _ = preflight_module_zip(zip_bytes)
+    if not preflight_ok:
+        return 400, {
+            "status": "error",
+            "error": "Module validation failed",
+            "preflight_status": "failed",
+            "preflight_errors": _flatten_validation_errors(validation_json),
+            "validation_json": validation_json,
+            "module_name": module_name,
+            "version": version,
+        }, None
+
+    smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_create_smoke_")
+    validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
+    if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
+        return 400, {
+            "status": "error",
+            "error": "Module smoke check failed",
+            "preflight_status": "failed",
+            "preflight_errors": smoke_errors or _flatten_validation_errors(validation_json),
+            "validation_json": validation_json,
+            "module_name": manifest_json["module_name"],
+            "version": manifest_json["module_version"],
+        }, None
+
+    manifest_summary = manifest_summary or {}
+    manifest_summary["tools"] = (manifest_json or {}).get("tools") or manifest_summary.get("tools") or []
+    return 200, {
+        "status": "ok",
+        "module_name": manifest_json["module_name"],
+        "version": manifest_json["module_version"],
+        "preflight_status": "passed",
+        "validation_status": validation_json.get("validation_status"),
+        "warnings": validation_json.get("warnings") or [],
+        "tools_count": len((manifest_json or {}).get("tools") or []),
+    }, {
+        "module_name": manifest_json["module_name"],
+        "version": manifest_json["module_version"],
+        "zip_bytes": zip_bytes,
+        "manifest_json": manifest_json,
+        "validation_json": validation_json,
+        "manifest_summary": manifest_summary,
+        "overwrite": overwrite,
+        "set_preferred": set_preferred,
     }
 
 
@@ -1836,6 +1867,49 @@ async def handle_save_module_workbench(request):
         return web.json_response(response_payload, status=status_code)
     except Exception as e:
         logger.error(f"Save module workbench failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_validate_module_workbench(request):
+    """
+    POST /api/modules/workbench/validate
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+
+        status_code, response_payload, prepared = await _prepare_module_package_payload(await request.json())
+        if prepared is None:
+            return web.json_response(response_payload, status=status_code)
+
+        async with get_session() as session:
+            modules_repo = ModulesRepo(session)
+            tool_conflicts = await _find_registry_tool_conflicts(session, prepared["manifest_json"])
+            existing = await modules_repo.get_module(prepared["module_name"], prepared["version"])
+
+        editable_preview = build_editable_spec_from_archive_bytes(
+            zip_bytes=prepared["zip_bytes"],
+            manifest_json=prepared["manifest_json"],
+            fallback_module_name=prepared["module_name"],
+            fallback_version=prepared["version"],
+        )
+        publish_ready = existing is None and not tool_conflicts
+        response_payload.update(
+            {
+                "validation_json": prepared["validation_json"],
+                "manifest_json": prepared["manifest_json"],
+                "manifest_summary": prepared["manifest_summary"],
+                "module_exists": existing is not None,
+                "publish_ready": publish_ready,
+                "conflicts": tool_conflicts,
+                "editable_preview": editable_preview,
+            }
+        )
+        return web.json_response(response_payload, status=200)
+    except Exception as e:
+        logger.error(f"Validate module workbench failed: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 

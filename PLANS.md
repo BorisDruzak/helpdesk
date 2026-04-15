@@ -76,6 +76,19 @@
 
 - Ключевой риск: production-волна одновременно затрагивает тестовую инфраструктуру, release flow и крупные runtime-файлы, поэтому после каждого пакета изменений нужен повторный baseline-прогон.
 
+## 2026-04-15 Module Development Workbench Follow-up
+
+- Expanded the admin module workbench toward a full authoring surface:
+  - template-driven tool starters now cover `dns.resolve`, `network.ping`, `tcp.connect`, `route.get`, `adapter.list`, `http.request`, and `system.service_status`;
+  - inline validation runs directly in the editor while payload/API preview stays in sync;
+  - server-side validate preview (`POST /api/modules/workbench/validate`) now reports publish readiness, ownership conflicts, and archive/source reconstruction without publishing;
+  - module archives are decomposed back into editable source fragments through builder markers or AST analysis of `@exposed_tool` functions.
+- Remaining execution steps for this task:
+  1. run local verify + targeted pytest;
+  2. deploy committed state to Linux with the standard release script;
+  3. browser-check the richer `Модули` tab on `http://192.168.100.17:8666/admin`, including archive/source explorer and save/validate flow with a live agent;
+  4. stop the remote server after smoke.
+
 ## 2026-04-14 Audit: Agent Update + Modules
 
 - Scope:

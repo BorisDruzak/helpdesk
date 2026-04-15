@@ -1,3 +1,9 @@
+## 2026-04-15 module workbench focus
+
+- For module authoring in the admin UI, start with `server/admin_modules_workbench.js`, `server/admin_modules_workbench.html`, `server/modules/handlers.py`, and `server/modules/workbench_service.py`.
+- The module workbench now supports template-driven tool creation, inline validation, validate-before-publish preview, preferred-version assignment, and archive-to-code decomposition.
+- The server validate endpoint for the workbench is `POST /api/modules/workbench/validate`.
+
 # QUICK_LOOKUP
 
 Короткий канонический навигатор по проекту `pc_client`.

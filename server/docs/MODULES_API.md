@@ -1,10 +1,10 @@
 # Modules API
 
-Текущий модульный API работает in-place поверх существующего `modules` контура, но уже использует unified semantic tool contract.
+The current modules API evolves the existing `modules` path in-place and now uses the unified semantic tool contract.
 
 ## Canonical docs
 
-Сначала читать:
+Read these first:
 
 - `server/docs/MODULE_AUTHORING_RULES.md`
 - `server/docs/REGISTRY_PUBLICATION_RULES.md`
@@ -12,52 +12,60 @@
 
 ## Domain model
 
-- `module` = pack доставки, versioning, ownership
-- `tool` = атомарный типизированный контракт
-- `playbook` = orchestration layer поверх tools
+- `module` = delivery pack, versioning, ownership
+- `tool` = atomic typed executable contract
+- `playbook` = orchestration layer over tools
 
-Canonical tool ids semantic-only:
+Canonical tool ids stay semantic-only:
 
 - `dns.resolve`
 - `network.ping`
 - `screen.collect`
 
-Legacy aliases допустимы только для совместимости.
+Legacy aliases exist only as compatibility bridges.
 
 ## Server responsibilities
 
 - preflight ZIP and manifest normalization
 - ownership/conflict checks
-- publish in module registry
+- publish into the server registry
 - preferred-version policy per module family
-- preferred-version resolution
+- preferred-version resolution for auto-install
 - desired-state persistence before auto-install
 - version-aware auto-install/update before `run_tool`
 
 ## Admin workbench
 
-`/admin` now embeds a dedicated module workbench loaded from separate static files:
+`/admin` embeds a dedicated module-development workbench loaded from:
 
 - `server/admin_modules_workbench.html`
 - `server/admin_modules_workbench.js`
 
 Workbench API:
 
-- `GET /api/modules/workbench` — grouped module families with versions and preferred-version state
-- `GET /api/modules/workbench/{module_name}/{version}` — module detail plus editable draft reconstructed from manifest/archive
-- `POST /api/modules/workbench/save` — build, validate, smoke-check and persist a module from structured UI payload
-- `PATCH /api/modules/{module_name}/preferred` — assign the preferred version used by auto-install/runtime resolution
+- `GET /api/modules/workbench` - grouped module families with versions and preferred-version state
+- `GET /api/modules/workbench/{module_name}/{version}` - module detail plus editable draft reconstructed from manifest and archive contents
+- `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
+- `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
+- `PATCH /api/modules/{module_name}/preferred` - assign the preferred version used by auto-install/runtime resolution
+
+Workbench detail and validate preview both expose archive/source decomposition for generated ZIP packages:
+
+- extracted text files from the archive
+- detected `@exposed_tool` functions and method names
+- per-tool reconstruction strategy (`markers`, `ast`, `raw`)
+- unresolved tools and methods so the editor can highlight where manual cleanup is still needed
 
 The preferred version is stored server-side and is the same source of truth used by:
 
 - the admin UI
-- `run_tool` auto-install/auto-update
+- `run_tool` auto-install and auto-update
 - preferred module resolution in the server registry
 
 ## Builtin modules
 
-Builtin providers (`system`, `screen`, и др.) используют тот же contract и validation vocabulary, но не требуют server ZIP install.
+Builtin providers such as `system` and `screen` use the same contract vocabulary and validation model, but they do not require server ZIP installation.
 
 ## Historical note
 
-Legacy narrative вида `module.tool` и старые risk enums оставлены только как compat layer внутри runtime. Публичный канон теперь строится вокруг semantic tool ids и shared contract vocabulary.
+Legacy `module.tool` naming and the old risk vocabulary remain only as internal compatibility layers. The public canon now centers on semantic tool ids and the shared contract vocabulary.

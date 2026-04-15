@@ -1,129 +1,457 @@
-<div class="modules-workbench-shell">
-    <div class="page-header" style="margin-bottom: 16px;">
-        <h2 style="margin-bottom: 8px;">Реестр и разработка модулей</h2>
-        <p style="color: var(--muted); font-size: 14px; margin: 0;">
-            Здесь серверный реестр, приоритетные версии и редактирование модулей по фрагментам:
-            manifest-поля, tool contracts и код маленьких tool-функций.
-        </p>
+<style>
+  .mw-shell {
+    --mw-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0));
+    --mw-border: rgba(148, 163, 184, 0.3);
+    --mw-muted: #64748b;
+    --mw-ink: #0f172a;
+    --mw-accent: #0f766e;
+    --mw-accent-soft: rgba(15, 118, 110, 0.12);
+    --mw-warn: #b45309;
+    --mw-danger: #b91c1c;
+    --mw-surface: #ffffff;
+  }
+
+  .mw-shell .mw-hero {
+    background: radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 45%), var(--mw-bg);
+    border: 1px solid var(--mw-border);
+    border-radius: 18px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+
+  .mw-shell .mw-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .mw-shell .mw-panel {
+    background: var(--mw-surface);
+    border: 1px solid var(--mw-border);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  }
+
+  .mw-shell .mw-panel + .mw-panel {
+    margin-top: 14px;
+  }
+
+  .mw-shell .mw-toolbar,
+  .mw-shell .mw-section-head,
+  .mw-shell .mw-inline-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .mw-shell .mw-subtle {
+    color: var(--mw-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mw-shell .mw-card-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .mw-shell .mw-family-card {
+    border: 1px solid var(--mw-border);
+    border-radius: 16px;
+    padding: 14px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), #fff);
+  }
+
+  .mw-shell .mw-family-card.is-selected {
+    border-color: rgba(15, 118, 110, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.18);
+  }
+
+  .mw-shell .mw-chip-row,
+  .mw-shell .mw-summary-grid,
+  .mw-shell .mw-grid-2,
+  .mw-shell .mw-grid-3,
+  .mw-shell .mw-grid-4 {
+    display: grid;
+    gap: 12px;
+  }
+
+  .mw-shell .mw-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mw-shell .mw-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mw-shell .mw-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .mw-shell .mw-chip-row {
+    grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+    align-items: start;
+  }
+
+  .mw-shell .mw-chip,
+  .mw-shell .mw-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--mw-ink);
+    white-space: nowrap;
+  }
+
+  .mw-shell .mw-chip.is-accent,
+  .mw-shell .mw-badge.is-accent {
+    background: var(--mw-accent-soft);
+    color: var(--mw-accent);
+  }
+
+  .mw-shell .mw-chip.is-warning {
+    background: rgba(180, 83, 9, 0.12);
+    color: var(--mw-warn);
+  }
+
+  .mw-shell .mw-chip.is-danger {
+    background: rgba(185, 28, 28, 0.12);
+    color: var(--mw-danger);
+  }
+
+  .mw-shell .mw-summary-item {
+    border: 1px solid var(--mw-border);
+    border-radius: 14px;
+    padding: 12px;
+    background: rgba(248, 250, 252, 0.85);
+  }
+
+  .mw-shell .mw-summary-item label {
+    display: block;
+    font-size: 11px;
+    color: var(--mw-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  .mw-shell .mw-summary-item strong {
+    font-size: 15px;
+    color: var(--mw-ink);
+  }
+
+  .mw-shell .mw-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .mw-shell .mw-tab-btn {
+    border: 1px solid var(--mw-border);
+    background: #fff;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .mw-shell .mw-tab-btn.is-active {
+    border-color: rgba(15, 118, 110, 0.45);
+    background: var(--mw-accent-soft);
+    color: var(--mw-accent);
+  }
+
+  .mw-shell textarea {
+    min-height: 88px;
+    font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mw-shell .mw-code-block {
+    border: 1px solid var(--mw-border);
+    border-radius: 14px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px;
+    overflow: auto;
+    max-height: 420px;
+    font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .mw-shell .mw-file-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .mw-shell .mw-file-btn {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--mw-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  .mw-shell .mw-file-btn.is-active {
+    border-color: rgba(15, 118, 110, 0.45);
+    background: var(--mw-accent-soft);
+  }
+
+  .mw-shell .mw-validation-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+  }
+
+  .mw-shell .mw-section {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .mw-shell .mw-empty {
+    border: 1px dashed rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    padding: 16px;
+    color: var(--mw-muted);
+    background: rgba(248, 250, 252, 0.65);
+  }
+
+  @media (max-width: 1280px) {
+    .mw-shell .mw-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .mw-shell .mw-grid-2,
+    .mw-shell .mw-grid-3,
+    .mw-shell .mw-grid-4 {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="mw-shell">
+  <section class="mw-hero">
+    <div class="mw-toolbar">
+      <div>
+        <h2 style="margin: 0 0 6px;">Разработка модулей</h2>
+        <div class="mw-subtle">
+          Серверный реестр, приоритетные версии, раскладка архива обратно в структуру модуля,
+          шаблоны atomic tool'ов и API-friendly preview для ручной работы и LLM-интеграций.
+        </div>
+      </div>
+      <div class="mw-chip-row">
+        <span class="mw-chip is-accent">semantic tool ids</span>
+        <span class="mw-chip">manifest + code fragments</span>
+        <span class="mw-chip">validate before publish</span>
+      </div>
     </div>
+  </section>
 
-    <div class="module-workbench-layout" style="display: grid; grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); gap: 16px;">
-        <section class="panel" style="margin: 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div>
-                    <h3 style="margin: 0;">Семейства модулей</h3>
-                    <div class="muted" style="font-size: 12px; margin-top: 4px;">Список версий на сервере и выбор приоритетной.</div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-refresh-btn">Обновить</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-new-btn">Новый модуль</button>
-                </div>
-            </div>
-            <div id="modules-workbench-list" class="modules-workbench-list">
-                <div class="loading">Загрузка реестра модулей...</div>
-            </div>
-        </section>
+  <div class="mw-layout">
+    <aside>
+      <section class="mw-panel">
+        <div class="mw-toolbar">
+          <div>
+            <h3 style="margin: 0;">Семейства модулей</h3>
+            <div class="mw-subtle">Выбор версии, приоритетного релиза и переход в редактор.</div>
+          </div>
+          <div class="mw-inline-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-refresh-btn">Обновить</button>
+            <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-new-btn">Новый модуль</button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 12px;">
+          <label for="modules-workbench-family-search">Поиск по семейству или tool id</label>
+          <input type="text" id="modules-workbench-family-search" placeholder="network, dns.resolve, browser...">
+        </div>
+        <div id="modules-workbench-list" class="mw-card-list">
+          <div class="mw-empty">Загрузка реестра модулей...</div>
+        </div>
+      </section>
 
-        <section class="panel" style="margin: 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px;">
-                <div>
-                    <h3 id="modules-workbench-editor-title" style="margin: 0;">Редактор модуля</h3>
-                    <div id="modules-workbench-editor-subtitle" class="muted" style="font-size: 12px; margin-top: 4px;">
-                        Выберите модуль слева или создайте новый draft.
-                    </div>
-                </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-load-selected-btn">Загрузить версию</button>
-                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-set-preferred-btn">Сделать приоритетной</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-save-btn">Сохранить модуль</button>
-                </div>
-            </div>
+      <section class="mw-panel">
+        <div class="mw-section-head">
+          <div>
+            <h3 style="margin: 0;">Валидация</h3>
+            <div class="mw-subtle">Локальные правила формы и серверный preflight/smoke перед публикацией.</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-validate-btn">Проверить</button>
+        </div>
+        <div id="modules-workbench-message" style="margin-top: 12px;"></div>
+        <div class="mw-section" style="margin-top: 12px; padding-top: 12px;">
+          <h4 style="margin: 0 0 8px;">Локальные проверки</h4>
+          <div id="modules-workbench-local-validation"></div>
+        </div>
+        <div class="mw-section">
+          <h4 style="margin: 0 0 8px;">Серверный validate preview</h4>
+          <div id="modules-workbench-server-validation">
+            <div class="mw-empty">Нажмите «Проверить», чтобы получить preflight, smoke и preview собранного архива.</div>
+          </div>
+        </div>
+      </section>
+    </aside>
 
-            <div id="modules-workbench-message"></div>
-
-            <div class="toolset-info" style="margin-bottom: 16px;">
-                <div class="info-card">
-                    <label>Семейство</label>
-                    <value id="modules-workbench-selected-module">—</value>
-                </div>
-                <div class="info-card">
-                    <label>Версия</label>
-                    <value id="modules-workbench-selected-version">—</value>
-                </div>
-                <div class="info-card">
-                    <label>Приоритетная</label>
-                    <value id="modules-workbench-selected-preferred">—</value>
-                </div>
+    <main>
+      <section class="mw-panel">
+        <div class="mw-toolbar">
+          <div>
+            <h3 id="modules-workbench-editor-title" style="margin: 0;">Редактор модуля</h3>
+            <div id="modules-workbench-editor-subtitle" class="mw-subtle">
+              Выберите модуль слева или соберите новый draft.
             </div>
+          </div>
+          <div class="mw-inline-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-load-selected-btn">Открыть выбранную версию</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-set-preferred-btn">Сделать приоритетной</button>
+            <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-save-btn">Сохранить модуль</button>
+          </div>
+        </div>
 
-            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div class="form-group">
-                    <label for="modules-workbench-module-name">Имя модуля</label>
-                    <input type="text" id="modules-workbench-module-name" placeholder="network_basic">
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-module-version">Версия</label>
-                    <input type="text" id="modules-workbench-module-version" placeholder="1.0.0">
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-module-description">Описание</label>
-                    <input type="text" id="modules-workbench-module-description" placeholder="Краткое описание пакета">
-                </div>
-            </div>
+        <div class="mw-summary-grid mw-grid-4" style="margin-top: 14px;">
+          <div class="mw-summary-item">
+            <label>Семейство</label>
+            <strong id="modules-workbench-selected-module">—</strong>
+          </div>
+          <div class="mw-summary-item">
+            <label>Версия</label>
+            <strong id="modules-workbench-selected-version">—</strong>
+          </div>
+          <div class="mw-summary-item">
+            <label>Приоритетная</label>
+            <strong id="modules-workbench-selected-preferred">—</strong>
+          </div>
+          <div class="mw-summary-item">
+            <label>Tool'ов</label>
+            <strong id="modules-workbench-selected-tools-count">0</strong>
+          </div>
+        </div>
 
-            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div class="form-group">
-                    <label for="modules-workbench-owner-scope">Owner scope</label>
-                    <select id="modules-workbench-owner-scope">
-                        <option value="core">core</option>
-                        <option value="platform">platform</option>
-                        <option value="builtin">builtin</option>
-                        <option value="vendor">vendor</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-module-api-version">Module API version</label>
-                    <input type="text" id="modules-workbench-module-api-version" placeholder="1.0.0">
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-entrypoint">Entrypoint</label>
-                    <input type="text" id="modules-workbench-entrypoint" placeholder="module:register">
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-min-agent-version">Min agent version</label>
-                    <input type="text" id="modules-workbench-min-agent-version" placeholder="1.0.0">
-                </div>
+        <div class="mw-section">
+          <div class="mw-section-head">
+            <div>
+              <h4 style="margin: 0;">Blueprint модуля</h4>
+              <div class="mw-subtle">Базовая идентичность, ownership, платформы и требования.</div>
             </div>
+          </div>
+          <div class="mw-grid-3" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="modules-workbench-module-name">Имя модуля</label>
+              <input type="text" id="modules-workbench-module-name" placeholder="network_basic">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-module-version">Версия</label>
+              <input type="text" id="modules-workbench-module-version" placeholder="1.0.0">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-module-description">Описание</label>
+              <input type="text" id="modules-workbench-module-description" placeholder="Кратко: что даёт этот pack">
+            </div>
+          </div>
+          <div class="mw-grid-4" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="modules-workbench-owner-scope">Owner scope</label>
+              <select id="modules-workbench-owner-scope">
+                <option value="core">core</option>
+                <option value="platform">platform</option>
+                <option value="builtin">builtin</option>
+                <option value="vendor">vendor</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-module-api-version">Module API version</label>
+              <input type="text" id="modules-workbench-module-api-version" placeholder="1.0.0">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-entrypoint">Entrypoint</label>
+              <input type="text" id="modules-workbench-entrypoint" placeholder="module:register">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-min-agent-version">Min agent version</label>
+              <input type="text" id="modules-workbench-min-agent-version" placeholder="1.0.0">
+            </div>
+          </div>
+          <div class="mw-grid-2" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="modules-workbench-platforms">Platforms (JSON)</label>
+              <textarea id="modules-workbench-platforms" rows="3" placeholder='["win32","linux"]'></textarea>
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-requirements">Requirements / optional requirements (JSON)</label>
+              <textarea id="modules-workbench-requirements" rows="3" placeholder='{"requirements":[],"optional_requirements":[]}'></textarea>
+            </div>
+          </div>
+        </div>
 
-            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div class="form-group">
-                    <label for="modules-workbench-platforms">Platforms (JSON)</label>
-                    <textarea id="modules-workbench-platforms" rows="2" placeholder='["win32","linux"]'></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="modules-workbench-requirements">Requirements / optional requirements (JSON)</label>
-                    <textarea id="modules-workbench-requirements" rows="2" placeholder='{"requirements":[],"optional_requirements":[]}'></textarea>
-                </div>
+        <div class="mw-section">
+          <div class="mw-section-head">
+            <div>
+              <h4 style="margin: 0;">Tool studio</h4>
+              <div class="mw-subtle">Шаблоны, атомарные tool-фрагменты, схемы, metadata и код.</div>
             </div>
+            <div class="mw-inline-actions">
+              <select id="modules-workbench-tool-template">
+                <option value="blank">Пустой diagnostic tool</option>
+                <option value="dns_resolve">Шаблон DNS resolve</option>
+                <option value="network_ping">Шаблон network ping</option>
+                <option value="http_request">Шаблон HTTP request</option>
+                <option value="system_service_status">Шаблон service status</option>
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-apply-template-btn">Подставить в текущий</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-add-template-btn">Добавить из шаблона</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-duplicate-tool-btn">Дублировать tool</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-remove-tool-btn">Удалить tool</button>
+            </div>
+          </div>
 
-            <div class="section" style="margin-top: 18px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                    <h4 style="margin: 0;">Tool fragments</h4>
-                    <div style="display: flex; gap: 8px;">
-                        <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-add-tool-btn">Добавить tool</button>
-                    </div>
-                </div>
-                <div id="modules-workbench-tool-tabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0;"></div>
-                <div id="modules-workbench-tool-editor"></div>
-            </div>
+          <div id="modules-workbench-tool-tabs" class="mw-tabs"></div>
+          <div id="modules-workbench-tool-editor" style="margin-top: 12px;"></div>
+        </div>
 
-            <div class="section" style="margin-top: 18px;">
-                <h4 style="margin-bottom: 8px;">Архив и исходники</h4>
-                <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
-                    Для модулей, собранных через builder, код tool-функций раскладывается обратно в поля. Для остальных модулей ниже показывается сырой архив.
-                </div>
-                <div id="modules-workbench-source-files"></div>
+        <div class="mw-section">
+          <div class="mw-section-head">
+            <div>
+              <h4 style="margin: 0;">API preview</h4>
+              <div class="mw-subtle">Payload, validate/save примеры и формат для ручного API или LLM-оркестрации.</div>
             </div>
-        </section>
-    </div>
+          </div>
+          <div id="modules-workbench-api-tabs" class="mw-tabs"></div>
+          <pre id="modules-workbench-api-preview" class="mw-code-block" style="margin-top: 12px;"></pre>
+        </div>
+
+        <div class="mw-section">
+          <div class="mw-section-head">
+            <div>
+              <h4 style="margin: 0;">Архив и раскладка исходников</h4>
+              <div class="mw-subtle">Показываем файлы архива, найденные методы `@exposed_tool` и статус reconstruction.</div>
+            </div>
+          </div>
+          <div id="modules-workbench-source-summary" class="mw-chip-row" style="margin-top: 12px;"></div>
+          <div class="mw-grid-2" style="margin-top: 12px;">
+            <div id="modules-workbench-source-files" class="mw-file-list"></div>
+            <div>
+              <div id="modules-workbench-source-meta" class="mw-subtle" style="margin-bottom: 8px;"></div>
+              <pre id="modules-workbench-source-content" class="mw-code-block"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 </div>

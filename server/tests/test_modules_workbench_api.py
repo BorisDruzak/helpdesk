@@ -1,5 +1,7 @@
 import json
 import uuid
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -121,6 +123,117 @@ async def test_module_workbench_detail_returns_editable_spec_for_generated_modul
 
 
 @pytest.mark.asyncio
+async def test_module_workbench_detail_reconstructs_tool_body_via_ast_without_builder_markers(test_client, test_engine):
+    module_name = f"wb_ast_{uuid.uuid4().hex[:8]}"
+    version = "1.0.0"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version=version,
+        tool_name="vendor_x.ast_demo",
+        description="AST module",
+        user_function_body='value = params.get("value", "x")\nreturn {"echo": value}',
+        owner_scope="vendor",
+        tools=[
+            {
+                "tool_name": "vendor_x.ast_demo",
+                "method_name": "inspect_value",
+                "description": "AST inspect value",
+                "params_schema": {
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "additionalProperties": True,
+                },
+                "metadata": {"domain": "vendor_x", "platforms": ["any"], "idempotent": True},
+                "user_function_body": 'value = params.get("value", "x")\nreturn {"echo": value}',
+            }
+        ],
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+
+    module_py = """from typing import Dict, Any
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
+
+
+class _Collector(BaseCollector):
+    @property
+    def name(self) -> str:
+        return "wb_ast"
+
+    async def collect(self) -> Dict[str, Any]:
+        return {}
+
+    @exposed_tool(
+        name="vendor_x.ast_demo",
+        aliases=["vendor_x.ast_demo_legacy"],
+        description="AST inspect value",
+        risk_level="safe_readonly",
+        params_schema={"type": "object", "properties": {"value": {"type": "string"}}, "additionalProperties": True},
+        output_schema={"type": "object", "properties": {"echo": {"type": "string"}}},
+        presets=[],
+        metadata_risk_level="safe_read",
+        metadata_scopes=["vendor_x"],
+        metadata_requires_consent=False,
+        metadata_allow_roles=["admin"],
+        metadata_domain="vendor_x",
+        metadata_platforms=["any"],
+        metadata_timeout_sec=30,
+        metadata_idempotent=True,
+        metadata_origin="managed",
+        metadata_side_effects=False,
+        contract_version="1.0.0",
+        dependencies={},
+        lifecycle="stable",
+        error_codes=["VALIDATION_ERROR"],
+        artifact_types=[],
+        redaction={"enabled": True, "allow_raw_sensitive_data": False},
+        resources={"max_runtime_sec": 30},
+    )
+    async def inspect_value(self, **kwargs) -> Dict[str, Any]:
+        params = {**{}, **kwargs}
+        value = params.get("value", "x")
+        return {"echo": value}
+
+
+def register():
+    return _Collector()
+"""
+
+    archive_path = MODULES_STORAGE_DIR / module_name / version / "module.zip"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_buffer = BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w") as zf:
+        zf.writestr("manifest.json", json.dumps(manifest_json, ensure_ascii=False, indent=2))
+        zf.writestr("module.py", module_py)
+    archive_path.write_bytes(archive_buffer.getvalue())
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Module(
+                module_name=module_name,
+                version=version,
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=len(archive_buffer.getvalue()),
+                storage_path=f"{module_name}/{version}/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(f"/api/modules/workbench/{module_name}/{version}")
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    editable = data["editable_spec"]
+    assert editable["tools"][0]["reconstruction_strategy"] == "ast"
+    assert 'value = params.get("value", "x")' in editable["tools"][0]["user_function_body"]
+
+
+@pytest.mark.asyncio
 async def test_module_workbench_save_creates_module_and_sets_preferred(test_client, test_engine):
     module_name = f"wb_save_{uuid.uuid4().hex[:8]}"
     response = await test_client.post(
@@ -191,3 +304,138 @@ async def test_module_workbench_save_creates_module_and_sets_preferred(test_clie
             await session.execute(text("SELECT value FROM server_config WHERE key = :key"), {"key": f"module_preferred:{module_name}"})
         ).scalar_one()
         assert '"version": "2.0.0"' in preferred_value
+
+
+@pytest.mark.asyncio
+async def test_module_workbench_validate_returns_preview_and_publish_readiness(test_client):
+    module_name = f"wb_validate_{uuid.uuid4().hex[:8]}"
+    response = await test_client.post(
+        "/api/modules/workbench/validate",
+        json={
+            "module_name": module_name,
+            "version": "0.2.0",
+            "description": "Validate-only draft",
+            "owner_scope": "vendor",
+            "module_api_version": "1.0.0",
+            "entrypoint": "module:register",
+            "platforms": ["any"],
+            "requirements": [],
+            "optional_requirements": [],
+            "tools": [
+                {
+                    "tool_name": "vendor_x.echo",
+                    "method_name": "echo_tool",
+                    "description": "Echo data",
+                    "params_schema": {
+                        "type": "object",
+                        "required": ["value"],
+                        "properties": {"value": {"type": "string"}},
+                        "additionalProperties": False,
+                    },
+                    "output_schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}},
+                    "metadata": {
+                        "domain": "vendor_x",
+                        "platforms": ["any"],
+                        "risk_level": "safe_read",
+                        "requires_consent": False,
+                        "timeout_sec": 30,
+                        "idempotent": True,
+                        "side_effects": False,
+                        "allow_roles": ["admin"],
+                        "scopes": ["custom"],
+                        "origin": "managed",
+                        "tool_kind": "diagnostic",
+                    },
+                    "contract_version": "1.0.0",
+                    "dependencies": {
+                        "min_agent_version": "1.0.0",
+                        "required_binaries": [],
+                        "required_python_packages": [],
+                        "required_services": [],
+                        "required_permissions": [],
+                    },
+                    "lifecycle": "stable",
+                    "error_codes": ["VALIDATION_ERROR"],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "user_function_body": 'return {"ok": True, "value": params.get("value")}',
+                }
+            ],
+        },
+    )
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["publish_ready"] is True
+    assert data["module_exists"] is False
+    assert data["editable_preview"]["module_name"] == module_name
+    assert data["editable_preview"]["tools"][0]["tool_name"] == "vendor_x.echo"
+    assert any(item["path"] == "module.py" for item in data["editable_preview"]["source"]["files"])
+
+
+@pytest.mark.asyncio
+async def test_module_workbench_validate_marks_existing_version_not_publish_ready(test_client):
+    module_name = f"wb_existing_{uuid.uuid4().hex[:8]}"
+    payload = {
+        "module_name": module_name,
+        "version": "0.3.0",
+        "description": "Existing version draft",
+        "owner_scope": "vendor",
+        "module_api_version": "1.0.0",
+        "entrypoint": "module:register",
+        "platforms": ["any"],
+        "requirements": [],
+        "optional_requirements": [],
+        "tools": [
+            {
+                "tool_name": "vendor_x.echo",
+                "method_name": "echo_tool",
+                "description": "Echo data",
+                "params_schema": {
+                    "type": "object",
+                    "required": ["value"],
+                    "properties": {"value": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+                "output_schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}},
+                "metadata": {
+                    "domain": "vendor_x",
+                    "platforms": ["any"],
+                    "risk_level": "safe_read",
+                    "requires_consent": False,
+                    "timeout_sec": 30,
+                    "idempotent": True,
+                    "side_effects": False,
+                    "allow_roles": ["admin"],
+                    "scopes": ["custom"],
+                    "origin": "managed",
+                    "tool_kind": "diagnostic",
+                },
+                "contract_version": "1.0.0",
+                "dependencies": {
+                    "min_agent_version": "1.0.0",
+                    "required_binaries": [],
+                    "required_python_packages": [],
+                    "required_services": [],
+                    "required_permissions": [],
+                },
+                "lifecycle": "stable",
+                "error_codes": ["VALIDATION_ERROR"],
+                "artifact_types": [],
+                "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                "user_function_body": 'return {"ok": True, "value": params.get("value")}',
+            }
+        ],
+    }
+
+    save_response = await test_client.post("/api/modules/workbench/save", json=payload)
+    assert save_response.status == 200, await save_response.text()
+
+    validate_response = await test_client.post("/api/modules/workbench/validate", json=payload)
+    assert validate_response.status == 200, await validate_response.text()
+    data = await validate_response.json()
+    assert data["status"] == "ok"
+    assert data["module_exists"] is True
+    assert data["publish_ready"] is False
