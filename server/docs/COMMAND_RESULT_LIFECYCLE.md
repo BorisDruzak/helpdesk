@@ -200,13 +200,20 @@ elif status == "consent_required":
 
 ## Специальный side effect для module pipeline
 
-Если outbox/event pipeline сохраняет `module_state_changed`, это событие не ограничивается только timeline/publish-слоем. После commit сервер дополнительно пытается запустить `reconcile_device()` для соответствующего `device_id`.
+Если outbox/event pipeline сохраняет `module_state_changed`, это событие не ограничивается только timeline/publish-слоем. После commit сервер теперь сначала синхронизирует `device_modules` из `payload.modules_snapshot`, а уже затем пытается запустить `reconcile_device()` для соответствующего `device_id`.
+
+Отдельно command-side effects для `command_result` снова считаются частью обязательного post-process слоя:
+
+- `list_installed_modules` success:
+  сервер берёт `payload.data.observations.modules`, приводит в flattened inventory и обновляет `device_modules` через `sync_modules_inventory(..., source="command_result")`.
+- `list_tools` success:
+  сервер берёт `payload.data.observations.tools`, канонически сортирует список, вычисляет `toolset_hash`, создаёт/переиспользует запись в `device_toolset_snapshots`, обновляет `devices.current_toolset_hash`, `current_toolset_snapshot_id` и `last_toolset_refresh_at`.
 
 Назначение:
 
 - быстрее свести `device_modules` и desired state после install/activate/deactivate;
 - уменьшить окно, в котором UI ещё видит старое состояние модулей;
-- поддержать server-first modular flow, где auto-install перед `run_tool` фиксирует desired state, а затем immediate reconcile закрывает фактический drift.
+- поддержать server-first modular flow, где auto-install перед `run_tool` фиксирует desired state, `module_state_changed` быстро обновляет actual inventory, а `list_installed_modules/list_tools` остаются каноническим путём для sync и snapshots.
 
 ## Контракты
 

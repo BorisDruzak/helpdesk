@@ -100,12 +100,105 @@ class CommandResultArtifactHandler:
     Handles payload artifacts independently from lifecycle updates.
     """
 
+    async def _sync_command_side_effects(
+        self,
+        normalized: NormalizedCommandResult,
+        ctx: Any,
+        lifecycle_outcome: CommandResultLifecycleOutcome,
+    ) -> None:
+        if lifecycle_outcome.status != "succeeded" or not lifecycle_outcome.operation_id:
+            return
+        device_id = getattr(ctx, "agent_id", None)
+        if not device_id:
+            return
+        observations = normalized.data_payload.get("observations")
+        if not isinstance(observations, dict):
+            return
+
+        from app.db import get_session
+        from app.repos import DevicesRepo, OperationsRepo, ToolsetSnapshotsRepo
+        from utils.toolset_hash import compute_toolset_hash, sort_tools
+        from websocket.modules_sync import flatten_modules_list, sync_modules_inventory
+
+        async with get_session() as session:
+            op_repo = OperationsRepo(session)
+            operation = await op_repo.get_by_operation_id(lifecycle_outcome.operation_id)
+            if not operation or operation.kind != "command" or not operation.command_name:
+                return
+
+            command_name = operation.command_name
+            if command_name == "list_installed_modules":
+                modules_list = observations.get("modules")
+                if not isinstance(modules_list, list):
+                    return
+                inventory = flatten_modules_list(modules_list)
+                await sync_modules_inventory(
+                    session=session,
+                    device_id=device_id,
+                    inventory=inventory,
+                    source="command_result",
+                )
+                await session.commit()
+                logger.info(
+                    "[command_result] synced device_modules from list_installed_modules: "
+                    f"device_id={device_id} modules={len(inventory)}"
+                )
+                return
+
+            if command_name != "list_tools":
+                return
+
+            tools_list = observations.get("tools")
+            if not isinstance(tools_list, list):
+                return
+
+            devices_repo = DevicesRepo(session)
+            snapshots_repo = ToolsetSnapshotsRepo(session)
+            device = await devices_repo.get_by_device_id(device_id)
+            if not device:
+                return
+
+            sorted_tools = sort_tools(tools_list)
+            toolset_hash = compute_toolset_hash(sorted_tools)
+            snapshot_id = await snapshots_repo.insert_snapshot_if_not_exists(
+                device_id=device_id,
+                toolset_hash=toolset_hash,
+                toolset_json={"tools": sorted_tools},
+                agent_version=device.agent_version or "unknown",
+                tool_count=len(sorted_tools),
+            )
+            await devices_repo.update_toolset_refresh_time(device_id)
+            if snapshot_id is not None and (
+                device.current_toolset_hash != toolset_hash
+                or device.current_toolset_snapshot_id != snapshot_id
+            ):
+                await devices_repo.update_toolset_snapshot_ref(
+                    device_id=device_id,
+                    toolset_hash=toolset_hash,
+                    snapshot_id=snapshot_id,
+                )
+                if device.current_toolset_hash != toolset_hash:
+                    await devices_repo.update_toolset_info(
+                        device_id=device_id,
+                        toolset_hash=toolset_hash,
+                        tools_count=len(sorted_tools),
+                    )
+            await session.commit()
+            logger.info(
+                "[command_result] synced toolset snapshot from list_tools: "
+                f"device_id={device_id} tool_count={len(sorted_tools)} hash={toolset_hash}"
+            )
+
     async def post_process(
         self,
         normalized: NormalizedCommandResult,
         ctx: Any,
         lifecycle_outcome: CommandResultLifecycleOutcome,
     ) -> None:
+        try:
+            await self._sync_command_side_effects(normalized, ctx, lifecycle_outcome)
+        except Exception as exc:
+            logger.warning(f"[command_result] command side effects failed: {exc}")
         artifacts = normalized.data_payload.get("artifacts")
         if not isinstance(artifacts, list) or not artifacts:
             return

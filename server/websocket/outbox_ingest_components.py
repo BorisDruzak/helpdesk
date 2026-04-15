@@ -296,6 +296,24 @@ class OutboxEventPublishService:
                     logger.warning(f"[outbox_pipeline] job side effects failed: {exc}")
         if outcome.event_type == "module_state_changed" and getattr(ctx, "agent_id", None):
             try:
+                modules_snapshot = outcome.payload_event.get("modules_snapshot") if isinstance(outcome.payload_event, dict) else None
+                if isinstance(modules_snapshot, list):
+                    from app.db import get_session
+                    from websocket.modules_sync import flatten_modules_list, sync_modules_inventory
+
+                    async with get_session() as session:
+                        await sync_modules_inventory(
+                            session=session,
+                            device_id=ctx.agent_id,
+                            inventory=flatten_modules_list(modules_snapshot),
+                            source="event",
+                        )
+                        await session.commit()
+                    logger.info(
+                        "[outbox_pipeline] synced device_modules from module_state_changed: "
+                        f"device_id={ctx.agent_id} modules={len(modules_snapshot)}"
+                    )
+
                 from modules.reconcile import reconcile_device
 
                 await reconcile_device(
