@@ -12,7 +12,7 @@ import logging
 log = logging.getLogger(__name__)
 
 # Разрешённые имена в if_expr (только context и prev_steps)
-_ALLOWED_NAMES = frozenset({"context", "prev_steps"})
+_ALLOWED_NAMES = frozenset({"context", "prev_steps", "steps"})
 
 
 def _safe_eval_node(node: ast.AST, namespace: Dict[str, Any]) -> Any:
@@ -23,6 +23,15 @@ def _safe_eval_node(node: ast.AST, namespace: Dict[str, Any]) -> Any:
     """
     if isinstance(node, ast.Constant):
         return node.value
+    if isinstance(node, ast.List):
+        return [_safe_eval_node(item, namespace) for item in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_safe_eval_node(item, namespace) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return {
+            _safe_eval_node(key, namespace): _safe_eval_node(value, namespace)
+            for key, value in zip(node.keys, node.values)
+        }
     if isinstance(node, ast.Name):
         if node.id not in _ALLOWED_NAMES:
             raise ValueError(f"Disallowed name in if_expr: {node.id!r}")
@@ -31,6 +40,8 @@ def _safe_eval_node(node: ast.AST, namespace: Dict[str, Any]) -> Any:
         if node.attr.startswith("_"):
             raise ValueError(f"Disallowed attribute: {node.attr!r}")
         val = _safe_eval_node(node.value, namespace)
+        if isinstance(val, dict):
+            return val[node.attr]
         return getattr(val, node.attr)
     if isinstance(node, ast.Subscript):
         val = _safe_eval_node(node.value, namespace)
@@ -99,7 +110,12 @@ def evaluate_if_expr(
     """
     if not if_expr or not (s := if_expr.strip()):
         return True
-    namespace = {"context": context or {}, "prev_steps": prev_steps or {}}
+    if s.startswith("{{") and s.endswith("}}"):
+        s = s[2:-2].strip()
+    if s.startswith("steps."):
+        s = f"prev_steps.{s[6:]}"
+    s = s.replace(" steps.", " prev_steps.")
+    namespace = {"context": context or {}, "prev_steps": prev_steps or {}, "steps": prev_steps or {}}
     try:
         tree = ast.parse(s, mode="eval")
         if not isinstance(tree.body, (ast.Compare, ast.BoolOp, ast.UnaryOp, ast.Name, ast.Constant, ast.Call, ast.Attribute, ast.Subscript)):

@@ -18,6 +18,78 @@ from app.db.models import PlaybookStep
 from app.utils.playbook_step_eval import evaluate_if_expr, resolve_params_template
 from app.services.playbook_capability import check_tool_available
 
+TOOL_BACKED_STEP_TYPES = frozenset({"run_tool", "collect", "enrich", "remediate"})
+LOCAL_STEP_TYPES = frozenset({"transform", "decision", "report"})
+
+
+def _step_type(step: PlaybookStep) -> str:
+    return str(getattr(step, "type", None) or ("run_tool" if step.tool else "transform")).strip().lower()
+
+
+def _is_tool_backed_step(step: PlaybookStep) -> bool:
+    step_type = _step_type(step)
+    return step_type in TOOL_BACKED_STEP_TYPES or bool(step.tool and step_type not in LOCAL_STEP_TYPES)
+
+
+def _has_local_steps(group: List[Tuple[PlaybookStep, int]]) -> bool:
+    return any(not _is_tool_backed_step(step) for step, _ in group)
+
+
+async def _execute_local_step(
+    repo: PlaybookRepo,
+    run,
+    step: PlaybookStep,
+    context: dict,
+    prev_steps: dict,
+):
+    now = datetime.now(timezone.utc)
+    step_type = _step_type(step)
+    input_payload = _step_params(step, context, prev_steps)
+    output_payload = None
+    error_payload = None
+    status = "success"
+    try:
+        if step_type == "decision":
+            decision = None
+            matched_rule = None
+            rules = input_payload.get("rules") if isinstance(input_payload, dict) else None
+            if not isinstance(rules, list):
+                rules = []
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                when_expr = rule.get("when")
+                if when_expr and not evaluate_if_expr(str(when_expr), context, prev_steps):
+                    continue
+                matched_rule = rule
+                decision = rule.get("set")
+                if decision is None:
+                    decision = rule.get("value") or rule.get("branch")
+                break
+            if decision is None and isinstance(input_payload, dict):
+                decision = input_payload.get("default")
+            output_payload = {
+                "decision": decision,
+                "matched_rule": matched_rule.get("id") if isinstance(matched_rule, dict) else None,
+            }
+        else:
+            output_payload = input_payload
+    except Exception as exc:
+        status = "failed"
+        error_payload = {"code": "LOCAL_STEP_FAILED", "message": str(exc), "step_type": step_type}
+
+    return await repo.create_step_run(
+        playbook_run_id=run.id,
+        playbook_step_id=step.id,
+        operation_id=None,
+        attempt=1,
+        input_json=input_payload,
+        status=status,
+        output_json=output_payload,
+        error_json=error_payload,
+        finished_at=now,
+    )
+
 
 def _retry_allowed(step: PlaybookStep, step_run, error_code: Optional[str]) -> bool:
     """Этап 7: Проверка retry_policy: max_attempts, retry_on_codes."""
@@ -111,16 +183,23 @@ async def _start_group_steps(
     from websocket.protocol import enqueue_command_async
 
     op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
-    started = 0
+    started_tools = 0
+    processed_steps = 0
     first_op_id: Optional[str] = None
     for (step, _idx) in group:
-        if started >= max_to_start:
+        if _is_tool_backed_step(step) and started_tools >= max_to_start:
             break
-        if not step.tool:
-            continue
         if step.if_expr and not evaluate_if_expr(step.if_expr, context, prev_steps):
             await repo.create_step_run_skipped(run.id, step.id, reason="if_expr=false")
             prev_steps[step.step_key] = {"output": None, "error": None, "status": "skipped"}
+            continue
+        if not _is_tool_backed_step(step):
+            local_step_run = await _execute_local_step(repo, run, step, context, prev_steps)
+            processed_steps += 1
+            prev_steps = await repo.get_prev_steps_for_run(run.id)
+            await _process_run_after_step_terminal(session, state, repo, run, step, local_step_run)
+            if getattr(run, "status", None) != "running":
+                break
             continue
         # Этап 9: Capability Gate — проверка до enqueue (отключается CAPABILITY_GATE_STRICT=false)
         if config.CAPABILITY_GATE_STRICT:
@@ -129,7 +208,10 @@ async def _start_group_steps(
                 step_run_fail = await repo.create_step_run_failed(
                     run.id, step.id, err_code or "UNSUPPORTED_CAPABILITY", err_msg or "Tool not available"
                 )
+                processed_steps += 1
                 await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
+                if getattr(run, "status", None) != "running":
+                    break
                 continue
         operation_id = str(uuid.uuid4())
         if first_op_id is None:
@@ -163,11 +245,12 @@ async def _start_group_steps(
             operation_id=operation_id,
             require_online=False,
         )
-        started += 1
+        started_tools += 1
+        processed_steps += 1
         logger.info(
             f"[PlaybookEngine] Started run_id={run.id} step_key={step.step_key} operation_id={operation_id}"
         )
-    return (started, first_op_id)
+    return (processed_steps, first_op_id)
 
 
 async def _process_run_after_step_terminal(
@@ -422,7 +505,7 @@ async def advance_after_terminal(
         running_count = await repo.count_running_step_runs_for_run(run.id)
         max_parallel = config.PLAYBOOK_MAX_PARALLEL_STEPS_PER_RUN if config.PLAYBOOK_PARALLEL_ENABLED else 1
         to_start = min(len(not_started), max(0, max_parallel - running_count))
-        if to_start > 0:
+        if to_start > 0 or _has_local_steps(not_started):
             await _start_group_steps(
                 session, state, repo, run, not_started, context, prev_steps, to_start
             )

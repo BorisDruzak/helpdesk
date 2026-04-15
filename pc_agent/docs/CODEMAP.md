@@ -47,7 +47,7 @@
 ### 2.1 Ядро (core/)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/core/orchestrator.py` | Фасад orchestrator-команд: dispatch, run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей; collect/job/uptime ветки полностью делегированы в helper-модули, cancel-operation flow доведён до канонического agent-side terminal результата и ticket event publish |
+| `pc_agent/core/orchestrator.py` | Фасад orchestrator-команд: dispatch, run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей; collect/job/uptime ветки полностью делегированы в helper-модули, cancel-operation flow доведён до канонического agent-side terminal результата и ticket event publish; `run_tool`, `list_tools` и `describe_tool` теперь резолвят канонический semantic tool id и legacy aliases через текущий registry без отдельного V2-контура |
 | `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py`, `pc_agent/core/orchestrator_shared.py` | Helper-слой распила orchestrator: каноническая collect/job/uptime логика и общий mojibake-safe logger; в `orchestrator.py` не должно оставаться дублированных тел этих handler-веток |
 | `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
@@ -56,8 +56,8 @@
 | `pc_agent/core/machine_identity.py` | Разрешение стабильного `machine_id` из OS/runtime (Windows MachineGuid, Linux machine-id, env override, fallback file) |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |
-| `pc_agent/core/registry.py` | Дескрипторы инструментов, alias→method, call_tool() |
-| `pc_agent/core/tools.py` | Инструментальная подсистема (каталог для сервера) |
+| `pc_agent/core/registry.py` | Дескрипторы инструментов, canonical tool id/alias → runtime method, `call_tool()`; public tool name может быть semantic key (`dns.resolve`), а legacy `module.tool` остаётся alias |
+| `pc_agent/core/tools.py` | Инструментальная подсистема и metadata-модель для server/agent policy/tool catalogs |
 | `pc_agent/core/policy_engine.py` | Политики выполнения |
 | `pc_agent/core/artifacts.py` | Артефакты (screenshot/record) |
 | `pc_agent/core/recording_controller.py` | Управление записью |
@@ -129,11 +129,11 @@
 
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
-- **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`
+- **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
 - **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
 - **device_seq, agent_seq** — тип события только по ним; outbox в `core/database.py`
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`
-- **инструменты (list_tools, call_tool)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
+- **инструменты (list_tools, call_tool, aliases, semantic ids)** — `core/registry.py`, `core/tools.py`, `core/orchestrator.py`
 - **consent, pending_consents** — `core/consent_service.py`, `core/database.py`, `core/orchestrator.py`, `ui_gui/consent_dialog.py`
 - **аутентификация, machine_id, install_id, токен** — `core/identity.py`, `core/machine_identity.py`, `auth/token_source.py`, `auth/connection_request.py`, `docs/AUTHENTICATION.md` (не логировать сырой токен; migration lookup идёт по `machine_id -> install_id -> legacy uuid`)
 - **always-on, tray, runtime logs, локальный shutdown/status/logs** — `docs/AGENT_RUNTIME_ALWAYS_ON.md`, `ws_agent.py`, `core/runtime_logging.py`, `ui_gui/main.py`, `ui_gui/tray_manager.py`, `ui_bridge/api_server.py`

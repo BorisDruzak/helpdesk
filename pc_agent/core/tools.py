@@ -31,6 +31,14 @@ class ToolMetadata(BaseModel):
     и разрешенные роли для использования инструмента.
     """
     
+    domain: str = Field(
+        default="system",
+        description="Логический домен/namespace инструмента"
+    )
+    platforms: list[str] = Field(
+        default_factory=lambda: ["any"],
+        description="Поддерживаемые платформы"
+    )
     risk_level: PolicyRiskLevel = Field(
         default="safe_read",
         description="Уровень риска инструмента"
@@ -46,6 +54,22 @@ class ToolMetadata(BaseModel):
     allow_roles: Optional[list[str]] = Field(
         default=None,
         description="Список разрешенных ролей. Если None, PolicyEngine решает по risk_level"
+    )
+    timeout_sec: Optional[int] = Field(
+        default=None,
+        description="Рекомендуемый таймаут выполнения"
+    )
+    idempotent: bool = Field(
+        default=False,
+        description="Идемпотентен ли диагностический шаг"
+    )
+    origin: str = Field(
+        default="builtin",
+        description="Источник инструмента: builtin/managed/legacy"
+    )
+    side_effects: bool = Field(
+        default=False,
+        description="Есть ли у инструмента побочные эффекты"
     )
 
 
@@ -64,6 +88,7 @@ class ToolSpec(BaseModel):
     capabilities: list[str] = Field(default_factory=list, description="Список возможностей инструмента")
     params_schema: dict = Field(default_factory=dict, description="JSON Schema для параметров (пока может быть пустым)")
     result_schema: dict = Field(default_factory=dict, description="JSON Schema для результата (опционально, может быть пустым)")
+    aliases: list[str] = Field(default_factory=list, description="Legacy aliases for the tool")
     metadata: ToolMetadata = Field(
         default_factory=lambda: ToolMetadata(),
         description="Метаданные инструмента для PolicyEngine"
@@ -132,5 +157,4 @@ def check_policy(spec: ToolSpec, actor_role: str) -> tuple[bool, Optional[str]]:
     
     # Все остальные случаи разрешены
     return True, None
-
 

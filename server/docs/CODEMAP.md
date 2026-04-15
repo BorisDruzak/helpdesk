@@ -48,9 +48,9 @@
 | `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
 | `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata, controlled reprovision токена на уже известный `device_id` и migration rebind legacy install-based token binding -> canonical `machine_id` |
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
-| `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher |
+| `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher + side effects для `list_installed_modules` и `list_tools` (inventory/toolset snapshots) |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
-| `server/websocket/outbox_ingest_components.py` | Компоненты outbox pipeline: envelope validator, persistence c requester-name enrichment для `chat_message`, ACK/NACK decision, post-commit publish |
+| `server/websocket/outbox_ingest_components.py` | Компоненты outbox pipeline: envelope validator, persistence c requester-name enrichment для `chat_message`, ACK/NACK decision, post-commit publish; `module_state_changed` здесь синхронизирует `device_modules` из snapshot и затем запускает reconcile |
 | `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
@@ -127,9 +127,9 @@
 ### 2.6 Утилиты (модули/manifest)
 | Файл | Назначение |
 |------|------------|
-| `server/utils/module_manifest.py` | Manifest v2, нормализация, summary/detail |
+| `server/utils/module_manifest.py` | Manifest v2, нормализация и строгая validation typed tools: canonical semantic ids, aliases, metadata/platform conflicts, summary/detail |
 | `server/utils/module_preflight.py` | Preflight ZIP, manifest_json, validation_json |
-| `server/utils/module_builder.py` | Сборка пакета для POST /api/modules/create |
+| `server/utils/module_builder.py` | Сборка пакета для POST /api/modules/create: legacy single-tool и multi-tool module packs с canonical semantic tool ids |
 | `server/utils/module_storage.py` | Хранение модулей |
 | `server/utils/tool_metadata_validation.py` | Валидация метаданных инструментов |
 | `server/core/policy_engine.py` | Политики доступа |

@@ -95,3 +95,21 @@
   3. выровнять module endpoints по auth/policy/audit;
   4. довести module desired-state + reconcile/event pipeline до server-first convergence;
   5. добавить regression tests на update recommendation, GUI/runtime status contract и module reconcile/auth flows.
+
+## 2026-04-15 In-Place Module/Playbook Refactor
+
+- Implemented in the current path, without a parallel V2:
+  - current module manifest normalization now supports canonical semantic tool ids, legacy aliases and output schema while keeping existing `module.tool` modules working;
+  - current agent registry/orchestrator now resolves canonical tool ids plus aliases through the existing runtime registry, and `list_tools` / `describe_tool` expose fuller metadata needed for policy/catalog layers;
+  - current server tool auto-install path resolves owning module by manifest tool binding instead of assuming `tool_name.split(".", 1)[0]` is always the physical module name;
+  - current playbook engine now executes local typed steps (`transform`, `decision`, `report`) inside the existing `playbook_*` tables and step-run model.
+- Guardrails kept:
+  - builtin screenshot path `screen.collect` and agent-side screen/system regressions were kept green;
+  - artifact-heavy flows were not rewritten and remain on the current result/artifact path.
+- Verification snapshot:
+  - passed: `python scripts/verify_workspace.py`
+  - passed: `python -m pytest pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_builtin_modules_screen_system.py -v --tb=short`
+  - passed: `python -m pytest server/tests/test_playbook_fixes.py::TestPlaybookCapabilityMetadataSource::test_check_tool_available_async_and_spec_metadata server/tests/test_playbook_fixes.py::TestPlaybookTypedLocalSteps::test_if_expr_supports_steps_alias_and_collections server/tests/test_modules_manifest_api.py::test_normalize_manifest_keeps_semantic_tool_name_and_legacy_alias server/tests/test_tool_service_builtin_modules.py -v --tb=short`
+  - passed: `python -m pytest pc_agent/tests/test_support_module_packages.py -v --tb=short`
+  - passed: `python -m pytest server/tests/test_modules_manifest_api.py::test_normalize_manifest_rejects_duplicate_tool_alias_conflicts server/tests/test_modules_manifest_api.py::test_build_module_package_supports_multi_tool_semantic_names -v --tb=short`
+  - blocked externally: DB-backed server pytest requires PostgreSQL access; with `-o asyncio_mode=strict` the suite reaches real DB auth and currently fails at `pg_hba.conf` / test database access from this workstation.

@@ -13,3 +13,16 @@ async def test_builtin_screen_module_skips_auto_install():
     result = await service._ensure_module_installed("device-1", "screen.collect")
 
     assert result is None
+
+
+@pytest.mark.no_db
+def test_manifest_tool_match_supports_aliases():
+    entry = {
+        "tool": "dns.resolve",
+        "aliases": ["network_basic.resolve", "network_basic.resolve_dns"],
+    }
+
+    assert ToolService._tool_matches_manifest_entry(entry, "dns.resolve") is True
+    assert ToolService._tool_matches_manifest_entry(entry, "network_basic.resolve") is True
+    assert ToolService._tool_matches_manifest_entry(entry, "network_basic.resolve_dns") is True
+    assert ToolService._tool_matches_manifest_entry(entry, "network_basic.lookup") is False

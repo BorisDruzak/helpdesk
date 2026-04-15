@@ -2,8 +2,16 @@
 Тесты для проверки исправлений: capability gate, handshake payload, skipped, metadata validation, list_tools debounce.
 Запуск: из директории server: pytest tests/test_playbook_fixes.py -v
 """
-import pytest
+import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.db.models import Playbook, PlaybookStep, PlaybookStepRun, PlaybookVersion
+from app.services import playbook_engine
 
 # --- Без БД ---
 
@@ -58,6 +66,7 @@ class TestToolMetadataValidation:
 class TestPlaybookCapabilityMetadataSource:
     """Capability gate читает metadata из tool.spec.metadata."""
 
+    @pytest.mark.no_db
     @pytest.mark.asyncio
     async def test_check_tool_available_async_and_spec_metadata(self):
         from app.services.playbook_capability import check_tool_available
@@ -92,3 +101,106 @@ class TestOperationsRepoHasPendingListTools:
         assert hasattr(OperationsRepo, "PENDING_STATUSES")
         assert "queued" in OperationsRepo.PENDING_STATUSES
         assert "running" in OperationsRepo.PENDING_STATUSES
+
+
+class TestPlaybookTypedLocalSteps:
+    @pytest.mark.asyncio
+    async def test_start_run_executes_transform_and_decision_steps_without_operations(self, test_engine):
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        playbook_version_id = None
+
+        async with session_maker() as session:
+            playbook = Playbook(
+                key=f"pb_{uuid.uuid4().hex[:8]}",
+                name="Typed local steps",
+                domain="diag",
+                owner="tests",
+                archived=False,
+            )
+            session.add(playbook)
+            await session.flush()
+            version = PlaybookVersion(
+                playbook_id=playbook.id,
+                version="1.0.0",
+                manifest_json={},
+                status="published",
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(version)
+            await session.flush()
+            playbook_version_id = version.id
+            session.add_all(
+                [
+                    PlaybookStep(
+                        playbook_version_id=version.id,
+                        step_key="prepare",
+                        order_no=10,
+                        type="transform",
+                        tool=None,
+                        params_template_json={"hostname": "{{ context.hostname }}", "mode": "diagnostic"},
+                    ),
+                    PlaybookStep(
+                        playbook_version_id=version.id,
+                        step_key="decide",
+                        order_no=20,
+                        type="decision",
+                        tool=None,
+                        params_template_json={
+                            "rules": [
+                                {
+                                    "id": "prepared",
+                                    "when": "{{ steps.prepare.status == 'success' }}",
+                                    "set": "ready",
+                                }
+                            ],
+                            "default": "unknown",
+                        },
+                    ),
+                ]
+            )
+            await session.commit()
+
+        async with session_maker() as session:
+            run_id, first_operation_id = await playbook_engine.start_run(
+                session=session,
+                state=MagicMock(),
+                playbook_version_id=playbook_version_id,
+                device_id=str(uuid.uuid4()),
+                context_json={"hostname": "site.example"},
+            )
+            await session.commit()
+
+        assert first_operation_id is None
+
+        async with session_maker() as session:
+            step_runs = (
+                await session.execute(
+                    select(PlaybookStepRun)
+                    .where(PlaybookStepRun.playbook_run_id == run_id)
+                    .order_by(PlaybookStepRun.id)
+                )
+            ).scalars().all()
+            assert len(step_runs) == 2
+            assert step_runs[0].status == "success"
+            assert step_runs[0].operation_id is None
+            assert step_runs[0].output_json["hostname"] == "site.example"
+            assert step_runs[1].status == "success"
+            assert step_runs[1].output_json["decision"] == "ready"
+
+    @pytest.mark.no_db
+    def test_if_expr_supports_steps_alias_and_collections(self):
+        from app.utils.playbook_step_eval import evaluate_if_expr
+
+        prev_steps = {
+            "http_check": {
+                "status": "success",
+                "output": {"status_code": 302},
+                "error": None,
+            }
+        }
+
+        assert evaluate_if_expr(
+            "{{ steps.http_check.output.status_code in [200, 301, 302] }}",
+            context={},
+            prev_steps=prev_steps,
+        ) is True

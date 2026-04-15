@@ -21,6 +21,14 @@ class ToolMetadata(BaseModel):
     КРИТИЧНО: Должен быть синхронизирован с pc_agent/core/tools.py ToolMetadata.
     """
     
+    domain: str = Field(
+        default="system",
+        description="Логический домен/namespace инструмента"
+    )
+    platforms: list[str] = Field(
+        default_factory=lambda: ["any"],
+        description="Поддерживаемые платформы"
+    )
     risk_level: PolicyRiskLevel = Field(
         default="safe_read",
         description="Уровень риска инструмента"
@@ -37,5 +45,20 @@ class ToolMetadata(BaseModel):
         default=None,
         description="Список разрешенных ролей. Если None, PolicyEngine решает по risk_level"
     )
-
+    timeout_sec: Optional[int] = Field(
+        default=None,
+        description="Рекомендуемый таймаут выполнения"
+    )
+    idempotent: bool = Field(
+        default=False,
+        description="Идемпотентен ли диагностический шаг"
+    )
+    origin: str = Field(
+        default="builtin",
+        description="Источник инструмента: builtin/managed/legacy"
+    )
+    side_effects: bool = Field(
+        default=False,
+        description="Есть ли у инструмента побочные эффекты"
+    )
 

@@ -11,8 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_ENTRYPOINT = "module:register"
 DEFAULT_PLATFORMS = ["any"]
+ALLOWED_PLATFORMS = {"any", "linux", "win32", "darwin"}
 MANIFEST_V2 = 2
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$")
+TOOL_KEY_RE = re.compile(r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
+PY_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _ensure_list(value: Any, default: Optional[List[Any]] = None) -> List[Any]:
@@ -27,6 +30,73 @@ def _normalize_platforms(value: Any) -> List[str]:
     return normalized or list(DEFAULT_PLATFORMS)
 
 
+def _validate_platforms(platforms: List[str], field_name: str) -> List[str]:
+    errors: List[str] = []
+    invalid = [item for item in platforms if item not in ALLOWED_PLATFORMS]
+    if invalid:
+        errors.append(
+            f"{field_name} contains unsupported values: {', '.join(sorted(dict.fromkeys(invalid)))}"
+        )
+    if "any" in platforms and len(platforms) > 1:
+        errors.append(f"{field_name} cannot combine 'any' with platform-specific values")
+    return errors
+
+
+def _normalize_bool_field(
+    raw_value: Any,
+    *,
+    default: bool,
+    field_name: str,
+    errors: List[str],
+) -> bool:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    errors.append(f"{field_name} must be a boolean")
+    return default
+
+
+def _normalize_optional_string_list(
+    raw_value: Any,
+    *,
+    field_name: str,
+    errors: List[str],
+) -> Optional[List[str]]:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, list) or any(not isinstance(item, str) or not item.strip() for item in raw_value):
+        errors.append(f"{field_name} must be a list of non-empty strings")
+        return None
+    return [item.strip() for item in raw_value]
+
+
+def _normalize_string_list(
+    raw_value: Any,
+    *,
+    field_name: str,
+    errors: List[str],
+) -> List[str]:
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list) or any(not isinstance(item, str) or not item.strip() for item in raw_value):
+        errors.append(f"{field_name} must be a list of non-empty strings")
+        return []
+    return [item.strip() for item in raw_value]
+
+
+def _normalize_optional_timeout(raw_value: Any, *, field_name: str, errors: List[str]) -> Optional[int]:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+        errors.append(f"{field_name} must be an integer")
+        return None
+    if raw_value < 1 or raw_value > 3600:
+        errors.append(f"{field_name} must be between 1 and 3600")
+        return None
+    return raw_value
+
+
 def _normalize_tool_name(module_name: str, raw_tool: Any, fallback: str) -> str:
     candidate = str(raw_tool or fallback).strip()
     if not candidate:
@@ -36,21 +106,41 @@ def _normalize_tool_name(module_name: str, raw_tool: Any, fallback: str) -> str:
     return candidate
 
 
+def _normalize_aliases(module_name: str, canonical_tool_name: str, raw_aliases: Any) -> List[str]:
+    aliases = []
+    for alias in _ensure_list(raw_aliases, []):
+        alias_value = str(alias or "").strip()
+        if not alias_value:
+            continue
+        normalized_alias = alias_value if "." in alias_value else f"{module_name}.{alias_value}"
+        if normalized_alias != canonical_tool_name:
+            aliases.append(normalized_alias)
+    short_name = canonical_tool_name.split(".", 1)[-1]
+    legacy_alias = f"{module_name}.{short_name}"
+    if legacy_alias != canonical_tool_name:
+        aliases.append(legacy_alias)
+    return list(dict.fromkeys(aliases))
+
+
 def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str], List[str]]:
     warnings: List[str] = []
     errors: List[str] = []
 
     tool_name = _normalize_tool_name(
         module_name,
-        raw_tool.get("tool") or raw_tool.get("name"),
+        raw_tool.get("canonical_name") or raw_tool.get("tool") or raw_tool.get("name"),
         f"{module_name}.run",
     )
+    if not TOOL_KEY_RE.match(tool_name):
+        errors.append(f"Tool '{tool_name}' must use a semantic id like 'dns.resolve' or 'network.ping'")
     short_name = tool_name.split(".", 1)[1]
     method_name = str(raw_tool.get("method") or short_name or "run").strip() or "run"
+    if not PY_IDENTIFIER_RE.match(method_name):
+        errors.append(f"Tool '{tool_name}' has invalid method '{method_name}'")
     params_schema = raw_tool.get("params_schema")
     if params_schema is None:
         params_schema = {}
-    elif not isinstance(params_schema, (dict, list)):
+    elif not isinstance(params_schema, dict):
         errors.append(f"Tool '{tool_name}' has invalid params_schema type")
         params_schema = {}
 
@@ -60,6 +150,13 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
     elif not isinstance(presets, list):
         errors.append(f"Tool '{tool_name}' has invalid presets type")
         presets = []
+
+    output_schema = raw_tool.get("output_schema")
+    if output_schema is None:
+        output_schema = {}
+    elif not isinstance(output_schema, dict):
+        errors.append(f"Tool '{tool_name}' has invalid output_schema type")
+        output_schema = {}
 
     capabilities = raw_tool.get("capabilities")
     if capabilities is None:
@@ -74,28 +171,72 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
         metadata = {}
 
     metadata_platforms = _normalize_platforms(metadata.get("platforms") or DEFAULT_PLATFORMS)
+    errors.extend(_validate_platforms(metadata_platforms, f"Tool '{tool_name}' metadata.platforms"))
+    aliases = _normalize_aliases(module_name, tool_name, raw_tool.get("aliases"))
+    for alias in aliases:
+        if not TOOL_KEY_RE.match(alias):
+            errors.append(f"Tool '{tool_name}' has invalid alias '{alias}'")
+    requires_consent = _normalize_bool_field(
+        metadata.get("requires_consent"),
+        default=False,
+        field_name=f"Tool '{tool_name}' metadata.requires_consent",
+        errors=errors,
+    )
+    idempotent = _normalize_bool_field(
+        metadata.get("idempotent"),
+        default=False,
+        field_name=f"Tool '{tool_name}' metadata.idempotent",
+        errors=errors,
+    )
+    side_effects = _normalize_bool_field(
+        metadata.get("side_effects"),
+        default=False,
+        field_name=f"Tool '{tool_name}' metadata.side_effects",
+        errors=errors,
+    )
+    allow_roles = _normalize_optional_string_list(
+        metadata.get("allow_roles"),
+        field_name=f"Tool '{tool_name}' metadata.allow_roles",
+        errors=errors,
+    )
+    scopes = _normalize_string_list(
+        metadata.get("scopes"),
+        field_name=f"Tool '{tool_name}' metadata.scopes",
+        errors=errors,
+    )
+    timeout_sec = _normalize_optional_timeout(
+        metadata.get("timeout_sec"),
+        field_name=f"Tool '{tool_name}' metadata.timeout_sec",
+        errors=errors,
+    )
+    domain = metadata.get("domain")
+    if domain is not None and not isinstance(domain, str):
+        errors.append(f"Tool '{tool_name}' metadata.domain must be a string")
+    origin = metadata.get("origin")
+    if origin is not None and not isinstance(origin, str):
+        errors.append(f"Tool '{tool_name}' metadata.origin must be a string")
     normalized = {
         "tool": tool_name,
+        "aliases": aliases,
         "method": method_name,
         "description": str(raw_tool.get("description") or "").strip(),
         "params_schema": params_schema,
+        "output_schema": output_schema,
         "presets": presets,
         "capabilities": capabilities,
         "metadata": {
-            "domain": str(metadata.get("domain") or module_name).strip() or module_name,
+            "domain": str(domain or tool_name.split(".", 1)[0]).strip() or tool_name.split(".", 1)[0],
             "platforms": metadata_platforms,
             "risk_level": str(metadata.get("risk_level") or raw_tool.get("risk_level") or "safe_readonly").strip() or "safe_readonly",
-            "requires_consent": bool(metadata.get("requires_consent", False)),
-            "timeout_sec": metadata.get("timeout_sec"),
-            "idempotent": bool(metadata.get("idempotent", False)),
-            "allow_roles": metadata.get("allow_roles"),
-            "scopes": _ensure_list(metadata.get("scopes"), []),
-            "origin": str(metadata.get("origin") or "managed"),
+            "requires_consent": requires_consent,
+            "timeout_sec": timeout_sec,
+            "idempotent": idempotent,
+            "side_effects": side_effects,
+            "allow_roles": allow_roles,
+            "scopes": scopes,
+            "origin": str(origin or "managed"),
         },
     }
-
-    if not tool_name.startswith(f"{module_name}."):
-        errors.append(f"Tool '{tool_name}' must belong to module '{module_name}'")
 
     return normalized, warnings, errors
 
@@ -110,8 +251,10 @@ def manifest_summary_from_manifest(manifest_json: Dict[str, Any]) -> Dict[str, A
                 "method": tool.get("method"),
                 "description": tool.get("description") or "",
                 "params_schema": tool.get("params_schema") or {},
+                "output_schema": tool.get("output_schema") or {},
                 "presets": tool.get("presets") or [],
                 "capabilities": tool.get("capabilities") or [],
+                "aliases": tool.get("aliases") or [],
                 "metadata": tool.get("metadata") or {},
             }
         )
@@ -175,6 +318,7 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
         "min_agent_version": source.get("min_agent_version"),
         "tools": [],
     }
+    validation["errors"]["metadata"].extend(_validate_platforms(normalized["platforms"], "manifest.json platforms"))
 
     tools_raw = source.get("tools")
     if tools_raw is None:
@@ -197,6 +341,31 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
         validation["errors"]["tools"].extend(errors)
         normalized["tools"].append(normalized_tool)
 
+    if normalized["tools"]:
+        canonical_index: Dict[str, int] = {}
+        alias_index: Dict[str, str] = {}
+        for idx, tool in enumerate(normalized["tools"], start=1):
+            tool_name = tool.get("tool")
+            if tool_name in canonical_index:
+                validation["errors"]["tools"].append(
+                    f"Duplicate tool '{tool_name}' declared in entries #{canonical_index[tool_name]} and #{idx}"
+                )
+            else:
+                canonical_index[tool_name] = idx
+            for alias in tool.get("aliases") or []:
+                owner = alias_index.get(alias)
+                if owner and owner != tool_name:
+                    validation["errors"]["tools"].append(
+                        f"Alias '{alias}' is declared by both '{owner}' and '{tool_name}'"
+                    )
+                    continue
+                alias_index[alias] = tool_name
+        for alias, owner in alias_index.items():
+            if alias in canonical_index and alias != owner:
+                validation["errors"]["tools"].append(
+                    f"Alias '{alias}' for tool '{owner}' conflicts with canonical tool '{alias}'"
+                )
+
     if not normalized["tools"]:
         fallback_tool_name = f"{module_name}.run" if module_name else "unknown.run"
         normalized["tools"].append(
@@ -205,6 +374,8 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                 "method": "run",
                 "description": normalized["description"],
                 "params_schema": {},
+                "output_schema": {},
+                "aliases": [],
                 "presets": [],
                 "capabilities": [],
                 "metadata": {
@@ -214,6 +385,7 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                     "requires_consent": False,
                     "timeout_sec": None,
                     "idempotent": False,
+                    "side_effects": False,
                     "allow_roles": None,
                     "scopes": [],
                     "origin": "managed" if is_v2 else "legacy",
@@ -338,4 +510,3 @@ def module_to_api_record(module: Any, include_detail: bool = False) -> Dict[str,
             }
         )
     return record
-

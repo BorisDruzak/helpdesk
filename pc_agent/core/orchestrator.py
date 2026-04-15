@@ -2206,10 +2206,16 @@ class AgentOrchestrator:
             if not metadata:
                 # Если metadata отсутствует, проставляем default
                 metadata = {
+                    'domain': module_name,
+                    'platforms': ['any'],
                     'risk_level': 'safe_read',
                     'scopes': [],
                     'requires_consent': False,
-                    'allow_roles': None
+                    'allow_roles': None,
+                    'timeout_sec': None,
+                    'idempotent': False,
+                    'origin': 'builtin',
+                    'side_effects': False,
                 }
             
             # Получаем presets из spec
@@ -2242,17 +2248,25 @@ class AgentOrchestrator:
             tool_info = {
                 'tool': tool_name,
                 'module': module_name,
+                'aliases': list(tool_data.get('aliases') or []),
                 'spec': {
                     'description': spec.get('description', 'Описание отсутствует'),
                     'risk_level': spec.get('risk_level', 'safe_readonly'),
                     'capabilities': spec.get('capabilities'),
                     'params_schema': params_schema,
+                    'output_schema': spec.get('output_schema', {}),
                     'presets': presets,
                     'metadata': {
+                        'domain': metadata.get('domain', module_name),
+                        'platforms': metadata.get('platforms', ['any']),
                         'risk_level': metadata.get('risk_level', 'safe_read'),
                         'scopes': metadata.get('scopes', []),
                         'requires_consent': metadata.get('requires_consent', False),
-                        'allow_roles': metadata.get('allow_roles')
+                        'allow_roles': metadata.get('allow_roles'),
+                        'timeout_sec': metadata.get('timeout_sec'),
+                        'idempotent': metadata.get('idempotent', False),
+                        'origin': metadata.get('origin', 'builtin'),
+                        'side_effects': metadata.get('side_effects', False),
                     }
                 }
             }
@@ -2329,15 +2343,7 @@ class AgentOrchestrator:
             
             logger.info(f"Получение описания инструмента: {tool_name}")
             
-            # Получаем плоский список всех tools из registry
-            tools_flat = self.registry.get_tools_flat()
-            
-            # Ищем tool по имени
-            tool_found = None
-            for tool_data in tools_flat:
-                if tool_data.get('tool') == tool_name:
-                    tool_found = tool_data
-                    break
+            tool_found = self.registry.get_tool(tool_name)
             
             if not tool_found:
                 return fail(
@@ -2352,12 +2358,15 @@ class AgentOrchestrator:
             tool_info = {
                 'name': tool_found.get('tool'),
                 'module': tool_found.get('module'),
+                'aliases': list(tool_found.get('aliases') or []),
                 'description': spec.get('description', 'Описание отсутствует'),
                 'parameters': spec.get('parameters', []),
                 'params_schema': spec.get('params_schema', {}),
+                'output_schema': spec.get('output_schema', {}),
                 'risk_level': spec.get('risk_level', 'safe_readonly'),
                 'capabilities': spec.get('capabilities'),
-                'async': spec.get('async', False)
+                'async': spec.get('async', False),
+                'metadata': spec.get('metadata', {}),
             }
             
             logger.success(f"Инструмент найден: {tool_name}")
@@ -2558,42 +2567,29 @@ class AgentOrchestrator:
         
         try:
             
-            # Контракт (Этап 3 Playbook): только формат "module.tool"; короткое имя не допускается
-            if "." not in tool:
-                error_msg = 'Используйте формат "module.tool" (например ping_check.ping_host). Короткое имя не поддерживается.'
-                if chat_job_id:
-                    await self._publish_chat_event(chat_job_id, meta, {
-                        "event": "tool_result",
-                        "tool": tool,
-                        "ok": False,
-                        "error": f"INVALID_TOOL_FORMAT: {error_msg}",
-                    }, ticket_id=ticket_id)
-                return fail(
-                    code="INVALID_TOOL_FORMAT",
-                    message=error_msg,
-                    meta=meta,
-                    retriable=False
-                )
-            parts = tool.split(".", 1)
-            module_name = parts[0]
-            tool_name = parts[1]
-            module_info = None  # будет заполнен через get_tool
-            await self._ensure_module_runtime_matches_inventory(module_name, full_tool_name=tool)
+            module_info = None
             tool_data_from_registry = self.registry.get_tool(tool)
+            if not tool_data_from_registry:
+                await self._ensure_all_package_runtime_matches_inventory()
+                tool_data_from_registry = self.registry.get_tool(tool)
             if not tool_data_from_registry:
                 if chat_job_id:
                     await self._publish_chat_event(chat_job_id, meta, {
                         "event": "tool_result",
                         "tool": tool,
                         "ok": False,
-                        "error": f'TOOL_NOT_FOUND: Инструмент "{tool}" не найден. Используйте формат module.tool.',
+                        "error": f'TOOL_NOT_FOUND: Инструмент "{tool}" не найден в реестре.',
                     }, ticket_id=ticket_id)
                 return fail(
                     code="TOOL_NOT_FOUND",
-                    message=f'Инструмент "{tool}" не найден. Используйте формат module.tool.',
+                    message=f'Инструмент "{tool}" не найден в реестре.',
                     meta=meta,
                     retriable=False
                 )
+            module_name = tool_data_from_registry.get("module")
+            if module_name:
+                await self._ensure_module_runtime_matches_inventory(module_name, full_tool_name=tool)
+                tool_data_from_registry = self.registry.get_tool(tool) or tool_data_from_registry
             module_info = self.registry.get_module(module_name)
             if not module_info:
                 error_msg = f'Модуль "{module_name}" не найден в реестре'
@@ -2612,12 +2608,6 @@ class AgentOrchestrator:
                 )
             methods_info = module_info.get('methods', {})
             method_name = tool_data_from_registry.get("method_name")
-            if not method_name:
-                for method_name_key, method_info_item in methods_info.items():
-                    method_tool_name = method_info_item.get('tool_name', method_name_key)
-                    if method_tool_name == tool_name or f"{module_name}.{method_tool_name}" == tool:
-                        method_name = method_info_item.get('real_method_name', method_name_key)
-                        break
             if not method_name:
                 if chat_job_id:
                     await self._publish_chat_event(chat_job_id, meta, {
@@ -2710,7 +2700,7 @@ class AgentOrchestrator:
             
             methods_info = module_info.get('methods', {})
             method_info = methods_info.get(method_name)
-            
+
             if not method_info:
                 # Fallback: если метод не найден в registry, но есть в instance
                 method_info = {

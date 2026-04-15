@@ -163,6 +163,11 @@ class CustomCollector(BaseCollector):
         return {"result": f"Processed: {param1}"}
 ```
 
+Контракт имени инструмента:
+- public tool id может быть canonical semantic key, а не только `module.tool`; например `@exposed_tool(name="dns.resolve")`;
+- если canonical id не совпадает с physical module namespace, runtime автоматически сохраняет legacy alias вида `module_name.short_name`;
+- один managed module pack может публиковать несколько атомарных tool-ов, а module в этом случае остаётся delivery/package boundary, а не частью публичного id инструмента.
+
 ## Установка модулей
 
 ### install_module_package

@@ -58,18 +58,18 @@ const modulesWithDrift = modulesData.modules.map(m => {
 ### Когда обновляется:
 
 1. **При command_result для list_tools** (автоматически)
-   - Файл: `server/websocket/agent_handler.py:942-1001`
+   - Файл: `server/websocket/command_result_components.py`
    - Триггер: Агент возвращает результат команды `list_tools`
    - Процесс:
      1. Извлекает `tools_list` из `payload.data.observations.tools`
      2. Сортирует tools (для консистентного hash)
      3. Вычисляет `toolset_hash_server` (SHA256, первые 16 символов)
      4. Вызывает `insert_snapshot_if_not_exists()` (идемпотентно)
-     5. Обновляет `devices.current_toolset_hash` и `current_toolset_snapshot_id`
-     6. **Commit транзакции** (строка 993)
+     5. Обновляет `devices.current_toolset_hash`, `current_toolset_snapshot_id` и `last_toolset_refresh_at`
+     6. **Commit транзакции**
 
 2. **При handshake** (автоматически, если toolset_hash изменился)
-   - Файл: `server/websocket/agent_handler.py:227-375`
+   - Файл: `server/websocket/agent_handshake.py`
    - Триггер: Агент подключается и отправляет handshake с `toolset_hash`
    - Процесс:
      1. Сравнивает `agent_toolset_hash` с `device.current_toolset_hash`
@@ -86,7 +86,7 @@ const modulesWithDrift = modulesData.modules.map(m => {
 
 ### КРИТИЧНО: Commit транзакции
 
-После обновления snapshot **обязательно** вызывается `await session.commit()` (строка 993 в `agent_handler.py`).
+После обновления snapshot **обязательно** вызывается `await session.commit()` внутри post-process слоя `command_result`.
 
 Без commit изменения не сохраняются в БД!
 
@@ -131,7 +131,7 @@ ORDER BY captured_at DESC;
 ### Логи для отладки:
 
 Ищите в логах сервера:
-- `[command_result] Processed list_tools:` - snapshot обновлен
+- `[command_result] synced toolset snapshot from list_tools:` - snapshot обновлен
 - `[ToolsetSnapshotsRepo] Created snapshot:` - новый snapshot создан
 - `[ToolsetSnapshotsRepo] Snapshot already exists:` - snapshot уже существует (идемпотентность)
 
@@ -148,7 +148,7 @@ ORDER BY captured_at DESC;
 ### Проблема: Snapshot не обновляется после list_tools
 
 **Проверьте**:
-1. Есть ли `await session.commit()` после `insert_snapshot_if_not_exists()` (строка 993)
+1. Есть ли `await session.commit()` в post-process слоя `command_result`
 2. Есть ли ошибки в логах при обработке `command_result`
 3. Возвращает ли агент корректный формат для `list_tools`:
    ```json
@@ -167,6 +167,14 @@ ORDER BY captured_at DESC;
 **Причина**: Toolset snapshot устарел. Модуль был активирован, но snapshot не обновлен.
 
 **Решение**: Нажмите "Sync Modules" для принудительного обновления snapshot.
+
+### Проблема: `device_modules` пустой, хотя auto-install уже сработал
+
+**Причина**: server-side inventory теперь обновляется в двух местах:
+1. из `module_state_changed` через `modules_snapshot`;
+2. из `command_result` команды `list_installed_modules`.
+
+Если пусто и после ручного `Sync Modules`, значит нужно смотреть server post-process для `outbox_ingest_components.py` и `command_result_components.py`, а не только enqueue/delivery path.
 
 ---
 

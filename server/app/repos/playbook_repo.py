@@ -126,19 +126,27 @@ class PlaybookRepo:
         self,
         playbook_run_id: int,
         playbook_step_id: int,
-        operation_id: str,
+        operation_id: Optional[str] = None,
         attempt: int = 1,
         input_json: Optional[dict] = None,
+        status: str = "running",
+        output_json: Optional[dict] = None,
+        error_json: Optional[dict] = None,
+        finished_at: Optional[datetime] = None,
     ) -> PlaybookStepRun:
-        """Создаёт playbook_step_run со статусом running, started_at=now."""
+        """Создаёт playbook_step_run. По умолчанию status=running, для local steps можно сразу писать terminal state."""
+        now = datetime.now(timezone.utc)
         step_run = PlaybookStepRun(
             playbook_run_id=playbook_run_id,
             playbook_step_id=playbook_step_id,
             attempt=attempt,
-            status="running",
+            status=status,
             operation_id=operation_id,
-            started_at=datetime.now(timezone.utc),
+            started_at=now,
+            finished_at=finished_at,
             input_json=input_json,
+            output_json=output_json,
+            error_json=error_json,
         )
         self.session.add(step_run)
         await self.session.flush()

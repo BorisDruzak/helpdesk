@@ -975,7 +975,8 @@ async def handle_create_module(request):
     JSON body:
     - module_name (обязательно)
     - version (обязательно)
-    - tool_name (обязательно)
+    - tool_name (обязательно для single-tool legacy create)
+    - tools (опционально, список typed tool definitions для multi-tool module)
     - description (обязательно)
     - user_function_body (обязательно, тело async-функции)
     - risk_level (опционально: safe_readonly | safe_write | dangerous, default safe_readonly)
@@ -1008,6 +1009,9 @@ async def handle_create_module(request):
         platforms = data.get("platforms")
         capabilities = data.get("capabilities")
         metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        output_schema = data.get("output_schema") if isinstance(data.get("output_schema"), dict) else None
+        aliases = data.get("aliases") if isinstance(data.get("aliases"), list) else None
+        tools = data.get("tools") if isinstance(data.get("tools"), list) else None
         requirements = data.get("requirements") if isinstance(data.get("requirements"), list) else None
         optional_requirements = data.get("optional_requirements") if isinstance(data.get("optional_requirements"), list) else None
         min_agent_version = data.get("min_agent_version")
@@ -1022,10 +1026,10 @@ async def handle_create_module(request):
                 "status": "error",
                 "error": "Missing version",
             }, status=400)
-        if not tool_name:
+        if not tool_name and not tools:
             return web.json_response({
                 "status": "error",
-                "error": "Missing tool_name",
+                "error": "Missing tool_name or tools",
             }, status=400)
         if not description:
             return web.json_response({
@@ -1047,6 +1051,9 @@ async def handle_create_module(request):
                 method_name=method_name,
                 capabilities=capabilities if isinstance(capabilities, list) else None,
                 metadata=metadata,
+                output_schema=output_schema,
+                aliases=aliases,
+                tools=tools,
                 requirements=requirements,
                 optional_requirements=optional_requirements,
                 min_agent_version=min_agent_version,

@@ -19,17 +19,25 @@ else:
 
 def exposed_tool(
     name: Optional[str] = None,
+    aliases: Optional[List[str]] = None,
     description: Optional[str] = None,
     risk_level: Optional[str] = None,
     capabilities: Optional[List[str]] = None,
     params_schema: Optional[Dict[str, Any]] = None,
     params_model: Optional['type[BaseModel]'] = None,
+    output_schema: Optional[Dict[str, Any]] = None,
     presets: Optional[List[Dict[str, Any]]] = None,
     # Параметры для metadata (PolicyEngine)
     metadata_risk_level: Optional[str] = None,
     metadata_scopes: Optional[List[str]] = None,
     metadata_requires_consent: Optional[bool] = None,
-    metadata_allow_roles: Optional[List[str]] = None
+    metadata_allow_roles: Optional[List[str]] = None,
+    metadata_domain: Optional[str] = None,
+    metadata_platforms: Optional[List[str]] = None,
+    metadata_timeout_sec: Optional[int] = None,
+    metadata_idempotent: Optional[bool] = None,
+    metadata_origin: Optional[str] = None,
+    metadata_side_effects: Optional[bool] = None,
 ) -> Callable:
     """
     Декоратор для пометки методов модуля как экспонируемых инструментов (tools) для MCP.
@@ -103,20 +111,28 @@ def exposed_tool(
         
         # Формируем metadata для PolicyEngine
         metadata_dict = {
+            'domain': metadata_domain,
+            'platforms': metadata_platforms,
             'risk_level': metadata_risk_level if metadata_risk_level is not None else "safe_read",
             'scopes': metadata_scopes if metadata_scopes is not None else [],
             'requires_consent': metadata_requires_consent if metadata_requires_consent is not None else False,
-            'allow_roles': metadata_allow_roles
+            'allow_roles': metadata_allow_roles,
+            'timeout_sec': metadata_timeout_sec,
+            'idempotent': metadata_idempotent if metadata_idempotent is not None else False,
+            'origin': metadata_origin,
+            'side_effects': metadata_side_effects if metadata_side_effects is not None else False,
         }
         
         # Устанавливаем атрибуты для пометки функции
         func.__exposed_tool__ = True
         func.__tool_name__ = name if name is not None else func.__name__
+        func.__tool_aliases__ = aliases if aliases is not None else []
         func.__tool_desc__ = description if description is not None else None
         func.__tool_risk_level__ = risk_level if risk_level is not None else "safe_readonly"
         func.__tool_capabilities__ = capabilities if capabilities is not None else None
         func.__tool_params_model__ = params_model_value
         func.__tool_params_schema__ = params_schema_value
+        func.__tool_output_schema__ = output_schema if isinstance(output_schema, dict) else {}
         func.__tool_presets__ = presets if presets is not None else []
         func.__tool_metadata__ = metadata_dict
         
@@ -130,11 +146,13 @@ def exposed_tool(
             # Копируем атрибуты на async wrapper
             async_wrapper.__exposed_tool__ = func.__exposed_tool__
             async_wrapper.__tool_name__ = func.__tool_name__
+            async_wrapper.__tool_aliases__ = func.__tool_aliases__
             async_wrapper.__tool_desc__ = func.__tool_desc__
             async_wrapper.__tool_risk_level__ = func.__tool_risk_level__
             async_wrapper.__tool_capabilities__ = func.__tool_capabilities__
             async_wrapper.__tool_params_model__ = func.__tool_params_model__
             async_wrapper.__tool_params_schema__ = func.__tool_params_schema__
+            async_wrapper.__tool_output_schema__ = func.__tool_output_schema__
             async_wrapper.__tool_presets__ = func.__tool_presets__
             async_wrapper.__tool_metadata__ = func.__tool_metadata__
             return async_wrapper
@@ -147,11 +165,13 @@ def exposed_tool(
             # Копируем атрибуты на sync wrapper
             sync_wrapper.__exposed_tool__ = func.__exposed_tool__
             sync_wrapper.__tool_name__ = func.__tool_name__
+            sync_wrapper.__tool_aliases__ = func.__tool_aliases__
             sync_wrapper.__tool_desc__ = func.__tool_desc__
             sync_wrapper.__tool_risk_level__ = func.__tool_risk_level__
             sync_wrapper.__tool_capabilities__ = func.__tool_capabilities__
             sync_wrapper.__tool_params_model__ = func.__tool_params_model__
             sync_wrapper.__tool_params_schema__ = func.__tool_params_schema__
+            sync_wrapper.__tool_output_schema__ = func.__tool_output_schema__
             sync_wrapper.__tool_presets__ = func.__tool_presets__
             sync_wrapper.__tool_metadata__ = func.__tool_metadata__
             return sync_wrapper
@@ -180,6 +200,7 @@ class ModuleRegistry:
             return
         self._manifest: Dict[str, Dict[str, Any]] = {}
         self._instances: Dict[str, Any] = {}  # Храним экземпляры модулей для вызова методов
+        self._tool_index: Dict[str, Dict[str, Any]] = {}
         self._initialized = True
     
     def register(self, instance: Any) -> None:
@@ -234,11 +255,9 @@ class ModuleRegistry:
                 exposed_methods_found = True
                 # Извлекаем информацию о методе
                 method_info = self._extract_method_info(attr, instance)
-                # Используем tool_name из декоратора, если указан
-                tool_name = getattr(attr, '__tool_name__', attr_name)
                 # КРИТИЧНО: Сохраняем реальное имя метода в method_info для поиска в instance
                 method_info['real_method_name'] = attr_name
-                methods_info[tool_name] = method_info
+                methods_info[attr_name] = method_info
         
         # Fallback: если нет помеченных методов и instance является BaseCollector,
         # регистрируем collect как дефолтный tool
@@ -259,6 +278,7 @@ class ModuleRegistry:
         
         # Сохраняем экземпляр для последующего вызова методов
         self._instances[module_name] = instance
+        self._rebuild_tool_index()
     
     def _extract_method_info(self, method: callable, instance: Any) -> Dict[str, Any]:
         """
@@ -330,9 +350,23 @@ class ModuleRegistry:
         
         # Получаем имя модуля
         module_name = getattr(instance, 'name', 'unknown')
-        
-        # Получаем имя инструмента из декоратора или используем имя метода
-        tool_name = getattr(method, '__tool_name__', method.__name__)
+
+        # Каноническое имя инструмента может быть semantic key (dns.resolve) или legacy module.tool.
+        tool_name_raw = getattr(method, '__tool_name__', method.__name__)
+        tool_name = str(tool_name_raw).strip() or method.__name__
+        if "." not in tool_name:
+            tool_name = f"{module_name}.{tool_name}"
+        short_name = tool_name.split(".", 1)[-1]
+        aliases = []
+        for alias in getattr(method, '__tool_aliases__', []) or []:
+            alias_value = str(alias or "").strip()
+            if not alias_value:
+                continue
+            aliases.append(alias_value if "." in alias_value else f"{module_name}.{alias_value}")
+        legacy_alias = f"{module_name}.{short_name}"
+        if legacy_alias != tool_name:
+            aliases.append(legacy_alias)
+        aliases = list(dict.fromkeys(aliases))
         
         # Извлекаем дополнительные атрибуты из декоратора
         risk_level = getattr(method, '__tool_risk_level__', "safe_readonly")
@@ -341,6 +375,7 @@ class ModuleRegistry:
         # Извлекаем params_model и params_schema
         params_model = getattr(method, '__tool_params_model__', None)
         params_schema = getattr(method, '__tool_params_schema__', {})
+        output_schema = getattr(method, '__tool_output_schema__', {})
         
         # Формируем имя модели (строкой)
         params_model_name = None
@@ -355,14 +390,35 @@ class ModuleRegistry:
         if metadata_dict is None:
             # Если metadata не указано, проставляем default значения
             metadata_dict = {
+                'domain': module_name,
+                'platforms': ['any'],
                 'risk_level': 'safe_read',
                 'scopes': [],
                 'requires_consent': False,
-                'allow_roles': None
+                'allow_roles': None,
+                'timeout_sec': None,
+                'idempotent': False,
+                'origin': 'builtin',
+                'side_effects': False,
+            }
+        else:
+            metadata_dict = {
+                'domain': metadata_dict.get('domain') or module_name,
+                'platforms': metadata_dict.get('platforms') or ['any'],
+                'risk_level': metadata_dict.get('risk_level', 'safe_read'),
+                'scopes': metadata_dict.get('scopes', []),
+                'requires_consent': metadata_dict.get('requires_consent', False),
+                'allow_roles': metadata_dict.get('allow_roles'),
+                'timeout_sec': metadata_dict.get('timeout_sec'),
+                'idempotent': metadata_dict.get('idempotent', False),
+                'origin': metadata_dict.get('origin', 'builtin'),
+                'side_effects': metadata_dict.get('side_effects', False),
             }
         
         return {
             'tool_name': tool_name,
+            'aliases': aliases,
+            'short_name': short_name,
             'module_name': module_name,
             'description': method_doc,
             'parameters': arguments,  # Человеко-ориентированная информация
@@ -371,6 +427,7 @@ class ModuleRegistry:
             'capabilities': capabilities,
             'params_model': params_model_name,  # Имя класса модели
             'params_schema': params_schema,  # Машинная JSON Schema
+            'output_schema': output_schema,
             'presets': presets,  # Предустановленные конфигурации
             'metadata': metadata_dict  # Метаданные для PolicyEngine
         }
@@ -399,6 +456,7 @@ class ModuleRegistry:
     def clear(self) -> None:
         """Очищает весь манифест."""
         self._manifest.clear()
+        self._tool_index.clear()
     
     def reset(self) -> None:
         """
@@ -407,6 +465,7 @@ class ModuleRegistry:
         """
         self._manifest.clear()
         self._instances.clear()
+        self._tool_index.clear()
     
     def unregister(self, module_name: str) -> bool:
         """
@@ -422,8 +481,52 @@ class ModuleRegistry:
             del self._manifest[module_name]
             if module_name in self._instances:
                 del self._instances[module_name]
+            self._rebuild_tool_index()
             return True
         return False
+
+    def _build_tool_spec(self, tool_info: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = tool_info.get('metadata')
+        if metadata is None:
+            metadata = {
+                'risk_level': 'safe_read',
+                'scopes': [],
+                'requires_consent': False,
+                'allow_roles': None,
+            }
+        return {
+            'description': tool_info.get('description', 'Описание отсутствует'),
+            'risk_level': tool_info.get('risk_level', 'safe_readonly'),
+            'capabilities': tool_info.get('capabilities'),
+            'params_model': tool_info.get('params_model'),
+            'params_schema': tool_info.get('params_schema', {}),
+            'output_schema': tool_info.get('output_schema', {}),
+            'parameters': tool_info.get('parameters', []),
+            'presets': tool_info.get('presets', []),
+            'async': tool_info.get('async', False),
+            'metadata': metadata,
+        }
+
+    def _rebuild_tool_index(self) -> None:
+        self._tool_index = {}
+        for module_name, module_info in self._manifest.items():
+            methods_info = module_info.get('methods', {})
+            for method_name, tool_info in methods_info.items():
+                canonical_tool = str(tool_info.get('tool_name') or '').strip()
+                if not canonical_tool:
+                    continue
+                entry = {
+                    "tool": canonical_tool,
+                    "module": module_name,
+                    "spec": self._build_tool_spec(tool_info),
+                    "method_name": tool_info.get('real_method_name') or method_name,
+                    "real_method_name": tool_info.get('real_method_name') or method_name,
+                    "instance": self._instances.get(module_name),
+                    "aliases": list(tool_info.get('aliases') or []),
+                }
+                self._tool_index[canonical_tool] = entry
+                for alias in entry["aliases"]:
+                    self._tool_index.setdefault(alias, entry)
     
     def get_module_names(self) -> List[str]:
         """
@@ -458,14 +561,13 @@ class ModuleRegistry:
                 }
             }]
         """
-        # Собираем все tools (контракт Этап 3: в результате всегда "module.tool")
         all_tools: List[Dict[str, Any]] = []
         for module_name, module_info in self._manifest.items():
             methods_info = module_info.get('methods', {})
-            for tool_name, tool_info in methods_info.items():
+            for method_name, tool_info in methods_info.items():
                 all_tools.append({
                     'module_name': module_name,
-                    'tool_name': tool_name,
+                    'tool_name': tool_info.get('tool_name') or f"{module_name}.{method_name}",
                     'tool_info': tool_info
                 })
         
@@ -477,36 +579,11 @@ class ModuleRegistry:
             tool_name = tool_data['tool_name']
             tool_info = tool_data['tool_info']
             
-            # Контракт (Этап 3 Playbook): всегда формат "module.tool"
-            unique_tool_name = f"{module_name}.{tool_name}"
-            
-            # Формируем spec из tool_info
-            # Извлекаем metadata или проставляем default
-            metadata = tool_info.get('metadata')
-            if metadata is None:
-                metadata = {
-                    'risk_level': 'safe_read',
-                    'scopes': [],
-                    'requires_consent': False,
-                    'allow_roles': None
-                }
-            
-            spec = {
-                'description': tool_info.get('description', 'Описание отсутствует'),
-                'risk_level': tool_info.get('risk_level', 'safe_readonly'),
-                'capabilities': tool_info.get('capabilities'),
-                'params_model': tool_info.get('params_model'),
-                'params_schema': tool_info.get('params_schema', {}),
-                'parameters': tool_info.get('parameters', []),
-                'presets': tool_info.get('presets', []),  # Предустановленные конфигурации
-                'async': tool_info.get('async', False),
-                'metadata': metadata  # Метаданные для PolicyEngine
-            }
-            
             result.append({
-                'tool': unique_tool_name,
+                'tool': tool_name,
                 'module': module_name,
-                'spec': spec
+                'aliases': list(tool_info.get('aliases') or []),
+                'spec': self._build_tool_spec(tool_info)
             })
         
         return result
@@ -540,61 +617,20 @@ class ModuleRegistry:
             }
             или None, если инструмент не найден
         """
-        # Контракт: только "module.tool"; короткое имя не разрешается
-        if "." not in tool_name:
-            return None
-        tools_flat = self.get_tools_flat()
-        tool_found = None
-        for tool_data in tools_flat:
-            if tool_data.get('tool') == tool_name:
-                tool_found = tool_data
-                break
+        tool_found = self._tool_index.get(tool_name)
         if not tool_found:
             return None
-        
-        module_name = tool_found.get('module')
-        spec = tool_found.get('spec', {})
-        
-        # Получаем экземпляр модуля
-        instance = self._instances.get(module_name)
+        instance = tool_found.get("instance") or self._instances.get(tool_found.get("module"))
         if not instance:
             return None
-        
-        module_info = self._manifest.get(module_name)
-        if not module_info:
-            return None
-        
-        methods_info = module_info.get('methods', {})
-        short_tool_name = tool_name.split('.', 1)[1]
-        method_info = methods_info.get(short_tool_name)
-
-        if method_info is None:
-            for method_candidate in methods_info.values():
-                method_tool_name = method_candidate.get('tool_name')
-                if method_tool_name == short_tool_name or method_tool_name == tool_name:
-                    method_info = method_candidate
-                    break
-
-        if method_info is None:
-            fallback_method_name = short_tool_name
-            if not hasattr(instance, fallback_method_name):
-                return None
-            method_name = fallback_method_name
-        else:
-            method_name = (
-                method_info.get('real_method_name')
-                or method_info.get('method_name')
-                or method_info.get('tool_name')
-                or short_tool_name
-            )
-        
         return {
-            "tool": tool_found.get('tool'),
-            "module": module_name,
-            "spec": spec,
-            "method_name": method_name,
-            "real_method_name": method_name,
-            "instance": instance
+            "tool": tool_found.get("tool"),
+            "module": tool_found.get("module"),
+            "spec": tool_found.get("spec", {}),
+            "method_name": tool_found.get("method_name"),
+            "real_method_name": tool_found.get("real_method_name"),
+            "instance": instance,
+            "aliases": list(tool_found.get("aliases") or []),
         }
     
     async def call_tool(self, tool_name: str, **params) -> Any:
@@ -636,4 +672,3 @@ class ModuleRegistry:
             return await method(**params)
         else:
             return method(**params)
-

@@ -26,7 +26,7 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 
 При вызове инструмента на агенте (run_tool, в т.ч. через `POST /api/admin/run_tool` или `POST /api/tools/run`) сервер:
 
-1. Определяет, является ли инструмент модульным (формат `module_name.tool_name`, например `ping.ping`).
+1. Определяет, является ли инструмент модульным. В текущем контракте допустимы как canonical semantic ids (`dns.resolve`, `network.ping`, `tcp.connect`), так и legacy aliases вида `module_name.tool_name`.
 2. Проверяет наличие модуля на агенте по таблице `device_modules` (активные модули).
 3. Если модуля на агенте нет — ищет модуль на сервере в реестре `modules` (берётся последняя по дате загрузки версия).
 4. Если модуль есть на сервере — проверяет совместимость ОС устройства с `platforms` из manifest модуля; при несовместимости или неизвестной ОС возвращает ошибку.
@@ -49,14 +49,18 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 
 ### Event-driven reconcile после `module_state_changed`
 
-Если агент публикует `module_state_changed`, сервер после сохранения события сразу пытается запустить `reconcile_device(..., reason="event_module_state_changed")`.
+Если агент публикует `module_state_changed`, сервер после сохранения события:
+
+1. читает `payload.modules_snapshot`;
+2. синхронизирует `device_modules` через `sync_modules_inventory(..., source="event")`;
+3. сразу пытается запустить `reconcile_device(..., reason="event_module_state_changed")`.
 
 Это дополняет periodic/manual reconcile и нужно для более бесшовного сценария:
 
 1. support запускает modular tool;
 2. сервер auto-install'ит пакет и фиксирует desired state;
 3. агент устанавливает/активирует модуль и отправляет `module_state_changed`;
-4. сервер сразу подтягивает reconcile, не дожидаясь только следующего фонового цикла.
+4. сервер сразу обновляет actual inventory и подтягивает reconcile, не дожидаясь только следующего фонового цикла.
 
 Список модулей на сервере: реестр в таблице `modules` и API `GET /api/modules`.
 
@@ -115,11 +119,17 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 **Request:** `application/json`
 - `module_name`: Имя модуля (обязательно)
 - `version`: Версия в формате X.Y.Z (обязательно)
-- `tool_name`: Имя инструмента (обязательно)
-- `description`: Описание инструмента (обязательно)
-- `user_function_body`: Тело async-функции, возвращающей Dict (обязательно)
+- `description`: Описание модуля/пакета capabilities (обязательно)
+- `tool_name`: Имя инструмента для legacy single-tool create (обязательно только если не передан `tools`)
+- `user_function_body`: Тело async-функции для legacy single-tool create (обязательно только если не передан `tools`)
+- `tools`: Опциональный список typed tool definitions для multi-tool module pack. Каждый элемент может задавать `tool_name`/`canonical_name`, `method_name`, `description`, `params_schema`, `output_schema`, `aliases`, `metadata`, `user_function_body`
 - `risk_level`: safe_readonly | safe_write | dangerous (optional, default "safe_readonly")
 - `overwrite`: Перезаписать при совпадении имени и версии (optional, default false)
+
+Замечания по контракту:
+- canonical public tool id может не совпадать с physical `module_name`; например модуль `network_basic` может публиковать `dns.resolve`, `network.ping`, `tcp.connect`, `route.get`, `adapter.list`;
+- серверный preflight валидирует duplicate canonical ids, alias conflicts, invalid semantic names и типы metadata до сохранения ZIP;
+- builder автоматически добавляет legacy alias вида `module_name.short_name`, если canonical tool id вынесен в общий namespace.
 
 **Response (200 OK):** как у POST /api/modules/upload (status, module_name, version, sha256, size, download_path, preflight_status).
 
@@ -638,7 +648,11 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 - `source` — источник обновления: `handshake|command_result|event` (миграция 037)
 - `last_error_code`, `last_error_message` — ошибки установки/активации
 
-Обновляется автоматически при получении `command_result` для `install_module_package`, `activate_module`, `deactivate_module`, а также при `module_state_changed` event от агента.
+Обновляется автоматически:
+
+- при `module_state_changed` event от агента — из `payload.modules_snapshot`;
+- при успешном `command_result` команды `list_installed_modules` — из `payload.data.observations.modules`;
+- при explicit sync/reconcile цепочке, которая enqueue'ит `list_installed_modules`.
 
 ### Удаление модуля (remove): только при подтверждении от агента
 
@@ -668,7 +682,7 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 
 Запускается:
 1. **Периодически** — каждые 5 минут через `module_reconcile_scheduler`.
-2. **Немедленно** — после `module_state_changed` event от агента.
+2. **Немедленно** — после `module_state_changed` event от агента, уже после обновления actual inventory из snapshot.
 3. **Вручную** — `POST /api/devices/{device_id}/modules/reconcile`.
 
 Алгоритм:
@@ -696,7 +710,7 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 - `captured_at` — время создания snapshot
 - UNIQUE constraint: `(device_id, toolset_hash)`
 
-Обновляется автоматически при получении `command_result` для `list_tools`.
+Обновляется автоматически при успешном `command_result` для `list_tools` в `CommandResultService`: сервер сохраняет snapshot, обновляет `devices.current_toolset_hash/current_toolset_snapshot_id` и `last_toolset_refresh_at`.
 
 См. [MODULES_DRIFT_AND_SNAPSHOTS.md](MODULES_DRIFT_AND_SNAPSHOTS.md) для деталей.
 

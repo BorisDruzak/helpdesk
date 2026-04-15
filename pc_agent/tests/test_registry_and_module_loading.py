@@ -19,7 +19,7 @@ if "loguru" not in sys.modules:
     loguru_module.logger = _LoggerStub()
     sys.modules["loguru"] = loguru_module
 
-from core.registry import ModuleRegistry
+from core.registry import ModuleRegistry, exposed_tool
 from core.loader import DynamicModuleLoader
 from modules import ModuleFactory
 from modules.impl.input import InputCollector
@@ -78,6 +78,41 @@ class RegistryAliasTests(unittest.TestCase):
             tool_info = self.registry.get_tool("custom.alias_tool")
             self.assertIsNotNone(tool_info)
             self.assertEqual(tool_info["method_name"], "real_method")
+
+    def test_semantic_tool_name_keeps_legacy_alias(self):
+        class SemanticCollector:
+            @property
+            def name(self) -> str:
+                return "network_basic"
+
+            @exposed_tool(
+                name="dns.resolve",
+                aliases=["resolve_dns"],
+                description="Resolve hostname",
+                risk_level="safe_readonly",
+                output_schema={"type": "object", "properties": {"ip": {"type": "string"}}},
+                metadata_scopes=["network.read"],
+            )
+            async def resolve_impl(self):
+                return {"ip": "127.0.0.1"}
+
+        self.registry.register(SemanticCollector())
+
+        canonical = self.registry.get_tool("dns.resolve")
+        legacy = self.registry.get_tool("network_basic.resolve")
+        explicit_alias = self.registry.get_tool("network_basic.resolve_dns")
+        tools_flat = self.registry.get_tools_flat()
+
+        self.assertIsNotNone(canonical)
+        self.assertIsNotNone(legacy)
+        self.assertIsNotNone(explicit_alias)
+        self.assertEqual(canonical["method_name"], "resolve_impl")
+        self.assertEqual(legacy["method_name"], "resolve_impl")
+        self.assertEqual(explicit_alias["method_name"], "resolve_impl")
+        flat_entry = next(item for item in tools_flat if item["tool"] == "dns.resolve")
+        self.assertIn("network_basic.resolve", flat_entry["aliases"])
+        self.assertIn("network_basic.resolve_dns", flat_entry["aliases"])
+        self.assertEqual(flat_entry["spec"]["output_schema"]["type"], "object")
 
 
 class ModuleFactoryExtraPathsTests(unittest.TestCase):

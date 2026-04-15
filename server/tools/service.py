@@ -35,6 +35,28 @@ class ToolService:
     def __init__(self, state_manager):
         self.state = state_manager
         self.cache = ToolsCache(state_manager)
+
+    @staticmethod
+    def _tool_matches_manifest_entry(tool_entry: Dict, tool_name: str) -> bool:
+        canonical_name = tool_entry.get("tool") or tool_entry.get("name")
+        if canonical_name == tool_name:
+            return True
+        aliases = tool_entry.get("aliases") or []
+        return tool_name in aliases
+
+    async def _find_server_module_for_tool(self, session, tool_name: str):
+        try:
+            from app.repos import ModulesRepo
+        except ImportError:
+            return None
+        modules_repo = ModulesRepo(session)
+        modules = await modules_repo.list_modules(limit=500)
+        for module in modules:
+            manifest = get_module_manifest(module)
+            for tool_entry in manifest.get("tools") or []:
+                if self._tool_matches_manifest_entry(tool_entry, tool_name):
+                    return module
+        return None
     
     async def get_tools_list(self, device_id: str) -> Optional[List[Dict]]:
         """
@@ -168,11 +190,14 @@ class ToolService:
                         "tool": name,
                         "name": name,
                         "module": m.module_name,
+                        "aliases": t.get("aliases") or [],
                         "description": t.get("description") or "",
                         "spec": {
                             "params_schema": t.get("params_schema") or {},
+                            "output_schema": t.get("output_schema") or {},
                             "presets": t.get("presets") or [],
                             "risk_level": (metadata.get("risk_level") or "safe_readonly"),
+                            "metadata": metadata,
                         },
                         "metadata": metadata,
                         "install_required": True,
@@ -194,12 +219,10 @@ class ToolService:
         При ошибке (модуль не на сервере, ошибка установки) возвращает dict с status/error.
         Для встроенных инструментов (без точки в имени) сразу возвращает None.
         """
-        if "." not in tool_name:
-            return None
-        module_name = tool_name.split(".", 1)[0]
-        if module_name.lower() in AGENT_BUILTIN_MODULES:
+        builtin_prefix = tool_name.split(".", 1)[0].lower() if "." in tool_name else ""
+        if builtin_prefix in AGENT_BUILTIN_MODULES:
             logger.debug(
-                f"[ensure_module] {tool_name!r} belongs to builtin module {module_name!r}, "
+                f"[ensure_module] {tool_name!r} belongs to builtin module {builtin_prefix!r}, "
                 f"skip auto-install"
             )
             return None
@@ -220,21 +243,20 @@ class ToolService:
         except Exception as snap_e:
             logger.debug(f"[ensure_module] Не удалось проверить snapshot: {snap_e}")
         try:
-            from app.repos import ModulesRepo
             from app.repos.devices_repo import DevicesRepo
         except ImportError:
             return None
         async with get_session() as session:
-            modules_repo = ModulesRepo(session)
-            server_modules = await modules_repo.list_modules(module_name=module_name, limit=1)
-            if not server_modules:
-                logger.warning(f"[ensure_module] Модуль {module_name!r} не найден на сервере")
+            module = await self._find_server_module_for_tool(session, tool_name)
+            if not module:
+                guessed_module_name = tool_name.split(".", 1)[0] if "." in tool_name else tool_name
+                logger.warning(f"[ensure_module] Tool {tool_name!r} не найден в server module registry")
                 return {
                     "status": "error",
-                    "error": f"Модуль {module_name!r} не установлен на агенте и не найден на сервере. Загрузите модуль на сервер или установите его вручную.",
+                    "error": f"Инструмент {tool_name!r} не установлен на агенте и не найден на сервере. Загрузите модуль {guessed_module_name!r} на сервер или установите его вручную.",
                     "error_code": "MODULE_NOT_ON_SERVER",
                 }
-            module = server_modules[0]
+            module_name = module.module_name
             version = module.version
             manifest = get_module_manifest(module)
             mod_platforms = manifest.get("platforms") or ["any"]
@@ -359,7 +381,7 @@ class ToolService:
         
         logger.info(f"🔧 Запуск tool {tool_name} на {device_id}")
         
-        # Проверка и при необходимости установка модуля (только для module.tool)
+        # Проверка и при необходимости установка модуля по owner module из server registry.
         ensure_err = await self._ensure_module_installed(device_id, tool_name, auth_context)
         if ensure_err:
             return ensure_err

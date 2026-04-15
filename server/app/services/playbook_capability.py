@@ -38,7 +38,8 @@ async def check_tool_available(
     tool_entry = None
     for t in tools:
         name = t.get("tool") or t.get("name")
-        if name == tool_name:
+        aliases = t.get("aliases") or []
+        if name == tool_name or tool_name in aliases:
             tool_entry = t
             break
     if not tool_entry:

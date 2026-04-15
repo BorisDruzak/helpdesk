@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 import routes as routes_module
 from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module
 from utils.module_builder import build_module_package
+from utils.module_manifest import normalize_manifest
 from utils.module_preflight import preflight_module_zip
 
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
@@ -103,6 +104,108 @@ def register():
     assert data['manifest_version'] == 1
     assert data['validation_status'] == 'compat'
     assert data['warnings']
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_keeps_semantic_tool_name_and_legacy_alias():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "tools": [
+                {
+                    "canonical_name": "dns.resolve",
+                    "aliases": ["resolve_dns"],
+                    "method": "resolve_impl",
+                    "output_schema": {"type": "object"},
+                    "metadata": {
+                        "domain": "network",
+                        "platforms": ["linux", "win32"],
+                        "risk_level": "safe_readonly",
+                        "requires_consent": False,
+                        "timeout_sec": 15,
+                        "idempotent": True,
+                    },
+                }
+            ],
+        }
+    )
+    assert not validation["errors"]["tools"]
+    assert normalized is not None
+    tool = normalized["tools"][0]
+    assert tool["tool"] == "dns.resolve"
+    assert "network_basic.resolve" in tool["aliases"]
+    assert "network_basic.resolve_dns" in tool["aliases"]
+    assert tool["output_schema"]["type"] == "object"
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_rejects_duplicate_tool_alias_conflicts():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "tools": [
+                {
+                    "tool": "dns.resolve",
+                    "method": "resolve_dns",
+                    "aliases": ["shared.alias"],
+                },
+                {
+                    "tool": "network.ping",
+                    "method": "ping_host",
+                    "aliases": ["shared.alias", "dns.resolve"],
+                },
+            ],
+        }
+    )
+
+    assert normalized is None
+    assert any("shared.alias" in error for error in validation["errors"]["tools"])
+    assert any("dns.resolve" in error and "conflicts" in error for error in validation["errors"]["tools"])
+
+
+@pytest.mark.no_db
+def test_build_module_package_supports_multi_tool_semantic_names():
+    zip_bytes, summary = build_module_package(
+        module_name="network_basic",
+        version="1.0.0",
+        tool_name="",
+        description="Network diagnostics",
+        user_function_body="",
+        platforms=["linux", "win32"],
+        tools=[
+            {
+                "tool_name": "dns.resolve",
+                "method_name": "resolve_dns",
+                "description": "Resolve DNS",
+                "params_schema": [{"name": "hostname", "type": "string", "required": True}],
+                "metadata": {"domain": "dns", "platforms": ["linux", "win32"], "idempotent": True},
+                "user_function_body": 'return {"ok": True, "best_ip": "127.0.0.1"}',
+            },
+            {
+                "tool_name": "network.ping",
+                "aliases": ["ping.host"],
+                "method_name": "ping_host",
+                "description": "Ping target",
+                "params_schema": [{"name": "target", "type": "string", "required": True}],
+                "metadata": {"domain": "network", "platforms": ["linux", "win32"], "idempotent": True},
+                "user_function_body": 'return {"ok": True, "reachable": True}',
+            },
+        ],
+    )
+
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+
+    assert ok is True
+    assert manifest_json is not None
+    assert [tool["tool"] for tool in manifest_json["tools"]] == ["dns.resolve", "network.ping"]
+    assert "network_basic.ping" in manifest_json["tools"][1]["aliases"]
+    assert "ping.host" in manifest_json["tools"][1]["aliases"]
+    assert manifest_summary == summary
+    assert validation_json["validation_status"] == "passed"
 
 
 @pytest.mark.asyncio
