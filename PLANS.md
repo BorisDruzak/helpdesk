@@ -120,3 +120,18 @@
   - passed: `python -m pytest pc_agent/tests/test_support_module_packages.py -v --tb=short`
   - passed: `python -m pytest server/tests/test_modules_manifest_api.py::test_normalize_manifest_rejects_duplicate_tool_alias_conflicts server/tests/test_modules_manifest_api.py::test_build_module_package_supports_multi_tool_semantic_names -v --tb=short`
   - blocked externally: DB-backed server pytest requires PostgreSQL access; with `-o asyncio_mode=strict` the suite reaches real DB auth and currently fails at `pg_hba.conf` / test database access from this workstation.
+
+## 2026-04-15 Module Workbench UI
+
+- Added a dedicated module-development workbench inside `/admin` while keeping a single admin shell:
+  - static fragment/script: `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`
+  - server APIs: grouped module families, editable draft detail, save-from-UI, preferred-version assignment
+  - server-side preferred module version now lives in `server_config` via `app/repos/module_rollout_repo.py`
+- Runtime impact:
+  - `run_tool` preferred module resolution now respects the same server-side preferred-version assignment as the UI
+  - module detail/workbench can reconstruct editable tool fragments from generated archives (`modules/workbench_service.py`)
+- Verification:
+  - passed: `python -m py_compile ...` for touched server files/tests
+  - passed: `node --check server/admin_modules_workbench.js`
+  - passed: `python -m pytest server/tests/test_modules_manifest_no_db.py -v --tb=short`
+  - passed with shared DB: `python -m pytest -o asyncio_mode=strict server/tests/test_modules_workbench_api.py server/tests/test_tool_service_auto_install_versions.py -v --tb=short`

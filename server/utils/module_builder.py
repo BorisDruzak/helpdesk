@@ -233,7 +233,14 @@ def _normalize_tool_specs(
         if tool_risk_level not in ALLOWED_RISK_LEVELS:
             tool_risk_level = DEFAULT_RISK_LEVEL
 
-        tool_params_schema = raw_tool.get("params_schema") if isinstance(raw_tool.get("params_schema"), list) else []
+        raw_params_schema = raw_tool.get("params_schema")
+        if isinstance(raw_params_schema, dict):
+            tool_params_schema_json = raw_params_schema
+            tool_defaults = {}
+        else:
+            tool_params_schema_list = raw_params_schema if isinstance(raw_params_schema, list) else []
+            tool_params_schema_json = _params_schema_to_json_schema(tool_params_schema_list)
+            tool_defaults = _params_schema_to_defaults(tool_params_schema_list)
         tool_presets = raw_tool.get("presets") if isinstance(raw_tool.get("presets"), list) else []
         tool_capabilities = raw_tool.get("capabilities") if isinstance(raw_tool.get("capabilities"), list) else []
         tool_metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
@@ -271,8 +278,8 @@ def _normalize_tool_specs(
                 "aliases": tool_aliases,
                 "method": method_name,
                 "description": tool_description[:500],
-                "params_schema": _params_schema_to_json_schema(tool_params_schema),
-                "defaults": _params_schema_to_defaults(tool_params_schema),
+                "params_schema": tool_params_schema_json,
+                "defaults": tool_defaults,
                 "presets": tool_presets,
                 "capabilities": tool_capabilities,
                 "output_schema": tool_output_schema,
@@ -361,6 +368,9 @@ def build_module_package(
     output_schema: Optional[Dict[str, Any]] = None,
     aliases: Optional[List[str]] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
+    module_api_version: str = "1.0.0",
+    owner_scope: str = "core",
+    entrypoint: str = "module:register",
 ) -> Tuple[bytes, dict]:
     if not (module_name and module_name.strip()):
         raise ValueError("module_name is required")
@@ -402,9 +412,9 @@ def build_module_package(
         "manifest_version": 2,
         "module_name": mod_name,
         "module_version": version.strip(),
-        "module_api_version": "1.0.0",
-        "owner_scope": "core",
-        "entrypoint": "module:register",
+        "module_api_version": (module_api_version or "1.0.0").strip() or "1.0.0",
+        "owner_scope": (owner_scope or "core").strip() or "core",
+        "entrypoint": (entrypoint or "module:register").strip() or "module:register",
         "description": str(description or tool_specs[0]["description"]).strip()[:500],
         "platforms": module_platforms,
         "requirements": requirements or [],

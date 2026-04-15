@@ -13,6 +13,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 from aiohttp import web
@@ -23,14 +24,16 @@ from utils.module_storage import save_module_zip_from_stream, save_module_zip_by
 from utils.module_preflight import apply_smoke_validation, preflight_module_zip
 from utils.module_builder import build_module_package, DEFAULT_RISK_LEVEL
 from utils.module_manifest import get_module_manifest, get_module_validation, module_to_api_record
+from utils.versioning import version_key
 from app.db import get_session
-from app.repos import ModulesRepo, DeviceModulesRepo
+from app.repos import ModulesRepo, DeviceModulesRepo, ModuleRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.db.models import DownloadAudit
 from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from modules.reconcile import set_desired_installed, set_desired_absent
+from modules.workbench_service import build_editable_spec
 try:
     from shared.tool_contracts import normalize_risk_level
 except ModuleNotFoundError:  # pragma: no cover - defensive path for nested cwd entrypoints
@@ -163,6 +166,204 @@ def _module_api_record(module: object, *, include_detail: bool = False) -> dict:
     record = module_to_api_record(module, include_detail=include_detail)
     record.update(_module_storage_state(module))
     return record
+
+
+def _pick_preferred_module_record(modules: list[object], preferred_version: Optional[str]) -> Optional[object]:
+    if not modules:
+        return None
+    if preferred_version:
+        for module in modules:
+            if str(getattr(module, "version", "")).strip() == preferred_version:
+                return module
+    return max(
+        modules,
+        key=lambda module: (
+            version_key(getattr(module, "version", "")).key,
+            getattr(module, "created_at", None) or datetime.fromtimestamp(0, tz=timezone.utc),
+        ),
+    )
+
+
+async def _get_module_preferred_assignments(session) -> Dict[str, dict]:
+    repo = ModuleRolloutRepo(session)
+    assignments = await repo.list_assignments()
+    return {item["module_name"]: item for item in assignments}
+
+
+async def _build_and_store_module_package(
+    *,
+    auth_context: AuthContext,
+    payload: dict,
+) -> tuple[int, dict]:
+    module_name = (payload.get("module_name") or "").strip()
+    version = (payload.get("version") or "").strip()
+    tool_name = (payload.get("tool_name") or "").strip()
+    method_name = (payload.get("method") or payload.get("method_name") or tool_name).strip()
+    description = (payload.get("description") or "").strip()
+    user_function_body = payload.get("user_function_body")
+    if user_function_body is None:
+        user_function_body = ""
+    risk_level = (payload.get("risk_level") or DEFAULT_RISK_LEVEL).strip()
+    overwrite = payload.get("overwrite") is True
+    params_schema = payload.get("params_schema")
+    presets = payload.get("presets")
+    platforms = payload.get("platforms")
+    capabilities = payload.get("capabilities")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    output_schema = payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else None
+    aliases = payload.get("aliases") if isinstance(payload.get("aliases"), list) else None
+    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
+    requirements = payload.get("requirements") if isinstance(payload.get("requirements"), list) else None
+    optional_requirements = payload.get("optional_requirements") if isinstance(payload.get("optional_requirements"), list) else None
+    min_agent_version = payload.get("min_agent_version")
+    module_api_version = (payload.get("module_api_version") or "1.0.0").strip()
+    owner_scope = (payload.get("owner_scope") or "core").strip().lower()
+    entrypoint = (payload.get("entrypoint") or "module:register").strip()
+    set_preferred = payload.get("set_preferred") is True
+
+    if not module_name:
+        return 400, {"status": "error", "error": "Missing module_name"}
+    if not version:
+        return 400, {"status": "error", "error": "Missing version"}
+    if not tool_name and not tools:
+        return 400, {"status": "error", "error": "Missing tool_name or tools"}
+    if not description:
+        return 400, {"status": "error", "error": "Missing description"}
+
+    try:
+        zip_bytes, manifest_summary = build_module_package(
+            module_name=module_name,
+            version=version,
+            tool_name=tool_name,
+            description=description,
+            user_function_body=user_function_body,
+            risk_level=risk_level,
+            params_schema=params_schema if isinstance(params_schema, list) else None,
+            presets=presets if isinstance(presets, list) else None,
+            platforms=platforms if isinstance(platforms, list) else None,
+            method_name=method_name,
+            capabilities=capabilities if isinstance(capabilities, list) else None,
+            metadata=metadata,
+            output_schema=output_schema,
+            aliases=aliases,
+            tools=tools,
+            requirements=requirements,
+            optional_requirements=optional_requirements,
+            min_agent_version=min_agent_version,
+            module_api_version=module_api_version,
+            owner_scope=owner_scope,
+            entrypoint=entrypoint,
+        )
+    except ValueError as e:
+        return 400, {"status": "error", "error": str(e)}
+
+    preflight_ok, validation_json, manifest_json, _ = preflight_module_zip(zip_bytes)
+    if not preflight_ok:
+        return 400, {
+            "status": "error",
+            "error": "Module validation failed",
+            "preflight_status": "failed",
+            "preflight_errors": _flatten_validation_errors(validation_json),
+            "validation_json": validation_json,
+            "module_name": module_name,
+            "version": version,
+        }
+
+    smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_create_smoke_")
+    validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
+    if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
+        return 400, {
+            "status": "error",
+            "error": "Module smoke check failed",
+            "preflight_status": "failed",
+            "preflight_errors": smoke_errors or _flatten_validation_errors(validation_json),
+            "validation_json": validation_json,
+            "module_name": manifest_json["module_name"],
+            "version": manifest_json["module_version"],
+        }
+
+    manifest_summary = manifest_summary or {}
+    manifest_summary["tools"] = (manifest_json or {}).get("tools") or manifest_summary.get("tools") or []
+    name_final = manifest_json["module_name"]
+    version_final = manifest_json["module_version"]
+
+    async with get_session() as session:
+        modules_repo = ModulesRepo(session)
+        tool_conflicts = await _find_registry_tool_conflicts(session, manifest_json)
+        if tool_conflicts:
+            return 409, {
+                "status": "error",
+                "error": "Tool ownership conflict",
+                "error_code": "MODULE_TOOL_OWNERSHIP_CONFLICT",
+                "conflicts": tool_conflicts,
+                "module_name": name_final,
+                "version": version_final,
+            }
+        existing = await modules_repo.get_module(name_final, version_final)
+        if existing and not overwrite:
+            return 409, {
+                "status": "error",
+                "error": "Module already exists",
+                "module_name": name_final,
+                "version": version_final,
+            }
+        if overwrite and auth_context.actor_role != "admin":
+            return 403, {"status": "error", "error": "Only admin can overwrite modules"}
+
+        storage_path, sha256, size = save_module_zip_bytes(
+            zip_bytes=zip_bytes,
+            module_name=name_final,
+            version=version_final,
+            storage_dir=MODULES_STORAGE_DIR,
+            max_size=MAX_MODULE_SIZE,
+        )
+        if existing and overwrite:
+            existing.sha256 = sha256
+            existing.size = size
+            existing.storage_path = storage_path
+            existing.manifest_json = manifest_json
+            existing.validation_json = validation_json
+            existing.manifest_summary = manifest_summary
+            await session.flush()
+            logger.info(f"Module updated (create/save): {name_final}/{version_final}")
+        else:
+            await modules_repo.create_module(
+                module_name=name_final,
+                version=version_final,
+                sha256=sha256,
+                size=size,
+                storage_path=storage_path,
+                uploaded_by=auth_context.actor_role or "admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+            logger.info(f"Module created (create/save): {name_final}/{version_final}")
+
+        if set_preferred:
+            rollout_repo = ModuleRolloutRepo(session)
+            await rollout_repo.set_assignment(
+                module_name=name_final,
+                version=version_final,
+                updated_by=auth_context.actor_role,
+            )
+        await session.commit()
+
+    return 200, {
+        "status": "success",
+        "module_name": name_final,
+        "version": version_final,
+        "sha256": sha256,
+        "size": size,
+        "download_path": f"/api/modules/{name_final}/{version_final}/download",
+        "preflight_status": "passed",
+        "manifest_version": 1 if validation_json.get("legacy_manifest") else manifest_json.get("manifest_version", 2),
+        "validation_status": validation_json.get("validation_status"),
+        "warnings": validation_json.get("warnings") or [],
+        "tools_count": len((manifest_json or {}).get("tools") or []),
+        "validation_json": validation_json,
+        "preferred_version": version_final if set_preferred else None,
+    }
 
 
 def _builtin_module_install_payload(module_name: str, version: str) -> dict:
@@ -1382,13 +1583,21 @@ async def handle_list_modules(request):
 
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
+            preferred_assignments = await _get_module_preferred_assignments(session)
             modules = await modules_repo.list_modules(
                 module_name=module_name,
                 limit=limit
             )
 
             return web.json_response({
-                "modules": [_module_api_record(module) for module in modules]
+                "modules": [
+                    {
+                        **_module_api_record(module),
+                        "is_preferred": preferred_assignments.get(module.module_name, {}).get("version") == module.version,
+                        "preferred_version": preferred_assignments.get(module.module_name, {}).get("version"),
+                    }
+                    for module in modules
+                ]
             })
 
     except Exception as e:
@@ -1410,6 +1619,7 @@ async def handle_get_module_detail(request):
 
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
+            preferred_assignments = await _get_module_preferred_assignments(session)
             module = await modules_repo.get_module(module_name, version)
             if not module:
                 return web.json_response({
@@ -1421,9 +1631,211 @@ async def handle_get_module_detail(request):
             return web.json_response({
                 "status": "ok",
                 **_module_api_record(module, include_detail=True),
+                "is_preferred": preferred_assignments.get(module.module_name, {}).get("version") == module.version,
+                "preferred_version": preferred_assignments.get(module.module_name, {}).get("version"),
             })
     except Exception as e:
         logger.error(f"Get module detail failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_list_modules_workbench(request):
+    """
+    GET /api/modules/workbench
+
+    Returns module families grouped by module_name with preferred-version metadata.
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+
+        limit = int(request.query.get("limit", 300))
+        async with get_session() as session:
+            modules_repo = ModulesRepo(session)
+            modules = await modules_repo.list_modules(limit=limit)
+            preferred_assignments = await _get_module_preferred_assignments(session)
+
+        grouped: Dict[str, list[object]] = {}
+        for module in modules:
+            grouped.setdefault(module.module_name, []).append(module)
+
+        families: list[dict] = []
+        for module_name in sorted(grouped):
+            versions = grouped[module_name]
+            preferred_version = preferred_assignments.get(module_name, {}).get("version")
+            preferred_active = any(item.version == preferred_version for item in versions)
+            preferred_module = _pick_preferred_module_record(versions, preferred_version)
+            version_records = []
+            for module in sorted(
+                versions,
+                key=lambda item: (
+                    version_key(getattr(item, "version", "")).key,
+                    getattr(item, "created_at", None) or datetime.fromtimestamp(0, tz=timezone.utc),
+                ),
+                reverse=True,
+            ):
+                manifest = get_module_manifest(module)
+                version_records.append(
+                    {
+                        **_module_api_record(module),
+                        "is_preferred": preferred_version == module.version,
+                        "tool_ids": [tool.get("tool") for tool in manifest.get("tools") or [] if tool.get("tool")],
+                    }
+                )
+            latest = version_records[0] if version_records else None
+            families.append(
+                {
+                    "module_name": module_name,
+                    "preferred_version": preferred_version if preferred_active else (preferred_module.version if preferred_module else None),
+                    "preferred_assigned": bool(preferred_version and preferred_active),
+                    "latest_version": latest.get("version") if latest else None,
+                    "owner_scope": (get_module_manifest(preferred_module).get("owner_scope") if preferred_module else None),
+                    "module_api_version": (get_module_manifest(preferred_module).get("module_api_version") if preferred_module else None),
+                    "versions": version_records,
+                }
+            )
+
+        return web.json_response(
+            {
+                "status": "ok",
+                "modules": families,
+                "count": len(families),
+            }
+        )
+    except Exception as e:
+        logger.error(f"List modules workbench failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_get_module_workbench_detail(request):
+    """
+    GET /api/modules/workbench/{module_name}/{version}
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+
+        module_name = request.match_info["module_name"]
+        version = request.match_info["version"]
+        async with get_session() as session:
+            modules_repo = ModulesRepo(session)
+            preferred_assignments = await _get_module_preferred_assignments(session)
+            module = await modules_repo.get_module(module_name, version)
+            if not module:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Module not found",
+                        "module_name": module_name,
+                        "version": version,
+                    },
+                    status=404,
+                )
+            editable_spec = build_editable_spec(module)
+            return web.json_response(
+                {
+                    "status": "ok",
+                    "module": {
+                        **_module_api_record(module, include_detail=True),
+                        "is_preferred": preferred_assignments.get(module.module_name, {}).get("version") == module.version,
+                        "preferred_version": preferred_assignments.get(module.module_name, {}).get("version"),
+                    },
+                    "editable_spec": editable_spec,
+                }
+            )
+    except Exception as e:
+        logger.error(f"Get module workbench detail failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_set_module_preferred_version(request):
+    """
+    PATCH /api/modules/{module_name}/preferred
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        if auth_context.actor_role != "admin":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Only admin can change preferred module versions",
+                    "error_code": "FORBIDDEN",
+                },
+                status=403,
+            )
+
+        module_name = request.match_info["module_name"]
+        data = await request.json()
+        version = str(data.get("version") or "").strip()
+
+        async with get_session() as session:
+            rollout_repo = ModuleRolloutRepo(session)
+            modules_repo = ModulesRepo(session)
+            if not version:
+                await rollout_repo.clear_assignment(module_name)
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "ok",
+                        "module_name": module_name,
+                        "preferred_version": None,
+                    }
+                )
+            module = await modules_repo.get_module(module_name, version)
+            if not module:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Module version not found",
+                        "error_code": "MODULE_NOT_FOUND",
+                        "module_name": module_name,
+                        "version": version,
+                    },
+                    status=404,
+                )
+            assignment = await rollout_repo.set_assignment(
+                module_name=module_name,
+                version=version,
+                updated_by=auth_context.actor_role,
+            )
+            await session.commit()
+            return web.json_response(
+                {
+                    "status": "ok",
+                    "module_name": module_name,
+                    "preferred_version": assignment["version"],
+                    "updated_at": assignment["updated_at"],
+                    "updated_by": assignment["updated_by"],
+                }
+            )
+    except Exception as e:
+        logger.error(f"Set preferred module version failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_save_module_workbench(request):
+    """
+    POST /api/modules/workbench/save
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        status_code, response_payload = await _build_and_store_module_package(
+            auth_context=auth_context,
+            payload=await request.json(),
+        )
+        return web.json_response(response_payload, status=status_code)
+    except Exception as e:
+        logger.error(f"Save module workbench failed: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
@@ -1460,6 +1872,7 @@ async def handle_delete_module(request):
 
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
+            rollout_repo = ModuleRolloutRepo(session)
             module = await modules_repo.get_module(module_name, version)
             if not module:
                 return web.json_response({
@@ -1470,7 +1883,10 @@ async def handle_delete_module(request):
                 }, status=404)
 
             storage_path = module.storage_path
+            assignment = await rollout_repo.get_assignment(module_name)
             deleted = await modules_repo.delete_module(module_name, version)
+            if assignment and assignment.get("version") == version:
+                await rollout_repo.clear_assignment(module_name)
             await session.commit()
 
         if not deleted:
@@ -1952,6 +2368,12 @@ async def handle_bulk_install_modules(request):
                 "error": "Authentication required",
                 "error_code": "AUTH_REQUIRED",
             }, status=401)
+
+        status_code, response_payload = await _build_and_store_module_package(
+            auth_context=auth_context,
+            payload=await request.json(),
+        )
+        return web.json_response(response_payload, status=status_code)
 
         data = await request.json()
         module_name = data.get("module_name")

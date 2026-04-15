@@ -1,0 +1,129 @@
+<div class="modules-workbench-shell">
+    <div class="page-header" style="margin-bottom: 16px;">
+        <h2 style="margin-bottom: 8px;">Реестр и разработка модулей</h2>
+        <p style="color: var(--muted); font-size: 14px; margin: 0;">
+            Здесь серверный реестр, приоритетные версии и редактирование модулей по фрагментам:
+            manifest-поля, tool contracts и код маленьких tool-функций.
+        </p>
+    </div>
+
+    <div class="module-workbench-layout" style="display: grid; grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); gap: 16px;">
+        <section class="panel" style="margin: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div>
+                    <h3 style="margin: 0;">Семейства модулей</h3>
+                    <div class="muted" style="font-size: 12px; margin-top: 4px;">Список версий на сервере и выбор приоритетной.</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-refresh-btn">Обновить</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-new-btn">Новый модуль</button>
+                </div>
+            </div>
+            <div id="modules-workbench-list" class="modules-workbench-list">
+                <div class="loading">Загрузка реестра модулей...</div>
+            </div>
+        </section>
+
+        <section class="panel" style="margin: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px;">
+                <div>
+                    <h3 id="modules-workbench-editor-title" style="margin: 0;">Редактор модуля</h3>
+                    <div id="modules-workbench-editor-subtitle" class="muted" style="font-size: 12px; margin-top: 4px;">
+                        Выберите модуль слева или создайте новый draft.
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-load-selected-btn">Загрузить версию</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-set-preferred-btn">Сделать приоритетной</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-save-btn">Сохранить модуль</button>
+                </div>
+            </div>
+
+            <div id="modules-workbench-message"></div>
+
+            <div class="toolset-info" style="margin-bottom: 16px;">
+                <div class="info-card">
+                    <label>Семейство</label>
+                    <value id="modules-workbench-selected-module">—</value>
+                </div>
+                <div class="info-card">
+                    <label>Версия</label>
+                    <value id="modules-workbench-selected-version">—</value>
+                </div>
+                <div class="info-card">
+                    <label>Приоритетная</label>
+                    <value id="modules-workbench-selected-preferred">—</value>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="modules-workbench-module-name">Имя модуля</label>
+                    <input type="text" id="modules-workbench-module-name" placeholder="network_basic">
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-module-version">Версия</label>
+                    <input type="text" id="modules-workbench-module-version" placeholder="1.0.0">
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-module-description">Описание</label>
+                    <input type="text" id="modules-workbench-module-description" placeholder="Краткое описание пакета">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="modules-workbench-owner-scope">Owner scope</label>
+                    <select id="modules-workbench-owner-scope">
+                        <option value="core">core</option>
+                        <option value="platform">platform</option>
+                        <option value="builtin">builtin</option>
+                        <option value="vendor">vendor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-module-api-version">Module API version</label>
+                    <input type="text" id="modules-workbench-module-api-version" placeholder="1.0.0">
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-entrypoint">Entrypoint</label>
+                    <input type="text" id="modules-workbench-entrypoint" placeholder="module:register">
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-min-agent-version">Min agent version</label>
+                    <input type="text" id="modules-workbench-min-agent-version" placeholder="1.0.0">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="modules-workbench-platforms">Platforms (JSON)</label>
+                    <textarea id="modules-workbench-platforms" rows="2" placeholder='["win32","linux"]'></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="modules-workbench-requirements">Requirements / optional requirements (JSON)</label>
+                    <textarea id="modules-workbench-requirements" rows="2" placeholder='{"requirements":[],"optional_requirements":[]}'></textarea>
+                </div>
+            </div>
+
+            <div class="section" style="margin-top: 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                    <h4 style="margin: 0;">Tool fragments</h4>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-add-tool-btn">Добавить tool</button>
+                    </div>
+                </div>
+                <div id="modules-workbench-tool-tabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0;"></div>
+                <div id="modules-workbench-tool-editor"></div>
+            </div>
+
+            <div class="section" style="margin-top: 18px;">
+                <h4 style="margin-bottom: 8px;">Архив и исходники</h4>
+                <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+                    Для модулей, собранных через builder, код tool-функций раскладывается обратно в поля. Для остальных модулей ниже показывается сырой архив.
+                </div>
+                <div id="modules-workbench-source-files"></div>
+            </div>
+        </section>
+    </div>
+</div>

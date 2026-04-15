@@ -640,124 +640,7 @@
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    <!-- Реестр модулей: один блок с двумя раскрываемыми секциями -->
-                    <div class="panel">
-                        <h2>Реестр модулей</h2>
-                        <div class="registry-actions" style="display: flex; gap: 10px; margin-bottom: 16px;">
-                            <button type="button" class="btn btn-secondary" id="registry-btn-upload-modules" aria-expanded="false" aria-controls="registry-upload-section">Загрузка модуля</button>
-                            <button type="button" class="btn btn-secondary" id="registry-btn-server-modules" aria-expanded="false" aria-controls="registry-server-section">Модули на сервере</button>
-                        </div>
-
-                        <!-- Секция: Загрузка модуля (создание из кода + ZIP) -->
-                        <div id="registry-upload-section" class="registry-section" style="display: none;">
-                            <div class="upload-form create-module-form">
-                                <h3>Создать модуль из кода</h3>
-                                <p style="font-size: 13px; color: #6e6e73; margin-bottom: 10px;">Заполните поля — сервер соберёт модуль по шаблону, проверит (preflight + smoke) и сохранит. Установить можно через блок «Установка» или API <code>POST /api/modules/bulk_install</code>.</p>
-                                <form id="create-module-form-modules">
-                                    <div class="form-group">
-                                        <label for="create-module-name-modules">Имя модуля <span class="required">*</span></label>
-                                        <input type="text" id="create-module-name-modules" name="module_name" required placeholder="например my_tool" pattern="[a-zA-Z0-9_]+">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-version-modules">Версия <span class="required">*</span></label>
-                                        <input type="text" id="create-version-modules" name="version" required placeholder="1.0.0">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-tool-name-modules">Имя инструмента <span class="required">*</span></label>
-                                        <input type="text" id="create-tool-name-modules" name="tool_name" required placeholder="например get_info">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-method-name-modules">Method</label>
-                                        <input type="text" id="create-method-name-modules" name="method_name" placeholder="run">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-description-modules">Описание инструмента <span class="required">*</span></label>
-                                        <input type="text" id="create-description-modules" name="description" required placeholder="Краткое описание для API">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-platforms-modules">Platforms (JSON)</label>
-                                        <textarea id="create-platforms-modules" name="platforms" rows="2" placeholder='["any"]'></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-risk-level-modules">Уровень риска</label>
-                                        <select id="create-risk-level-modules" name="risk_level">
-                                            <option value="safe_readonly">safe_readonly</option>
-                                            <option value="safe_write">safe_write</option>
-                                            <option value="dangerous">dangerous</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-code-body-modules">Тело функции (код) <span class="required">*</span></label>
-                                        <textarea id="create-code-body-modules" name="user_function_body" rows="8" required placeholder="return {&quot;ok&quot;: True}  # только тело async-функции, без async def"></textarea>
-                                        <small>Только тело async-функции, возвращающей Dict. Пример: <code>return {&quot;ok&quot;: True}</code></small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-params-schema-modules">Параметры (params_schema, JSON-массив)</label>
-                                        <textarea id="create-params-schema-modules" name="params_schema" rows="3" placeholder='[{"name": "path", "type": "string", "default": ""}]'></textarea>
-                                        <small>Опционально. JSON-массив параметров. Если задан, в теле функции доступна переменная <code>params</code>. Пример: <code>[{"name":"target","type":"string","required":true}]</code></small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-presets-modules">Presets (JSON)</label>
-                                        <textarea id="create-presets-modules" name="presets" rows="3" placeholder='[{"id":"default","name":"Default","description":"Default preset","params":{}}]'></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-capabilities-modules">Capabilities (JSON)</label>
-                                        <textarea id="create-capabilities-modules" name="capabilities" rows="3" placeholder='[]'></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="create-metadata-modules">Metadata (JSON)</label>
-                                        <textarea id="create-metadata-modules" name="metadata" rows="4" placeholder='{"domain":"custom","risk_level":"safe_readonly","requires_consent":false,"timeout_sec":30,"idempotent":true,"allow_roles":["admin"],"scopes":["custom"]}'></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label><input type="checkbox" id="create-overwrite-modules" name="overwrite"> Перезаписать при совпадении имени и версии</label>
-                                    </div>
-                                    <button type="submit" class="btn btn-primary" id="create-module-btn-modules">Создать и сохранить модуль</button>
-                                </form>
-                                <div id="create-module-message-modules"></div>
-                            </div>
-
-                            <div class="upload-form">
-                                <h3>Загрузить модуль (ZIP)</h3>
-                                <form id="upload-form-modules" enctype="multipart/form-data">
-                                    <div class="form-group">
-                                        <label for="upload-file-modules">ZIP файл</label>
-                                        <input type="file" id="upload-file-modules" name="file" accept=".zip" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="upload-module-name-modules">Имя модуля</label>
-                                        <input type="text" id="upload-module-name-modules" name="module_name" placeholder="из manifest">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="upload-version-modules">Версия</label>
-                                        <input type="text" id="upload-version-modules" name="version" placeholder="из manifest">
-                                    </div>
-                                    <div class="form-group">
-                                        <label><input type="checkbox" id="upload-overwrite-modules" name="overwrite"> Перезаписать при совпадении имени и версии</label>
-                                    </div>
-                                    <button type="submit" class="btn" id="upload-btn-modules">Загрузить</button>
-                                </form>
-                                <div id="upload-message-modules"></div>
-                            </div>
-                        </div>
-
-                        <!-- Секция: Модули на сервере (список, удалить, обновить) -->
-                        <div id="registry-server-section" class="registry-section" style="display: none;">
-                            <div class="section">
-                                <h3>Загруженные модули на сервере</h3>
-                                <div class="form-actions" style="margin-bottom: 12px;">
-                                    <button type="button" class="btn btn-secondary" id="cleanup-missing-modules-btn">Удалить отсутствующие файлы из реестра</button>
-                                    <span id="modules-missing-summary" class="muted">Проверка файлов ещё не выполнялась.</span>
-                                </div>
-                                <div id="modules-list-modules">
-                                    <div class="loading">Загрузка...</div>
-                                </div>
-                                <div id="module-detail-modules" style="display:none; margin-top: 16px;">
-                                    <h4>Module Details</h4>
-                                    <div id="module-detail-content-modules"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div id="modules-workbench-host"></div>
 
                     <!-- Установить модули на устройства -->
                     <div class="panel" style="grid-column: 1 / -1;">
@@ -1335,6 +1218,7 @@
     </div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/admin.js?v=20260414a"></script>
+    <script src="/admin.js?v=20260415a"></script>
+    <script src="/admin_modules_workbench.js?v=20260415a"></script>
 </body>
 </html>

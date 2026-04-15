@@ -71,22 +71,30 @@ class ToolService:
 
     async def _get_preferred_server_modules(self, session) -> Dict[str, object]:
         try:
-            from app.repos import ModulesRepo
+            from app.repos import ModulesRepo, ModuleRolloutRepo
         except ImportError:
             return {}
         modules_repo = ModulesRepo(session)
+        rollout_repo = ModuleRolloutRepo(session)
         modules = await modules_repo.list_modules(limit=1000)
+        assignments = {
+            item["module_name"]: item["version"]
+            for item in await rollout_repo.list_assignments()
+        }
         grouped: Dict[str, List[object]] = {}
         for module in modules:
             grouped.setdefault(module.module_name, []).append(module)
-        return {
-            module_name: preferred
-            for module_name, preferred in (
-                (module_name, self._pick_preferred_module(items))
-                for module_name, items in grouped.items()
-            )
-            if preferred is not None
-        }
+        selected: Dict[str, object] = {}
+        for module_name, items in grouped.items():
+            preferred_version = assignments.get(module_name)
+            preferred = None
+            if preferred_version:
+                preferred = next((item for item in items if getattr(item, "version", None) == preferred_version), None)
+            if preferred is None:
+                preferred = self._pick_preferred_module(items)
+            if preferred is not None:
+                selected[module_name] = preferred
+        return selected
 
     async def _resolve_preferred_server_module_for_tool(self, session, tool_name: str) -> Dict[str, Any]:
         preferred_modules = await self._get_preferred_server_modules(session)

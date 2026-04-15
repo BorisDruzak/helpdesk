@@ -22,8 +22,8 @@
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
-| Модули / reconcile | `server/modules/service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
-| Admin / support / ticket UI | `server/admin.js`, `server/support.js`, `server/ticket.js`, `server/web_shared.js`, `server/control_plane.py`, `server/runtime_control.py` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
+| Модули / reconcile | `server/modules/service.py`, `server/modules/handlers.py`, `server/modules/workbench_service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
+| Admin / support / ticket UI | `server/admin.js`, `server/admin_modules_workbench.js`, `server/support.js`, `server/ticket.js`, `server/web_shared.js`, `server/control_plane.py`, `server/runtime_control.py` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
 
 ---
 
@@ -115,7 +115,7 @@
 |--------------|------------|
 | `server/tickets/` | handlers, `create_flow.py`, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др.; `create_flow.py` держит единый DB-first путь создания для `/api/tickets/create`, WS `chat_raise` и legacy `/api/chat_raise`, а `assignment_service.py` и `ticket_events_repo.py` считают состав очереди обязательным для назначения и автоназначения; `handle_ticket_get` поддерживает forward catch-up (`since_event_id`) и reverse pagination (`before_event_id`, `limit`, `has_older`, `next_before_event_id`) для агентского ticket chat; `admin_config_handlers.py` ведёт helpdesk-admin settings API: очереди, состав очередей, routing rules, SLA policies, targets/matrix (GET/PUT), calendars, OLA targets, audit |
 | `server/agents/` | handlers, agent_builds_handlers, service; `handlers.py` также даёт admin-only архивирование устройства с очисткой live runtime-сессии |
-| `server/modules/` | handlers, service, reconcile, verification |
+| `server/modules/` | handlers, service, reconcile, verification, `workbench_service.py` для реконструкции editable draft и module-family workbench payload |
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
@@ -138,7 +138,7 @@
 ### 2.7 UI (статика)
 | Файл | Назначение |
 |------|------------|
-| `server/admin.html`, `server/admin.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket |
+| `server/admin.html`, `server/admin.js`, `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket; модульный workbench вынесен в отдельный fragment+script и встраивается во вкладку `Модули` |
 | `server/control_plane.py`, `server/runtime_control.py` | Control-plane и runtime orchestration для техпанели: статус сервера (включая `started_at`/`uptime` из systemd и его timezone-offset timestamps вида `+05`), корректный `stop -> stopped/inactive` без ложного `failed`, health summary main API, полные логи (по умолчанию `Info+`), подтверждённые lifecycle actions с аудитом |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
 | `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь тикетов` + `Рабочий тикет`; runtime теперь опирается на `web_shared.js` для общих auth/date/html helpers, чтобы не дублировать базовый shell-код. Переключатель режимов вынесен в верхний action-bar рядом с `Обновить / Выйти / Войти как admin`, чтобы оба режима воспринимались как единый workspace. В `Очереди тикетов` левый inbox скрывается, управление очередью собрано в компактную верхнюю панель (summary, фильтры, сортировка), а основной экран отдан широкой доске тикетов; левая колонка используется под действия по очереди и выбранному тикету. Карточки тикетов раскрывают `SLA / OLA / маршрут` и `Контекст и присутствие`. В `Рабочем тикете` левый inbox снова показывается, при этом фильтр `Мои` показывает только назначенные на текущего support-оператора тикеты, а фильтры `Нужны действия` и `Ждут пользователя` считаются только по своим тикетам. Для работы по тикету используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`). Для закрытия тикета использует встроенную форму кодов решения вместо prompt. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
@@ -161,7 +161,7 @@
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos
-- **модули (install, desired, reconcile)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
+- **модули (install, desired, reconcile, preferred version, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`

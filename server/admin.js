@@ -6701,7 +6701,8 @@
             if (cleanupBtn) cleanupBtn.onclick = cleanupMissingModulesRegistry;
             await Promise.all([
                 loadDevicesListModules(),
-                loadModulesList()
+                loadModulesList(),
+                window.ModuleWorkbench?.load?.() || Promise.resolve()
             ]);
         }
 
@@ -6894,7 +6895,9 @@
 
         async function loadModulesList() {
             const container = document.getElementById('modules-list-modules');
-            container.innerHTML = '<div class="loading">Загрузка модулей...</div>';
+            if (container) {
+                container.innerHTML = '<div class="loading">Загрузка модулей...</div>';
+            }
 
             try {
                 const response = await fetch('/api/modules', { headers: getAuthHeaders() });
@@ -6908,15 +6911,22 @@
                 } else {
                     modulesDataTab = [];
                     updateModulesMissingSummary();
-                    container.innerHTML = '<div class="error-message">Не удалось загрузить модули</div>';
+                    if (container) {
+                        container.innerHTML = '<div class="error-message">Не удалось загрузить модули</div>';
+                    }
                 }
             } catch (error) {
-                container.innerHTML = `<div class="error-message">Ошибка: ${escapeHtml(error.message)}</div>`;
+                if (container) {
+                    container.innerHTML = `<div class="error-message">Ошибка: ${escapeHtml(error.message)}</div>`;
+                }
             }
         }
 
         function renderModulesList() {
             const container = document.getElementById('modules-list-modules');
+            if (!container) {
+                return;
+            }
             if (modulesDataTab.length === 0) {
                 container.innerHTML = '<div class="empty">Нет загруженных модулей</div>';
                 return;

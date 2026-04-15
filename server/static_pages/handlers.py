@@ -4,7 +4,7 @@ from aiohttp import web
 
 
 BASE_DIR = Path(__file__).parent.parent
-ADMIN_SHELL_VERSION = "20260331e"
+ADMIN_SHELL_VERSION = "20260415a"
 SUPPORT_SHELL_VERSION = "20260414c"
 LOGIN_SHELL_VERSION = "20260330a"
 
@@ -72,6 +72,14 @@ async def handle_admin_css(request):
 
 async def handle_admin_js(request):
     return _text_file_response(BASE_DIR / "admin.js", "application/javascript", no_cache=True)
+
+
+async def handle_admin_modules_workbench_html(request):
+    return _text_file_response(BASE_DIR / "admin_modules_workbench.html", "text/html", no_cache=True)
+
+
+async def handle_admin_modules_workbench_js(request):
+    return _text_file_response(BASE_DIR / "admin_modules_workbench.js", "application/javascript", no_cache=True)
 
 
 async def handle_web_shared_js(request):

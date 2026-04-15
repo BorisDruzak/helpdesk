@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device, DeviceDesiredModule, DeviceModule, DeviceToolsetSnapshot, Module
+from app.db.models import Device, DeviceDesiredModule, DeviceModule, DeviceToolsetSnapshot, Module, ServerConfig
 from tools.service import ToolService
 
 
@@ -87,6 +87,17 @@ async def _seed_module(module_name: str, version: str) -> None:
                 manifest_json=_module_manifest(module_name, version),
                 validation_json={"validation_status": "passed"},
                 manifest_summary={"tools": [{"tool": "dns.resolve"}]},
+            )
+        )
+        await session.commit()
+
+
+async def _seed_module_preferred(module_name: str, version: str) -> None:
+    async with get_session() as session:
+        session.add(
+            ServerConfig(
+                key=f"module_preferred:{module_name}",
+                value=f'{{"module_name":"{module_name}","version":"{version}","updated_by":"admin"}}',
             )
         )
         await session.commit()
@@ -212,3 +223,27 @@ async def test_ensure_module_installed_blocks_when_agent_version_too_old():
 
     assert result is not None
     assert result["error_code"] == "AGENT_VERSION_TOO_OLD"
+
+
+@pytest.mark.asyncio
+async def test_ensure_module_installed_uses_server_preferred_assignment_over_latest_semver():
+    device_id = str(uuid.uuid4())
+    module_name = f"network_basic_{uuid.uuid4().hex[:8]}"
+    await _seed_device(device_id)
+    await _seed_module(module_name, "1.0.0")
+    await _seed_module(module_name, "2.0.0")
+    await _seed_module_preferred(module_name, "1.0.0")
+
+    service = ToolService(SimpleNamespace())
+    issued = []
+
+    async def fake_send_ws_command(**kwargs):
+        issued.append(kwargs)
+        return {"payload": {"status": "success"}}
+
+    with patch("websocket.protocol.send_ws_command", new=fake_send_ws_command):
+        result = await service._ensure_module_installed(device_id, "dns.resolve")
+
+    assert result is None
+    assert issued
+    assert issued[0]["params"]["module_version"] == "1.0.0"
