@@ -2369,12 +2369,6 @@ async def handle_bulk_install_modules(request):
                 "error_code": "AUTH_REQUIRED",
             }, status=401)
 
-        status_code, response_payload = await _build_and_store_module_package(
-            auth_context=auth_context,
-            payload=await request.json(),
-        )
-        return web.json_response(response_payload, status=status_code)
-
         data = await request.json()
         module_name = data.get("module_name")
         version = data.get("version")
