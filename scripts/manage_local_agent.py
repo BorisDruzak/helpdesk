@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import argparse
 import json
 import os
@@ -16,6 +17,8 @@ from pathlib import Path
 
 
 WORKSPACE = Path(__file__).resolve().parent.parent
+if str(WORKSPACE) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE))
 VENV_DIR = WORKSPACE / ".venvs" / "agent-win"
 VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 REQUIREMENTS = WORKSPACE / "pc_agent" / "requirements.txt"
@@ -161,6 +164,89 @@ def _choose_ui_port(preferred: int = DEFAULT_UI_PORT) -> int:
     raise SystemExit("No free local UI port available in the expected range")
 
 
+def _default_primary_agent_data_dir() -> Path:
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        return (Path(local_appdata) / "PCClientAgent" / "data").resolve()
+    return (Path.home() / "AppData" / "Local" / "PCClientAgent" / "data").resolve()
+
+
+def _sync_instance_token_from_primary_install(instance_name: str, instance_data_dir: Path) -> bool:
+    """
+    Makes local testing easier: if an isolated instance on the same machine does
+    not have its own token yet, reuse the active token from the main local
+    agent installation.
+
+    This is intentionally scoped to scripts/manage_local_agent.py so the
+    production runtime contract stays token-based and per-data-root.
+    """
+    primary_data_dir = _default_primary_agent_data_dir()
+    instance_data_dir = instance_data_dir.resolve()
+    if primary_data_dir == instance_data_dir:
+        return False
+
+    primary_db_path = primary_data_dir / "storage.db"
+    if not primary_db_path.exists():
+        return False
+
+    async def _copy_token() -> bool:
+        from pc_agent.auth.token_source import load_auth_token_from_db
+        from pc_agent.core.database import DatabaseManager
+        from pc_agent.core.identity import IdentityManager
+
+        target_identity = IdentityManager(instance_data_dir / "identity.json")
+        target_payload = target_identity.load_or_create()
+        source_identity = IdentityManager(primary_data_dir / "identity.json")
+        source_payload = source_identity.load_or_create()
+
+        target_machine_id = str(target_payload.get("machine_id") or "").strip().lower()
+        source_machine_id = str(source_payload.get("machine_id") or "").strip().lower()
+        if not target_machine_id or target_machine_id != source_machine_id:
+            print(
+                f"[manage_local_agent] skip primary token import for '{instance_name}': "
+                f"machine_id mismatch"
+            )
+            return False
+
+        DatabaseManager._instance = None
+        target_db = DatabaseManager(str(instance_data_dir / "storage.db"))
+        await target_db.init_db()
+        existing_token = await load_auth_token_from_db(
+            target_db,
+            target_identity,
+            migrate_to_primary=False,
+        )
+        if existing_token:
+            return False
+
+        DatabaseManager._instance = None
+        source_db = DatabaseManager(str(primary_db_path))
+        await source_db.init_db()
+        source_token = await load_auth_token_from_db(source_db, source_identity)
+        if not source_token:
+            return False
+
+        DatabaseManager._instance = None
+        target_db = DatabaseManager(str(instance_data_dir / "storage.db"))
+        await target_db.init_db()
+        saved = await target_db.save_auth_token(source_token, target_machine_id)
+        if saved:
+            print(
+                f"[manage_local_agent] imported auth token for '{instance_name}' "
+                f"from primary install ({target_machine_id[:8]}...)"
+            )
+        return saved
+
+    try:
+        return asyncio.run(_copy_token())
+    except Exception as exc:
+        print(
+            f"[manage_local_agent] warning: failed to import token from primary install "
+            f"for '{instance_name}': {exc}"
+        )
+        return False
+
+
 def _seed_release_install(name: str, build_root: Path) -> str:
     layout = _ensure_instance_layout(name)
     install_root = layout["install_root"]
@@ -245,6 +331,8 @@ def _start(
         raise SystemExit(f"Instance '{name}' is already running with PID {current['pid']}")
 
     layout = _ensure_instance_layout(name)
+    if not auth_token:
+        _sync_instance_token_from_primary_install(name, layout["data_dir"])
     resolved_ui_port = ui_port if ui_port is not None else _choose_ui_port()
     env = _build_env(ws_url, api_url, auth_token, ui_port)
     env["PC_AGENT_UI_PORT"] = str(resolved_ui_port)

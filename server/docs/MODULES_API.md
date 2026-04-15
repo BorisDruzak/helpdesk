@@ -31,10 +31,32 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 3. Если модуля на агенте нет — ищет модуль на сервере в реестре `modules` (берётся последняя по дате загрузки версия).
 4. Если модуль есть на сервере — проверяет совместимость ОС устройства с `platforms` из manifest модуля; при несовместимости или неизвестной ОС возвращает ошибку.
 5. Если всё ок — отправляет агенту команду `install_module_package` (через тот же механизм, что и ручная установка), ждёт успешного завершения (таймаут 90 с), затем выполняет запрошенный run_tool.
+6. После успешной auto-install сервер сразу фиксирует desired state как `installed` с reason `run_tool`, чтобы последующая reconcile-цепочка опиралась на server-first intent, а не только на inventory snapshot.
 
 Исключение: builtin-модули агента (`system`, `screen`) не требуют server-side установки. Для `screen.collect` и `screen.record` сервер не должен пытаться скачивать ZIP с `/api/modules/.../download`, даже если в server registry есть старые записи о пакетах.
 
 Если модуля нет на сервере, возвращается ошибка с кодом `MODULE_NOT_ON_SERVER`. Ошибки установки (таймаут, отказ агента) возвращаются с кодами `MODULE_INSTALL_TIMEOUT`, `MODULE_INSTALL_FAILED` и т.п.
+
+### AuthContext и policy для device-scoped module endpoints
+
+Для mutation-endpoints устройств (`install`, `activate`, `deactivate`, `remove`, `verify`, `sync`, `trigger_reconcile`) роль и actor context теперь берутся из проверенного токена и `AuthContext`.
+
+Инварианты:
+
+- `actor_role` из JSON body не считается источником истины и игнорируется для policy decision;
+- доступ проверяется через `PolicyEngine`, а не через ad-hoc role checks;
+- audit/update metadata используют `auth_context.actor_role`, чтобы журнал отражал реального инициатора.
+
+### Event-driven reconcile после `module_state_changed`
+
+Если агент публикует `module_state_changed`, сервер после сохранения события сразу пытается запустить `reconcile_device(..., reason="event_module_state_changed")`.
+
+Это дополняет periodic/manual reconcile и нужно для более бесшовного сценария:
+
+1. support запускает modular tool;
+2. сервер auto-install'ит пакет и фиксирует desired state;
+3. агент устанавливает/активирует модуль и отправляет `module_state_changed`;
+4. сервер сразу подтягивает reconcile, не дожидаясь только следующего фонового цикла.
 
 Список модулей на сервере: реестр в таблице `modules` и API `GET /api/modules`.
 

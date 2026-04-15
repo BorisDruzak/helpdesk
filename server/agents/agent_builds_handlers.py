@@ -4,7 +4,9 @@ HTTP handlers for agent remote update (agent builds registry).
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +25,12 @@ from core.tool_metadata import ToolMetadata
 from websocket.protocol import enqueue_command_async
 from tech.runtime_audit import write_agent_runtime_audit
 
+try:
+    from packaging.version import InvalidVersion, Version as PackagingVersion
+except ImportError:  # pragma: no cover - fallback stays local and simple
+    InvalidVersion = ValueError
+    PackagingVersion = None
+
 # Маппинг ОС (из handshake metadata os_type) в target билда для массового обновления
 OS_TYPE_TO_TARGET = {
     "windows": "windows_amd64",
@@ -32,6 +40,148 @@ OS_TYPE_TO_TARGET = {
     "Linux": "linux_alt_x86_64",
     "linux_alt": "linux_alt_x86_64",
 }
+
+RELEASE_CHANNELS = {"stable", "release"}
+NON_RELEASE_CHANNELS = {"beta", "alpha", "rc", "dev", "nightly", "preview", "canary"}
+VERSION_PRERELEASE_MARKERS = ("alpha", "beta", "rc", "dev", "preview", "nightly", "canary")
+_SEMVER_RE = re.compile(
+    r"^\s*v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
+    r"(?:[-+](?P<suffix>[0-9A-Za-z.-]+))?\s*$"
+)
+
+
+@dataclass(frozen=True)
+class VersionOrderKey:
+    valid: bool
+    key: tuple
+    normalized: str
+    is_prerelease: bool
+
+
+def _channel_priority(channel: Optional[str]) -> int:
+    normalized = str(channel or "").strip().lower()
+    if normalized in RELEASE_CHANNELS:
+        return 3
+    if normalized == "rc":
+        return 2
+    if normalized in {"beta", "preview", "canary"}:
+        return 1
+    if normalized in {"alpha", "dev", "nightly"}:
+        return 0
+    return -1
+
+
+def _infer_release_channel(version: Optional[str], channel: Optional[str] = None) -> str:
+    normalized_channel = str(channel or "").strip().lower()
+    if normalized_channel:
+        if normalized_channel in RELEASE_CHANNELS:
+            return "stable"
+        if normalized_channel in NON_RELEASE_CHANNELS:
+            return normalized_channel
+    lowered = str(version or "").strip().lower()
+    for marker in VERSION_PRERELEASE_MARKERS:
+        if marker in lowered:
+            return marker
+    if "-" in lowered:
+        return "prerelease"
+    return "stable"
+
+
+def _version_key(version: Optional[str]) -> VersionOrderKey:
+    raw = str(version or "").strip()
+    lowered = raw.lower()
+    if PackagingVersion is not None:
+        try:
+            parsed = PackagingVersion(raw)
+            return VersionOrderKey(
+                valid=True,
+                key=(parsed,),
+                normalized=str(parsed),
+                is_prerelease=bool(parsed.is_prerelease or parsed.is_devrelease),
+            )
+        except InvalidVersion:
+            pass
+    match = _SEMVER_RE.match(raw)
+    if match:
+        suffix = match.group("suffix") or ""
+        is_prerelease = bool(suffix and any(marker in suffix.lower() for marker in VERSION_PRERELEASE_MARKERS))
+        suffix_key = (0, suffix.lower()) if is_prerelease else (1, "")
+        key = (
+            int(match.group("major")),
+            int(match.group("minor")),
+            int(match.group("patch")),
+            suffix_key,
+        )
+        return VersionOrderKey(
+            valid=True,
+            key=key,
+            normalized=raw,
+            is_prerelease=is_prerelease,
+        )
+    return VersionOrderKey(
+        valid=False,
+        key=(raw.lower(),),
+        normalized=raw,
+        is_prerelease=("-" in lowered) or any(marker in lowered for marker in VERSION_PRERELEASE_MARKERS),
+    )
+
+
+def _compare_versions(left: Optional[str], right: Optional[str]) -> int:
+    left_key = _version_key(left)
+    right_key = _version_key(right)
+    if left_key.valid and right_key.valid:
+        if left_key.key == right_key.key:
+            return 0
+        return 1 if left_key.key > right_key.key else -1
+    left_norm = left_key.normalized.lower()
+    right_norm = right_key.normalized.lower()
+    if left_norm == right_norm:
+        return 0
+    return 1 if left_norm > right_norm else -1
+
+
+def _is_release_build(*, version: Optional[str], channel: Optional[str]) -> bool:
+    inferred_channel = _infer_release_channel(version, channel)
+    version_info = _version_key(version)
+    return inferred_channel == "stable" and not version_info.is_prerelease
+
+
+def _pick_preferred_build(builds: list, *, release_only: bool = False):
+    candidates = []
+    for build in builds:
+        if release_only and not _is_release_build(version=build.version, channel=build.channel):
+            continue
+        candidates.append(build)
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda build: (
+            _version_key(getattr(build, "version", "")).key,
+            _channel_priority(getattr(build, "channel", "")),
+            getattr(build, "created_at", None) or 0,
+        ),
+    )
+
+
+def _serialize_build_identity(build) -> dict:
+    return {
+        "target": build.target,
+        "channel": build.channel,
+        "version": build.version,
+        "archive_type": build.archive_type,
+        "artifact_name": build.artifact_filename,
+        "is_release": _is_release_build(version=build.version, channel=build.channel),
+        "download_path": f"/api/agent_builds/{build.target}/{build.channel}/{build.version}/download",
+    }
+
+
+def _resolve_target_for_device(device) -> Optional[str]:
+    if not device:
+        return None
+    device_metadata = device.device_metadata if isinstance(device.device_metadata, dict) else {}
+    os_type = device_metadata.get("os_type") or device.os
+    return _os_type_to_target(os_type)
 
 
 def _os_type_to_target(os_type: Optional[str]) -> Optional[str]:
@@ -338,6 +488,103 @@ async def handle_download_agent_build(request: web.Request) -> web.Response:
         logger.error(f"❌ Ошибка обработки download_agent_build: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_get_device_update_recommendation(request: web.Request) -> web.Response:
+    """
+    GET /api/devices/{device_id}/agent/update_recommendation?current_version=...&target=...
+
+    Returns server-side recommended release build for the device.
+    """
+    auth_context: AuthContext = request.get("auth_context")
+    if not auth_context:
+        return web.json_response(
+            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
+            status=401,
+        )
+
+    device_id = request.match_info["device_id"]
+    if auth_context.actor_role == "agent" and auth_context.actor_id != device_id:
+        return web.json_response(
+            {"status": "error", "error": "Forbidden", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+
+    current_version = _safe_str(request.query.get("current_version"))
+    explicit_target = _safe_str(request.query.get("target")) or None
+
+    async with get_session() as session:
+        from app.repos.devices_repo import DevicesRepo
+
+        devices_repo = DevicesRepo(session)
+        repo = AgentBuildsRepo(session)
+        device = await devices_repo.get_by_device_id(device_id)
+        if not device:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Device not found",
+                    "error_code": "DEVICE_NOT_FOUND",
+                    "device_id": device_id,
+                },
+                status=404,
+            )
+
+        target = explicit_target or _resolve_target_for_device(device)
+        if not target:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Could not determine build target for device",
+                    "error_code": "TARGET_SELECTION_FAILED",
+                    "device_id": device_id,
+                },
+                status=400,
+            )
+
+        builds = await repo.list_builds_for_target(target=target)
+
+    current_release_channel = _infer_release_channel(current_version) if current_version else "unknown"
+    current_is_release = _is_release_build(version=current_version, channel=current_release_channel) if current_version else False
+    current_comparison = "unknown"
+    recommended = _pick_preferred_build(builds, release_only=True)
+    update_available = False
+    recommended_reason = None
+
+    if recommended and current_version:
+        compare_result = _compare_versions(recommended.version, current_version)
+        if compare_result > 0:
+            current_comparison = "newer_release_available"
+        elif compare_result < 0:
+            current_comparison = "recommended_release_is_older"
+        else:
+            current_comparison = "same_version"
+        if current_is_release:
+            if compare_result > 0:
+                update_available = True
+                recommended_reason = "newer_release_available"
+        elif recommended.version != current_version:
+            update_available = True
+            recommended_reason = "non_release_current_version"
+    elif recommended and not current_version:
+        update_available = True
+        recommended_reason = "current_version_unknown"
+
+    payload = {
+        "status": "ok",
+        "device_id": device_id,
+        "target": target,
+        "current_version": current_version or None,
+        "is_release": current_is_release,
+        "release_channel": current_release_channel,
+        "update_available": update_available,
+        "recommended_version": recommended.version if recommended else None,
+        "recommended_channel": recommended.channel if recommended else None,
+        "recommended_reason": recommended_reason,
+        "comparison": current_comparison,
+        "recommended_build": _serialize_build_identity(recommended) if recommended else None,
+    }
+    return web.json_response(payload)
 
 
 async def handle_update_device_agent(request: web.Request) -> web.Response:

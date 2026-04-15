@@ -109,20 +109,23 @@ class DynamicModuleLoader:
         agent_dir = Path(__file__).resolve().parent.parent
         project_root = agent_dir.parent
 
-        agent_dir_str = str(agent_dir.resolve())
-        if agent_dir_str not in sys.path:
-            sys.path.insert(0, agent_dir_str)
-            logger.debug(f"Added agent directory to sys.path: {agent_dir_str}")
-
-        project_root_str = str(project_root.resolve())
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-            logger.debug(f"Added project root to sys.path: {project_root_str}")
-
         module_path_str = str(module_path.resolve())
         if module_path_str in sys.path:
             sys.path.remove(module_path_str)
         sys.path.insert(0, module_path_str)
+
+        agent_dir_str = str(agent_dir.resolve())
+        if agent_dir_str in sys.path:
+            sys.path.remove(agent_dir_str)
+        sys.path.insert(1, agent_dir_str)
+        logger.debug(f"Ensured agent directory in sys.path: {agent_dir_str}")
+
+        project_root_str = str(project_root.resolve())
+        if project_root_str in sys.path:
+            sys.path.remove(project_root_str)
+        sys.path.insert(2, project_root_str)
+        logger.debug(f"Ensured project root in sys.path: {project_root_str}")
+
         logger.debug(f"Moved '{module_path_str}' to the front of sys.path")
 
         self.unload_module(module_name)

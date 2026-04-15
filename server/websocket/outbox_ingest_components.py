@@ -294,6 +294,17 @@ class OutboxEventPublishService:
                     await push_chat_event_to_ui(ctx.state, job_id, outcome.payload_event)
                 except Exception as exc:
                     logger.warning(f"[outbox_pipeline] job side effects failed: {exc}")
+        if outcome.event_type == "module_state_changed" and getattr(ctx, "agent_id", None):
+            try:
+                from modules.reconcile import reconcile_device
+
+                await reconcile_device(
+                    device_id=ctx.agent_id,
+                    state=ctx.state,
+                    reason="event_module_state_changed",
+                )
+            except Exception as exc:
+                logger.warning(f"[outbox_pipeline] reconcile after module_state_changed failed: {exc}")
         logger.debug(
             f"[outbox_pipeline] processed outbox_id={outcome.outbox_id} trace_id={outcome.trace_id}"
         )

@@ -1,12 +1,12 @@
 """
-Модуль для сбора системной информации.
-
-Собирает данные о загрузке процессора, использовании памяти,
-состоянии дисков и сетевой активности.
+System information collector with presets and section-based output.
 """
 
+import platform
 import socket
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 import psutil
 from loguru import logger
 from pydantic import BaseModel
@@ -15,99 +15,262 @@ from modules.base_module import BaseCollector
 from core.registry import exposed_tool
 
 
+SYSTEM_PRESETS: dict[str, dict[str, bool]] = {
+    "minimal": {
+        "include_cpu": True,
+        "include_memory": True,
+        "include_disk": False,
+        "include_network": False,
+        "include_hostname": False,
+        "include_ip": False,
+        "include_platform": False,
+        "include_boot_time": False,
+    },
+    "basic": {
+        "include_cpu": True,
+        "include_memory": True,
+        "include_disk": True,
+        "include_network": False,
+        "include_hostname": True,
+        "include_ip": False,
+        "include_platform": False,
+        "include_boot_time": False,
+    },
+    "identity": {
+        "include_cpu": False,
+        "include_memory": False,
+        "include_disk": False,
+        "include_network": True,
+        "include_hostname": True,
+        "include_ip": True,
+        "include_platform": True,
+        "include_boot_time": False,
+    },
+    "network": {
+        "include_cpu": False,
+        "include_memory": False,
+        "include_disk": False,
+        "include_network": True,
+        "include_hostname": True,
+        "include_ip": True,
+        "include_platform": False,
+        "include_boot_time": False,
+    },
+    "full": {
+        "include_cpu": True,
+        "include_memory": True,
+        "include_disk": True,
+        "include_network": True,
+        "include_hostname": True,
+        "include_ip": True,
+        "include_platform": True,
+        "include_boot_time": True,
+    },
+}
+
+
 class SystemCollectParams(BaseModel):
-    """Параметры для сбора системной информации."""
-    include_ip: bool = True
-    include_hostname: bool = True
+    preset: str = "basic"
+    include_cpu: Optional[bool] = None
+    include_memory: Optional[bool] = None
+    include_disk: Optional[bool] = None
+    include_network: Optional[bool] = None
+    include_hostname: Optional[bool] = None
+    include_ip: Optional[bool] = None
+    include_platform: Optional[bool] = None
+    include_boot_time: Optional[bool] = None
 
 
 class SystemCollector(BaseCollector):
-    """
-    Коллектор системной информации (CPU, RAM, диски, сеть).
-    """
-    
     @property
     def name(self) -> str:
-        """Возвращает уникальное имя модуля."""
         return "system"
-    
+
+    @staticmethod
+    def _resolve_flags(**kwargs: Optional[bool]) -> dict[str, bool]:
+        preset = str(kwargs.pop("preset", "basic") or "basic").strip().lower()
+        resolved = dict(SYSTEM_PRESETS.get(preset, SYSTEM_PRESETS["basic"]))
+        for key, value in kwargs.items():
+            if value is not None:
+                resolved[key] = bool(value)
+        resolved["preset"] = preset
+        return resolved
+
+    @staticmethod
+    def _guess_primary_ip(hostname: str) -> str:
+        try:
+            ip = socket.gethostbyname(hostname)
+            if ip and not ip.startswith("127."):
+                return ip
+        except Exception:
+            pass
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))
+                return sock.getsockname()[0]
+        except Exception:
+            return "unknown"
+
+    @staticmethod
+    def _disk_path() -> str:
+        return str(Path.home().anchor or "/")
+
     @exposed_tool(
         name="collect",
-        description="Collect basic system metrics",
+        description="Collect system information using presets or explicit sections",
         risk_level="safe_readonly",
         params_model=SystemCollectParams,
         presets=[
             {
+                "id": "minimal",
+                "name": "Minimal",
+                "description": "CPU and memory only",
+                "params": {"preset": "minimal"},
+            },
+            {
                 "id": "basic",
-                "name": "Базовые метрики",
-                "description": "Сбор основных метрик (CPU, RAM, Disk) без IP-адреса",
-                "params": {"include_ip": False, "include_hostname": True}
+                "name": "Basic",
+                "description": "CPU, memory, disk and hostname",
+                "params": {"preset": "basic"},
+            },
+            {
+                "id": "identity",
+                "name": "Identity",
+                "description": "Hostname, IP and platform details",
+                "params": {"preset": "identity"},
+            },
+            {
+                "id": "network",
+                "name": "Network",
+                "description": "Network-focused snapshot",
+                "params": {"preset": "network"},
             },
             {
                 "id": "full",
-                "name": "Полная информация",
-                "description": "Сбор всех доступных метрик включая IP-адрес",
-                "params": {"include_ip": True, "include_hostname": True}
+                "name": "Full",
+                "description": "All available system sections",
+                "params": {"preset": "full"},
             },
-            {
-                "id": "minimal",
-                "name": "Минимальная информация",
-                "description": "Только CPU, RAM и Disk без сетевой информации",
-                "params": {"include_ip": False, "include_hostname": False}
-            }
         ],
         metadata_risk_level="safe_read",
         metadata_scopes=[],
-        metadata_requires_consent=False
+        metadata_requires_consent=False,
     )
-    async def collect(self, include_ip: bool = True, include_hostname: bool = True) -> Dict[str, Any]:
-        """
-        Асинхронный сбор системной информации.
-        
-        Args:
-            include_ip: Включать ли IP-адрес в результат (по умолчанию True)
-            include_hostname: Включать ли hostname в результат (по умолчанию True)
-        
-        Returns:
-            Dict[str, Any]: Словарь с системными метриками (observations)
-        
-        Raises:
-            Exception: В случае ошибок сбора данных
-        """
-        logger.debug(f"[{self.name}] Начинаю сбор системной информации (include_ip={include_ip}, include_hostname={include_hostname})")
-        
-        cpu = psutil.cpu_percent(interval=1)
-        
-        memory = psutil.virtual_memory()
-        ram = memory.percent
-        
-        disk = psutil.disk_usage('/')
-        disk_percent = disk.percent
-        
-        result = {
-            "cpu": cpu,
-            "ram": ram,
-            "disk": disk_percent
-        }
-        
-        if include_hostname:
-            hostname = socket.gethostname()
-            result["hostname"] = hostname
-            
-            if include_ip:
-                try:
-                    ip = socket.gethostbyname(hostname)
-                    result["ip"] = ip
-                except Exception:
-                    result["ip"] = "unknown"
-        elif include_ip:
-            # Если нужен только IP, но не hostname, получаем hostname только для IP
-            hostname = socket.gethostname()
-            try:
-                ip = socket.gethostbyname(hostname)
-                result["ip"] = ip
-            except Exception:
-                result["ip"] = "unknown"
-        
-        return result
+    async def collect(
+        self,
+        preset: str = "basic",
+        include_cpu: Optional[bool] = None,
+        include_memory: Optional[bool] = None,
+        include_disk: Optional[bool] = None,
+        include_network: Optional[bool] = None,
+        include_hostname: Optional[bool] = None,
+        include_ip: Optional[bool] = None,
+        include_platform: Optional[bool] = None,
+        include_boot_time: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        flags = self._resolve_flags(
+            preset=preset,
+            include_cpu=include_cpu,
+            include_memory=include_memory,
+            include_disk=include_disk,
+            include_network=include_network,
+            include_hostname=include_hostname,
+            include_ip=include_ip,
+            include_platform=include_platform,
+            include_boot_time=include_boot_time,
+        )
+        logger.debug(f"[{self.name}] collecting system info with flags={flags}")
 
+        result: Dict[str, Any] = {
+            "preset": flags["preset"],
+            "selected_sections": [],
+            "sections": {},
+        }
+
+        hostname = socket.gethostname()
+
+        if flags["include_cpu"]:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_info = {
+                "percent": cpu_percent,
+                "logical_cores": psutil.cpu_count(logical=True),
+                "physical_cores": psutil.cpu_count(logical=False),
+            }
+            result["cpu"] = cpu_percent
+            result["sections"]["cpu"] = cpu_info
+            result["selected_sections"].append("cpu")
+
+        if flags["include_memory"]:
+            memory = psutil.virtual_memory()
+            memory_info = {
+                "percent": memory.percent,
+                "total_bytes": memory.total,
+                "available_bytes": memory.available,
+                "used_bytes": memory.used,
+            }
+            result["ram"] = memory.percent
+            result["sections"]["memory"] = memory_info
+            result["selected_sections"].append("memory")
+
+        if flags["include_disk"]:
+            disk_path = self._disk_path()
+            disk_usage = psutil.disk_usage(disk_path)
+            disk_info = {
+                "path": disk_path,
+                "percent": disk_usage.percent,
+                "total_bytes": disk_usage.total,
+                "used_bytes": disk_usage.used,
+                "free_bytes": disk_usage.free,
+            }
+            result["disk"] = disk_usage.percent
+            result["sections"]["disk"] = disk_info
+            result["selected_sections"].append("disk")
+
+        if flags["include_hostname"] or flags["include_ip"] or flags["include_network"]:
+            network_info: Dict[str, Any] = {}
+            if flags["include_hostname"]:
+                result["hostname"] = hostname
+                network_info["hostname"] = hostname
+            if flags["include_ip"]:
+                primary_ip = self._guess_primary_ip(hostname)
+                result["ip"] = primary_ip
+                network_info["primary_ip"] = primary_ip
+            if flags["include_network"]:
+                interfaces = []
+                for iface_name, addresses in psutil.net_if_addrs().items():
+                    iface_entry = {"name": iface_name, "ipv4": [], "ipv6": []}
+                    for address in addresses:
+                        if address.family == socket.AF_INET:
+                            iface_entry["ipv4"].append(address.address)
+                        elif address.family == socket.AF_INET6:
+                            iface_entry["ipv6"].append(address.address)
+                    if iface_entry["ipv4"] or iface_entry["ipv6"]:
+                        interfaces.append(iface_entry)
+                network_info["interfaces"] = interfaces
+                network_counters = psutil.net_io_counters()
+                if network_counters:
+                    network_info["io"] = {
+                        "bytes_sent": network_counters.bytes_sent,
+                        "bytes_recv": network_counters.bytes_recv,
+                    }
+            if network_info:
+                result["sections"]["network"] = network_info
+                result["selected_sections"].append("network")
+
+        if flags["include_platform"]:
+            platform_info = {
+                "system": platform.system(),
+                "release": platform.release(),
+                "version": platform.version(),
+                "machine": platform.machine(),
+                "python_version": platform.python_version(),
+            }
+            result["sections"]["platform"] = platform_info
+            result["selected_sections"].append("platform")
+
+        if flags["include_boot_time"]:
+            boot_ts = psutil.boot_time()
+            result["sections"]["boot_time"] = {"epoch": boot_ts}
+            result["selected_sections"].append("boot_time")
+
+        return result

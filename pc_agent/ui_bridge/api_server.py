@@ -49,6 +49,7 @@ class UiApiServer:
         on_update_settings: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_test_connection: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_restart_agent: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_trigger_update: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_shutdown_agent: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_get_runtime_status: Optional[Callable[[], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
         on_get_runtime_logs: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
@@ -74,6 +75,7 @@ class UiApiServer:
         self.on_update_settings = on_update_settings
         self.on_test_connection = on_test_connection
         self.on_restart_agent = on_restart_agent
+        self.on_trigger_update = on_trigger_update
         self.on_shutdown_agent = on_shutdown_agent
         self.on_get_runtime_status = on_get_runtime_status
         self.on_get_runtime_logs = on_get_runtime_logs
@@ -105,6 +107,7 @@ class UiApiServer:
         self.app.router.add_post("/ui/settings", self.handle_update_settings)
         self.app.router.add_post("/ui/settings/test_connection", self.handle_test_connection)
         self.app.router.add_post("/ui/agent/restart", self.handle_restart_agent)
+        self.app.router.add_post("/ui/agent/update", self.handle_trigger_update)
         self.app.router.add_post("/ui/agent/shutdown", self.handle_shutdown_agent)
         self.app.router.add_get("/ui/agent/status", self.handle_runtime_status)
         self.app.router.add_get("/ui/agent/logs", self.handle_runtime_logs)
@@ -662,6 +665,40 @@ class UiApiServer:
                 result = {"result": result}
             result.setdefault("status", "ok")
             return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+    async def handle_trigger_update(self, request: Request) -> Response:
+        """Обработчик POST /ui/agent/update."""
+        if not self.on_trigger_update:
+            return web.json_response(
+                {"status": "error", "error": "update trigger not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        try:
+            payload = {}
+            if request.can_read_body:
+                try:
+                    payload = await request.json()
+                except Exception:
+                    payload = {}
+            result = await self._invoke_maybe_async(self.on_trigger_update, payload)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except ValueError as e:
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=400,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
         except Exception as e:
             logger.exception(e)
             return web.json_response(

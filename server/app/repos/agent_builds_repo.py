@@ -102,3 +102,15 @@ class AgentBuildsRepo:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def list_builds_for_target(
+        self,
+        *,
+        target: str,
+    ) -> List[AgentBuild]:
+        stmt = (
+            select(AgentBuild)
+            .where(AgentBuild.target == target)
+            .order_by(AgentBuild.created_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())

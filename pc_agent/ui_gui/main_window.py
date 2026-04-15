@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self._server_connection_state: str = "starting"
         self._server_connection_detail: str = ""
         self._runtime_logs_dir: Optional[str] = None
+        self._update_status_snapshot: Dict[str, Any] = {}
         
         self.setWindowTitle(f"Maria Agent v{AGENT_VERSION}")
         self.setMinimumSize(1200, 760)
@@ -125,6 +126,15 @@ class MainWindow(QMainWindow):
             f"padding: 6px 10px; border-radius: 999px; background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-weight: 700;"
         )
         top_bar.addWidget(self.profile_top_status)
+        self.release_badge = QLabel("Версия: —")
+        self.release_badge.setStyleSheet(
+            f"padding: 6px 10px; border-radius: 999px; background: {theme.BG_INPUT}; color: {theme.TEXT_SECONDARY}; font-weight: 700;"
+        )
+        top_bar.addWidget(self.release_badge)
+        self.update_agent_btn = QPushButton("Проверить update")
+        self.update_agent_btn.setObjectName("SecondaryButton")
+        self.update_agent_btn.clicked.connect(self._on_trigger_update_clicked)
+        top_bar.addWidget(self.update_agent_btn)
         top_bar.addStretch()
 
         self.settings_btn = QPushButton("Настройки")
@@ -418,6 +428,8 @@ class MainWindow(QMainWindow):
         self._repair_widget_texts(self.settings_dialog)
         self._add_log("GUI запущен", "info")
         self._load_device_uuid()
+        self._render_update_status()
+        QTimer.singleShot(250, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
 
     def _on_list_navigation_visibility_changed(self, list_mode: bool) -> None:
         """В режиме чата скрываем панель профиля — область тикета на всю ширину."""
@@ -649,21 +661,71 @@ class MainWindow(QMainWindow):
     def _on_refresh_runtime_clicked(self) -> None:
         asyncio.create_task(self._async_load_runtime_diagnostics())
 
-    async def _async_load_runtime_diagnostics(self) -> None:
-        try:
-            status_data = await self._async_ui_request("GET", "/ui/agent/status")
-            logs_data = await self._async_ui_request("GET", "/ui/agent/logs?source=agent&lines=120")
-        except Exception as e:
-            self.runtime_status_label.setText(self._repair_text(f"Ошибка диагностики: {e}"))
-            self.runtime_logs_view.setPlainText("")
+    def _render_update_status(self) -> None:
+        snapshot = self._update_status_snapshot or {}
+        version = str(snapshot.get("agent_version") or AGENT_VERSION)
+        is_release = bool(snapshot.get("is_release"))
+        release_channel = str(snapshot.get("release_channel") or ("stable" if is_release else "non_release"))
+        update_available = bool(snapshot.get("update_available"))
+        recommended_version = str(snapshot.get("recommended_version") or "").strip()
+        error_message = str(snapshot.get("update_status_error") or "").strip()
+
+        if is_release:
+            badge_text = f"Release • {version}"
+            bg = "#dcfce7"
+            fg = "#166534"
+        else:
+            badge_text = f"Non-release ({release_channel}) • {version}"
+            bg = "#fef3c7"
+            fg = "#b45309"
+        if error_message:
+            badge_text = f"{badge_text} • update: {error_message}"
+        self.release_badge.setText(self._repair_text(badge_text))
+        self.release_badge.setStyleSheet(
+            f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
+        )
+
+        if update_available and recommended_version:
+            self.update_agent_btn.setText(self._repair_text(f"Обновить до {recommended_version}"))
+            self.update_agent_btn.setEnabled(True)
+        elif not is_release:
+            self.update_agent_btn.setText("Проверить release update")
+            self.update_agent_btn.setEnabled(True)
+        else:
+            self.update_agent_btn.setText("Release актуален")
+            self.update_agent_btn.setEnabled(False)
+
+    def _apply_runtime_status_snapshot(self, runtime: Dict[str, Any], *, update_panel: bool) -> None:
+        self._update_status_snapshot = {
+            "agent_version": runtime.get("agent_version", AGENT_VERSION),
+            "is_release": runtime.get("is_release"),
+            "release_channel": runtime.get("release_channel"),
+            "update_available": runtime.get("update_available"),
+            "recommended_version": runtime.get("recommended_version"),
+            "recommended_channel": runtime.get("recommended_channel"),
+            "recommended_reason": runtime.get("recommended_reason"),
+            "recommended_build": runtime.get("recommended_build"),
+            "update_status_error": runtime.get("update_status_error"),
+            "update_checked_at": runtime.get("update_checked_at"),
+        }
+        self._render_update_status()
+
+        if not update_panel:
             return
 
-        runtime = status_data
         log_runtime = runtime.get("log_runtime") if isinstance(runtime, dict) else {}
         self._runtime_logs_dir = str(runtime.get("logs_dir") or "") if isinstance(runtime, dict) else None
+        release_line = f"Release: {'yes' if runtime.get('is_release') else 'no'} / {runtime.get('release_channel', '—')}"
+        recommended_line = f"Recommended: {runtime.get('recommended_version') or '—'} / {runtime.get('recommended_channel') or '—'}"
+        if runtime.get("recommended_reason"):
+            recommended_line = f"{recommended_line} / {runtime.get('recommended_reason')}"
         summary_lines = [
             f"Device ID: {runtime.get('device_id', '—')}",
+            f"Agent: {runtime.get('agent_version', AGENT_VERSION)}",
             f"Connection: {runtime.get('connection_state', '—')} / {runtime.get('connection_detail', '')}".strip(),
+            release_line,
+            f"Update available: {'yes' if runtime.get('update_available') else 'no'}",
+            recommended_line,
             f"Changed at: {runtime.get('connection_changed_at', '—')}",
             f"Uptime: {runtime.get('uptime_seconds', '—')} сек",
             f"UI bridge: {'up' if runtime.get('ui_bridge_running') else 'down'}",
@@ -671,8 +733,61 @@ class MainWindow(QMainWindow):
             f"Log level: {log_runtime.get('level', '—')} (console {log_runtime.get('console_level', '—')})",
             f"Log file: {log_runtime.get('file', '—')}",
         ]
+        if runtime.get("update_checked_at"):
+            summary_lines.append(f"Update checked: {runtime.get('update_checked_at')}")
+        if runtime.get("update_status_error"):
+            summary_lines.append(f"Update error: {runtime.get('update_status_error')}")
         self.runtime_status_label.setText(self._repair_text("\n".join(summary_lines)))
+
+    async def _async_refresh_runtime_snapshot(self, *, update_panel: bool) -> Dict[str, Any]:
+        runtime = await self._async_ui_request("GET", "/ui/agent/status")
+        self._apply_runtime_status_snapshot(runtime, update_panel=update_panel)
+        return runtime
+
+    async def _async_load_runtime_diagnostics(self) -> None:
+        try:
+            status_data = await self._async_refresh_runtime_snapshot(update_panel=True)
+            logs_data = await self._async_ui_request("GET", "/ui/agent/logs?source=agent&lines=120")
+        except Exception as e:
+            self.runtime_status_label.setText(self._repair_text(f"Ошибка диагностики: {e}"))
+            self.runtime_logs_view.setPlainText("")
+            return
+
         self.runtime_logs_view.setPlainText(str(logs_data.get("text") or ""))
+
+    def _on_trigger_update_clicked(self) -> None:
+        asyncio.create_task(self._async_trigger_update())
+
+    async def _async_trigger_update(self) -> None:
+        self.update_agent_btn.setEnabled(False)
+        try:
+            response = await self._async_ui_request("POST", "/ui/agent/update", payload={})
+            if response.get("status") == "accepted":
+                recommended = response.get("recommendation") or {}
+                version = recommended.get("recommended_version") or "новой версии"
+                self._show_nonblocking_message(
+                    "Обновление",
+                    f"Запрос на обновление до {version} отправлен.",
+                    QMessageBox.Icon.Information,
+                )
+            else:
+                self._show_nonblocking_message(
+                    "Обновление",
+                    str(response.get("message") or "Рекомендованное обновление сейчас недоступно."),
+                    QMessageBox.Icon.Information,
+                )
+        except Exception as e:
+            logger.error(f"Ошибка запуска update: {e}")
+            self._show_nonblocking_message(
+                "Ошибка обновления",
+                f"Не удалось запросить обновление:\n{e}",
+                QMessageBox.Icon.Critical,
+            )
+        finally:
+            try:
+                await self._async_refresh_runtime_snapshot(update_panel=False)
+            except Exception:
+                pass
 
     def _on_open_logs_clicked(self) -> None:
         if not self._runtime_logs_dir:
@@ -984,6 +1099,8 @@ class MainWindow(QMainWindow):
         self._server_connection_state = (state or "disconnected").strip().lower()
         self._server_connection_detail = detail.strip()
         self._render_connection_status()
+        if self._bridge_connected and self._server_connection_state == "connected":
+            QTimer.singleShot(400, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
 
     def set_connected(self, connected: bool):
         self.set_connection_state("connected" if connected else "disconnected")

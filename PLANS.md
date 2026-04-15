@@ -73,3 +73,25 @@
   3. выборочный или полный server pytest regression run;
   4. только потом новые рефакторинги крупных файлов.
 - Ключевой риск: production-волна одновременно затрагивает тестовую инфраструктуру, release flow и крупные runtime-файлы, поэтому после каждого пакета изменений нужен повторный baseline-прогон.
+
+## 2026-04-14 Audit: Agent Update + Modules
+
+- Scope:
+  - self-update с server-side выбором целевой версии, beta/release семантикой и GUI агента;
+  - server-managed modules flow: upload -> install -> activate -> run_tool -> result -> reconcile/toolset sync.
+- Уже есть:
+  - server-side `agent_builds` registry, remote update command `update`, launcher apply/verify/rollback и handshake-confirm;
+  - module registry, desired/actual tables, periodic reconcile, device-scoped install/remove API, agent package install/reload, auto-install before `run_tool`.
+- Основные gap-ы для production:
+  - у self-update нет server-side “recommended build” логики: `get_latest_build()` выбирает по `created_at`, а не по semver/channel/release-priority;
+  - локальный GUI агента не умеет показывать release/non-release статус, не знает о доступном recommended update и не умеет инициировать self-update с агента;
+  - agent UI/runtime status не отдаёт build channel/update availability/update history summary;
+  - auto-install для `run_tool` не пишет desired state (`reason=run_tool`), поэтому server-first source of truth для модулей неполный;
+  - docs обещают immediate reconcile после `module_state_changed`, но в коде сейчас найден periodic/manual path и follow-up sync, без явного event-triggered reconcile;
+  - часть module endpoints (`activate/deactivate/sync/remove/reconcile`, legacy rollback path) всё ещё полагается на `actor_role` из body или hardcoded role вместо полного `AuthContext` + policy/audit.
+- Следующий пакет работ:
+  1. спроектировать `recommended agent update` contract и semver-aware selection policy;
+  2. расширить UI bridge / GUI агента статусом версии, release-меткой и кнопкой update;
+  3. выровнять module endpoints по auth/policy/audit;
+  4. довести module desired-state + reconcile/event pipeline до server-first convergence;
+  5. добавить regression tests на update recommendation, GUI/runtime status contract и module reconcile/auth flows.

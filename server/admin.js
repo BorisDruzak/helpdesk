@@ -786,6 +786,8 @@
         let confirmedCanaryOperationId = null;
         let agentUpdateDiagnosticsPollTimer = null;
         let agentUpdateConfirmAction = null;
+        let agentUpdatesAgentsById = {};
+        let agentUpdatesRecommendationState = null;
 
         function setPendingAgentUpdateOperation(opId, deviceId) {
             pendingAgentUpdateOperationId = opId;
@@ -5361,6 +5363,7 @@
         async function loadAgentUpdatesTab() {
             const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
             const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const selectionModeSelect = document.getElementById('agentUpdatesSelectionMode');
             const refreshBuildsBtn = document.getElementById('agentUpdatesRefreshBuilds');
             const triggerBtn = document.getElementById('agentUpdatesTriggerBtn');
             const diagnosticsRefreshBtn = document.getElementById('agentUpdatesDiagnosticsRefreshBtn');
@@ -5371,7 +5374,11 @@
                 if (refreshBuildsBtn) refreshBuildsBtn.addEventListener('click', () => loadAgentUpdatesBuilds(true));
                 if (triggerBtn) triggerBtn.addEventListener('click', triggerAgentUpdate);
                 if (diagnosticsRefreshBtn) diagnosticsRefreshBtn.addEventListener('click', function() { loadAgentUpdateDiagnostics(true); });
-                deviceSelect.addEventListener('change', function() { loadAgentUpdateDiagnostics(true); });
+                if (selectionModeSelect) selectionModeSelect.addEventListener('change', syncAgentUpdateSelectionMode);
+                deviceSelect.addEventListener('change', function() {
+                    loadAgentUpdateDiagnostics(true);
+                    loadAgentUpdateRecommendation(true);
+                });
                 const uploadForm = document.getElementById('agentBuildUploadForm');
                 if (uploadForm) uploadForm.addEventListener('submit', submitAgentBuildUpload);
                 const uploadFile = document.getElementById('agentBuildUploadFile');
@@ -5406,12 +5413,16 @@
                 const r = await fetch('/api/agents', { headers: getAuthHeaders() });
                 const data = await r.json();
                 const previousDeviceId = deviceSelect.value;
+                agentUpdatesAgentsById = {};
                 deviceSelect.innerHTML = '<option value="">— Выберите устройство —</option>';
                 if (r.ok && data.agents && data.agents.length > 0) {
                     data.agents.forEach(agent => {
+                        agentUpdatesAgentsById[agent.device_id] = agent;
                         const opt = document.createElement('option');
                         opt.value = agent.device_id;
+                        const versionSuffix = agent.agent_version ? (' / ' + agent.agent_version) : '';
                         opt.textContent = `${agent.device_id} (${agent.user_display_name || '—'})`;
+                        opt.textContent = opt.textContent.replace(')', `${versionSuffix})`);
                         deviceSelect.appendChild(opt);
                     });
                     const bulkDevicesEl = document.getElementById('agentUpdatesBulkDevices');
@@ -5434,6 +5445,68 @@
 
             loadAgentUpdatesBuilds(false);
             loadAgentUpdateDiagnostics(false);
+            loadAgentUpdateRecommendation(false);
+            syncAgentUpdateSelectionMode();
+        }
+
+        function syncAgentUpdateSelectionMode() {
+            const modeEl = document.getElementById('agentUpdatesSelectionMode');
+            const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const refreshBtn = document.getElementById('agentUpdatesRefreshBuilds');
+            const recommendationWrap = document.getElementById('agentUpdatesRecommendationWrap');
+            const mode = modeEl ? modeEl.value : 'recommended_release';
+            const manualMode = mode === 'manual_build';
+            if (buildSelect) buildSelect.disabled = !manualMode;
+            if (refreshBtn) refreshBtn.disabled = !manualMode;
+            if (recommendationWrap) recommendationWrap.style.display = 'block';
+        }
+
+        async function loadAgentUpdateRecommendation(showLoading) {
+            const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
+            const recommendationEl = document.getElementById('agentUpdatesRecommendation');
+            if (!deviceSelect || !recommendationEl) return;
+            const deviceId = deviceSelect.value ? String(deviceSelect.value).trim() : '';
+            agentUpdatesRecommendationState = null;
+            if (!deviceId) {
+                recommendationEl.innerHTML = '<div class="muted">Выберите устройство, чтобы загрузить рекомендацию по обновлению.</div>';
+                return;
+            }
+
+            const agent = agentUpdatesAgentsById[deviceId] || {};
+            const params = new URLSearchParams();
+            if (agent.agent_version) params.set('current_version', String(agent.agent_version));
+            const url = '/api/devices/' + encodeURIComponent(deviceId) + '/agent/update_recommendation?' + params.toString();
+            if (showLoading !== false) {
+                recommendationEl.innerHTML = '<div class="muted">Загрузка рекомендации сервера...</div>';
+            }
+            try {
+                const response = await fetch(url, { headers: getAuthHeaders() });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    recommendationEl.innerHTML = '<div class="error-message">' + escapeHtml(data.error || 'Не удалось загрузить рекомендацию') + '</div>';
+                    return;
+                }
+                agentUpdatesRecommendationState = data;
+                const releaseBadge = data.is_release
+                    ? '<span class="badge badge-success">release</span>'
+                    : '<span class="badge badge-warning">non-release</span>';
+                const recommended = data.recommended_build
+                    ? `${escapeHtml(data.recommended_build.target || '—')} / ${escapeHtml(data.recommended_build.channel || '—')} / ${escapeHtml(data.recommended_build.version || '—')}`
+                    : 'нет release build';
+                const updateBadge = data.update_available
+                    ? '<span class="badge badge-warning">обновление доступно</span>'
+                    : '<span class="badge badge-success">актуально</span>';
+                recommendationEl.innerHTML = `
+                    <div style="display:grid; gap:8px;">
+                        <div><strong>Текущая версия:</strong> ${escapeHtml(data.current_version || 'unknown')} ${releaseBadge}</div>
+                        <div><strong>Рекомендованный релиз:</strong> ${recommended}</div>
+                        <div><strong>Статус:</strong> ${updateBadge}</div>
+                        <div class="muted"><strong>Причина:</strong> ${escapeHtml(data.recommended_reason || data.comparison || 'unknown')}</div>
+                    </div>
+                `;
+            } catch (error) {
+                recommendationEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
+            }
         }
 
         async function triggerBulkAgentUpdate() {
@@ -5634,6 +5707,7 @@
         async function triggerAgentUpdate() {
             const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
             const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const selectionModeEl = document.getElementById('agentUpdatesSelectionMode');
             const restartDelayEl = document.getElementById('agentUpdatesRestartDelay');
             const resultEl = document.getElementById('agentUpdatesResult');
             const resultContent = document.getElementById('agentUpdatesResultContent');
@@ -5643,28 +5717,41 @@
             const buildVal = buildSelect && buildSelect.value ? buildSelect.value : '';
             const valueSep = '|';
             const parts = buildVal.split(valueSep);
+            const selectionMode = selectionModeEl && selectionModeEl.value ? selectionModeEl.value : 'recommended_release';
 
             if (!deviceId) {
                 if (errorEl) { errorEl.textContent = 'Выберите устройство'; errorEl.style.display = 'block'; }
                 if (resultEl) resultEl.style.display = 'none';
                 return;
             }
-            if (parts.length !== 3 || !parts[0]) {
+            if (selectionMode === 'manual_build' && (parts.length !== 3 || !parts[0])) {
                 if (errorEl) { errorEl.textContent = 'Выберите билд агента'; errorEl.style.display = 'block'; }
                 if (resultEl) resultEl.style.display = 'none';
                 return;
             }
 
-            const target = parts[0];
-            const channel = parts[1];
-            const version = parts[2];
+            let target = parts[0];
+            let channel = parts[1];
+            let version = parts[2];
+            if (selectionMode !== 'manual_build') {
+                const recommendedBuild = agentUpdatesRecommendationState && agentUpdatesRecommendationState.recommended_build;
+                if (!recommendedBuild || !recommendedBuild.target || !recommendedBuild.channel || !recommendedBuild.version) {
+                    if (errorEl) { errorEl.textContent = 'Сервер не смог подобрать релизный build для выбранного агента'; errorEl.style.display = 'block'; }
+                    if (resultEl) resultEl.style.display = 'none';
+                    return;
+                }
+                target = recommendedBuild.target;
+                channel = recommendedBuild.channel;
+                version = recommendedBuild.version;
+            }
             const restart_delay_sec = restartDelayEl ? parseInt(restartDelayEl.value, 10) : 2;
             const body = { target, channel, version };
             if (!isNaN(restart_delay_sec) && restart_delay_sec >= 0) body.restart_delay_sec = restart_delay_sec;
 
             if (errorEl) errorEl.style.display = 'none';
             const selectedDeviceLabel = deviceSelect.options[deviceSelect.selectedIndex] ? deviceSelect.options[deviceSelect.selectedIndex].textContent : deviceId;
-            const confirmBody = 'Устройство: ' + selectedDeviceLabel + '. Билд: ' + target + ' / ' + channel + ' / ' + version + '. После подтверждения агент скачает архив, завершится и launcher применит обновление.';
+            const modeLabel = selectionMode === 'manual_build' ? 'ручной build' : 'рекомендованный release build';
+            const confirmBody = 'Устройство: ' + selectedDeviceLabel + '. Режим: ' + modeLabel + '. Билд: ' + target + ' / ' + channel + ' / ' + version + '. После подтверждения агент скачает архив, завершится и launcher применит обновление.';
             if (openAgentUpdateConfirmModal({
                 title: 'Подтвердите обновление агента',
                 body: confirmBody,
@@ -5693,6 +5780,7 @@
                                 if (typeof setPendingAgentUpdateOperation === 'function') setPendingAgentUpdateOperation(opId, deviceId);
                             }
                             loadAgentUpdateDiagnostics(true);
+                            loadAgentUpdateRecommendation(true);
                         } else {
                             resultContent.innerHTML = `
                                 <p class="error-message">${data.error || 'Ошибка запроса'}</p>
@@ -6482,6 +6570,8 @@
         let selectedDeviceIdTab = null;
 
         async function loadModulesTab() {
+            const cleanupBtn = document.getElementById('cleanup-missing-modules-btn');
+            if (cleanupBtn) cleanupBtn.onclick = cleanupMissingModulesRegistry;
             await Promise.all([
                 loadDevicesListModules(),
                 loadModulesList()
@@ -6632,6 +6722,49 @@
             btnServer.addEventListener('click', () => toggleSection(sectionServer, btnServer, sectionUpload, btnUpload));
         }
 
+        function updateModulesMissingSummary() {
+            const summaryEl = document.getElementById('modules-missing-summary');
+            if (!summaryEl) return;
+            const missingCount = (modulesDataTab || []).filter(function(moduleItem) { return !!moduleItem.file_missing; }).length;
+            if (!modulesDataTab.length) {
+                summaryEl.textContent = 'Модулей в реестре пока нет.';
+                return;
+            }
+            if (!missingCount) {
+                summaryEl.textContent = 'Все файлы модулей найдены на диске.';
+                return;
+            }
+            summaryEl.textContent = 'Отсутствуют файлы: ' + missingCount + '. Эти записи можно очистить из DB и UI.';
+        }
+
+        async function cleanupMissingModulesRegistry() {
+            const missingItems = (modulesDataTab || []).filter(function(moduleItem) { return !!moduleItem.file_missing; });
+            if (!missingItems.length) {
+                alert('Отсутствующих файлов модулей сейчас не найдено.');
+                return;
+            }
+            if (!confirm('Удалить из серверного реестра ' + missingItems.length + ' записей модулей, для которых отсутствуют файлы на диске?')) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/modules/cleanup_missing', {
+                    method: 'POST',
+                    headers: getAuthHeaders(true)
+                });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    alert('Ошибка очистки: ' + (data.error || response.status));
+                    return;
+                }
+                const removed = Array.isArray(data.removed) ? data.removed.length : 0;
+                alert('Очистка завершена. Удалено записей: ' + removed);
+                await loadModulesList();
+                updateDeployModuleSelect();
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
         async function loadModulesList() {
             const container = document.getElementById('modules-list-modules');
             container.innerHTML = '<div class="loading">Загрузка модулей...</div>';
@@ -6643,8 +6776,11 @@
                 if (data.modules) {
                     modulesDataTab = data.modules;
                     renderModulesList();
+                    updateModulesMissingSummary();
                     updateDeployModuleSelect();
                 } else {
+                    modulesDataTab = [];
+                    updateModulesMissingSummary();
                     container.innerHTML = '<div class="error-message">Не удалось загрузить модули</div>';
                 }
             } catch (error) {
@@ -6675,12 +6811,12 @@
                     <tbody>
                         ${modulesDataTab.map(m => `
                             <tr>
-                                <td><strong>${escapeHtml(m.module_name)}</strong>${m.legacy_manifest ? ' <span class="badge badge-warning">legacy</span>' : ''}</td>
+                                <td><strong>${escapeHtml(m.module_name)}</strong>${m.legacy_manifest ? ' <span class="badge badge-warning">legacy</span>' : ''}${m.file_missing ? ' <span class="badge badge-danger">missing file</span>' : ''}</td>
                                 <td>${escapeHtml(m.version)}</td>
                                 <td>v${escapeHtml(String(m.manifest_version || '1'))}</td>
                                 <td>${escapeHtml((m.platforms || []).join(', ') || 'any')}</td>
                                 <td>${m.tools_count || 0}</td>
-                                <td>${escapeHtml(m.validation_status || 'unknown')}</td>
+                                <td>${escapeHtml(m.validation_status || 'unknown')}${m.file_missing ? '<div class="muted" style="font-size:12px;">archive missing</div>' : ''}</td>
                                 <td>${m.created_at ? new Date(m.created_at).toLocaleString() : '?'}</td>
                                 <td>
                                     <button type="button" class="btn btn-small" data-module-name="${escapeHtml(m.module_name)}" data-version="${escapeHtml(m.version)}" onclick="showInstallDialogModules(this)">Установить...</button>

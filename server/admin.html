@@ -744,6 +744,10 @@
                         <div id="registry-server-section" class="registry-section" style="display: none;">
                             <div class="section">
                                 <h3>Загруженные модули на сервере</h3>
+                                <div class="form-actions" style="margin-bottom: 12px;">
+                                    <button type="button" class="btn btn-secondary" id="cleanup-missing-modules-btn">Удалить отсутствующие файлы из реестра</button>
+                                    <span id="modules-missing-summary" class="muted">Проверка файлов ещё не выполнялась.</span>
+                                </div>
                                 <div id="modules-list-modules">
                                     <div class="loading">Загрузка...</div>
                                 </div>
@@ -1090,6 +1094,23 @@
                         </div>
                         <div class="form-group">
                             <label for="agentUpdatesBuildSelect">Билд агента</label>
+                            <label for="agentUpdatesSelectionMode">Режим выбора версии</label>
+                            <select id="agentUpdatesSelectionMode">
+                                <option value="recommended_release">Рекомендованный релиз</option>
+                                <option value="manual_build">Ручной выбор билда</option>
+                            </select>
+                            <span class="muted" style="font-size: 12px; display: block; margin-top: 4px;">
+                                В режиме релиза сервер сам подберёт рекомендованный build для выбранного агента.
+                            </span>
+                        </div>
+                        <div class="form-group" id="agentUpdatesRecommendationWrap">
+                            <label>Рекомендация сервера</label>
+                            <div id="agentUpdatesRecommendation" class="result-panel" style="display: block;">
+                                <div class="muted">Выберите устройство, чтобы загрузить рекомендацию по обновлению.</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="agentUpdatesBuildSelect">Ручной билд агента</label>
                             <select id="agentUpdatesBuildSelect">
                                 <option value="">— Загрузите список билдов —</option>
                             </select>

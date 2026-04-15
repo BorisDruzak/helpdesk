@@ -1,9 +1,8 @@
 """
-Модуль для снятия скриншотов и записи экрана.
+Screen capture and recording module.
 
-Использует библиотеку mss (python-mss) для быстрого кроссплатформенного
-захвата экрана. Запись видео — mss + ffmpeg (subprocess). Файлы сохраняются
-локально и передаются через artifact pipeline.
+Supports full-monitor screenshots, all-monitor capture, and selected regions
+relative to the chosen monitor.
 """
 
 import asyncio
@@ -12,33 +11,28 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import mss
 import mss.tools
 from loguru import logger
 from pydantic import BaseModel, Field
 
-# Импортируем базовый класс из родительского пакета
 from modules.base_module import BaseCollector
 from pc_agent.config.config_loader import get_config
 from core.registry import exposed_tool
 from core.recording_controller import get_recording_controller
 
-# Лимит размера видео (байт), план этап 1
 SIZE_LIMIT_BYTES = 200 * 1024 * 1024
 
 
 def _get_ffmpeg_path() -> Optional[str]:
-    """
-    Возвращает путь к исполняемому файлу ffmpeg.
-    Сначала ищет в PATH, затем — в пакете imageio-ffmpeg (pip install imageio-ffmpeg).
-    """
     path = shutil.which("ffmpeg")
     if path:
         return path
     try:
         import imageio_ffmpeg
+
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         if exe and os.path.isfile(exe):
             return exe
@@ -48,14 +42,16 @@ def _get_ffmpeg_path() -> Optional[str]:
 
 
 class ScreenCollectParams(BaseModel):
-    """Параметры для снятия скриншота."""
     monitor: int = 1
-    include_cursor: bool = False  # Placeholder - пока не поддерживается
+    include_cursor: bool = False
+    left: Optional[int] = Field(default=None, ge=0)
+    top: Optional[int] = Field(default=None, ge=0)
+    width: Optional[int] = Field(default=None, gt=0)
+    height: Optional[int] = Field(default=None, gt=0)
 
 
 class ScreenRecordParams(BaseModel):
-    """Параметры записи экрана (этап 5, раздел H плана)."""
-    duration_sec: int = Field(ge=1, le=300, description="Длительность записи 1–300 сек")
+    duration_sec: int = Field(ge=1, le=300, description="Recording duration in seconds")
     fps: int = Field(default=15, ge=5, le=30)
     max_width: int = Field(default=1920, ge=640, le=3840)
     quality_crf: int = Field(default=28, ge=18, le=40)
@@ -63,200 +59,165 @@ class ScreenRecordParams(BaseModel):
 
 
 class ScreenCollector(BaseCollector):
-    """
-    Коллектор для снятия скриншотов экрана.
-    
-    Использует:
-    - mss для захвата экрана (самая быстрая кроссплатформенная библиотека)
-    - Artifact pipeline для обработки файлов
-    
-    Особенности:
-    - Захватывает все мониторы в один файл (mon=-1)
-    - Сохраняет временные файлы в data_dir/temp/
-    - Возвращает артефакты через _artifacts в observations
-    - Orchestrator обрабатывает загрузку и очистку файлов
-    """
-    
     def __init__(self):
-        """Инициализация коллектора скриншотов."""
         super().__init__()
-        
-        # Создаем экземпляр mss для захвата экрана
         self.sct = mss.mss()
-        
-        # Определяем директорию для временных файлов
         self.temp_dir = Path(get_config().paths.data_dir) / "temp"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.debug(f"[{self.name}] ScreenCollector инициализирован")
-        logger.debug(f"[{self.name}] Временная директория: {self.temp_dir}")
-    
+        logger.debug(f"[{self.name}] temp dir: {self.temp_dir}")
+
     @property
     def name(self) -> str:
-        """Возвращает уникальное имя модуля."""
         return "screen"
-    
+
+    def _resolve_capture_region(
+        self,
+        *,
+        monitor: int,
+        left: Optional[int],
+        top: Optional[int],
+        width: Optional[int],
+        height: Optional[int],
+    ) -> tuple[dict, str]:
+        monitors = self.sct.monitors
+        if not monitors:
+            raise RuntimeError("No monitors available for screenshot capture")
+
+        monitor_index = 0 if monitor <= 0 else monitor
+        if monitor_index >= len(monitors):
+            logger.warning(f"[{self.name}] Requested monitor {monitor} not found, falling back to primary")
+            monitor_index = 1 if len(monitors) > 1 else 0
+
+        base_monitor = monitors[monitor_index]
+        region_requested = any(value is not None for value in (left, top, width, height))
+        if not region_requested:
+            return dict(base_monitor), "monitor"
+
+        if None in (left, top, width, height):
+            raise ValueError("left, top, width and height must be provided together for region capture")
+
+        return {
+            "left": int(base_monitor["left"]) + int(left),
+            "top": int(base_monitor["top"]) + int(top),
+            "width": int(width),
+            "height": int(height),
+        }, "region"
+
+    @staticmethod
+    def _write_screenshot(image: Any, output_path: Path) -> None:
+        mss.tools.to_png(image.rgb, image.size, output=str(output_path))
+
     @exposed_tool(
         name="collect",
-        description="Capture screenshot of the screen",
+        description="Capture screenshot of the screen or a selected region",
         risk_level="sensitive_read",
         params_model=ScreenCollectParams,
         presets=[
             {
                 "id": "primary_monitor",
-                "name": "Основной монитор",
-                "description": "Снимок основного монитора (обычно первого)",
-                "params": {"monitor": 1, "include_cursor": False}
+                "name": "Primary monitor",
+                "description": "Capture the primary monitor",
+                "params": {"monitor": 1, "include_cursor": False},
             },
             {
                 "id": "all_monitors",
-                "name": "Все мониторы",
-                "description": "Снимок всех подключенных мониторов в один файл",
-                "params": {"monitor": -1, "include_cursor": False}
+                "name": "All monitors",
+                "description": "Capture all connected monitors in one image",
+                "params": {"monitor": -1, "include_cursor": False},
             },
             {
                 "id": "secondary_monitor",
-                "name": "Второй монитор",
-                "description": "Снимок второго монитора (если подключен)",
-                "params": {"monitor": 2, "include_cursor": False}
-            }
+                "name": "Secondary monitor",
+                "description": "Capture the secondary monitor if it exists",
+                "params": {"monitor": 2, "include_cursor": False},
+            },
+            {
+                "id": "region_template",
+                "name": "Selected area",
+                "description": "Template for region capture relative to the chosen monitor",
+                "params": {
+                    "monitor": 1,
+                    "left": 100,
+                    "top": 100,
+                    "width": 800,
+                    "height": 600,
+                    "include_cursor": False,
+                },
+            },
         ],
         metadata_risk_level="sensitive_read",
         metadata_scopes=["screen"],
         metadata_requires_consent=False,
         metadata_allow_roles=["user", "agent", "llm", "support", "admin"],
     )
-    async def collect(self, monitor: int = 1, include_cursor: bool = False) -> Dict[str, Any]:
-        """
-        Асинхронный сбор данных - снятие скриншота.
-        
-        Args:
-            monitor: Номер монитора для захвата (по умолчанию 1). 
-                    Используйте -1 для захвата всех мониторов в один файл.
-            include_cursor: Включать ли курсор в скриншот (placeholder, пока не поддерживается)
-        
-        Процесс:
-        1. Генерирует имя временного файла с timestamp
-        2. Захватывает указанный монитор через mss
-        3. Возвращает observations с артефактом и метаданными
-        
-        Returns:
-            Dict[str, Any]: Словарь с информацией о скриншоте
-            {
-                "resolution": "WxH",
-                "captured_at_epoch": <int>,
-                "_artifacts": [
-                    {
-                        "kind": "screenshot",
-                        "local_path": "<абсолютный/относительный путь>",
-                        "name": "screenshot_<ts>.png",
-                        "mime": "image/png"
-                    }
-                ],
-                "_cleanup_paths": ["<путь к файлу>"]
-            }
-        
-        Raises:
-            mss.ScreenShotError: Ошибка захвата экрана
-            FileNotFoundError: Временный файл не был создан
-            Exception: Другие неожиданные ошибки
-        """
-        logger.debug(f"[{self.name}] Начинаю снятие скриншота (monitor={monitor}, include_cursor={include_cursor})")
-        
-        # Генерируем имя файла с timestamp
+    async def collect(
+        self,
+        monitor: int = 1,
+        include_cursor: bool = False,
+        left: Optional[int] = None,
+        top: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        logger.debug(
+            f"[{self.name}] capture requested "
+            f"(monitor={monitor}, include_cursor={include_cursor}, left={left}, top={top}, width={width}, height={height})"
+        )
         timestamp = int(time.time())
         temp_path = self.temp_dir / f"screenshot_{timestamp}.png"
-        
         try:
-            # ЗАХВАТ ЭКРАНА
-            # monitor=-1 означает захват всех мониторов в один файл
-            # monitor=1, 2, 3... означает захват конкретного монитора
-            logger.debug(f"[{self.name}] Захватываю экран (monitor={monitor})...")
-            
-            # sct.shot() захватывает экран и сохраняет в файл
-            screenshot_path = self.sct.shot(mon=monitor, output=str(temp_path))
-            
-            logger.success(f"[{self.name}] Скриншот сохранен: {screenshot_path}")
-            
-            # Получаем информацию о разрешении
-            # Если monitor=-1, используем последний монитор (все мониторы)
-            # Иначе используем указанный монитор
-            if monitor == -1:
-                monitor_info = self.sct.monitors[-1]  # -1 = все мониторы
-            else:
-                # monitor=0 это все мониторы, monitor=1,2,3... это конкретные мониторы
-                # В mss индексация: monitors[0] = все, monitors[1] = первый, monitors[2] = второй и т.д.
-                if monitor == 0:
-                    monitor_info = self.sct.monitors[0]
-                else:
-                    # Для monitor=1 используем monitors[1], для monitor=2 используем monitors[2] и т.д.
-                    if monitor < len(self.sct.monitors):
-                        monitor_info = self.sct.monitors[monitor]
-                    else:
-                        # Fallback на первый доступный монитор
-                        logger.warning(f"Монитор {monitor} не найден, используем монитор 1")
-                        monitor_info = self.sct.monitors[1] if len(self.sct.monitors) > 1 else self.sct.monitors[0]
-            
-            resolution = f"{monitor_info['width']}x{monitor_info['height']}"
-            
-            logger.debug(f"[{self.name}] Разрешение: {resolution}")
-            
-            # Формируем абсолютный путь для артефакта
+            capture_region, capture_mode = self._resolve_capture_region(
+                monitor=monitor,
+                left=left,
+                top=top,
+                width=width,
+                height=height,
+            )
+            image = self.sct.grab(capture_region)
+            self._write_screenshot(image, temp_path)
             absolute_path = temp_path.resolve()
-            
-            # Формируем observations с артефактом
-            observations = {
+            resolution = f"{capture_region['width']}x{capture_region['height']}"
+            logger.success(f"[{self.name}] screenshot saved: {absolute_path}")
+            return {
                 "resolution": resolution,
                 "captured_at_epoch": timestamp,
+                "capture_mode": capture_mode,
+                "monitor": monitor,
+                "include_cursor": include_cursor,
+                "region": {
+                    "left": int(capture_region["left"]),
+                    "top": int(capture_region["top"]),
+                    "width": int(capture_region["width"]),
+                    "height": int(capture_region["height"]),
+                },
                 "_artifacts": [
                     {
                         "kind": "screenshot",
                         "local_path": str(absolute_path),
                         "name": f"screenshot_{timestamp}.png",
-                        "mime": "image/png"
+                        "mime": "image/png",
                     }
                 ],
-                "_cleanup_paths": [str(absolute_path)]
+                "_cleanup_paths": [str(absolute_path)],
             }
-            
-            logger.success(f"[{self.name}] Скриншот готов для обработки через artifact pipeline")
-            return observations
-        
-        except mss.ScreenShotError as e:
-            # Специфичная ошибка mss (нет дисплея, серверная винда и т.д.)
-            logger.error(f"[{self.name}] Ошибка захвата экрана: {e}")
-            # Удаляем файл, если он был создан, но произошла ошибка
+        except mss.ScreenShotError as exc:
+            logger.error(f"[{self.name}] screen capture error: {exc}")
             if temp_path.exists():
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+                temp_path.unlink(missing_ok=True)
             raise
-        
-        except FileNotFoundError as e:
-            # Ошибка, если временный файл не был создан
-            logger.error(f"[{self.name}] Файл не найден: {e}")
-            raise
-        
-        except Exception as e:
-            # Любые другие ошибки
-            logger.error(f"[{self.name}] Неожиданная ошибка: {e}", exc_info=True)
-            # Удаляем файл, если он был создан, но произошла ошибка
+        except Exception:
             if temp_path.exists():
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+                temp_path.unlink(missing_ok=True)
             raise
 
     @exposed_tool(
         name="record",
-        description="Record screen to MP4 video (1–300 sec, up to 200MB)",
+        description="Record screen to MP4 video (1-300 sec, up to 200MB)",
         risk_level="sensitive_read",
         params_model=ScreenRecordParams,
         presets=[
-            {"id": "short", "name": "30 сек", "description": "Короткая запись 30 сек", "params": {"duration_sec": 30}},
-            {"id": "long", "name": "5 мин", "description": "Длинная запись 5 мин", "params": {"duration_sec": 300}},
+            {"id": "short", "name": "30 sec", "description": "Short recording", "params": {"duration_sec": 30}},
+            {"id": "long", "name": "5 min", "description": "Long recording", "params": {"duration_sec": 300}},
         ],
         metadata_risk_level="sensitive_read",
         metadata_scopes=["screen"],
@@ -272,17 +233,10 @@ class ScreenCollector(BaseCollector):
         monitor: int = 1,
         operation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Запись экрана в MP4 (этап 5, раздел H плана).
-        
-        Использует mss для захвата кадров и ffmpeg для кодирования. Поддерживает
-        досрочную остановку через STOP-кнопку (RecordingController по operation_id).
-        """
         ffmpeg_path = _get_ffmpeg_path()
         if not ffmpeg_path:
             raise RuntimeError(
-                "ffmpeg не найден. Установите: системный ffmpeg (apt install ffmpeg / brew install ffmpeg) "
-                "или pip install imageio-ffmpeg (бинарник в пакете)."
+                "ffmpeg not found. Install a system ffmpeg binary or imageio-ffmpeg."
             )
         stop_event = get_recording_controller().get(operation_id) if operation_id else None
         timestamp = int(time.time())
@@ -302,11 +256,9 @@ class ScreenCollector(BaseCollector):
             )
             if result.get("error"):
                 raise RuntimeError(result["error"])
-            frames_captured = result.get("frames_captured", 0)
-            logger.success(f"[{self.name}] Запись завершена: {frames_captured} кадров, {temp_path}")
             absolute_path = temp_path.resolve()
-            observations = {
-                "frames_captured": frames_captured,
+            return {
+                "frames_captured": result.get("frames_captured", 0),
                 "duration_sec": result.get("duration_actual_sec", 0),
                 "file_size_bytes": absolute_path.stat().st_size,
                 "_artifacts": [
@@ -319,13 +271,9 @@ class ScreenCollector(BaseCollector):
                 ],
                 "_cleanup_paths": [str(absolute_path)],
             }
-            return observations
-        except Exception as e:
+        except Exception:
             if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except Exception:
-                    pass
+                temp_path.unlink(missing_ok=True)
             raise
 
 
@@ -340,39 +288,46 @@ def _record_sync(
     output_path: str,
     stop_event: Optional[object],
 ) -> Dict[str, Any]:
-    """
-    Синхронная запись экрана: захват кадров mss + кодирование ffmpeg через pipe.
-    Вызывается из asyncio.to_thread. MSS создаётся внутри потока (на Linux X11 display
-    в thread-local, иначе '_thread._local' object has no attribute 'display').
-    """
     import time as time_mod
+
     max_frames = fps * duration_sec
-    # MSS создаём в этом же потоке: на Linux привязка к X11 display thread-local
     with mss.mss() as sct:
         mon_idx = 0 if monitor <= 0 else monitor
         if mon_idx >= len(sct.monitors):
-            mon_idx = 1
+            mon_idx = 1 if len(sct.monitors) > 1 else 0
         img = sct.grab(sct.monitors[mon_idx])
         w, h = img.width, img.height
-        if w > max_width:
-            scale = f"scale={max_width}:-2"
-        else:
-            scale = "copy"
+        scale = f"scale={max_width}:-2" if w > max_width else "copy"
         cmd = [
-            ffmpeg_path, "-y",
-            "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{w}x{h}", "-r", str(fps),
-            "-i", "pipe:0",
-            "-vf", scale,
-            "-c:v", "libx264", "-crf", str(quality_crf),
-            "-movflags", "+faststart",
-            "-pix_fmt", "yuv420p",
+            ffmpeg_path,
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgra",
+            "-s",
+            f"{w}x{h}",
+            "-r",
+            str(fps),
+            "-i",
+            "pipe:0",
+            "-vf",
+            scale,
+            "-c:v",
+            "libx264",
+            "-crf",
+            str(quality_crf),
+            "-movflags",
+            "+faststart",
+            "-pix_fmt",
+            "yuv420p",
             output_path,
         ]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         frames_captured = 0
         start = time_mod.time()
         try:
-            for i in range(max_frames):
+            for _ in range(max_frames):
                 if stop_event is not None and getattr(stop_event, "is_set", lambda: False) and stop_event.is_set():
                     break
                 try:
@@ -393,7 +348,7 @@ def _record_sync(
             proc.wait(timeout=30)
     duration_actual = time_mod.time() - start
     if os.path.exists(output_path) and os.path.getsize(output_path) > size_limit_bytes:
-        logger.warning(f"[screen] Размер записи превысил лимит {size_limit_bytes // (1024*1024)} MB")
+        logger.warning(f"[screen] recording exceeded size limit {size_limit_bytes // (1024 * 1024)} MB")
     return {
         "frames_captured": frames_captured,
         "duration_actual_sec": round(duration_actual, 1),

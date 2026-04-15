@@ -307,6 +307,25 @@ class ToolService:
                 "error": f"Ошибка установки модуля {module_name!r}: {err}",
                 "error_code": payload.get("error_code") or "MODULE_INSTALL_FAILED",
             }
+        try:
+            from modules.reconcile import set_desired_installed
+
+            async with get_session() as session_desired:
+                await set_desired_installed(
+                    device_id=device_id,
+                    module_name=module_name,
+                    desired_version=version,
+                    desired_sha256=module.sha256,
+                    reason="run_tool",
+                    updated_by=actor_role,
+                    session=session_desired,
+                )
+                await session_desired.commit()
+        except Exception as desired_e:
+            logger.warning(
+                f"[ensure_module] Failed to persist desired state for "
+                f"{device_id}:{module_name}@{version}: {desired_e}"
+            )
         logger.info(f"✅ Модуль {module_name}@{version} установлен на {device_id}, продолжаем run_tool")
         return None
     

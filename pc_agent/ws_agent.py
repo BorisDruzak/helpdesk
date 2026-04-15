@@ -20,7 +20,7 @@ import os
 import argparse
 import atexit
 import queue
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
@@ -191,6 +191,8 @@ class WSAgent:
         self._last_connection_state: str = "initializing"
         self._last_connection_detail: str = ""
         self._last_connection_changed_at: Optional[str] = None
+        self._cached_update_status: Dict[str, Any] = {}
+        self._cached_update_checked_at: Optional[str] = None
         
         # Очередь и задача для публикации логов в EventBus
         # Используем обычную queue.Queue для синхронного sink
@@ -261,6 +263,169 @@ class WSAgent:
         except Exception as exc:
             logger.debug(f"[update] latest applied update confirmation unavailable: {exc}")
             return None
+
+    @staticmethod
+    def _release_channel_for_version(version: Optional[str]) -> str:
+        lowered = str(version or "").strip().lower()
+        if "beta" in lowered:
+            return "beta"
+        if "alpha" in lowered:
+            return "alpha"
+        if "rc" in lowered:
+            return "rc"
+        if "dev" in lowered:
+            return "dev"
+        if "-" in lowered:
+            return "prerelease"
+        return "stable"
+
+    @classmethod
+    def _is_release_version(cls, version: Optional[str]) -> bool:
+        return cls._release_channel_for_version(version) == "stable"
+
+    def _infer_build_target(self) -> Optional[str]:
+        os_name = platform.system().strip().lower()
+        if os_name.startswith("win"):
+            return "windows_amd64"
+        if os_name.startswith("linux"):
+            return "linux_alt_x86_64"
+        return None
+
+    def _base_update_status(self) -> Dict[str, Any]:
+        return {
+            "agent_version": AGENT_VERSION,
+            "is_release": self._is_release_version(AGENT_VERSION),
+            "release_channel": self._release_channel_for_version(AGENT_VERSION),
+            "update_available": False,
+            "recommended_version": None,
+            "recommended_channel": None,
+            "recommended_reason": None,
+            "recommended_build": None,
+            "update_status_error": None,
+            "update_checked_at": self._cached_update_checked_at,
+        }
+
+    def _merge_update_status(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        merged = self._base_update_status()
+        if isinstance(payload, dict):
+            for key in (
+                "update_available",
+                "recommended_version",
+                "recommended_channel",
+                "recommended_reason",
+                "recommended_build",
+                "comparison",
+                "update_status_error",
+                "update_checked_at",
+            ):
+                if key in payload:
+                    merged[key] = payload.get(key)
+            if "is_release" in payload:
+                merged["is_release"] = bool(payload.get("is_release"))
+            if payload.get("release_channel"):
+                merged["release_channel"] = str(payload.get("release_channel"))
+        return merged
+
+    @staticmethod
+    def _decode_json_text(raw_text: str) -> Optional[Dict[str, Any]]:
+        text = str(raw_text or "").strip()
+        if not text:
+            return None
+        try:
+            payload = jsonlib.loads(text)
+        except Exception:
+            return None
+        if isinstance(payload, dict):
+            return payload
+        return None
+
+    @staticmethod
+    def _format_update_status_http_error(
+        *,
+        status: int,
+        payload: Optional[Dict[str, Any]],
+        raw_text: str,
+    ) -> str:
+        if isinstance(payload, dict):
+            error_message = str(payload.get("error") or "").strip()
+            if error_message:
+                return error_message
+        text = str(raw_text or "").strip()
+        if status == 404:
+            return "Update recommendation endpoint is unavailable on server (HTTP 404)"
+        if text:
+            return text[:200]
+        return f"HTTP {status}"
+
+    async def _fetch_update_status(self, *, force: bool = False) -> Dict[str, Any]:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if (
+            not force
+            and self._cached_update_status
+            and self._cached_update_checked_at
+        ):
+            try:
+                cached_at = datetime.fromisoformat(self._cached_update_checked_at)
+                if (datetime.now(timezone.utc) - cached_at).total_seconds() < 30:
+                    return self._merge_update_status(self._cached_update_status)
+            except Exception:
+                pass
+
+        base = self._base_update_status()
+        if not self.auth_token:
+            base["update_status_error"] = "auth_token_missing"
+            return base
+        if not self.device_id:
+            base["update_status_error"] = "device_id_missing"
+            return base
+
+        api_url = get_config().server.api_url.rstrip("/")
+        target = self._infer_build_target()
+        query = [f"current_version={quote(AGENT_VERSION)}"]
+        if target:
+            query.append(f"target={quote(target)}")
+        recommendation_url = f"{api_url}/devices/{quote(self.device_id)}/agent/update_recommendation?{'&'.join(query)}"
+
+        session = self._http_session
+        created_session = False
+        if session is None or session.closed:
+            session = ClientSession(timeout=ClientTimeout(total=10))
+            created_session = True
+
+        try:
+            async with session.get(
+                recommendation_url,
+                headers={"Authorization": f"Bearer {self.auth_token}"},
+            ) as response:
+                raw_text = await response.text()
+                payload = self._decode_json_text(raw_text)
+                if response.status != 200:
+                    raise RuntimeError(
+                        self._format_update_status_http_error(
+                            status=response.status,
+                            payload=payload,
+                            raw_text=raw_text,
+                        )
+                    )
+                if payload is None:
+                    raise RuntimeError("Invalid recommendation payload")
+                payload["update_checked_at"] = now_iso
+                self._cached_update_checked_at = now_iso
+                self._cached_update_status = dict(payload)
+                return self._merge_update_status(payload)
+        except Exception as exc:
+            logger.debug(f"[update] recommendation fetch failed: {exc}")
+            if self._cached_update_status:
+                cached = dict(self._cached_update_status)
+                cached["update_status_error"] = str(exc)
+                cached["update_checked_at"] = now_iso
+                return self._merge_update_status(cached)
+            base["update_status_error"] = str(exc)
+            base["update_checked_at"] = now_iso
+            return base
+        finally:
+            if created_session:
+                await session.close()
 
     @property
     def requested_exit_code(self) -> int:
@@ -334,8 +499,9 @@ class WSAgent:
     def get_runtime_status(self) -> Dict[str, Any]:
         data_root = self._data_root or runtime_paths.resolve_data_root()
         logs_dir = runtime_paths.resolve_logs_dir(Path(data_root))
-        return {
+        status = {
             "device_id": self.device_id,
+            "agent_version": AGENT_VERSION,
             "started_at": datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat(),
             "uptime_seconds": max(0, int(time.time() - self.start_time)),
             "connection_state": self._last_connection_state,
@@ -347,6 +513,69 @@ class WSAgent:
             "logs_dir": str(logs_dir),
             "event_bus_subscribers": self.event_bus.get_subscriber_count() if self.event_bus else 0,
         }
+        status.update(self._merge_update_status(self._cached_update_status))
+        return status
+
+    async def get_runtime_status_async(self) -> Dict[str, Any]:
+        status = self.get_runtime_status()
+        status.update(await self._fetch_update_status())
+        return status
+
+    async def trigger_recommended_update(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = payload or {}
+        recommendation = await self._fetch_update_status(force=True)
+        recommended_build = recommendation.get("recommended_build")
+        if not recommendation.get("update_available") or not isinstance(recommended_build, dict):
+            return {
+                "status": "ok",
+                "update_available": False,
+                "message": "Recommended update is not available",
+                "recommendation": recommendation,
+            }
+        if not self.auth_token:
+            raise RuntimeError("auth token is missing")
+        if not self.device_id:
+            raise RuntimeError("device_id is missing")
+
+        api_url = get_config().server.api_url.rstrip("/")
+        update_url = f"{api_url}/devices/{quote(self.device_id)}/agent/update"
+        request_body = {
+            "target": recommended_build.get("target"),
+            "channel": recommended_build.get("channel"),
+            "version": recommended_build.get("version"),
+            "reason": str(payload.get("reason") or "agent_gui_self_update"),
+        }
+
+        session = self._http_session
+        created_session = False
+        if session is None or session.closed:
+            session = ClientSession(timeout=ClientTimeout(total=15))
+            created_session = True
+        try:
+            async with session.post(
+                update_url,
+                json=request_body,
+                headers={"Authorization": f"Bearer {self.auth_token}"},
+            ) as response:
+                result = await response.json(content_type=None)
+                if response.status != 202:
+                    error_message = result.get("error") if isinstance(result, dict) else None
+                    raise RuntimeError(error_message or f"HTTP {response.status}")
+                self._cached_update_checked_at = datetime.now(timezone.utc).isoformat()
+                self._cached_update_status = {
+                    **recommendation,
+                    "update_available": False,
+                    "recommended_reason": "update_requested",
+                }
+                return {
+                    "status": "accepted",
+                    "message": "Update request sent",
+                    "recommendation": recommendation,
+                    "server_response": result if isinstance(result, dict) else {"result": result},
+                }
+        finally:
+            if created_session:
+                await session.close()
 
     def get_runtime_logs(self, source: str = "agent", lines: int = 120) -> Dict[str, Any]:
         normalized_source = str(source or "agent").strip().lower()
@@ -673,8 +902,11 @@ class WSAgent:
             async def on_restart_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
                 return await self.schedule_restart(payload)
 
-            def on_get_runtime_status() -> Dict[str, Any]:
-                return self.get_runtime_status()
+            async def on_trigger_update(payload: Dict[str, Any]) -> Dict[str, Any]:
+                return await self.trigger_recommended_update(payload)
+
+            async def on_get_runtime_status() -> Dict[str, Any]:
+                return await self.get_runtime_status_async()
 
             def on_get_runtime_logs(payload: Dict[str, Any]) -> Dict[str, Any]:
                 source = str(payload.get("source") or "agent")
@@ -720,6 +952,7 @@ class WSAgent:
                 on_update_settings=on_update_settings,
                 on_test_connection=on_test_connection,
                 on_restart_agent=on_restart_agent,
+                on_trigger_update=on_trigger_update,
                 on_get_runtime_status=on_get_runtime_status,
                 on_get_runtime_logs=on_get_runtime_logs,
                 on_chat_send=on_chat_send,

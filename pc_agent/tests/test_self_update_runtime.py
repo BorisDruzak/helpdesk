@@ -2,6 +2,9 @@ import json
 import sys
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -122,3 +125,76 @@ def test_latest_update_handshake_payload_returns_success_when_latest_entry_succe
         "applied_update_version": "2.1.0",
         "last_update_operation_id": "op-success",
     }
+
+
+@pytest.mark.asyncio
+async def test_runtime_status_includes_recommended_update_fields(tmp_path, monkeypatch):
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+    agent.device_id = "device-1"
+
+    async def fake_fetch_update_status(*, force: bool = False):
+        return {
+            "agent_version": "3.1.3-beta.1",
+            "is_release": False,
+            "release_channel": "beta",
+            "update_available": True,
+            "recommended_version": "3.1.3",
+            "recommended_channel": "stable",
+            "recommended_reason": "non_release_current_version",
+            "recommended_build": {
+                "target": "windows_amd64",
+                "channel": "stable",
+                "version": "3.1.3",
+                "is_release": True,
+            },
+            "update_checked_at": "2026-04-14T10:00:00+00:00",
+        }
+
+    monkeypatch.setattr(agent, "_fetch_update_status", fake_fetch_update_status)
+
+    status = await agent.get_runtime_status_async()
+
+    assert status["device_id"] == "device-1"
+    assert status["is_release"] is False
+    assert status["release_channel"] == "beta"
+    assert status["update_available"] is True
+    assert status["recommended_version"] == "3.1.3"
+    assert status["recommended_channel"] == "stable"
+    assert status["recommended_reason"] == "non_release_current_version"
+
+
+@pytest.mark.asyncio
+async def test_fetch_update_status_reports_plain_text_404_cleanly(tmp_path, monkeypatch):
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+    agent.device_id = "device-1"
+    agent.auth_token = "agent-token-1"
+
+    class FakeResponse:
+        status = 404
+
+        async def text(self):
+            return "404: Not Found"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeSession:
+        closed = False
+
+        def get(self, url, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "pc_agent.ws_agent.get_config",
+        lambda: SimpleNamespace(server=SimpleNamespace(api_url="http://example.test/api")),
+    )
+    agent._http_session = FakeSession()
+
+    status = await agent._fetch_update_status(force=True)
+
+    assert status["update_available"] is False
+    assert status["recommended_version"] is None
+    assert status["update_status_error"] == "Update recommendation endpoint is unavailable on server (HTTP 404)"

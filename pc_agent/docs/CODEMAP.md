@@ -33,7 +33,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, а GUI закрытие больше не считается автоматическим shutdown; при auth bootstrap умеет fallback lookup токена по `machine_id -> install_id -> legacy uuid`, после `Invalid token` переводит и GUI, и headless режим в automatic reprovision, и не фиксирует вечный local reject при `DEVICE_ARCHIVED`; long-running `run_tool` / `call_tool` dispatch теперь уходит в background tasks, чтобы агент мог принять `cancel_operation` без блокировки WS loop |
+| `pc_agent/ws_agent.py` | Основной runtime: WS-соединение, handshake, команды, UI bridge; auth/connection orchestration (через state machine), Scheduler RPC + runtime loop; now runs as always-on process with sticky `connection_state`, runtime diagnostics/status/log tail callbacks для `ui_bridge`, server-driven update recommendation cache (`is_release`, `release_channel`, `recommended_version`, `update_available`) и local trigger recommended update через обычный server update flow; GUI закрытие больше не считается автоматическим shutdown; при auth bootstrap умеет fallback lookup токена по `machine_id -> install_id -> legacy uuid`, после `Invalid token` переводит и GUI, и headless режим в automatic reprovision, и не фиксирует вечный local reject при `DEVICE_ARCHIVED`; long-running `run_tool` / `call_tool` dispatch теперь уходит в background tasks, чтобы агент мог принять `cancel_operation` без блокировки WS loop |
 | `pc_agent/ws_agent_runtime_helpers.py` | Вынесенные runtime helper-блоки `WSAgent`: restart/update-shutdown, scheduler RPC/runtime loop, auth bootstrap, reprovision/request-connection flow, форматирование uptime |
 | `pc_agent/launcher/launcher_main.py` | Launcher / запускные сценарии |
 | `pc_agent/launcher_portable_main.py` | Портативный launcher |
@@ -90,7 +90,7 @@
 ### 2.4 UI bridge (core ↔ GUI)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP), settings + local agent control/diagnostics (`/ui/agent/status`, `/ui/agent/logs`, `/ui/agent/shutdown`) |
+| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP), settings + local agent control/diagnostics (`/ui/agent/status`, `/ui/agent/logs`, `/ui/agent/shutdown`, `/ui/agent/update`) |
 | `pc_agent/ui_bridge/event_bus.py` | События между core и GUI; хранит sticky `connection_state` для поздних SSE-подписчиков |
 | `pc_agent/ui_bridge/models.py` | Модели данных для UI |
 | `pc_agent/ui_bridge/settings_service.py` | Настройки для GUI |
@@ -98,7 +98,7 @@
 ### 2.5 GUI (Qt)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics |
+| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics, release badge и кнопка recommended update из локального `ui_bridge` |
 | `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, mark-read, локальные профили инициатора; detail refresh разделён на initial tail load, forward catch-up через `since_event_id` и reverse pagination вверх через `before_event_id`, с prepend history и сохранением viewport; список тикетов на `QListView` + модель; runtime path больше не использует deprecated chat client и работает через `TicketApiClient` как канонический GUI contract |
 | `pc_agent/ui_gui/tickets_list_model.py` | `TicketsListModel` и `TicketCardDelegate` — обновление строк без полного `clear()`, отрисовка карточек |
 | `pc_agent/ui_gui/ticket_format.py` | Подписи/цвета статусов, формат дат, отпечаток строки тикета для диффа модели |
@@ -139,7 +139,7 @@
 - **always-on, tray, runtime logs, локальный shutdown/status/logs** — `docs/AGENT_RUNTIME_ALWAYS_ON.md`, `ws_agent.py`, `core/runtime_logging.py`, `ui_gui/main.py`, `ui_gui/tray_manager.py`, `ui_bridge/api_server.py`
 - **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
-- **self-update, pending_update, update_history, launcher rollback** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`
+- **self-update, pending_update, update_history, launcher rollback, recommended update UI** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`, `ws_agent.py`, `ui_bridge/api_server.py`, `ui_gui/main_window.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`
 - **SQLite, миграции схемы** — `core/database.py` (DB_SCHEMA_VERSION), `docs/DATABASE.md`
 

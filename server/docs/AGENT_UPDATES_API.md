@@ -107,6 +107,54 @@ Body:
 
 Если `version` не задан — берётся **latest** build для `(target, channel)`.
 
+## Recommended update for device
+
+`GET /api/devices/{device_id}/agent/update_recommendation?current_version=...&target=...`
+
+**Auth:** обязателен. `admin`/`support`/`auditor` могут читать рекомендации для любого устройства. Агентский токен может запрашивать рекомендацию только для собственного `device_id`.
+
+Назначение endpoint:
+
+- server-side выбрать рекомендуемый build для устройства без логики выбора в GUI;
+- предпочесть release build (`stable`) для устройства, которое работает на non-release версии;
+- выбирать кандидата по semver, а не только по `created_at`;
+- вернуть GUI уже готовую интерпретацию текущей и рекомендуемой версии.
+
+`target` опционален. Если он не передан, сервер пытается вывести target из метаданных устройства (`os_type`, handshake metadata). `current_version` тоже опционален, но для корректного `update_available` и `comparison` GUI должен передавать текущую версию агента.
+
+Ответ:
+
+```json
+{
+  "status": "ok",
+  "device_id": "device-uuid",
+  "target": "windows_amd64",
+  "current_version": "3.2.0-beta.2",
+  "is_release": false,
+  "release_channel": "beta",
+  "update_available": true,
+  "recommended_version": "3.2.0",
+  "recommended_channel": "stable",
+  "recommended_reason": "prefer_release",
+  "comparison": "newer_release_available",
+  "recommended_build": {
+    "target": "windows_amd64",
+    "channel": "stable",
+    "version": "3.2.0",
+    "is_release": true
+  }
+}
+```
+
+Значения `comparison` используются как готовый server-side verdict для UI:
+
+- `newer_release_available`
+- `recommended_release_is_older`
+- `same_version`
+- `unknown`
+
+GUI агента использует этот endpoint перед локальным `POST /ui/agent/update`, а сам trigger update по-прежнему делает обычный `POST /api/devices/{device_id}/agent/update` с выбранным сервером build.
+
 Ответ (202):
 ```json
 {

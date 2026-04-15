@@ -91,6 +91,22 @@ def _module_file_missing_payload(module_name: str, version: str, storage_path: s
     }
 
 
+def _module_storage_state(module: object) -> dict:
+    archive_path = _module_archive_path(module)
+    file_exists = archive_path.exists()
+    return {
+        "storage_path": str(getattr(module, "storage_path", "") or ""),
+        "file_exists": file_exists,
+        "file_missing": not file_exists,
+    }
+
+
+def _module_api_record(module: object, *, include_detail: bool = False) -> dict:
+    record = module_to_api_record(module, include_detail=include_detail)
+    record.update(_module_storage_state(module))
+    return record
+
+
 def _builtin_module_install_payload(module_name: str, version: str) -> dict:
     return {
         "status": "ok",
@@ -140,6 +156,48 @@ async def _enqueue_module_followup_sync(
         "modules_sync": modules_sync,
         "toolset_sync": toolset_sync,
     }
+
+
+def _module_auth_error_response() -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "Authentication required",
+            "error_code": "AUTH_REQUIRED",
+        },
+        status=401,
+    )
+
+
+def _check_module_policy(
+    *,
+    auth_context: Optional[AuthContext],
+    tool_name: str,
+    risk_level: str,
+) -> tuple[Optional[str], Optional[web.Response]]:
+    if not auth_context:
+        return None, _module_auth_error_response()
+    metadata = ToolMetadata(
+        risk_level=risk_level,
+        requires_consent=False,
+        allow_roles=None,
+    )
+    decision = PolicyEngine().check_policy(
+        actor_role=auth_context.actor_role,
+        tool_name=tool_name,
+        metadata=metadata,
+    )
+    if not decision.allow:
+        return None, web.json_response(
+            {
+                "status": "error",
+                "error": "Policy violation",
+                "error_code": decision.reason,
+                "required_role": decision.required_role,
+            },
+            status=403,
+        )
+    return auth_context.actor_role, None
 
 
 async def _run_module_smoke(zip_bytes: bytes, smoke_prefix: str) -> tuple[bool, Optional[dict], list[str]]:
@@ -366,11 +424,24 @@ async def handle_list_installed_modules(request):
     { "device_id": "...", "actor_role": "admin" }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="list_installed_modules",
+            risk_level="safe_read",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         
         data = await request.json()
         device_id = data.get("device_id")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_list_installed_modules] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not device_id:
             return web.json_response({
@@ -417,13 +488,26 @@ async def handle_activate_module(request):
     { "device_id": "...", "name": "hello", "version": "0.1.0", "actor_role": "admin" }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="activate_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         
         data = await request.json()
         device_id = data.get("device_id")
         name = data.get("name")
         version = data.get("version")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_activate_module] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not device_id:
             return web.json_response({
@@ -483,12 +567,25 @@ async def handle_rollback_module(request):
     { "device_id": "...", "name": "hello", "actor_role": "admin" }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="rollback_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         
         data = await request.json()
         device_id = data.get("device_id")
         name = data.get("name")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_rollback_module] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not device_id:
             return web.json_response({
@@ -582,12 +679,25 @@ async def handle_deactivate_module(request):
     { "device_id": "...", "name": "hello", "actor_role": "admin" }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="deactivate_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         
         data = await request.json()
         device_id = data.get("device_id")
         name = data.get("name")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_deactivate_module] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not device_id:
             return web.json_response({
@@ -1193,7 +1303,7 @@ async def handle_list_modules(request):
             )
 
             return web.json_response({
-                "modules": [module_to_api_record(module) for module in modules]
+                "modules": [_module_api_record(module) for module in modules]
             })
 
     except Exception as e:
@@ -1225,7 +1335,7 @@ async def handle_get_module_detail(request):
                 }, status=404)
             return web.json_response({
                 "status": "ok",
-                **module_to_api_record(module, include_detail=True),
+                **_module_api_record(module, include_detail=True),
             })
     except Exception as e:
         logger.error(f"Get module detail failed: {e}")
@@ -1323,6 +1433,59 @@ async def handle_delete_module(request):
         return web.json_response({
             "status": "error",
             "error": str(e)
+        }, status=500)
+
+
+async def handle_cleanup_missing_modules(request):
+    """
+    POST /api/modules/cleanup_missing
+
+    Deletes registry records whose archive files are already missing on disk.
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return web.json_response({
+                "status": "error",
+                "error": "Authentication required",
+                "error_code": "AUTH_REQUIRED",
+            }, status=401)
+        if auth_context.actor_role != "admin":
+            return web.json_response({
+                "status": "error",
+                "error": "Only admin can cleanup missing modules",
+                "error_code": "FORBIDDEN",
+            }, status=403)
+
+        removed: list[dict] = []
+        async with get_session() as session:
+            modules_repo = ModulesRepo(session)
+            modules = await modules_repo.list_modules(limit=500)
+            for module in modules:
+                storage_state = _module_storage_state(module)
+                if not storage_state["file_missing"]:
+                    continue
+                deleted = await modules_repo.delete_module(module.module_name, module.version)
+                if deleted:
+                    removed.append({
+                        "module_name": module.module_name,
+                        "version": module.version,
+                        "storage_path": storage_state["storage_path"],
+                    })
+            await session.commit()
+
+        logger.info(f"Module cleanup_missing removed {len(removed)} stale records")
+        return web.json_response({
+            "status": "ok",
+            "removed": removed,
+            "count": len(removed),
+        })
+    except Exception as e:
+        logger.error(f"Cleanup missing modules failed: {e}")
+        logger.exception(e)
+        return web.json_response({
+            "status": "error",
+            "error": str(e),
         }, status=500)
 
 
@@ -1900,13 +2063,26 @@ async def handle_activate_module_new(request):
         }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="activate_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         device_id = request.match_info["device_id"]
         
         data = await request.json()
         module_name = data.get("module_name")
         version = data.get("version")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_activate_module_new] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not module_name:
             return web.json_response({
@@ -1999,12 +2175,25 @@ async def handle_deactivate_module_new(request):
         }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="deactivate_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         device_id = request.match_info["device_id"]
         
         data = await request.json()
         module_name = data.get("module_name")
-        actor_role = data.get("actor_role", "admin")
+        if "actor_role" in data:
+            logger.warning(
+                f"[handle_deactivate_module_new] actor_role in JSON body ignored: "
+                f"using actor_role={actor_role} from AuthContext"
+            )
         
         if not module_name:
             return web.json_response({
@@ -2091,6 +2280,15 @@ async def handle_sync_modules(request):
         }
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="sync_modules",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         state = request.app['state']
         device_id = request.match_info["device_id"]
         
@@ -2102,7 +2300,7 @@ async def handle_sync_modules(request):
             device_id=device_id,
             command="list_installed_modules",
             params={},
-            actor_role="admin",
+            actor_role=actor_role,
             trace_id=None
         )
         
@@ -2112,7 +2310,7 @@ async def handle_sync_modules(request):
             device_id=device_id,
             command="list_tools",
             params={},
-            actor_role="admin",
+            actor_role=actor_role,
             trace_id=None
         )
         
@@ -2153,6 +2351,15 @@ async def handle_remove_module_version(request):
     Перед enqueue: capability/version check — модуль с такой версией есть в device_modules.
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="remove_module_version",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         device_id = request.match_info["device_id"]
         data = await request.json()
         module_name = data.get("module_name")
@@ -2200,7 +2407,7 @@ async def handle_remove_module_version(request):
                 operation_id=operation_id,
                 device_id=device_id,
                 kind="module_remove_version",  # NEW: специальный kind для модульных операций
-                actor_role="admin",
+                actor_role=actor_role,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
                 job_id=None
@@ -2213,7 +2420,7 @@ async def handle_remove_module_version(request):
             device_id=device_id,
             command="remove_module_version",
             params={"name": module_name, "version": version},
-            actor_role="admin",
+            actor_role=actor_role,
             trace_id=None,
             operation_id=operation_id,  # Связать с operation
             require_online=False,
@@ -2224,7 +2431,7 @@ async def handle_remove_module_version(request):
                     device_id=device_id,
                     module_name=module_name,
                     reason="manual_remove",
-                    updated_by="admin",
+                    updated_by=actor_role,
                 )
             except Exception as desired_e:
                 logger.warning(
@@ -2234,7 +2441,7 @@ async def handle_remove_module_version(request):
         await _enqueue_module_followup_sync(
             state=state,
             device_id=device_id,
-            actor_role="admin",
+            actor_role=actor_role,
             require_online=False,
         )
 
@@ -2262,6 +2469,15 @@ async def handle_remove_module(request):
     затем remove_module (агент обработает по порядку).
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="remove_module",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         device_id = request.match_info["device_id"]
         data = await request.json()
         module_name = data.get("module_name")
@@ -2303,7 +2519,7 @@ async def handle_remove_module(request):
                 operation_id=operation_id,
                 device_id=device_id,
                 kind="module_remove",
-                actor_role="admin",
+                actor_role=actor_role,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
                 job_id=None
@@ -2317,7 +2533,7 @@ async def handle_remove_module(request):
             device_id=device_id,
             command="deactivate_module",
             params={"name": module_name},
-            actor_role="admin",
+            actor_role=actor_role,
             trace_id=None,
             require_online=False,
         )
@@ -2326,7 +2542,7 @@ async def handle_remove_module(request):
             device_id=device_id,
             command="remove_module",
             params={"name": module_name},
-            actor_role="admin",
+            actor_role=actor_role,
             trace_id=None,
             operation_id=operation_id,
             require_online=False,
@@ -2338,14 +2554,14 @@ async def handle_remove_module(request):
                 device_id=device_id,
                 module_name=module_name,
                 reason="manual",
-                updated_by="admin",
+                updated_by=actor_role,
             )
         except Exception as desired_e:
             logger.warning(f"[handle_remove_module] Failed to set desired absent: {desired_e}")
         await _enqueue_module_followup_sync(
             state=state,
             device_id=device_id,
-            actor_role="admin",
+            actor_role=actor_role,
             require_online=False,
         )
         
@@ -2371,6 +2587,15 @@ async def handle_verify_module(request):
     Returns: {"status": "ok", "verified": bool, "tools_found": int}
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        _actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="verify_module",
+            risk_level="safe_read",
+        )
+        if error_response:
+            return error_response
+
         device_id = request.match_info["device_id"]
         data = await request.json()
         module_name = data.get("module_name")
@@ -2608,6 +2833,15 @@ async def handle_trigger_reconcile(request):
     Запускает немедленный reconcile для устройства.
     """
     try:
+        auth_context: AuthContext = request.get("auth_context")
+        actor_role, error_response = _check_module_policy(
+            auth_context=auth_context,
+            tool_name="reconcile_modules",
+            risk_level="system_write",
+        )
+        if error_response:
+            return error_response
+
         device_id = request.match_info["device_id"]
         state = request.app["state"]
 
@@ -2617,6 +2851,7 @@ async def handle_trigger_reconcile(request):
         return web.json_response({
             "status": "ok",
             "device_id": device_id,
+            "actor_role": actor_role,
             "stats": stats,
         })
 

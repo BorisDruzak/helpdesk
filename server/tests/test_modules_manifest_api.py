@@ -152,6 +152,58 @@ async def test_list_and_detail_include_manifest_metadata(test_client, test_engin
     assert detail_data['manifest_json']['tools'][0]['method'] == 'run_impl'
     assert detail_data['validation_json']['validation_status'] == 'passed'
     assert detail_data['tools'][0]['metadata']['domain'] == 'listed'
+    assert item['file_missing'] is True
+    assert item['file_exists'] is False
+    assert detail_data['file_missing'] is True
+
+
+@pytest.mark.asyncio
+async def test_cleanup_missing_modules_removes_only_stale_records(test_client, test_engine):
+    missing_name = f"missing_{uuid.uuid4().hex[:8]}"
+    existing_name = f"existing_{uuid.uuid4().hex[:8]}"
+    storage_root = routes_module.handle_cleanup_missing_modules.__globals__["MODULES_STORAGE_DIR"]
+    existing_storage = storage_root / existing_name / "1.0.0" / "module.zip"
+    existing_storage.parent.mkdir(parents=True, exist_ok=True)
+    existing_storage.write_bytes(b"zip")
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(Module(
+            module_name=missing_name,
+            version='1.0.0',
+            sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+            size=123,
+            storage_path=f'{missing_name}/1.0.0/module.zip',
+            uploaded_by='admin',
+            manifest_json={'module_name': missing_name, 'module_version': '1.0.0', 'platforms': ['any'], 'tools': []},
+            validation_json={'validation_status': 'passed'},
+            manifest_summary={'tools': []},
+        ))
+        session.add(Module(
+            module_name=existing_name,
+            version='1.0.0',
+            sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+            size=123,
+            storage_path=f'{existing_name}/1.0.0/module.zip',
+            uploaded_by='admin',
+            manifest_json={'module_name': existing_name, 'module_version': '1.0.0', 'platforms': ['any'], 'tools': []},
+            validation_json={'validation_status': 'passed'},
+            manifest_summary={'tools': []},
+        ))
+        await session.commit()
+
+    response = await test_client.post('/api/modules/cleanup_missing', headers=ADMIN_HEADERS)
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data['status'] == 'ok'
+    assert data['count'] == 1
+    assert data['removed'][0]['module_name'] == missing_name
+
+    async with session_maker() as session:
+        missing_module = await session.get(Module, {'module_name': missing_name, 'version': '1.0.0'})
+        existing_module = await session.get(Module, {'module_name': existing_name, 'version': '1.0.0'})
+        assert missing_module is None
+        assert existing_module is not None
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,7 @@ from agents.agent_builds_handlers import (
     handle_upload_agent_build,
     handle_list_agent_builds,
     handle_download_agent_build,
+    handle_get_device_update_recommendation,
     handle_update_device_agent,
     handle_bulk_update_agents,
 )
@@ -203,6 +204,7 @@ from modules.handlers import (
     handle_bulk_install_modules,
     handle_download_module,
     handle_list_modules,
+    handle_cleanup_missing_modules,
     handle_get_module_detail,
     handle_delete_module,
     handle_get_device_modules,
@@ -315,6 +317,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/list_devices', handle_get_devices),  # Alias for compatibility
         web.get('/api/devices/{device_id}', handle_get_device),  # Single device (agent page)
         web.get('/api/devices/{device_id}/agent/update_diagnostics', handle_get_device_update_diagnostics),
+        web.get('/api/devices/{device_id}/agent/update_recommendation', handle_get_device_update_recommendation),
         web.post('/api/devices/{device_id}/check', handle_device_check),  # Force check (list_tools)
         web.delete('/api/devices/{device_id}', handle_delete_device),  # Delete device from DB
         web.get('/api/devices/{device_id}/tokens', handle_get_device_tokens),  # Get device tokens
@@ -506,6 +509,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/modules/ping', handle_modules_ping),
         web.post('/api/modules/upload', handle_upload_module),
         web.post('/api/modules/create', handle_create_module),
+        web.post('/api/modules/cleanup_missing', handle_cleanup_missing_modules),
         web.post('/api/modules/bulk_install', handle_bulk_install_modules),
         web.get('/api/modules/{module_name}/{version}', handle_get_module_detail),
         web.get('/api/modules/{module_name}/{version}/download', handle_download_module),

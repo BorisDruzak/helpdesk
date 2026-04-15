@@ -33,7 +33,7 @@
 |------|------------|
 | `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
 | `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
-| `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket` и session endpoint `GET /api/ui_session` |
+| `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation` и device-scoped module lifecycle endpoints |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
 | `server/runtime_control.py` | Канонический runtime-control слой для `systemctl`/`journalctl`, control-plane state, smoke/status/log filtering и unit-level lifecycle |
 
@@ -160,14 +160,14 @@
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos
-- **модули (install, desired, reconcile)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `websocket/modules_sync.py`, `app/repos/device_desired_modules_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
+- **модули (install, desired, reconcile)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
-- **обновление агента (builds, upload, update, mass, diagnostics)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
+- **обновление агента (builds, upload, update, mass, diagnostics, recommendation)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `GET /api/devices/{id}/agent/update_recommendation`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 

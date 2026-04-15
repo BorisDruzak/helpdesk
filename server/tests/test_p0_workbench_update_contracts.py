@@ -118,6 +118,54 @@ async def test_single_update_response_has_operation_object(test_client):
     data = await resp.json()
     assert data["status"] == "accepted"
     assert data["device_id"] == device_id
+
+
+@pytest.mark.asyncio
+async def test_update_recommendation_prefers_stable_for_non_release_current_version(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    await _insert_build(target="windows_amd64", channel="beta", version="3.2.0-beta.1")
+    stable_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.9")
+
+    resp = await test_client.get(
+        f"/api/devices/{device_id}/agent/update_recommendation",
+        headers=_admin_headers(),
+        params={"current_version": "3.2.0-beta.1"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert data["device_id"] == device_id
+    assert data["is_release"] is False
+    assert data["release_channel"] == "beta"
+    assert data["update_available"] is True
+    assert data["recommended_version"] == stable_version
+    assert data["recommended_channel"] == "stable"
+    assert data["recommended_reason"] == "non_release_current_version"
+    assert data["recommended_build"]["is_release"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_recommendation_uses_semver_not_created_at(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    newer_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.11")
+    await _insert_build(target="windows_amd64", channel="stable", version="3.1.9")
+
+    resp = await test_client.get(
+        f"/api/devices/{device_id}/agent/update_recommendation",
+        headers=_admin_headers(),
+        params={"current_version": "3.1.8"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert data["is_release"] is True
+    assert data["update_available"] is True
+    assert data["recommended_version"] == newer_version
+    assert data["recommended_reason"] == "newer_release_available"
     assert data["operation"]["operation_id"] == data["operation_id"]
     assert data["operation"]["status"] == "queued"
     assert data["build"]["target"] == "windows_amd64"

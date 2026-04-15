@@ -142,3 +142,38 @@ async def test_ui_api_server_runtime_status_and_logs_endpoints():
     finally:
         await session.close()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_ui_api_server_update_endpoint():
+    server = UiApiServer(
+        EventBus(),
+        host="127.0.0.1",
+        port=0,
+        on_trigger_update=lambda payload: {
+            "status": "accepted",
+            "message": "Update request sent",
+            "recommendation": {
+                "recommended_version": "3.1.3",
+                "recommended_channel": "stable",
+            },
+            "payload_echo": payload,
+        },
+    )
+    await server.start()
+
+    sockets = getattr(getattr(server.site, "_server", None), "sockets", None)
+    assert sockets
+    port = sockets[0].getsockname()[1]
+
+    session = aiohttp.ClientSession()
+    try:
+        async with session.post(f"http://127.0.0.1:{port}/ui/agent/update", json={"reason": "manual"}) as response:
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["status"] == "accepted"
+            assert payload["recommendation"]["recommended_version"] == "3.1.3"
+            assert payload["payload_echo"]["reason"] == "manual"
+    finally:
+        await session.close()
+        await server.stop()

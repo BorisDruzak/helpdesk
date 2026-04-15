@@ -18,6 +18,15 @@
    - controlled restart/update flow
 4. `pc_agent/ui_bridge/api_server.py` считается локальной control/diagnostics поверхностью для GUI и локальных проверок.
 
+### Recommended update surface в локальном UI bridge
+
+Локальный `ui_bridge` теперь отдаёт GUI не только connection/runtime diagnostics, но и update-related surface:
+
+- `GET /ui/agent/status` возвращает `agent_version`, `is_release`, `release_channel`, `update_available`, `recommended_version`, `recommended_channel`, `recommended_reason`, `comparison`, `update_checked_at`;
+- `POST /ui/agent/update` запускает локальный trigger recommended update: агент запрашивает server-side recommendation и, если есть кандидат, инициирует обычный server update flow для собственного `device_id`.
+
+Таким образом, GUI не выбирает build самостоятельно и не держит отдельную semver/release policy.
+
 ## Tray и окно
 
 - `ui.tray_enabled=true` включает tray-слой.
@@ -50,6 +59,8 @@
 
 1. `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`
 2. Проверить `http://127.0.0.1:<port>/ui/agent/status`
+   - убедиться, что в JSON есть release/update поля и они меняются после подключения к серверу;
+   - при наличии рекомендации проверить локальный `POST /ui/agent/update`;
 3. Программно закрыть окно `Maria Agent`
 4. Убедиться, что процесс жив, а `ui_bridge` всё ещё отвечает
 5. Завершить агент через `POST /ui/agent/shutdown`

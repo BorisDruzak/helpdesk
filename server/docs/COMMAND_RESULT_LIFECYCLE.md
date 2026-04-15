@@ -198,6 +198,16 @@ elif status == "consent_required":
 - Повторная обработка того же result не изменяет terminal состояния
 - Guards защищают от некорректных updates
 
+## Специальный side effect для module pipeline
+
+Если outbox/event pipeline сохраняет `module_state_changed`, это событие не ограничивается только timeline/publish-слоем. После commit сервер дополнительно пытается запустить `reconcile_device()` для соответствующего `device_id`.
+
+Назначение:
+
+- быстрее свести `device_modules` и desired state после install/activate/deactivate;
+- уменьшить окно, в котором UI ещё видит старое состояние модулей;
+- поддержать server-first modular flow, где auto-install перед `run_tool` фиксирует desired state, а затем immediate reconcile закрывает фактический drift.
+
 ## Контракты
 
 ### Future Contract для Consent_Required

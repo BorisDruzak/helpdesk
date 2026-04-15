@@ -12,8 +12,8 @@ from utils.module_manifest import manifest_summary_from_manifest
 
 MODULE_PY_TEMPLATE_NO_PARAMS = '''# Generated from admin create-module flow. Module: {{MODULE_NAME}}
 from typing import Dict, Any
-from modules.base_module import BaseCollector
-from core.registry import exposed_tool
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
 
 class _Collector(BaseCollector):
     @property
@@ -42,8 +42,8 @@ def register():
 
 MODULE_PY_TEMPLATE_WITH_PARAMS = '''# Generated from admin create-module flow. Module: {{MODULE_NAME}}
 from typing import Dict, Any
-from modules.base_module import BaseCollector
-from core.registry import exposed_tool
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
 
 class _Collector(BaseCollector):
     @property
