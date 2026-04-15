@@ -82,7 +82,7 @@ python scripts/sync_local_to_share.py --apply
 python scripts/deploy_workspace_to_remote.py
 ```
 
-`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию требуют green CI artifact для текущего commit. Экстренный bypass допускается только явным `--skip-ci-check`.
+`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию требуют green CI artifact для текущего commit. Экстренный bypass допускается только явным `--skip-ci-check`, причём для полного `release_server_to_remote.py` этот флаг должен прокидываться и во внутренний шаг `deploy_workspace_to_remote.py`.
 
 12. Поднять сервер на Linux и прогнать smoke:
 

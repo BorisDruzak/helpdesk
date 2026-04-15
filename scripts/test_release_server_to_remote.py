@@ -61,6 +61,22 @@ def test_main_passes_allow_local_dirty_to_deploy(monkeypatch: pytest.MonkeyPatch
     assert "--allow-local-dirty" in deploy_command
 
 
+def test_main_passes_skip_ci_check_to_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release, "parse_args", lambda: make_args(skip_ci_check=True))
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
+        calls.append((label, command))
+
+    monkeypatch.setattr(release, "run_step", fake_run_step)
+    monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
+
+    release.main()
+
+    deploy_command = next(command for label, command in calls if label == "deploy")
+    assert "--skip-ci-check" in deploy_command
+
+
 def test_main_skips_optional_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         release,

@@ -141,6 +141,8 @@ def main() -> None:
             deploy_command.extend(["--branch", args.branch])
         if args.allow_local_dirty:
             deploy_command.append("--allow-local-dirty")
+        if args.skip_ci_check:
+            deploy_command.append("--skip-ci-check")
         run_step(deploy_command, cwd=workspace, label="deploy")
 
         remote_command_base = [
