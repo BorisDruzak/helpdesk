@@ -68,7 +68,7 @@ The preferred version is stored server-side and is the same source of truth used
 Preferred-version rollout now has an explicit server-side setting:
 
 - `manual` - changing preferred only changes the registry/source-of-truth; devices update later through `run_tool`, manual install, or other runtime touch points
-- `installed_devices` - changing preferred immediately rewrites desired state for devices that already have the module installed (or already have `desired=installed`), then triggers reconcile so the target version is actually enqueued to the agent; if reconcile has nothing to do, the server falls back to inventory/toolset refresh
+- `installed_devices` - changing preferred immediately rewrites desired state for devices that already have the module installed (or already have `desired=installed`), triggers reconcile so the target version is enqueued to the agent, and then queues inventory/toolset refresh so server-side actual state converges in the UI
 
 ## Builtin modules
 

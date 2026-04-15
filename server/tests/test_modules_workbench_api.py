@@ -582,7 +582,7 @@ async def test_preferred_version_change_auto_rolls_installed_devices_when_enable
     assert data["rollout_summary"]["mode"] == "installed_devices"
     assert data["rollout_summary"]["desired_updates"] == 1
     assert data["rollout_summary"]["sync_enqueued"] == 1
-    assert data["rollout_summary"]["refresh_enqueued"] == 0
+    assert data["rollout_summary"]["refresh_enqueued"] == 1
     assert reconcile_calls == [device_id]
 
     async with session_maker() as session:
