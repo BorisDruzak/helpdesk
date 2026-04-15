@@ -1,17 +1,23 @@
 import json
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Module, ServerConfig
+from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module, ServerConfig
 from modules.handlers import MODULES_STORAGE_DIR
+from tests.conftest import TEST_UI_ADMIN_TOKEN
 from utils.module_builder import build_module_package
 from utils.module_preflight import preflight_module_zip
+
+
+ADMIN_HEADERS = {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 
 
 @pytest.mark.asyncio
@@ -439,3 +445,154 @@ async def test_module_workbench_validate_marks_existing_version_not_publish_read
     assert data["status"] == "ok"
     assert data["module_exists"] is True
     assert data["publish_ready"] is False
+
+
+@pytest.mark.asyncio
+async def test_module_workbench_exposes_and_updates_rollout_settings(test_client):
+    response = await test_client.get("/api/modules/workbench")
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["rollout_settings"]["preferred_version_rollout_mode"] == "manual"
+    assert data["rollout_settings"]["sync_after_preferred_change"] is True
+
+    patch_response = await test_client.patch(
+        "/api/modules/rollout_settings",
+        json={
+            "preferred_version_rollout_mode": "installed_devices",
+            "sync_after_preferred_change": False,
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert patch_response.status == 200, await patch_response.text()
+    patched = await patch_response.json()
+    assert patched["rollout_settings"]["preferred_version_rollout_mode"] == "installed_devices"
+    assert patched["rollout_settings"]["sync_after_preferred_change"] is False
+
+    get_response = await test_client.get("/api/modules/rollout_settings")
+    assert get_response.status == 200, await get_response.text()
+    loaded = await get_response.json()
+    assert loaded["rollout_settings"]["preferred_version_rollout_mode"] == "installed_devices"
+    assert loaded["rollout_settings"]["sync_after_preferred_change"] is False
+
+
+@pytest.mark.asyncio
+async def test_preferred_version_change_auto_rolls_installed_devices_when_enabled(test_client, test_engine):
+    module_name = f"wb_rollout_{uuid.uuid4().hex[:8]}"
+    device_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.0.0",
+                hostname="wb-rollout",
+                os="windows",
+                capabilities={},
+                device_metadata={"os_type": "Windows"},
+                first_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc),
+                last_handshake_at=datetime.now(timezone.utc),
+            )
+        )
+        for version in ("1.0.0", "2.0.0"):
+            zip_bytes, _summary = build_module_package(
+                module_name=module_name,
+                version=version,
+                tool_name="vendor_x.rollout_echo",
+                description=f"Rollout module {version}",
+                user_function_body=f'return {{"ok": True, "version": "{version}"}}',
+                owner_scope="vendor",
+            )
+            ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+            assert ok is True
+            session.add(
+                Module(
+                    module_name=module_name,
+                    version=version,
+                    sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                    size=len(zip_bytes),
+                    storage_path=f"{module_name}/{version}/module.zip",
+                    uploaded_by="admin",
+                    manifest_json=manifest_json,
+                    validation_json=validation_json,
+                    manifest_summary=manifest_summary,
+                )
+            )
+        session.add(
+            DeviceModule(
+                device_id=device_id,
+                module_name=module_name,
+                version="1.0.0",
+                installed=True,
+                active=True,
+                state="active",
+                installed_at=datetime.now(timezone.utc),
+                activated_at=datetime.now(timezone.utc),
+                last_updated_at=datetime.now(timezone.utc),
+                source="handshake",
+            )
+        )
+        session.add(
+            DeviceDesiredModule(
+                device_id=device_id,
+                module_name=module_name,
+                desired_version="1.0.0",
+                desired_sha256=None,
+                state="installed",
+                reason="manual",
+                updated_at=datetime.now(timezone.utc),
+                updated_by="admin",
+            )
+        )
+        await session.execute(
+            text(
+                "INSERT INTO server_config (key, value) VALUES (:key, :value) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+            ),
+            {
+                "key": "module_rollout_settings",
+                "value": json.dumps(
+                    {
+                        "preferred_version_rollout_mode": "installed_devices",
+                        "sync_after_preferred_change": True,
+                    }
+                ),
+            },
+        )
+        await session.commit()
+
+    sync_calls: list[str] = []
+
+    async def fake_followup_sync(*, device_id, **_kwargs):
+        sync_calls.append(device_id)
+        return {"status": "accepted"}
+
+    with patch("modules.handlers._enqueue_module_followup_sync", new=fake_followup_sync):
+        response = await test_client.patch(
+            f"/api/modules/{module_name}/preferred",
+            json={"version": "2.0.0"},
+            headers=ADMIN_HEADERS,
+        )
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["preferred_version"] == "2.0.0"
+    assert data["rollout_summary"]["mode"] == "installed_devices"
+    assert data["rollout_summary"]["desired_updates"] == 1
+    assert data["rollout_summary"]["sync_enqueued"] == 1
+    assert sync_calls == [device_id]
+
+    async with session_maker() as session:
+        desired = (
+            await session.execute(
+                text(
+                    "SELECT desired_version, reason FROM device_desired_modules "
+                    "WHERE device_id = :device_id AND module_name = :module_name"
+                ),
+                {"device_id": device_id, "module_name": module_name},
+            )
+        ).one()
+        assert desired[0] == "2.0.0"
+        assert desired[1] == "preferred_rollout"

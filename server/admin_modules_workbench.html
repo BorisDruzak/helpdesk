@@ -294,6 +294,41 @@
           </div>
           <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-validate-btn">Проверить</button>
         </div>
+        <div class="mw-section" style="margin-top: 12px; padding-top: 12px;">
+          <div class="mw-section-head compact">
+            <div>
+              <h4 style="margin: 0;">Rollout policy</h4>
+              <div class="mw-subtle">Настройка поведения preferred version для уже установленных модулей на устройствах.</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-save-rollout-btn">Сохранить policy</button>
+          </div>
+          <div class="mw-summary-grid mw-grid-2" style="margin-top: 12px;">
+            <div class="mw-summary-item">
+              <label>Текущий режим</label>
+              <strong id="modules-workbench-rollout-summary">—</strong>
+            </div>
+            <div class="mw-summary-item">
+              <label>Примечание</label>
+              <div id="modules-workbench-rollout-note" class="mw-subtle">—</div>
+            </div>
+          </div>
+          <div class="mw-grid-2" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="modules-workbench-rollout-mode">Preferred version rollout mode</label>
+              <select id="modules-workbench-rollout-mode">
+                <option value="manual">manual</option>
+                <option value="installed_devices">installed_devices</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="mw-subtle" for="modules-workbench-rollout-sync" style="display:block; margin-bottom: 8px;">После смены preferred ставить follow-up sync/reconcile</label>
+              <label style="display:flex; gap:8px; align-items:center;">
+                <input type="checkbox" id="modules-workbench-rollout-sync" checked>
+                <span>Queue sync after preferred change</span>
+              </label>
+            </div>
+          </div>
+        </div>
         <div id="modules-workbench-message" style="margin-top: 12px;"></div>
         <div class="mw-section" style="margin-top: 12px; padding-top: 12px;">
           <h4 style="margin: 0 0 8px;">Локальные проверки</h4>

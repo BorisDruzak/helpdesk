@@ -19,6 +19,10 @@
     const state = {
         initialized: false,
         catalog: [],
+        rolloutSettings: {
+            preferred_version_rollout_mode: "manual",
+            sync_after_preferred_change: true,
+        },
         selectedFamily: null,
         selectedVersion: null,
         currentDraft: null,
@@ -130,6 +134,48 @@
             user_function_body: 'return {"ok": True}',
             reconstruction_strategy: "draft",
         };
+    }
+
+    function rolloutModeLabel(mode) {
+        if (mode === "installed_devices") {
+            return "автообновление существующих установок";
+        }
+        return "только ручной preferred";
+    }
+
+    function rolloutSummaryText(summary) {
+        if (!summary || typeof summary !== "object") {
+            return "";
+        }
+        if (summary.mode !== "installed_devices") {
+            return "Auto-rollout не запускался: режим manual.";
+        }
+        return `Auto-rollout: updated desired state for ${Number(summary.desired_updates || 0)} device(s), sync queued for ${Number(summary.sync_enqueued || 0)}.`;
+    }
+
+    function renderRolloutSettings() {
+        const modeEl = byId("modules-workbench-rollout-mode");
+        const syncEl = byId("modules-workbench-rollout-sync");
+        const summaryEl = byId("modules-workbench-rollout-summary");
+        const noteEl = byId("modules-workbench-rollout-note");
+        const settings = state.rolloutSettings || {
+            preferred_version_rollout_mode: "manual",
+            sync_after_preferred_change: true,
+        };
+        if (modeEl) {
+            modeEl.value = settings.preferred_version_rollout_mode || "manual";
+        }
+        if (syncEl) {
+            syncEl.checked = settings.sync_after_preferred_change !== false;
+        }
+        if (summaryEl) {
+            summaryEl.textContent = rolloutModeLabel(settings.preferred_version_rollout_mode || "manual");
+        }
+        if (noteEl) {
+            noteEl.textContent = settings.preferred_version_rollout_mode === "installed_devices"
+                ? "При смене preferred сервер обновит desired version для устройств, где этот модуль уже установлен или уже desired=installed."
+                : "Смена preferred только меняет приоритетную версию в реестре. Устройства обновятся позже через run_tool/manual install.";
+        }
     }
 
     function createToolTemplate(templateKey) {
@@ -576,6 +622,7 @@
         });
         byId("modules-workbench-duplicate-tool-btn")?.addEventListener("click", () => duplicateCurrentTool());
         byId("modules-workbench-remove-tool-btn")?.addEventListener("click", () => removeCurrentTool());
+        byId("modules-workbench-save-rollout-btn")?.addEventListener("click", async () => saveRolloutSettings());
     }
 
     async function load() {
@@ -594,6 +641,10 @@
                 return;
             }
             state.catalog = data.modules || [];
+            state.rolloutSettings = data.rollout_settings || {
+                preferred_version_rollout_mode: "manual",
+                sync_after_preferred_change: true,
+            };
             if (!state.currentDraft) {
                 state.currentDraft = createEmptyDraft();
             }
@@ -606,6 +657,7 @@
     }
 
     function renderAll() {
+        renderRolloutSettings();
         renderCatalog();
         renderSummary();
         renderTopFields();
@@ -616,6 +668,33 @@
         renderApiPreviewTabs();
         renderApiPreview();
         renderSourceExplorer();
+    }
+
+    async function saveRolloutSettings() {
+        const mode = String(byId("modules-workbench-rollout-mode")?.value || "manual").trim() || "manual";
+        const syncAfterPreferredChange = byId("modules-workbench-rollout-sync")?.checked !== false;
+        try {
+            const response = await fetch("/api/modules/rollout_settings", {
+                method: "PATCH",
+                headers: {
+                    ...getAuthHeaders(),
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    preferred_version_rollout_mode: mode,
+                    sync_after_preferred_change: syncAfterPreferredChange,
+                }),
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== "ok") {
+                throw new Error(data.error || "Не удалось сохранить настройки rollout.");
+            }
+            state.rolloutSettings = data.rollout_settings || state.rolloutSettings;
+            renderRolloutSettings();
+            setMessage("success", "Настройки rollout модулей сохранены.");
+        } catch (error) {
+            setMessage("error", error.message);
+        }
     }
 
     function renderCatalog() {
@@ -1392,7 +1471,12 @@
                 setMessage("error", data.error || "Не удалось сохранить модуль.", (data.preflight_errors || []).map((item) => html(item)).join("<br>"));
                 return;
             }
-            setMessage("success", `Модуль ${data.module_name}/${data.version} сохранён в server registry.`);
+            const rolloutMessage = rolloutSummaryText(data.rollout_summary);
+            setMessage(
+                "success",
+                `Модуль ${data.module_name}/${data.version} сохранён в server registry.`,
+                rolloutMessage ? html(rolloutMessage) : ""
+            );
             await load();
             await refreshOuterModuleInstallViews();
             state.selectedFamily = data.module_name;
@@ -1419,7 +1503,12 @@
                 setMessage("error", data.error || "Не удалось назначить приоритетную версию.");
                 return;
             }
-            setMessage("success", `Приоритетная версия для ${state.selectedFamily} обновлена: ${state.selectedVersion}.`);
+            const rolloutMessage = rolloutSummaryText(data.rollout_summary);
+            setMessage(
+                "success",
+                `Приоритетная версия для ${state.selectedFamily} обновлена: ${state.selectedVersion}.`,
+                rolloutMessage ? html(rolloutMessage) : ""
+            );
             await load();
             await refreshOuterModuleInstallViews();
         } catch (error) {

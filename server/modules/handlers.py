@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from aiohttp import web
 from loguru import logger
+from sqlalchemy import select
 from websocket.protocol import send_ws_command, enqueue_command_async
 from config import AGENT_BUILTIN_MODULES, MODULES_STORAGE_DIR, MAX_MODULE_SIZE, SERVER_PUBLIC_BASE_URL
 from utils.module_storage import save_module_zip_from_stream, save_module_zip_bytes, load_module_zip, stream_module_zip
@@ -28,7 +29,7 @@ from utils.versioning import version_key
 from app.db import get_session
 from app.repos import ModulesRepo, DeviceModulesRepo, ModuleRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from app.db.models import DownloadAudit
+from app.db.models import DeviceDesiredModule, DeviceModule, DownloadAudit
 from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
@@ -190,10 +191,114 @@ async def _get_module_preferred_assignments(session) -> Dict[str, dict]:
     return {item["module_name"]: item for item in assignments}
 
 
+async def _get_module_rollout_settings(session) -> dict:
+    repo = ModuleRolloutRepo(session)
+    return await repo.get_settings()
+
+
+async def _collect_module_rollout_target_device_ids(session, module_name: str) -> list[str]:
+    desired_rows = await session.execute(
+        select(DeviceDesiredModule.device_id).where(
+            DeviceDesiredModule.module_name == module_name,
+            DeviceDesiredModule.state == "installed",
+        )
+    )
+    actual_rows = await session.execute(
+        select(DeviceModule.device_id).where(
+            DeviceModule.module_name == module_name,
+            DeviceModule.installed.is_(True),
+        )
+    )
+    device_ids = {
+        str(device_id).strip()
+        for (device_id,) in desired_rows.all() + actual_rows.all()
+        if isinstance(device_id, str) and device_id.strip()
+    }
+    return sorted(device_ids)
+
+
+async def _apply_module_preferred_rollout(
+    *,
+    session,
+    state,
+    module_name: str,
+    version: str,
+    updated_by: Optional[str],
+    settings: dict,
+) -> dict:
+    mode = str(settings.get("preferred_version_rollout_mode") or "manual").strip().lower()
+    should_sync = bool(settings.get("sync_after_preferred_change", True))
+    if mode != "installed_devices":
+        return {
+            "mode": mode,
+            "should_sync": should_sync,
+            "desired_updates": 0,
+            "sync_enqueued": 0,
+            "device_ids": [],
+        }
+
+    modules_repo = ModulesRepo(session)
+    module = await modules_repo.get_module(module_name, version)
+    if not module:
+        return {
+            "mode": mode,
+            "should_sync": should_sync,
+            "desired_updates": 0,
+            "sync_enqueued": 0,
+            "device_ids": [],
+        }
+
+    device_ids = await _collect_module_rollout_target_device_ids(session, module_name)
+    for device_id in device_ids:
+        await set_desired_installed(
+            device_id=device_id,
+            module_name=module_name,
+            desired_version=version,
+            desired_sha256=module.sha256,
+            reason="preferred_rollout",
+            updated_by=updated_by,
+            session=session,
+        )
+
+    return {
+        "mode": mode,
+        "should_sync": should_sync,
+        "desired_updates": len(device_ids),
+        "sync_enqueued": 0,
+        "device_ids": device_ids,
+    }
+
+
+async def _finalize_module_preferred_rollout(
+    *,
+    state,
+    updated_by: Optional[str],
+    rollout_summary: Optional[dict],
+) -> dict | None:
+    if not isinstance(rollout_summary, dict):
+        return rollout_summary
+    device_ids = list(rollout_summary.get("device_ids") or [])
+    if not rollout_summary.get("should_sync") or state is None or not device_ids:
+        return rollout_summary
+
+    sync_enqueued = 0
+    for device_id in device_ids:
+        await _enqueue_module_followup_sync(
+            state=state,
+            device_id=device_id,
+            actor_role=updated_by or "admin",
+            require_online=False,
+        )
+        sync_enqueued += 1
+    rollout_summary["sync_enqueued"] = sync_enqueued
+    return rollout_summary
+
+
 async def _build_and_store_module_package(
     *,
     auth_context: AuthContext,
     payload: dict,
+    app_state=None,
 ) -> tuple[int, dict]:
     status_code, response_payload, prepared = await _prepare_module_package_payload(payload)
     if prepared is None:
@@ -207,6 +312,7 @@ async def _build_and_store_module_package(
     manifest_summary = prepared["manifest_summary"]
     overwrite = prepared["overwrite"]
     set_preferred = prepared["set_preferred"]
+    rollout_summary = None
 
     async with get_session() as session:
         modules_repo = ModulesRepo(session)
@@ -268,7 +374,21 @@ async def _build_and_store_module_package(
                 version=version_final,
                 updated_by=auth_context.actor_role,
             )
+            rollout_settings = await _get_module_rollout_settings(session)
+            rollout_summary = await _apply_module_preferred_rollout(
+                session=session,
+                state=app_state,
+                module_name=name_final,
+                version=version_final,
+                updated_by=auth_context.actor_role,
+                settings=rollout_settings,
+            )
         await session.commit()
+    rollout_summary = await _finalize_module_preferred_rollout(
+        state=app_state,
+        updated_by=auth_context.actor_role,
+        rollout_summary=rollout_summary,
+    )
 
     return 200, {
         "status": "success",
@@ -284,6 +404,7 @@ async def _build_and_store_module_package(
         "tools_count": len((manifest_json or {}).get("tools") or []),
         "validation_json": validation_json,
         "preferred_version": version_final if set_preferred else None,
+        "rollout_summary": rollout_summary,
     }
 
 
@@ -1687,6 +1808,7 @@ async def handle_list_modules_workbench(request):
             modules_repo = ModulesRepo(session)
             modules = await modules_repo.list_modules(limit=limit)
             preferred_assignments = await _get_module_preferred_assignments(session)
+            rollout_settings = await _get_module_rollout_settings(session)
 
         grouped: Dict[str, list[object]] = {}
         for module in modules:
@@ -1733,6 +1855,7 @@ async def handle_list_modules_workbench(request):
                 "status": "ok",
                 "modules": families,
                 "count": len(families),
+                "rollout_settings": rollout_settings,
             }
         )
     except Exception as e:
@@ -1780,6 +1903,66 @@ async def handle_get_module_workbench_detail(request):
             )
     except Exception as e:
         logger.error(f"Get module workbench detail failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_get_module_rollout_settings(request):
+    """GET /api/modules/rollout_settings."""
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        async with get_session() as session:
+            rollout_settings = await _get_module_rollout_settings(session)
+        return web.json_response({"status": "ok", "rollout_settings": rollout_settings})
+    except Exception as e:
+        logger.error(f"Get module rollout settings failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_patch_module_rollout_settings(request):
+    """PATCH /api/modules/rollout_settings."""
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        if auth_context.actor_role != "admin":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Only admin can change module rollout settings",
+                    "error_code": "FORBIDDEN",
+                },
+                status=403,
+            )
+
+        data = await request.json()
+        mode = data.get("preferred_version_rollout_mode")
+        sync_after_preferred_change = data.get("sync_after_preferred_change")
+        if mode is not None:
+            mode = str(mode or "").strip().lower()
+        if sync_after_preferred_change is not None and not isinstance(sync_after_preferred_change, bool):
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "sync_after_preferred_change must be a boolean",
+                    "error_code": "VALIDATION_ERROR",
+                },
+                status=400,
+            )
+
+        async with get_session() as session:
+            rollout_repo = ModuleRolloutRepo(session)
+            settings = await rollout_repo.set_settings(
+                preferred_version_rollout_mode=mode,
+                sync_after_preferred_change=sync_after_preferred_change,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", "rollout_settings": settings})
+    except Exception as e:
+        logger.error(f"Patch module rollout settings failed: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
@@ -1836,7 +2019,21 @@ async def handle_set_module_preferred_version(request):
                 version=version,
                 updated_by=auth_context.actor_role,
             )
+            rollout_settings = await _get_module_rollout_settings(session)
+            rollout_summary = await _apply_module_preferred_rollout(
+                session=session,
+                state=request.app.get("state"),
+                module_name=module_name,
+                version=version,
+                updated_by=auth_context.actor_role,
+                settings=rollout_settings,
+            )
             await session.commit()
+            rollout_summary = await _finalize_module_preferred_rollout(
+                state=request.app.get("state"),
+                updated_by=auth_context.actor_role,
+                rollout_summary=rollout_summary,
+            )
             return web.json_response(
                 {
                     "status": "ok",
@@ -1844,6 +2041,7 @@ async def handle_set_module_preferred_version(request):
                     "preferred_version": assignment["version"],
                     "updated_at": assignment["updated_at"],
                     "updated_by": assignment["updated_by"],
+                    "rollout_summary": rollout_summary,
                 }
             )
     except Exception as e:
@@ -1863,6 +2061,7 @@ async def handle_save_module_workbench(request):
         status_code, response_payload = await _build_and_store_module_package(
             auth_context=auth_context,
             payload=await request.json(),
+            app_state=request.app.get("state"),
         )
         return web.json_response(response_payload, status=status_code)
     except Exception as e:

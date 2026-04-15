@@ -33,7 +33,7 @@
 |------|------------|
 | `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
 | `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
-| `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation` и device-scoped module lifecycle endpoints |
+| `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation`, module rollout settings `GET/PATCH /api/modules/rollout_settings` и device-scoped module lifecycle endpoints |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
 | `server/runtime_control.py` | Канонический runtime-control слой для `systemctl`/`journalctl`, control-plane state, smoke/status/log filtering и unit-level lifecycle |
 
@@ -115,7 +115,7 @@
 |--------------|------------|
 | `server/tickets/` | handlers, `create_flow.py`, service, assignment_service, sla_service, workflow_service, public_queue_handlers, public_ticket_handlers, admin_config_handlers и др.; `create_flow.py` держит единый DB-first путь создания для `/api/tickets/create`, WS `chat_raise` и legacy `/api/chat_raise`, а `assignment_service.py` и `ticket_events_repo.py` считают состав очереди обязательным для назначения и автоназначения; `handle_ticket_get` поддерживает forward catch-up (`since_event_id`) и reverse pagination (`before_event_id`, `limit`, `has_older`, `next_before_event_id`) для агентского ticket chat; `admin_config_handlers.py` ведёт helpdesk-admin settings API: очереди, состав очередей, routing rules, SLA policies, targets/matrix (GET/PUT), calendars, OLA targets, audit |
 | `server/agents/` | handlers, agent_builds_handlers, service; `handlers.py` также даёт admin-only архивирование устройства с очисткой live runtime-сессии |
-| `server/modules/` | handlers, service, reconcile, verification, `workbench_service.py` для реконструкции editable draft и module-family workbench payload |
+| `server/modules/` | handlers, service, reconcile, verification, `workbench_service.py` для реконструкции editable draft и module-family workbench payload; preferred-version auto-rollout теперь через policy может переводить существующие установки в новый desired state |
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
@@ -161,7 +161,7 @@
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos
-- **модули (install, desired, reconcile, preferred version, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
+- **модули (install, desired, reconcile, preferred version, rollout policy, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
@@ -240,6 +240,6 @@
 
 ## 2026-04-15 Module workbench note
 
-- `server/modules/handlers.py` now exposes `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints.
+- `server/modules/handlers.py` now exposes `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
-- `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, API preview, and archive/source exploration in the admin UI.
+- `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, API preview, archive/source exploration, and rollout-policy controls in the admin UI.
