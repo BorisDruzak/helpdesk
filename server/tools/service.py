@@ -5,10 +5,11 @@
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from loguru import logger
 from .cache import ToolsCache
 from utils.module_manifest import get_module_manifest
+from utils.versioning import version_key
 from config import (
     TOOL_EXECUTION_TIMEOUT,
     ENABLE_DB_PERSISTENCE,
@@ -44,19 +45,79 @@ class ToolService:
         aliases = tool_entry.get("aliases") or []
         return tool_name in aliases
 
-    async def _find_server_module_for_tool(self, session, tool_name: str):
+    @staticmethod
+    def _tool_identifiers(tool_entry: Dict[str, Any]) -> List[str]:
+        identifiers: List[str] = []
+        canonical_name = tool_entry.get("tool") or tool_entry.get("name")
+        if isinstance(canonical_name, str) and canonical_name.strip():
+            identifiers.append(canonical_name.strip())
+        for alias in tool_entry.get("aliases") or []:
+            alias_name = str(alias or "").strip()
+            if alias_name:
+                identifiers.append(alias_name)
+        return list(dict.fromkeys(identifiers))
+
+    @staticmethod
+    def _pick_preferred_module(modules: List[object]):
+        if not modules:
+            return None
+        return max(
+            modules,
+            key=lambda module: (
+                version_key(getattr(module, "version", "")).key,
+                getattr(module, "created_at", None) or 0,
+            ),
+        )
+
+    async def _get_preferred_server_modules(self, session) -> Dict[str, object]:
         try:
             from app.repos import ModulesRepo
         except ImportError:
-            return None
+            return {}
         modules_repo = ModulesRepo(session)
-        modules = await modules_repo.list_modules(limit=500)
+        modules = await modules_repo.list_modules(limit=1000)
+        grouped: Dict[str, List[object]] = {}
         for module in modules:
+            grouped.setdefault(module.module_name, []).append(module)
+        return {
+            module_name: preferred
+            for module_name, preferred in (
+                (module_name, self._pick_preferred_module(items))
+                for module_name, items in grouped.items()
+            )
+            if preferred is not None
+        }
+
+    async def _resolve_preferred_server_module_for_tool(self, session, tool_name: str) -> Dict[str, Any]:
+        preferred_modules = await self._get_preferred_server_modules(session)
+        matches: List[Dict[str, Any]] = []
+        for module in preferred_modules.values():
             manifest = get_module_manifest(module)
             for tool_entry in manifest.get("tools") or []:
                 if self._tool_matches_manifest_entry(tool_entry, tool_name):
-                    return module
-        return None
+                    matches.append(
+                        {
+                            "module": module,
+                            "manifest": manifest,
+                            "tool_entry": tool_entry,
+                        }
+                    )
+        if not matches:
+            return {"status": "missing"}
+        owner_names = {match["module"].module_name for match in matches}
+        if len(owner_names) > 1:
+            owners = sorted(owner_names)
+            return {
+                "status": "conflict",
+                "error": (
+                    f"Tool {tool_name!r} is declared by multiple preferred module packs: "
+                    + ", ".join(owners)
+                ),
+                "owners": owners,
+            }
+        match = matches[0]
+        match["status"] = "ok"
+        return match
     
     async def get_tools_list(self, device_id: str) -> Optional[List[Dict]]:
         """
@@ -154,20 +215,10 @@ class ToolService:
         """
         if not DB_AVAILABLE:
             return []
-        try:
-            from app.repos import ModulesRepo
-        except ImportError:
-            return []
         result: List[Dict] = []
         seen_tool_names: set = set()
         async with get_session() as session:
-            repo = ModulesRepo(session)
-            modules = await repo.list_modules(limit=500)
-            by_module: Dict[str, object] = {}
-            for m in modules:
-                if m.module_name not in by_module:
-                    by_module[m.module_name] = m
-            for m in by_module.values():
+            for m in (await self._get_preferred_server_modules(session)).values():
                 manifest = get_module_manifest(m)
                 tools = manifest.get("tools") or []
                 # Если в manifest нет списка tools (например, модуль залит через upload без tools в manifest),
@@ -228,27 +279,24 @@ class ToolService:
             return None
         if not DB_AVAILABLE:
             return None
-        # Если инструмент уже зарегистрирован в toolset snapshot агента — не переустанавливать.
-        # Переустановка триггерит _rebuild_registry_from_active_modules, что может сломать registry.
         try:
-            from app.repos import ToolsetSnapshotsRepo
-            async with get_session() as session_snap:
-                snap_repo = ToolsetSnapshotsRepo(session_snap)
-                snapshot = await snap_repo.get_latest_snapshot(device_id)
-                if snapshot and snapshot.toolset_json:
-                    known_tools = [t.get("tool") or t.get("name") for t in snapshot.toolset_json.get("tools", [])]
-                    if tool_name in known_tools:
-                        logger.debug(f"[ensure_module] {tool_name!r} уже в toolset snapshot, пропускаем установку")
-                        return None
-        except Exception as snap_e:
-            logger.debug(f"[ensure_module] Не удалось проверить snapshot: {snap_e}")
-        try:
+            from app.repos import DeviceModulesRepo, ToolsetSnapshotsRepo
             from app.repos.devices_repo import DevicesRepo
+            from modules.reconcile import set_desired_installed
         except ImportError:
             return None
+
+        actor_role = "admin"
         async with get_session() as session:
-            module = await self._find_server_module_for_tool(session, tool_name)
-            if not module:
+            resolution = await self._resolve_preferred_server_module_for_tool(session, tool_name)
+            if resolution.get("status") == "conflict":
+                logger.error(f"[ensure_module] {resolution.get('error')}")
+                return {
+                    "status": "error",
+                    "error": resolution.get("error"),
+                    "error_code": "MODULE_TOOL_OWNER_CONFLICT",
+                }
+            if resolution.get("status") != "ok":
                 guessed_module_name = tool_name.split(".", 1)[0] if "." in tool_name else tool_name
                 logger.warning(f"[ensure_module] Tool {tool_name!r} не найден в server module registry")
                 return {
@@ -256,9 +304,12 @@ class ToolService:
                     "error": f"Инструмент {tool_name!r} не установлен на агенте и не найден на сервере. Загрузите модуль {guessed_module_name!r} на сервер или установите его вручную.",
                     "error_code": "MODULE_NOT_ON_SERVER",
                 }
+
+            module = resolution["module"]
+            manifest = resolution["manifest"]
+            tool_entry = resolution["tool_entry"]
             module_name = module.module_name
             version = module.version
-            manifest = get_module_manifest(module)
             mod_platforms = manifest.get("platforms") or ["any"]
             if isinstance(mod_platforms, list) and len(mod_platforms) > 0 and "any" not in [str(p).lower() for p in mod_platforms]:
                 devices_repo = DevicesRepo(session)
@@ -284,6 +335,57 @@ class ToolService:
                         "error": f"Модуль не поддерживается на ОС устройства: device os={device_os!r}, модуль: {allowed}",
                         "error_code": "MODULE_PLATFORM_MISMATCH",
                     }
+
+            snapshot_has_tool = False
+            try:
+                snap_repo = ToolsetSnapshotsRepo(session)
+                snapshot = await snap_repo.get_latest_snapshot(device_id)
+                if snapshot and snapshot.toolset_json:
+                    known_tools = {
+                        t.get("tool") or t.get("name")
+                        for t in snapshot.toolset_json.get("tools", [])
+                        if (t.get("tool") or t.get("name"))
+                    }
+                    snapshot_has_tool = bool(known_tools.intersection(self._tool_identifiers(tool_entry)))
+            except Exception as snap_e:
+                logger.debug(f"[ensure_module] Не удалось проверить snapshot: {snap_e}")
+
+            device_modules_repo = DeviceModulesRepo(session)
+            installed_modules = await device_modules_repo.get_device_modules(device_id, active_only=False)
+            preferred_active = any(
+                item.module_name == module_name and item.version == version and item.installed and item.active
+                for item in installed_modules
+            )
+
+            try:
+                await set_desired_installed(
+                    device_id=device_id,
+                    module_name=module_name,
+                    desired_version=version,
+                    desired_sha256=module.sha256,
+                    reason="run_tool",
+                    updated_by=actor_role,
+                    session=session,
+                )
+                await session.commit()
+            except Exception as desired_e:
+                logger.error(
+                    f"[ensure_module] Failed to persist desired state for "
+                    f"{device_id}:{module_name}@{version}: {desired_e}"
+                )
+                return {
+                    "status": "error",
+                    "error": f"Не удалось зафиксировать desired state для {module_name!r}",
+                    "error_code": "MODULE_DESIRED_STATE_FAILED",
+                }
+
+            if preferred_active and snapshot_has_tool:
+                logger.debug(
+                    f"[ensure_module] {tool_name!r} already resolved to preferred "
+                    f"{module_name}@{version} on {device_id}"
+                )
+                return None
+
             download_url = f"{SERVER_PUBLIC_BASE_URL}/api/modules/{module_name}/{version}/download"
             params_install = {
                 "module_name": module_name,
@@ -293,9 +395,8 @@ class ToolService:
                 "size": module.size,
                 "package_b64": None,
             }
-        # Автоустановка выполняется от имени admin, чтобы политика install_module_package не блокировала
+
         logger.info(f"[ensure_module] Устанавливаем модуль {module_name}@{version} на {device_id} перед run_tool")
-        actor_role = "admin"
         try:
             from websocket.protocol import send_ws_command
             result = await send_ws_command(
@@ -329,25 +430,6 @@ class ToolService:
                 "error": f"Ошибка установки модуля {module_name!r}: {err}",
                 "error_code": payload.get("error_code") or "MODULE_INSTALL_FAILED",
             }
-        try:
-            from modules.reconcile import set_desired_installed
-
-            async with get_session() as session_desired:
-                await set_desired_installed(
-                    device_id=device_id,
-                    module_name=module_name,
-                    desired_version=version,
-                    desired_sha256=module.sha256,
-                    reason="run_tool",
-                    updated_by=actor_role,
-                    session=session_desired,
-                )
-                await session_desired.commit()
-        except Exception as desired_e:
-            logger.warning(
-                f"[ensure_module] Failed to persist desired state for "
-                f"{device_id}:{module_name}@{version}: {desired_e}"
-            )
         logger.info(f"✅ Модуль {module_name}@{version} установлен на {device_id}, продолжаем run_tool")
         return None
     

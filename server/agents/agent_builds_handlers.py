@@ -4,9 +4,7 @@ HTTP handlers for agent remote update (agent builds registry).
 from __future__ import annotations
 
 import hashlib
-import re
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -18,18 +16,14 @@ from app.db import get_session
 from app.db.models import AgentBuildDownloadAudit
 from app.repos import AuthTokensRepo
 from app.repos.agent_builds_repo import AgentBuildsRepo
+from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
+from utils.versioning import compare_versions, version_key
 from websocket.protocol import enqueue_command_async
 from tech.runtime_audit import write_agent_runtime_audit
-
-try:
-    from packaging.version import InvalidVersion, Version as PackagingVersion
-except ImportError:  # pragma: no cover - fallback stays local and simple
-    InvalidVersion = ValueError
-    PackagingVersion = None
 
 # Маппинг ОС (из handshake metadata os_type) в target билда для массового обновления
 OS_TYPE_TO_TARGET = {
@@ -44,18 +38,6 @@ OS_TYPE_TO_TARGET = {
 RELEASE_CHANNELS = {"stable", "release"}
 NON_RELEASE_CHANNELS = {"beta", "alpha", "rc", "dev", "nightly", "preview", "canary"}
 VERSION_PRERELEASE_MARKERS = ("alpha", "beta", "rc", "dev", "preview", "nightly", "canary")
-_SEMVER_RE = re.compile(
-    r"^\s*v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
-    r"(?:[-+](?P<suffix>[0-9A-Za-z.-]+))?\s*$"
-)
-
-
-@dataclass(frozen=True)
-class VersionOrderKey:
-    valid: bool
-    key: tuple
-    normalized: str
-    is_prerelease: bool
 
 
 def _channel_priority(channel: Optional[str]) -> int:
@@ -87,62 +69,9 @@ def _infer_release_channel(version: Optional[str], channel: Optional[str] = None
     return "stable"
 
 
-def _version_key(version: Optional[str]) -> VersionOrderKey:
-    raw = str(version or "").strip()
-    lowered = raw.lower()
-    if PackagingVersion is not None:
-        try:
-            parsed = PackagingVersion(raw)
-            return VersionOrderKey(
-                valid=True,
-                key=(parsed,),
-                normalized=str(parsed),
-                is_prerelease=bool(parsed.is_prerelease or parsed.is_devrelease),
-            )
-        except InvalidVersion:
-            pass
-    match = _SEMVER_RE.match(raw)
-    if match:
-        suffix = match.group("suffix") or ""
-        is_prerelease = bool(suffix and any(marker in suffix.lower() for marker in VERSION_PRERELEASE_MARKERS))
-        suffix_key = (0, suffix.lower()) if is_prerelease else (1, "")
-        key = (
-            int(match.group("major")),
-            int(match.group("minor")),
-            int(match.group("patch")),
-            suffix_key,
-        )
-        return VersionOrderKey(
-            valid=True,
-            key=key,
-            normalized=raw,
-            is_prerelease=is_prerelease,
-        )
-    return VersionOrderKey(
-        valid=False,
-        key=(raw.lower(),),
-        normalized=raw,
-        is_prerelease=("-" in lowered) or any(marker in lowered for marker in VERSION_PRERELEASE_MARKERS),
-    )
-
-
-def _compare_versions(left: Optional[str], right: Optional[str]) -> int:
-    left_key = _version_key(left)
-    right_key = _version_key(right)
-    if left_key.valid and right_key.valid:
-        if left_key.key == right_key.key:
-            return 0
-        return 1 if left_key.key > right_key.key else -1
-    left_norm = left_key.normalized.lower()
-    right_norm = right_key.normalized.lower()
-    if left_norm == right_norm:
-        return 0
-    return 1 if left_norm > right_norm else -1
-
-
 def _is_release_build(*, version: Optional[str], channel: Optional[str]) -> bool:
     inferred_channel = _infer_release_channel(version, channel)
-    version_info = _version_key(version)
+    version_info = version_key(version)
     return inferred_channel == "stable" and not version_info.is_prerelease
 
 
@@ -157,7 +86,7 @@ def _pick_preferred_build(builds: list, *, release_only: bool = False):
     return max(
         candidates,
         key=lambda build: (
-            _version_key(getattr(build, "version", "")).key,
+            version_key(getattr(build, "version", "")).key,
             _channel_priority(getattr(build, "channel", "")),
             getattr(build, "created_at", None) or 0,
         ),
@@ -201,6 +130,53 @@ def _sanitize_update_reason(value: Optional[str]) -> Optional[str]:
     if not text:
         return None
     return text[:500]
+
+
+async def _resolve_assigned_rollout_build(
+    session,
+    *,
+    target: str,
+    builds_repo: Optional[AgentBuildsRepo] = None,
+    rollout_repo: Optional[AgentRolloutRepo] = None,
+):
+    repo = builds_repo or AgentBuildsRepo(session)
+    rollout = rollout_repo or AgentRolloutRepo(session)
+    assignment = await rollout.get_assignment(target)
+    if not assignment:
+        return None, None
+    build = await repo.get_build(
+        target=target,
+        channel=assignment["channel"],
+        version=assignment["version"],
+    )
+    return build, assignment
+
+
+async def _resolve_recommended_build(session, *, target: str):
+    repo = AgentBuildsRepo(session)
+    assigned_build, assignment = await _resolve_assigned_rollout_build(session, target=target, builds_repo=repo)
+    if assigned_build:
+        return assigned_build, "assigned_rollout", assignment
+    builds = await repo.list_builds_for_target(target=target)
+    return _pick_preferred_build(builds, release_only=True), "latest_release_fallback", assignment
+
+
+async def _resolve_requested_build(
+    session,
+    *,
+    target: str,
+    channel: str,
+    version: Optional[str],
+):
+    repo = AgentBuildsRepo(session)
+    if version:
+        build = await repo.get_build(target=target, channel=channel, version=version)
+        return build, "explicit_version"
+    assigned_build, _assignment = await _resolve_assigned_rollout_build(session, target=target, builds_repo=repo)
+    if assigned_build:
+        return assigned_build, "assigned_rollout"
+    build = await repo.get_latest_build(target=target, channel=channel)
+    return build, "channel_latest"
 
 
 async def handle_upload_agent_build(request: web.Request) -> web.Response:
@@ -421,6 +397,133 @@ async def handle_list_agent_builds(request: web.Request) -> web.Response:
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
 
+async def handle_get_agent_rollout_policy(request: web.Request) -> web.Response:
+    """GET /api/agent_updates/rollout_policy."""
+    auth_context: AuthContext = request.get("auth_context")
+    if not auth_context:
+        return web.json_response(
+            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
+            status=401,
+        )
+
+    try:
+        async with get_session() as session:
+            repo = AgentBuildsRepo(session)
+            rollout_repo = AgentRolloutRepo(session)
+            assignments = await rollout_repo.list_assignments()
+            builds = await repo.list_builds(limit=200)
+
+        available_targets = sorted({str(build.target or "").strip() for build in builds if str(build.target or "").strip()})
+        resolved = []
+        for item in assignments:
+            build = next(
+                (
+                    candidate
+                    for candidate in builds
+                    if candidate.target == item["target"]
+                    and candidate.channel == item["channel"]
+                    and candidate.version == item["version"]
+                ),
+                None,
+            )
+            resolved.append(
+                {
+                    "target": item["target"],
+                    "channel": item["channel"],
+                    "version": item["version"],
+                    "updated_at": item.get("updated_at"),
+                    "updated_by": item.get("updated_by"),
+                    "build": _serialize_build_identity(build) if build else None,
+                    "build_missing": build is None,
+                }
+            )
+        return web.json_response(
+            {
+                "status": "ok",
+                "assignments": resolved,
+                "available_targets": available_targets,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to load agent rollout policy: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_patch_agent_rollout_policy(request: web.Request) -> web.Response:
+    """PATCH /api/agent_updates/rollout_policy."""
+    auth_context: AuthContext = request.get("auth_context")
+    if not auth_context:
+        return web.json_response(
+            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
+            status=401,
+        )
+    if auth_context.actor_role != "admin":
+        return web.json_response(
+            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    target = _safe_str(data.get("target"))
+    clear = bool(data.get("clear"))
+    channel = _safe_str(data.get("channel")).lower()
+    version = _safe_str(data.get("version"))
+
+    if not target:
+        return web.json_response({"status": "error", "error": "Missing target"}, status=400)
+
+    try:
+        async with get_session() as session:
+            rollout_repo = AgentRolloutRepo(session)
+            repo = AgentBuildsRepo(session)
+            if clear:
+                await rollout_repo.clear_assignment(target)
+                await session.commit()
+                return web.json_response({"status": "ok", "target": target, "cleared": True})
+
+            if not channel or not version:
+                return web.json_response(
+                    {"status": "error", "error": "channel and version are required unless clear=true"},
+                    status=400,
+                )
+            build = await repo.get_build(target=target, channel=channel, version=version)
+            if not build:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Build not found",
+                        "error_code": "BUILD_NOT_FOUND",
+                        "target": target,
+                        "channel": channel,
+                        "version": version,
+                    },
+                    status=404,
+                )
+            assignment = await rollout_repo.set_assignment(
+                target=target,
+                channel=channel,
+                version=version,
+                updated_by=auth_context.actor_role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "target": target,
+                "assignment": assignment,
+                "build": _serialize_build_identity(build),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to update agent rollout policy: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
 async def handle_download_agent_build(request: web.Request) -> web.Response:
     """
     GET /api/agent_builds/{target}/{channel}/{version}/download
@@ -517,7 +620,6 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
         from app.repos.devices_repo import DevicesRepo
 
         devices_repo = DevicesRepo(session)
-        repo = AgentBuildsRepo(session)
         device = await devices_repo.get_by_device_id(device_id)
         if not device:
             return web.json_response(
@@ -542,24 +644,32 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
                 status=400,
             )
 
-        builds = await repo.list_builds_for_target(target=target)
+        recommended, recommendation_source, assignment = await _resolve_recommended_build(session, target=target)
 
     current_release_channel = _infer_release_channel(current_version) if current_version else "unknown"
     current_is_release = _is_release_build(version=current_version, channel=current_release_channel) if current_version else False
     current_comparison = "unknown"
-    recommended = _pick_preferred_build(builds, release_only=True)
     update_available = False
     recommended_reason = None
 
     if recommended and current_version:
-        compare_result = _compare_versions(recommended.version, current_version)
+        compare_result = compare_versions(recommended.version, current_version)
         if compare_result > 0:
             current_comparison = "newer_release_available"
         elif compare_result < 0:
             current_comparison = "recommended_release_is_older"
         else:
             current_comparison = "same_version"
-        if current_is_release:
+        if recommendation_source == "assigned_rollout":
+            if compare_result > 0:
+                update_available = True
+                recommended_reason = "assigned_rollout_newer"
+            elif not current_is_release and recommended.version != current_version:
+                update_available = True
+                recommended_reason = "assigned_rollout_non_release_current"
+            else:
+                recommended_reason = "assigned_rollout"
+        elif current_is_release:
             if compare_result > 0:
                 update_available = True
                 recommended_reason = "newer_release_available"
@@ -568,7 +678,7 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
             recommended_reason = "non_release_current_version"
     elif recommended and not current_version:
         update_available = True
-        recommended_reason = "current_version_unknown"
+        recommended_reason = "assigned_rollout" if recommendation_source == "assigned_rollout" else "current_version_unknown"
 
     payload = {
         "status": "ok",
@@ -583,6 +693,8 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
         "recommended_reason": recommended_reason,
         "comparison": current_comparison,
         "recommended_build": _serialize_build_identity(recommended) if recommended else None,
+        "recommendation_source": recommendation_source if recommended else "none",
+        "assigned_rollout": assignment,
     }
     return web.json_response(payload)
 
@@ -646,11 +758,12 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
         )
 
     async with get_session() as session:
-        repo = AgentBuildsRepo(session)
-        if version:
-            build = await repo.get_build(target=target, channel=channel, version=version)
-        else:
-            build = await repo.get_latest_build(target=target, channel=channel)
+        build, build_source = await _resolve_requested_build(
+            session,
+            target=target,
+            channel=channel,
+            version=version,
+        )
 
         if not build:
             return web.json_response(
@@ -734,6 +847,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
                 "status": "queued",
             },
             "build": {"target": build.target, "channel": build.channel, "version": build.version},
+            "build_source": build_source,
         },
         status=202,
     )
@@ -872,7 +986,6 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
     audit_records: list[dict[str, str | None]] = []
 
     async with get_session() as session:
-        repo = AgentBuildsRepo(session)
         ui_publisher = state.ui_publisher if hasattr(state, "ui_publisher") else None
         op_service = OperationService(session, publisher=ui_publisher)
 
@@ -906,7 +1019,12 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 })
                 continue
 
-            build = await repo.get_build(target=target, channel=channel, version=version) if version else await repo.get_latest_build(target=target, channel=channel)
+            build, build_source = await _resolve_requested_build(
+                session,
+                target=target,
+                channel=channel,
+                version=version,
+            )
             if not build:
                 errors_result.append({
                     "device_id": device_id,
@@ -960,6 +1078,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 "operation_id": op_id,
                 "target": build.target,
                 "channel": build.channel,
+                "build_source": build_source,
                 "build": {"target": build.target, "channel": build.channel, "version": build.version},
             })
             audit_records.append(

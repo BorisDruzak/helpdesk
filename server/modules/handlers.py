@@ -14,7 +14,7 @@ import tempfile
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 from aiohttp import web
 from loguru import logger
 from websocket.protocol import send_ws_command, enqueue_command_async
@@ -75,6 +75,57 @@ def _extract_active_version_from_observations(observations: dict) -> Optional[st
         if active_name:
             return active_name
     return None
+
+
+def _manifest_tool_identifiers(manifest_json: Optional[dict]) -> Dict[str, str]:
+    identifiers: Dict[str, str] = {}
+    if not isinstance(manifest_json, dict):
+        return identifiers
+    for tool in manifest_json.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        canonical_name = str(tool.get("tool") or tool.get("name") or "").strip()
+        if not canonical_name:
+            continue
+        identifiers.setdefault(canonical_name, canonical_name)
+        for alias in tool.get("aliases") or []:
+            alias_name = str(alias or "").strip()
+            if alias_name:
+                identifiers.setdefault(alias_name, canonical_name)
+    return identifiers
+
+
+async def _find_registry_tool_conflicts(session, manifest_json: Optional[dict]) -> list[dict]:
+    if not isinstance(manifest_json, dict):
+        return []
+    incoming_module_name = str(manifest_json.get("module_name") or "").strip()
+    if not incoming_module_name:
+        return []
+    incoming_identifiers = _manifest_tool_identifiers(manifest_json)
+    if not incoming_identifiers:
+        return []
+
+    modules_repo = ModulesRepo(session)
+    conflicts: list[dict] = []
+    for existing in await modules_repo.list_modules(limit=1000):
+        if existing.module_name == incoming_module_name:
+            continue
+        existing_manifest = get_module_manifest(existing)
+        existing_identifiers = _manifest_tool_identifiers(existing_manifest)
+        for identifier, incoming_owner in incoming_identifiers.items():
+            existing_owner = existing_identifiers.get(identifier)
+            if not existing_owner:
+                continue
+            conflicts.append(
+                {
+                    "identifier": identifier,
+                    "incoming_tool": incoming_owner,
+                    "existing_tool": existing_owner,
+                    "existing_module_name": existing.module_name,
+                    "existing_version": existing.version,
+                }
+            )
+    return conflicts
 
 
 def _module_archive_path(module: object) -> Path:
@@ -875,6 +926,16 @@ async def handle_upload_module(request):
             modules_repo = ModulesRepo(session)
             manifest_name = manifest_json["module_name"]
             manifest_version = manifest_json["module_version"]
+            tool_conflicts = await _find_registry_tool_conflicts(session, manifest_json)
+            if tool_conflicts:
+                return web.json_response({
+                    "status": "error",
+                    "error": "Tool ownership conflict",
+                    "error_code": "MODULE_TOOL_OWNERSHIP_CONFLICT",
+                    "conflicts": tool_conflicts,
+                    "module_name": manifest_name,
+                    "version": manifest_version,
+                }, status=409)
             existing = await modules_repo.get_module(manifest_name, manifest_version)
 
             if existing and not overwrite:
@@ -1097,6 +1158,16 @@ async def handle_create_module(request):
 
         async with get_session() as session:
             modules_repo = ModulesRepo(session)
+            tool_conflicts = await _find_registry_tool_conflicts(session, manifest_json)
+            if tool_conflicts:
+                return web.json_response({
+                    "status": "error",
+                    "error": "Tool ownership conflict",
+                    "error_code": "MODULE_TOOL_OWNERSHIP_CONFLICT",
+                    "conflicts": tool_conflicts,
+                    "module_name": name_final,
+                    "version": version_final,
+                }, status=409)
             existing = await modules_repo.get_module(name_final, version_final)
             if existing and not overwrite:
                 return web.json_response({

@@ -54,6 +54,41 @@ async def test_create_module_returns_manifest_v2(test_client):
 
 
 @pytest.mark.asyncio
+async def test_create_module_rejects_cross_module_tool_ownership_conflict(test_client):
+    first_module = f"owner_{uuid.uuid4().hex[:8]}"
+    second_module = f"conflict_{uuid.uuid4().hex[:8]}"
+
+    first_response = await test_client.post('/api/modules/create', json={
+        'module_name': first_module,
+        'version': '1.0.0',
+        'tool_name': 'dns.resolve',
+        'method_name': 'resolve_dns',
+        'description': 'DNS owner',
+        'user_function_body': 'return {"ok": True}',
+        'platforms': ['win32'],
+        'metadata': {'domain': 'dns', 'platforms': ['win32'], 'idempotent': True},
+    })
+    assert first_response.status == 200, await first_response.text()
+
+    second_response = await test_client.post('/api/modules/create', json={
+        'module_name': second_module,
+        'version': '1.0.0',
+        'tool_name': 'dns.resolve',
+        'method_name': 'resolve_dns',
+        'description': 'Conflicting DNS owner',
+        'user_function_body': 'return {"ok": True}',
+        'platforms': ['win32'],
+        'metadata': {'domain': 'dns', 'platforms': ['win32'], 'idempotent': True},
+    })
+    assert second_response.status == 409, await second_response.text()
+    data = await second_response.json()
+    assert data['status'] == 'error'
+    assert data['error_code'] == 'MODULE_TOOL_OWNERSHIP_CONFLICT'
+    assert data['conflicts']
+    assert data['conflicts'][0]['existing_module_name'] == first_module
+
+
+@pytest.mark.asyncio
 async def test_upload_legacy_manifest_returns_compat(test_client):
     module_name = f"legacy_{uuid.uuid4().hex[:8]}"
     manifest = {

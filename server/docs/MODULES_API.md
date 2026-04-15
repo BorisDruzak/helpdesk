@@ -27,15 +27,15 @@ SERVER_PUBLIC_BASE_URL=http://IP_ИЛИ_ИМЯ_СЕРВЕРА:8666
 При вызове инструмента на агенте (run_tool, в т.ч. через `POST /api/admin/run_tool` или `POST /api/tools/run`) сервер:
 
 1. Определяет, является ли инструмент модульным. В текущем контракте допустимы как canonical semantic ids (`dns.resolve`, `network.ping`, `tcp.connect`), так и legacy aliases вида `module_name.tool_name`.
-2. Проверяет наличие модуля на агенте по таблице `device_modules` (активные модули).
-3. Если модуля на агенте нет — ищет модуль на сервере в реестре `modules` (берётся последняя по дате загрузки версия).
-4. Если модуль есть на сервере — проверяет совместимость ОС устройства с `platforms` из manifest модуля; при несовместимости или неизвестной ОС возвращает ошибку.
-5. Если всё ок — отправляет агенту команду `install_module_package` (через тот же механизм, что и ручная установка), ждёт успешного завершения (таймаут 90 с), затем выполняет запрошенный run_tool.
-6. После успешной auto-install сервер сразу фиксирует desired state как `installed` с reason `run_tool`, чтобы последующая reconcile-цепочка опиралась на server-first intent, а не только на inventory snapshot.
+2. Разрешает owner module только по preferred version каждого module pack. Инвариант: один canonical tool id должен принадлежать ровно одному module pack; конфликт owners блокирует `run_tool` с `MODULE_TOOL_OWNER_CONFLICT`.
+3. Проверяет фактическое состояние на агенте по `device_modules` и `device_toolset_snapshots`: если на устройстве уже активен preferred version и tool виден в snapshot, переустановка не нужна; если версия устарела или tool в snapshot отсутствует, сервер принудительно довозит preferred package.
+4. Перед auto-install сервер обязательно фиксирует desired state как `installed` с reason `run_tool`, чтобы `run_tool` не зависел от ручной install и reconcile всегда видел server-first intent.
+5. Если модуль есть на сервере — проверяет совместимость ОС устройства с `platforms` из manifest модуля; при несовместимости или неизвестной ОС возвращает ошибку.
+6. Если всё ок — отправляет агенту команду `install_module_package` (через тот же механизм, что и ручная установка), ждёт успешного завершения (таймаут 90 с), затем выполняет запрошенный run_tool.
 
 Исключение: builtin-модули агента (`system`, `screen`) не требуют server-side установки. Для `screen.collect` и `screen.record` сервер не должен пытаться скачивать ZIP с `/api/modules/.../download`, даже если в server registry есть старые записи о пакетах.
 
-Если модуля нет на сервере, возвращается ошибка с кодом `MODULE_NOT_ON_SERVER`. Ошибки установки (таймаут, отказ агента) возвращаются с кодами `MODULE_INSTALL_TIMEOUT`, `MODULE_INSTALL_FAILED` и т.п.
+Если модуля нет на сервере, возвращается ошибка с кодом `MODULE_NOT_ON_SERVER`. Ошибки установки (таймаут, отказ агента) возвращаются с кодами `MODULE_INSTALL_TIMEOUT`, `MODULE_INSTALL_FAILED` и т.п. Если сервер не смог записать desired state до auto-install, `run_tool` прерывается с `MODULE_DESIRED_STATE_FAILED`.
 
 ### AuthContext и policy для device-scoped module endpoints
 

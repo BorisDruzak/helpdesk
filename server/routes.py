@@ -37,6 +37,8 @@ from agents.agent_builds_handlers import (
     handle_upload_agent_build,
     handle_list_agent_builds,
     handle_download_agent_build,
+    handle_get_agent_rollout_policy,
+    handle_patch_agent_rollout_policy,
     handle_get_device_update_recommendation,
     handle_update_device_agent,
     handle_bulk_update_agents,
@@ -329,6 +331,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/agent_builds/upload', handle_upload_agent_build),
         web.get('/api/agent_builds', handle_list_agent_builds),
         web.get('/api/agent_builds/{target}/{channel}/{version}/download', handle_download_agent_build),
+        web.get('/api/agent_updates/rollout_policy', handle_get_agent_rollout_policy),
+        web.patch('/api/agent_updates/rollout_policy', handle_patch_agent_rollout_policy),
         web.post('/api/devices/{device_id}/agent/update', handle_update_device_agent),
         web.post('/api/agents/update_bulk', handle_bulk_update_agents),
 

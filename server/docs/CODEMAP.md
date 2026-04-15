@@ -75,7 +75,7 @@
 ### 2.2.1 Tools / единый путь run_tool
 | Файл | Назначение |
 |------|------------|
-| `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, отправка команды агенту |
+| `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, version-aware auto-install/auto-update module pack по preferred version, фиксация desired state перед `run_tool` |
 | `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService`; `/api/tools/run` по умолчанию возвращает async `202 Accepted` + `operation_id` + `poll_url`, sync path допускается только через явный `wait=1` |
 | `server/app/services/operation_service.py` | Ветка consent: `approve_consent()` переводит operation `waiting_consent -> queued` и enqueue `run_tool` в `device_outbox` (исполнение после явного approve) |
 | `server/websocket/protocol.py` | Транспорт: `send_ws_command(..., wait_for_result=...)` enqueue в `device_outbox` + опционально ожидание `command_result` |
@@ -167,7 +167,7 @@
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
-- **обновление агента (builds, upload, update, mass, diagnostics, recommendation)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `POST /api/devices/{id}/agent/update`, `GET /api/devices/{id}/agent/update_recommendation`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
+- **обновление агента (builds, upload, update, mass, diagnostics, recommendation, global rollout policy)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `app/repos/agent_rollout_repo.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `GET/PATCH /api/agent_updates/rollout_policy`, `POST /api/devices/{id}/agent/update`, `GET /api/devices/{id}/agent/update_recommendation`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 

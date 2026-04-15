@@ -107,6 +107,35 @@ Body:
 
 Если `version` не задан — берётся **latest** build для `(target, channel)`.
 
+## Global rollout policy
+
+`GET /api/agent_updates/rollout_policy`
+
+Возвращает текущие server-side назначения preferred build по `target`. Эти назначения используются как единый source of truth для UI, `update_recommendation`, `POST /api/devices/{device_id}/agent/update` без явной версии и `POST /api/agents/update_bulk`, если версия не указана.
+
+`PATCH /api/agent_updates/rollout_policy`
+
+Назначает или снимает preferred build для target.
+
+Пример:
+
+```json
+{
+  "target": "windows_amd64",
+  "channel": "stable",
+  "version": "3.2.0"
+}
+```
+
+Для снятия назначения:
+
+```json
+{
+  "target": "windows_amd64",
+  "clear": true
+}
+```
+
 ## Recommended update for device
 
 `GET /api/devices/{device_id}/agent/update_recommendation?current_version=...&target=...`
@@ -116,6 +145,7 @@ Body:
 Назначение endpoint:
 
 - server-side выбрать рекомендуемый build для устройства без логики выбора в GUI;
+- если для target назначен global rollout, вернуть именно его, а не просто latest stable;
 - предпочесть release build (`stable`) для устройства, которое работает на non-release версии;
 - выбирать кандидата по semver, а не только по `created_at`;
 - вернуть GUI уже готовую интерпретацию текущей и рекомендуемой версии.
@@ -137,6 +167,12 @@ Body:
   "recommended_channel": "stable",
   "recommended_reason": "prefer_release",
   "comparison": "newer_release_available",
+  "recommendation_source": "assigned_rollout",
+  "assigned_rollout": {
+    "target": "windows_amd64",
+    "channel": "stable",
+    "version": "3.2.0"
+  },
   "recommended_build": {
     "target": "windows_amd64",
     "channel": "stable",
@@ -203,7 +239,7 @@ GUI агента использует этот endpoint перед локаль�
 
 - `device_ids`: список `device_id` или `null` — при `null` обновление запускается для **всех онлайн-агентов**.
 - `channel`: канал (по умолчанию `stable`).
-- `version`: версия билда; если не указана — берётся последняя для каждого target.
+- `version`: версия билда; если не указана — сначала берётся назначенный rollout для target, а если его нет, последняя версия по указанному каналу.
 - Target для каждого устройства подбирается **автоматически** по `os_type` из метаданных агента (Windows → `windows_amd64`, Linux → `linux_alt_x86_64` и т.д.).
 
 **Ответ (200):**

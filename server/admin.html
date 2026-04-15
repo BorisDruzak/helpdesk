@@ -1176,6 +1176,27 @@
                 </div>
 
                 <div class="section">
+                    <h2>Глобальный rollout</h2>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Назначенный build становится серверным приоритетом для всех агентов соответствующего target. Если версия не указана в update API, сервер возьмёт этот rollout автоматически.</p>
+                    <div class="agent-updates-form">
+                        <div class="form-group">
+                            <label for="agentUpdatesRolloutBuildSelect">Назначаемый build</label>
+                            <select id="agentUpdatesRolloutBuildSelect">
+                                <option value="">— Загрузите список билдов —</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="agentUpdatesRolloutRefreshBtn" style="margin-top: 6px;">Обновить rollout policy</button>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="agentUpdatesAssignRolloutBtn">Назначить как приоритетный</button>
+                            <button type="button" class="btn btn-secondary" id="agentUpdatesClearRolloutBtn">Снять назначение</button>
+                        </div>
+                    </div>
+                    <div id="agentUpdatesRolloutPolicy" class="result-panel" style="display: block; margin-top: 12px;">
+                        <div class="muted">Назначенные rollout версии ещё не загружены.</div>
+                    </div>
+                </div>
+
+                <div class="section">
                     <h2>Массовое обновление</h2>
                     <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Запуск обновления для нескольких устройств. Target подбирается по ОС устройства (Windows → windows_amd64, Linux → linux_alt_x86_64).</p>
                     <div class="agent-updates-form">
@@ -1202,7 +1223,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="agentUpdatesBulkVersion">Версия (пусто = последняя)</label>
+                            <label for="agentUpdatesBulkVersion">Версия (пусто = назначенный rollout или последняя по каналу)</label>
                             <input type="text" id="agentUpdatesBulkVersion" placeholder="например 3.1.0" style="width: 120px;">
                         </div>
                         <div class="form-group">

@@ -179,6 +179,72 @@ async def test_update_recommendation_uses_semver_not_created_at(test_client):
 
 
 @pytest.mark.asyncio
+async def test_update_recommendation_prefers_assigned_rollout_over_latest_release(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.5")
+    await _insert_build(target="windows_amd64", channel="stable", version="3.2.9")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    resp = await test_client.get(
+        f"/api/devices/{device_id}/agent/update_recommendation",
+        headers=_admin_headers(),
+        params={"current_version": "3.0.0"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert data["recommended_version"] == assigned_version
+    assert data["recommendation_source"] == "assigned_rollout"
+    assert data["assigned_rollout"]["version"] == assigned_version
+    assert data["recommended_reason"] == "assigned_rollout_newer"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_uses_assigned_rollout_when_version_omitted(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="4.0.1")
+    await _insert_build(target="windows_amd64", channel="stable", version="4.0.9")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    async def _noop(**kwargs):
+        return "ok"
+
+    with patch("agents.service.AgentService.get_agents_list", return_value=[{"device_id": device_id, "os_type": "Windows"}]), \
+         patch("agents.agent_builds_handlers.enqueue_command_async", new=_noop):
+        resp = await test_client.post(
+            "/api/agents/update_bulk",
+            headers={**_admin_headers(), "Content-Type": "application/json"},
+            json={
+                "rollout_mode": "bulk",
+                "channel": "stable",
+                "device_ids": [device_id],
+                "require_canary_confirmed": False,
+            },
+        )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert data["operations"][0]["build"]["version"] == assigned_version
+    assert data["operations"][0]["build_source"] == "assigned_rollout"
+
+
+@pytest.mark.asyncio
 async def test_list_agent_builds_returns_archive_metadata_for_authorized_role(test_client):
     version = await _insert_build(target="windows_amd64")
 

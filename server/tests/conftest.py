@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -259,12 +260,7 @@ def ensure_db_ready(request):
     request.getfixturevalue("run_migrations")
 
 
-@pytest.fixture(autouse=True)
-async def cleanup_db(request):
-    """Clean test data before each DB-backed test."""
-    if request.node.get_closest_marker("no_db"):
-        return
-
+async def _cleanup_db_async(request) -> None:
     test_database_url = request.getfixturevalue("test_database_url")
     test_engine = request.getfixturevalue("test_engine")
     verify_test_database(test_database_url)
@@ -279,12 +275,17 @@ async def cleanup_db(request):
                 ticket_events,
                 device_events,
                 device_toolset_snapshots,
+                device_desired_modules,
+                device_modules,
                 device_config,
                 dispatch_ready_devices,
                 devices,
                 agent_tokens,
                 connection_requests,
+                agent_build_download_audit,
+                agent_builds,
                 agent_runtime_audit,
+                server_config,
                 ui_user_audit,
                 ticket_admin_audit,
                 ticket_queue_ola_targets,
@@ -297,9 +298,18 @@ async def cleanup_db(request):
                 ticket_resolution_codes,
                 ticket_queues,
                 ui_users,
+                modules,
                 tickets
             RESTART IDENTITY CASCADE
         """))
+
+
+@pytest.fixture(autouse=True)
+def cleanup_db(request):
+    """Clean test data before each DB-backed test."""
+    if request.node.get_closest_marker("no_db"):
+        return
+    asyncio.run(_cleanup_db_async(request))
 
 
 @pytest.fixture
@@ -327,7 +337,7 @@ def patched_get_session(test_engine):
         yield
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_app(patched_get_session, test_engine, test_database_url: str):
     """Создаёт aiohttp app через create_app() с session-scoped test engine."""
     from auth import middleware as auth_middleware_module
@@ -427,14 +437,14 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
         yield app
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_client(test_app):
     """aiohttp test client для HTTP запросов."""
     async with TestClient(TestServer(test_app)) as client:
         yield client
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_agent(tmp_path, test_client):
     """Запускает WSAgent in-process с временным SQLite."""
     import sys

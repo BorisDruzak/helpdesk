@@ -788,6 +788,7 @@
         let agentUpdateConfirmAction = null;
         let agentUpdatesAgentsById = {};
         let agentUpdatesRecommendationState = null;
+        let agentUpdatesRolloutAssignments = [];
 
         function setPendingAgentUpdateOperation(opId, deviceId) {
             pendingAgentUpdateOperationId = opId;
@@ -5365,6 +5366,9 @@
             const buildSelect = document.getElementById('agentUpdatesBuildSelect');
             const selectionModeSelect = document.getElementById('agentUpdatesSelectionMode');
             const refreshBuildsBtn = document.getElementById('agentUpdatesRefreshBuilds');
+            const refreshRolloutBtn = document.getElementById('agentUpdatesRolloutRefreshBtn');
+            const assignRolloutBtn = document.getElementById('agentUpdatesAssignRolloutBtn');
+            const clearRolloutBtn = document.getElementById('agentUpdatesClearRolloutBtn');
             const triggerBtn = document.getElementById('agentUpdatesTriggerBtn');
             const diagnosticsRefreshBtn = document.getElementById('agentUpdatesDiagnosticsRefreshBtn');
             if (!deviceSelect || !buildSelect) return;
@@ -5372,6 +5376,9 @@
             if (!agentUpdatesTabInitialized) {
                 agentUpdatesTabInitialized = true;
                 if (refreshBuildsBtn) refreshBuildsBtn.addEventListener('click', () => loadAgentUpdatesBuilds(true));
+                if (refreshRolloutBtn) refreshRolloutBtn.addEventListener('click', () => loadAgentRolloutPolicy(true));
+                if (assignRolloutBtn) assignRolloutBtn.addEventListener('click', assignAgentRolloutBuild);
+                if (clearRolloutBtn) clearRolloutBtn.addEventListener('click', clearAgentRolloutBuild);
                 if (triggerBtn) triggerBtn.addEventListener('click', triggerAgentUpdate);
                 if (diagnosticsRefreshBtn) diagnosticsRefreshBtn.addEventListener('click', function() { loadAgentUpdateDiagnostics(true); });
                 if (selectionModeSelect) selectionModeSelect.addEventListener('change', syncAgentUpdateSelectionMode);
@@ -5444,6 +5451,7 @@
             }
 
             loadAgentUpdatesBuilds(false);
+            loadAgentRolloutPolicy(false);
             loadAgentUpdateDiagnostics(false);
             loadAgentUpdateRecommendation(false);
             syncAgentUpdateSelectionMode();
@@ -5459,6 +5467,109 @@
             if (buildSelect) buildSelect.disabled = !manualMode;
             if (refreshBtn) refreshBtn.disabled = !manualMode;
             if (recommendationWrap) recommendationWrap.style.display = 'block';
+        }
+
+        function renderAgentRolloutPolicy(assignments) {
+            const container = document.getElementById('agentUpdatesRolloutPolicy');
+            if (!container) return;
+            if (!assignments || !assignments.length) {
+                container.innerHTML = '<div class="muted">Глобальный rollout пока не назначен.</div>';
+                return;
+            }
+            container.innerHTML = assignments.map(function(item) {
+                const build = item.build || {};
+                const statusBadge = item.build_missing
+                    ? '<span class="badge badge-danger">build missing</span>'
+                    : '<span class="badge badge-success">active</span>';
+                const updatedMeta = item.updated_at
+                    ? new Date(item.updated_at).toLocaleString('ru-RU')
+                    : '—';
+                const buildText = build.target
+                    ? `${escapeHtml(build.target)} / ${escapeHtml(build.channel || '—')} / ${escapeHtml(build.version || '—')}`
+                    : `${escapeHtml(item.target)} / ${escapeHtml(item.channel || '—')} / ${escapeHtml(item.version || '—')}`;
+                return `
+                    <div style="display:grid; gap:6px; padding:10px 0; border-bottom:1px solid var(--border-color);">
+                        <div><strong>${escapeHtml(item.target)}</strong> ${statusBadge}</div>
+                        <div><strong>Приоритетный билд:</strong> ${buildText}</div>
+                        <div class="muted"><strong>Обновлено:</strong> ${escapeHtml(updatedMeta)}${item.updated_by ? ' / ' + escapeHtml(item.updated_by) : ''}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadAgentRolloutPolicy(showLoading) {
+            const container = document.getElementById('agentUpdatesRolloutPolicy');
+            if (!container) return;
+            if (showLoading !== false) {
+                container.innerHTML = '<div class="muted">Загрузка rollout policy...</div>';
+            }
+            try {
+                const response = await fetch('/api/agent_updates/rollout_policy', { headers: getAuthHeaders() });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    container.innerHTML = '<div class="error-message">' + escapeHtml(data.error || 'Не удалось загрузить rollout policy') + '</div>';
+                    return;
+                }
+                agentUpdatesRolloutAssignments = data.assignments || [];
+                renderAgentRolloutPolicy(agentUpdatesRolloutAssignments);
+            } catch (error) {
+                container.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
+            }
+        }
+
+        async function assignAgentRolloutBuild() {
+            const selectEl = document.getElementById('agentUpdatesRolloutBuildSelect');
+            const resultEl = document.getElementById('agentUpdatesRolloutPolicy');
+            const selected = selectEl && selectEl.value ? String(selectEl.value).split('|') : [];
+            if (selected.length !== 3 || !selected[0] || !selected[1] || !selected[2]) {
+                if (resultEl) resultEl.innerHTML = '<div class="error-message">Выберите build для назначения rollout policy.</div>';
+                return;
+            }
+            const body = { target: selected[0], channel: selected[1], version: selected[2] };
+            try {
+                const response = await fetch('/api/agent_updates/rollout_policy', {
+                    method: 'PATCH',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify(body),
+                });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(data.error || 'Не удалось сохранить rollout policy') + '</div>';
+                    return;
+                }
+                await loadAgentRolloutPolicy(false);
+                await loadAgentUpdateRecommendation(true);
+            } catch (error) {
+                if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
+            }
+        }
+
+        async function clearAgentRolloutBuild() {
+            const selectEl = document.getElementById('agentUpdatesRolloutBuildSelect');
+            const resultEl = document.getElementById('agentUpdatesRolloutPolicy');
+            const selected = selectEl && selectEl.value ? String(selectEl.value).split('|') : [];
+            const fallbackAssignment = agentUpdatesRolloutAssignments && agentUpdatesRolloutAssignments.length ? agentUpdatesRolloutAssignments[0] : null;
+            const target = selected[0] || (fallbackAssignment && fallbackAssignment.target) || '';
+            if (!target) {
+                if (resultEl) resultEl.innerHTML = '<div class="error-message">Выберите build или target, для которого нужно снять rollout policy.</div>';
+                return;
+            }
+            try {
+                const response = await fetch('/api/agent_updates/rollout_policy', {
+                    method: 'PATCH',
+                    headers: getAuthHeaders(true),
+                    body: JSON.stringify({ target: target, clear: true }),
+                });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(data.error || 'Не удалось снять rollout policy') + '</div>';
+                    return;
+                }
+                await loadAgentRolloutPolicy(false);
+                await loadAgentUpdateRecommendation(true);
+            } catch (error) {
+                if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
+            }
         }
 
         async function loadAgentUpdateRecommendation(showLoading) {
@@ -5496,10 +5607,14 @@
                 const updateBadge = data.update_available
                     ? '<span class="badge badge-warning">обновление доступно</span>'
                     : '<span class="badge badge-success">актуально</span>';
+                const sourceLabel = data.recommendation_source === 'assigned_rollout'
+                    ? 'глобальный rollout'
+                    : (data.recommendation_source === 'latest_release_fallback' ? 'последний release' : 'нет');
                 recommendationEl.innerHTML = `
                     <div style="display:grid; gap:8px;">
                         <div><strong>Текущая версия:</strong> ${escapeHtml(data.current_version || 'unknown')} ${releaseBadge}</div>
                         <div><strong>Рекомендованный релиз:</strong> ${recommended}</div>
+                        <div><strong>Источник рекомендации:</strong> ${escapeHtml(sourceLabel)}</div>
                         <div><strong>Статус:</strong> ${updateBadge}</div>
                         <div class="muted"><strong>Причина:</strong> ${escapeHtml(data.recommended_reason || data.comparison || 'unknown')}</div>
                     </div>
@@ -5662,6 +5777,7 @@
             const containerEl = document.getElementById('agentUpdatesBuildsContainer');
             const tbodyEl = document.getElementById('agentUpdatesBuildsTableBody');
             const buildSelect = document.getElementById('agentUpdatesBuildSelect');
+            const rolloutBuildSelect = document.getElementById('agentUpdatesRolloutBuildSelect');
             if (!tbodyEl || !buildSelect) return;
 
             if (showLoading !== false && loadingEl) loadingEl.style.display = 'block';
@@ -5681,14 +5797,25 @@
                 const builds = data.builds || [];
                 const valueSep = '|';
 
+                const previousManualValue = buildSelect.value || '';
+                const previousRolloutValue = rolloutBuildSelect && rolloutBuildSelect.value ? rolloutBuildSelect.value : '';
                 buildSelect.innerHTML = '<option value="">— Выберите билд —</option>';
+                if (rolloutBuildSelect) rolloutBuildSelect.innerHTML = '<option value="">— Выберите build для rollout —</option>';
                 builds.forEach(b => {
                     const val = [b.target, b.channel, b.version].join(valueSep);
                     const opt = document.createElement('option');
                     opt.value = val;
                     opt.textContent = `${b.target} / ${b.channel} / ${b.version} / ${b.archive_type || '—'}`;
                     buildSelect.appendChild(opt);
+                    if (rolloutBuildSelect) {
+                        const rolloutOpt = document.createElement('option');
+                        rolloutOpt.value = val;
+                        rolloutOpt.textContent = `${b.target} / ${b.channel} / ${b.version} / ${b.archive_type || '—'}`;
+                        rolloutBuildSelect.appendChild(rolloutOpt);
+                    }
                 });
+                if (previousManualValue) buildSelect.value = previousManualValue;
+                if (rolloutBuildSelect && previousRolloutValue) rolloutBuildSelect.value = previousRolloutValue;
 
                 tbodyEl.innerHTML = builds.map(b => {
                     const sizeKb = b.size != null ? Math.round(b.size / 1024) + ' КБ' : '—';
