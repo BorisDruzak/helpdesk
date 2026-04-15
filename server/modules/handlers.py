@@ -281,16 +281,27 @@ async def _finalize_module_preferred_rollout(
     if not rollout_summary.get("should_sync") or state is None or not device_ids:
         return rollout_summary
 
-    sync_enqueued = 0
+    from modules.reconcile import reconcile_device
+
+    reconcile_enqueued = 0
+    followup_refresh_enqueued = 0
     for device_id in device_ids:
-        await _enqueue_module_followup_sync(
-            state=state,
+        stats = await reconcile_device(
             device_id=device_id,
-            actor_role=updated_by or "admin",
-            require_online=False,
+            state=state,
+            reason="preferred_rollout",
         )
-        sync_enqueued += 1
-    rollout_summary["sync_enqueued"] = sync_enqueued
+        reconcile_enqueued += 1
+        if not stats.get("installs") and not stats.get("removes"):
+            await _enqueue_module_followup_sync(
+                state=state,
+                device_id=device_id,
+                actor_role=updated_by or "admin",
+                require_online=False,
+            )
+            followup_refresh_enqueued += 1
+    rollout_summary["sync_enqueued"] = reconcile_enqueued
+    rollout_summary["refresh_enqueued"] = followup_refresh_enqueued
     return rollout_summary
 
 

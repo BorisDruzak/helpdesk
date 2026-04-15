@@ -150,7 +150,9 @@
         if (summary.mode !== "installed_devices") {
             return "Auto-rollout не запускался: режим manual.";
         }
-        return `Auto-rollout: updated desired state for ${Number(summary.desired_updates || 0)} device(s), sync queued for ${Number(summary.sync_enqueued || 0)}.`;
+        const reconciled = Number(summary.sync_enqueued || 0);
+        const refreshed = Number(summary.refresh_enqueued || 0);
+        return `Auto-rollout: updated desired state for ${Number(summary.desired_updates || 0)} device(s), reconcile triggered for ${reconciled}, refresh queued for ${refreshed}.`;
     }
 
     function renderRolloutSettings() {

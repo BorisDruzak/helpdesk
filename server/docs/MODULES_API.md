@@ -46,7 +46,7 @@ Workbench API:
 
 - `GET /api/modules/workbench` - grouped module families with versions and preferred-version state
 - `GET /api/modules/rollout_settings` - current rollout policy for preferred-version changes
-- `PATCH /api/modules/rollout_settings` - update the rollout policy (`manual` or `installed_devices`, plus follow-up sync toggle)
+- `PATCH /api/modules/rollout_settings` - update the rollout policy (`manual` or `installed_devices`, plus reconcile/refresh toggle)
 - `GET /api/modules/workbench/{module_name}/{version}` - module detail plus editable draft reconstructed from manifest and archive contents
 - `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
 - `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
@@ -68,7 +68,7 @@ The preferred version is stored server-side and is the same source of truth used
 Preferred-version rollout now has an explicit server-side setting:
 
 - `manual` - changing preferred only changes the registry/source-of-truth; devices update later through `run_tool`, manual install, or other runtime touch points
-- `installed_devices` - changing preferred immediately rewrites desired state for devices that already have the module installed (or already have `desired=installed`), then optionally enqueues module sync
+- `installed_devices` - changing preferred immediately rewrites desired state for devices that already have the module installed (or already have `desired=installed`), then triggers reconcile so the target version is actually enqueued to the agent; if reconcile has nothing to do, the server falls back to inventory/toolset refresh
 
 ## Builtin modules
 

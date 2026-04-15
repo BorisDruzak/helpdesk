@@ -563,13 +563,13 @@ async def test_preferred_version_change_auto_rolls_installed_devices_when_enable
         )
         await session.commit()
 
-    sync_calls: list[str] = []
+    reconcile_calls: list[str] = []
 
-    async def fake_followup_sync(*, device_id, **_kwargs):
-        sync_calls.append(device_id)
-        return {"status": "accepted"}
+    async def fake_reconcile_device(device_id, **_kwargs):
+        reconcile_calls.append(device_id)
+        return {"installs": 1, "removes": 0, "skipped": 0}
 
-    with patch("modules.handlers._enqueue_module_followup_sync", new=fake_followup_sync):
+    with patch("modules.reconcile.reconcile_device", new=fake_reconcile_device):
         response = await test_client.patch(
             f"/api/modules/{module_name}/preferred",
             json={"version": "2.0.0"},
@@ -582,7 +582,8 @@ async def test_preferred_version_change_auto_rolls_installed_devices_when_enable
     assert data["rollout_summary"]["mode"] == "installed_devices"
     assert data["rollout_summary"]["desired_updates"] == 1
     assert data["rollout_summary"]["sync_enqueued"] == 1
-    assert sync_calls == [device_id]
+    assert data["rollout_summary"]["refresh_enqueued"] == 0
+    assert reconcile_calls == [device_id]
 
     async with session_maker() as session:
         desired = (
