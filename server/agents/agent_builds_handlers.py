@@ -179,6 +179,45 @@ async def _resolve_requested_build(
     return build, "channel_latest"
 
 
+def _build_identity_tuple(build) -> tuple[str, str, str]:
+    return (
+        str(getattr(build, "target", "") or "").strip(),
+        str(getattr(build, "channel", "") or "").strip().lower(),
+        str(getattr(build, "version", "") or "").strip(),
+    )
+
+
+async def _allow_agent_self_update_for_recommendation(
+    session,
+    *,
+    auth_context: AuthContext,
+    device_id: str,
+    requested_build,
+) -> tuple[bool, Optional[str], Optional[dict]]:
+    if auth_context.actor_role != "agent":
+        return False, None, None
+    if auth_context.actor_id != device_id:
+        return False, "AGENT_DEVICE_SCOPE_MISMATCH", None
+
+    recommended_build, recommendation_source, assignment = await _resolve_recommended_build(
+        session,
+        target=str(getattr(requested_build, "target", "") or "").strip(),
+    )
+    if not recommended_build:
+        return False, "AGENT_SELF_UPDATE_RECOMMENDATION_MISSING", None
+    if _build_identity_tuple(recommended_build) != _build_identity_tuple(requested_build):
+        return False, "AGENT_SELF_UPDATE_NOT_RECOMMENDED", {
+            "recommended_build": _serialize_build_identity(recommended_build),
+            "recommendation_source": recommendation_source,
+            "assigned_rollout": assignment,
+        }
+    return True, None, {
+        "recommended_build": _serialize_build_identity(recommended_build),
+        "recommendation_source": recommendation_source,
+        "assigned_rollout": assignment,
+    }
+
+
 async def handle_upload_agent_build(request: web.Request) -> web.Response:
     """
     POST /api/agent_builds/upload
@@ -748,19 +787,6 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
     if not target:
         return web.json_response({"status": "error", "error": "Missing target"}, status=400)
 
-    # Server-side policy check: update is system_write (admin/system only)
-    policy_engine = PolicyEngine()
-    decision = policy_engine.check_policy(
-        actor_role=auth_context.actor_role,
-        tool_name="update",
-        metadata=ToolMetadata(risk_level="system_write", requires_consent=False, allow_roles=None),
-    )
-    if not decision.allow:
-        return web.json_response(
-            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
-            status=403,
-        )
-
     async with get_session() as session:
         build, build_source = await _resolve_requested_build(
             session,
@@ -780,6 +806,46 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
                 },
                 status=404,
             )
+
+        agent_self_update_allowed = False
+        agent_self_update_context = None
+        if auth_context.actor_role == "agent":
+            agent_self_update_allowed, agent_self_update_error, agent_self_update_context = (
+                await _allow_agent_self_update_for_recommendation(
+                    session,
+                    auth_context=auth_context,
+                    device_id=device_id,
+                    requested_build=build,
+                )
+            )
+            if not agent_self_update_allowed:
+                error_message = "Insufficient permissions"
+                if agent_self_update_error == "AGENT_SELF_UPDATE_NOT_RECOMMENDED":
+                    error_message = "Agent may request only the current recommended build"
+                elif agent_self_update_error == "AGENT_SELF_UPDATE_RECOMMENDATION_MISSING":
+                    error_message = "No recommended build available for self-update"
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": error_message,
+                        "error_code": agent_self_update_error or "FORBIDDEN",
+                        **(agent_self_update_context or {}),
+                    },
+                    status=403,
+                )
+        else:
+            # Server-side policy check: update is system_write (admin/system only)
+            policy_engine = PolicyEngine()
+            decision = policy_engine.check_policy(
+                actor_role=auth_context.actor_role,
+                tool_name="update",
+                metadata=ToolMetadata(risk_level="system_write", requires_consent=False, allow_roles=None),
+            )
+            if not decision.allow:
+                return web.json_response(
+                    {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+                    status=403,
+                )
 
         # Create operation (materialized state)
         op_id = str(uuid.uuid4())
@@ -852,6 +918,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             },
             "build": {"target": build.target, "channel": build.channel, "version": build.version},
             "build_source": build_source,
+            "self_update_authorized": agent_self_update_allowed if auth_context.actor_role == "agent" else False,
         },
         status=202,
     )

@@ -12,6 +12,7 @@ from app.db import get_session
 from app.db.models import AgentBuild, AgentRuntimeAudit, Artifact, Device, DeviceOutbox, Operation, Ticket, TicketEvent
 from app.db.engine import async_sessionmaker
 from app.repos.operations_repo import OperationsRepo
+from auth.context import AuthContext, AuthType
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 from websocket.agent_handshake import handle_handshake
 from websocket.agent_services import CommandResultService
@@ -227,6 +228,85 @@ async def test_update_recommendation_marks_assigned_rollout_older_as_actionable(
     assert data["update_available"] is True
     assert data["comparison"] == "recommended_release_is_older"
     assert data["recommended_reason"] == "assigned_rollout_older"
+
+
+@pytest.mark.asyncio
+async def test_agent_can_request_self_update_only_for_recommended_build(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.4")
+    await _insert_build(target="windows_amd64", channel="stable", version="3.1.5")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    test_client.app["state"].is_agent_online = lambda _device_id: True
+    async def _agent_auth_context(_request):
+        return AuthContext(
+            actor_id=device_id,
+            actor_role="agent",
+            auth_type=AuthType.AGENT_TOKEN,
+            token="test-agent-self-update",
+        )
+
+    with patch("agents.agent_builds_handlers.enqueue_command_async") as mocked_enqueue, \
+         patch("auth.middleware.extract_auth_context", new=_agent_auth_context):
+        async def _noop(**kwargs):
+            return "ok"
+        mocked_enqueue.side_effect = _noop
+        resp = await test_client.post(
+            f"/api/devices/{device_id}/agent/update",
+            headers={"Authorization": "Bearer test-agent-self-update", "Content-Type": "application/json"},
+            json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+        )
+
+    assert resp.status == 202
+    data = await resp.json()
+    assert data["status"] == "accepted"
+    assert data["build"]["version"] == assigned_version
+    assert data["self_update_authorized"] is True
+
+
+@pytest.mark.asyncio
+async def test_agent_self_update_rejects_non_recommended_build(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.4")
+    newer_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.5")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    test_client.app["state"].is_agent_online = lambda _device_id: True
+    async def _agent_auth_context(_request):
+        return AuthContext(
+            actor_id=device_id,
+            actor_role="agent",
+            auth_type=AuthType.AGENT_TOKEN,
+            token="test-agent-self-update",
+        )
+
+    with patch("auth.middleware.extract_auth_context", new=_agent_auth_context):
+        resp = await test_client.post(
+            f"/api/devices/{device_id}/agent/update",
+            headers={"Authorization": "Bearer test-agent-self-update", "Content-Type": "application/json"},
+            json={"target": "windows_amd64", "channel": "stable", "version": newer_version},
+        )
+
+    assert resp.status == 403
+    data = await resp.json()
+    assert data["status"] == "error"
+    assert data["error_code"] == "AGENT_SELF_UPDATE_NOT_RECOMMENDED"
+    assert data["recommended_build"]["version"] == assigned_version
+    assert data["recommendation_source"] == "assigned_rollout"
 
 
 @pytest.mark.asyncio

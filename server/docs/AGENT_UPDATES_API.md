@@ -88,7 +88,10 @@
 
 `POST /api/devices/{device_id}/agent/update`
 
-**Auth:** обязателен. Policy: `system_write` (admin/system).
+**Auth:** обязателен.
+
+- `admin/system` могут инициировать произвольный допустимый build для устройства;
+- агентский токен может инициировать update только для собственного `device_id` и только если запрошенный build совпадает с текущей server recommendation для этого устройства/target.
 
 **Ограничение:** агент должен быть **online** (активное WS-соединение).
 
@@ -106,6 +109,8 @@ Body:
 - `reason` — опциональная человекочитаемая причина запуска; попадает в audit/timeline и в `pending_update.json`.
 
 Если `version` не задан — берётся **latest** build для `(target, channel)`.
+
+Self-update через agent token не является bypass админского rollout: сервер повторно сверяет `(target, channel, version)` с рекомендованным build и отвергает произвольные версии с `error_code = AGENT_SELF_UPDATE_NOT_RECOMMENDED`.
 
 ## Global rollout policy
 
