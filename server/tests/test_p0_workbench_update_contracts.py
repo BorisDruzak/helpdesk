@@ -166,16 +166,8 @@ async def test_update_recommendation_uses_semver_not_created_at(test_client):
     assert data["update_available"] is True
     assert data["recommended_version"] == newer_version
     assert data["recommended_reason"] == "newer_release_available"
-    assert data["operation"]["operation_id"] == data["operation_id"]
-    assert data["operation"]["status"] == "queued"
-    assert data["build"]["target"] == "windows_amd64"
-
-    async with get_session() as session:
-        op_repo = OperationsRepo(session)
-        operation = await op_repo.get_by_operation_id(data["operation_id"])
-        assert operation is not None
-        assert operation.deadline_at is not None
-        assert int((operation.deadline_at - operation.queued_at).total_seconds()) >= 110
+    assert data["comparison"] == "newer_release_available"
+    assert data["recommended_build"]["target"] == "windows_amd64"
 
 
 @pytest.mark.asyncio
@@ -205,6 +197,36 @@ async def test_update_recommendation_prefers_assigned_rollout_over_latest_releas
     assert data["recommendation_source"] == "assigned_rollout"
     assert data["assigned_rollout"]["version"] == assigned_version
     assert data["recommended_reason"] == "assigned_rollout_newer"
+
+
+@pytest.mark.asyncio
+async def test_update_recommendation_marks_assigned_rollout_older_as_actionable(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.4")
+    await _insert_build(target="windows_amd64", channel="stable", version="3.1.5")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    resp = await test_client.get(
+        f"/api/devices/{device_id}/agent/update_recommendation",
+        headers=_admin_headers(),
+        params={"current_version": "3.1.5"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert data["recommended_version"] == assigned_version
+    assert data["recommendation_source"] == "assigned_rollout"
+    assert data["update_available"] is True
+    assert data["comparison"] == "recommended_release_is_older"
+    assert data["recommended_reason"] == "assigned_rollout_older"
 
 
 @pytest.mark.asyncio

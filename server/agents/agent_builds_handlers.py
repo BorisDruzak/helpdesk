@@ -654,6 +654,7 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
 
     if recommended and current_version:
         compare_result = compare_versions(recommended.version, current_version)
+        version_mismatch = recommended.version != current_version
         if compare_result > 0:
             current_comparison = "newer_release_available"
         elif compare_result < 0:
@@ -664,7 +665,10 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
             if compare_result > 0:
                 update_available = True
                 recommended_reason = "assigned_rollout_newer"
-            elif not current_is_release and recommended.version != current_version:
+            elif compare_result < 0:
+                update_available = True
+                recommended_reason = "assigned_rollout_older"
+            elif not current_is_release and version_mismatch:
                 update_available = True
                 recommended_reason = "assigned_rollout_non_release_current"
             else:
@@ -673,7 +677,7 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
             if compare_result > 0:
                 update_available = True
                 recommended_reason = "newer_release_available"
-        elif recommended.version != current_version:
+        elif version_mismatch:
             update_available = True
             recommended_reason = "non_release_current_version"
     elif recommended and not current_version:

@@ -5619,19 +5619,24 @@
                 const recommended = data.recommended_build
                     ? `${escapeHtml(data.recommended_build.target || '—')} / ${escapeHtml(data.recommended_build.channel || '—')} / ${escapeHtml(data.recommended_build.version || '—')}`
                     : 'нет release build';
-                const updateBadge = data.update_available
-                    ? '<span class="badge badge-warning">обновление доступно</span>'
-                    : '<span class="badge badge-success">актуально</span>';
+                let updateBadge = '<span class="badge badge-success">актуально</span>';
+                if (data.update_available && data.comparison === 'recommended_release_is_older') {
+                    updateBadge = '<span class="badge badge-warning">требуется rollback</span>';
+                } else if (data.update_available) {
+                    updateBadge = '<span class="badge badge-warning">требуется sync</span>';
+                }
                 const sourceLabel = data.recommendation_source === 'assigned_rollout'
-                    ? 'глобальный rollout'
+                    ? 'server rollout'
                     : (data.recommendation_source === 'latest_release_fallback' ? 'последний release' : 'нет');
+                const comparisonLabel = data.comparison || 'unknown';
                 recommendationEl.innerHTML = `
                     <div style="display:grid; gap:8px;">
                         <div><strong>Текущая версия:</strong> ${escapeHtml(data.current_version || 'unknown')} ${releaseBadge}</div>
                         <div><strong>Рекомендованный релиз:</strong> ${recommended}</div>
                         <div><strong>Источник рекомендации:</strong> ${escapeHtml(sourceLabel)}</div>
                         <div><strong>Статус:</strong> ${updateBadge}</div>
-                        <div class="muted"><strong>Причина:</strong> ${escapeHtml(data.recommended_reason || data.comparison || 'unknown')}</div>
+                        <div><strong>Сравнение:</strong> <span class="muted">${escapeHtml(comparisonLabel)}</span></div>
+                        <div class="muted"><strong>Причина:</strong> ${escapeHtml(data.recommended_reason || comparisonLabel)}</div>
                     </div>
                 `;
             } catch (error) {
@@ -5892,7 +5897,12 @@
 
             if (errorEl) errorEl.style.display = 'none';
             const selectedDeviceLabel = deviceSelect.options[deviceSelect.selectedIndex] ? deviceSelect.options[deviceSelect.selectedIndex].textContent : deviceId;
-            const modeLabel = selectionMode === 'manual_build' ? 'ручной build' : 'рекомендованный release build';
+            const isRollback = selectionMode !== 'manual_build'
+                && agentUpdatesRecommendationState
+                && agentUpdatesRecommendationState.comparison === 'recommended_release_is_older';
+            const modeLabel = selectionMode === 'manual_build'
+                ? 'ручной build'
+                : (isRollback ? 'server rollout (rollback)' : 'server rollout');
             const confirmBody = 'Устройство: ' + selectedDeviceLabel + '. Режим: ' + modeLabel + '. Билд: ' + target + ' / ' + channel + ' / ' + version + '. После подтверждения агент скачает архив, завершится и launcher применит обновление.';
             if (openAgentUpdateConfirmModal({
                 title: 'Подтвердите обновление агента',

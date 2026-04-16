@@ -146,6 +146,7 @@ Body:
 
 - server-side выбрать рекомендуемый build для устройства без логики выбора в GUI;
 - если для target назначен global rollout, вернуть именно его, а не просто latest stable;
+- если assigned rollout не совпадает с текущей версией агента, считать это actionable sync even when rollout is older than current version;
 - предпочесть release build (`stable`) для устройства, которое работает на non-release версии;
 - выбирать кандидата по semver, а не только по `created_at`;
 - вернуть GUI уже готовую интерпретацию текущей и рекомендуемой версии.
@@ -188,6 +189,19 @@ Body:
 - `recommended_release_is_older`
 - `same_version`
 - `unknown`
+
+Если `recommendation_source == "assigned_rollout"` и `recommended_version != current_version`, сервер обязан вернуть `update_available: true` в обе стороны:
+
+- upgrade к более новой rollout-версии;
+- controlled rollback к более старой rollout-версии.
+
+Типовые `recommended_reason`:
+
+- `assigned_rollout_newer`
+- `assigned_rollout_older`
+- `assigned_rollout_non_release_current`
+- `newer_release_available`
+- `non_release_current_version`
 
 GUI агента использует этот endpoint перед локальным `POST /ui/agent/update`, а сам trigger update по-прежнему делает обычный `POST /api/devices/{device_id}/agent/update` с выбранным сервером build.
 
