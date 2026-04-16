@@ -860,6 +860,9 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             trace_id=trace_id,
             tool_name="update",
         )
+        # Commit before enqueue_command_async(): it opens its own DB session and must
+        # observe this pre-created agent_update operation instead of racing on a duplicate insert.
+        await session.commit()
 
         download_url = (
             f"{config.SERVER_PUBLIC_BASE_URL}/api/agent_builds/{build.target}/{build.channel}/{build.version}/download"
@@ -888,8 +891,6 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             trace_id=trace_id,
             operation_id=op_id,
         )
-
-        await session.commit()
 
     await write_agent_runtime_audit(
         device_id=device_id,
@@ -1115,6 +1116,9 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 trace_id=trace_id,
                 tool_name="update",
             )
+            # enqueue_command_async() uses a separate session; publish the materialized
+            # agent_update operation first to avoid a duplicate-operation transaction wait.
+            await session.commit()
 
             download_url = (
                 f"{config.SERVER_PUBLIC_BASE_URL}/api/agent_builds/{build.target}/{build.channel}/{build.version}/download"

@@ -122,6 +122,31 @@ async def test_single_update_response_has_operation_object(test_client):
 
 
 @pytest.mark.asyncio
+async def test_single_update_endpoint_commits_precreated_operation_before_enqueue(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows")
+    version = await _insert_build(target="windows_amd64")
+
+    test_client.app["state"].is_agent_online = lambda _device_id: True
+    test_client.app["state"].connected_agents[device_id] = {
+        "ws": SimpleNamespace(),
+        "metadata": {"device_id": device_id},
+    }
+
+    resp = await test_client.post(
+        f"/api/devices/{device_id}/agent/update",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": version},
+    )
+
+    assert resp.status == 202
+    data = await resp.json()
+    assert data["status"] == "accepted"
+    assert data["operation"]["operation_id"] == data["operation_id"]
+    assert data["build"]["version"] == version
+
+
+@pytest.mark.asyncio
 async def test_update_recommendation_prefers_stable_for_non_release_current_version(test_client):
     device_id = str(uuid.uuid4())
     await _insert_device(device_id, os_name="Windows")
