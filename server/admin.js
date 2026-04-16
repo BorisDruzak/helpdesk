@@ -2199,6 +2199,38 @@
         // ============================================
         // Tab Management
         // ============================================
+
+        const SIDEBAR_COLLAPSE_STORAGE_KEY = 'pc_client_admin_sidebar_collapsed';
+
+        function applySidebarCollapsedState(collapsed) {
+            const appLayout = document.querySelector('.app-layout');
+            const toggleBtn = document.getElementById('sidebarCollapseBtn');
+            if (!appLayout) return;
+            appLayout.classList.toggle('is-sidebar-collapsed', Boolean(collapsed));
+            if (toggleBtn) {
+                toggleBtn.setAttribute('aria-label', collapsed ? 'Развернуть боковое меню' : 'Свернуть боковое меню');
+                toggleBtn.setAttribute('title', collapsed ? 'Развернуть боковое меню' : 'Свернуть боковое меню');
+            }
+        }
+
+        function initSidebarCollapse() {
+            const toggleBtn = document.getElementById('sidebarCollapseBtn');
+            if (!toggleBtn || toggleBtn.dataset.bound === '1') return;
+            toggleBtn.dataset.bound = '1';
+            const initialCollapsed = window.localStorage?.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) === '1';
+            applySidebarCollapsedState(initialCollapsed);
+            toggleBtn.addEventListener('click', function() {
+                const appLayout = document.querySelector('.app-layout');
+                if (!appLayout) return;
+                const nextCollapsed = !appLayout.classList.contains('is-sidebar-collapsed');
+                applySidebarCollapsedState(nextCollapsed);
+                try {
+                    window.localStorage?.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, nextCollapsed ? '1' : '0');
+                } catch (error) {
+                    console.warn('sidebar collapsed state persistence failed', error);
+                }
+            });
+        }
         
         // Tab switching functionality
         document.addEventListener('DOMContentLoaded', function() {
@@ -2210,6 +2242,7 @@
                     switchTab(tabName);
                 });
             });
+            initSidebarCollapse();
             initWorkbenchTab();
             initTicketFormsBuilderTab();
             initSettingsTab();

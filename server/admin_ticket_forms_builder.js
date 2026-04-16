@@ -194,12 +194,42 @@
         return (form.fields || []).find((field) => field.key === state.draftFieldKey) || null;
     }
 
+    function activeTarget() {
+        return state.currentView === "create" ? "draft" : "edit";
+    }
+
+    function activeFormForView() {
+        if (state.currentView === "create") {
+            return getDraftForm();
+        }
+        if (state.currentView === "edit") {
+            return getSelectedForm();
+        }
+        return null;
+    }
+
+    function activeFieldForView() {
+        if (state.currentView === "create") {
+            return getDraftField();
+        }
+        if (state.currentView === "edit") {
+            return getSelectedField();
+        }
+        return null;
+    }
+
     function syncPackMetaFromInputs() {
         if (!state.pack) {
             return;
         }
-        state.pack.title = String(byId("ticketFormsPackTitle")?.value || "").trim() || "Каталог заявок";
-        state.pack.description = String(byId("ticketFormsPackDescription")?.value || "").trim();
+        const titleInput = byId("ticketFormsPackTitle");
+        const descriptionInput = byId("ticketFormsPackDescription");
+        if (titleInput) {
+            state.pack.title = String(titleInput.value || "").trim() || "Каталог заявок";
+        }
+        if (descriptionInput) {
+            state.pack.description = String(descriptionInput.value || "").trim();
+        }
     }
 
     function uniqueKey(existingKeys, seed) {
@@ -339,11 +369,13 @@
         if (!state.pack) {
             return;
         }
-        if (byId("ticketFormsPackTitle")) {
-            byId("ticketFormsPackTitle").value = state.pack.title || "";
+        const titleInput = byId("ticketFormsPackTitle");
+        const descriptionInput = byId("ticketFormsPackDescription");
+        if (titleInput) {
+            titleInput.value = state.pack.title || "";
         }
-        if (byId("ticketFormsPackDescription")) {
-            byId("ticketFormsPackDescription").value = state.pack.description || "";
+        if (descriptionInput) {
+            descriptionInput.value = state.pack.description || "";
         }
     }
 
@@ -658,61 +690,178 @@
     }
 
     function renderViewButtons() {
-        document.querySelectorAll("[data-view]").forEach((button) => {
-            button.classList.toggle("is-active", button.getAttribute("data-view") === state.currentView);
-        });
-        VIEW_MODES.forEach((view) => {
-            const node = byId(`ticketFormsView${view.charAt(0).toUpperCase()}${view.slice(1)}`);
-            if (node) {
-                node.hidden = view !== state.currentView;
-            }
-        });
+        return null;
     }
 
-    function renderCatalogView() {
-        const node = byId("ticketFormsViewCatalog");
+    function buildFormListCards(selectedKey) {
+        const forms = packForms();
+        if (!forms.length) {
+            return `
+                <div class="tfb-empty">
+                    Форм пока нет. Создайте первую форму и сразу начните заполнять её поля.
+                </div>
+            `;
+        }
+        return forms.map((form) => {
+            const summary = formSummary(form);
+            const active = form.key === selectedKey;
+            return `
+                <button
+                    type="button"
+                    class="tfb-form-card${active ? " is-active" : ""}"
+                    data-action="open-edit-form"
+                    data-form-key="${html(form.key)}"
+                >
+                    <div class="tfb-section-head">
+                        <div>
+                            <strong>${html(form.title || form.key)}</strong>
+                            <div class="tfb-subtle">${html(form.key)} · ${summary.fieldsCount} полей</div>
+                        </div>
+                        <span class="tfb-chip${summary.conditionalCount ? " is-warning" : ""}">${summary.requiredCount} обязательных</span>
+                    </div>
+                    <div class="tfb-subtle" style="margin-top: 8px;">${html(form.description || "Без описания формы")}</div>
+                </button>
+            `;
+        }).join("");
+    }
+
+    function renderNavigator() {
+        const node = byId("ticketFormsNavigator");
         if (!node || !state.pack) {
             return;
         }
         const forms = packForms();
-        const selectedForm = getSelectedForm() || forms[0] || null;
-        const packPreview = JSON.stringify(state.pack, null, 2);
-        const selectedSummary = selectedForm ? formSummary(selectedForm) : { fieldsCount: 0, requiredCount: 0, conditionalCount: 0 };
         const dirty = hasUnsavedChanges();
+        if (state.currentView === "catalog") {
+            node.innerHTML = `
+                <div class="tfb-card">
+                    <div class="tfb-section-head">
+                        <div>
+                            <h3>Все формы</h3>
+                            <div class="tfb-subtle">Нажмите на форму, чтобы сразу открыть её поля и параметры без лишних кнопок.</div>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="open-create">Новая форма</button>
+                    </div>
+                    <div class="tfb-summary-grid" style="margin-top: 14px;">
+                        <div class="tfb-summary-item">
+                            <label>Форм</label>
+                            <strong>${forms.length}</strong>
+                        </div>
+                        <div class="tfb-summary-item">
+                            <label>Сохранение</label>
+                            <strong>${dirty ? "есть изменения" : "всё сохранено"}</strong>
+                        </div>
+                        <div class="tfb-summary-item">
+                            <label>Каталог</label>
+                            <strong>один рабочий</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="tfb-side-card" style="min-height: 0;">
+                    <div class="tfb-section-head">
+                        <div>
+                            <h3 style="margin: 0;">Список форм</h3>
+                            <div class="tfb-subtle">Левая колонка прокручивается отдельно, поэтому рабочая область не прыгает по высоте.</div>
+                        </div>
+                    </div>
+                    <div class="tfb-scroll-stack" style="margin-top: 12px;">
+                        ${buildFormListCards(state.selectedFormKey)}
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        const form = activeFormForView();
+        if (!form) {
+            node.innerHTML = `
+                <div class="tfb-card">
+                    <div class="tfb-inline-note">
+                        Вернитесь ко всем формам или создайте новую форму, чтобы продолжить работу.
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        const target = activeTarget();
+        const selectedFieldKey = target === "draft" ? state.draftFieldKey : state.selectedFieldKey;
+        const summary = formSummary(form);
         node.innerHTML = `
-            <div class="tfb-summary-grid">
-                <div class="tfb-summary-item">
-                    <label>Форм в каталоге</label>
-                    <strong>${forms.length}</strong>
+            <div class="tfb-card">
+                <div class="tfb-header-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="open-forms-catalog">Все формы</button>
+                    ${state.currentView === "edit"
+                        ? '<button type="button" class="btn btn-secondary btn-sm" data-action="open-create">Новая форма</button>'
+                        : '<button type="button" class="btn btn-secondary btn-sm" data-action="reset-draft-form">Сбросить черновик</button>'}
                 </div>
-                <div class="tfb-summary-item">
-                    <label>Сохранение</label>
-                    <strong>${dirty ? "есть несохранённые изменения" : "всё сохранено"}</strong>
+                <div style="margin-top: 12px;">
+                    <h3 style="margin: 0 0 6px;">${html(form?.title || "Новая форма")}</h3>
+                    <div class="tfb-subtle">${html(form?.key || "Ключ формы ещё не заполнен")}</div>
                 </div>
-                <div class="tfb-summary-item">
-                    <label>Активная форма</label>
-                    <strong>${html(selectedForm?.title || "Форма не выбрана")}</strong>
+                <div class="tfb-preview-tags" style="margin-top: 12px;">
+                    <span class="tfb-chip is-info">${state.currentView === "create" ? "Создание" : "Редактирование"}</span>
+                    <span class="tfb-chip">${summary.fieldsCount} полей</span>
+                    <span class="tfb-chip is-accent">${summary.requiredCount} обязательных</span>
+                </div>
+                <div class="tfb-inline-note" style="margin-top: 12px;">
+                    После выбора формы слева показываются её поля. Нажмите на поле, и его параметры откроются справа.
                 </div>
             </div>
 
-            <div class="tfb-doc-card" style="margin-top: 14px;">
-                <h4>Как работать с каталогом</h4>
-                <ul class="tfb-doc-list">
-                    <li>Используйте «Создать форму» для новой заявки, а не меняйте каталог raw JSON-ом.</li>
-                    <li>Редактирование существующей формы выполняйте в отдельном режиме, чтобы не спутать создание и поддержку.</li>
-                    <li>Когда структура готова, нажмите «Сохранить изменения», и сервер сам сделает каталог активным.</li>
-                </ul>
+            <div class="tfb-side-card" style="min-height: 0;">
+                <div class="tfb-section-head">
+                    <div>
+                        <h3 style="margin: 0;">Поля формы</h3>
+                        <div class="tfb-subtle">Добавляйте поле через раскрывающийся список, потом сразу редактируйте его параметры справа.</div>
+                    </div>
+                </div>
+                <details class="tfb-add-menu">
+                    <summary>Добавить поле</summary>
+                    <div class="tfb-add-menu-grid">
+                        ${FIELD_TYPES.map((item) => `
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                data-action="add-current-field"
+                                data-field-type="${html(item.value)}"
+                            >
+                                ${html(item.label)}
+                            </button>
+                        `).join("")}
+                    </div>
+                </details>
+                <div class="tfb-scroll-stack" style="margin-top: 12px;">
+                    ${buildFieldListMarkup(form, target, selectedFieldKey)}
+                </div>
             </div>
+        `;
+    }
 
-            ${selectedForm ? `
-                <div class="tfb-review-layout" style="margin-top: 14px;">
+    function renderPrimaryPanel() {
+        const node = byId("ticketFormsPrimaryPanel");
+        if (!node || !state.pack) {
+            return;
+        }
+        if (state.currentView === "catalog") {
+            const selectedForm = getSelectedForm() || packForms()[0] || null;
+            const selectedSummary = selectedForm ? formSummary(selectedForm) : { fieldsCount: 0, requiredCount: 0, conditionalCount: 0 };
+            node.innerHTML = `
+                <div class="tfb-doc-card">
+                    <h3>Как теперь устроен экран</h3>
+                    <ul class="tfb-doc-list">
+                        <li>В системе один рабочий каталог, поэтому основной сценарий строится вокруг форм, а не вокруг настроек каталога.</li>
+                        <li>Список форм и рабочая область живут в одном окне и имеют согласованную высоту.</li>
+                        <li>Из списка форм вы сразу проваливаетесь в поля и параметры, без кнопок «выбрать» и «редактировать».</li>
+                    </ul>
+                </div>
+                ${selectedForm ? `
                     <div class="tfb-preview-card">
                         <div class="tfb-section-head">
                             <div>
-                                <h4 style="margin: 0;">Как выглядит выбранная форма</h4>
-                                <div class="tfb-subtle">${html(selectedForm.description || "Описание формы не заполнено.")}</div>
+                                <h3>Выбранная форма</h3>
+                                <div class="tfb-subtle">${html(selectedForm.description || "Описание формы пока не заполнено.")}</div>
                             </div>
-                            <div class="tfb-inline-actions">
+                            <div class="tfb-preview-tags">
                                 <span class="tfb-chip">${selectedSummary.fieldsCount} полей</span>
                                 <span class="tfb-chip is-accent">${selectedSummary.requiredCount} обязательных</span>
                                 ${selectedSummary.conditionalCount ? `<span class="tfb-chip is-warning">${selectedSummary.conditionalCount} по условию</span>` : ""}
@@ -721,305 +870,222 @@
                         <div class="tfb-grid-2" style="margin-top: 14px;">
                             ${buildPreviewFields(selectedForm)}
                         </div>
-                    </div>
-                    <div class="tfb-side-card">
-                        <label>Быстрые действия</label>
-                        <div class="tfb-inline-actions" style="margin-top: 8px;">
-                            <button type="button" class="btn btn-primary btn-sm" data-action="open-edit-form" data-form-key="${html(selectedForm.key)}">Редактировать форму</button>
-                            <button type="button" class="btn btn-secondary btn-sm" data-action="open-create">Создать ещё одну</button>
-                        </div>
-                        <div class="tfb-inline-note" style="margin-top: 12px;">
-                            Любое изменение формы сначала хранится на текущей странице. После кнопки сохранения сервер сразу выпускает новую активную редакцию каталога.
+                        <div class="tfb-header-actions" style="margin-top: 14px;">
+                            <button type="button" class="btn btn-primary btn-sm" data-action="open-edit-form" data-form-key="${html(selectedForm.key)}">Открыть форму</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-action="open-create">Создать новую форму</button>
                         </div>
                     </div>
-                </div>
-            ` : `
-                <div class="tfb-empty" style="margin-top: 14px;">
-                    В каталоге пока нет форм. Начните с пошагового сценария создания.
-                </div>
-            `}
-
-            <details class="tfb-advanced" style="margin-top: 14px;">
-                <summary>JSON preview каталога</summary>
-                <pre class="tfb-code">${html(packPreview)}</pre>
-            </details>
-        `;
-    }
-
-    function renderCreateView() {
-        const node = byId("ticketFormsViewCreate");
-        if (!node || !state.pack) {
-            return;
-        }
-        const draft = getDraftForm();
-        const draftField = getDraftField();
-        const issues = formIssues(draft, { existingForms: packForms() });
-        const summary = formSummary(draft);
-        node.innerHTML = `
-            <div class="tfb-editor-layout">
-                <aside class="tfb-side-card">
-                    <div class="tfb-section-head">
-                        <div>
-                            <h4 style="margin: 0;">Создание формы</h4>
-                            <div class="tfb-subtle">Новый тип заявки собирается отдельно от редактора уже существующих форм.</div>
-                        </div>
-                        <span class="tfb-chip is-accent">Шаг ${state.wizardStep}</span>
+                ` : `
+                    <div class="tfb-empty">
+                        Каталог пуст. Создайте первую форму, и она сразу откроется в рабочей области.
                     </div>
-                    <div id="ticketFormsCreateStepper" class="tfb-stepper" style="margin-top: 14px;">
-                        ${[
-                            { id: 1, title: "Основа формы", note: "Название и ключ" },
-                            { id: 2, title: "Поля", note: "Состав и обязательность" },
-                            { id: 3, title: "Проверка", note: "Сводка и добавление в каталог" },
-                        ].map((step) => `
-                            <button type="button" class="tfb-stepper-btn ${step.id === state.wizardStep ? "is-active" : ""}" data-action="set-wizard-step" data-step="${step.id}">
-                                <strong>Шаг ${step.id}. ${html(step.title)}</strong>
-                                <span class="tfb-subtle">${html(step.note)}</span>
-                            </button>
-                        `).join("")}
-                    </div>
-                    <div class="tfb-side-card" style="margin-top: 14px;">
-                        <label>Сводка черновика</label>
-                        <strong>${html(draft.title || "Новая форма")}</strong>
-                        <div class="tfb-subtle" style="margin-top: 8px;">${html(draft.key || "Ключ не заполнен")}</div>
-                        <div class="tfb-preview-tags" style="margin-top: 10px;">
-                            <span class="tfb-chip">${summary.fieldsCount} полей</span>
-                            <span class="tfb-chip is-accent">${summary.requiredCount} обязательных</span>
-                            ${summary.conditionalCount ? `<span class="tfb-chip is-warning">${summary.conditionalCount} по условию</span>` : ""}
-                        </div>
-                    </div>
-                    <div class="tfb-inline-note" style="margin-top: 14px;">
-                        После шага проверки форма попадает в текущий каталог. Затем останется один шаг: сохранить изменения, чтобы сервер сразу сделал их активными.
-                    </div>
-                    <div class="tfb-inline-actions" style="margin-top: 14px;">
-                        <button type="button" class="btn btn-secondary btn-sm" data-view="catalog">К каталогу</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="reset-draft-form">Начать заново</button>
-                    </div>
-                </aside>
-
-                <div>
-                    <section class="tfb-step-card"${state.wizardStep === 1 ? "" : " hidden"}>
-                        <div class="tfb-section-head">
-                            <div>
-                                <h4 style="margin: 0;">Шаг 1. Основа формы</h4>
-                                <div class="tfb-subtle">Оставляем только то, что нужно для старта: название и системный ключ.</div>
-                            </div>
-                        </div>
-                        <div class="tfb-doc-card" style="margin-top: 14px;">
-                            <h4>Подсказка из документации</h4>
-                            <ul class="tfb-doc-list">
-                                <li>Название формы должно быть человеческим и понятным для пользователя.</li>
-                                <li>Ключ формы используйте для API и аналитики: латиница, цифры и <code>_</code>.</li>
-                                <li><code>request_kind</code> можно не трогать, если он должен совпадать с ключом.</li>
-                            </ul>
-                        </div>
-                        <div style="margin-top: 14px;">
-                            ${buildFormBasicsMarkup(draft, "draft")}
-                        </div>
-                    </section>
-
-                    <section class="tfb-step-card"${state.wizardStep === 2 ? "" : " hidden"}>
-                        <div class="tfb-section-head">
-                            <div>
-                                <h4 style="margin: 0;">Шаг 2. Поля формы</h4>
-                                <div class="tfb-subtle">Сначала добавляем базовые поля, а сложные правила оставляем в advanced-блоках.</div>
-                            </div>
-                            <div class="tfb-inline-actions">
-                                <button type="button" class="btn btn-secondary btn-sm" data-action="add-draft-field" data-field-type="text">Текст</button>
-                                <button type="button" class="btn btn-secondary btn-sm" data-action="add-draft-field" data-field-type="textarea">Текстовый блок</button>
-                                <button type="button" class="btn btn-secondary btn-sm" data-action="add-draft-field" data-field-type="select">Список</button>
-                                <button type="button" class="btn btn-secondary btn-sm" data-action="add-draft-field" data-field-type="radio">Переключатели</button>
-                            </div>
-                        </div>
-                        <div class="tfb-doc-card" style="margin-top: 14px;">
-                            <h4>Что обязательно на этом шаге</h4>
-                            <ul class="tfb-doc-list">
-                                <li>Название поля.</li>
-                                <li>Системный ключ поля.</li>
-                                <li>Тип поля.</li>
-                                <li>Обязательность поля.</li>
-                            </ul>
-                        </div>
-                        <div class="tfb-editor-layout" style="margin-top: 14px;">
-                            <div class="tfb-side-card">
-                                <label>Поля черновика</label>
-                                <div id="ticketFormsDraftFieldsList" class="tfb-field-list" style="margin-top: 10px;">
-                                    ${buildFieldListMarkup(draft, "draft", state.draftFieldKey)}
-                                </div>
-                            </div>
-                            <div>
-                                ${buildFieldEditorMarkup(draft, draftField, "draft")}
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="tfb-step-card"${state.wizardStep === 3 ? "" : " hidden"}>
-                        <div class="tfb-section-head">
-                            <div>
-                                <h4 style="margin: 0;">Шаг 3. Проверка и добавление</h4>
-                                <div class="tfb-subtle">Проверяем форму до публикации и только потом переносим её в каталог.</div>
-                            </div>
-                        </div>
-                        <div class="tfb-review-layout" style="margin-top: 14px;">
-                            <div class="tfb-preview-card">
-                                <h4>Что увидит пользователь</h4>
-                                <div class="tfb-grid-2" style="margin-top: 12px;">
-                                    ${buildPreviewFields(draft)}
-                                </div>
-                                <details class="tfb-advanced">
-                                    <summary>JSON preview формы</summary>
-                                    <pre class="tfb-code">${html(JSON.stringify(draft, null, 2))}</pre>
-                                </details>
-                            </div>
-                            <div class="tfb-side-card">
-                                <label>Статус проверки</label>
-                                ${issues.length ? `
-                                    <div class="tfb-chip is-danger">Есть что исправить</div>
-                                    <ul class="tfb-issues-list" style="margin-top: 12px;">
-                                        ${issues.map((issue) => `<li>${html(issue)}</li>`).join("")}
-                                    </ul>
-                                ` : `
-                                    <div class="tfb-chip is-accent">Форма готова к добавлению в каталог</div>
-                                    <div class="tfb-subtle" style="margin-top: 12px;">После добавления откроется отдельный редактор формы. Затем останется просто сохранить изменения каталога.</div>
-                                `}
-                                <div class="tfb-inline-actions" style="margin-top: 16px;">
-                                    <button type="button" class="btn btn-primary" data-action="commit-draft-form"${issues.length ? " disabled" : ""}>Добавить в каталог</button>
-                                    <button type="button" class="btn btn-secondary" data-action="set-wizard-step" data-step="2">Вернуться к полям</button>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <div class="tfb-step-actions" style="margin-top: 16px;">
-                        <button type="button" class="btn btn-secondary" data-action="wizard-prev"${state.wizardStep <= 1 ? " disabled" : ""}>Назад</button>
-                        <button type="button" class="btn btn-primary" data-action="wizard-next"${state.wizardStep >= 3 ? " disabled" : ""}>Дальше</button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    function renderEditView() {
-        const node = byId("ticketFormsViewEdit");
-        if (!node || !state.pack) {
-            return;
-        }
-        const form = getSelectedForm();
-        if (!form) {
-            node.innerHTML = `
-                <div class="tfb-empty">
-                    Выберите форму слева или создайте новую через пошаговый режим.
-                    <div style="margin-top: 12px;">
-                        <button type="button" class="btn btn-primary btn-sm" data-action="open-create">Создать форму</button>
-                    </div>
-                </div>
+                `}
             `;
             return;
         }
 
+        const form = activeFormForView();
+        if (!form) {
+            node.innerHTML = `
+                <div class="tfb-empty">
+                    Форма не выбрана. Вернитесь ко всем формам или создайте новую.
+                </div>
+            `;
+            return;
+        }
+        const target = activeTarget();
         const summary = formSummary(form);
-        const issues = formIssues(form, { existingForms: packForms(), ignoreKey: form.key });
+        const issues = formIssues(form, { existingForms: packForms() });
         node.innerHTML = `
-            <div class="tfb-summary-grid">
-                <div class="tfb-summary-item">
-                    <label>Форма</label>
-                    <strong>${html(form.title || form.key)}</strong>
+            <div class="tfb-card">
+                <div class="tfb-section-head">
+                    <div>
+                        <h3>${state.currentView === "create" ? "Новая форма" : "Основные параметры формы"}</h3>
+                        <div class="tfb-subtle">
+                            ${state.currentView === "create"
+                                ? "Сначала задайте название и ключ, затем добавьте поля слева. После сохранения каталог сразу станет активным."
+                                : "Здесь живут основные параметры формы. Поля и их детальная настройка вынесены в соседние колонки, чтобы всё помещалось на один экран."}
+                        </div>
+                    </div>
+                    <div class="tfb-preview-tags">
+                        <span class="tfb-chip is-info">${state.currentView === "create" ? "Шаг 1: форма" : "Форма"}</span>
+                        <span class="tfb-chip">${summary.fieldsCount} полей</span>
+                        ${state.currentView === "edit"
+                            ? '<button type="button" class="btn btn-danger btn-sm" data-action="delete-form">Удалить форму</button>'
+                            : ""}
+                    </div>
                 </div>
-                <div class="tfb-summary-item">
-                    <label>Полей</label>
-                    <strong>${summary.fieldsCount}</strong>
+                <div class="tfb-doc-card" style="margin-top: 14px;">
+                    <h3 style="margin-bottom: 8px;">Базовый путь</h3>
+                    <ul class="tfb-doc-list">
+                        <li>Название формы должно быть понятным человеку, который создаёт заявку.</li>
+                        <li>Ключ формы и ключи полей нужны для маршрутизации, аналитики и API, поэтому они должны быть уникальными.</li>
+                        <li>Сложные вещи вроде <code>request_kind</code> и условного показа спрятаны в расширенных настройках.</li>
+                    </ul>
                 </div>
-                <div class="tfb-summary-item">
-                    <label>Проверка</label>
-                    <strong>${issues.length ? `нужно проверить: ${issues.length}` : "готово"}</strong>
+                <div style="margin-top: 14px;">
+                    ${buildFormBasicsMarkup(form, target)}
                 </div>
             </div>
 
-            <div class="tfb-doc-card" style="margin-top: 14px;">
-                <h4>Режим редактирования</h4>
-                <ul class="tfb-doc-list">
-                    <li>Это отдельный редактор уже существующей формы, без шагов создания.</li>
-                    <li>Меняйте состав полей и расширенные настройки здесь.</li>
-                    <li>После правок нажмите сохранение каталога, и сервер сразу опубликует обновлённую редакцию.</li>
-                </ul>
-            </div>
-
-            <div class="tfb-editor-layout" style="margin-top: 14px;">
-                <div class="tfb-side-card">
-                    <div class="tfb-section-head">
-                        <div>
-                            <label style="margin: 0;">Поля формы</label>
-                            <div class="tfb-subtle">Быстро переключайтесь между полями и редактируйте каждое отдельно.</div>
-                        </div>
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="add-edit-field" data-field-type="text">Добавить поле</button>
-                    </div>
-                    <div class="tfb-field-actions" style="margin-top: 10px;">
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="add-edit-field" data-field-type="select">Список</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="add-edit-field" data-field-type="radio">Переключатели</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="add-edit-field" data-field-type="checkbox">Флажок</button>
-                    </div>
-                    <div id="ticketFormsEditFieldsList" class="tfb-field-list" style="margin-top: 12px;">
-                        ${buildFieldListMarkup(form, "edit", state.selectedFieldKey)}
-                    </div>
-                </div>
-                <div>
-                    <div class="tfb-step-card">
-                        <div class="tfb-section-head">
-                            <div>
-                                <h4 style="margin: 0;">Основные параметры формы</h4>
-                                <div class="tfb-subtle">Базовые атрибуты формы и её бизнес-смысл.</div>
-                            </div>
-                            <button type="button" class="btn btn-danger btn-sm" data-action="delete-form">Удалить форму</button>
-                        </div>
-                        <div style="margin-top: 14px;">
-                            ${buildFormBasicsMarkup(form, "edit")}
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 14px;">
-                        ${buildFieldEditorMarkup(form, getSelectedField(), "edit")}
-                    </div>
-
-                    ${issues.length ? `
-                        <div class="tfb-card" style="margin-top: 14px;">
-                            <h4>Что стоит поправить</h4>
-                            <ul class="tfb-issues-list">
-                                ${issues.map((issue) => `<li>${html(issue)}</li>`).join("")}
-                            </ul>
+            ${issues.length ? `
+                <div class="tfb-card">
+                    <h3 style="margin-bottom: 8px;">Что ещё стоит поправить</h3>
+                    <ul class="tfb-issues-list">
+                        ${issues.map((issue) => `<li>${html(issue)}</li>`).join("")}
+                    </ul>
+                    ${state.currentView === "create" ? `
+                        <div class="tfb-header-actions" style="margin-top: 14px;">
+                            <button type="button" class="btn btn-primary" data-action="commit-draft-form" disabled>Добавить форму в каталог</button>
                         </div>
                     ` : ""}
-
-                    <div class="tfb-preview-card" style="margin-top: 14px;">
-                        <div class="tfb-section-head">
-                            <div>
-                                <h4 style="margin: 0;">Как выглядит форма сейчас</h4>
-                                <div class="tfb-subtle">${html(form.description || "Описание формы не заполнено.")}</div>
-                            </div>
-                            <div class="tfb-preview-tags">
-                                <span class="tfb-chip">${summary.fieldsCount} полей</span>
-                                <span class="tfb-chip is-accent">${summary.requiredCount} обязательных</span>
-                            </div>
-                        </div>
-                        <div class="tfb-grid-2" style="margin-top: 14px;">
-                            ${buildPreviewFields(form)}
-                        </div>
-                        <details class="tfb-advanced">
-                            <summary>JSON preview формы</summary>
-                            <pre class="tfb-code">${html(JSON.stringify(form, null, 2))}</pre>
-                        </details>
+                </div>
+            ` : `
+                <div class="tfb-doc-card">
+                    <h3 style="margin-bottom: 8px;">Форма выглядит целостно</h3>
+                    <div class="tfb-subtle">
+                        ${state.currentView === "create"
+                            ? "Форма готова к добавлению в каталог. Сначала добавьте её в рабочий список, потом сохраните изменения каталога одной кнопкой."
+                            : "Когда структура готова, просто нажмите «Сохранить изменения». Сервер сам выпустит новую активную редакцию без видимых версий в интерфейсе."}
                     </div>
+                    ${state.currentView === "create" ? `
+                        <div class="tfb-header-actions" style="margin-top: 14px;">
+                            <button type="button" class="btn btn-primary" data-action="commit-draft-form">Добавить форму в каталог</button>
+                        </div>
+                    ` : ""}
+                </div>
+            `}
+
+            <div class="tfb-preview-card">
+                <div class="tfb-section-head">
+                    <div>
+                        <h3>Как форма выглядит сейчас</h3>
+                        <div class="tfb-subtle">${html(form.description || "Описание формы пока не заполнено.")}</div>
+                    </div>
+                    <div class="tfb-preview-tags">
+                        <span class="tfb-chip">${summary.fieldsCount} полей</span>
+                        <span class="tfb-chip is-accent">${summary.requiredCount} обязательных</span>
+                    </div>
+                </div>
+                <div class="tfb-grid-2" style="margin-top: 14px;">
+                    ${buildPreviewFields(form)}
                 </div>
             </div>
         `;
     }
 
+    function renderSecondaryPanel() {
+        const node = byId("ticketFormsSecondaryPanel");
+        if (!node || !state.pack) {
+            return;
+        }
+        const dirty = hasUnsavedChanges();
+        if (state.currentView === "catalog") {
+            const selectedForm = getSelectedForm() || packForms()[0] || null;
+            const packPreview = JSON.stringify(state.pack, null, 2);
+            node.innerHTML = `
+                <div class="tfb-side-card">
+                    <div class="tfb-section-head">
+                        <div>
+                            <h3>Публикация</h3>
+                            <div class="tfb-subtle">Сохранение всегда делает текущий каталог активным. Никаких ручных версий или переключателей в обычной работе больше нет.</div>
+                        </div>
+                        <span class="tfb-chip ${dirty ? "is-warning" : "is-accent"}">${dirty ? "есть изменения" : "всё сохранено"}</span>
+                    </div>
+                    <div class="tfb-inline-note" style="margin-top: 12px;">
+                        Название и описание каталога сейчас не обязательны для ежедневной работы, потому что в системе используется один рабочий каталог обращений.
+                    </div>
+                </div>
+
+                <div class="tfb-side-card">
+                    <h3>Служебные настройки каталога</h3>
+                    <div class="tfb-service-note">
+                        Эти поля оставлены только как задел на масштабирование: отдельные порталы, филиалы или разные витрины форм. Пока интерфейс не заставляет вас думать об этом в ежедневном сценарии.
+                    </div>
+                    <details class="tfb-advanced">
+                        <summary>Открыть служебные настройки</summary>
+                        <div class="form-group">
+                            <label for="ticketFormsPackTitle">Название каталога</label>
+                            <input type="text" id="ticketFormsPackTitle" placeholder="Каталог заявок">
+                        </div>
+                        <div class="form-group" style="margin-top: 12px;">
+                            <label for="ticketFormsPackDescription">Описание каталога</label>
+                            <textarea id="ticketFormsPackDescription" rows="5" placeholder="Служебное описание каталога"></textarea>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="tfb-preview-card">
+                    <h3>Технический preview</h3>
+                    <div class="tfb-subtle" style="margin-bottom: 12px;">
+                        Оставлен внизу как расширенный контроль для проверки структуры перед публикацией.
+                    </div>
+                    <details class="tfb-advanced">
+                        <summary>JSON preview каталога</summary>
+                        <pre class="tfb-code">${html(packPreview)}</pre>
+                    </details>
+                </div>
+
+                ${selectedForm ? `
+                    <div class="tfb-doc-card">
+                        <h3>Сейчас выбрана форма</h3>
+                        <div class="tfb-subtle">${html(selectedForm.title || selectedForm.key)}</div>
+                    </div>
+                ` : ""}
+            `;
+            return;
+        }
+
+        const form = activeFormForView();
+        if (!form) {
+            node.innerHTML = `
+                <div class="tfb-empty">
+                    Выберите форму, чтобы открыть параметры её полей.
+                </div>
+            `;
+            return;
+        }
+        const target = activeTarget();
+        const field = activeFieldForView();
+        node.innerHTML = `
+            <div class="tfb-side-card">
+                <div class="tfb-section-head">
+                    <div>
+                        <h3>Параметры поля</h3>
+                        <div class="tfb-subtle">Базовые настройки поля всегда видны сразу. Всё сложное спрятано в расширенных настройках внутри карточки.</div>
+                    </div>
+                    <span class="tfb-chip is-info">${field ? fieldTypeLabel(field.type) : "поле не выбрано"}</span>
+                </div>
+                <div style="margin-top: 14px;">
+                    ${buildFieldEditorMarkup(form, field, target)}
+                </div>
+            </div>
+
+            <div class="tfb-doc-card">
+                <h3>Как читать этот экран</h3>
+                <ul class="tfb-doc-list">
+                    <li>Слева выбирается форма или поле.</li>
+                    <li>В центре остаются только основные параметры формы.</li>
+                    <li>Справа редактируется выбранное поле, поэтому экран не расползается вниз.</li>
+                </ul>
+            </div>
+        `;
+    }
+
+    function renderCreateView() {
+        return null;
+    }
+
+    function renderEditView() {
+        return null;
+    }
+
     function render() {
         ensureSelection();
+        renderNavigator();
+        renderPrimaryPanel();
+        renderSecondaryPanel();
         renderPackMeta();
-        renderCatalogFormsList();
-        renderViewButtons();
-        renderCatalogView();
-        renderCreateView();
-        renderEditView();
     }
 
     async function loadVersions() {
@@ -1304,12 +1370,18 @@
         const action = target.getAttribute("data-action");
         if (action === "select-form") {
             state.selectedFormKey = String(target.getAttribute("data-form-key") || "");
+            state.currentView = "edit";
             render();
             return;
         }
         if (action === "open-edit-form") {
             state.selectedFormKey = String(target.getAttribute("data-form-key") || state.selectedFormKey);
             state.currentView = "edit";
+            render();
+            return;
+        }
+        if (action === "open-forms-catalog") {
+            state.currentView = "catalog";
             render();
             return;
         }
@@ -1340,6 +1412,10 @@
         }
         if (action === "add-draft-field") {
             addField("draft", String(target.getAttribute("data-field-type") || "text"));
+            return;
+        }
+        if (action === "add-current-field") {
+            addField(activeTarget(), String(target.getAttribute("data-field-type") || "text"));
             return;
         }
         if (action === "delete-edit-field") {
@@ -1386,7 +1462,7 @@
         if (target.id === "ticketFormsPackTitle" || target.id === "ticketFormsPackDescription") {
             syncPackMetaFromInputs();
             if (isChangeEvent) {
-                renderCatalogView();
+                render();
             }
             return;
         }

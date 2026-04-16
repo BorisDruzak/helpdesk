@@ -256,7 +256,8 @@
 ## 2026-04-16 Request form builder UX
 
 - `server/admin_ticket_forms_builder.html` / `server/admin_ticket_forms_builder.js` are the dedicated admin UI entrypoints for the request-form catalog.
-- The builder is split into three operator modes: catalog, guided form creation, and separate editing of an existing form.
-- Everyday authoring should happen through the guided flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
+- The UI is now organized around one working catalog: a left navigator, a central form editor, and a right field-parameters panel with shared height and independent scrolling.
+- Clicking a form opens its fields directly; clicking a field opens its parameters. The builder keeps `title` / `description` of the catalog in a hidden service section so the main flow stays focused on forms.
+- Everyday authoring should happen through the direct form -> field -> parameter flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
 - The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.

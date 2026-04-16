@@ -531,11 +531,36 @@
             padding: 20px;
             border-bottom: 1px solid #e5e5e7;
             margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
 
         .sidebar-header h2 {
             font-size: 20px;
             margin: 0;
+        }
+
+        .sidebar-toggle-button {
+            width: 42px;
+            height: 42px;
+            border: 1px solid #d6d6dc;
+            border-radius: 12px;
+            background: #ffffff;
+            color: #1d1d1f;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .sidebar-toggle-button:hover {
+            background: #f5f5f7;
+            border-color: #c7c7cf;
         }
 
         .sidebar-menu {
@@ -578,6 +603,37 @@
             flex: 1;
             margin-left: 250px;
             padding: 20px;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar {
+            width: 88px;
+        }
+
+        .app-layout.is-sidebar-collapsed .main-content-area {
+            margin-left: 88px;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar-header {
+            justify-content: center;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar-header h2,
+        .app-layout.is-sidebar-collapsed .sidebar-menu-item a span:not(.icon),
+        .app-layout.is-sidebar-collapsed .sidebar-help-panel {
+            display: none !important;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar-menu-item a {
+            justify-content: center;
+            padding: 14px 12px;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar-menu-item a .icon {
+            margin-right: 0;
+        }
+
+        .app-layout.is-sidebar-collapsed .sidebar-help-button {
+            display: none;
         }
 
         .admin-session-bar {
