@@ -1,0 +1,78 @@
+<div class="panel" style="display: grid; gap: 16px;">
+    <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap;">
+        <div>
+            <h2 style="margin: 0 0 6px 0;">Каталог форм обращений</h2>
+            <p style="margin: 0; color: var(--muted); font-size: 14px;">
+                Соберите типы заявок, дополнительные поля и условия показа. Сохранённая версия становится доступна в веб-форме и в агенте.
+            </p>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <label style="display: inline-flex; gap: 8px; align-items: center; margin: 0;">
+                <input type="checkbox" id="ticketFormsMakePreferred" checked>
+                <span>Сделать активной после сохранения</span>
+            </label>
+            <button type="button" class="btn btn-secondary" id="ticketFormsRefreshBtn">Обновить</button>
+            <button type="button" class="btn btn-primary" id="ticketFormsSaveBtn">Сохранить версию</button>
+        </div>
+    </div>
+
+    <div id="ticketFormsBuilderStatus" class="loading" style="display: none;"></div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr); gap: 16px; align-items: start;">
+        <div class="section" style="margin: 0;">
+            <h3 style="margin-top: 0;">Параметры пакета</h3>
+            <div class="form-group">
+                <label for="ticketFormsPackTitle">Название каталога</label>
+                <input type="text" id="ticketFormsPackTitle" placeholder="Каталог заявок">
+            </div>
+            <div class="form-group">
+                <label for="ticketFormsPackVersion">Версия</label>
+                <input type="text" id="ticketFormsPackVersion" placeholder="1.0.1">
+            </div>
+            <div class="form-group">
+                <label for="ticketFormsPackDescription">Описание</label>
+                <textarea id="ticketFormsPackDescription" rows="3" placeholder="Что изменилось в этой версии каталога"></textarea>
+            </div>
+        </div>
+
+        <div class="section" style="margin: 0;">
+            <h3 style="margin-top: 0;">Версии</h3>
+            <div id="ticketFormsVersionsList" style="display: grid; gap: 8px;"></div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.2fr); gap: 16px; align-items: start;">
+        <div class="section" style="margin: 0;">
+            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0;">Типы заявок</h3>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="add-form">Добавить</button>
+            </div>
+            <div id="ticketFormsFormsList" style="display: grid; gap: 8px;"></div>
+        </div>
+
+        <div class="section" style="margin: 0;">
+            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0;">Карточка типа</h3>
+                <button type="button" class="btn btn-danger btn-sm" data-action="delete-form">Удалить</button>
+            </div>
+            <div id="ticketFormsFormEditor"></div>
+        </div>
+
+        <div class="section" style="margin: 0;">
+            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0;">Поля формы</h3>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="add-field">Добавить поле</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-action="delete-field">Удалить поле</button>
+                </div>
+            </div>
+            <div id="ticketFormsFieldsList" style="display: grid; gap: 8px; margin-bottom: 14px;"></div>
+            <div id="ticketFormsFieldEditor"></div>
+        </div>
+    </div>
+
+    <div class="section" style="margin: 0;">
+        <h3 style="margin-top: 0;">JSON preview</h3>
+        <textarea id="ticketFormsPreview" rows="18" readonly style="font-family: Consolas, 'Courier New', monospace; font-size: 12px;"></textarea>
+    </div>
+</div>

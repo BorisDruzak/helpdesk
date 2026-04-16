@@ -52,6 +52,13 @@ from tickets.public_ticket_handlers import (
     handle_public_ticket_authorize,
     handle_public_ticket_create,
 )
+from tickets.form_pack_handlers import (
+    handle_ticket_form_pack_current,
+    handle_ticket_form_pack_detail,
+    handle_ticket_form_pack_save,
+    handle_ticket_form_pack_set_preferred,
+    handle_ticket_form_packs_list,
+)
 from tickets.handlers import (
     handle_tickets_create,
     handle_ticket_get,
@@ -146,6 +153,8 @@ from static_pages.handlers import (
     handle_help_js,
     handle_admin_modules_workbench_html,
     handle_admin_modules_workbench_js,
+    handle_admin_ticket_forms_builder_html,
+    handle_admin_ticket_forms_builder_js,
 )
 from api.admin import handle_admin_run_tool
 from tickets.admin_config_handlers import (
@@ -279,6 +288,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/admin.js', handle_admin_js),
         web.get('/admin_modules_workbench.html', handle_admin_modules_workbench_html),
         web.get('/admin_modules_workbench.js', handle_admin_modules_workbench_js),
+        web.get('/admin_ticket_forms_builder.html', handle_admin_ticket_forms_builder_html),
+        web.get('/admin_ticket_forms_builder.js', handle_admin_ticket_forms_builder_js),
         web.get('/web_shared.js', handle_web_shared_js),
         web.get('/support', handle_support_page),
         web.get('/support.css', handle_support_css),
@@ -302,6 +313,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/public_api/queues', handle_public_queues),
         web.get('/public_api/queue/tickets', handle_public_queue_tickets),
         web.get('/public_api/queue/stats', handle_public_queue_stats),
+        web.get('/public_api/ticket_forms/current', handle_ticket_form_pack_current),
         web.post('/public_api/tickets/create', handle_public_ticket_create),
         web.post('/public_api/tickets/{ticket_id}/authorize', handle_public_ticket_authorize),
         
@@ -352,6 +364,11 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.post('/api/tickets/create', handle_tickets_create),
         web.get('/api/tickets', handle_tickets_list),
+        web.get('/api/ticket_forms/current', handle_ticket_form_pack_current),
+        web.get('/api/ticket_forms/packs', handle_ticket_form_packs_list),
+        web.get('/api/ticket_forms/packs/{pack_key}/{version}', handle_ticket_form_pack_detail),
+        web.post('/api/ticket_forms/packs/save', handle_ticket_form_pack_save),
+        web.patch('/api/ticket_forms/packs/{pack_key}/{version}/preferred', handle_ticket_form_pack_set_preferred),
         web.get('/api/tickets/resolution_codes', handle_ticket_resolution_codes_list),
         web.get('/api/tickets/metrics/backlog', handle_ticket_metrics_backlog),
         web.get('/api/tickets/metrics/aging', handle_ticket_metrics_aging),

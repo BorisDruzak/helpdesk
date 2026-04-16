@@ -31,6 +31,18 @@
                     <p>Заполните профиль и описание проблемы.</p>
                 </div>
                 <form id="createForm" class="stack">
+                    <div class="request-type-card">
+                        <div>
+                            <strong>Тип заявки</strong>
+                            <p id="requestTypeHint">Выберите шаблон, чтобы система сразу показала нужные поля.</p>
+                        </div>
+                        <div id="requestTypeOptions" class="request-type-options"></div>
+                    </div>
+                    <div id="dynamicFormIntro" class="dynamic-form-intro" hidden>
+                        <strong id="dynamicFormTitle">Форма заявки</strong>
+                        <p id="dynamicFormDescription"></p>
+                    </div>
+                    <div id="dynamicFields" class="stack"></div>
                     <label>
                         <span>Отображаемое имя</span>
                         <input type="text" id="createDisplayName" placeholder="Иван Иванов" required>

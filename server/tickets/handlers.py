@@ -19,6 +19,7 @@ from app.repos import (
     NotificationPrefsRepo,
     NotificationRepo,
     ProblemsRepo,
+    TicketFormPacksRepo,
     TicketEventsRepo,
 )
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
@@ -29,6 +30,12 @@ from tickets.assignment_service import (
     TicketAssignmentService,
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.form_catalog import (
+    DEFAULT_TICKET_FORM_PACK_KEY,
+    build_form_custom_fields,
+    resolve_ticket_form_pack,
+    validate_form_submission,
+)
 from tickets.ola_service import build_ola_block, close_ola_processing, start_ola_for_ticket
 from tickets.public_access import (
     mark_public_ticket_unbound,
@@ -774,6 +781,11 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
     except ValueError as exc:
         return _validation_error({"priority": str(exc)})
 
+    form_key = str(data.get("form_key") or "").strip()
+    pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
+    pack_version = str(data.get("form_pack_version") or "").strip() or None
+    form_payload = data.get("form_payload")
+
     if auth_context.actor_role == "agent":
         device_id = auth_context.actor_id
     else:
@@ -782,6 +794,24 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             return _validation_error({"device_id": "device_id is required"})
 
     async with get_session() as session:
+        extra_custom_fields: dict[str, Any] | None = None
+        ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
+        if form_key:
+            try:
+                form_pack = await resolve_ticket_form_pack(
+                    TicketFormPacksRepo(session),
+                    pack_key=pack_key,
+                    version=pack_version,
+                )
+                validated_submission = validate_form_submission(
+                    form_pack,
+                    form_key=form_key,
+                    raw_values=form_payload or {},
+                )
+                extra_custom_fields = build_form_custom_fields(validated_submission)
+            except ValueError as exc:
+                details = exc.args[0] if exc.args else "invalid form payload"
+                return _validation_error({"form_payload": details})
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -795,6 +825,8 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             initial_message_sender_role="user",
             initial_message_from="user",
             include_public_access=True,
+            ticket_type=ticket_type,
+            extra_custom_fields=extra_custom_fields,
         )
         await session.commit()
         ticket_data = await _ticket_payload(session, created["ticket"])

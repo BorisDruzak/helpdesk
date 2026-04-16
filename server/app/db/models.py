@@ -982,6 +982,31 @@ class Module(Base):
         )
 
 
+class TicketFormPack(Base):
+    """Versioned registry of structured ticket request forms."""
+    __tablename__ = "ticket_form_packs"
+
+    pack_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_ticket_form_packs_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TicketFormPack(pack_key={self.pack_key!r}, version={self.version!r})>"
+        )
+
+
 class AgentBuild(Base):
     """
     Server-side registry of agent build artifacts (self-update packages).

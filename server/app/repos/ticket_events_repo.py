@@ -780,6 +780,7 @@ class TicketEventsRepo:
         description: str,
         status: str = "in_progress",
         requester_id: Optional[str] = None,
+        ticket_type: str = "request",
     ) -> Ticket:
         """
         Create a new ticket.
@@ -804,6 +805,7 @@ class TicketEventsRepo:
             title=title,
             description=description,
             status=status,
+            ticket_type=ticket_type,
             created_at=now,
             updated_at=now,
             requester_id=requester_id,
@@ -947,6 +949,7 @@ class TicketEventsRepo:
             "assignee_id", "requester_id", "sla_policy_id", "resolved_at", "closed_at",
             "resolution_code", "root_cause", "parent_ticket_id",
             "manual_rank", "manual_rank_updated_at", "manual_rank_updated_by",
+            "ticket_type",
             "archived_at",
         }
         for key, value in fields.items():

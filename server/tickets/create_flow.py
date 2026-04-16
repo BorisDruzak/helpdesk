@@ -154,6 +154,8 @@ async def create_ticket_with_side_effects(
     initial_message_sender_role: str = "user",
     initial_message_from: Optional[str] = None,
     include_public_access: bool = True,
+    ticket_type: str = "request",
+    extra_custom_fields: Optional[dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
@@ -164,6 +166,7 @@ async def create_ticket_with_side_effects(
         description=description,
         status="new",
         requester_id=requester_id,
+        ticket_type=ticket_type,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})
@@ -173,6 +176,8 @@ async def create_ticket_with_side_effects(
         requester_profile=requester_profile or {},
         priority_class=normalized_priority["priority_class"],
     )
+    if extra_custom_fields:
+        custom_fields.update(extra_custom_fields)
 
     public_access_code: Optional[str] = None
     if include_public_access:

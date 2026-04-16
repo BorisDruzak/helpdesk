@@ -9,7 +9,7 @@ import socket
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPalette
@@ -63,6 +63,240 @@ TICKET_HISTORY_TOP_THRESHOLD_PX = 72
 
 OUTGOING_MESSAGE_ROLES = {"user", "agent", "requester"}
 SUPPORT_MESSAGE_ROLES = {"support", "admin"}
+DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
+DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
+OPTION_FIELD_TYPES = {"select", "radio"}
+
+
+def build_default_ticket_form_pack() -> dict[str, Any]:
+    return {
+        "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
+        "version": DEFAULT_TICKET_FORM_PACK_VERSION,
+        "title": "Каталог заявок",
+        "description": "Базовый каталог интеллектуальных форм.",
+        "forms": [
+            {
+                "key": "breakage",
+                "request_kind": "breakage",
+                "title": "Поломка",
+                "description": "Проблема с оборудованием или рабочим местом.",
+                "fields": [
+                    {"key": "asset_name", "label": "Что сломалось", "type": "text", "required": True, "placeholder": "Компьютер, монитор, МФУ", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "room", "label": "Кабинет", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "inventory_number", "label": "Инвентарный номер", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "access",
+                "request_kind": "access",
+                "title": "Доступ",
+                "description": "Выдача или изменение доступа.",
+                "fields": [
+                    {"key": "system_name", "label": "В какую систему", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "role_name", "label": "Какая роль", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "approver", "label": "Кто согласует", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "software_install",
+                "request_kind": "software_install",
+                "title": "Установка ПО",
+                "description": "Установка или обновление программного обеспечения.",
+                "fields": [
+                    {"key": "software_name", "label": "Какое ПО", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "version", "label": "Нужная версия", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "license_owner", "label": "Есть лицензия / кто владелец", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "hardware_replacement",
+                "request_kind": "hardware_replacement",
+                "title": "Замена техники",
+                "description": "Замена ПК, периферии или другой техники.",
+                "fields": [
+                    {"key": "replace_what", "label": "Что нужно заменить", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "room", "label": "Кабинет", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "reason", "label": "Причина замены", "type": "textarea", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "printer",
+                "request_kind": "printer",
+                "title": "Печать / принтер",
+                "description": "Проблемы с печатью или самим принтером.",
+                "fields": [
+                    {"key": "room", "label": "Кабинет", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "printer_model", "label": "Модель", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "printer_number", "label": "Номер принтера", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "network",
+                "request_kind": "network",
+                "title": "Сеть / интернет",
+                "description": "Проблемы с локальной сетью или интернетом.",
+                "fields": [
+                    {"key": "room", "label": "Кабинет", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "pc_name", "label": "С какого ПК", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {
+                        "key": "affected_scope",
+                        "label": "У всех или у одного",
+                        "type": "radio",
+                        "required": False,
+                        "placeholder": "",
+                        "help_text": "",
+                        "options": [
+                            {"value": "single", "label": "У одного"},
+                            {"value": "multiple", "label": "У нескольких"},
+                            {"value": "all", "label": "У всех"},
+                        ],
+                        "visible_when": None,
+                    },
+                ],
+            },
+            {
+                "key": "site_system",
+                "request_kind": "site_system",
+                "title": "Сайт / система",
+                "description": "Проблемы с сайтом, сервисом или бизнес-системой.",
+                "fields": [
+                    {
+                        "key": "issue_kind",
+                        "label": "Тип проблемы",
+                        "type": "select",
+                        "required": True,
+                        "placeholder": "",
+                        "help_text": "",
+                        "options": [
+                            {"value": "site_down", "label": "Сайт не открывается"},
+                            {"value": "auth", "label": "Не удаётся войти"},
+                            {"value": "functional", "label": "Ошибка в работе функции"},
+                        ],
+                        "visible_when": None,
+                    },
+                    {"key": "system_name", "label": "Система / сайт", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "url", "label": "URL", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": {"field": "issue_kind", "equals": "site_down"}},
+                    {"key": "pc_name", "label": "С какого ПК", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": {"field": "issue_kind", "equals": "site_down"}},
+                    {
+                        "key": "affected_scope",
+                        "label": "У всех или у одного",
+                        "type": "radio",
+                        "required": False,
+                        "placeholder": "",
+                        "help_text": "",
+                        "options": [
+                            {"value": "single", "label": "У одного"},
+                            {"value": "multiple", "label": "У нескольких"},
+                            {"value": "all", "label": "У всех"},
+                        ],
+                        "visible_when": {"field": "issue_kind", "equals": "site_down"},
+                    },
+                ],
+            },
+            {
+                "key": "new_account",
+                "request_kind": "new_account",
+                "title": "Новая учётка",
+                "description": "Создание новой учётной записи.",
+                "fields": [
+                    {"key": "employee_name", "label": "Для кого", "type": "text", "required": True, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "department", "label": "Подразделение", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {"key": "systems", "label": "Какие системы нужны", "type": "textarea", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                ],
+            },
+            {
+                "key": "mail_issue",
+                "request_kind": "mail_issue",
+                "title": "Проблема с почтой",
+                "description": "Почта не приходит, не отправляется или не работает.",
+                "fields": [
+                    {"key": "mailbox", "label": "Почтовый ящик", "type": "text", "required": False, "placeholder": "", "help_text": "", "options": [], "visible_when": None},
+                    {
+                        "key": "problem_type",
+                        "label": "Проблема",
+                        "type": "select",
+                        "required": False,
+                        "placeholder": "",
+                        "help_text": "",
+                        "options": [
+                            {"value": "send", "label": "Не отправляется"},
+                            {"value": "receive", "label": "Не приходит"},
+                            {"value": "auth", "label": "Не удаётся войти"},
+                            {"value": "other", "label": "Другое"},
+                        ],
+                        "visible_when": None,
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
+    pack = raw_pack if isinstance(raw_pack, dict) else {}
+    normalized = {
+        "pack_key": str(pack.get("pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY,
+        "version": str(pack.get("version") or DEFAULT_TICKET_FORM_PACK_VERSION).strip() or DEFAULT_TICKET_FORM_PACK_VERSION,
+        "title": str(pack.get("title") or "Каталог заявок").strip() or "Каталог заявок",
+        "description": str(pack.get("description") or "").strip(),
+        "forms": [],
+    }
+    raw_forms = pack.get("forms") if isinstance(pack.get("forms"), list) else []
+    for form in raw_forms:
+        if not isinstance(form, dict):
+            continue
+        form_key = str(form.get("key") or "").strip()
+        if not form_key:
+            continue
+        normalized_form = {
+            "key": form_key,
+            "request_kind": str(form.get("request_kind") or form_key).strip() or form_key,
+            "title": str(form.get("title") or form_key).strip() or form_key,
+            "description": str(form.get("description") or "").strip(),
+            "fields": [],
+        }
+        raw_fields = form.get("fields") if isinstance(form.get("fields"), list) else []
+        for field in raw_fields:
+            if not isinstance(field, dict):
+                continue
+            field_key = str(field.get("key") or "").strip()
+            if not field_key:
+                continue
+            field_type = str(field.get("type") or "text").strip().lower() or "text"
+            normalized_form["fields"].append(
+                {
+                    "key": field_key,
+                    "label": str(field.get("label") or field_key).strip() or field_key,
+                    "type": field_type,
+                    "required": bool(field.get("required")),
+                    "placeholder": str(field.get("placeholder") or "").strip(),
+                    "help_text": str(field.get("help_text") or "").strip(),
+                    "options": [
+                        {
+                            "value": str(option.get("value") or "").strip(),
+                            "label": str(option.get("label") or option.get("value") or "").strip(),
+                        }
+                        for option in (field.get("options") if isinstance(field.get("options"), list) else [])
+                        if isinstance(option, dict) and str(option.get("value") or "").strip()
+                    ],
+                    "visible_when": field.get("visible_when") if isinstance(field.get("visible_when"), dict) else None,
+                }
+            )
+        normalized["forms"].append(normalized_form)
+    if not normalized["forms"]:
+        return build_default_ticket_form_pack()
+    return normalized
+
+
+def ticket_form_field_visible(field_def: dict[str, Any], values: dict[str, Any]) -> bool:
+    rule = field_def.get("visible_when")
+    if not isinstance(rule, dict):
+        return True
+    current_value = values.get(str(rule.get("field") or ""))
+    if "equals" in rule:
+        return str(current_value or "").strip() == str(rule.get("equals") or "").strip()
+    allowed = {str(item or "").strip() for item in rule.get("in") or []}
+    return str(current_value or "").strip() in allowed
 
 
 def can_user_confirm_close(ticket: dict) -> bool:
@@ -285,6 +519,151 @@ class MessageBubbleWidget(QFrame):
         event.accept()
 
 
+class TicketDynamicFieldsWidget(QWidget):
+    """Dynamic form fields driven by the ticket form catalog."""
+
+    changed = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._field_defs: list[dict[str, Any]] = []
+        self._containers: dict[str, QWidget] = {}
+        self._widgets: dict[str, QWidget] = {}
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(10)
+
+    def clear_form(self) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._field_defs = []
+        self._containers = {}
+        self._widgets = {}
+
+    def set_form(self, form_def: Optional[dict[str, Any]], values: Optional[dict[str, Any]] = None) -> None:
+        self.clear_form()
+        values = values or {}
+        if not isinstance(form_def, dict):
+            return
+        self._field_defs = list(form_def.get("fields") or [])
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            if not field_key:
+                continue
+            container = QWidget(self)
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.setSpacing(4)
+
+            field_label = QLabel(field_def.get("label") or field_key)
+            field_label.setStyleSheet(f"font-size: {theme.UI_FONT_PT + 1}pt; font-weight: 700; color: {theme.TEXT_PRIMARY};")
+            container_layout.addWidget(field_label)
+
+            field_type = str(field_def.get("type") or "text").strip().lower()
+            widget: QWidget
+            if field_type == "textarea":
+                input_widget = QTextEdit()
+                input_widget.setMinimumHeight(88)
+                input_widget.setPlaceholderText(field_def.get("placeholder") or "")
+                input_widget.setPlainText(str(values.get(field_key) or ""))
+                input_widget.textChanged.connect(self._on_any_changed)
+                widget = input_widget
+            elif field_type in OPTION_FIELD_TYPES:
+                input_widget = QComboBox()
+                input_widget.addItem("Выберите...", "")
+                for option in field_def.get("options") or []:
+                    input_widget.addItem(option.get("label") or option.get("value") or "", option.get("value") or "")
+                current_index = input_widget.findData(str(values.get(field_key) or ""))
+                if current_index >= 0:
+                    input_widget.setCurrentIndex(current_index)
+                input_widget.currentIndexChanged.connect(self._on_any_changed)
+                widget = input_widget
+            elif field_type == "checkbox":
+                input_widget = QCheckBox(field_def.get("placeholder") or "Подтверждаю")
+                input_widget.setChecked(bool(values.get(field_key)))
+                input_widget.stateChanged.connect(self._on_any_changed)
+                widget = input_widget
+            else:
+                input_widget = QLineEdit()
+                input_widget.setPlaceholderText(field_def.get("placeholder") or "")
+                input_widget.setText(str(values.get(field_key) or ""))
+                input_widget.textChanged.connect(self._on_any_changed)
+                widget = input_widget
+
+            container_layout.addWidget(widget)
+            help_text = str(field_def.get("help_text") or "").strip()
+            if help_text:
+                help_label = QLabel(help_text)
+                help_label.setWordWrap(True)
+                help_label.setStyleSheet(f"font-size: {theme.UI_FONT_PT}pt; color: {theme.TEXT_MUTED};")
+                container_layout.addWidget(help_label)
+
+            self._containers[field_key] = container
+            self._widgets[field_key] = widget
+            self._layout.addWidget(container)
+
+        self._layout.addStretch(1)
+        self._apply_visibility()
+
+    def _on_any_changed(self, *_args) -> None:
+        self._apply_visibility()
+        self.changed.emit()
+
+    def _field_value(self, field_key: str) -> Any:
+        widget = self._widgets.get(field_key)
+        if widget is None:
+            return ""
+        if isinstance(widget, QTextEdit):
+            return widget.toPlainText().strip()
+        if isinstance(widget, QComboBox):
+            return str(widget.currentData() or "").strip()
+        if isinstance(widget, QCheckBox):
+            return widget.isChecked()
+        if isinstance(widget, QLineEdit):
+            return widget.text().strip()
+        return ""
+
+    def values(self, *, visible_only: bool = True) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        current_values = {field_def.get("key"): self._field_value(str(field_def.get("key") or "")) for field_def in self._field_defs}
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            if not field_key:
+                continue
+            if visible_only and not ticket_form_field_visible(field_def, current_values):
+                continue
+            result[field_key] = current_values.get(field_key)
+        return result
+
+    def missing_required_labels(self) -> list[str]:
+        values = self.values(visible_only=False)
+        missing: list[str] = []
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            if not field_key or not field_def.get("required"):
+                continue
+            if not ticket_form_field_visible(field_def, values):
+                continue
+            value = values.get(field_key)
+            if field_def.get("type") == "checkbox":
+                if value is not True:
+                    missing.append(str(field_def.get("label") or field_key))
+            elif not str(value or "").strip():
+                missing.append(str(field_def.get("label") or field_key))
+        return missing
+
+    def _apply_visibility(self) -> None:
+        values = self.values(visible_only=False)
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            container = self._containers.get(field_key)
+            if container is not None:
+                container.setVisible(ticket_form_field_visible(field_def, values))
+
+
 class TicketCreateDialog(QDialog):
     """Modal dialog for ticket creation."""
 
@@ -317,6 +696,19 @@ class TicketCreateDialog(QDialog):
         profile_buttons.addStretch(1)
         profile_layout.addLayout(profile_buttons)
         layout.addWidget(profile_group)
+
+        forms_group = QGroupBox("Тип заявки")
+        forms_layout = QVBoxLayout(forms_group)
+        self.form_selector = QComboBox()
+        self.form_selector.currentIndexChanged.connect(self._on_form_changed)
+        forms_layout.addWidget(self.form_selector)
+        self.form_summary = QLabel("")
+        self.form_summary.setWordWrap(True)
+        forms_layout.addWidget(self.form_summary)
+        self.dynamic_fields_widget = TicketDynamicFieldsWidget(self)
+        self.dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
+        forms_layout.addWidget(self.dynamic_fields_widget)
+        layout.addWidget(forms_group)
 
         self.description_input = QTextEdit()
         self.description_input.setPlaceholderText("Опишите проблему для службы поддержки")
@@ -355,6 +747,7 @@ class TicketCreateDialog(QDialog):
         self.manage_profiles_btn.setObjectName("SecondaryButton")
         theme.apply_agent_dialog_theme(self)
         self._refresh_profiles()
+        self._refresh_forms()
 
     def _refresh_profiles(self) -> None:
         active_id = self.panel._profiles_data.get("active_profile_id")
@@ -380,6 +773,40 @@ class TicketCreateDialog(QDialog):
         self.panel._save_profiles()
         self.profile_summary.setText(self.panel.current_requester_profile_summary())
 
+    def _refresh_forms(self) -> None:
+        form_pack = self.panel.ticket_form_pack()
+        forms = list(form_pack.get("forms") or [])
+        current_key = self.form_selector.currentData()
+        self.form_selector.blockSignals(True)
+        self.form_selector.clear()
+        for form in forms:
+            self.form_selector.addItem(form.get("title") or form.get("key") or "Форма", form.get("key"))
+        if self.form_selector.count() > 0:
+            index = self.form_selector.findData(current_key)
+            self.form_selector.setCurrentIndex(index if index >= 0 else 0)
+        self.form_selector.blockSignals(False)
+        self._on_form_changed()
+
+    def _selected_form(self) -> Optional[dict[str, Any]]:
+        form_key = self.form_selector.currentData()
+        for form in self.panel.ticket_form_pack().get("forms") or []:
+            if form.get("key") == form_key:
+                return form
+        forms = self.panel.ticket_form_pack().get("forms") or []
+        return forms[0] if forms else None
+
+    def _on_form_changed(self, *_args) -> None:
+        form = self._selected_form()
+        if not form:
+            self.form_summary.setText("Каталог форм не загружен.")
+            self.dynamic_fields_widget.clear_form()
+            return
+        self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы тикет сразу попал в нужную очередь.")
+        self.dynamic_fields_widget.set_form(form)
+
+    def _on_form_fields_changed(self) -> None:
+        self.form_summary.setText((self._selected_form() or {}).get("description") or "")
+
     def _on_manage_profiles(self) -> None:
         self.panel.open_profile_manager()
         self._refresh_profiles()
@@ -391,6 +818,14 @@ class TicketCreateDialog(QDialog):
         if not self.description_input.toPlainText().strip():
             QMessageBox.warning(self, "Ошибка", "Опишите проблему")
             return
+        missing_fields = self.dynamic_fields_widget.missing_required_labels()
+        if missing_fields:
+            QMessageBox.warning(
+                self,
+                "РќРµ С…РІР°С‚Р°РµС‚ РґР°РЅРЅС‹С…",
+                "Р—Р°РїРѕР»РЅРёС‚Рµ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРѕР»СЏ: " + ", ".join(missing_fields),
+            )
+            return
         self.accept()
 
     def payload(self) -> dict:
@@ -399,12 +834,20 @@ class TicketCreateDialog(QDialog):
         importance = bool(self.importance_select.currentData())
         urgency_reason = self.urgency_reason_input.text().strip() or ("Срочно" if urgency else "Несрочно")
         importance_reason = self.importance_reason_input.text().strip() or ("Важно" if importance else "Неважно")
+        form_pack = self.panel.ticket_form_pack()
+        selected_form = self._selected_form() or {}
         return {
+            "title": f"Request: {selected_form.get('title') or 'Support Request'}",
             "description": description,
             "urgency": urgency,
             "importance": importance,
             "urgency_reason": urgency_reason,
             "importance_reason": importance_reason,
+            "form_key": selected_form.get("key"),
+            "form_pack_key": form_pack.get("pack_key"),
+            "form_pack_version": form_pack.get("version"),
+            "form_payload": self.dynamic_fields_widget.values(),
+            "ticket_type": selected_form.get("request_kind") or selected_form.get("key") or "request",
         }
 
 
@@ -636,6 +1079,8 @@ class ChatPanel(QWidget):
 
         self._profiles_path = resolve_data_root() / "requester_profiles.json"
         self._profiles_data = self._load_profiles()
+        self._ticket_form_pack_path = resolve_data_root() / "ticket_form_pack.json"
+        self._ticket_form_pack = self._load_ticket_form_pack()
 
         self._ticket_list_timer = QTimer(self)
         self._ticket_list_timer.timeout.connect(self._refresh_ticket_list_async)
@@ -645,6 +1090,7 @@ class ChatPanel(QWidget):
         self._setup_ui()
         self._ticket_list_timer.start(TICKET_LIST_POLL_INTERVAL_MS)
         self._refresh_ticket_list_async()
+        self._refresh_ticket_form_pack_async()
 
     def _setup_ui(self) -> None:
         self.setObjectName("AgentChatPanel")
@@ -1005,6 +1451,49 @@ class ChatPanel(QWidget):
         )
         self._refresh_profile_selector()
         self.requesterProfileChanged.emit()
+
+    def _load_ticket_form_pack(self) -> dict[str, Any]:
+        try:
+            if self._ticket_form_pack_path.exists():
+                raw = json.loads(self._ticket_form_pack_path.read_text(encoding="utf-8"))
+                return normalize_ticket_form_pack(raw)
+        except Exception as exc:
+            logger.warning(f"Не удалось загрузить каталог форм: {exc}")
+        return build_default_ticket_form_pack()
+
+    def _save_ticket_form_pack(self) -> None:
+        self._profiles_dir_ready()
+        self._ticket_form_pack_path.write_text(
+            json.dumps(self._ticket_form_pack, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def ticket_form_pack(self) -> dict[str, Any]:
+        return self._ticket_form_pack
+
+    def _apply_ticket_form_pack(self, raw_pack: Any) -> None:
+        self._ticket_form_pack = normalize_ticket_form_pack(raw_pack)
+        self._save_ticket_form_pack()
+
+    def _refresh_ticket_form_pack_async(self, force: bool = False) -> None:
+        self._spawn_task(self._async_refresh_ticket_form_pack(force=force))
+
+    async def _async_refresh_ticket_form_pack(self, force: bool = False) -> None:
+        if self._is_closing:
+            return
+        current_version = str(self._ticket_form_pack.get("version") or "") if isinstance(self._ticket_form_pack, dict) else ""
+        try:
+            result = await self.ticket_client.get_ticket_form_pack_current(
+                pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+                current_version=current_version or None,
+            )
+            pack = result.get("pack") if isinstance(result, dict) else None
+            has_update = bool(result.get("has_update")) if isinstance(result, dict) else False
+            next_version = str((pack or {}).get("version") or "")
+            if pack and (force or has_update or next_version != current_version):
+                self._apply_ticket_form_pack(pack)
+        except Exception as exc:
+            logger.info(f"Каталог форм недоступен, используем кеш: {exc}")
 
     def _profiles(self) -> List[dict]:
         profiles = self._profiles_data.get("profiles")
@@ -2248,11 +2737,19 @@ class ChatPanel(QWidget):
             QMessageBox.warning(self, "Профиль обязателен", "Сначала заполните и выберите профиль инициатора.")
             self.open_profile_manager(start_new=True)
             return
-        dialog = TicketCreateDialog(self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        payload = dialog.payload()
-        self._spawn_task(self._async_create_ticket(payload))
+        self._spawn_task(self._async_open_create_ticket_dialog())
+
+    async def _async_open_create_ticket_dialog(self) -> None:
+        self.create_ticket_btn.setEnabled(False)
+        try:
+            await self._async_refresh_ticket_form_pack()
+            dialog = TicketCreateDialog(self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            payload = dialog.payload()
+            await self._async_create_ticket(payload)
+        finally:
+            self.create_ticket_btn.setEnabled(True)
 
     async def _async_create_ticket(self, payload: dict) -> None:
         description = payload.get("description", "").strip()
@@ -2266,11 +2763,10 @@ class ChatPanel(QWidget):
         importance_reason = payload.get("importance_reason") or ("Важно" if importance else "Неважно")
         requester_profile, display_name = self._current_requester_payload()
 
-        self.create_ticket_btn.setEnabled(False)
         try:
             result = await self.ticket_client.create_ticket(
                 description=description,
-                title="Support Request",
+                title=str(payload.get("title") or "Support Request"),
                 tags=[],
                 requester_profile=requester_profile,
                 user_display_name=display_name,
@@ -2278,6 +2774,11 @@ class ChatPanel(QWidget):
                 importance=importance,
                 urgency_reason=urgency_reason,
                 importance_reason=importance_reason,
+                form_key=payload.get("form_key"),
+                form_pack_key=payload.get("form_pack_key"),
+                form_pack_version=payload.get("form_pack_version"),
+                form_payload=payload.get("form_payload"),
+                ticket_type=payload.get("ticket_type"),
             )
             if result.get("status") != "ok":
                 raise RuntimeError(str(result))
@@ -2300,8 +2801,6 @@ class ChatPanel(QWidget):
         except Exception as exc:
             logger.error(f"Ошибка создания тикета: {exc}")
             QMessageBox.critical(self, "Ошибка", str(exc))
-        finally:
-            self.create_ticket_btn.setEnabled(True)
 
     def _on_open_ticket(self) -> None:
         cur = self.tickets_list.currentIndex()

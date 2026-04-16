@@ -366,6 +366,11 @@ class TicketApiClient:
         importance: Optional[bool] = None,
         urgency_reason: Optional[str] = None,
         importance_reason: Optional[str] = None,
+        form_key: Optional[str] = None,
+        form_pack_key: Optional[str] = None,
+        form_pack_version: Optional[str] = None,
+        form_payload: Optional[dict] = None,
+        ticket_type: Optional[str] = None,
     ) -> dict:
         """
         Создает новый тикет.
@@ -399,6 +404,16 @@ class TicketApiClient:
             payload["urgency_reason"] = urgency_reason
         if importance_reason is not None:
             payload["importance_reason"] = importance_reason
+        if form_key is not None:
+            payload["form_key"] = form_key
+        if form_pack_key is not None:
+            payload["form_pack_key"] = form_pack_key
+        if form_pack_version is not None:
+            payload["form_pack_version"] = form_pack_version
+        if form_payload is not None:
+            payload["form_payload"] = form_payload
+        if ticket_type is not None:
+            payload["ticket_type"] = ticket_type
         
         logger.debug(f"POST {url} с payload: {payload}")
         
@@ -423,6 +438,38 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при create_ticket: {e}")
             raise Exception(f"Network error: {e}")
     
+    async def get_ticket_form_pack_current(
+        self,
+        pack_key: str = "request_forms",
+        current_version: Optional[str] = None,
+    ) -> dict:
+        """Получает текущий каталог форм заявок для агента."""
+        url = f"{self.base_url}/ticket_forms/current"
+        params = {"pack_key": pack_key}
+        if current_version:
+            params["current_version"] = current_version
+
+        logger.debug(f"GET {url} pack_key={pack_key} current_version={current_version}")
+
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, params=params, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    error_msg = f"HTTP {response.status}: {response_text}"
+                    logger.error(f"Ошибка get_ticket_form_pack_current: {error_msg}")
+                    raise Exception(error_msg)
+                result = await response.json()
+                logger.debug(
+                    "get_ticket_form_pack_current успешно: "
+                    f"pack_key={pack_key}, version={(result.get('pack') or {}).get('version')}"
+                )
+                return result
+        except aiohttp.ClientError as e:
+            logger.error(f"Ошибка сети при get_ticket_form_pack_current: {e}")
+            raise Exception(f"Network error: {e}")
+
     async def list_tickets(self) -> dict:
         """
         Получает список тикетов. Для агента передаётся device_id — сервер возвращает только тикеты этого устройства.

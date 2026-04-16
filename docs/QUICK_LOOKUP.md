@@ -1,3 +1,9 @@
+## 2026-04-16 intake forms
+
+- Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, and `pc_agent/ui_gui/chat_panel.py`.
+- The admin `/admin` shell has a dedicated `Конструктор форм` tab for versioned request-form packs, served by `/api/ticket_forms/current`, `/public_api/ticket_forms/current`, and `/api/ticket_forms/packs/*`.
+- Public `/help` and the local agent ticket dialog now submit `form_key`, `form_payload`, and `ticket_type`; the agent caches the latest form pack in its local data root and refreshes only when the server reports a newer version.
+
 ## 2026-04-15 module workbench focus
 
 - For module authoring in the admin UI, start with `server/admin_modules_workbench.js`, `server/admin_modules_workbench.html`, `server/modules/handlers.py`, and `server/modules/workbench_service.py`.

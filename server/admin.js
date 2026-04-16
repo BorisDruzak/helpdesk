@@ -2175,6 +2175,7 @@
                 });
             });
             initWorkbenchTab();
+            initTicketFormsBuilderTab();
             initSettingsTab();
             initTechTab();
         });
@@ -2221,6 +2222,8 @@
             } else             if (tabName === 'modules') {
                 loadModulesTab();
                 initRegistryModulesToggles();
+            } else if (tabName === 'ticket-forms') {
+                loadTicketFormsBuilderTab();
             } else if (tabName === 'users') {
                 loadUsersTab();
             } else if (tabName === 'agent-updates') {
@@ -2261,6 +2264,18 @@
                 if (!frame || !workbenchTicketId) return;
                 frame.src = '/ticket.html?ticket_id=' + encodeURIComponent(workbenchTicketId) + '&_ts=' + Date.now();
             });
+        }
+
+        function initTicketFormsBuilderTab() {
+            if (window.TicketFormsBuilderWorkbench && typeof window.TicketFormsBuilderWorkbench.init === 'function') {
+                window.TicketFormsBuilderWorkbench.init();
+            }
+        }
+
+        function loadTicketFormsBuilderTab() {
+            if (window.TicketFormsBuilderWorkbench && typeof window.TicketFormsBuilderWorkbench.loadTab === 'function') {
+                window.TicketFormsBuilderWorkbench.loadTab();
+            }
         }
 
         const settingsState = {

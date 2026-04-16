@@ -165,3 +165,38 @@
 - Verification for this refactor:
   - passed: `python scripts/verify_workspace.py`
   - passed: `python -m pytest server/tests/test_modules_workbench_api.py -v --tb=short`
+
+## 2026-04-16 Intake Forms Manual QA
+
+- Scope:
+  - versioned request-form packs in admin UI;
+  - public `/help` dynamic intake forms;
+  - local agent ticket-create dialog with cached form-pack refresh;
+  - end-to-end ticket creation with `form_key`, `form_pack_key`, `form_pack_version`, `form_payload`, `ticket_type`.
+- Manual check matrix:
+  1. Admin constructor:
+     - open `/admin`, switch to `Конструктор форм`;
+     - confirm current preferred pack/version loads without JS errors;
+     - create/edit fields for `printer`, `access`, `site_system`;
+     - save a new version and assign it preferred.
+  2. Public help form:
+     - open `/help`;
+     - verify request type cards render from `/public_api/ticket_forms/current`;
+     - choose `printer` and confirm `cabinet`, `model`, `printer_number`;
+     - choose `access` and confirm `system`, `role`, `approver`;
+     - choose `site_system` with site-down issue and confirm conditional `url`, `source_pc`, `scope`;
+     - submit a ticket and verify success response.
+  3. Local agent dialog:
+     - bootstrap local agent runtime;
+     - start a named GUI instance via `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`;
+     - open create-ticket dialog and verify the same dynamic forms/conditional fields;
+     - submit a ticket and confirm the dialog blocks missing required dynamic fields.
+  4. Regression spot-check:
+     - confirm classic free-text/title/contacts path still submits;
+     - confirm old or missing cached pack falls back to built-in defaults;
+     - confirm server accepts unchanged clients without `form_payload`.
+- Verification target for this task:
+  - `python scripts/verify_workspace.py`
+  - `python -m pytest server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_contracts.py server/tests/test_ticket_device_binding.py -v --tb=short`
+  - `python -m pytest pc_agent/tests -v --tb=short`
+  - browser/manual QA against `http://192.168.100.17:8666/admin`

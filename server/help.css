@@ -120,6 +120,85 @@ body {
     gap: 14px;
 }
 
+.request-type-card,
+.dynamic-form-intro {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border-radius: 20px;
+    background: rgba(15, 118, 110, 0.06);
+    border: 1px solid rgba(15, 118, 110, 0.12);
+}
+
+.request-type-card p,
+.dynamic-form-intro p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.request-type-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.request-type-option {
+    display: grid;
+    gap: 6px;
+    text-align: left;
+    border: 1px solid rgba(17, 24, 39, 0.12);
+    border-radius: 18px;
+    padding: 14px;
+    background: var(--card-strong);
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.request-type-option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(15, 118, 110, 0.24);
+}
+
+.request-type-option.is-active {
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
+    background: linear-gradient(135deg, rgba(15, 118, 110, 0.14), rgba(255, 255, 255, 0.88));
+}
+
+.request-type-option strong {
+    font-size: 15px;
+}
+
+.request-type-option span,
+.request-type-empty,
+.dynamic-help {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.dynamic-field {
+    display: grid;
+    gap: 6px;
+}
+
+.dynamic-radio-group {
+    display: grid;
+    gap: 8px;
+}
+
+.dynamic-radio-option,
+.dynamic-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.58);
+    border: 1px solid rgba(17, 24, 39, 0.08);
+}
+
 label {
     display: grid;
     gap: 6px;
