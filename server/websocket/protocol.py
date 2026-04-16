@@ -655,6 +655,7 @@ async def enqueue_command_async(
     try:
         from app.db import get_session
         from app.repos.device_outbox_repo import DeviceOutboxRepo
+        from app.repos.operations_repo import OperationsRepo
         from app.services.operation_service import OperationService
         
         async with get_session() as session:
@@ -671,12 +672,25 @@ async def enqueue_command_async(
                 operation_id=command_id  # operation_id = command_id
             )
             
-            # 2. Create operation (materialized state) только если operation_id не был передан
-            # Если operation_id передан, операция уже создана в вызывающем коде
-            if not operation_id:
-                ui_publisher = state.ui_publisher if hasattr(state, 'ui_publisher') else None
-                op_service = OperationService(session, publisher=ui_publisher)
-                operation = await op_service.enqueue_operation(
+            # 2. Create or reuse operation (materialized state)
+            # Некоторые вызывающие коды передают pre-created operation_id, но reconcile/outbox
+            # могут передавать только идентификатор без фактической записи в operations.
+            # Поэтому здесь гарантируем наличие materialized operation для любого command_id.
+            ui_publisher = state.ui_publisher if hasattr(state, 'ui_publisher') else None
+            op_service = OperationService(session, publisher=ui_publisher)
+            op_repo = OperationsRepo(session)
+            existing_op = await op_repo.get_by_operation_id(command_id)
+
+            if existing_op:
+                if job_id and existing_op.job_id != job_id:
+                    existing_op.job_id = job_id
+                if ticket_id and existing_op.ticket_id != ticket_id:
+                    existing_op.ticket_id = ticket_id
+                logger.debug(
+                    f"[enqueue_command_async] Using existing operation: operation_id={command_id}"
+                )
+            else:
+                await op_service.enqueue_operation(
                     operation_id=command_id,
                     device_id=device_id,
                     kind=kind,
