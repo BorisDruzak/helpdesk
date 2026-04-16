@@ -988,6 +988,13 @@
         note.classList.toggle("is-success", !isError && Boolean(message));
     }
 
+    function makeFlashMessage(kind, text, detailsHtml) {
+        if (!text) {
+            return null;
+        }
+        return { kind, text, detailsHtml: detailsHtml || "" };
+    }
+
     function resetArchiveImportForm() {
         const fileInput = byId("modules-workbench-archive-file");
         const moduleInput = byId("modules-workbench-archive-module-name");
@@ -1096,7 +1103,6 @@
                 `Архив принят: ${data.module_name}/${data.version}. Сервер сохранил версию и завершил preflight со статусом ${data.validation_status || "passed"}.`,
                 false
             );
-            setMessage("success", `Архив ${data.module_name}/${data.version} загружен в server registry.`);
             await load();
             await refreshOuterModuleInstallViews();
             state.selectedFamily = data.module_name;
@@ -1104,10 +1110,14 @@
             resetArchiveImportForm();
             if (openAfter) {
                 requestModulesSubtab("editor");
-                await loadVersionDetail(data.module_name, data.version, { view: "editor" });
+                await loadVersionDetail(data.module_name, data.version, {
+                    view: "editor",
+                    flashMessage: makeFlashMessage("success", `Архив ${data.module_name}/${data.version} загружен в server registry.`),
+                });
             } else {
                 requestModulesSubtab("list");
                 setCurrentView("list");
+                setMessage("success", `Архив ${data.module_name}/${data.version} загружен в server registry.`);
             }
         } catch (error) {
             renderArchiveImportNote(error.message, true);
@@ -1775,6 +1785,8 @@
             }
             if ((state.currentDraft.warnings || []).length) {
                 setMessage("warning", "Часть кода удалось восстановить не полностью. Ниже всё равно показаны доступные source-файлы и найденные методы.", (state.currentDraft.warnings || []).map((item) => html(item)).join("<br>"));
+            } else if (options?.flashMessage?.text) {
+                setMessage(options.flashMessage.kind || "success", options.flashMessage.text, options.flashMessage.detailsHtml || "");
             }
             renderAll();
         } catch (error) {
@@ -2808,16 +2820,17 @@
                 return;
             }
             const rolloutMessage = rolloutSummaryText(data.rollout_summary);
-            setMessage(
-                "success",
-                `Модуль ${data.module_name}/${data.version} сохранён в server registry.`,
-                rolloutMessage ? html(rolloutMessage) : ""
-            );
             await load();
             await refreshOuterModuleInstallViews();
             state.selectedFamily = data.module_name;
             state.selectedVersion = data.version;
-            await loadVersionDetail(data.module_name, data.version);
+            await loadVersionDetail(data.module_name, data.version, {
+                flashMessage: makeFlashMessage(
+                    "success",
+                    `Модуль ${data.module_name}/${data.version} сохранён в server registry.`,
+                    rolloutMessage ? html(rolloutMessage) : ""
+                ),
+            });
         } catch (error) {
             setMessage("error", error.message);
         }

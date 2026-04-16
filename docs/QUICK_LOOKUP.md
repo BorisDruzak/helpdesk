@@ -1,7 +1,7 @@
 ## 2026-04-15 module workbench focus
 
 - For module authoring in the admin UI, start with `server/admin_modules_workbench.js`, `server/admin_modules_workbench.html`, `server/modules/handlers.py`, and `server/modules/workbench_service.py`.
-- The module workbench now supports template-driven tool creation, inline validation, validate-before-publish preview, preferred-version assignment, rollout-policy settings for preferred versions, archive-to-code decomposition, and delete-from-registry actions from the module list.
+- The module workbench now supports template-driven tool creation, inline validation, validate-before-publish preview, preferred-version assignment, rollout-policy settings for preferred versions, ZIP archive import into the registry, archive-to-code decomposition, and delete-from-registry actions from the module list.
 - The admin `Модули` page is split into inner tabs: `Разработка модулей`, `Список модулей`, `Редактор модулей`, and `Модули на устройствах`; the authoring flow inside the first tab is a 4-step wizard.
 - Everyday module authoring no longer starts from raw JSON: platforms are selected from supported values, requirements are entered line-by-line, and params/output schemas can be assembled from validated blueprint rows before publish.
 - The server validate endpoint for the workbench is `POST /api/modules/workbench/validate`.
