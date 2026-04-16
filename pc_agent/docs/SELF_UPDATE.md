@@ -6,6 +6,8 @@ PC Agent поддерживает удалённое обновление чер
 
 Для операционного сценария "что менять, как версионировать, что проверять и как катить rollout" используйте канонический playbook: [AGENT_UPDATE_WORKFLOW.md](AGENT_UPDATE_WORKFLOW.md).
 
+Важно: server-side assigned rollout является source of truth и может указывать как на upgrade, так и на controlled rollback. Для агента это один и тот же self-update flow: если рекомендованная release-версия с сервера отличается от текущей, GUI должен показывать action-кнопку, а launcher после restart применяет запрошенный архив и переключает `current.json` на указанную версию.
+
 ## Layout (per-user)
 
 - **install_root** (по умолчанию: Windows `%LOCALAPPDATA%\PCClientAgent\install`, Linux `~/.local/opt/pcclient-agent`):
@@ -39,7 +41,8 @@ PC Agent поддерживает удалённое обновление чер
 Требования:
 - `download_url`, `sha256`, `version` обязательны
 - `archive_type`: `zip` или `tar.gz`
-- выполнять может только `actor_role=admin`
+- выполнять может server-authorized privileged actor: `admin`, `system` или `agent` для собственного self-update, уже разрешённого сервером по recommended build
+- для совместимости со старыми release сервер может прислать WS-команду с `actor_role=admin`, а исходного инициатора положить в `requested_by`; агент должен использовать `requested_by` для `pending_update.json` и диагностики
 
 ## Что делает агент (при команде update)
 
@@ -75,6 +78,7 @@ PC Agent поддерживает удалённое обновление чер
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
 - Если update "успешен" по логам агента, но GUI показывает `Сервер: подключение...`, проверьте локальный `ui_bridge`: поздний SSE-подписчик должен сразу получать последнее `connection_state`; см. `pc_agent/ui_bridge/event_bus.py`, `pc_agent/ui_bridge/api_server.py`.
+- Runtime status GUI должен дополнительно показывать: `comparison`, `recommendation_source`, `assigned_rollout`, `pending_update_*`, `last_applied_update_*`, `last_failed_update_*`, чтобы разбирать rollout/update состояние без ручного чтения файлов.
 
 ## Распространение (exe / rpm) и готовность к обновлению
 

@@ -239,6 +239,10 @@ GUI агента использует этот endpoint перед локаль�
 
 Агент по этим параметрам скачивает артефакт, проверяет sha256, пишет `pending_update.json` и завершается с кодом 42. Дальнейшим управлением занимается launcher.
 
+Важно: сама WS-команда `update` теперь считается server-authorized privileged action. Помимо обычного `admin/system` запроса сервер может поставить такой update и после локального self-update trigger из GUI агента, если `POST /api/devices/{device_id}/agent/update` уже подтвердил, что агент запрашивает ровно рекомендованный build для собственного `device_id`.
+
+Для backward-compatibility сервер отправляет WS `update` с privileged `actor_role=admin`, а исходного инициатора (`admin` или `agent`) кладёт в `params.requested_by`. Это позволяет старым release-агентам, которые ещё проверяют `update` как admin-only команду, тоже принимать сервером уже авторизованный self-update.
+
 ## Массовое обновление
 
 `POST /api/agents/update_bulk`

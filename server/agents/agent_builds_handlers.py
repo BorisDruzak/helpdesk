@@ -867,6 +867,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
         download_url = (
             f"{config.SERVER_PUBLIC_BASE_URL}/api/agent_builds/{build.target}/{build.channel}/{build.version}/download"
         )
+        command_actor_role = "admin"
         params = {
             "target": build.target,
             "channel": build.channel,
@@ -876,6 +877,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             "size": build.size,
             "archive_type": build.archive_type or "zip",
             "artifact_name": build.artifact_filename,
+            "requested_by": auth_context.actor_role,
         }
         if isinstance(restart_delay_sec, int):
             params["restart_delay_sec"] = restart_delay_sec
@@ -887,7 +889,7 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             device_id=device_id,
             command="update",
             params=params,
-            actor_role=auth_context.actor_role,
+            actor_role=command_actor_role,
             trace_id=trace_id,
             operation_id=op_id,
         )
@@ -1132,6 +1134,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 "size": build.size,
                 "archive_type": build.archive_type or "zip",
                 "artifact_name": build.artifact_filename,
+                "requested_by": auth_context.actor_role,
             }
             if isinstance(restart_delay_sec, int):
                 params["restart_delay_sec"] = restart_delay_sec
@@ -1143,7 +1146,7 @@ async def handle_bulk_update_agents(request: web.Request) -> web.Response:
                 device_id=device_id,
                 command="update",
                 params=params,
-                actor_role=auth_context.actor_role,
+                actor_role="admin",
                 trace_id=trace_id,
                 operation_id=op_id,
             )

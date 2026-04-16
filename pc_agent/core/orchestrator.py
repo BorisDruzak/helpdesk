@@ -612,7 +612,13 @@ class AgentOrchestrator:
                 except Exception as db_error:
                     logger.warning(f"Не удалось сохранить результат в БД: {db_error}")
             
-            logger.success(f"OK Команда '{cmd}' выполнена успешно (duration: {duration_ms}ms)")
+            if result.status == "success":
+                logger.success(f"OK Команда '{cmd}' выполнена успешно (duration: {duration_ms}ms)")
+            else:
+                logger.warning(
+                    f"Команда '{cmd}' завершилась со статусом {result.status} "
+                    f"(duration: {duration_ms}ms)"
+                )
             return result.model_dump()
             
         except Exception as e:
@@ -1353,8 +1359,11 @@ class AgentOrchestrator:
         """
         try:
             actor_role = (command.get("actor_role") or "user").lower()
-            if actor_role != "admin":
-                return fail(code="FORBIDDEN", message="admin only", meta=meta, retriable=False)
+            # `update` приходит только с сервера по доверенному WS-каналу. Помимо admin/system
+            # сервер теперь может отправлять self-update, инициированный самим агентом через
+            # его GUI, уже после отдельной server-side авторизации recommended build.
+            if actor_role not in {"admin", "system", "agent"}:
+                return fail(code="FORBIDDEN", message="admin/agent only", meta=meta, retriable=False)
 
             version = command.get("version")
             target = command.get("target")
@@ -1365,7 +1374,7 @@ class AgentOrchestrator:
             restart_delay_sec = command.get("restart_delay_sec")
             archive_type = command.get("archive_type") or "zip"
             operation_id = (meta.request_id or "") if hasattr(meta, "request_id") else ""
-            requested_by = (command.get("actor_role") or "admin").lower()
+            requested_by = (command.get("requested_by") or actor_role or "admin").lower()
 
             if not version:
                 return fail(code="UPDATE_FAILED", message="Missing version", meta=meta, retriable=False)

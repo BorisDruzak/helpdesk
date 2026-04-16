@@ -294,6 +294,10 @@ async def test_agent_can_request_self_update_only_for_recommended_build(test_cli
     assert data["status"] == "accepted"
     assert data["build"]["version"] == assigned_version
     assert data["self_update_authorized"] is True
+    assert mocked_enqueue.call_count == 1
+    enqueue_kwargs = mocked_enqueue.call_args.kwargs
+    assert enqueue_kwargs["actor_role"] == "admin"
+    assert enqueue_kwargs["params"]["requested_by"] == "agent"
 
 
 @pytest.mark.asyncio
