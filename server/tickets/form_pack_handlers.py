@@ -10,6 +10,7 @@ from app.db import get_session
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
+    next_form_pack_version,
     pack_summary,
     resolve_ticket_form_pack,
     validate_form_pack_schema,
@@ -98,15 +99,19 @@ async def handle_ticket_form_pack_save(request: web.Request) -> web.Response:
         return _json_error("invalid_payload", status=400)
 
     raw_pack = data.get("pack") if isinstance(data.get("pack"), dict) else data
-    make_preferred = bool(data.get("make_preferred", True))
     notes = str(data.get("notes") or raw_pack.get("description") or "").strip()
     try:
-        normalized_pack = validate_form_pack_schema(raw_pack)
+        normalized_pack = validate_form_pack_schema(raw_pack, require_version=False)
     except ValueError as exc:
         return _json_error("validation_error", status=400, details=exc.args[0] if exc.args else "invalid pack")
 
     async with get_session() as session:
         repo = TicketFormPacksRepo(session)
+        current = await resolve_ticket_form_pack(repo, pack_key=normalized_pack["pack_key"])
+        next_version = next_form_pack_version(current.get("version") if isinstance(current, dict) else None)
+        while await repo.get_pack(normalized_pack["pack_key"], next_version) is not None:
+            next_version = next_form_pack_version(next_version)
+        normalized_pack["version"] = next_version
         pack = await repo.upsert_pack(
             pack_key=normalized_pack["pack_key"],
             version=normalized_pack["version"],
@@ -114,13 +119,11 @@ async def handle_ticket_form_pack_save(request: web.Request) -> web.Response:
             created_by=auth_context.actor_id,
             notes=notes,
         )
-        preferred = None
-        if make_preferred:
-            preferred = await repo.set_preferred(
-                pack_key=normalized_pack["pack_key"],
-                version=normalized_pack["version"],
-                updated_by=auth_context.actor_id,
-            )
+        preferred = await repo.set_preferred(
+            pack_key=normalized_pack["pack_key"],
+            version=normalized_pack["version"],
+            updated_by=auth_context.actor_id,
+        )
         await session.commit()
     return _json_ok(
         pack={**pack_summary(normalized_pack), "created_at": pack.created_at.isoformat() if pack.created_at else None, "created_by": pack.created_by, "notes": pack.notes},

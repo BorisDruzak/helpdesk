@@ -16,13 +16,13 @@
         fragmentLoaded: false,
         loading: false,
         pack: null,
-        versions: [],
         selectedFormKey: "",
         selectedFieldKey: "",
         currentView: "catalog",
         wizardStep: 1,
         draftForm: null,
         draftFieldKey: "",
+        lastLoadedSignature: "",
     };
 
     function html(value) {
@@ -38,6 +38,17 @@
 
     function clone(value) {
         return JSON.parse(JSON.stringify(value));
+    }
+
+    function packSignature(pack) {
+        return JSON.stringify(ensurePack(pack || createBlankPack()));
+    }
+
+    function hasUnsavedChanges() {
+        if (!state.pack) {
+            return false;
+        }
+        return packSignature(state.pack) !== state.lastLoadedSignature;
     }
 
     function byId(id) {
@@ -188,7 +199,6 @@
             return;
         }
         state.pack.title = String(byId("ticketFormsPackTitle")?.value || "").trim() || "Каталог заявок";
-        state.pack.version = String(byId("ticketFormsPackVersion")?.value || "").trim() || "1.0.0";
         state.pack.description = String(byId("ticketFormsPackDescription")?.value || "").trim();
     }
 
@@ -262,7 +272,6 @@
 
     function formIssues(form, options) {
         const existingForms = Array.isArray(options?.existingForms) ? options.existingForms : [];
-        const ignoreKey = String(options?.ignoreKey || "").trim();
         const issues = [];
         const formKey = String(form?.key || "").trim();
         const requestKind = String(form?.request_kind || "").trim();
@@ -281,7 +290,7 @@
             issues.push("У формы должен быть request_kind. Обычно он совпадает с ключом.");
         }
         if (formKey) {
-            const duplicate = existingForms.some((item) => item !== form && item.key === formKey && item.key !== ignoreKey);
+            const duplicate = existingForms.some((item) => item !== form && item.key === formKey);
             if (duplicate) {
                 issues.push(`Ключ формы ${formKey} уже используется в этом каталоге.`);
             }
@@ -333,45 +342,13 @@
         if (byId("ticketFormsPackTitle")) {
             byId("ticketFormsPackTitle").value = state.pack.title || "";
         }
-        if (byId("ticketFormsPackVersion")) {
-            byId("ticketFormsPackVersion").value = state.pack.version || "";
-        }
         if (byId("ticketFormsPackDescription")) {
             byId("ticketFormsPackDescription").value = state.pack.description || "";
         }
     }
 
     function renderVersions() {
-        const node = byId("ticketFormsVersionsList");
-        if (!node) {
-            return;
-        }
-        if (!state.versions.length) {
-            node.innerHTML = `<div class="tfb-empty">Пока сохранена только встроенная версия или список ещё не загружен.</div>`;
-            return;
-        }
-        node.innerHTML = state.versions.map((pack) => {
-            const isCurrent = state.pack && pack.version === state.pack.version;
-            return `
-                <div class="tfb-card">
-                    <div class="tfb-section-head">
-                        <div>
-                            <strong>${html(pack.version || "—")}</strong>
-                            <div class="tfb-subtle" style="margin-top: 4px;">${html(pack.created_by || "system")}</div>
-                        </div>
-                        <div class="tfb-inline-actions">
-                            ${pack.is_preferred ? '<span class="tfb-chip is-accent">активная</span>' : ""}
-                            ${isCurrent ? '<span class="tfb-chip is-info">открыта</span>' : ""}
-                        </div>
-                    </div>
-                    <div class="tfb-subtle" style="margin-top: 8px;">${html(pack.description || pack.notes || "Без комментария к версии")}</div>
-                    <div class="tfb-inline-actions" style="margin-top: 10px;">
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="load-version" data-version="${html(pack.version)}">Открыть</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-action="set-preferred" data-version="${html(pack.version)}">Сделать активной</button>
-                    </div>
-                </div>
-            `;
-        }).join("");
+        // История версий остаётся внутренней серверной механикой и не показывается в обычном UI.
     }
 
     function renderCatalogFormsList() {
@@ -435,11 +412,32 @@
         `).join("");
     }
 
+    function findDuplicateFormKey(form) {
+        const formKey = String(form?.key || "").trim();
+        if (!formKey) {
+            return "";
+        }
+        return packForms().some((item) => item !== form && item.key === formKey)
+            ? `Ключ ${formKey} уже занят другой формой в каталоге.`
+            : "";
+    }
+
+    function findDuplicateFieldKey(form, field) {
+        const fieldKey = String(field?.key || "").trim();
+        if (!fieldKey) {
+            return "";
+        }
+        return (form?.fields || []).some((item) => item !== field && item.key === fieldKey)
+            ? `Ключ ${fieldKey} уже занят другим полем в этой форме.`
+            : "";
+    }
+
     function buildFormBasicsMarkup(form, target) {
         const prefix = target === "draft" ? "ticketFormsDraft" : "ticketFormsEdit";
         const requestKindNote = String(form.request_kind || "").trim() === String(form.key || "").trim()
             ? "Оставьте как есть, если ticket_type должен совпадать с ключом формы."
             : "Переопределён отдельно от ключа формы.";
+        const duplicateFormKey = findDuplicateFormKey(form);
         return `
             <div class="tfb-grid-2">
                 <div class="form-group">
@@ -465,6 +463,7 @@
                         placeholder="printer"
                     >
                     <div class="tfb-subtle" style="margin-top: 6px;">Используйте латиницу и snake_case: <code>printer</code>, <code>site_system</code>.</div>
+                    ${duplicateFormKey ? `<div class="error-message" style="margin-top: 8px;">${html(duplicateFormKey)}</div>` : ""}
                 </div>
             </div>
             <details class="tfb-advanced">
@@ -529,6 +528,7 @@
         const visibleField = String(visibleWhen.field || "");
         const visibleValue = String(visibleWhen.equals || "");
         const needsOptions = field.type === "select" || field.type === "radio";
+        const duplicateFieldKey = findDuplicateFieldKey(form, field);
         return `
             <div class="tfb-card">
                 <div class="tfb-section-head">
@@ -560,11 +560,12 @@
                             id="${prefix}FieldKey"
                             data-field-target="${target}"
                             data-field-prop="key"
-                            value="${html(field.key || "")}"
-                            placeholder="printer_model"
-                        >
-                    </div>
+                        value="${html(field.key || "")}"
+                        placeholder="printer_model"
+                    >
+                    ${duplicateFieldKey ? `<div class="error-message" style="margin-top: 8px;">${html(duplicateFieldKey)}</div>` : ""}
                 </div>
+            </div>
                 <div class="tfb-grid-2">
                     <div class="form-group">
                         <label for="${prefix}FieldType">Тип поля</label>
@@ -677,6 +678,7 @@
         const selectedForm = getSelectedForm() || forms[0] || null;
         const packPreview = JSON.stringify(state.pack, null, 2);
         const selectedSummary = selectedForm ? formSummary(selectedForm) : { fieldsCount: 0, requiredCount: 0, conditionalCount: 0 };
+        const dirty = hasUnsavedChanges();
         node.innerHTML = `
             <div class="tfb-summary-grid">
                 <div class="tfb-summary-item">
@@ -684,8 +686,8 @@
                     <strong>${forms.length}</strong>
                 </div>
                 <div class="tfb-summary-item">
-                    <label>Текущая версия</label>
-                    <strong>${html(state.pack.version || "—")}</strong>
+                    <label>Сохранение</label>
+                    <strong>${dirty ? "есть несохранённые изменения" : "всё сохранено"}</strong>
                 </div>
                 <div class="tfb-summary-item">
                     <label>Активная форма</label>
@@ -698,7 +700,7 @@
                 <ul class="tfb-doc-list">
                     <li>Используйте «Создать форму» для новой заявки, а не меняйте каталог raw JSON-ом.</li>
                     <li>Редактирование существующей формы выполняйте в отдельном режиме, чтобы не спутать создание и поддержку.</li>
-                    <li>Когда структура готова, вернитесь сюда и сохраните новую версию каталога.</li>
+                    <li>Когда структура готова, нажмите «Сохранить изменения», и сервер сам сделает каталог активным.</li>
                 </ul>
             </div>
 
@@ -727,7 +729,7 @@
                             <button type="button" class="btn btn-secondary btn-sm" data-action="open-create">Создать ещё одну</button>
                         </div>
                         <div class="tfb-inline-note" style="margin-top: 12px;">
-                            Любое изменение формы пока хранится только в текущем черновике страницы. Для публикации обязательно сохраните новую версию каталога слева.
+                            Любое изменение формы сначала хранится на текущей странице. После кнопки сохранения сервер сразу выпускает новую активную редакцию каталога.
                         </div>
                     </div>
                 </div>
@@ -786,7 +788,7 @@
                         </div>
                     </div>
                     <div class="tfb-inline-note" style="margin-top: 14px;">
-                        После шага проверки форма добавляется в текущий каталог, но новая версия каталога публикуется отдельно.
+                        После шага проверки форма попадает в текущий каталог. Затем останется один шаг: сохранить изменения, чтобы сервер сразу сделал их активными.
                     </div>
                     <div class="tfb-inline-actions" style="margin-top: 14px;">
                         <button type="button" class="btn btn-secondary btn-sm" data-view="catalog">К каталогу</button>
@@ -877,7 +879,7 @@
                                     </ul>
                                 ` : `
                                     <div class="tfb-chip is-accent">Форма готова к добавлению в каталог</div>
-                                    <div class="tfb-subtle" style="margin-top: 12px;">После добавления откроется отдельный редактор формы. Затем останется сохранить новую версию каталога.</div>
+                                    <div class="tfb-subtle" style="margin-top: 12px;">После добавления откроется отдельный редактор формы. Затем останется просто сохранить изменения каталога.</div>
                                 `}
                                 <div class="tfb-inline-actions" style="margin-top: 16px;">
                                     <button type="button" class="btn btn-primary" data-action="commit-draft-form"${issues.length ? " disabled" : ""}>Добавить в каталог</button>
@@ -937,7 +939,7 @@
                 <ul class="tfb-doc-list">
                     <li>Это отдельный редактор уже существующей формы, без шагов создания.</li>
                     <li>Меняйте состав полей и расширенные настройки здесь.</li>
-                    <li>После правок не забудьте сохранить новую версию каталога слева.</li>
+                    <li>После правок нажмите сохранение каталога, и сервер сразу опубликует обновлённую редакцию.</li>
                 </ul>
             </div>
 
@@ -1013,7 +1015,6 @@
     function render() {
         ensureSelection();
         renderPackMeta();
-        renderVersions();
         renderCatalogFormsList();
         renderViewButtons();
         renderCatalogView();
@@ -1022,15 +1023,7 @@
     }
 
     async function loadVersions() {
-        const response = await fetch(`/api/ticket_forms/packs?pack_key=${encodeURIComponent(PACK_KEY)}`, {
-            headers: getAuthHeaders(),
-            cache: "no-store",
-        });
-        const data = await responseToJson(response);
-        if (!response.ok || data.status !== "ok") {
-            throw new Error(data.error || "Не удалось загрузить список версий");
-        }
-        state.versions = Array.isArray(data.packs) ? data.packs : [];
+        return null;
     }
 
     async function loadCurrentPack(version) {
@@ -1055,12 +1048,12 @@
                 throw new Error(data.error || "Не удалось загрузить каталог форм");
             }
             state.pack = ensurePack(data.pack);
-            await loadVersions();
+            state.lastLoadedSignature = packSignature(state.pack);
             if (!state.currentView || !VIEW_MODES.includes(state.currentView)) {
                 state.currentView = "catalog";
             }
             render();
-            setStatus(`Каталог форм загружен: версия ${state.pack.version}`, "success");
+            setStatus("Каталог форм загружен.", "success");
         } catch (error) {
             console.error("ticket forms builder load failed", error);
             setStatus(error.message || "Не удалось загрузить каталог форм", "error");
@@ -1074,22 +1067,24 @@
             return;
         }
         syncPackMetaFromInputs();
-        setStatus("Сохраняем каталог форм...", "loading");
+        setStatus("Сохраняем изменения каталога...", "loading");
         try {
+            const payloadPack = clone(state.pack);
+            delete payloadPack.version;
             const response = await fetch("/api/ticket_forms/packs/save", {
                 method: "POST",
                 headers: getAuthHeaders(true),
                 body: JSON.stringify({
-                    pack: state.pack,
-                    make_preferred: byId("ticketFormsMakePreferred")?.checked !== false,
+                    pack: payloadPack,
+                    auto_publish: true,
                 }),
             });
             const data = await responseToJson(response);
             if (!response.ok || data.status !== "ok") {
                 throw new Error((data.details && JSON.stringify(data.details)) || data.error || "Не удалось сохранить каталог");
             }
-            await loadCurrentPack(state.pack.version);
-            setStatus(`Версия ${state.pack.version} сохранена`, "success");
+            await loadCurrentPack();
+            setStatus("Изменения сохранены и уже стали активными.", "success");
         } catch (error) {
             console.error("ticket forms builder save failed", error);
             setStatus(error.message || "Не удалось сохранить каталог", "error");
@@ -1154,7 +1149,7 @@
         state.draftFieldKey = "";
         state.currentView = "edit";
         render();
-        setStatus("Форма добавлена в каталог. Теперь сохраните новую версию каталога слева.", "success");
+        setStatus("Форма добавлена в каталог. Теперь сохраните изменения, чтобы она сразу стала активной.", "success");
     }
 
     function addField(target, type) {
@@ -1205,7 +1200,7 @@
         state.selectedFieldKey = state.pack.forms[0]?.fields?.[0]?.key || "";
         state.currentView = state.pack.forms.length ? "catalog" : "create";
         render();
-        setStatus("Форма удалена из черновика каталога. Не забудьте сохранить новую версию каталога.", "success");
+        setStatus("Форма удалена из черновика каталога. Сохраните изменения, чтобы обновить активный каталог.", "success");
     }
 
     function selectField(target, key) {
@@ -1388,7 +1383,7 @@
         const target = event.target;
         const isChangeEvent = event.type === "change";
 
-        if (target.id === "ticketFormsPackTitle" || target.id === "ticketFormsPackVersion" || target.id === "ticketFormsPackDescription") {
+        if (target.id === "ticketFormsPackTitle" || target.id === "ticketFormsPackDescription") {
             syncPackMetaFromInputs();
             if (isChangeEvent) {
                 renderCatalogView();

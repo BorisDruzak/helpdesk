@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any, Optional
 
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
@@ -12,6 +13,7 @@ DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "radio", "checkbox"}
 OPTION_FIELD_TYPES = {"select", "radio"}
+KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -197,7 +199,23 @@ def _normalize_visible_when(raw_rule: Any) -> Optional[dict[str, Any]]:
     raise ValueError("visible_when requires equals or in")
 
 
-def validate_form_pack_schema(raw_pack: Any) -> dict[str, Any]:
+def next_form_pack_version(current_version: Optional[str]) -> str:
+    version = str(current_version or "").strip()
+    if not version:
+        return "1.0.1"
+    parts = version.split(".")
+    if all(part.isdigit() for part in parts):
+        numeric_parts = [int(part) for part in parts]
+        numeric_parts[-1] += 1
+        return ".".join(str(part) for part in numeric_parts)
+    match = re.match(r"^(.*?)(\d+)$", version)
+    if match:
+        prefix, tail = match.groups()
+        return f"{prefix}{int(tail) + 1}"
+    return f"{version}.1"
+
+
+def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) -> dict[str, Any]:
     if not isinstance(raw_pack, dict):
         raise ValueError("form pack must be an object")
 
@@ -206,7 +224,7 @@ def validate_form_pack_schema(raw_pack: Any) -> dict[str, Any]:
     title = str(raw_pack.get("title") or "").strip() or "Каталог заявок"
     description = str(raw_pack.get("description") or "").strip()
     raw_forms = raw_pack.get("forms")
-    if not version:
+    if require_version and not version:
         raise ValueError("version is required")
     if not isinstance(raw_forms, list) or not raw_forms:
         raise ValueError("forms must be a non-empty array")
@@ -221,8 +239,12 @@ def validate_form_pack_schema(raw_pack: Any) -> dict[str, Any]:
         request_kind = str(raw_form.get("request_kind") or form_key).strip() or form_key
         if not form_key:
             raise ValueError("form key is required")
+        if not KEY_PATTERN.match(form_key):
+            raise ValueError(f"form {form_key!r} key must use latin snake_case")
         if not form_title:
             raise ValueError(f"form {form_key!r} title is required")
+        if not KEY_PATTERN.match(request_kind):
+            raise ValueError(f"form {form_key!r} request_kind must use latin snake_case")
         if form_key in seen_forms:
             raise ValueError(f"duplicate form key: {form_key}")
         seen_forms.add(form_key)
@@ -241,6 +263,8 @@ def validate_form_pack_schema(raw_pack: Any) -> dict[str, Any]:
             field_type = str(raw_field.get("type") or "text").strip().lower()
             if not field_key:
                 raise ValueError(f"form {form_key!r} field key is required")
+            if not KEY_PATTERN.match(field_key):
+                raise ValueError(f"form {form_key!r} field {field_key!r} key must use latin snake_case")
             if field_key in seen_fields:
                 raise ValueError(f"form {form_key!r} has duplicate field key {field_key!r}")
             if not field_label:

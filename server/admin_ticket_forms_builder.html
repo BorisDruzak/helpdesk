@@ -335,7 +335,7 @@
       <div>
         <h2 style="margin: 0 0 6px;">Конструктор форм заявок</h2>
         <div class="tfb-subtle">
-          Создавайте форму по шагам, редактируйте существующие формы отдельно, а публикацию новой версии каталога делайте в режиме «Каталог».
+          Создавайте форму по шагам, редактируйте существующие формы отдельно, а каталог сохраняйте одной кнопкой без ручного управления версиями.
         </div>
       </div>
       <div class="tfb-inline-actions">
@@ -350,7 +350,7 @@
         <ul class="tfb-doc-list">
           <li>Сначала создайте форму по шагам: название, ключ и поля.</li>
           <li>Потом проверьте форму и добавьте её в текущий каталог.</li>
-          <li>После этого сохраните новую версию каталога, чтобы изменения увидели `/help` и агент.</li>
+          <li>После этого просто сохраните каталог: сервер сам выпустит новую активную редакцию для `/help` и агента.</li>
         </ul>
       </div>
       <div class="tfb-doc-card">
@@ -370,8 +370,8 @@
     <aside class="tfb-panel">
       <div class="tfb-section-head">
         <div>
-          <h3 style="margin: 0;">Каталог и публикация</h3>
-          <div class="tfb-subtle">Здесь живут версия каталога, публикация и список форм внутри пакета.</div>
+          <h3 style="margin: 0;">Каталог и сохранение</h3>
+          <div class="tfb-subtle">Здесь хранятся название каталога, описание и кнопка публикации без ручного управления версиями.</div>
         </div>
       </div>
 
@@ -379,41 +379,23 @@
         <label for="ticketFormsPackTitle">Название каталога</label>
         <input type="text" id="ticketFormsPackTitle" placeholder="Каталог заявок">
 
-        <div class="tfb-grid-2" style="margin-top: 12px;">
-          <div class="form-group" style="margin: 0;">
-            <label for="ticketFormsPackVersion">Версия</label>
-            <input type="text" id="ticketFormsPackVersion" placeholder="1.0.2">
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 24px;">
-              <input type="checkbox" id="ticketFormsMakePreferred" checked>
-              <span>Сделать активной</span>
-            </label>
-          </div>
-        </div>
-
         <details class="tfb-advanced">
           <summary>Расширенные настройки каталога</summary>
           <div class="form-group" style="margin: 0;">
-            <label for="ticketFormsPackDescription">Описание версии</label>
-            <textarea id="ticketFormsPackDescription" rows="4" placeholder="Что изменилось в этой версии каталога"></textarea>
-            <div class="tfb-subtle" style="margin-top: 6px;">Это описание увидите в списке версий, когда будете выбирать активную редакцию.</div>
+            <label for="ticketFormsPackDescription">Описание каталога</label>
+            <textarea id="ticketFormsPackDescription" rows="4" placeholder="Коротко опишите каталог и правила его использования"></textarea>
+            <div class="tfb-subtle" style="margin-top: 6px;">Это поле помогает администраторам понимать назначение каталога, но не мешает обычному сценарию.</div>
           </div>
         </details>
 
         <div class="tfb-step-actions" style="margin-top: 14px;">
           <button type="button" class="btn btn-secondary" id="ticketFormsRefreshBtn">Обновить</button>
-          <button type="button" class="btn btn-primary" id="ticketFormsSaveBtn">Сохранить версию</button>
+          <button type="button" class="btn btn-primary" id="ticketFormsSaveBtn">Сохранить изменения</button>
         </div>
 
         <div class="tfb-inline-note" style="margin-top: 12px;">
-          Изменения внутри каталога не попадут в `/help` и агент, пока вы не сохраните новую версию пакета.
+          После сохранения сервер сам создаст новую активную редакцию каталога. Ничего переключать вручную не нужно.
         </div>
-      </div>
-
-      <div class="tfb-side-card" style="margin-top: 14px;">
-        <label>Версии каталога</label>
-        <div id="ticketFormsVersionsList" class="tfb-version-list" style="margin-top: 8px;"></div>
       </div>
 
       <div class="tfb-side-card" style="margin-top: 14px;">

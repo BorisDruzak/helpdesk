@@ -4,7 +4,7 @@ from aiohttp import web
 
 
 BASE_DIR = Path(__file__).parent.parent
-ADMIN_SHELL_VERSION = "20260416b"
+ADMIN_SHELL_VERSION = "20260416c"
 SUPPORT_SHELL_VERSION = "20260414c"
 LOGIN_SHELL_VERSION = "20260330a"
 

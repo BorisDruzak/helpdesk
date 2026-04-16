@@ -12,8 +12,7 @@ def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 
 
-@pytest.mark.asyncio
-async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, test_engine):
+async def _clear_request_form_packs(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         await session.execute(
@@ -26,6 +25,11 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
         )
         await session.commit()
 
+
+@pytest.mark.asyncio
+async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
     response = await test_client.get("/public_api/ticket_forms/current")
     assert response.status == 200, await response.text()
     data = await response.json()
@@ -37,15 +41,16 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
 
 
 @pytest.mark.asyncio
-async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_client):
+async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
     response = await test_client.post(
         "/api/ticket_forms/packs/save",
         json={
             "pack": {
                 "pack_key": "request_forms",
-                "version": "1.0.1",
                 "title": "Каталог заявок",
-                "description": "Тестовая версия каталога",
+                "description": "Тестовая публикация каталога",
                 "forms": [
                     {
                         "key": "printer",
@@ -59,11 +64,13 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
                     }
                 ],
             },
-            "make_preferred": True,
         },
         headers={**_admin_headers(), "Content-Type": "application/json"},
     )
     assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["pack"]["version"] == "1.0.1"
 
     current_response = await test_client.get(
         "/api/ticket_forms/current?pack_key=request_forms",
@@ -74,6 +81,79 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
     assert current_data["status"] == "ok"
     assert current_data["pack"]["version"] == "1.0.1"
     assert current_data["pack"]["forms"][0]["fields"][0]["key"] == "room"
+
+
+@pytest.mark.asyncio
+async def test_admin_save_auto_increments_internal_pack_version(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    payload = {
+        "pack": {
+            "pack_key": "request_forms",
+            "title": "Каталог заявок",
+            "description": "Автоматический выпуск",
+            "forms": [
+                {
+                    "key": "printer",
+                    "request_kind": "printer",
+                    "title": "Печать / принтер",
+                    "fields": [
+                        {"key": "room", "label": "Кабинет", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        }
+    }
+
+    first = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json=payload,
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert first.status == 200, await first.text()
+    assert (await first.json())["pack"]["version"] == "1.0.1"
+
+    payload["pack"]["description"] = "Автоматический выпуск 2"
+    second = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json=payload,
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert second.status == 200, await second.text()
+    second_data = await second.json()
+    assert second_data["pack"]["version"] == "1.0.2"
+
+
+@pytest.mark.asyncio
+async def test_admin_save_rejects_duplicate_form_key(test_client):
+    response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": "printer",
+                        "request_kind": "printer",
+                        "title": "Печать / принтер",
+                        "fields": [{"key": "room", "label": "Кабинет", "type": "text", "required": True}],
+                    },
+                    {
+                        "key": "printer",
+                        "request_kind": "printer_duplicate",
+                        "title": "Дубликат",
+                        "fields": [{"key": "room_2", "label": "Кабинет 2", "type": "text", "required": False}],
+                    },
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 400, await response.text()
+    data = await response.json()
+    assert data["error"] == "validation_error"
+    assert "duplicate form key" in str(data["details"])
 
 
 @pytest.mark.asyncio

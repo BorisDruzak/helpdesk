@@ -170,6 +170,7 @@
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
 - **миграции БД** — `app/db/migrations/versions/`, `docs/DATABASE.md`
 - **обновление агента (builds, upload, update, mass, diagnostics, recommendation, global rollout policy)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `app/repos/agent_rollout_repo.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST /api/agent_builds/upload`, `GET/PATCH /api/agent_updates/rollout_policy`, `POST /api/devices/{id}/agent/update`, `GET /api/devices/{id}/agent/update_recommendation`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
+  - Инвариант recommendation: `assigned_rollout` — source of truth; любой version mismatch с rollout actionable, включая controlled rollback на более старую release-версию.
 - **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 
@@ -254,6 +255,7 @@
 ## 2026-04-16 Request form builder UX
 
 - `server/admin_ticket_forms_builder.html` / `server/admin_ticket_forms_builder.js` are the dedicated admin UI entrypoints for the request-form catalog.
-- The builder is split into three operator modes: catalog/version management, guided form creation, and separate editing of an existing form.
+- The builder is split into three operator modes: catalog, guided form creation, and separate editing of an existing form.
 - Everyday authoring should happen through the guided flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
+- The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.
