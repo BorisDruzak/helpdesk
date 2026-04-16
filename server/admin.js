@@ -789,6 +789,8 @@
         let agentUpdatesAgentsById = {};
         let agentUpdatesRecommendationState = null;
         let agentUpdatesRolloutAssignments = [];
+        let agentUpdatesSubtabInitialized = false;
+        let activeAgentUpdatesSubtab = 'settings';
 
         function setPendingAgentUpdateOperation(opId, deviceId) {
             pendingAgentUpdateOperationId = opId;
@@ -876,12 +878,46 @@
             }
         }
 
+        function syncAgentUpdatesSubtabButtons() {
+            document.querySelectorAll('.agent-updates-subtab-btn').forEach(btn => {
+                const isActive = btn.getAttribute('data-agent-updates-subtab') === activeAgentUpdatesSubtab;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            document.querySelectorAll('[data-agent-updates-subtab-panel]').forEach(panel => {
+                const isActive = panel.getAttribute('data-agent-updates-subtab-panel') === activeAgentUpdatesSubtab;
+                panel.hidden = !isActive;
+                panel.classList.toggle('active', isActive);
+            });
+        }
+
+        function switchAgentUpdatesSubtab(subtab) {
+            activeAgentUpdatesSubtab = subtab === 'advanced' ? 'advanced' : 'settings';
+            syncAgentUpdatesSubtabButtons();
+            if (activeAgentUpdatesSubtab === 'advanced') ensureAgentUpdateDiagnosticsPoll();
+            else clearAgentUpdateDiagnosticsPoll();
+        }
+
+        function initAgentUpdatesSubtabs() {
+            if (agentUpdatesSubtabInitialized) {
+                syncAgentUpdatesSubtabButtons();
+                return;
+            }
+            agentUpdatesSubtabInitialized = true;
+            document.querySelectorAll('.agent-updates-subtab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    switchAgentUpdatesSubtab(this.getAttribute('data-agent-updates-subtab'));
+                });
+            });
+            syncAgentUpdatesSubtabButtons();
+        }
+
         function ensureAgentUpdateDiagnosticsPoll() {
             clearAgentUpdateDiagnosticsPoll();
             const tab = document.getElementById('tab-agent-updates');
             const deviceSelect = document.getElementById('agentUpdatesDeviceSelect');
             const deviceId = deviceSelect && deviceSelect.value ? deviceSelect.value.trim() : '';
-            if (!tab || !tab.classList.contains('active') || !deviceId) return;
+            if (!tab || !tab.classList.contains('active') || activeAgentUpdatesSubtab !== 'advanced' || !deviceId) return;
             agentUpdateDiagnosticsPollTimer = setInterval(function() {
                 loadAgentUpdateDiagnostics(false);
             }, 10000);
@@ -2213,6 +2249,9 @@
                 queueStartPolling();
             } else {
                 queueStopPolling();
+            }
+            if (tabName !== 'agent-updates') {
+                clearAgentUpdateDiagnosticsPoll();
             }
             if (tabName === 'devices') {
                 loadDevicesList();
@@ -5387,6 +5426,7 @@
             const triggerBtn = document.getElementById('agentUpdatesTriggerBtn');
             const diagnosticsRefreshBtn = document.getElementById('agentUpdatesDiagnosticsRefreshBtn');
             if (!deviceSelect || !buildSelect) return;
+            initAgentUpdatesSubtabs();
 
             if (!agentUpdatesTabInitialized) {
                 agentUpdatesTabInitialized = true;
@@ -5470,6 +5510,7 @@
             loadAgentUpdateDiagnostics(false);
             loadAgentUpdateRecommendation(false);
             syncAgentUpdateSelectionMode();
+            syncAgentUpdatesSubtabButtons();
         }
 
         function syncAgentUpdateSelectionMode() {
@@ -5584,6 +5625,41 @@
                 await loadAgentUpdateRecommendation(true);
             } catch (error) {
                 if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
+            }
+        }
+
+        async function deleteAgentBuild(target, channel, version) {
+            if (!target || !channel || !version) return;
+            const buildLabel = target + ' / ' + channel + ' / ' + version;
+            if (!window.confirm('Удалить build с сервера?\n\n' + buildLabel + '\n\nЕсли эта версия ещё нужна для rollout или canary, сначала снимите её из rollout policy.')) {
+                return;
+            }
+            const errorEl = document.getElementById('agentUpdatesBuildsError');
+            if (errorEl) errorEl.style.display = 'none';
+            try {
+                const response = await fetch(
+                    '/api/agent_builds/' + encodeURIComponent(target) + '/' + encodeURIComponent(channel) + '/' + encodeURIComponent(version),
+                    {
+                        method: 'DELETE',
+                        headers: getAuthHeaders(true),
+                    }
+                );
+                const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    if (errorEl) {
+                        errorEl.textContent = data.error || 'Не удалось удалить build';
+                        errorEl.style.display = 'block';
+                    }
+                    return;
+                }
+                await loadAgentUpdatesBuilds(true);
+                await loadAgentRolloutPolicy(false);
+                await loadAgentUpdateRecommendation(true);
+            } catch (error) {
+                if (errorEl) {
+                    errorEl.textContent = error.message;
+                    errorEl.style.display = 'block';
+                }
             }
         }
 
@@ -5841,8 +5917,47 @@
                     const sizeKb = b.size != null ? Math.round(b.size / 1024) + ' КБ' : '—';
                     const created = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU') : '—';
                     const shaShort = b.sha256 ? b.sha256.slice(0, 12) + '…' : '—';
-                    return `<tr><td>${b.target}</td><td>${b.channel}</td><td>${b.version}</td><td>${b.archive_type || '—'}</td><td>${sizeKb}</td><td><code>${shaShort}</code></td><td>${created}</td></tr>`;
+                    const isRolloutAssigned = !!b.is_rollout_assigned;
+                    const statusHtml = isRolloutAssigned
+                        ? '<span class="badge badge-success">priority rollout</span>'
+                        : '<span class="badge badge-secondary">обычный build</span>';
+                    const deleteDisabled = isRolloutAssigned ? 'disabled' : '';
+                    const deleteTitle = isRolloutAssigned
+                        ? 'Сначала снимите rollout policy для этой версии'
+                        : 'Удалить build с сервера';
+                    return `
+                        <tr>
+                            <td>${escapeHtml(b.target || '—')}</td>
+                            <td>${escapeHtml(b.channel || '—')}</td>
+                            <td>${escapeHtml(b.version || '—')}</td>
+                            <td>${escapeHtml(b.archive_type || '—')}</td>
+                            <td>${escapeHtml(sizeKb)}</td>
+                            <td><code>${escapeHtml(shaShort)}</code></td>
+                            <td>${escapeHtml(created)}</td>
+                            <td>${statusHtml}</td>
+                            <td>
+                                <button
+                                    type="button"
+                                    class="btn btn-danger btn-sm agent-build-delete-btn"
+                                    data-target="${escapeHtml(b.target || '')}"
+                                    data-channel="${escapeHtml(b.channel || '')}"
+                                    data-version="${escapeHtml(b.version || '')}"
+                                    title="${escapeHtml(deleteTitle)}"
+                                    ${deleteDisabled}
+                                >Удалить</button>
+                            </td>
+                        </tr>
+                    `;
                 }).join('');
+                tbodyEl.querySelectorAll('.agent-build-delete-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        deleteAgentBuild(
+                            this.getAttribute('data-target') || '',
+                            this.getAttribute('data-channel') || '',
+                            this.getAttribute('data-version') || ''
+                        );
+                    });
+                });
                 if (containerEl) containerEl.style.display = 'block';
             } catch (e) {
                 if (loadingEl) loadingEl.style.display = 'none';

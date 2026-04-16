@@ -991,9 +991,16 @@
             <div id="tab-agent-updates" class="tab-content">
                 <div class="page-header">
                     <h1>Обновление агентов</h1>
-                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">Удалённое обновление PC Agent на подключённых устройствах. Доступны только агенты в сети. Выберите устройство и билд, затем нажмите «Запустить обновление».</p>
+                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">Серверный rollout — источник истины для версий агента. В настройках держите приоритетную версию и набор build-ов на сервере, а расширенные действия используйте для canary, диагностики и массовой раскатки.</p>
                 </div>
 
+                <div class="agent-updates-shell">
+                    <div class="agent-updates-subtabs" role="tablist" aria-label="Разделы обновления агентов">
+                        <button type="button" class="agent-updates-subtab-btn active" data-agent-updates-subtab="settings" role="tab" aria-selected="true">Настройки</button>
+                        <button type="button" class="agent-updates-subtab-btn" data-agent-updates-subtab="advanced" role="tab" aria-selected="false">Расширенные настройки</button>
+                    </div>
+
+                    <section class="agent-updates-subtab-panel" data-agent-updates-subtab-panel="advanced" hidden>
                 <div class="section">
                     <h2>Запуск обновления на устройстве</h2>
                     <div class="agent-updates-form">
@@ -1088,29 +1095,8 @@
                 </div>
 
                 <div class="section">
-                    <h2>Глобальный rollout</h2>
-                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Назначенный build становится серверным приоритетом для всех агентов соответствующего target. Если версия не указана в update API, сервер возьмёт этот rollout автоматически.</p>
-                    <div class="agent-updates-form">
-                        <div class="form-group">
-                            <label for="agentUpdatesRolloutBuildSelect">Назначаемый build</label>
-                            <select id="agentUpdatesRolloutBuildSelect">
-                                <option value="">— Загрузите список билдов —</option>
-                            </select>
-                            <button type="button" class="btn btn-secondary btn-sm" id="agentUpdatesRolloutRefreshBtn" style="margin-top: 6px;">Обновить rollout policy</button>
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-primary" id="agentUpdatesAssignRolloutBtn">Назначить как приоритетный</button>
-                            <button type="button" class="btn btn-secondary" id="agentUpdatesClearRolloutBtn">Снять назначение</button>
-                        </div>
-                    </div>
-                    <div id="agentUpdatesRolloutPolicy" class="result-panel" style="display: block; margin-top: 12px;">
-                        <div class="muted">Назначенные rollout версии ещё не загружены.</div>
-                    </div>
-                </div>
-
-                <div class="section">
                     <h2>Массовое обновление</h2>
-                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Запуск обновления для нескольких устройств. Target подбирается по ОС устройства (Windows → windows_amd64, Linux → linux_alt_x86_64).</p>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Target подбирается по ОС устройства. Bulk режим живёт по контракту canary-first: при включённом флаге сервер не пустит массовую раскатку без подтверждённой canary-операции.</p>
                     <div class="agent-updates-form">
                         <div class="form-group">
                             <label><input type="checkbox" id="agentUpdatesBulkAllOnline" checked> Все онлайн-агенты</label>
@@ -1154,9 +1140,32 @@
                     </div>
                 </div>
 
+                    </section>
+                    <section class="agent-updates-subtab-panel active" data-agent-updates-subtab-panel="settings">
+                <div class="section">
+                    <h2>Глобальный rollout</h2>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Назначенный build становится server-side rollout policy и используется как приоритетная версия для self-update, ручного запуска без явной версии и массовой раскатки по target.</p>
+                    <div class="agent-updates-form">
+                        <div class="form-group">
+                            <label for="agentUpdatesRolloutBuildSelect">Назначаемый build</label>
+                            <select id="agentUpdatesRolloutBuildSelect">
+                                <option value="">— Загрузите список билдов —</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="agentUpdatesRolloutRefreshBtn" style="margin-top: 6px;">Обновить rollout policy</button>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="agentUpdatesAssignRolloutBtn">Назначить как приоритетный</button>
+                            <button type="button" class="btn btn-secondary" id="agentUpdatesClearRolloutBtn">Снять назначение</button>
+                        </div>
+                    </div>
+                    <div id="agentUpdatesRolloutPolicy" class="result-panel" style="display: block; margin-top: 12px;">
+                        <div class="muted">Назначенные rollout версии ещё не загружены.</div>
+                    </div>
+                </div>
+
                 <div class="section">
                     <h2>Загрузка билда</h2>
-                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Загрузите архив агента (ZIP или tar.gz), укажите target, канал и версию. После загрузки билд появится в списке доступных.</p>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Загрузите архив агента для нужного target. Для Windows и Linux версии ведутся независимо, а priority rollout назначается отдельно по каждому target.</p>
                     <form id="agentBuildUploadForm" class="agent-updates-form">
                         <div class="form-group">
                             <label for="agentBuildUploadFile">Файл (ZIP или tar.gz)</label>
@@ -1203,6 +1212,7 @@
 
                 <div class="section">
                     <h2>Доступные билды</h2>
+                    <p style="color: var(--muted); font-size: 14px; margin-bottom: 12px;">Удаляйте старые версии только после снятия rollout policy. Assigned build защищён серверным контрактом и не может быть удалён, пока он источник истины для target.</p>
                     <div id="agentUpdatesBuildsLoading" class="loading">Загрузка...</div>
                     <div id="agentUpdatesBuildsError" class="error-message" style="display: none;"></div>
                     <div id="agentUpdatesBuildsContainer" style="display: none;">
@@ -1216,11 +1226,15 @@
                                     <th>Размер</th>
                                     <th>SHA256</th>
                                     <th>Загружен</th>
+                                    <th>Статус</th>
+                                    <th>Действие</th>
                                 </tr>
                             </thead>
                             <tbody id="agentUpdatesBuildsTableBody"></tbody>
                         </table>
                     </div>
+                </div>
+                    </section>
                 </div>
             </div> <!-- End of Agent Updates Tab -->
         </div> <!-- End of main-content-area -->

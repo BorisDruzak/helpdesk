@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
+import config
 from app.db import get_session
 from app.db.models import AgentBuild, AgentRuntimeAudit, Artifact, Device, DeviceOutbox, Operation, Ticket, TicketEvent
 from app.db.engine import async_sessionmaker
@@ -390,6 +391,71 @@ async def test_list_agent_builds_returns_archive_metadata_for_authorized_role(te
     assert build["archive_type"] == "zip"
     assert build["mime_type"] == "application/zip"
     assert build["artifact_filename"].endswith(".zip")
+    assert build["is_rollout_assigned"] is False
+    assert build["delete_block_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_agent_builds_marks_rollout_assigned_build(test_client):
+    version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.8")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    resp = await test_client.get("/api/agent_builds?limit=10", headers=_admin_headers())
+    assert resp.status == 200
+    data = await resp.json()
+    build = next(item for item in data["builds"] if item["version"] == version)
+    assert build["is_rollout_assigned"] is True
+    assert build["delete_block_reason"] == "assigned_rollout"
+    assert build["assigned_rollout"]["version"] == version
+
+
+@pytest.mark.asyncio
+async def test_delete_agent_build_rejects_rollout_assigned_version(test_client):
+    version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.8")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    resp = await test_client.delete(
+        f"/api/agent_builds/windows_amd64/stable/{version}",
+        headers=_admin_headers(),
+    )
+    assert resp.status == 409
+    data = await resp.json()
+    assert data["status"] == "error"
+    assert data["error_code"] == "BUILD_ASSIGNED_TO_ROLLOUT"
+    assert data["assigned_rollout"]["version"] == version
+
+
+@pytest.mark.asyncio
+async def test_delete_agent_build_removes_db_row_and_archive(test_client):
+    version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.7")
+    build_file = config.AGENT_BUILDS_STORAGE_DIR / "windows_amd64" / "stable" / version / "agent.zip"
+    build_file.parent.mkdir(parents=True, exist_ok=True)
+    build_file.write_bytes(b"test-build")
+
+    resp = await test_client.delete(
+        f"/api/agent_builds/windows_amd64/stable/{version}",
+        headers=_admin_headers(),
+    )
+    assert resp.status == 200, await resp.text()
+    data = await resp.json()
+    assert data["status"] == "ok"
+    assert not build_file.exists()
+
+    async with get_session() as session:
+        build = await session.get(AgentBuild, {"target": "windows_amd64", "channel": "stable", "version": version})
+        assert build is None
 
 
 @pytest.mark.asyncio

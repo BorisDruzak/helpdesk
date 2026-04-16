@@ -105,6 +105,34 @@ def _serialize_build_identity(build) -> dict:
     }
 
 
+def _resolve_build_file_path(storage_path: Optional[str]) -> Optional[Path]:
+    relative = str(storage_path or "").strip()
+    if not relative:
+        return None
+    return config.AGENT_BUILDS_STORAGE_DIR / relative
+
+
+def _cleanup_empty_build_dirs(file_path: Optional[Path]) -> None:
+    if not file_path:
+        return
+    try:
+        current = file_path.parent
+        root = config.AGENT_BUILDS_STORAGE_DIR.resolve()
+        while current.exists():
+            try:
+                current_resolved = current.resolve()
+            except OSError:
+                break
+            if current_resolved == root:
+                break
+            if any(current.iterdir()):
+                break
+            current.rmdir()
+            current = current.parent
+    except OSError:
+        return
+
+
 def _resolve_target_for_device(device) -> Optional[str]:
     if not device:
         return None
@@ -406,7 +434,12 @@ async def handle_list_agent_builds(request: web.Request) -> web.Response:
 
         async with get_session() as session:
             repo = AgentBuildsRepo(session)
+            rollout_repo = AgentRolloutRepo(session)
             builds = await repo.list_builds(target=target, channel=channel, limit=limit)
+            rollout_assignments = {
+                (str(item.get("target") or "").strip(), str(item.get("channel") or "").strip().lower(), str(item.get("version") or "").strip()): item
+                for item in await rollout_repo.list_assignments()
+            }
 
         return web.json_response(
             {
@@ -424,6 +457,11 @@ async def handle_list_agent_builds(request: web.Request) -> web.Response:
                         "notes": b.notes,
                         "created_at": b.created_at.isoformat() if b.created_at else None,
                         "download_path": f"/api/agent_builds/{b.target}/{b.channel}/{b.version}/download",
+                        "is_rollout_assigned": (b.target, b.channel, b.version) in rollout_assignments,
+                        "delete_block_reason": (
+                            "assigned_rollout" if (b.target, b.channel, b.version) in rollout_assignments else None
+                        ),
+                        "assigned_rollout": rollout_assignments.get((b.target, b.channel, b.version)),
                     }
                     for b in builds
                 ],
@@ -432,6 +470,115 @@ async def handle_list_agent_builds(request: web.Request) -> web.Response:
         )
     except Exception as e:
         logger.error(f"❌ Ошибка обработки list_agent_builds: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_delete_agent_build(request: web.Request) -> web.Response:
+    """
+    DELETE /api/agent_builds/{target}/{channel}/{version}
+
+    Удаляет билд агента с сервера: запись из БД и архив на диске.
+    Запрещает удаление build, который назначен как rollout policy.
+    """
+    auth_context: AuthContext = request.get("auth_context")
+    if not auth_context:
+        return web.json_response(
+            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
+            status=401,
+        )
+    if auth_context.actor_role != "admin":
+        return web.json_response(
+            {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+            status=403,
+        )
+
+    target = _safe_str(request.match_info.get("target"))
+    channel = _safe_str(request.match_info.get("channel")).lower()
+    version = _safe_str(request.match_info.get("version"))
+    if not target or not channel or not version:
+        return web.json_response(
+            {"status": "error", "error": "Missing build identity"},
+            status=400,
+        )
+
+    try:
+        async with get_session() as session:
+            repo = AgentBuildsRepo(session)
+            rollout_repo = AgentRolloutRepo(session)
+            build = await repo.get_build(target=target, channel=channel, version=version)
+            if not build:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Build not found",
+                        "target": target,
+                        "channel": channel,
+                        "version": version,
+                    },
+                    status=404,
+                )
+
+            rollout_assignment = await rollout_repo.get_assignment(target)
+            if (
+                rollout_assignment
+                and str(rollout_assignment.get("channel") or "").strip().lower() == channel
+                and str(rollout_assignment.get("version") or "").strip() == version
+            ):
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Build is assigned as global rollout policy",
+                        "error_code": "BUILD_ASSIGNED_TO_ROLLOUT",
+                        "target": target,
+                        "channel": channel,
+                        "version": version,
+                        "assigned_rollout": rollout_assignment,
+                    },
+                    status=409,
+                )
+
+            storage_path = build.storage_path
+            deleted = await repo.delete_build(target=target, channel=channel, version=version)
+            await session.commit()
+
+        if not deleted:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Build not found",
+                    "target": target,
+                    "channel": channel,
+                    "version": version,
+                },
+                status=404,
+            )
+
+        build_file = _resolve_build_file_path(storage_path)
+        if build_file and build_file.exists():
+            try:
+                build_file.unlink()
+            except OSError as exc:
+                logger.error(f"Failed to delete agent build file {build_file}: {exc}")
+                return web.json_response(
+                    {"status": "error", "error": f"Failed to delete file: {exc}"},
+                    status=500,
+                )
+        elif build_file:
+            logger.warning(f"Agent build file already missing on disk: {build_file}")
+        _cleanup_empty_build_dirs(build_file)
+
+        logger.info(f"Agent build deleted from server: {target}/{channel}/{version}")
+        return web.json_response(
+            {
+                "status": "ok",
+                "target": target,
+                "channel": channel,
+                "version": version,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete agent build {target}/{channel}/{version}: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 

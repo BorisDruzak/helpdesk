@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Optional, List
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -114,3 +114,20 @@ class AgentBuildsRepo:
         )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def delete_build(
+        self,
+        *,
+        target: str,
+        channel: str,
+        version: str,
+    ) -> bool:
+        stmt = (
+            delete(AgentBuild)
+            .where(AgentBuild.target == target)
+            .where(AgentBuild.channel == channel)
+            .where(AgentBuild.version == version)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return bool(result.rowcount)

@@ -36,6 +36,7 @@ from agents.handlers import (
 from agents.agent_builds_handlers import (
     handle_upload_agent_build,
     handle_list_agent_builds,
+    handle_delete_agent_build,
     handle_download_agent_build,
     handle_get_agent_rollout_policy,
     handle_patch_agent_rollout_policy,
@@ -353,6 +354,7 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.post('/api/agent_builds/upload', handle_upload_agent_build),
         web.get('/api/agent_builds', handle_list_agent_builds),
+        web.delete('/api/agent_builds/{target}/{channel}/{version}', handle_delete_agent_build),
         web.get('/api/agent_builds/{target}/{channel}/{version}/download', handle_download_agent_build),
         web.get('/api/agent_updates/rollout_policy', handle_get_agent_rollout_policy),
         web.patch('/api/agent_updates/rollout_policy', handle_patch_agent_rollout_policy),

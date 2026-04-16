@@ -1378,6 +1378,46 @@
         .modules-subtab-panel[hidden] {
             display: none !important;
         }
+        .agent-updates-shell {
+            display: grid;
+            gap: 18px;
+        }
+        .agent-updates-subtabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 6px;
+            border: 1px solid #d8dee8;
+            border-radius: 16px;
+            background: linear-gradient(180deg, #f8fbff, #f1f5fb);
+        }
+        .agent-updates-subtab-btn {
+            border: 1px solid transparent;
+            background: transparent;
+            color: #4b5563;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+        .agent-updates-subtab-btn:hover {
+            background: rgba(0, 82, 204, 0.08);
+            color: #0f172a;
+        }
+        .agent-updates-subtab-btn.active {
+            background: #ffffff;
+            border-color: rgba(0, 82, 204, 0.18);
+            color: var(--primary);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+        .agent-updates-subtab-panel {
+            display: block;
+        }
+        .agent-updates-subtab-panel[hidden] {
+            display: none !important;
+        }
 
         @media (max-width: 1280px) {
             .settings-app,

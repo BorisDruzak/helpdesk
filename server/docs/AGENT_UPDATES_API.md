@@ -63,10 +63,54 @@
       "size": 123456,
       "notes": null,
       "created_at": "2026-04-13T08:30:00+00:00",
-      "download_path": "/api/agent_builds/windows_amd64/stable/3.1.0/download"
+      "download_path": "/api/agent_builds/windows_amd64/stable/3.1.0/download",
+      "is_rollout_assigned": false,
+      "delete_block_reason": null,
+      "assigned_rollout": null
     }
   ],
   "count": 1
+}
+```
+
+Если `is_rollout_assigned = true`, этот build сейчас является source of truth для target и не может быть удалён, пока rollout policy не снят.
+
+## Delete build
+
+`DELETE /api/agent_builds/{target}/{channel}/{version}`
+
+**Auth:** обязателен, только `admin`.
+
+Удаляет build из `agent_builds` и удаляет архив с диска.
+
+Ограничения:
+
+- build нельзя удалить, если он сейчас назначен как global rollout policy для target;
+- для cleanup сначала нужно снять rollout policy, затем повторить delete.
+
+Успех:
+
+```json
+{
+  "status": "ok",
+  "target": "windows_amd64",
+  "channel": "stable",
+  "version": "3.1.7"
+}
+```
+
+Conflict:
+
+```json
+{
+  "status": "error",
+  "error": "Build is assigned as global rollout policy",
+  "error_code": "BUILD_ASSIGNED_TO_ROLLOUT",
+  "assigned_rollout": {
+    "target": "windows_amd64",
+    "channel": "stable",
+    "version": "3.1.8"
+  }
 }
 ```
 
@@ -317,3 +361,4 @@ GUI агента использует этот endpoint перед локаль�
 
 - [../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md](../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md)
 - [../../pc_agent/docs/SELF_UPDATE.md](../../pc_agent/docs/SELF_UPDATE.md)
+- [../../docs/AGENT_UPDATE_CONTRACT.md](../../docs/AGENT_UPDATE_CONTRACT.md)
