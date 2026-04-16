@@ -5594,6 +5594,7 @@
                     return;
                 }
                 await loadAgentRolloutPolicy(false);
+                await loadAgentUpdatesBuilds(true);
                 await loadAgentUpdateRecommendation(true);
             } catch (error) {
                 if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
@@ -5622,6 +5623,7 @@
                     return;
                 }
                 await loadAgentRolloutPolicy(false);
+                await loadAgentUpdatesBuilds(true);
                 await loadAgentUpdateRecommendation(true);
             } catch (error) {
                 if (resultEl) resultEl.innerHTML = '<div class="error-message">' + escapeHtml(error.message) + '</div>';
