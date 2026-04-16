@@ -35,6 +35,9 @@ async def test_tools_run_async_returns_poll_url(test_client_no_db, monkeypatch):
     async def _fake_get_tools_list(self, _device_id):
         return []
 
+    async def _fake_get_tools_from_server(self, _device_id):
+        return []
+
     async def _fake_run_tool(self, **_kwargs):
         return {
             "status": "accepted",
@@ -42,6 +45,7 @@ async def test_tools_run_async_returns_poll_url(test_client_no_db, monkeypatch):
         }
 
     monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
     monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _fake_run_tool)
 
     response = await test_client_no_db.post(
@@ -59,3 +63,65 @@ async def test_tools_run_async_returns_poll_url(test_client_no_db, monkeypatch):
     assert payload["status"] == "accepted"
     assert payload["operation_id"]
     assert payload["poll_url"] == f"/api/operations/{payload['operation_id']}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_tools_run_uses_server_registry_metadata_when_device_snapshot_is_stale(monkeypatch):
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="agent-test",
+            actor_role="agent",
+            auth_type=AuthType.AGENT_TOKEN,
+            token="agent-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    bind_app_value(app, key=STATE_APP_KEY, legacy_name="state", value=object())
+    app.router.add_post("/api/tools/run", handle_tools_run)
+
+    async def _fake_get_tools_list(self, _device_id):
+        return []
+
+    async def _fake_get_tools_from_server(self, _device_id):
+        return [
+            {
+                "tool": "network_ping.ping",
+                "module": "network_ping",
+                "aliases": ["ping"],
+                "spec": {
+                    "metadata": {
+                        "risk_level": "safe_read",
+                        "requires_consent": False,
+                        "allow_roles": ["admin", "support", "agent", "llm"],
+                    }
+                },
+            }
+        ]
+
+    async def _fake_run_tool(self, **_kwargs):
+        return {
+            "status": "accepted",
+            "device_id": "device-async-2",
+        }
+
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _fake_run_tool)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/tools/run",
+            json={
+                "device_id": "device-async-2",
+                "ticket_id": "ticket-async-2",
+                "tool_name": "network_ping.ping",
+                "params": {"host": "127.0.0.1"},
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 202
+    assert payload["status"] == "accepted"

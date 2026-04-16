@@ -267,10 +267,12 @@ class PolicyEngine:
         
         # Find tool in list (поддержка форматов агента: "tool" + spec.metadata и legacy: "name"/"tool_id" + metadata)
         for tool in tools_list:
+            aliases = tool.get("aliases") or []
             if (
                 tool.get("name") == tool_name
                 or tool.get("tool_id") == tool_name
                 or tool.get("tool") == tool_name
+                or tool_name in aliases
             ):
                 # Метаданные: верхний уровень или внутри spec (формат list_tools агента)
                 metadata_dict = tool.get("metadata") or (tool.get("spec") or {}).get("metadata") or {}

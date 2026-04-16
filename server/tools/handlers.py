@@ -134,6 +134,14 @@ async def handle_tools_run(request):
         
         # Получаем metadata для tool
         tool_metadata = policy_engine.get_tool_metadata(tool_name, tools_list)
+        if not tool_metadata:
+            tools_from_server = await tool_service.get_tools_from_server(device_id)
+            tool_metadata = policy_engine.get_tool_metadata(tool_name, tools_from_server)
+            if tool_metadata:
+                logger.info(
+                    f"[handle_tools_run] Using server registry metadata for {tool_name} "
+                    f"(device snapshot missing/stale)"
+                )
         
         # Если metadata не найдена: для screen.collect/screen.record — разрешаем user/agent
         # (запрос из GUI агента часто идёт с токеном устройства → actor_role=agent, snapshot может быть пуст)
@@ -302,4 +310,3 @@ async def handle_tools_run(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-
