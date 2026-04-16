@@ -1,78 +1,449 @@
-<div class="panel" style="display: grid; gap: 16px;">
-    <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap;">
+<style>
+  .tfb-shell {
+    --tfb-border: rgba(148, 163, 184, 0.28);
+    --tfb-muted: #64748b;
+    --tfb-ink: #0f172a;
+    --tfb-accent: #0f766e;
+    --tfb-accent-soft: rgba(15, 118, 110, 0.1);
+    --tfb-info-soft: rgba(37, 99, 235, 0.08);
+    --tfb-warn-soft: rgba(217, 119, 6, 0.12);
+    --tfb-danger-soft: rgba(185, 28, 28, 0.12);
+    --tfb-surface: #ffffff;
+    display: grid;
+    gap: 16px;
+  }
+
+  .tfb-shell .tfb-hero,
+  .tfb-shell .tfb-panel {
+    background: var(--tfb-surface);
+    border: 1px solid var(--tfb-border);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  }
+
+  .tfb-shell .tfb-hero {
+    padding: 18px 20px;
+    background:
+      radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 42%),
+      radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 38%),
+      var(--tfb-surface);
+  }
+
+  .tfb-shell .tfb-panel {
+    padding: 16px;
+  }
+
+  .tfb-shell .tfb-toolbar,
+  .tfb-shell .tfb-inline-actions,
+  .tfb-shell .tfb-section-head,
+  .tfb-shell .tfb-step-actions,
+  .tfb-shell .tfb-view-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .tfb-shell .tfb-layout,
+  .tfb-shell .tfb-summary-grid,
+  .tfb-shell .tfb-grid-2,
+  .tfb-shell .tfb-grid-3,
+  .tfb-shell .tfb-editor-layout,
+  .tfb-shell .tfb-review-layout {
+    display: grid;
+    gap: 14px;
+  }
+
+  .tfb-shell .tfb-layout {
+    grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .tfb-shell .tfb-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tfb-shell .tfb-grid-3,
+  .tfb-shell .tfb-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tfb-shell .tfb-editor-layout {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .tfb-shell .tfb-review-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    align-items: start;
+  }
+
+  .tfb-shell .tfb-subtle {
+    color: var(--tfb-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .tfb-shell .tfb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 12px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--tfb-ink);
+    white-space: nowrap;
+  }
+
+  .tfb-shell .tfb-chip.is-accent {
+    background: var(--tfb-accent-soft);
+    color: var(--tfb-accent);
+  }
+
+  .tfb-shell .tfb-chip.is-info {
+    background: var(--tfb-info-soft);
+    color: #1d4ed8;
+  }
+
+  .tfb-shell .tfb-chip.is-warning {
+    background: var(--tfb-warn-soft);
+    color: #b45309;
+  }
+
+  .tfb-shell .tfb-chip.is-danger {
+    background: var(--tfb-danger-soft);
+    color: #b91c1c;
+  }
+
+  .tfb-shell .tfb-card,
+  .tfb-shell .tfb-side-card,
+  .tfb-shell .tfb-doc-card,
+  .tfb-shell .tfb-preview-card,
+  .tfb-shell .tfb-step-card,
+  .tfb-shell .tfb-form-card {
+    border: 1px solid var(--tfb-border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.88), #ffffff);
+  }
+
+  .tfb-shell .tfb-card,
+  .tfb-shell .tfb-side-card,
+  .tfb-shell .tfb-doc-card,
+  .tfb-shell .tfb-preview-card,
+  .tfb-shell .tfb-step-card {
+    padding: 14px;
+  }
+
+  .tfb-shell .tfb-summary-item {
+    border: 1px solid var(--tfb-border);
+    border-radius: 16px;
+    padding: 14px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.86), #ffffff);
+  }
+
+  .tfb-shell .tfb-summary-item label,
+  .tfb-shell .tfb-side-card label {
+    display: block;
+    font-size: 11px;
+    color: var(--tfb-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  .tfb-shell .tfb-summary-item strong {
+    font-size: 15px;
+    color: var(--tfb-ink);
+  }
+
+  .tfb-shell .tfb-doc-card {
+    border-color: rgba(15, 118, 110, 0.22);
+    background: rgba(15, 118, 110, 0.06);
+  }
+
+  .tfb-shell .tfb-doc-card h4,
+  .tfb-shell .tfb-preview-card h4,
+  .tfb-shell .tfb-card h4 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--tfb-ink);
+  }
+
+  .tfb-shell .tfb-doc-list,
+  .tfb-shell .tfb-issues-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--tfb-muted);
+  }
+
+  .tfb-shell .tfb-issues-list {
+    color: #b91c1c;
+  }
+
+  .tfb-shell .tfb-form-list,
+  .tfb-shell .tfb-version-list,
+  .tfb-shell .tfb-stepper,
+  .tfb-shell .tfb-field-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .tfb-shell .tfb-form-card,
+  .tfb-shell .tfb-stepper-btn,
+  .tfb-shell .tfb-view-btn,
+  .tfb-shell .tfb-field-btn {
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  }
+
+  .tfb-shell .tfb-form-card,
+  .tfb-shell .tfb-field-btn {
+    padding: 12px 14px;
+  }
+
+  .tfb-shell .tfb-stepper-btn,
+  .tfb-shell .tfb-view-btn {
+    border: 1px solid var(--tfb-border);
+    border-radius: 16px;
+    padding: 12px 14px;
+    background: #fff;
+  }
+
+  .tfb-shell .tfb-form-card,
+  .tfb-shell .tfb-field-btn {
+    border: 1px solid var(--tfb-border);
+    border-radius: 16px;
+    background: #fff;
+  }
+
+  .tfb-shell .tfb-form-card:hover,
+  .tfb-shell .tfb-stepper-btn:hover,
+  .tfb-shell .tfb-view-btn:hover,
+  .tfb-shell .tfb-field-btn:hover {
+    border-color: rgba(15, 118, 110, 0.36);
+    transform: translateY(-1px);
+  }
+
+  .tfb-shell .tfb-form-card.is-active,
+  .tfb-shell .tfb-stepper-btn.is-active,
+  .tfb-shell .tfb-view-btn.is-active,
+  .tfb-shell .tfb-field-btn.is-active {
+    border-color: rgba(15, 118, 110, 0.46);
+    background: var(--tfb-accent-soft);
+  }
+
+  .tfb-shell .tfb-form-card strong,
+  .tfb-shell .tfb-stepper-btn strong,
+  .tfb-shell .tfb-field-btn strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--tfb-ink);
+  }
+
+  .tfb-shell .tfb-form-actions,
+  .tfb-shell .tfb-field-actions,
+  .tfb-shell .tfb-preview-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .tfb-shell .tfb-preview-field {
+    border: 1px dashed rgba(148, 163, 184, 0.45);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.78);
+    display: grid;
+    gap: 6px;
+  }
+
+  .tfb-shell .tfb-empty {
+    border: 1px dashed rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    padding: 16px;
+    color: var(--tfb-muted);
+    background: rgba(248, 250, 252, 0.65);
+  }
+
+  .tfb-shell details.tfb-advanced {
+    margin-top: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    padding-top: 12px;
+  }
+
+  .tfb-shell details.tfb-advanced summary {
+    cursor: pointer;
+    color: var(--tfb-ink);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .tfb-shell .tfb-view[hidden],
+  .tfb-shell .tfb-step-card[hidden] {
+    display: none !important;
+  }
+
+  .tfb-shell .tfb-code {
+    border: 1px solid var(--tfb-border);
+    border-radius: 14px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px;
+    overflow: auto;
+    max-height: 360px;
+    font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .tfb-shell .tfb-inline-note {
+    border-left: 3px solid rgba(15, 118, 110, 0.24);
+    padding-left: 10px;
+    color: var(--tfb-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 1220px) {
+    .tfb-shell .tfb-layout,
+    .tfb-shell .tfb-editor-layout,
+    .tfb-shell .tfb-review-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .tfb-shell .tfb-grid-2,
+    .tfb-shell .tfb-grid-3,
+    .tfb-shell .tfb-summary-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="tfb-shell">
+  <section class="tfb-hero">
+    <div class="tfb-toolbar">
+      <div>
+        <h2 style="margin: 0 0 6px;">Конструктор форм заявок</h2>
+        <div class="tfb-subtle">
+          Создавайте форму по шагам, редактируйте существующие формы отдельно, а публикацию новой версии каталога делайте в режиме «Каталог».
+        </div>
+      </div>
+      <div class="tfb-inline-actions">
+        <span class="tfb-chip is-accent">wizard-first</span>
+        <span class="tfb-chip">отдельный редактор</span>
+        <span class="tfb-chip">advanced по требованию</span>
+      </div>
+    </div>
+    <div class="tfb-grid-2" style="margin-top: 14px;">
+      <div class="tfb-doc-card">
+        <h4>Базовый сценарий</h4>
+        <ul class="tfb-doc-list">
+          <li>Сначала создайте форму по шагам: название, ключ и поля.</li>
+          <li>Потом проверьте форму и добавьте её в текущий каталог.</li>
+          <li>После этого сохраните новую версию каталога, чтобы изменения увидели `/help` и агент.</li>
+        </ul>
+      </div>
+      <div class="tfb-doc-card">
+        <h4>Что скрыто в расширенных настройках</h4>
+        <ul class="tfb-doc-list">
+          <li>Подсказки под полем, placeholder и условный показ.</li>
+          <li>`request_kind`, если он отличается от ключа формы.</li>
+          <li>JSON preview для технической проверки перед публикацией.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div id="ticketFormsBuilderStatus" class="loading" style="display: none;"></div>
+
+  <div class="tfb-layout">
+    <aside class="tfb-panel">
+      <div class="tfb-section-head">
         <div>
-            <h2 style="margin: 0 0 6px 0;">Каталог форм обращений</h2>
-            <p style="margin: 0; color: var(--muted); font-size: 14px;">
-                Соберите типы заявок, дополнительные поля и условия показа. Сохранённая версия становится доступна в веб-форме и в агенте.
-            </p>
+          <h3 style="margin: 0;">Каталог и публикация</h3>
+          <div class="tfb-subtle">Здесь живут версия каталога, публикация и список форм внутри пакета.</div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <label style="display: inline-flex; gap: 8px; align-items: center; margin: 0;">
-                <input type="checkbox" id="ticketFormsMakePreferred" checked>
-                <span>Сделать активной после сохранения</span>
+      </div>
+
+      <div class="tfb-side-card" style="margin-top: 14px;">
+        <label for="ticketFormsPackTitle">Название каталога</label>
+        <input type="text" id="ticketFormsPackTitle" placeholder="Каталог заявок">
+
+        <div class="tfb-grid-2" style="margin-top: 12px;">
+          <div class="form-group" style="margin: 0;">
+            <label for="ticketFormsPackVersion">Версия</label>
+            <input type="text" id="ticketFormsPackVersion" placeholder="1.0.2">
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 24px;">
+              <input type="checkbox" id="ticketFormsMakePreferred" checked>
+              <span>Сделать активной</span>
             </label>
-            <button type="button" class="btn btn-secondary" id="ticketFormsRefreshBtn">Обновить</button>
-            <button type="button" class="btn btn-primary" id="ticketFormsSaveBtn">Сохранить версию</button>
-        </div>
-    </div>
-
-    <div id="ticketFormsBuilderStatus" class="loading" style="display: none;"></div>
-
-    <div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr); gap: 16px; align-items: start;">
-        <div class="section" style="margin: 0;">
-            <h3 style="margin-top: 0;">Параметры пакета</h3>
-            <div class="form-group">
-                <label for="ticketFormsPackTitle">Название каталога</label>
-                <input type="text" id="ticketFormsPackTitle" placeholder="Каталог заявок">
-            </div>
-            <div class="form-group">
-                <label for="ticketFormsPackVersion">Версия</label>
-                <input type="text" id="ticketFormsPackVersion" placeholder="1.0.1">
-            </div>
-            <div class="form-group">
-                <label for="ticketFormsPackDescription">Описание</label>
-                <textarea id="ticketFormsPackDescription" rows="3" placeholder="Что изменилось в этой версии каталога"></textarea>
-            </div>
+          </div>
         </div>
 
-        <div class="section" style="margin: 0;">
-            <h3 style="margin-top: 0;">Версии</h3>
-            <div id="ticketFormsVersionsList" style="display: grid; gap: 8px;"></div>
-        </div>
-    </div>
+        <details class="tfb-advanced">
+          <summary>Расширенные настройки каталога</summary>
+          <div class="form-group" style="margin: 0;">
+            <label for="ticketFormsPackDescription">Описание версии</label>
+            <textarea id="ticketFormsPackDescription" rows="4" placeholder="Что изменилось в этой версии каталога"></textarea>
+            <div class="tfb-subtle" style="margin-top: 6px;">Это описание увидите в списке версий, когда будете выбирать активную редакцию.</div>
+          </div>
+        </details>
 
-    <div style="display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.2fr); gap: 16px; align-items: start;">
-        <div class="section" style="margin: 0;">
-            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0;">Типы заявок</h3>
-                <button type="button" class="btn btn-secondary btn-sm" data-action="add-form">Добавить</button>
-            </div>
-            <div id="ticketFormsFormsList" style="display: grid; gap: 8px;"></div>
-        </div>
-
-        <div class="section" style="margin: 0;">
-            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0;">Карточка типа</h3>
-                <button type="button" class="btn btn-danger btn-sm" data-action="delete-form">Удалить</button>
-            </div>
-            <div id="ticketFormsFormEditor"></div>
+        <div class="tfb-step-actions" style="margin-top: 14px;">
+          <button type="button" class="btn btn-secondary" id="ticketFormsRefreshBtn">Обновить</button>
+          <button type="button" class="btn btn-primary" id="ticketFormsSaveBtn">Сохранить версию</button>
         </div>
 
-        <div class="section" style="margin: 0;">
-            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0;">Поля формы</h3>
-                <div style="display: flex; gap: 8px;">
-                    <button type="button" class="btn btn-secondary btn-sm" data-action="add-field">Добавить поле</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-action="delete-field">Удалить поле</button>
-                </div>
-            </div>
-            <div id="ticketFormsFieldsList" style="display: grid; gap: 8px; margin-bottom: 14px;"></div>
-            <div id="ticketFormsFieldEditor"></div>
+        <div class="tfb-inline-note" style="margin-top: 12px;">
+          Изменения внутри каталога не попадут в `/help` и агент, пока вы не сохраните новую версию пакета.
         </div>
-    </div>
+      </div>
 
-    <div class="section" style="margin: 0;">
-        <h3 style="margin-top: 0;">JSON preview</h3>
-        <textarea id="ticketFormsPreview" rows="18" readonly style="font-family: Consolas, 'Courier New', monospace; font-size: 12px;"></textarea>
-    </div>
+      <div class="tfb-side-card" style="margin-top: 14px;">
+        <label>Версии каталога</label>
+        <div id="ticketFormsVersionsList" class="tfb-version-list" style="margin-top: 8px;"></div>
+      </div>
+
+      <div class="tfb-side-card" style="margin-top: 14px;">
+        <div class="tfb-section-head">
+          <div>
+            <label style="margin: 0;">Формы в текущем каталоге</label>
+            <div class="tfb-subtle">Выберите форму для редактирования или начните новую.</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="open-create">Создать</button>
+        </div>
+        <div id="ticketFormsCatalogForms" class="tfb-form-list" style="margin-top: 12px;"></div>
+      </div>
+    </aside>
+
+    <main class="tfb-panel">
+      <div class="tfb-view-switch">
+        <div>
+          <h3 style="margin: 0;">Рабочая область формы</h3>
+          <div class="tfb-subtle">Создание и редактирование разделены, чтобы обычный сценарий не смешивался с поддержкой старых форм.</div>
+        </div>
+        <div class="tfb-inline-actions">
+          <button type="button" class="tfb-view-btn" data-view="catalog">Каталог</button>
+          <button type="button" class="tfb-view-btn" data-view="create">Создать форму</button>
+          <button type="button" class="tfb-view-btn" data-view="edit">Редактировать форму</button>
+        </div>
+      </div>
+
+      <section id="ticketFormsViewCatalog" class="tfb-view" style="margin-top: 14px;"></section>
+      <section id="ticketFormsViewCreate" class="tfb-view" hidden style="margin-top: 14px;"></section>
+      <section id="ticketFormsViewEdit" class="tfb-view" hidden style="margin-top: 14px;"></section>
+    </main>
+  </div>
 </div>

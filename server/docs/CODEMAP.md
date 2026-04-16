@@ -250,3 +250,10 @@
 - `server/admin.html` and `server/admin.js` now treat the admin `Модули` page as an inner-tab workspace with four subviews: step-by-step authoring, module registry list, advanced editor, and device installs.
 - `server/admin_modules_workbench.html` / `server/admin_modules_workbench.js` split authoring into a guided 4-step flow (`Каркас` -> `Инструменты` -> `Политики` -> `Проверка`) while keeping the advanced manifest/tool editor available as a separate view for power users.
 - The workbench list can now import a ready ZIP archive, delete a published module version, and open the uploaded package directly in the editor; the authoring/editor views replace most routine JSON entry with guided controls: platform pills, line-based requirements, and validated schema blueprints for params/output before publish.
+
+## 2026-04-16 Request form builder UX
+
+- `server/admin_ticket_forms_builder.html` / `server/admin_ticket_forms_builder.js` are the dedicated admin UI entrypoints for the request-form catalog.
+- The builder is split into three operator modes: catalog/version management, guided form creation, and separate editing of an existing form.
+- Everyday authoring should happen through the guided flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
+- The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.
