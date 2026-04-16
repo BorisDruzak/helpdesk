@@ -148,3 +148,20 @@
   - passed: `node --check server/admin_modules_workbench.js`
   - passed: `python -m pytest server/tests/test_modules_manifest_no_db.py -v --tb=short`
   - passed with shared DB: `python -m pytest -o asyncio_mode=strict server/tests/test_modules_workbench_api.py server/tests/test_tool_service_auto_install_versions.py -v --tb=short`
+
+## 2026-04-16 Modules page workspace refactor
+
+- Refactored the admin `Модули` page into nested workspace tabs:
+  - `Разработка модулей`
+  - `Список модулей`
+  - `Редактор модулей`
+  - `Модули на устройствах`
+- Rebuilt `Разработка модулей` as a guided authoring flow with four steps:
+  1. module scaffold;
+  2. tool templates and code;
+  3. runtime policies;
+  4. validation, rollout settings, API preview, and source explorer.
+- Kept a separate advanced editor for full manifest/tool JSON fields so power-user editing stays available without overloading the main authoring path.
+- Verification for this refactor:
+  - passed: `python scripts/verify_workspace.py`
+  - passed: `python -m pytest server/tests/test_modules_workbench_api.py -v --tb=short`

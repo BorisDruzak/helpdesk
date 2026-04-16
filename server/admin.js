@@ -6195,6 +6195,8 @@
 
         function setDeviceIdForModulesTab(deviceId) {
             window._selectedDeviceIdForModules = deviceId;
+            window._selectedModulesSubtab = 'devices';
+            activeModulesSubtab = 'devices';
         }
 
         async function deviceAgentRefresh() {
@@ -6695,8 +6697,61 @@
         let modulesDataTab = [];
         let devicesDataTab = [];
         let selectedDeviceIdTab = null;
+        let modulesSubtabInitialized = false;
+        let activeModulesSubtab = 'development';
+
+        function desiredModulesSubtab() {
+            return window._selectedModulesSubtab || activeModulesSubtab || 'development';
+        }
+
+        function syncModulesSubtabButtons() {
+            const visiblePanel = activeModulesSubtab === 'devices' ? 'devices' : 'development';
+            document.querySelectorAll('.modules-subtab-btn').forEach(btn => {
+                const isActive = btn.getAttribute('data-modules-subtab') === activeModulesSubtab;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            document.querySelectorAll('[data-modules-subtab-panel]').forEach(panel => {
+                const isActive = panel.getAttribute('data-modules-subtab-panel') === visiblePanel;
+                panel.hidden = !isActive;
+                panel.classList.toggle('active', isActive);
+            });
+        }
+
+        function switchModulesSubtab(subtab, options) {
+            const next = ['development', 'list', 'editor', 'devices'].includes(subtab) ? subtab : 'development';
+            activeModulesSubtab = next;
+            window._selectedModulesSubtab = next;
+            syncModulesSubtabButtons();
+            if (next === 'devices' && selectedDeviceIdTab) {
+                selectDeviceModules(selectedDeviceIdTab, true);
+            }
+            const workbenchView = next === 'devices' ? null : next;
+            if (workbenchView) {
+                window.ModuleWorkbench?.switchView?.(workbenchView, options || {});
+            }
+        }
+
+        function initModulesSubtabs() {
+            if (modulesSubtabInitialized) {
+                syncModulesSubtabButtons();
+                return;
+            }
+            modulesSubtabInitialized = true;
+            document.querySelectorAll('.modules-subtab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    switchModulesSubtab(this.getAttribute('data-modules-subtab'));
+                });
+            });
+            syncModulesSubtabButtons();
+        }
+
+        window.switchModulesSubtab = switchModulesSubtab;
 
         async function loadModulesTab() {
+            initModulesSubtabs();
+            activeModulesSubtab = desiredModulesSubtab();
+            syncModulesSubtabButtons();
             const cleanupBtn = document.getElementById('cleanup-missing-modules-btn');
             if (cleanupBtn) cleanupBtn.onclick = cleanupMissingModulesRegistry;
             await Promise.all([
@@ -6704,6 +6759,9 @@
                 loadModulesList(),
                 window.ModuleWorkbench?.load?.() || Promise.resolve()
             ]);
+            if (activeModulesSubtab !== 'devices') {
+                window.ModuleWorkbench?.switchView?.(activeModulesSubtab);
+            }
         }
 
         function modulesInstallConsoleLog(message, isError) {

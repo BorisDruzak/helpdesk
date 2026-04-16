@@ -639,11 +639,24 @@
                     <h1>Модули</h1>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    <div id="modules-workbench-host"></div>
+                <div class="modules-page-shell">
+                    <div class="modules-subtabs" role="tablist" aria-label="Разделы страницы модулей">
+                        <button type="button" class="modules-subtab-btn active" data-modules-subtab="development" role="tab" aria-selected="true">Разработка модулей</button>
+                        <button type="button" class="modules-subtab-btn" data-modules-subtab="list" role="tab" aria-selected="false">Список модулей</button>
+                        <button type="button" class="modules-subtab-btn" data-modules-subtab="editor" role="tab" aria-selected="false">Редактор модулей</button>
+                        <button type="button" class="modules-subtab-btn" data-modules-subtab="devices" role="tab" aria-selected="false">Модули на устройствах</button>
+                    </div>
+                    <section class="modules-subtab-panel active" data-modules-subtab-panel="development">
+                        <div id="modules-workbench-host"></div>
+                    </section>
+
+                    <section class="modules-subtab-panel" data-modules-subtab-panel="list" hidden></section>
+
+                    <section class="modules-subtab-panel" data-modules-subtab-panel="editor" hidden></section>
 
                     <!-- Установить модули на устройства -->
-                    <div class="panel" style="grid-column: 1 / -1;">
+                    <section class="modules-subtab-panel" data-modules-subtab-panel="devices" hidden>
+                    <div class="panel">
                         <h2>Установить модули на устройства</h2>
                         <p style="font-size: 13px; color: #6e6e73; margin-bottom: 12px;">Выберите одно или несколько устройств из списка (из БД), выберите модуль с сервера и нажмите «Установить». Внизу отображается консоль с прогрессом и ошибками.</p>
                         <div id="devices-table-modules-wrap" style="margin-bottom: 16px;">
@@ -715,6 +728,7 @@
                             <div id="device-details-content-modules"></div>
                         </div>
                     </div>
+                    </section>
                 </div>
             </div> <!-- End of Modules Tab -->
 
@@ -1218,7 +1232,7 @@
     </div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/admin.js?v=20260415b"></script>
-    <script src="/admin_modules_workbench.js?v=20260415c"></script>
+    <script src="/admin.js?v=20260416a"></script>
+    <script src="/admin_modules_workbench.js?v=20260416a"></script>
 </body>
 </html>

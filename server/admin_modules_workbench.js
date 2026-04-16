@@ -6,14 +6,14 @@
     const RESERVED_NAMESPACES = new Set(["dns", "network", "tcp", "http", "tls", "system", "service", "file", "process", "browser"]);
     const API_PREVIEW_MODES = ["payload", "curl-validate", "curl-save", "fetch-save"];
     const TOOL_TEMPLATE_OPTIONS = [
-        { key: "blank", label: "РџСѓСЃС‚РѕР№ diagnostic tool" },
-        { key: "dns_resolve", label: "РЁР°Р±Р»РѕРЅ DNS resolve" },
-        { key: "network_ping", label: "РЁР°Р±Р»РѕРЅ network ping" },
-        { key: "tcp_connect", label: "РЁР°Р±Р»РѕРЅ TCP connect" },
-        { key: "route_get", label: "РЁР°Р±Р»РѕРЅ route.get" },
-        { key: "adapter_list", label: "РЁР°Р±Р»РѕРЅ adapter.list" },
-        { key: "http_request", label: "РЁР°Р±Р»РѕРЅ HTTP request" },
-        { key: "system_service_status", label: "РЁР°Р±Р»РѕРЅ service status" },
+        { key: "blank", label: "Пустой diagnostic tool" },
+        { key: "dns_resolve", label: "Шаблон DNS resolve" },
+        { key: "network_ping", label: "Шаблон network ping" },
+        { key: "tcp_connect", label: "Шаблон TCP connect" },
+        { key: "route_get", label: "Шаблон route.get" },
+        { key: "adapter_list", label: "Шаблон adapter.list" },
+        { key: "http_request", label: "Шаблон HTTP request" },
+        { key: "system_service_status", label: "Шаблон service status" },
     ];
 
     const state = {
@@ -30,6 +30,8 @@
         selectedSourcePath: null,
         serverValidation: null,
         apiPreviewMode: "payload",
+        currentView: "development",
+        currentWizardStep: 1,
     };
 
     const html = window.escapeHtml || ((value) => String(value ?? "")
@@ -65,6 +67,42 @@
 
     function byId(id) {
         return document.getElementById(id);
+    }
+
+    function normalizeView(view) {
+        return ["development", "list", "editor"].includes(view) ? view : "development";
+    }
+
+    function requestModulesSubtab(view) {
+        if (typeof window.switchModulesSubtab === "function") {
+            window.switchModulesSubtab(view);
+        }
+    }
+
+    function setCurrentView(view, options) {
+        state.currentView = normalizeView(view);
+        if (options && Number.isInteger(options.wizardStep)) {
+            state.currentWizardStep = Math.min(4, Math.max(1, options.wizardStep));
+        }
+        renderVisibleView();
+        renderTopFields();
+        renderToolTabs();
+        renderToolEditor();
+        renderCatalog();
+        renderDevelopmentWizard();
+        renderSummary();
+        renderLocalValidation();
+        renderServerValidation();
+        renderApiPreviewTabs();
+        renderApiPreview();
+        renderSourceExplorer();
+        renderWorkbenchHeader();
+    }
+
+    function setWizardStep(step) {
+        state.currentWizardStep = Math.min(4, Math.max(1, Number(step) || 1));
+        renderDevelopmentWizard();
+        renderWorkbenchHeader();
     }
 
     function setMessage(kind, text, detailsHtml) {
@@ -574,13 +612,37 @@
     }
 
     function populateToolTemplateOptions() {
-        const select = byId("modules-workbench-tool-template");
-        if (!select) {
-            return;
+        ["modules-workbench-tool-template", "modules-workbench-wizard-tool-template"].forEach((id) => {
+            const select = byId(id);
+            if (!select) {
+                return;
+            }
+            const currentValue = select.value || "blank";
+            select.innerHTML = TOOL_TEMPLATE_OPTIONS.map((item) => `<option value="${item.key}">${html(item.label)}</option>`).join("");
+            select.value = TOOL_TEMPLATE_OPTIONS.some((item) => item.key === currentValue) ? currentValue : "blank";
+        });
+    }
+
+    function renderVisibleView() {
+        document.querySelectorAll("[data-workbench-view]").forEach((section) => {
+            section.hidden = section.getAttribute("data-workbench-view") !== state.currentView;
+        });
+    }
+
+    function renderWorkbenchHeader() {
+        const badge = byId("modules-workbench-current-view-badge");
+        if (badge) {
+            const labels = {
+                development: "Пошаговая разработка",
+                list: "Список модулей",
+                editor: "Advanced-редактор",
+            };
+            badge.textContent = labels[state.currentView] || state.currentView;
         }
-        const currentValue = select.value || "blank";
-        select.innerHTML = TOOL_TEMPLATE_OPTIONS.map((item) => `<option value="${item.key}">${html(item.label)}</option>`).join("");
-        select.value = TOOL_TEMPLATE_OPTIONS.some((item) => item.key === currentValue) ? currentValue : "blank";
+        const stepChip = byId("modules-workbench-current-step-chip");
+        if (stepChip) {
+            stepChip.textContent = `Шаг ${state.currentWizardStep}`;
+        }
     }
 
     async function refreshOuterModuleInstallViews() {
@@ -602,12 +664,15 @@
             state.selectedSourcePath = null;
             state.currentDraft = createEmptyDraft();
             state.serverValidation = null;
-            setMessage("success", "Создан новый draft. Заполните blueprint, подставьте tool templates и проверьте модуль перед публикацией.");
+            state.currentWizardStep = 1;
+            setCurrentView("development", { wizardStep: 1 });
+            requestModulesSubtab("development");
+            setMessage("success", "Создан новый draft. Заполните каркас, добавьте инструменты и проверьте модуль перед публикацией.");
             renderAll();
         });
         byId("modules-workbench-load-selected-btn")?.addEventListener("click", async () => {
             if (!state.selectedFamily || !state.selectedVersion) {
-                setMessage("warning", "Сначала выберите семейство и версию слева.");
+                setMessage("warning", "Сначала выберите модуль и нужную версию в списке.");
                 return;
             }
             await loadVersionDetail(state.selectedFamily, state.selectedVersion);
@@ -625,6 +690,41 @@
         byId("modules-workbench-duplicate-tool-btn")?.addEventListener("click", () => duplicateCurrentTool());
         byId("modules-workbench-remove-tool-btn")?.addEventListener("click", () => removeCurrentTool());
         byId("modules-workbench-save-rollout-btn")?.addEventListener("click", async () => saveRolloutSettings());
+        byId("modules-workbench-open-list-btn")?.addEventListener("click", () => {
+            requestModulesSubtab("list");
+            setCurrentView("list");
+        });
+        byId("modules-workbench-open-editor-btn")?.addEventListener("click", () => {
+            requestModulesSubtab("editor");
+            setCurrentView("editor");
+        });
+        byId("modules-workbench-editor-open-list-btn")?.addEventListener("click", () => {
+            requestModulesSubtab("list");
+            setCurrentView("list");
+        });
+        byId("modules-workbench-editor-open-development-btn")?.addEventListener("click", () => {
+            requestModulesSubtab("development");
+            setCurrentView("development", { wizardStep: 4 });
+        });
+        byId("modules-workbench-list-new-btn")?.addEventListener("click", () => byId("modules-workbench-new-btn")?.click());
+        byId("modules-workbench-wizard-apply-template-btn")?.addEventListener("click", () => {
+            applyTemplateToCurrentTool(byId("modules-workbench-wizard-tool-template")?.value || "blank");
+            renderDevelopmentWizard();
+        });
+        byId("modules-workbench-wizard-add-template-btn")?.addEventListener("click", () => {
+            addToolFromTemplate(byId("modules-workbench-wizard-tool-template")?.value || "blank");
+            renderDevelopmentWizard();
+        });
+        byId("modules-workbench-wizard-duplicate-tool-btn")?.addEventListener("click", () => {
+            duplicateCurrentTool();
+            renderDevelopmentWizard();
+        });
+        byId("modules-workbench-wizard-remove-tool-btn")?.addEventListener("click", () => {
+            removeCurrentTool();
+            renderDevelopmentWizard();
+        });
+        byId("modules-workbench-wizard-back-btn")?.addEventListener("click", () => setWizardStep(state.currentWizardStep - 1));
+        byId("modules-workbench-wizard-next-btn")?.addEventListener("click", () => setWizardStep(state.currentWizardStep + 1));
     }
 
     async function load() {
@@ -659,17 +759,292 @@
     }
 
     function renderAll() {
+        renderVisibleView();
+        renderWorkbenchHeader();
         renderRolloutSettings();
         renderCatalog();
         renderSummary();
         renderTopFields();
         renderToolTabs();
         renderToolEditor();
+        renderDevelopmentWizard();
         renderLocalValidation();
         renderServerValidation();
         renderApiPreviewTabs();
         renderApiPreview();
         renderSourceExplorer();
+    }
+
+    function activeTool() {
+        return state.currentDraft?.tools?.[state.selectedToolIndex] || null;
+    }
+
+    function splitCsv(raw) {
+        return String(raw || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    function renderDevelopmentWizard() {
+        const steps = [
+            { id: 1, title: "Каркас", note: "Имя, версия, платформы и границы модуля." },
+            { id: 2, title: "Инструменты", note: "Шаблон, схемы и код выбранного tool." },
+            { id: 3, title: "Политики", note: "Риск, роли, scopes и runtime-поведение." },
+            { id: 4, title: "Проверка", note: "Validate, preview и публикация в registry." },
+        ];
+        const stepper = byId("modules-workbench-stepper");
+        if (stepper) {
+            stepper.innerHTML = steps.map((step) => `
+                <button type="button" class="mw-stepper-btn ${step.id === state.currentWizardStep ? "is-active" : ""}" data-wizard-step-target="${step.id}">
+                    <strong>Шаг ${step.id}. ${html(step.title)}</strong>
+                    <span class="mw-subtle">${html(step.note)}</span>
+                </button>
+            `).join("");
+            stepper.querySelectorAll("[data-wizard-step-target]").forEach((button) => {
+                button.addEventListener("click", () => setWizardStep(Number(button.getAttribute("data-wizard-step-target") || "1")));
+            });
+        }
+        document.querySelectorAll("[data-wizard-step]").forEach((section) => {
+            section.hidden = Number(section.getAttribute("data-wizard-step")) !== state.currentWizardStep;
+        });
+        byId("modules-workbench-wizard-back-btn")?.toggleAttribute("disabled", state.currentWizardStep <= 1);
+        byId("modules-workbench-wizard-next-btn")?.toggleAttribute("disabled", state.currentWizardStep >= 4);
+
+        renderWizardSummary();
+        renderWizardBasics();
+        renderWizardToolEditor();
+        renderWizardPolicyEditor();
+    }
+
+    function renderWizardSummary() {
+        const el = byId("modules-workbench-wizard-summary");
+        if (!el) {
+            return;
+        }
+        const draft = state.currentDraft || createEmptyDraft();
+        const tool = activeTool();
+        el.innerHTML = `
+            <label>Текущий draft</label>
+            <strong>${html(draft.module_name || "Новый модуль")}</strong>
+            <div class="mw-subtle" style="margin-top: 6px;">Версия: ${html(draft.version || "—")} • tools: ${html(String((draft.tools || []).length))}</div>
+            <div class="mw-chip-row" style="margin-top: 12px;">
+                <span class="mw-chip is-accent">${html(draft.owner_scope || "vendor")}</span>
+                <span class="mw-chip">${html((draft.platforms || ["any"]).join(", "))}</span>
+                <span class="mw-chip">${html(tool?.tool_name || "tool не выбран")}</span>
+            </div>
+        `;
+    }
+
+    function renderWizardBasics() {
+        const draft = state.currentDraft || createEmptyDraft();
+        const set = (id, value) => {
+            const el = byId(id);
+            if (el && document.activeElement !== el) {
+                el.value = value ?? "";
+            }
+        };
+        set("modules-workbench-wizard-module-name", draft.module_name || "");
+        set("modules-workbench-wizard-module-version", draft.version || "");
+        set("modules-workbench-wizard-module-description", draft.description || "");
+        set("modules-workbench-wizard-owner-scope", draft.owner_scope || "vendor");
+        set("modules-workbench-wizard-min-agent-version", draft.min_agent_version || "");
+        set("modules-workbench-wizard-platforms", pretty(draft.platforms || ["any"]));
+        set("modules-workbench-wizard-requirements", pretty({
+            requirements: draft.requirements || [],
+            optional_requirements: draft.optional_requirements || [],
+        }));
+        [
+            "modules-workbench-wizard-module-name",
+            "modules-workbench-wizard-module-version",
+            "modules-workbench-wizard-module-description",
+            "modules-workbench-wizard-owner-scope",
+            "modules-workbench-wizard-min-agent-version",
+            "modules-workbench-wizard-platforms",
+            "modules-workbench-wizard-requirements",
+        ].forEach((id) => {
+            const el = byId(id);
+            if (!el || el.dataset.bound === "1") {
+                return;
+            }
+            el.dataset.bound = "1";
+            const handler = () => {
+                syncWizardBasicsFromDom();
+                renderSummary();
+                renderTopFields();
+                renderWizardSummary();
+            };
+            el.addEventListener("input", handler);
+            el.addEventListener("change", handler);
+        });
+    }
+
+    function syncWizardBasicsFromDom() {
+        if (!state.currentDraft) {
+            state.currentDraft = createEmptyDraft();
+        }
+        const errors = [];
+        state.currentDraft.module_name = String(byId("modules-workbench-wizard-module-name")?.value || "").trim();
+        state.currentDraft.version = String(byId("modules-workbench-wizard-module-version")?.value || "").trim();
+        state.currentDraft.description = String(byId("modules-workbench-wizard-module-description")?.value || "").trim();
+        state.currentDraft.owner_scope = String(byId("modules-workbench-wizard-owner-scope")?.value || "vendor").trim();
+        state.currentDraft.min_agent_version = String(byId("modules-workbench-wizard-min-agent-version")?.value || "").trim() || null;
+        state.currentDraft.platforms = safeParseJson(byId("modules-workbench-wizard-platforms")?.value, ["any"], "Platforms", errors);
+        const req = safeParseJson(byId("modules-workbench-wizard-requirements")?.value, { requirements: [], optional_requirements: [] }, "Requirements", errors);
+        state.currentDraft.requirements = Array.isArray(req.requirements) ? req.requirements : [];
+        state.currentDraft.optional_requirements = Array.isArray(req.optional_requirements) ? req.optional_requirements : [];
+        return errors;
+    }
+
+    function renderWizardToolEditor() {
+        const tool = activeTool();
+        const tabs = byId("modules-workbench-wizard-tool-tabs");
+        if (tabs) {
+            const tools = state.currentDraft?.tools || [];
+            tabs.innerHTML = tools.map((item, index) => `
+                <button type="button" class="mw-tab-btn ${index === state.selectedToolIndex ? "is-active" : ""}" data-wizard-tool-tab="${index}">
+                    ${html(item.tool_name || `tool_${index + 1}`)}
+                </button>
+            `).join("");
+            tabs.querySelectorAll("[data-wizard-tool-tab]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    state.selectedToolIndex = Number(button.getAttribute("data-wizard-tool-tab") || "0");
+                    renderDevelopmentWizard();
+                    renderToolTabs();
+                    renderToolEditor();
+                    renderApiPreview();
+                });
+            });
+        }
+        if (!tool) {
+            return;
+        }
+        const set = (id, value) => {
+            const el = byId(id);
+            if (el && document.activeElement !== el) {
+                el.value = value ?? "";
+            }
+        };
+        set("modules-workbench-wizard-tool-name", tool.tool_name || "");
+        set("modules-workbench-wizard-tool-method", tool.method_name || "");
+        set("modules-workbench-wizard-tool-description", tool.description || "");
+        set("modules-workbench-wizard-tool-params-schema", pretty(tool.params_schema || {}));
+        set("modules-workbench-wizard-tool-output-schema", pretty(tool.output_schema || {}));
+        set("modules-workbench-wizard-tool-code", tool.user_function_body || "");
+        [
+            "modules-workbench-wizard-tool-name",
+            "modules-workbench-wizard-tool-method",
+            "modules-workbench-wizard-tool-description",
+            "modules-workbench-wizard-tool-params-schema",
+            "modules-workbench-wizard-tool-output-schema",
+            "modules-workbench-wizard-tool-code",
+        ].forEach((id) => {
+            const el = byId(id);
+            if (!el || el.dataset.bound === "1") {
+                return;
+            }
+            el.dataset.bound = "1";
+            const handler = () => {
+                syncWizardToolCoreFromDom();
+                renderToolTabs();
+                renderToolEditor();
+                renderWizardSummary();
+                renderLocalValidation();
+                renderApiPreview();
+            };
+            el.addEventListener("input", handler);
+            el.addEventListener("change", handler);
+        });
+    }
+
+    function syncWizardToolCoreFromDom() {
+        const tool = activeTool();
+        if (!tool) {
+            return [];
+        }
+        const errors = [];
+        tool.tool_name = String(byId("modules-workbench-wizard-tool-name")?.value || "").trim();
+        tool.method_name = String(byId("modules-workbench-wizard-tool-method")?.value || "").trim();
+        tool.description = String(byId("modules-workbench-wizard-tool-description")?.value || "").trim();
+        tool.params_schema = safeParseJson(byId("modules-workbench-wizard-tool-params-schema")?.value, { type: "object", properties: {} }, "Params schema", errors);
+        tool.output_schema = safeParseJson(byId("modules-workbench-wizard-tool-output-schema")?.value, { type: "object", properties: {} }, "Output schema", errors);
+        tool.user_function_body = String(byId("modules-workbench-wizard-tool-code")?.value || "").trim();
+        return errors;
+    }
+
+    function renderWizardPolicyEditor() {
+        const tool = activeTool();
+        if (!tool) {
+            return;
+        }
+        tool.metadata = { ...blankTool().metadata, ...(tool.metadata || {}) };
+        const set = (id, value) => {
+            const el = byId(id);
+            if (el && document.activeElement !== el) {
+                if (el.type === "checkbox") {
+                    el.checked = Boolean(value);
+                } else {
+                    el.value = value ?? "";
+                }
+            }
+        };
+        set("modules-workbench-wizard-tool-domain", tool.metadata.domain || "");
+        set("modules-workbench-wizard-tool-kind", tool.metadata.tool_kind || "diagnostic");
+        set("modules-workbench-wizard-risk-level", tool.metadata.risk_level || "safe_read");
+        set("modules-workbench-wizard-tool-roles", (tool.metadata.allow_roles || []).join(", "));
+        set("modules-workbench-wizard-tool-scopes", (tool.metadata.scopes || []).join(", "));
+        set("modules-workbench-wizard-tool-timeout", tool.metadata.timeout_sec || 30);
+        set("modules-workbench-wizard-tool-contract-version", tool.contract_version || "1.0.0");
+        set("modules-workbench-wizard-tool-lifecycle", tool.lifecycle || "stable");
+        set("modules-workbench-wizard-tool-requires-consent", tool.metadata.requires_consent);
+        set("modules-workbench-wizard-tool-idempotent", tool.metadata.idempotent !== false);
+        set("modules-workbench-wizard-tool-side-effects", tool.metadata.side_effects);
+        [
+            "modules-workbench-wizard-tool-domain",
+            "modules-workbench-wizard-tool-kind",
+            "modules-workbench-wizard-risk-level",
+            "modules-workbench-wizard-tool-roles",
+            "modules-workbench-wizard-tool-scopes",
+            "modules-workbench-wizard-tool-timeout",
+            "modules-workbench-wizard-tool-contract-version",
+            "modules-workbench-wizard-tool-lifecycle",
+            "modules-workbench-wizard-tool-requires-consent",
+            "modules-workbench-wizard-tool-idempotent",
+            "modules-workbench-wizard-tool-side-effects",
+        ].forEach((id) => {
+            const el = byId(id);
+            if (!el || el.dataset.bound === "1") {
+                return;
+            }
+            el.dataset.bound = "1";
+            const handler = () => {
+                syncWizardToolPolicyFromDom();
+                renderToolEditor();
+                renderWizardSummary();
+                renderLocalValidation();
+            };
+            el.addEventListener("input", handler);
+            el.addEventListener("change", handler);
+        });
+    }
+
+    function syncWizardToolPolicyFromDom() {
+        const tool = activeTool();
+        if (!tool) {
+            return;
+        }
+        tool.metadata = { ...blankTool().metadata, ...(tool.metadata || {}) };
+        tool.metadata.domain = String(byId("modules-workbench-wizard-tool-domain")?.value || "").trim() || "custom";
+        tool.metadata.tool_kind = String(byId("modules-workbench-wizard-tool-kind")?.value || "diagnostic").trim();
+        tool.metadata.risk_level = String(byId("modules-workbench-wizard-risk-level")?.value || "safe_read").trim();
+        tool.metadata.allow_roles = splitCsv(byId("modules-workbench-wizard-tool-roles")?.value || "");
+        tool.metadata.scopes = splitCsv(byId("modules-workbench-wizard-tool-scopes")?.value || "");
+        tool.metadata.timeout_sec = Number(byId("modules-workbench-wizard-tool-timeout")?.value || 30) || 30;
+        tool.metadata.requires_consent = byId("modules-workbench-wizard-tool-requires-consent")?.checked === true;
+        tool.metadata.idempotent = byId("modules-workbench-wizard-tool-idempotent")?.checked !== false;
+        tool.metadata.side_effects = byId("modules-workbench-wizard-tool-side-effects")?.checked === true;
+        tool.contract_version = String(byId("modules-workbench-wizard-tool-contract-version")?.value || "1.0.0").trim() || "1.0.0";
+        tool.lifecycle = String(byId("modules-workbench-wizard-tool-lifecycle")?.value || "stable").trim() || "stable";
     }
 
     async function saveRolloutSettings() {
@@ -725,15 +1100,15 @@
                     <div class="mw-toolbar">
                         <div>
                             <h3 style="margin: 0 0 4px;">${html(family.module_name)}</h3>
-                            <div class="mw-subtle">latest ${html(family.latest_version || "—")} • preferred ${html(family.preferred_version || "—")}</div>
+                            <div class="mw-subtle">Последняя ${html(family.latest_version || "—")} • preferred ${html(family.preferred_version || "—")}</div>
                         </div>
-                        <span class="mw-badge ${family.preferred_assigned ? "is-accent" : ""}">${family.preferred_assigned ? "manual" : "auto"}</span>
+                        <span class="mw-badge ${family.preferred_assigned ? "is-accent" : ""}">${family.preferred_assigned ? "preferred задан" : "без preferred"}</span>
                     </div>
                     <div class="mw-chip-row" style="margin-top: 10px;">${toolPreview || '<span class="mw-subtle">tool ids пока не обнаружены</span>'}</div>
                     <div class="mw-grid-3" style="margin-top: 12px; align-items: center;">
                         <select data-version-select="${html(family.module_name)}">${versionsOptions}</select>
-                        <button type="button" class="btn btn-secondary btn-sm" data-open-family="${html(family.module_name)}">Открыть</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-preferred-family="${html(family.module_name)}">Приоритет</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-open-family="${html(family.module_name)}">Открыть в редакторе</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-preferred-family="${html(family.module_name)}">Сделать preferred</button>
                     </div>
                 </div>
             `;
@@ -752,7 +1127,8 @@
                 const select = list.querySelector(`[data-version-select="${CSS.escape(moduleName)}"]`);
                 state.selectedFamily = moduleName;
                 state.selectedVersion = select ? select.value : "";
-                await loadVersionDetail(moduleName, state.selectedVersion);
+                requestModulesSubtab("editor");
+                await loadVersionDetail(moduleName, state.selectedVersion, { view: "editor" });
             });
         });
         list.querySelectorAll("[data-preferred-family]").forEach((button) => {
@@ -766,7 +1142,7 @@
         });
     }
 
-    async function loadVersionDetail(moduleName, version) {
+    async function loadVersionDetail(moduleName, version, options) {
         setMessage(null, "");
         try {
             const response = await fetch(`/api/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`, {
@@ -786,6 +1162,12 @@
             state.currentDraft.module_name = moduleName;
             state.currentDraft.version = version;
             state.serverValidation = null;
+            if (options?.view) {
+                state.currentView = normalizeView(options.view);
+            }
+            if (options?.wizardStep) {
+                state.currentWizardStep = Math.min(4, Math.max(1, Number(options.wizardStep) || 1));
+            }
             if ((state.currentDraft.warnings || []).length) {
                 setMessage("warning", "Часть кода удалось восстановить не полностью. Ниже всё равно показаны доступные source-файлы и найденные методы.", (state.currentDraft.warnings || []).map((item) => html(item)).join("<br>"));
             }
@@ -1103,7 +1485,10 @@
 
     function refreshDraftViews() {
         renderSummary();
+        renderTopFields();
         renderToolTabs();
+        renderToolEditor();
+        renderDevelopmentWizard();
         renderLocalValidation();
         renderApiPreview();
     }
@@ -1114,7 +1499,12 @@
         const draft = state.currentDraft || createEmptyDraft();
         const topErrors = syncTopFieldsFromDom();
         const toolSyncErrors = syncCurrentToolFromEditor();
-        errors.push(...topErrors, ...toolSyncErrors);
+        const wizardErrors = [
+            ...(syncWizardBasicsFromDom() || []),
+            ...(syncWizardToolCoreFromDom() || []),
+        ];
+        syncWizardToolPolicyFromDom();
+        errors.push(...topErrors, ...toolSyncErrors, ...wizardErrors);
 
         if (!draft.module_name) {
             errors.push("Нужно указать имя модуля.");
@@ -1261,6 +1651,9 @@
     function draftToPayload() {
         syncTopFieldsFromDom();
         syncCurrentToolFromEditor();
+        syncWizardBasicsFromDom();
+        syncWizardToolCoreFromDom();
+        syncWizardToolPolicyFromDom();
         const draft = clone(state.currentDraft || createEmptyDraft());
         return {
             module_name: draft.module_name,
@@ -1520,5 +1913,8 @@
 
     window.ModuleWorkbench = {
         load,
+        switchView(view, options) {
+            setCurrentView(view, options);
+        },
     };
 })();

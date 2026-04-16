@@ -16,13 +16,14 @@
 - Server harness: `server/tests/conftest.py`, `server/tests/README.md`.
 - CI runner: `scripts/run_ci_suite.py`; isolated temp checkout runner: `scripts/run_ci_in_temp_workspace.py`.
 - Канонические test/CI env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`.
+- Windows default: if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test` through a local SSH tunnel; explicit admin DSN is required for isolated ephemeral DBs from Windows.
 
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
-| Модули / reconcile | `server/modules/service.py`, `server/modules/handlers.py`, `server/modules/workbench_service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULES_API.md` |
+| Модули / reconcile | `server/modules/service.py`, `server/modules/handlers.py`, `server/modules/workbench_service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULE_CREATION_GUIDE.md`, `server/docs/MODULES_API.md` |
 | Admin / support / ticket UI | `server/admin.js`, `server/admin_modules_workbench.js`, `server/support.js`, `server/ticket.js`, `server/web_shared.js`, `server/control_plane.py`, `server/runtime_control.py` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin` |
 
 ---
@@ -138,7 +139,7 @@
 ### 2.7 UI (статика)
 | Файл | Назначение |
 |------|------------|
-| `server/admin.html`, `server/admin.js`, `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket; модульный workbench вынесен в отдельный fragment+script и встраивается во вкладку `Модули` |
+| `server/admin.html`, `server/admin.js`, `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket; вкладка `Модули` теперь разделена на подтемы `Разработка модулей` / `Список модулей` / `Редактор модулей` / `Модули на устройствах`, а workbench живёт в отдельном fragment+script |
 | `server/control_plane.py`, `server/runtime_control.py` | Control-plane и runtime orchestration для техпанели: статус сервера (включая `started_at`/`uptime` из systemd и его timezone-offset timestamps вида `+05`), корректный `stop -> stopped/inactive` без ложного `failed`, health summary main API, полные логи (по умолчанию `Info+`), подтверждённые lifecycle actions с аудитом |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
 | `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь тикетов` + `Рабочий тикет`; runtime теперь опирается на `web_shared.js` для общих auth/date/html helpers, чтобы не дублировать базовый shell-код. Переключатель режимов вынесен в верхний action-bar рядом с `Обновить / Выйти / Войти как admin`, чтобы оба режима воспринимались как единый workspace. В `Очереди тикетов` левый inbox скрывается, управление очередью собрано в компактную верхнюю панель (summary, фильтры, сортировка), а основной экран отдан широкой доске тикетов; левая колонка используется под действия по очереди и выбранному тикету. Карточки тикетов раскрывают `SLA / OLA / маршрут` и `Контекст и присутствие`. В `Рабочем тикете` левый inbox снова показывается, при этом фильтр `Мои` показывает только назначенные на текущего support-оператора тикеты, а фильтры `Нужны действия` и `Ждут пользователя` считаются только по своим тикетам. Для работы по тикету используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`). Для закрытия тикета использует встроенную форму кодов решения вместо prompt. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
@@ -243,3 +244,8 @@
 - `server/modules/handlers.py` now exposes `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
 - `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, API preview, archive/source exploration, and rollout-policy controls in the admin UI.
+
+## 2026-04-16 Module page refactor
+
+- `server/admin.html` and `server/admin.js` now treat the admin `Модули` page as an inner-tab workspace with four subviews: step-by-step authoring, module registry list, advanced editor, and device installs.
+- `server/admin_modules_workbench.html` / `server/admin_modules_workbench.js` split authoring into a guided 4-step flow (`Каркас` -> `Инструменты` -> `Политики` -> `Проверка`) while keeping the advanced manifest/tool editor available as a separate view for power users.
