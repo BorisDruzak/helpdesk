@@ -789,9 +789,47 @@
         </div>
         <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-list-new-btn">Новый модуль</button>
       </div>
-      <div class="form-group" style="margin-top: 12px;">
-        <label for="modules-workbench-family-search">Поиск по модулю, tool id или версии</label>
-        <input type="text" id="modules-workbench-family-search" placeholder="network, dns.resolve, 1.2.0">
+      <div class="mw-grid-2" style="margin-top: 12px; align-items: start;">
+        <div class="form-group">
+          <label for="modules-workbench-family-search">РџРѕРёСЃРє РїРѕ РјРѕРґСѓР»СЋ, tool id РёР»Рё РІРµСЂСЃРёРё</label>
+          <input type="text" id="modules-workbench-family-search" placeholder="network, dns.resolve, 1.2.0">
+        </div>
+        <div class="mw-doc-card">
+          <div class="mw-section-head" style="align-items: start;">
+            <div>
+              <h4 style="margin: 0;">Импорт архива</h4>
+              <div class="mw-subtle">Для готового ZIP-пакета из CI, локальной сборки или ручной упаковки. Сервер всё равно прогонит preflight и smoke до записи в registry.</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-archive-reset-btn">Очистить</button>
+          </div>
+          <div class="mw-grid-2" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="modules-workbench-archive-file">ZIP архив</label>
+              <input type="file" id="modules-workbench-archive-file" accept=".zip,application/zip">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-archive-module-name">Имя модуля</label>
+              <input type="text" id="modules-workbench-archive-module-name" placeholder="disk_space_audit">
+              <div class="mw-field-note">Если имя есть в названии файла вида <code>module-1.2.3.zip</code>, форма подставит его автоматически.</div>
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-archive-version">Версия</label>
+              <input type="text" id="modules-workbench-archive-version" placeholder="1.0.0">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-archive-note">Что важно</label>
+              <div id="modules-workbench-archive-note" class="mw-field-note">Имя и версия нужны только для upload contract. Канонические значения сервер возьмёт из <code>manifest.json</code> внутри архива.</div>
+            </div>
+          </div>
+          <div class="mw-grid-2" style="margin-top: 12px;">
+            <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-archive-overwrite"><span>Разрешить overwrite существующей версии</span></label>
+            <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-archive-open-after" checked><span>Открыть загруженную версию в редакторе</span></label>
+          </div>
+          <div class="mw-inline-actions" style="margin-top: 14px;">
+            <button type="button" class="btn btn-primary btn-sm" id="modules-workbench-archive-upload-btn">Загрузить архив</button>
+            <span class="mw-field-note">Подходит для альтернативного пути: собрать модуль локально, загрузить как ZIP и дальше уже редактировать в workbench.</span>
+          </div>
+        </div>
       </div>
       <div id="modules-workbench-list" class="mw-card-list" style="margin-top: 14px;"></div>
     </div>

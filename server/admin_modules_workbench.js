@@ -962,6 +962,164 @@
         }
     }
 
+    function guessArchiveIdentity(fileName) {
+        const normalized = String(fileName || "").trim();
+        if (!normalized) {
+            return { moduleName: "", version: "" };
+        }
+        const zipName = normalized.replace(/\.zip$/i, "");
+        const semverMatch = zipName.match(/^(.*)-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?)$/);
+        if (semverMatch) {
+            return {
+                moduleName: String(semverMatch[1] || "").trim(),
+                version: String(semverMatch[2] || "").trim(),
+            };
+        }
+        return { moduleName: zipName, version: "" };
+    }
+
+    function renderArchiveImportNote(message, isError) {
+        const note = byId("modules-workbench-archive-note");
+        if (!note) {
+            return;
+        }
+        note.textContent = message || "Имя и версия нужны только для upload contract. Канонические значения сервер возьмёт из manifest.json внутри архива.";
+        note.classList.toggle("is-danger", Boolean(isError));
+        note.classList.toggle("is-success", !isError && Boolean(message));
+    }
+
+    function resetArchiveImportForm() {
+        const fileInput = byId("modules-workbench-archive-file");
+        const moduleInput = byId("modules-workbench-archive-module-name");
+        const versionInput = byId("modules-workbench-archive-version");
+        const overwriteInput = byId("modules-workbench-archive-overwrite");
+        const openAfterInput = byId("modules-workbench-archive-open-after");
+        if (fileInput) {
+            fileInput.value = "";
+        }
+        if (moduleInput) {
+            moduleInput.value = "";
+        }
+        if (versionInput) {
+            versionInput.value = "";
+        }
+        if (overwriteInput) {
+            overwriteInput.checked = false;
+        }
+        if (openAfterInput) {
+            openAfterInput.checked = true;
+        }
+        renderArchiveImportNote("", false);
+    }
+
+    function syncArchiveIdentityFromFile() {
+        const file = byId("modules-workbench-archive-file")?.files?.[0];
+        const moduleInput = byId("modules-workbench-archive-module-name");
+        const versionInput = byId("modules-workbench-archive-version");
+        if (!file || !moduleInput || !versionInput) {
+            renderArchiveImportNote("", false);
+            return;
+        }
+        const guessed = guessArchiveIdentity(file.name);
+        if (!String(moduleInput.value || "").trim() && guessed.moduleName) {
+            moduleInput.value = guessed.moduleName;
+        }
+        if (!String(versionInput.value || "").trim() && guessed.version) {
+            versionInput.value = guessed.version;
+        }
+        const guessedParts = [];
+        if (guessed.moduleName) {
+            guessedParts.push(`module_name=${guessed.moduleName}`);
+        }
+        if (guessed.version) {
+            guessedParts.push(`version=${guessed.version}`);
+        }
+        renderArchiveImportNote(
+            guessedParts.length
+                ? `Файл ${file.name}. Подсказка из имени архива: ${guessedParts.join(", ")}. При конфликте источником истины останется manifest.json.`
+                : `Файл ${file.name}. Если имя и версия не читаются из названия, заполните их вручную перед upload.`,
+            false
+        );
+    }
+
+    async function uploadArchiveModule() {
+        const file = byId("modules-workbench-archive-file")?.files?.[0];
+        const moduleName = String(byId("modules-workbench-archive-module-name")?.value || "").trim();
+        const version = String(byId("modules-workbench-archive-version")?.value || "").trim();
+        const overwrite = byId("modules-workbench-archive-overwrite")?.checked === true;
+        const openAfter = byId("modules-workbench-archive-open-after")?.checked !== false;
+        if (!file) {
+            renderArchiveImportNote("Сначала выберите ZIP-архив.", true);
+            setMessage("warning", "Сначала выберите ZIP-архив для импорта.");
+            return;
+        }
+        if (!moduleName) {
+            renderArchiveImportNote("Укажите имя модуля или выберите архив с говорящим именем вроде module-1.2.3.zip.", true);
+            setMessage("warning", "Для upload нужен module_name.");
+            return;
+        }
+        if (!version) {
+            renderArchiveImportNote("Укажите версию модуля. Сервер потом сверит её с manifest.json.", true);
+            setMessage("warning", "Для upload нужна версия модуля.");
+            return;
+        }
+
+        const uploadBtn = byId("modules-workbench-archive-upload-btn");
+        const previousLabel = uploadBtn?.textContent || "";
+        if (uploadBtn) {
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = "Загрузка...";
+        }
+        renderArchiveImportNote(`Загружаем ${file.name} и прогоняем server preflight...`, false);
+        try {
+            const form = new FormData();
+            form.append("file", file);
+            form.append("module_name", moduleName);
+            form.append("version", version);
+            if (overwrite) {
+                form.append("overwrite", "true");
+            }
+            const response = await fetch("/api/modules/upload", {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: form,
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== "success") {
+                const preflightErrors = Array.isArray(data.preflight_errors) ? data.preflight_errors.join(" | ") : "";
+                renderArchiveImportNote(preflightErrors || data.error || "Загрузка архива не прошла server validate.", true);
+                setMessage("error", data.error || "Не удалось загрузить архив модуля.", preflightErrors ? html(preflightErrors) : "");
+                return;
+            }
+
+            renderArchiveImportNote(
+                `Архив принят: ${data.module_name}/${data.version}. Сервер сохранил версию и завершил preflight со статусом ${data.validation_status || "passed"}.`,
+                false
+            );
+            setMessage("success", `Архив ${data.module_name}/${data.version} загружен в server registry.`);
+            await load();
+            await refreshOuterModuleInstallViews();
+            state.selectedFamily = data.module_name;
+            state.selectedVersion = data.version;
+            resetArchiveImportForm();
+            if (openAfter) {
+                requestModulesSubtab("editor");
+                await loadVersionDetail(data.module_name, data.version, { view: "editor" });
+            } else {
+                requestModulesSubtab("list");
+                setCurrentView("list");
+            }
+        } catch (error) {
+            renderArchiveImportNote(error.message, true);
+            setMessage("error", error.message);
+        } finally {
+            if (uploadBtn) {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = previousLabel || "Загрузить архив";
+            }
+        }
+    }
+
     function bindEvents() {
         populateToolTemplateOptions();
         byId("modules-workbench-refresh-btn")?.addEventListener("click", () => load());
@@ -1033,6 +1191,9 @@
         });
         byId("modules-workbench-wizard-back-btn")?.addEventListener("click", () => setWizardStep(state.currentWizardStep - 1));
         byId("modules-workbench-wizard-next-btn")?.addEventListener("click", () => setWizardStep(state.currentWizardStep + 1));
+        byId("modules-workbench-archive-reset-btn")?.addEventListener("click", () => resetArchiveImportForm());
+        byId("modules-workbench-archive-file")?.addEventListener("change", () => syncArchiveIdentityFromFile());
+        byId("modules-workbench-archive-upload-btn")?.addEventListener("click", async () => uploadArchiveModule());
     }
 
     async function load() {
