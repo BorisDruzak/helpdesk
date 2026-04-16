@@ -313,6 +313,65 @@ async def test_module_workbench_save_creates_module_and_sets_preferred(test_clie
 
 
 @pytest.mark.asyncio
+async def test_delete_module_version_removes_registry_archive_and_preferred_assignment(test_client, test_engine):
+    module_name = f"wb_delete_{uuid.uuid4().hex[:8]}"
+    version = "1.0.0"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version=version,
+        tool_name="vendor_x.delete_me",
+        description="Delete me",
+        user_function_body='return {"ok": True}',
+        owner_scope="vendor",
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+
+    archive_path = MODULES_STORAGE_DIR / module_name / version / "module.zip"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_path.write_bytes(zip_bytes)
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Module(
+                module_name=module_name,
+                version=version,
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=len(zip_bytes),
+                storage_path=f"{module_name}/{version}/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+        )
+        session.add(
+            ServerConfig(
+                key=f"module_preferred:{module_name}",
+                value=json.dumps({"module_name": module_name, "version": version, "updated_by": "admin"}),
+            )
+        )
+        await session.commit()
+
+    response = await test_client.delete(f"/api/modules/{module_name}/{version}", headers=ADMIN_HEADERS)
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["module_name"] == module_name
+    assert data["version"] == version
+    assert archive_path.exists() is False
+
+    async with session_maker() as session:
+        deleted_module = await session.get(Module, {"module_name": module_name, "version": version})
+        assert deleted_module is None
+        preferred_value = (
+            await session.execute(text("SELECT value FROM server_config WHERE key = :key"), {"key": f"module_preferred:{module_name}"})
+        ).scalar_one_or_none()
+        assert preferred_value is None
+
+
+@pytest.mark.asyncio
 async def test_module_workbench_validate_returns_preview_and_publish_readiness(test_client):
     module_name = f"wb_validate_{uuid.uuid4().hex[:8]}"
     response = await test_client.post(

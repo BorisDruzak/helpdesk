@@ -5,6 +5,33 @@
     const METHOD_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
     const RESERVED_NAMESPACES = new Set(["dns", "network", "tcp", "http", "tls", "system", "service", "file", "process", "browser"]);
     const API_PREVIEW_MODES = ["payload", "curl-validate", "curl-save", "fetch-save"];
+    const PLATFORM_OPTIONS = [
+        { value: "any", label: "Любая" },
+        { value: "linux", label: "Linux" },
+        { value: "win32", label: "Windows" },
+        { value: "darwin", label: "macOS" },
+    ];
+    const OWNER_SCOPE_OPTIONS = ["vendor", "core", "platform", "builtin"];
+    const TOOL_SCHEMA_EXAMPLES = {
+        params: {
+            type: "object",
+            properties: {
+                hostname: { type: "string", minLength: 1 },
+                record_type: { type: "string", enum: ["A", "AAAA", "CNAME", "MX", "TXT"] },
+            },
+            required: ["hostname"],
+            additionalProperties: false,
+        },
+        output: {
+            type: "object",
+            properties: {
+                hostname: { type: "string" },
+                answers: { type: "array", items: { type: "string" } },
+                resolver: { type: "string" },
+            },
+            required: ["hostname", "answers"],
+        },
+    };
     const TOOL_TEMPLATE_OPTIONS = [
         { key: "blank", label: "Пустой diagnostic tool" },
         { key: "dns_resolve", label: "Шаблон DNS resolve" },
@@ -15,6 +42,14 @@
         { key: "http_request", label: "Шаблон HTTP request" },
         { key: "system_service_status", label: "Шаблон service status" },
     ];
+
+    const SCHEMA_FIELD_TYPES = new Map([
+        ["string", { type: "string" }],
+        ["integer", { type: "integer" }],
+        ["number", { type: "number" }],
+        ["boolean", { type: "boolean" }],
+        ["object", { type: "object", additionalProperties: true }],
+    ]);
 
     const state = {
         initialized: false,
@@ -46,6 +81,259 @@
 
     function pretty(value) {
         return JSON.stringify(value, null, 2);
+    }
+
+    function uniqueStrings(values) {
+        return Array.from(new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean)));
+    }
+
+    function parseListInput(raw) {
+        return uniqueStrings(String(raw || "")
+            .split(/\r?\n|,/)
+            .map((item) => item.trim()));
+    }
+
+    function formatListInput(values) {
+        return uniqueStrings(values).join("\n");
+    }
+
+    function schemaTypeFromBlueprint(rawType) {
+        const type = String(rawType || "").trim().toLowerCase();
+        if (!type) {
+            return null;
+        }
+        if (SCHEMA_FIELD_TYPES.has(type)) {
+            return clone(SCHEMA_FIELD_TYPES.get(type));
+        }
+        const arrayMatch = type.match(/^array\[(string|integer|number|boolean|object)\]$/);
+        if (arrayMatch) {
+            const itemType = arrayMatch[1];
+            return {
+                type: "array",
+                items: SCHEMA_FIELD_TYPES.has(itemType)
+                    ? clone(SCHEMA_FIELD_TYPES.get(itemType))
+                    : { type: itemType },
+            };
+        }
+        return null;
+    }
+
+    function schemaTypeToBlueprint(definition) {
+        if (!definition || typeof definition !== "object") {
+            return "";
+        }
+        if (definition.type === "array") {
+            const itemType = definition.items?.type;
+            if (typeof itemType === "string" && SCHEMA_FIELD_TYPES.has(itemType)) {
+                return `array[${itemType}]`;
+            }
+            return "";
+        }
+        return typeof definition.type === "string" && SCHEMA_FIELD_TYPES.has(definition.type)
+            ? definition.type
+            : "";
+    }
+
+    function buildSchemaFromBlueprint(raw, allowAdditional, label, errors) {
+        const lines = String(raw || "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        if (!lines.length) {
+            return { schema: null, fieldCount: 0, requiredCount: 0 };
+        }
+        const properties = {};
+        const required = [];
+        lines.forEach((line, index) => {
+            const [left, descriptionPart] = line.split("|").map((item) => item.trim());
+            const match = String(left || "").match(/^([A-Za-z_][A-Za-z0-9_]*):([A-Za-z\[\]0-9_]+)(!)?$/);
+            if (!match) {
+                errors.push(`${label}: строка ${index + 1} должна быть в формате name:type! | Описание.`);
+                return;
+            }
+            const [, fieldName, rawType, requiredMark] = match;
+            const schemaType = schemaTypeFromBlueprint(rawType);
+            if (!schemaType) {
+                errors.push(`${label}: строка ${index + 1} содержит неподдерживаемый тип ${rawType}.`);
+                return;
+            }
+            if (descriptionPart) {
+                schemaType.description = descriptionPart;
+            }
+            properties[fieldName] = schemaType;
+            if (requiredMark) {
+                required.push(fieldName);
+            }
+        });
+        if (errors.length) {
+            return { schema: null, fieldCount: 0, requiredCount: 0 };
+        }
+        return {
+            schema: {
+                type: "object",
+                properties,
+                required,
+                additionalProperties: allowAdditional === true,
+            },
+            fieldCount: Object.keys(properties).length,
+            requiredCount: required.length,
+        };
+    }
+
+    function formatSchemaBlueprint(schema) {
+        if (!schema || typeof schema !== "object" || schema.type !== "object" || !schema.properties || typeof schema.properties !== "object") {
+            return "";
+        }
+        const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+        const lines = Object.entries(schema.properties).map(([fieldName, definition]) => {
+            const typeLabel = schemaTypeToBlueprint(definition);
+            if (!typeLabel) {
+                return "";
+            }
+            const description = typeof definition?.description === "string" ? definition.description.trim() : "";
+            return `${fieldName}:${typeLabel}${required.has(fieldName) ? "!" : ""}${description ? ` | ${description}` : ""}`;
+        }).filter(Boolean);
+        return lines.join("\n");
+    }
+
+    function syncSchemaBlueprintControls(options) {
+        const linesEl = byId(options.linesId);
+        const jsonEl = byId(options.jsonId);
+        const statusEl = byId(options.statusId);
+        const allowAdditional = byId(options.additionalId)?.checked === true;
+        if (!linesEl || !jsonEl || !statusEl) {
+            return { valid: true, used: false, errors: [] };
+        }
+        const raw = String(linesEl.value || "").trim();
+        if (!raw) {
+            statusEl.textContent = "Быстрый конструктор не заполнен. Можно оставить raw JSON schema вручную.";
+            statusEl.classList.remove("is-danger", "is-success");
+            return { valid: true, used: false, errors: [] };
+        }
+        const errors = [];
+        const result = buildSchemaFromBlueprint(raw, allowAdditional, options.label, errors);
+        if (errors.length || !result.schema) {
+            statusEl.textContent = errors[0] || `${options.label}: не удалось собрать схему.`;
+            statusEl.classList.add("is-danger");
+            statusEl.classList.remove("is-success");
+            return { valid: false, used: true, errors };
+        }
+        jsonEl.value = pretty(result.schema);
+        statusEl.textContent = `Собрано ${result.fieldCount} полей, обязательных: ${result.requiredCount}. JSON schema обновлена автоматически.`;
+        statusEl.classList.remove("is-danger");
+        statusEl.classList.add("is-success");
+        return { valid: true, used: true, errors: [] };
+    }
+
+    function bindSchemaBlueprintControls(options, onValidSync) {
+        [options.linesId, options.additionalId].forEach((id) => {
+            const el = byId(id);
+            if (!el || el.dataset.bound === "1") {
+                return;
+            }
+            el.dataset.bound = "1";
+            const handler = () => {
+                const result = syncSchemaBlueprintControls(options);
+                if (result.valid && result.used && typeof onValidSync === "function") {
+                    onValidSync();
+                }
+            };
+            el.addEventListener("input", handler);
+            el.addEventListener("change", handler);
+        });
+    }
+
+    function formatArtifactKinds(artifacts) {
+        return (artifacts || [])
+            .map((item) => {
+                if (typeof item === "string") {
+                    return item.trim();
+                }
+                if (item && typeof item === "object") {
+                    return String(item.kind || "").trim();
+                }
+                return "";
+            })
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    function parseArtifactKinds(raw) {
+        return parseListInput(raw).map((kind) => ({ kind }));
+    }
+
+    function platformCheckboxId(prefix, value) {
+        return `${prefix}-${value}`;
+    }
+
+    function renderPlatformControls(prefix, label, note) {
+        return `
+            <div class="form-group">
+                <label>${html(label)}</label>
+                <div class="mw-choice-grid">
+                    ${PLATFORM_OPTIONS.map((item) => `
+                        <label class="mw-choice-pill">
+                            <input type="checkbox" id="${platformCheckboxId(prefix, item.value)}" data-platform-group="${prefix}" data-platform-value="${item.value}">
+                            <span>${html(item.label)}</span>
+                        </label>
+                    `).join("")}
+                </div>
+                ${note ? `<div class="mw-field-note">${html(note)}</div>` : ""}
+            </div>
+        `;
+    }
+
+    function writePlatformControls(prefix, values) {
+        const selected = new Set(uniqueStrings(values));
+        PLATFORM_OPTIONS.forEach((item) => {
+            const checkbox = byId(platformCheckboxId(prefix, item.value));
+            if (checkbox) {
+                checkbox.checked = selected.has(item.value);
+            }
+        });
+    }
+
+    function readPlatformControls(prefix) {
+        return PLATFORM_OPTIONS
+            .filter((item) => byId(platformCheckboxId(prefix, item.value))?.checked)
+            .map((item) => item.value);
+    }
+
+    function enforcePlatformSelection(prefix, changedValue) {
+        const values = readPlatformControls(prefix);
+        if (changedValue === "any" && values.includes("any")) {
+            PLATFORM_OPTIONS.filter((item) => item.value !== "any").forEach((item) => {
+                const checkbox = byId(platformCheckboxId(prefix, item.value));
+                if (checkbox) {
+                    checkbox.checked = false;
+                }
+            });
+            return;
+        }
+        if (changedValue !== "any" && values.includes(changedValue)) {
+            const anyCheckbox = byId(platformCheckboxId(prefix, "any"));
+            if (anyCheckbox) {
+                anyCheckbox.checked = false;
+            }
+        }
+    }
+
+    function bindPlatformControls(prefix, handler) {
+        document.querySelectorAll(`[data-platform-group="${prefix}"]`).forEach((checkbox) => {
+            if (checkbox.dataset.bound === "1") {
+                return;
+            }
+            checkbox.dataset.bound = "1";
+            checkbox.addEventListener("change", () => {
+                enforcePlatformSelection(prefix, checkbox.getAttribute("data-platform-value") || "");
+                handler();
+            });
+        });
+    }
+
+    function readIntInput(id, fallback) {
+        const raw = Number(byId(id)?.value);
+        return Number.isFinite(raw) ? raw : fallback;
     }
 
     function safeParseJson(raw, fallback, label, errors) {
@@ -171,6 +459,26 @@
             },
             user_function_body: 'return {"ok": True}',
             reconstruction_strategy: "draft",
+        };
+    }
+
+    function normalizeToolDraft(tool) {
+        const base = blankTool();
+        const current = tool && typeof tool === "object" ? tool : {};
+        return {
+            ...base,
+            ...current,
+            aliases: Array.isArray(current.aliases) ? current.aliases : base.aliases,
+            presets: Array.isArray(current.presets) ? current.presets : base.presets,
+            capabilities: Array.isArray(current.capabilities) ? current.capabilities : base.capabilities,
+            error_codes: Array.isArray(current.error_codes) ? current.error_codes : base.error_codes,
+            artifact_types: Array.isArray(current.artifact_types) ? current.artifact_types : base.artifact_types,
+            metadata: { ...base.metadata, ...(current.metadata || {}) },
+            dependencies: { ...base.dependencies, ...(current.dependencies || {}) },
+            redaction: { ...base.redaction, ...(current.redaction || {}) },
+            resources: { ...base.resources, ...(current.resources || {}) },
+            params_schema: current.params_schema && typeof current.params_schema === "object" ? current.params_schema : base.params_schema,
+            output_schema: current.output_schema && typeof current.output_schema === "object" ? current.output_schema : base.output_schema,
         };
     }
 
@@ -776,7 +1084,13 @@
     }
 
     function activeTool() {
-        return state.currentDraft?.tools?.[state.selectedToolIndex] || null;
+        const tool = state.currentDraft?.tools?.[state.selectedToolIndex];
+        if (!tool) {
+            return null;
+        }
+        const normalized = normalizeToolDraft(tool);
+        state.currentDraft.tools[state.selectedToolIndex] = normalized;
+        return normalized;
     }
 
     function splitCsv(raw) {
@@ -849,19 +1163,21 @@
         set("modules-workbench-wizard-module-description", draft.description || "");
         set("modules-workbench-wizard-owner-scope", draft.owner_scope || "vendor");
         set("modules-workbench-wizard-min-agent-version", draft.min_agent_version || "");
-        set("modules-workbench-wizard-platforms", pretty(draft.platforms || ["any"]));
-        set("modules-workbench-wizard-requirements", pretty({
-            requirements: draft.requirements || [],
-            optional_requirements: draft.optional_requirements || [],
-        }));
+        set("modules-workbench-wizard-module-api-version", draft.module_api_version || "1.0.0");
+        set("modules-workbench-wizard-entrypoint", draft.entrypoint || "module:register");
+        set("modules-workbench-wizard-requirements", formatListInput(draft.requirements || []));
+        set("modules-workbench-wizard-optional-requirements", formatListInput(draft.optional_requirements || []));
+        writePlatformControls("modules-workbench-wizard-platforms", draft.platforms || ["any"]);
         [
             "modules-workbench-wizard-module-name",
             "modules-workbench-wizard-module-version",
             "modules-workbench-wizard-module-description",
             "modules-workbench-wizard-owner-scope",
             "modules-workbench-wizard-min-agent-version",
-            "modules-workbench-wizard-platforms",
+            "modules-workbench-wizard-module-api-version",
+            "modules-workbench-wizard-entrypoint",
             "modules-workbench-wizard-requirements",
+            "modules-workbench-wizard-optional-requirements",
         ].forEach((id) => {
             const el = byId(id);
             if (!el || el.dataset.bound === "1") {
@@ -877,6 +1193,12 @@
             el.addEventListener("input", handler);
             el.addEventListener("change", handler);
         });
+        bindPlatformControls("modules-workbench-wizard-platforms", () => {
+            syncWizardBasicsFromDom();
+            renderSummary();
+            renderTopFields();
+            renderWizardSummary();
+        });
     }
 
     function syncWizardBasicsFromDom() {
@@ -889,10 +1211,11 @@
         state.currentDraft.description = String(byId("modules-workbench-wizard-module-description")?.value || "").trim();
         state.currentDraft.owner_scope = String(byId("modules-workbench-wizard-owner-scope")?.value || "vendor").trim();
         state.currentDraft.min_agent_version = String(byId("modules-workbench-wizard-min-agent-version")?.value || "").trim() || null;
-        state.currentDraft.platforms = safeParseJson(byId("modules-workbench-wizard-platforms")?.value, ["any"], "Platforms", errors);
-        const req = safeParseJson(byId("modules-workbench-wizard-requirements")?.value, { requirements: [], optional_requirements: [] }, "Requirements", errors);
-        state.currentDraft.requirements = Array.isArray(req.requirements) ? req.requirements : [];
-        state.currentDraft.optional_requirements = Array.isArray(req.optional_requirements) ? req.optional_requirements : [];
+        state.currentDraft.module_api_version = String(byId("modules-workbench-wizard-module-api-version")?.value || "1.0.0").trim() || "1.0.0";
+        state.currentDraft.entrypoint = String(byId("modules-workbench-wizard-entrypoint")?.value || "module:register").trim() || "module:register";
+        state.currentDraft.platforms = readPlatformControls("modules-workbench-wizard-platforms");
+        state.currentDraft.requirements = parseListInput(byId("modules-workbench-wizard-requirements")?.value || "");
+        state.currentDraft.optional_requirements = parseListInput(byId("modules-workbench-wizard-optional-requirements")?.value || "");
         return errors;
     }
 
@@ -922,13 +1245,21 @@
         const set = (id, value) => {
             const el = byId(id);
             if (el && document.activeElement !== el) {
-                el.value = value ?? "";
+                if (el.type === "checkbox") {
+                    el.checked = Boolean(value);
+                } else {
+                    el.value = value ?? "";
+                }
             }
         };
         set("modules-workbench-wizard-tool-name", tool.tool_name || "");
         set("modules-workbench-wizard-tool-method", tool.method_name || "");
         set("modules-workbench-wizard-tool-description", tool.description || "");
+        set("modules-workbench-wizard-tool-params-schema-lines", formatSchemaBlueprint(tool.params_schema || {}));
+        set("modules-workbench-wizard-tool-params-schema-additional", tool.params_schema?.additionalProperties === true);
         set("modules-workbench-wizard-tool-params-schema", pretty(tool.params_schema || {}));
+        set("modules-workbench-wizard-tool-output-schema-lines", formatSchemaBlueprint(tool.output_schema || {}));
+        set("modules-workbench-wizard-tool-output-schema-additional", tool.output_schema?.additionalProperties === true);
         set("modules-workbench-wizard-tool-output-schema", pretty(tool.output_schema || {}));
         set("modules-workbench-wizard-tool-code", tool.user_function_body || "");
         [
@@ -955,6 +1286,102 @@
             el.addEventListener("input", handler);
             el.addEventListener("change", handler);
         });
+        bindSchemaBlueprintControls({
+            linesId: "modules-workbench-wizard-tool-params-schema-lines",
+            additionalId: "modules-workbench-wizard-tool-params-schema-additional",
+            jsonId: "modules-workbench-wizard-tool-params-schema",
+            statusId: "modules-workbench-wizard-tool-params-schema-status",
+            label: "Params schema",
+        }, () => {
+            syncWizardToolCoreFromDom();
+            renderToolTabs();
+            renderToolEditor();
+            renderWizardSummary();
+            renderLocalValidation();
+            renderApiPreview();
+        });
+        bindSchemaBlueprintControls({
+            linesId: "modules-workbench-wizard-tool-output-schema-lines",
+            additionalId: "modules-workbench-wizard-tool-output-schema-additional",
+            jsonId: "modules-workbench-wizard-tool-output-schema",
+            statusId: "modules-workbench-wizard-tool-output-schema-status",
+            label: "Output schema",
+        }, () => {
+            syncWizardToolCoreFromDom();
+            renderToolTabs();
+            renderToolEditor();
+            renderWizardSummary();
+            renderLocalValidation();
+            renderApiPreview();
+        });
+        syncSchemaBlueprintControls({
+            linesId: "modules-workbench-wizard-tool-params-schema-lines",
+            additionalId: "modules-workbench-wizard-tool-params-schema-additional",
+            jsonId: "modules-workbench-wizard-tool-params-schema",
+            statusId: "modules-workbench-wizard-tool-params-schema-status",
+            label: "Params schema",
+        });
+        syncSchemaBlueprintControls({
+            linesId: "modules-workbench-wizard-tool-output-schema-lines",
+            additionalId: "modules-workbench-wizard-tool-output-schema-additional",
+            jsonId: "modules-workbench-wizard-tool-output-schema",
+            statusId: "modules-workbench-wizard-tool-output-schema-status",
+            label: "Output schema",
+        });
+        const paramsExampleBtn = byId("modules-workbench-wizard-params-example-btn");
+        if (paramsExampleBtn && paramsExampleBtn.dataset.bound !== "1") {
+            paramsExampleBtn.dataset.bound = "1";
+            paramsExampleBtn.addEventListener("click", () => {
+                const linesEl = byId("modules-workbench-wizard-tool-params-schema-lines");
+                const additionalEl = byId("modules-workbench-wizard-tool-params-schema-additional");
+                if (linesEl) {
+                    linesEl.value = formatSchemaBlueprint(TOOL_SCHEMA_EXAMPLES.params);
+                }
+                if (additionalEl) {
+                    additionalEl.checked = TOOL_SCHEMA_EXAMPLES.params.additionalProperties === true;
+                }
+                syncSchemaBlueprintControls({
+                    linesId: "modules-workbench-wizard-tool-params-schema-lines",
+                    additionalId: "modules-workbench-wizard-tool-params-schema-additional",
+                    jsonId: "modules-workbench-wizard-tool-params-schema",
+                    statusId: "modules-workbench-wizard-tool-params-schema-status",
+                    label: "Params schema",
+                });
+                syncWizardToolCoreFromDom();
+                renderToolTabs();
+                renderToolEditor();
+                renderWizardSummary();
+                renderLocalValidation();
+                renderApiPreview();
+            });
+        }
+        const outputExampleBtn = byId("modules-workbench-wizard-output-example-btn");
+        if (outputExampleBtn && outputExampleBtn.dataset.bound !== "1") {
+            outputExampleBtn.dataset.bound = "1";
+            outputExampleBtn.addEventListener("click", () => {
+                const linesEl = byId("modules-workbench-wizard-tool-output-schema-lines");
+                const additionalEl = byId("modules-workbench-wizard-tool-output-schema-additional");
+                if (linesEl) {
+                    linesEl.value = formatSchemaBlueprint(TOOL_SCHEMA_EXAMPLES.output);
+                }
+                if (additionalEl) {
+                    additionalEl.checked = TOOL_SCHEMA_EXAMPLES.output.additionalProperties === true;
+                }
+                syncSchemaBlueprintControls({
+                    linesId: "modules-workbench-wizard-tool-output-schema-lines",
+                    additionalId: "modules-workbench-wizard-tool-output-schema-additional",
+                    jsonId: "modules-workbench-wizard-tool-output-schema",
+                    statusId: "modules-workbench-wizard-tool-output-schema-status",
+                    label: "Output schema",
+                });
+                syncWizardToolCoreFromDom();
+                renderToolTabs();
+                renderToolEditor();
+                renderWizardSummary();
+                renderLocalValidation();
+                renderApiPreview();
+            });
+        }
     }
 
     function syncWizardToolCoreFromDom() {
@@ -999,6 +1426,7 @@
         set("modules-workbench-wizard-tool-requires-consent", tool.metadata.requires_consent);
         set("modules-workbench-wizard-tool-idempotent", tool.metadata.idempotent !== false);
         set("modules-workbench-wizard-tool-side-effects", tool.metadata.side_effects);
+        writePlatformControls("modules-workbench-wizard-tool-platforms", tool.metadata.platforms || ["any"]);
         [
             "modules-workbench-wizard-tool-domain",
             "modules-workbench-wizard-tool-kind",
@@ -1026,6 +1454,12 @@
             el.addEventListener("input", handler);
             el.addEventListener("change", handler);
         });
+        bindPlatformControls("modules-workbench-wizard-tool-platforms", () => {
+            syncWizardToolPolicyFromDom();
+            renderToolEditor();
+            renderWizardSummary();
+            renderLocalValidation();
+        });
     }
 
     function syncWizardToolPolicyFromDom() {
@@ -1039,6 +1473,7 @@
         tool.metadata.risk_level = String(byId("modules-workbench-wizard-risk-level")?.value || "safe_read").trim();
         tool.metadata.allow_roles = splitCsv(byId("modules-workbench-wizard-tool-roles")?.value || "");
         tool.metadata.scopes = splitCsv(byId("modules-workbench-wizard-tool-scopes")?.value || "");
+        tool.metadata.platforms = readPlatformControls("modules-workbench-wizard-tool-platforms");
         tool.metadata.timeout_sec = Number(byId("modules-workbench-wizard-tool-timeout")?.value || 30) || 30;
         tool.metadata.requires_consent = byId("modules-workbench-wizard-tool-requires-consent")?.checked === true;
         tool.metadata.idempotent = byId("modules-workbench-wizard-tool-idempotent")?.checked !== false;
@@ -1105,10 +1540,11 @@
                         <span class="mw-badge ${family.preferred_assigned ? "is-accent" : ""}">${family.preferred_assigned ? "preferred задан" : "без preferred"}</span>
                     </div>
                     <div class="mw-chip-row" style="margin-top: 10px;">${toolPreview || '<span class="mw-subtle">tool ids пока не обнаружены</span>'}</div>
-                    <div class="mw-grid-3" style="margin-top: 12px; align-items: center;">
+                    <div class="mw-grid-4" style="margin-top: 12px; align-items: center;">
                         <select data-version-select="${html(family.module_name)}">${versionsOptions}</select>
                         <button type="button" class="btn btn-secondary btn-sm" data-open-family="${html(family.module_name)}">Открыть в редакторе</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-preferred-family="${html(family.module_name)}">Сделать preferred</button>
+                        <button type="button" class="btn btn-danger btn-sm" data-delete-family="${html(family.module_name)}">Удалить версию</button>
                     </div>
                 </div>
             `;
@@ -1138,6 +1574,14 @@
                 state.selectedFamily = moduleName;
                 state.selectedVersion = select ? select.value : "";
                 await setPreferredVersion();
+            });
+        });
+        list.querySelectorAll("[data-delete-family]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                const moduleName = button.getAttribute("data-delete-family");
+                const select = list.querySelector(`[data-version-select="${CSS.escape(moduleName)}"]`);
+                const version = select ? select.value : "";
+                await deleteModuleVersion(moduleName, version);
             });
         });
     }
@@ -1206,11 +1650,9 @@
         set("modules-workbench-module-api-version", draft.module_api_version || "1.0.0");
         set("modules-workbench-entrypoint", draft.entrypoint || "module:register");
         set("modules-workbench-min-agent-version", draft.min_agent_version || "");
-        set("modules-workbench-platforms", pretty(draft.platforms || ["any"]));
-        set("modules-workbench-requirements", pretty({
-            requirements: draft.requirements || [],
-            optional_requirements: draft.optional_requirements || [],
-        }));
+        set("modules-workbench-requirements", formatListInput(draft.requirements || []));
+        set("modules-workbench-optional-requirements", formatListInput(draft.optional_requirements || []));
+        writePlatformControls("modules-workbench-platforms", draft.platforms || ["any"]);
 
         [
             "modules-workbench-module-name",
@@ -1220,8 +1662,8 @@
             "modules-workbench-module-api-version",
             "modules-workbench-entrypoint",
             "modules-workbench-min-agent-version",
-            "modules-workbench-platforms",
             "modules-workbench-requirements",
+            "modules-workbench-optional-requirements",
         ].forEach((id) => {
             const el = byId(id);
             if (!el || el.dataset.bound === "1") {
@@ -1234,6 +1676,10 @@
             };
             el.addEventListener("input", handler);
             el.addEventListener("change", handler);
+        });
+        bindPlatformControls("modules-workbench-platforms", () => {
+            syncTopFieldsFromDom();
+            refreshDraftViews();
         });
     }
 
@@ -1249,10 +1695,9 @@
         state.currentDraft.module_api_version = String(byId("modules-workbench-module-api-version")?.value || "1.0.0").trim() || "1.0.0";
         state.currentDraft.entrypoint = String(byId("modules-workbench-entrypoint")?.value || "module:register").trim() || "module:register";
         state.currentDraft.min_agent_version = String(byId("modules-workbench-min-agent-version")?.value || "").trim() || null;
-        state.currentDraft.platforms = safeParseJson(byId("modules-workbench-platforms")?.value, ["any"], "Platforms", errors);
-        const req = safeParseJson(byId("modules-workbench-requirements")?.value, { requirements: [], optional_requirements: [] }, "Requirements", errors);
-        state.currentDraft.requirements = Array.isArray(req.requirements) ? req.requirements : [];
-        state.currentDraft.optional_requirements = Array.isArray(req.optional_requirements) ? req.optional_requirements : [];
+        state.currentDraft.platforms = readPlatformControls("modules-workbench-platforms");
+        state.currentDraft.requirements = parseListInput(byId("modules-workbench-requirements")?.value || "");
+        state.currentDraft.optional_requirements = parseListInput(byId("modules-workbench-optional-requirements")?.value || "");
         return errors;
     }
 
@@ -1286,7 +1731,7 @@
         if (!wrap) {
             return;
         }
-        const tool = state.currentDraft?.tools?.[state.selectedToolIndex];
+        const tool = activeTool();
         if (!tool) {
             wrap.innerHTML = '<div class="mw-empty">Добавьте хотя бы один tool.</div>';
             return;
@@ -1324,46 +1769,186 @@
             </div>
             <div class="mw-grid-2" style="margin-top: 12px;">
                 <div class="form-group">
-                    <label for="modules-workbench-tool-aliases">Aliases (JSON array)</label>
-                    <textarea id="modules-workbench-tool-aliases" rows="4">${html(pretty(tool.aliases || []))}</textarea>
+                    <label for="modules-workbench-tool-aliases">Aliases</label>
+                    <textarea id="modules-workbench-tool-aliases" rows="4" placeholder="По одному alias на строку">${html(formatListInput(tool.aliases || []))}</textarea>
+                    <div class="mw-field-note">Alias нужен как compatibility bridge, а не как основной идентификатор.</div>
                 </div>
                 <div class="form-group">
-                    <label for="modules-workbench-tool-error-codes">Error codes (JSON array)</label>
-                    <textarea id="modules-workbench-tool-error-codes" rows="4">${html(pretty(tool.error_codes || []))}</textarea>
+                    <label for="modules-workbench-tool-error-codes">Error codes</label>
+                    <textarea id="modules-workbench-tool-error-codes" rows="4" placeholder="VALIDATION_ERROR&#10;TIMEOUT">${html(formatListInput(tool.error_codes || []))}</textarea>
+                    <div class="mw-field-note">Используйте стабильные коды из runtime contract, чтобы решения были предсказуемыми.</div>
                 </div>
             </div>
             <div class="mw-grid-2" style="margin-top: 12px;">
                 <div class="form-group">
-                    <label for="modules-workbench-tool-params-schema">Params schema (JSON object)</label>
+                    <label for="modules-workbench-tool-params-schema-lines">Params schema без JSON</label>
+                    <textarea id="modules-workbench-tool-params-schema-lines" rows="6" placeholder="hostname:string! | Имя хоста&#10;record_type:string | Тип записи">${html(formatSchemaBlueprint(tool.params_schema || {}))}</textarea>
+                    <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <input type="checkbox" id="modules-workbench-tool-params-schema-additional" ${tool.params_schema?.additionalProperties === true ? "checked" : ""}>
+                        Разрешить дополнительные поля
+                    </label>
+                    <div id="modules-workbench-tool-params-schema-status" class="mw-field-note" style="margin-top: 8px;"></div>
+                    <label for="modules-workbench-tool-params-schema" style="margin-top: 10px;">Raw JSON schema</label>
                     <textarea id="modules-workbench-tool-params-schema" rows="10">${html(pretty(tool.params_schema || {}))}</textarea>
+                    <div class="mw-inline-actions" style="margin-top: 8px;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-tool-params-example-btn">Подставить пример</button>
+                        <span class="mw-field-note">Формат строки: <code>name:type! | Описание</code>. Типы: string, integer, number, boolean, object, array[string].</span>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label for="modules-workbench-tool-output-schema">Output schema (JSON object)</label>
+                    <label for="modules-workbench-tool-output-schema-lines">Output schema без JSON</label>
+                    <textarea id="modules-workbench-tool-output-schema-lines" rows="6" placeholder="ok:boolean! | Успешное выполнение&#10;answers:array[string] | Список ответов">${html(formatSchemaBlueprint(tool.output_schema || {}))}</textarea>
+                    <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <input type="checkbox" id="modules-workbench-tool-output-schema-additional" ${tool.output_schema?.additionalProperties === true ? "checked" : ""}>
+                        Разрешить дополнительные поля
+                    </label>
+                    <div id="modules-workbench-tool-output-schema-status" class="mw-field-note" style="margin-top: 8px;"></div>
+                    <label for="modules-workbench-tool-output-schema" style="margin-top: 10px;">Raw JSON schema</label>
                     <textarea id="modules-workbench-tool-output-schema" rows="10">${html(pretty(tool.output_schema || {}))}</textarea>
+                    <div class="mw-inline-actions" style="margin-top: 8px;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-tool-output-example-btn">Подставить пример</button>
+                        <span class="mw-field-note">Output schema лучше держать структурированной, а не полагаться на stdout/stderr.</span>
+                    </div>
                 </div>
             </div>
-            <div class="mw-grid-3" style="margin-top: 12px;">
-                <div class="form-group">
-                    <label for="modules-workbench-tool-metadata">Metadata (JSON object)</label>
-                    <textarea id="modules-workbench-tool-metadata" rows="11">${html(pretty(tool.metadata || {}))}</textarea>
+            <div class="mw-section">
+                <div class="mw-section-head">
+                    <div>
+                        <h4 style="margin: 0;">Политики и доступ</h4>
+                        <div class="mw-subtle">Заполняется по guide: domain, platform support, роли, scopes и базовые runtime-флаги.</div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="modules-workbench-tool-dependencies">Dependencies (JSON object)</label>
-                    <textarea id="modules-workbench-tool-dependencies" rows="11">${html(pretty(tool.dependencies || {}))}</textarea>
+                <div class="mw-grid-4" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-domain">Domain</label>
+                        <input type="text" id="modules-workbench-tool-domain" value="${html(tool.metadata?.domain || "")}" placeholder="network">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-kind">Tool kind</label>
+                        <select id="modules-workbench-tool-kind">
+                            ${["diagnostic", "inventory", "remediation", "automation"].map((item) => `<option value="${item}" ${tool.metadata?.tool_kind === item ? "selected" : ""}>${item}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-risk-level">Risk level</label>
+                        <select id="modules-workbench-tool-risk-level">
+                            ${["safe_read", "safe_readonly", "moderate", "dangerous"].map((item) => `<option value="${item}" ${tool.metadata?.risk_level === item ? "selected" : ""}>${item}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-timeout">Timeout, сек</label>
+                        <input type="number" id="modules-workbench-tool-timeout" min="1" max="3600" step="1" value="${html(String(tool.metadata?.timeout_sec || 30))}">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="modules-workbench-tool-artifacts">Artifact types (JSON array)</label>
-                    <textarea id="modules-workbench-tool-artifacts" rows="11">${html(pretty(tool.artifact_types || []))}</textarea>
+                ${renderPlatformControls("modules-workbench-tool-platforms", "Поддерживаемые платформы", "В docs рекомендуют указывать platforms честно, чтобы validate и runtime decisions были предсказуемыми.")}
+                <div class="mw-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-roles">Разрешённые роли</label>
+                        <textarea id="modules-workbench-tool-roles" rows="4" placeholder="admin&#10;support">${html(formatListInput(tool.metadata?.allow_roles || []))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-scopes">Scopes</label>
+                        <textarea id="modules-workbench-tool-scopes" rows="4" placeholder="network&#10;diagnostics">${html(formatListInput(tool.metadata?.scopes || []))}</textarea>
+                    </div>
+                </div>
+                <div class="mw-grid-3" style="margin-top: 8px;">
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-requires-consent" ${tool.metadata?.requires_consent ? "checked" : ""}> Требует consent</label>
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-idempotent" ${tool.metadata?.idempotent !== false ? "checked" : ""}> Idempotent</label>
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-side-effects" ${tool.metadata?.side_effects ? "checked" : ""}> Есть side effects</label>
                 </div>
             </div>
-            <div class="mw-grid-2" style="margin-top: 12px;">
-                <div class="form-group">
-                    <label for="modules-workbench-tool-redaction">Redaction (JSON object)</label>
-                    <textarea id="modules-workbench-tool-redaction" rows="8">${html(pretty(tool.redaction || {}))}</textarea>
+            <div class="mw-section">
+                <div class="mw-section-head">
+                    <div>
+                        <h4 style="margin: 0;">Совместимость и зависимости</h4>
+                        <div class="mw-subtle">Dependencies нужны, чтобы validate и runtime понимали совместимость ещё до запуска.</div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="modules-workbench-tool-resources">Resources (JSON object)</label>
-                    <textarea id="modules-workbench-tool-resources" rows="8">${html(pretty(tool.resources || {}))}</textarea>
+                <div class="mw-grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-dependency-min-agent-version">Min agent version</label>
+                        <input type="text" id="modules-workbench-tool-dependency-min-agent-version" value="${html(tool.dependencies?.min_agent_version || "")}" placeholder="3.1.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-required-binaries">Required binaries</label>
+                        <textarea id="modules-workbench-tool-required-binaries" rows="4" placeholder="ping&#10;traceroute">${html(formatListInput(tool.dependencies?.required_binaries || []))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-required-python-packages">Required Python packages</label>
+                        <textarea id="modules-workbench-tool-required-python-packages" rows="4" placeholder="psutil&#10;requests">${html(formatListInput(tool.dependencies?.required_python_packages || []))}</textarea>
+                    </div>
+                </div>
+                <div class="mw-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-required-services">Required services</label>
+                        <textarea id="modules-workbench-tool-required-services" rows="4" placeholder="dns-client">${html(formatListInput(tool.dependencies?.required_services || []))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-required-permissions">Required permissions</label>
+                        <textarea id="modules-workbench-tool-required-permissions" rows="4" placeholder="network.read">${html(formatListInput(tool.dependencies?.required_permissions || []))}</textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="mw-section">
+                <div class="mw-section-head">
+                    <div>
+                        <h4 style="margin: 0;">Безопасность и лимиты</h4>
+                        <div class="mw-subtle">Redaction и resources по docs обязательны: это защита от утечек и runaway tool.</div>
+                    </div>
+                </div>
+                <div class="mw-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-artifacts">Artifact types</label>
+                        <textarea id="modules-workbench-tool-artifacts" rows="4" placeholder="screenshot&#10;log_bundle">${html(formatArtifactKinds(tool.artifact_types || []))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-redaction-fields">Redaction fields</label>
+                        <textarea id="modules-workbench-tool-redaction-fields" rows="4" placeholder="authorization&#10;cookie&#10;token">${html(formatListInput(tool.redaction?.redact_fields || []))}</textarea>
+                    </div>
+                </div>
+                <div class="mw-grid-4" style="margin-top: 8px;">
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-redaction-enabled" ${tool.redaction?.enabled !== false ? "checked" : ""}> Redaction включён</label>
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-redaction-headers" ${tool.redaction?.redact_headers !== false ? "checked" : ""}> Redact headers</label>
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-redaction-env" ${tool.redaction?.redact_env !== false ? "checked" : ""}> Redact env</label>
+                    <label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="modules-workbench-tool-redaction-allow-raw" ${tool.redaction?.allow_raw_sensitive_data ? "checked" : ""}> Разрешить raw sensitive data</label>
+                </div>
+                <div class="mw-grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-runtime">Max runtime, сек</label>
+                        <input type="number" id="modules-workbench-tool-resource-runtime" min="1" max="3600" step="1" value="${html(String(tool.resources?.max_runtime_sec || 30))}">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-stdout">Max stdout bytes</label>
+                        <input type="number" id="modules-workbench-tool-resource-stdout" min="0" step="1" value="${html(String(tool.resources?.max_stdout_bytes || 65536))}">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-stderr">Max stderr bytes</label>
+                        <input type="number" id="modules-workbench-tool-resource-stderr" min="0" step="1" value="${html(String(tool.resources?.max_stderr_bytes || 65536))}">
+                    </div>
+                </div>
+                <div class="mw-grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-artifact-count">Max artifact count</label>
+                        <input type="number" id="modules-workbench-tool-resource-artifact-count" min="0" step="1" value="${html(String(tool.resources?.max_artifact_count || 0))}">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-artifact-bytes">Max artifact bytes</label>
+                        <input type="number" id="modules-workbench-tool-resource-artifact-bytes" min="0" step="1" value="${html(String(tool.resources?.max_artifact_bytes || 0))}">
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-subprocess-count">Max subprocess count</label>
+                        <input type="number" id="modules-workbench-tool-resource-subprocess-count" min="0" step="1" value="${html(String(tool.resources?.max_subprocess_count || 2))}">
+                    </div>
+                </div>
+                <div class="mw-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-filesystem-scope">Allowed filesystem scope</label>
+                        <textarea id="modules-workbench-tool-resource-filesystem-scope" rows="4" placeholder="C:\\Temp&#10;/var/log">${html(formatListInput(tool.resources?.allowed_filesystem_scope || []))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="modules-workbench-tool-resource-external-hosts">Allowed external hosts</label>
+                        <textarea id="modules-workbench-tool-resource-external-hosts" rows="4" placeholder="api.example.com&#10;8.8.8.8">${html(formatListInput(tool.resources?.allowed_external_hosts || []))}</textarea>
+                    </div>
                 </div>
             </div>
             <div class="form-group" style="margin-top: 12px;">
@@ -1382,12 +1967,35 @@
             "modules-workbench-tool-error-codes",
             "modules-workbench-tool-params-schema",
             "modules-workbench-tool-output-schema",
-            "modules-workbench-tool-metadata",
-            "modules-workbench-tool-dependencies",
             "modules-workbench-tool-artifacts",
-            "modules-workbench-tool-redaction",
-            "modules-workbench-tool-resources",
-            "modules-workbench-tool-code",
+            "modules-workbench-tool-domain",
+            "modules-workbench-tool-kind",
+            "modules-workbench-tool-risk-level",
+            "modules-workbench-tool-timeout",
+            "modules-workbench-tool-roles",
+            "modules-workbench-tool-scopes",
+            "modules-workbench-tool-dependency-min-agent-version",
+            "modules-workbench-tool-required-binaries",
+            "modules-workbench-tool-required-python-packages",
+            "modules-workbench-tool-required-services",
+            "modules-workbench-tool-required-permissions",
+            "modules-workbench-tool-redaction-fields",
+            "modules-workbench-tool-resource-runtime",
+            "modules-workbench-tool-resource-stdout",
+            "modules-workbench-tool-resource-stderr",
+            "modules-workbench-tool-resource-artifact-count",
+            "modules-workbench-tool-resource-artifact-bytes",
+            "modules-workbench-tool-resource-subprocess-count",
+            "modules-workbench-tool-resource-filesystem-scope",
+            "modules-workbench-tool-resource-external-hosts",
+            "modules-workbench-tool-requires-consent",
+            "modules-workbench-tool-idempotent",
+            "modules-workbench-tool-side-effects",
+            "modules-workbench-tool-redaction-enabled",
+            "modules-workbench-tool-redaction-headers",
+            "modules-workbench-tool-redaction-env",
+            "modules-workbench-tool-redaction-allow-raw",
+            "modules-workbench-tool-code"
         ].forEach((id) => {
             const el = byId(id);
             if (!el || el.dataset.bound === "1") {
@@ -1401,10 +2009,94 @@
             el.addEventListener("input", handler);
             el.addEventListener("change", handler);
         });
+        bindPlatformControls("modules-workbench-tool-platforms", () => {
+            syncCurrentToolFromEditor();
+            refreshDraftViews();
+        });
+        bindSchemaBlueprintControls({
+            linesId: "modules-workbench-tool-params-schema-lines",
+            additionalId: "modules-workbench-tool-params-schema-additional",
+            jsonId: "modules-workbench-tool-params-schema",
+            statusId: "modules-workbench-tool-params-schema-status",
+            label: "Params schema"
+        }, () => {
+            syncCurrentToolFromEditor();
+            refreshDraftViews();
+        });
+        bindSchemaBlueprintControls({
+            linesId: "modules-workbench-tool-output-schema-lines",
+            additionalId: "modules-workbench-tool-output-schema-additional",
+            jsonId: "modules-workbench-tool-output-schema",
+            statusId: "modules-workbench-tool-output-schema-status",
+            label: "Output schema"
+        }, () => {
+            syncCurrentToolFromEditor();
+            refreshDraftViews();
+        });
+        syncSchemaBlueprintControls({
+            linesId: "modules-workbench-tool-params-schema-lines",
+            additionalId: "modules-workbench-tool-params-schema-additional",
+            jsonId: "modules-workbench-tool-params-schema",
+            statusId: "modules-workbench-tool-params-schema-status",
+            label: "Params schema"
+        });
+        syncSchemaBlueprintControls({
+            linesId: "modules-workbench-tool-output-schema-lines",
+            additionalId: "modules-workbench-tool-output-schema-additional",
+            jsonId: "modules-workbench-tool-output-schema",
+            statusId: "modules-workbench-tool-output-schema-status",
+            label: "Output schema"
+        });
+        const paramsExampleBtn = byId("modules-workbench-tool-params-example-btn");
+        if (paramsExampleBtn && paramsExampleBtn.dataset.bound !== "1") {
+            paramsExampleBtn.dataset.bound = "1";
+            paramsExampleBtn.addEventListener("click", () => {
+                const linesEl = byId("modules-workbench-tool-params-schema-lines");
+                const additionalEl = byId("modules-workbench-tool-params-schema-additional");
+                if (linesEl) {
+                    linesEl.value = formatSchemaBlueprint(TOOL_SCHEMA_EXAMPLES.params);
+                }
+                if (additionalEl) {
+                    additionalEl.checked = TOOL_SCHEMA_EXAMPLES.params.additionalProperties === true;
+                }
+                syncSchemaBlueprintControls({
+                    linesId: "modules-workbench-tool-params-schema-lines",
+                    additionalId: "modules-workbench-tool-params-schema-additional",
+                    jsonId: "modules-workbench-tool-params-schema",
+                    statusId: "modules-workbench-tool-params-schema-status",
+                    label: "Params schema"
+                });
+                syncCurrentToolFromEditor();
+                refreshDraftViews();
+            });
+        }
+        const outputExampleBtn = byId("modules-workbench-tool-output-example-btn");
+        if (outputExampleBtn && outputExampleBtn.dataset.bound !== "1") {
+            outputExampleBtn.dataset.bound = "1";
+            outputExampleBtn.addEventListener("click", () => {
+                const linesEl = byId("modules-workbench-tool-output-schema-lines");
+                const additionalEl = byId("modules-workbench-tool-output-schema-additional");
+                if (linesEl) {
+                    linesEl.value = formatSchemaBlueprint(TOOL_SCHEMA_EXAMPLES.output);
+                }
+                if (additionalEl) {
+                    additionalEl.checked = TOOL_SCHEMA_EXAMPLES.output.additionalProperties === true;
+                }
+                syncSchemaBlueprintControls({
+                    linesId: "modules-workbench-tool-output-schema-lines",
+                    additionalId: "modules-workbench-tool-output-schema-additional",
+                    jsonId: "modules-workbench-tool-output-schema",
+                    statusId: "modules-workbench-tool-output-schema-status",
+                    label: "Output schema"
+                });
+                syncCurrentToolFromEditor();
+                refreshDraftViews();
+            });
+        }
     }
 
     function syncCurrentToolFromEditor() {
-        const tool = state.currentDraft?.tools?.[state.selectedToolIndex];
+        const tool = activeTool();
         if (!tool) {
             return [];
         }
@@ -1414,15 +2106,50 @@
         tool.contract_version = String(byId("modules-workbench-tool-contract-version")?.value || "1.0.0").trim() || "1.0.0";
         tool.lifecycle = String(byId("modules-workbench-tool-lifecycle")?.value || "stable").trim() || "stable";
         tool.description = String(byId("modules-workbench-tool-description")?.value || "").trim();
-        tool.aliases = safeParseJson(byId("modules-workbench-tool-aliases")?.value, [], "Aliases", errors);
-        tool.error_codes = safeParseJson(byId("modules-workbench-tool-error-codes")?.value, [], "Error codes", errors);
+        tool.aliases = parseListInput(byId("modules-workbench-tool-aliases")?.value || "");
+        tool.error_codes = parseListInput(byId("modules-workbench-tool-error-codes")?.value || "");
         tool.params_schema = safeParseJson(byId("modules-workbench-tool-params-schema")?.value, { type: "object", properties: {} }, "Params schema", errors);
         tool.output_schema = safeParseJson(byId("modules-workbench-tool-output-schema")?.value, { type: "object", properties: {} }, "Output schema", errors);
-        tool.metadata = safeParseJson(byId("modules-workbench-tool-metadata")?.value, blankTool().metadata, "Metadata", errors);
-        tool.dependencies = safeParseJson(byId("modules-workbench-tool-dependencies")?.value, blankTool().dependencies, "Dependencies", errors);
-        tool.artifact_types = safeParseJson(byId("modules-workbench-tool-artifacts")?.value, [], "Artifact types", errors);
-        tool.redaction = safeParseJson(byId("modules-workbench-tool-redaction")?.value, blankTool().redaction, "Redaction", errors);
-        tool.resources = safeParseJson(byId("modules-workbench-tool-resources")?.value, blankTool().resources, "Resources", errors);
+        tool.metadata = {
+            ...blankTool().metadata,
+            ...(tool.metadata || {}),
+            domain: String(byId("modules-workbench-tool-domain")?.value || "").trim() || "custom",
+            platforms: readPlatformControls("modules-workbench-tool-platforms"),
+            risk_level: String(byId("modules-workbench-tool-risk-level")?.value || "safe_read").trim() || "safe_read",
+            requires_consent: byId("modules-workbench-tool-requires-consent")?.checked === true,
+            timeout_sec: readIntInput("modules-workbench-tool-timeout", 30),
+            idempotent: byId("modules-workbench-tool-idempotent")?.checked !== false,
+            side_effects: byId("modules-workbench-tool-side-effects")?.checked === true,
+            allow_roles: parseListInput(byId("modules-workbench-tool-roles")?.value || ""),
+            scopes: parseListInput(byId("modules-workbench-tool-scopes")?.value || ""),
+            origin: "managed",
+            tool_kind: String(byId("modules-workbench-tool-kind")?.value || "diagnostic").trim() || "diagnostic",
+        };
+        tool.dependencies = {
+            min_agent_version: String(byId("modules-workbench-tool-dependency-min-agent-version")?.value || "").trim() || null,
+            required_binaries: parseListInput(byId("modules-workbench-tool-required-binaries")?.value || ""),
+            required_python_packages: parseListInput(byId("modules-workbench-tool-required-python-packages")?.value || ""),
+            required_services: parseListInput(byId("modules-workbench-tool-required-services")?.value || ""),
+            required_permissions: parseListInput(byId("modules-workbench-tool-required-permissions")?.value || ""),
+        };
+        tool.artifact_types = parseArtifactKinds(byId("modules-workbench-tool-artifacts")?.value || "");
+        tool.redaction = {
+            enabled: byId("modules-workbench-tool-redaction-enabled")?.checked !== false,
+            redact_headers: byId("modules-workbench-tool-redaction-headers")?.checked !== false,
+            redact_env: byId("modules-workbench-tool-redaction-env")?.checked !== false,
+            redact_fields: parseListInput(byId("modules-workbench-tool-redaction-fields")?.value || ""),
+            allow_raw_sensitive_data: byId("modules-workbench-tool-redaction-allow-raw")?.checked === true,
+        };
+        tool.resources = {
+            max_runtime_sec: readIntInput("modules-workbench-tool-resource-runtime", 30),
+            max_stdout_bytes: readIntInput("modules-workbench-tool-resource-stdout", 65536),
+            max_stderr_bytes: readIntInput("modules-workbench-tool-resource-stderr", 65536),
+            max_artifact_count: readIntInput("modules-workbench-tool-resource-artifact-count", 0),
+            max_artifact_bytes: readIntInput("modules-workbench-tool-resource-artifact-bytes", 0),
+            max_subprocess_count: readIntInput("modules-workbench-tool-resource-subprocess-count", 2),
+            allowed_filesystem_scope: parseListInput(byId("modules-workbench-tool-resource-filesystem-scope")?.value || ""),
+            allowed_external_hosts: parseListInput(byId("modules-workbench-tool-resource-external-hosts")?.value || ""),
+        };
         tool.user_function_body = String(byId("modules-workbench-tool-code")?.value || "").trim();
         return errors;
     }
@@ -1505,11 +2232,49 @@
         ];
         syncWizardToolPolicyFromDom();
         errors.push(...topErrors, ...toolSyncErrors, ...wizardErrors);
+        [
+            {
+                linesId: "modules-workbench-wizard-tool-params-schema-lines",
+                additionalId: "modules-workbench-wizard-tool-params-schema-additional",
+                jsonId: "modules-workbench-wizard-tool-params-schema",
+                statusId: "modules-workbench-wizard-tool-params-schema-status",
+                label: "Params schema",
+            },
+            {
+                linesId: "modules-workbench-wizard-tool-output-schema-lines",
+                additionalId: "modules-workbench-wizard-tool-output-schema-additional",
+                jsonId: "modules-workbench-wizard-tool-output-schema",
+                statusId: "modules-workbench-wizard-tool-output-schema-status",
+                label: "Output schema",
+            },
+            {
+                linesId: "modules-workbench-tool-params-schema-lines",
+                additionalId: "modules-workbench-tool-params-schema-additional",
+                jsonId: "modules-workbench-tool-params-schema",
+                statusId: "modules-workbench-tool-params-schema-status",
+                label: "Params schema",
+            },
+            {
+                linesId: "modules-workbench-tool-output-schema-lines",
+                additionalId: "modules-workbench-tool-output-schema-additional",
+                jsonId: "modules-workbench-tool-output-schema",
+                statusId: "modules-workbench-tool-output-schema-status",
+                label: "Output schema",
+            },
+        ].forEach((options) => {
+            const result = syncSchemaBlueprintControls(options);
+            if (result.errors?.length) {
+                errors.push(...result.errors);
+            }
+        });
 
         if (!draft.module_name) {
             errors.push("Нужно указать имя модуля.");
         } else if (!MODULE_NAME_RE.test(draft.module_name)) {
             errors.push("Имя модуля должно состоять из lowercase букв, цифр и underscore.");
+        }
+        if (!OWNER_SCOPE_OPTIONS.includes(String(draft.owner_scope || "").trim())) {
+            errors.push(`Owner scope должен быть одним из: ${OWNER_SCOPE_OPTIONS.join(", ")}.`);
         }
         if (!draft.version) {
             errors.push("Нужно указать версию модуля.");
@@ -1523,7 +2288,11 @@
             errors.push("Нужно определить хотя бы один tool.");
         }
         if (!Array.isArray(draft.platforms)) {
-            errors.push("Platforms должны быть JSON-массивом.");
+            errors.push("Платформы модуля не распознаны.");
+        } else if (!draft.platforms.length) {
+            errors.push("Нужно выбрать хотя бы одну платформу модуля.");
+        } else if (draft.platforms.includes("any") && draft.platforms.length > 1) {
+            errors.push("Платформа 'any' не должна сочетаться с конкретными платформами.");
         }
 
         (draft.tools || []).forEach((tool, index) => {
@@ -1569,12 +2338,23 @@
                 if (!tool.metadata.domain) {
                     warnings.push(`${label}: metadata.domain не заполнен.`);
                 }
-                if (!Array.isArray(tool.metadata.platforms)) {
-                    warnings.push(`${label}: metadata.platforms лучше указать массивом.`);
+                if (!Array.isArray(tool.metadata.platforms) || !tool.metadata.platforms.length) {
+                    errors.push(`${label}: нужно выбрать хотя бы одну platform в metadata.`);
+                } else if (tool.metadata.platforms.includes("any") && tool.metadata.platforms.length > 1) {
+                    errors.push(`${label}: metadata.platforms не может сочетать any с конкретными платформами.`);
                 }
                 if (!tool.metadata.risk_level) {
                     warnings.push(`${label}: metadata.risk_level не указан.`);
                 }
+            }
+            if (!tool.dependencies || typeof tool.dependencies !== "object") {
+                errors.push(`${label}: dependencies должны быть заполнены.`);
+            }
+            if (!tool.redaction || typeof tool.redaction !== "object") {
+                errors.push(`${label}: redaction должна быть заполнена.`);
+            }
+            if (!tool.resources || typeof tool.resources !== "object") {
+                errors.push(`${label}: resources должны быть заполнены.`);
             }
         });
 
@@ -1882,6 +2662,43 @@
         }
     }
 
+    async function deleteModuleVersion(moduleName, version) {
+        if (!moduleName || !version) {
+            setMessage("warning", "Сначала выберите семейство и версию, которую нужно удалить.");
+            return;
+        }
+        const confirmed = window.confirm(`Удалить модуль ${moduleName} версии ${version} с сервера? Это удалит запись из registry и архив с диска.`);
+        if (!confirmed) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`, {
+                method: "DELETE",
+                headers: getAuthHeaders(true),
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== "ok") {
+                setMessage("error", data.error || "Не удалось удалить модуль.");
+                return;
+            }
+            if (state.selectedFamily === moduleName && state.selectedVersion === version) {
+                state.selectedFamily = null;
+                state.selectedVersion = null;
+                state.selectedToolIndex = 0;
+                state.selectedSourcePath = null;
+                state.currentDraft = createEmptyDraft();
+                state.serverValidation = null;
+            }
+            await load();
+            await refreshOuterModuleInstallViews();
+            requestModulesSubtab("list");
+            setCurrentView("list");
+            setMessage("success", `Модуль ${moduleName}/${version} удалён из server registry.`);
+        } catch (error) {
+            setMessage("error", error.message);
+        }
+    }
+
     async function setPreferredVersion() {
         if (!state.selectedFamily || !state.selectedVersion) {
             setMessage("warning", "Сначала выберите семейство и версию, которую нужно сделать приоритетной.");
@@ -1918,3 +2735,5 @@
         },
     };
 })();
+
+

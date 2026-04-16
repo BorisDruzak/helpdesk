@@ -320,6 +320,67 @@
     font-size: 12px;
   }
 
+  .mw-shell .mw-field-note {
+    margin-top: 6px;
+    color: var(--mw-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mw-shell .mw-field-note.is-success {
+    color: #166534;
+  }
+
+  .mw-shell .mw-field-note.is-danger {
+    color: #b91c1c;
+  }
+
+  .mw-shell .mw-doc-card {
+    border: 1px solid rgba(15, 118, 110, 0.2);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: rgba(15, 118, 110, 0.06);
+  }
+
+  .mw-shell .mw-doc-card h4 {
+    margin: 0 0 8px;
+    color: var(--mw-ink);
+    font-size: 14px;
+  }
+
+  .mw-shell .mw-doc-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+    color: var(--mw-muted);
+    font-size: 12px;
+  }
+
+  .mw-shell .mw-choice-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .mw-shell .mw-choice-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--mw-border);
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+    color: var(--mw-ink);
+    user-select: none;
+  }
+
+  .mw-shell .mw-choice-pill input {
+    margin: 0;
+  }
+
   @media (max-width: 1280px) {
     .mw-shell .mw-dev-layout,
     .mw-shell .mw-editor-layout {
@@ -393,28 +454,48 @@
               <div class="mw-subtle">Задаём идентичность модуля и минимальные ограничения ещё до инструментов.</div>
             </div>
           </div>
+          <div class="mw-doc-card" style="margin-top: 14px;">
+            <h4>Подсказка из guide</h4>
+            <ul class="mw-doc-list">
+              <li>`module` — это bundle доставки, versioning и ownership, а не один большой скрипт.</li>
+              <li>`platforms` указывайте честно: это влияет и на validate, и на runtime decisions.</li>
+              <li>Reserved namespaces вроде `dns.*` или `network.*` требуют `owner_scope=core|platform|builtin`.</li>
+            </ul>
+          </div>
           <div class="mw-grid-2" style="margin-top: 14px;">
             <div class="form-group">
               <label for="modules-workbench-wizard-module-name">Имя модуля</label>
               <input type="text" id="modules-workbench-wizard-module-name" placeholder="network_tools">
+              <div class="mw-field-note">Используйте family-имя пакета доставки: например `network_basic` или `vendor_acme_support`.</div>
             </div>
             <div class="form-group">
               <label for="modules-workbench-wizard-module-version">Версия</label>
               <input type="text" id="modules-workbench-wizard-module-version" placeholder="1.0.0">
+              <div class="mw-field-note">Лучше придерживаться semver `x.y.z`, чтобы rollout и diff версий были понятными.</div>
             </div>
           </div>
-          <div class="mw-grid-2">
+          <div class="mw-grid-4">
             <div class="form-group">
               <label for="modules-workbench-wizard-owner-scope">Owner scope</label>
               <select id="modules-workbench-wizard-owner-scope">
                 <option value="vendor">vendor</option>
-                <option value="internal">internal</option>
+                <option value="core">core</option>
+                <option value="platform">platform</option>
                 <option value="builtin">builtin</option>
               </select>
+              <div class="mw-field-note">Для reserved namespaces в docs допустимы только `core`, `platform` и `builtin`.</div>
             </div>
             <div class="form-group">
               <label for="modules-workbench-wizard-min-agent-version">Минимальная версия агента</label>
               <input type="text" id="modules-workbench-wizard-min-agent-version" placeholder="1.0.0">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-wizard-module-api-version">Module API version</label>
+              <input type="text" id="modules-workbench-wizard-module-api-version" placeholder="1.0.0">
+            </div>
+            <div class="form-group">
+              <label for="modules-workbench-wizard-entrypoint">Entrypoint</label>
+              <input type="text" id="modules-workbench-wizard-entrypoint" placeholder="module:register">
             </div>
           </div>
           <div class="form-group">
@@ -423,13 +504,28 @@
           </div>
           <div class="mw-grid-2">
             <div class="form-group">
-              <label for="modules-workbench-wizard-platforms">Platforms (JSON array)</label>
-              <textarea id="modules-workbench-wizard-platforms" rows="4">["any"]</textarea>
+              <label>Platforms</label>
+              <div class="mw-choice-grid">
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-platforms-any" data-platform-group="modules-workbench-wizard-platforms" data-platform-value="any"><span>Любая</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-platforms-linux" data-platform-group="modules-workbench-wizard-platforms" data-platform-value="linux"><span>Linux</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-platforms-win32" data-platform-group="modules-workbench-wizard-platforms" data-platform-value="win32"><span>Windows</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-platforms-darwin" data-platform-group="modules-workbench-wizard-platforms" data-platform-value="darwin"><span>macOS</span></label>
+              </div>
+              <div class="mw-field-note">`any` не комбинируется с конкретными платформами.</div>
             </div>
             <div class="form-group">
-              <label for="modules-workbench-wizard-requirements">Requirements (JSON object)</label>
-              <textarea id="modules-workbench-wizard-requirements" rows="4">{"requirements":[],"optional_requirements":[]}</textarea>
+              <label for="modules-workbench-wizard-requirements">Requirements</label>
+              <textarea id="modules-workbench-wizard-requirements" rows="4" placeholder="psutil&#10;requests"></textarea>
+              <div class="mw-field-note">По одному requirement на строку. Это список пакетов/зависимостей уровня модуля.</div>
             </div>
+          </div>
+          <div class="form-group">
+            <label for="modules-workbench-wizard-optional-requirements">Optional requirements</label>
+            <textarea id="modules-workbench-wizard-optional-requirements" rows="3" placeholder="nmap&#10;tcpdump"></textarea>
+            <div class="mw-field-note">Опциональные зависимости, без которых модуль всё ещё может быть опубликован.</div>
+          </div>
+          <div class="mw-inline-note" style="margin-top: 12px;">
+            `module_api_version` обычно оставляйте `1.0.0`, а `entrypoint` — `module:register`, если не меняете builder/runtime path.
           </div>
         </section>
         <section class="mw-step-card" data-wizard-step="2" hidden>
@@ -439,17 +535,25 @@
               <div class="mw-subtle">Собираем модуль из шаблонов и сразу редактируем код и схемы выбранного инструмента.</div>
             </div>
           </div>
+          <div class="mw-doc-card" style="margin-top: 14px;">
+            <h4>Правило автора</h4>
+            <ul class="mw-doc-list">
+              <li>Один tool = одно логическое действие.</li>
+              <li>Canonical tool id должен быть semantic-only: `dns.resolve`, `network.ping`.</li>
+              <li>`params_schema` и `output_schema` обязательны, поэтому ниже есть быстрые doc-примеры.</li>
+            </ul>
+          </div>
           <div class="mw-inline-actions" style="margin-top: 14px;">
             <div class="form-group" style="min-width: 260px; margin: 0;">
               <label for="modules-workbench-wizard-tool-template">Шаблон инструмента</label>
               <select id="modules-workbench-wizard-tool-template"></select>
             </div>
-            <div class="mw-step-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-apply-template-btn">Применить к текущему</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-add-template-btn">Добавить новый</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-duplicate-tool-btn">Дублировать</button>
-              <button type="button" class="btn btn-danger btn-sm" id="modules-workbench-wizard-remove-tool-btn">Удалить</button>
-            </div>
+          </div>
+          <div class="mw-step-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-apply-template-btn">Применить к текущему</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-add-template-btn">Добавить новый</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-duplicate-tool-btn">Дублировать</button>
+            <button type="button" class="btn btn-danger btn-sm" id="modules-workbench-wizard-remove-tool-btn">Удалить</button>
           </div>
           <div id="modules-workbench-wizard-tool-tabs" class="mw-tabs" style="margin-top: 14px;"></div>
           <div class="mw-grid-3" style="margin-top: 14px;">
@@ -468,12 +572,34 @@
           </div>
           <div class="mw-grid-2">
             <div class="form-group">
-              <label for="modules-workbench-wizard-tool-params-schema">Params schema</label>
+              <label for="modules-workbench-wizard-tool-params-schema-lines">Params schema без JSON</label>
+              <textarea id="modules-workbench-wizard-tool-params-schema-lines" rows="6" placeholder="hostname:string! | Имя хоста&#10;record_type:string | Тип записи"></textarea>
+              <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;">
+                <input type="checkbox" id="modules-workbench-wizard-tool-params-schema-additional">
+                Разрешить дополнительные поля
+              </label>
+              <div id="modules-workbench-wizard-tool-params-schema-status" class="mw-field-note" style="margin-top: 8px;"></div>
+              <label for="modules-workbench-wizard-tool-params-schema" style="margin-top: 10px;">Raw JSON schema</label>
               <textarea id="modules-workbench-wizard-tool-params-schema" rows="10"></textarea>
+              <div class="mw-inline-actions" style="margin-top: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-params-example-btn">Подставить пример</button>
+                <span class="mw-field-note">Формат строки: <code>name:type! | Описание</code>. Типы: string, integer, number, boolean, object, array[string].</span>
+              </div>
             </div>
             <div class="form-group">
-              <label for="modules-workbench-wizard-tool-output-schema">Output schema</label>
+              <label for="modules-workbench-wizard-tool-output-schema-lines">Output schema без JSON</label>
+              <textarea id="modules-workbench-wizard-tool-output-schema-lines" rows="6" placeholder="ok:boolean! | Успешное выполнение&#10;answers:array[string] | Список ответов"></textarea>
+              <label style="display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;">
+                <input type="checkbox" id="modules-workbench-wizard-tool-output-schema-additional">
+                Разрешить дополнительные поля
+              </label>
+              <div id="modules-workbench-wizard-tool-output-schema-status" class="mw-field-note" style="margin-top: 8px;"></div>
+              <label for="modules-workbench-wizard-tool-output-schema" style="margin-top: 10px;">Raw JSON schema</label>
               <textarea id="modules-workbench-wizard-tool-output-schema" rows="10"></textarea>
+              <div class="mw-inline-actions" style="margin-top: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="modules-workbench-wizard-output-example-btn">Подставить пример</button>
+                <span class="mw-field-note">Структурируйте output так, чтобы validate и playbook могли на него опираться.</span>
+              </div>
             </div>
           </div>
           <div class="form-group">
@@ -511,6 +637,15 @@
                 <option value="moderate">moderate</option>
                 <option value="dangerous">dangerous</option>
               </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Поддерживаемые платформы tool</label>
+            <div class="mw-choice-grid">
+              <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-tool-platforms-any" data-platform-group="modules-workbench-wizard-tool-platforms" data-platform-value="any"><span>Любая</span></label>
+              <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-tool-platforms-linux" data-platform-group="modules-workbench-wizard-tool-platforms" data-platform-value="linux"><span>Linux</span></label>
+              <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-tool-platforms-win32" data-platform-group="modules-workbench-wizard-tool-platforms" data-platform-value="win32"><span>Windows</span></label>
+              <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-wizard-tool-platforms-darwin" data-platform-group="modules-workbench-wizard-tool-platforms" data-platform-value="darwin"><span>macOS</span></label>
             </div>
           </div>
           <div class="mw-grid-2">
@@ -696,7 +831,7 @@
       </div>
 
       <div class="mw-editor-layout" style="margin-top: 16px;">
-        <div class="mw-panel">
+      <div class="mw-panel">
           <div class="mw-grid-4">
             <div class="form-group">
               <label for="modules-workbench-module-name">Имя модуля</label>
@@ -710,7 +845,8 @@
               <label for="modules-workbench-owner-scope">Owner scope</label>
               <select id="modules-workbench-owner-scope">
                 <option value="vendor">vendor</option>
-                <option value="internal">internal</option>
+                <option value="core">core</option>
+                <option value="platform">platform</option>
                 <option value="builtin">builtin</option>
               </select>
             </div>
@@ -738,13 +874,24 @@
 
           <div class="mw-grid-2">
             <div class="form-group">
-              <label for="modules-workbench-platforms">Platforms</label>
-              <textarea id="modules-workbench-platforms" rows="5"></textarea>
+              <label>Platforms</label>
+              <div class="mw-choice-grid">
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-platforms-any" data-platform-group="modules-workbench-platforms" data-platform-value="any"><span>Любая</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-platforms-linux" data-platform-group="modules-workbench-platforms" data-platform-value="linux"><span>Linux</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-platforms-win32" data-platform-group="modules-workbench-platforms" data-platform-value="win32"><span>Windows</span></label>
+                <label class="mw-choice-pill"><input type="checkbox" id="modules-workbench-platforms-darwin" data-platform-group="modules-workbench-platforms" data-platform-value="darwin"><span>macOS</span></label>
+              </div>
+              <div class="mw-field-note">`any` не комбинируется с конкретными платформами. Здесь та же логика, что и в пошаговой разработке.</div>
             </div>
             <div class="form-group">
               <label for="modules-workbench-requirements">Requirements</label>
-              <textarea id="modules-workbench-requirements" rows="5"></textarea>
+              <textarea id="modules-workbench-requirements" rows="5" placeholder="psutil&#10;requests"></textarea>
             </div>
+          </div>
+          <div class="form-group">
+            <label for="modules-workbench-optional-requirements">Optional requirements</label>
+            <textarea id="modules-workbench-optional-requirements" rows="4" placeholder="nmap&#10;tcpdump"></textarea>
+            <div class="mw-field-note">Списки вводятся по одному значению на строку и валидируются ещё до server validate.</div>
           </div>
 
           <div class="mw-section">
@@ -788,8 +935,19 @@
               Если редактируете существующую версию, сначала откройте её из «Списка модулей», а уже потом вносите правки в advanced-редакторе. Так сохраняется правильный draft и восстановленные source-фрагменты.
             </div>
           </div>
+          <div class="mw-side-card" style="margin-top: 14px;">
+            <label>Checklist из docs</label>
+            <ul class="mw-doc-list" style="margin-top: 8px;">
+              <li>Canonical id semantic-only.</li>
+              <li>Namespace допустим для выбранного owner scope.</li>
+              <li>`params_schema` и `output_schema` заданы.</li>
+              <li>`dependencies`, `redaction`, `resources` заполнены честно.</li>
+              <li>Validate зелёный до публикации.</li>
+            </ul>
+          </div>
         </aside>
       </div>
     </div>
   </section>
 </div>
+

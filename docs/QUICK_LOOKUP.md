@@ -1,8 +1,9 @@
 ## 2026-04-15 module workbench focus
 
 - For module authoring in the admin UI, start with `server/admin_modules_workbench.js`, `server/admin_modules_workbench.html`, `server/modules/handlers.py`, and `server/modules/workbench_service.py`.
-- The module workbench now supports template-driven tool creation, inline validation, validate-before-publish preview, preferred-version assignment, rollout-policy settings for preferred versions, and archive-to-code decomposition.
-- The admin `Модули` page is now split into inner tabs: `Разработка модулей`, `Список модулей`, `Редактор модулей`, and `Модули на устройствах`; the authoring flow inside the first tab is a 4-step wizard.
+- The module workbench now supports template-driven tool creation, inline validation, validate-before-publish preview, preferred-version assignment, rollout-policy settings for preferred versions, archive-to-code decomposition, and delete-from-registry actions from the module list.
+- The admin `Модули` page is split into inner tabs: `Разработка модулей`, `Список модулей`, `Редактор модулей`, and `Модули на устройствах`; the authoring flow inside the first tab is a 4-step wizard.
+- Everyday module authoring no longer starts from raw JSON: platforms are selected from supported values, requirements are entered line-by-line, and params/output schemas can be assembled from validated blueprint rows before publish.
 - The server validate endpoint for the workbench is `POST /api/modules/workbench/validate`.
 - Preferred-version rollout settings now live in `server/app/repos/module_rollout_repo.py` and are exposed via `GET/PATCH /api/modules/rollout_settings`; in `installed_devices` mode a preferred-version change rewrites desired state, triggers reconcile for matching devices, and then refreshes inventory/toolset so the admin UI converges.
 

@@ -249,3 +249,4 @@
 
 - `server/admin.html` and `server/admin.js` now treat the admin `Модули` page as an inner-tab workspace with four subviews: step-by-step authoring, module registry list, advanced editor, and device installs.
 - `server/admin_modules_workbench.html` / `server/admin_modules_workbench.js` split authoring into a guided 4-step flow (`Каркас` -> `Инструменты` -> `Политики` -> `Проверка`) while keeping the advanced manifest/tool editor available as a separate view for power users.
+- The workbench list can now delete a published module version, and the authoring/editor views replace most routine JSON entry with guided controls: platform pills, line-based requirements, and validated schema blueprints for params/output before publish.

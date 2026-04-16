@@ -6,6 +6,7 @@ The current modules API evolves the existing `modules` path in-place and now use
 
 Read these first:
 
+- `server/docs/MODULE_CREATION_GUIDE.md`
 - `server/docs/MODULE_AUTHORING_RULES.md`
 - `server/docs/REGISTRY_PUBLICATION_RULES.md`
 - `server/docs/RUNTIME_EXECUTION_CONTRACT.md`
@@ -50,7 +51,18 @@ Workbench API:
 - `GET /api/modules/workbench/{module_name}/{version}` - module detail plus editable draft reconstructed from manifest and archive contents
 - `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
 - `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
+- `DELETE /api/modules/{module_name}/{version}` - remove a published module version from the registry and delete its archive from storage; clears preferred-version assignment if the deleted version was preferred
 - `PATCH /api/modules/{module_name}/preferred` - assign the preferred version used by auto-install/runtime resolution
+
+Workbench UX expectations:
+
+- the `Модули` page is split into inner tabs for guided development, catalog/list, advanced editor, and device install state
+- the guided flow is a 4-step wizard: `Каркас -> Инструменты -> Политики -> Проверка`
+- common manifest/tool fields no longer require raw JSON for everyday authoring:
+  - module platforms are chosen from supported platform pills (`any`, `linux`, `win32`, `darwin`)
+  - module `requirements` and `optional_requirements` are entered as one item per line instead of JSON arrays/objects
+  - params/output schemas can be assembled from validated line-based blueprint rows such as `hostname:string! | Имя хоста`, while raw JSON schema stays available as an advanced fallback
+- local validation is expected to catch platform mistakes, owner-scope conflicts, and malformed schema JSON before server-side validate/publish
 
 Workbench detail and validate preview both expose archive/source decomposition for generated ZIP packages:
 
