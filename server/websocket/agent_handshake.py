@@ -477,6 +477,7 @@ async def handle_handshake(
     desired_revision = 0
     should_request_toolset = False
     
+    should_reconcile_modules = False
     if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             async with get_session() as session:
@@ -590,6 +591,7 @@ async def handle_handshake(
                         device_id=device_id,
                         inventory=modules_inventory
                     )
+                    should_reconcile_modules = True
                 else:
                     # Fallback: если modules_inventory отсутствует или имеет неверный формат, запросить через команду
                     logger.info(
@@ -614,6 +616,17 @@ async def handle_handshake(
                 "[handshake] Failed to upsert device: {}",
                 e,
             )
+    if should_reconcile_modules:
+        try:
+            from modules.reconcile import reconcile_device
+
+            await reconcile_device(
+                device_id=device_id,
+                state=state,
+                reason="handshake_modules_inventory",
+            )
+        except Exception as exc:
+            logger.warning(f"[handshake] reconcile after modules_inventory failed: {exc}")
     
     # Phase D: Get open tickets for handshake sync
     open_tickets = []

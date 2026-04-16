@@ -280,8 +280,8 @@ class PolicyEngine:
                 requires_consent = metadata_dict.get("requires_consent", False)
                 # Старые снапшоты: для screen-инструментов разрешаем user/agent и не требуем consent (кнопка в GUI = явное действие)
                 if tool_name in ("screen.collect", "screen.record"):
-                    if allow_roles is None:
-                        allow_roles = ["user", "agent", "llm", "support", "admin"]
+                    screen_roles = ["user", "agent", "llm", "support", "admin"]
+                    allow_roles = list(dict.fromkeys((allow_roles or []) + screen_roles))
                     requires_consent = False
                 return ToolMetadata(
                     risk_level=normalize_risk_level(metadata_dict.get("risk_level", "safe_read")),
