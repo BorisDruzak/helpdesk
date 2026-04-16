@@ -551,6 +551,8 @@ class ToolService:
                             if not k.startswith("_")  # Убираем внутренние поля типа _operation_id
                         }
                         
+                        actor_role = getattr(auth_context, "actor_role", None) or "support"
+
                         # Создаём событие tool_call_started с operation_id сразу
                         result = await ticket_events_repo.add_event(
                             ticket_id=ticket_id,
@@ -562,7 +564,7 @@ class ToolService:
                                 "ticket_id": ticket_id,
                                 "tool_name": tool_name,
                                 "params": sanitized_params,
-                                "actor_role": "support",  # По умолчанию support для run_tool
+                                "actor_role": actor_role,
                                 "call_id": call_id,  # Legacy поле, optional
                                 "ts": datetime.now(timezone.utc).isoformat()
                             },

@@ -6,11 +6,13 @@ Tests for tool_call_started event creation.
 """
 import pytest
 import asyncio
+from unittest.mock import patch
 from sqlalchemy import select
 from app.db.engine import async_sessionmaker
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.operations_repo import OperationsRepo
 from app.db.models import TicketEvent
+from auth.context import AuthContext, AuthType
 from tests.test_helpers import TEST_ECHO_TOOL, create_test_ticket
 
 
@@ -259,3 +261,46 @@ async def test_tool_call_started_with_different_operation_ids(test_engine):
         operation_ids = {e.operation_id for e in events}
         assert operation_id1 in operation_ids
         assert operation_id2 in operation_ids
+
+
+@pytest.mark.asyncio
+async def test_tool_call_started_uses_auth_context_actor_role(test_client, test_agent, test_engine):
+    device_id = test_agent.device_id
+    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+
+    async def _agent_auth_context(_request):
+        return AuthContext(
+            actor_id=device_id,
+            actor_role="agent",
+            auth_type=AuthType.AGENT_TOKEN,
+            token="test-agent-tool-role",
+        )
+
+    with patch("auth.middleware.extract_auth_context", new=_agent_auth_context):
+        tool_resp = await test_client.post(
+            "/api/tools/run",
+            headers={"Authorization": "Bearer test-agent-tool-role"},
+            json={
+                "tool_name": "screen.collect",
+                "params": {},
+                "device_id": device_id,
+                "ticket_id": ticket_id,
+            },
+        )
+
+    assert tool_resp.status == 202
+    operation_id = (await tool_resp.json())["operation_id"]
+
+    await asyncio.sleep(0.1)
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        events_repo = TicketEventsRepo(session)
+        events = await events_repo.get_events(ticket_id)
+        started_event = next(
+            e
+            for e in events
+            if e.event_type == "tool_call_started" and e.operation_id == operation_id
+        )
+
+        assert started_event.payload.get("actor_role") == "agent"
