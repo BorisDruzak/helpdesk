@@ -55,6 +55,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
     else:
         process.kill()
@@ -95,6 +96,7 @@ def run_and_capture(
             stderr=subprocess.STDOUT,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
         timed_out = False
         output = ""

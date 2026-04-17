@@ -55,3 +55,23 @@ def test_main_writes_red_summary_when_interrupted(tmp_path, monkeypatch):
     assert summary["status"] == "red"
     assert summary["runner_error"] == "Interrupted by user"
     assert summary["steps"] == []
+
+
+def test_run_and_capture_replaces_invalid_utf8_output(tmp_path):
+    log_path = tmp_path / "encoding.log"
+
+    result = run_ci_suite.run_and_capture(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.buffer.write(b'bad:\\xd3\\n'); sys.stdout.flush()",
+        ],
+        cwd=tmp_path,
+        log_path=log_path,
+        step_name="encoding_step",
+        timeout_seconds=5,
+    )
+
+    assert result["returncode"] == 0
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "bad:" in log_text
