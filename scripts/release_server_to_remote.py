@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
         help="Skip remote smoke check after starting the server.",
     )
     parser.add_argument(
+        "--skip-migrations",
+        action="store_true",
+        help="Skip remote Alembic migrations after deploy.",
+    )
+    parser.add_argument(
         "--leave-running",
         action="store_true",
         help="Leave the remote server running after the flow completes.",
@@ -144,6 +149,19 @@ def main() -> None:
         if args.skip_ci_check:
             deploy_command.append("--skip-ci-check")
         run_step(deploy_command, cwd=workspace, label="deploy")
+        if not args.skip_migrations:
+            run_step(
+                [
+                    sys.executable,
+                    str(workspace / "scripts" / "run_remote_migrations.py"),
+                    "--remote",
+                    args.remote,
+                    "upgrade",
+                    "head",
+                ],
+                cwd=workspace,
+                label="migrate",
+            )
 
         remote_command_base = [
             sys.executable,

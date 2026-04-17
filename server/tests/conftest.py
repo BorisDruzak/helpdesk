@@ -4,15 +4,21 @@ import asyncio
 import importlib
 import os
 import re
+import socket
+import subprocess
 import sys
+import time
 import types
 import uuid
+import warnings
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+import asyncpg
+from asyncpg import exceptions as asyncpg_exceptions
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -31,10 +37,21 @@ from tech.log_buffer import clear_log_records
 
 TEST_DATABASE_PREFIX = "pc_support_test_"
 SHARED_TEST_DATABASE_NAME = "pc_support_test"
+WINDOWS_TEST_DB_TUNNEL_PORT = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
+WINDOWS_TEST_DB_TUNNEL_HOST = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
+WINDOWS_TEST_DB_SSH_TARGET = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@192.168.100.17")
+WINDOWS_TEST_DB_REMOTE_BIND = os.getenv("PC_CLIENT_TEST_DB_REMOTE_BIND", "127.0.0.1:5432")
+WINDOWS_TEST_DB_SSH_KEY = os.getenv(
+    "PC_CLIENT_TEST_DB_SSH_KEY",
+    r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519",
+)
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
+
+_WINDOWS_TEST_DB_TUNNEL_PROCESS = None
+_WINDOWS_TEST_DB_TUNNEL_OWNED = False
 
 
 def _default_runtime_database_url() -> str:
@@ -123,6 +140,15 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
         verify_test_database(shared_url, allow_shared=True)
         return shared_url, _resolve_admin_url(shared_url), True
 
+    if (
+        os.name == "nt"
+        and explicit_test_url is None
+        and os.getenv("TEST_DATABASE_ADMIN_URL") is None
+    ):
+        shared_url = _default_windows_shared_test_database_url()
+        verify_test_database(shared_url, allow_shared=True)
+        return shared_url, _resolve_admin_url(shared_url), True
+
     if explicit_test_url:
         verify_test_database(explicit_test_url, allow_shared=False)
         return explicit_test_url, _resolve_admin_url(explicit_test_url), False
@@ -131,6 +157,154 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
     generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
     test_url = _render_url(make_url(admin_url).set(database=generated_name))
     return test_url, admin_url, False
+
+
+def _is_tcp_port_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _default_windows_shared_test_database_url() -> str:
+    _ensure_windows_test_db_tunnel()
+    return (
+        "postgresql+asyncpg://chatbot:chatbot@"
+        f"{WINDOWS_TEST_DB_TUNNEL_HOST}:{WINDOWS_TEST_DB_TUNNEL_PORT}/{SHARED_TEST_DATABASE_NAME}"
+    )
+
+
+def _ensure_windows_test_db_tunnel() -> None:
+    global _WINDOWS_TEST_DB_TUNNEL_PROCESS, _WINDOWS_TEST_DB_TUNNEL_OWNED
+
+    if os.name != "nt":
+        return
+    if _is_tcp_port_open(WINDOWS_TEST_DB_TUNNEL_HOST, WINDOWS_TEST_DB_TUNNEL_PORT):
+        return
+    if _WINDOWS_TEST_DB_TUNNEL_PROCESS is not None and _WINDOWS_TEST_DB_TUNNEL_PROCESS.poll() is None:
+        return
+
+    cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        WINDOWS_TEST_DB_SSH_KEY,
+        "-L",
+        f"{WINDOWS_TEST_DB_TUNNEL_PORT}:{WINDOWS_TEST_DB_REMOTE_BIND}",
+        WINDOWS_TEST_DB_SSH_TARGET,
+        "-N",
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.time() + 10.0
+    while time.time() < deadline:
+        if _is_tcp_port_open(WINDOWS_TEST_DB_TUNNEL_HOST, WINDOWS_TEST_DB_TUNNEL_PORT):
+            _WINDOWS_TEST_DB_TUNNEL_PROCESS = proc
+            _WINDOWS_TEST_DB_TUNNEL_OWNED = True
+            return
+        if proc.poll() is not None:
+            stderr = (proc.stderr.read() if proc.stderr else "").strip()
+            raise RuntimeError(f"Failed to start Windows test DB SSH tunnel: {stderr or proc.returncode}")
+        time.sleep(0.2)
+
+    proc.terminate()
+    raise RuntimeError("Timed out waiting for Windows test DB SSH tunnel to open")
+
+
+def _close_windows_test_db_tunnel() -> None:
+    global _WINDOWS_TEST_DB_TUNNEL_PROCESS, _WINDOWS_TEST_DB_TUNNEL_OWNED
+
+    proc = _WINDOWS_TEST_DB_TUNNEL_PROCESS
+    if not _WINDOWS_TEST_DB_TUNNEL_OWNED or proc is None:
+        return
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
+    _WINDOWS_TEST_DB_TUNNEL_OWNED = False
+
+
+def _should_auto_fallback_to_shared_test_db() -> bool:
+    return (
+        os.name == "nt"
+        and os.getenv("TEST_DATABASE_URL") is None
+        and os.getenv("TEST_DATABASE_ADMIN_URL") is None
+        and not _shared_test_db_allowed()
+    )
+
+
+def _is_admin_database_unavailable(exc: Exception) -> bool:
+    handled_types = (
+        ConnectionRefusedError,
+        OSError,
+        asyncpg_exceptions.InvalidAuthorizationSpecificationError,
+        asyncpg_exceptions.InsufficientPrivilegeError,
+        asyncpg_exceptions.InvalidPasswordError,
+        asyncpg_exceptions.PostgresConnectionError,
+    )
+    return isinstance(exc, handled_types)
+
+
+async def _probe_database(database_url: str) -> None:
+    sync_like_url = database_url.replace("+asyncpg", "")
+    conn = None
+    try:
+        conn = await asyncpg.connect(sync_like_url)
+        await conn.execute("SELECT 1")
+    finally:
+        if conn is not None:
+            await conn.close()
+
+
+def _probe_database_sync(database_url: str) -> None:
+    asyncio.run(_probe_database(database_url))
+
+
+def _maybe_fallback_to_shared_test_db(
+    test_db_url: str,
+    admin_db_url: str,
+    is_shared: bool,
+    *,
+    allow_auto_shared_fallback: bool,
+) -> tuple[str, str, bool]:
+    if is_shared or not allow_auto_shared_fallback:
+        return test_db_url, admin_db_url, is_shared
+
+    try:
+        _probe_database_sync(admin_db_url)
+        return test_db_url, admin_db_url, is_shared
+    except Exception as exc:
+        if not _is_admin_database_unavailable(exc):
+            raise
+
+        shared_url = _default_test_database_url(SHARED_TEST_DATABASE_NAME)
+        verify_test_database(shared_url, allow_shared=True)
+        try:
+            _probe_database_sync(shared_url)
+        except Exception:
+            raise exc
+
+        warnings.warn(
+            "Admin test database is unavailable from this client; falling back to shared "
+            f"test DB {SHARED_TEST_DATABASE_NAME}. Set TEST_DATABASE_ADMIN_URL for isolated "
+            "ephemeral DB runs.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return shared_url, _resolve_admin_url(shared_url), True
 
 
 async def _run_admin_sql(admin_database_url: str, sql: str, **params) -> None:
@@ -170,11 +344,20 @@ async def _create_test_database(admin_database_url: str, db_name: str) -> None:
 @pytest.fixture(scope="session")
 def test_database_url() -> str:
     test_db_url, admin_db_url, is_shared = _resolve_test_database_urls()
+    test_db_url, admin_db_url, is_shared = _maybe_fallback_to_shared_test_db(
+        test_db_url,
+        admin_db_url,
+        is_shared,
+        allow_auto_shared_fallback=_should_auto_fallback_to_shared_test_db(),
+    )
     verify_test_database(test_db_url, allow_shared=is_shared)
     original_test_url = os.environ.get("TEST_DATABASE_URL")
     original_admin_url = os.environ.get("TEST_DATABASE_ADMIN_URL")
+    original_allow_shared = os.environ.get("PC_CLIENT_ALLOW_SHARED_TEST_DB")
     os.environ["TEST_DATABASE_URL"] = test_db_url
     os.environ["TEST_DATABASE_ADMIN_URL"] = admin_db_url
+    if is_shared:
+        os.environ["PC_CLIENT_ALLOW_SHARED_TEST_DB"] = "1"
 
     db_name = make_url(test_db_url).database or ""
     if not is_shared:
@@ -192,6 +375,11 @@ def test_database_url() -> str:
             os.environ.pop("TEST_DATABASE_ADMIN_URL", None)
         else:
             os.environ["TEST_DATABASE_ADMIN_URL"] = original_admin_url
+        if original_allow_shared is None:
+            os.environ.pop("PC_CLIENT_ALLOW_SHARED_TEST_DB", None)
+        else:
+            os.environ["PC_CLIENT_ALLOW_SHARED_TEST_DB"] = original_allow_shared
+        _close_windows_test_db_tunnel()
         if not is_shared:
             asyncio.run(_drop_test_database(admin_db_url, db_name))
 
@@ -216,6 +404,17 @@ def run_migrations(test_database_url: str):
     script_path = server_root / "app" / "db" / "migrations"
     if script_path.exists():
         alembic_cfg.set_main_option("script_location", str(script_path))
+
+    if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
+        env = os.environ.copy()
+        env["DATABASE_URL"] = test_database_url
+        subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
+            cwd=str(server_root),
+            env=env,
+            check=True,
+        )
+        return
 
     with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
         command.upgrade(alembic_cfg, "head")
@@ -268,6 +467,11 @@ async def _cleanup_db_async(test_database_url: str, test_engine) -> None:
     async with test_engine.begin() as conn:
         await conn.execute(text("""
             TRUNCATE TABLE
+                observer_error_occurrences,
+                observer_error_signatures,
+                observer_span_links,
+                observer_spans,
+                observer_traces,
                 operations,
                 device_outbox,
                 ticket_events,
