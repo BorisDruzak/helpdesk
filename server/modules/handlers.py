@@ -2343,9 +2343,14 @@ async def handle_get_device_toolset(request):
 
             if not snapshot:
                 return web.json_response({
-                    "status": "error",
-                    "error": "No toolset snapshot found"
-                }, status=404)
+                    "status": "ok",
+                    "device_id": device_id,
+                    "toolset_hash": None,
+                    "tool_count": 0,
+                    "captured_at": None,
+                    "tools_by_module": {},
+                    "missing_snapshot": True,
+                })
 
             modules_repo = ModulesRepo(session)
             registry_modules = await modules_repo.list_modules(limit=500)
@@ -2372,7 +2377,8 @@ async def handle_get_device_toolset(request):
                 "toolset_hash": snapshot.toolset_hash,
                 "tool_count": snapshot.tool_count,
                 "captured_at": snapshot.captured_at.isoformat(),
-                "tools_by_module": tools_by_module
+                "tools_by_module": tools_by_module,
+                "missing_snapshot": False,
             })
 
     except Exception as e:

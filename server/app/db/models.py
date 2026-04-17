@@ -1375,6 +1375,191 @@ class AgentRuntimeAudit(Base):
     )
 
 
+class ObserverTrace(Base):
+    """Materialized technical trace overlay built from existing runtime sources."""
+    __tablename__ = "observer_traces"
+
+    trace_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    root_span_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    root_kind: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="running")
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    span_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_observer_traces_started_at", "started_at"),
+        Index("ix_observer_traces_status_started_at", "status", "started_at"),
+    )
+
+
+class ObserverSpan(Base):
+    """Individual segment of an observer trace."""
+    __tablename__ = "observer_spans"
+
+    span_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("observer_traces.trace_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_span_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default="internal")
+    component: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    event_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    module_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    tool_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="ok")
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("trace_id", "source_type", "source_ref", name="uq_observer_spans_trace_source"),
+        Index("ix_observer_spans_trace_parent", "trace_id", "parent_span_id"),
+        Index("ix_observer_spans_status_started_at", "status", "started_at"),
+    )
+
+
+class ObserverSpanLink(Base):
+    """Causal links between spans when relationship is not a strict tree edge."""
+    __tablename__ = "observer_span_links"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    span_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("observer_spans.span_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    linked_trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    linked_span_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "span_id",
+            "linked_trace_id",
+            "linked_span_id",
+            "reason",
+            name="uq_observer_span_links_target_reason",
+        ),
+    )
+
+
+class ObserverErrorSignature(Base):
+    """Aggregated fingerprint of similar observer failures."""
+    __tablename__ = "observer_error_signatures"
+
+    error_signature: Mapped[str] = mapped_column(String(160), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    component: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    module_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    tool_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_kind: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    exception_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    failure_stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    message_sample: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, index=True)
+    occurrences_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    affected_devices_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_observer_error_signatures_component_seen", "component", "last_seen_at"),
+        Index("ix_observer_error_signatures_module_seen", "module_name", "last_seen_at"),
+    )
+
+
+class ObserverErrorOccurrence(Base):
+    """Concrete failure occurrence inside a projected observer span/trace."""
+    __tablename__ = "observer_error_occurrences"
+
+    occurrence_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trace_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("observer_traces.trace_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    span_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("observer_spans.span_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    error_signature: Mapped[str] = mapped_column(
+        String(160),
+        sa.ForeignKey("observer_error_signatures.error_signature", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    component: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    module_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    tool_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_kind: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    exception_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    failure_stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, server_default="error")
+    message_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    stack_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    __table_args__ = (
+        Index("ix_observer_error_occurrences_signature_created", "error_signature", "created_at"),
+        Index("ix_observer_error_occurrences_trace_created", "trace_id", "created_at"),
+    )
+
+
 class AuthSession(Base):
     """
     Auth session model for Phase 2 (session-based authentication).

@@ -916,6 +916,66 @@
                 <div class="section">
                     <div class="tech-section-head">
                         <div>
+                            <h2>Trace search</h2>
+                            <p class="muted" style="margin-top: 6px;">Поиск observer traces и error signatures поверх operations, ticket_events, device_events, runtime audit и action trace агента.</p>
+                        </div>
+                    </div>
+                    <div class="tech-control-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                        <div class="form-group">
+                            <label for="techTraceIdInput">Trace ID</label>
+                            <input type="text" id="techTraceIdInput" placeholder="uuid trace">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceTicketIdInput">Ticket ID</label>
+                            <input type="text" id="techTraceTicketIdInput" placeholder="uuid ticket">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceJobIdInput">Job ID</label>
+                            <input type="text" id="techTraceJobIdInput" placeholder="uuid job">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceOperationIdInput">Operation ID</label>
+                            <input type="text" id="techTraceOperationIdInput" placeholder="uuid operation">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceDeviceIdInput">Device ID</label>
+                            <input type="text" id="techTraceDeviceIdInput" placeholder="uuid device">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceToolInput">Tool</label>
+                            <input type="text" id="techTraceToolInput" placeholder="screen.collect">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceModuleInput">Module</label>
+                            <input type="text" id="techTraceModuleInput" placeholder="screen">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceSignatureInput">Error signature</label>
+                            <input type="text" id="techTraceSignatureInput" placeholder="ws_ack_timeout">
+                        </div>
+                    </div>
+                    <div class="tech-actions-bar" style="margin-top: 12px;">
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="search-traces">Искать traces</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="search-signatures">Искать signatures</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="rebuild">Пересобрать traces</button>
+                        <label class="muted" style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+                            <input type="checkbox" id="techTraceIncludeAgentActions">
+                            Подтягивать action trace агента
+                        </label>
+                    </div>
+                    <div id="techTraceSearchStatus" class="tech-control-note">Задайте фильтры и запустите поиск.</div>
+                    <div class="tech-split-grid" style="margin-top: 12px;">
+                        <div>
+                            <div id="techTraceResults"></div>
+                        </div>
+                        <div>
+                            <div id="techTraceDetail"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="tech-section-head">
+                        <div>
                             <h2>Агенты</h2>
                             <p class="muted" style="margin-top: 6px;">Главная таблица состояния устройств и быстрая диагностика выбранного агента.</p>
                         </div>

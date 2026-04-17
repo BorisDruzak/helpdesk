@@ -36,6 +36,7 @@ from config import (
 from tech.dismiss_store import dismiss_alert, is_alert_dismissed
 from tech.log_buffer import list_log_records, remove_log_record
 from websocket.protocol import send_ws_command, send_ws_rpc_request
+from observer.service import ObserverOverlayService, TraceOverlayFilters
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -54,6 +55,10 @@ def _parse_query_limit(raw: Optional[str], *, default: int, cap: int) -> int:
     except (TypeError, ValueError):
         v = default
     return max(1, min(int(v), cap))
+
+
+def _parse_bool(value: Optional[str]) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _pool_status_safe(bind: Any) -> Optional[str]:
@@ -1500,5 +1505,160 @@ async def handle_tech_operations_stuck(request: web.Request) -> web.Response:
                     }
                     for op in rows
                 ],
+            }
+        )
+
+
+def _trace_filters_from_request(request: web.Request) -> TraceOverlayFilters:
+    return TraceOverlayFilters(
+        trace_id=_compact_query_value(request.query.get("trace_id")),
+        ticket_id=_compact_query_value(request.query.get("ticket_id")),
+        job_id=_compact_query_value(request.query.get("job_id")),
+        operation_id=_compact_query_value(request.query.get("operation_id")),
+        device_id=_compact_query_value(request.query.get("device_id")),
+        tool_name=_compact_query_value(request.query.get("tool_name")),
+        module_name=_compact_query_value(request.query.get("module_name")),
+        error_signature=_compact_query_value(request.query.get("error_signature")),
+        status=_compact_query_value(request.query.get("status")),
+    )
+
+
+def _compact_query_value(raw: Optional[str]) -> Optional[str]:
+    value = str(raw or "").strip()
+    return value or None
+
+
+def _extract_action_trace_entries(response: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = response.get("payload") if isinstance(response, dict) else None
+    if not isinstance(payload, dict):
+        return []
+    data = payload.get("data")
+    if isinstance(data, dict) and isinstance(data.get("observations"), dict):
+        entries = data["observations"].get("entries")
+        if isinstance(entries, list):
+            return [item for item in entries if isinstance(item, dict)]
+    observations = payload.get("observations")
+    if isinstance(observations, dict):
+        entries = observations.get("entries")
+        if isinstance(entries, list):
+            return [item for item in entries if isinstance(item, dict)]
+    return []
+
+
+def _serialize_trace_filters(filters: TraceOverlayFilters) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for field_name in filters.__dataclass_fields__:
+        value = getattr(filters, field_name)
+        if value is not None:
+            payload[field_name] = value
+    return payload
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_traces_search(request: web.Request) -> web.Response:
+    limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
+    filters = _trace_filters_from_request(request)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        traces = await service.search_traces(filters, limit=limit)
+        await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "count": len(traces),
+                "filters": _serialize_trace_filters(filters),
+                "traces": traces,
+            }
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_trace_detail(request: web.Request) -> web.Response:
+    trace_id = request.match_info["trace_id"]
+    include_agent_actions = _parse_bool(request.query.get("include_agent_actions"))
+    action_limit = _parse_query_limit(request.query.get("action_limit"), default=50, cap=200)
+
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        detail = await service.get_trace_detail(trace_id)
+        if detail is None:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": "Trace not found"}, status=404)
+        await session.commit()
+
+    agent_actions: list[dict[str, Any]] = []
+    agent_actions_error: Optional[str] = None
+    if include_agent_actions:
+        device_id = detail["trace"].get("device_id")
+        if device_id:
+            try:
+                response = await send_ws_rpc_request(
+                    state=request.app["state"],
+                    device_id=device_id,
+                    method="search_action_trace",
+                    params={
+                        "trace_id": trace_id,
+                        "operation_id": detail["trace"].get("operation_id"),
+                        "limit": action_limit,
+                    },
+                    actor_role="support",
+                    timeout=20,
+                )
+                agent_actions = _extract_action_trace_entries(response)
+            except Exception as exc:
+                agent_actions_error = str(exc)
+
+    detail["status"] = "ok"
+    detail["agent_actions"] = agent_actions
+    detail["agent_actions_error"] = agent_actions_error
+    return web.json_response(detail)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_signatures_search(request: web.Request) -> web.Response:
+    limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
+    filters = _trace_filters_from_request(request)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        signatures = await service.search_signatures(filters, limit=limit)
+        await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "count": len(signatures),
+                "filters": _serialize_trace_filters(filters),
+                "signatures": signatures,
+            }
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_signature_detail(request: web.Request) -> web.Response:
+    error_signature = request.match_info["error_signature"]
+    limit = _parse_query_limit(request.query.get("limit"), default=100, cap=500)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        detail = await service.get_signature_detail(error_signature, limit=limit)
+        if detail is None:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": "Signature not found"}, status=404)
+        await session.commit()
+        detail["status"] = "ok"
+        return web.json_response(detail)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_traces_rebuild(request: web.Request) -> web.Response:
+    limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
+    filters = _trace_filters_from_request(request)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        projected = await service.rebuild_traces(filters, limit=limit)
+        await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "projected_count": len(projected),
+                "trace_ids": projected,
             }
         )

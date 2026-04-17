@@ -207,7 +207,7 @@ class OperationLifecycleService:
                 operation = await op_repo.get_by_operation_id(operation_id)
                 lifecycle_status = normalized.lifecycle_status
 
-                expected_statuses = ["queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"]
+                expected_statuses = ["queued", "sent", "accepted", "running", "waiting_consent"]
                 processed = True
 
                 if lifecycle_status == "queued":
@@ -257,7 +257,7 @@ class OperationLifecycleService:
                             result_summary=(result_summary or str(cancel_status or "completed"))[:500],
                             expected_statuses=expected_statuses,
                         )
-                        if target_operation_id and cancel_status == "canceled":
+                        if target_operation_id and cancel_status in {"canceled", "already_finished"}:
                             await op_service.mark_canceled(
                                 operation_id=target_operation_id,
                                 expected_statuses=["cancel_requested", "running", "accepted", "waiting_consent"],

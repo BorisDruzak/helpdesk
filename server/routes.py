@@ -254,6 +254,11 @@ from tech.handlers import (
     handle_tech_logs,
     handle_tech_dismiss_item,
     handle_tech_operations_stuck,
+    handle_tech_traces_search,
+    handle_tech_trace_detail,
+    handle_tech_traces_rebuild,
+    handle_tech_signatures_search,
+    handle_tech_signature_detail,
 )
 
 
@@ -508,6 +513,11 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),
         web.get('/api/admin/tech/operations/stuck', handle_tech_operations_stuck),
+        web.get('/api/admin/tech/traces', handle_tech_traces_search),
+        web.post('/api/admin/tech/traces/rebuild', handle_tech_traces_rebuild),
+        web.get('/api/admin/tech/traces/{trace_id}', handle_tech_trace_detail),
+        web.get('/api/admin/tech/signatures', handle_tech_signatures_search),
+        web.get('/api/admin/tech/signatures/{error_signature}', handle_tech_signature_detail),
         
         # ============================================================================
         # Uploads API

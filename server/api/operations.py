@@ -260,6 +260,39 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             ui_publisher = state.ui_publisher if state and hasattr(state, 'ui_publisher') else None
             op_service = OperationService(session, publisher=ui_publisher)
             
+            success = await op_service.mark_cancel_requested(
+                operation_id=operation_id,
+                status_before_cancel=target_op.status,
+                cancel_reason=cancel_reason,
+                active_cancel_operation_id=cancel_operation_id,
+                expected_statuses=[target_op.status]
+            )
+            
+            if not success:
+                await session.rollback()
+                async with get_session() as check_session:
+                    current_op = await OperationsRepo(check_session).get_by_operation_id(operation_id)
+                
+                if current_op and current_op.status == "cancel_requested" and current_op.active_cancel_operation_id:
+                    return web.json_response({
+                        "status": "ok",
+                        "message": "Cancel already requested",
+                        "target_operation_id": operation_id,
+                        "cancel_operation_id": current_op.active_cancel_operation_id
+                    })
+                
+                if current_op and current_op.status in terminal_statuses:
+                    return web.json_response({
+                        "status": "noop",
+                        "reason": "already_terminal",
+                        "target_operation_id": operation_id
+                    }, status=409)
+                
+                return web.json_response({
+                    "status": "error",
+                    "error": "Failed to update operation status (concurrent modification?)"
+                }, status=409)
+            
             # Создать cancel-op операцию
             cancel_op = await op_service.enqueue_operation(
                 operation_id=cancel_operation_id,
@@ -280,20 +313,7 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             )
             
             # Установить статус cancel_requested в target-op с status_before_cancel
-            success = await op_service.mark_cancel_requested(
-                operation_id=operation_id,
-                status_before_cancel=target_op.status,
-                cancel_reason=cancel_reason,
-                active_cancel_operation_id=cancel_operation_id
-            )
-            
-            if not success:
-                # Rollback: удалить cancel-op если не удалось обновить target-op
-                await session.rollback()
-                return web.json_response({
-                    "status": "error",
-                    "error": "Failed to update operation status (concurrent modification?)"
-                }, status=409)
+            # target-op already moved to cancel_requested above.
             
             # Записать op_cancel_requested event в ticket_events (если есть ticket_id)
             # Stage 7: отдельная сессия — при IntegrityError (дубликат) основной flow не ломается

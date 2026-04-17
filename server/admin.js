@@ -3953,6 +3953,12 @@
             logs: [],
         };
         let techServerConfirmState = null;
+        let techObserverState = {
+            mode: 'traces',
+            results: [],
+            detail: null,
+            selectedId: null,
+        };
 
         function techStatusClass(kind) {
             if (kind === 'ok') return 'ok';
@@ -4541,6 +4547,26 @@
                     loadTechControlPanels().catch((err) => techControlNote(err.message || String(err), true));
                 }
             });
+            [
+                'techTraceIdInput',
+                'techTraceTicketIdInput',
+                'techTraceJobIdInput',
+                'techTraceOperationIdInput',
+                'techTraceDeviceIdInput',
+                'techTraceToolInput',
+                'techTraceModuleInput',
+                'techTraceSignatureInput',
+            ].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            loadTechObserverSearch('traces').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        }
+                    });
+                }
+            });
             ['techServerLogsLevel', 'techServerLogsLimit'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', () => loadTechControlPanels().catch((e) => techControlNote(e.message || String(e), true)));
@@ -4616,6 +4642,28 @@
                     if (actionBtn) {
                         e.preventDefault();
                         handleTechActionButton(actionBtn);
+                        return;
+                    }
+                    const observerActionBtn = e.target.closest('button[data-tech-observer-action]');
+                    if (observerActionBtn) {
+                        e.preventDefault();
+                        const action = observerActionBtn.getAttribute('data-tech-observer-action');
+                        if (action === 'search-traces') {
+                            loadTechObserverSearch('traces').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        } else if (action === 'search-signatures') {
+                            loadTechObserverSearch('signatures').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        } else if (action === 'rebuild') {
+                            rebuildTechObserverTraces().catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        }
+                        return;
+                    }
+                    const observerOpenBtn = e.target.closest('button[data-tech-observer-open]');
+                    if (observerOpenBtn) {
+                        e.preventDefault();
+                        loadTechObserverDetail(
+                            observerOpenBtn.getAttribute('data-tech-observer-open') === 'signature' ? 'signatures' : 'traces',
+                            observerOpenBtn.getAttribute('data-tech-observer-id')
+                        ).catch((err) => techSetObserverStatus(err.message || String(err), true));
                     }
                 });
             }
@@ -4626,6 +4674,8 @@
             });
             window.addEventListener('resize', techCloseContextMenu);
             window.addEventListener('scroll', techCloseContextMenu, true);
+            renderTechObserverResults();
+            renderTechObserverDetail();
         }
 
         async function loadTechPanel(force) {
@@ -4783,6 +4833,253 @@
                     </tr>`).join('')}
                 </tbody>
             </table></div>`;
+        }
+
+        function techObserverInputValue(id) {
+            return (document.getElementById(id)?.value || '').trim();
+        }
+
+        function techObserverFilters(limit = 25) {
+            const params = new URLSearchParams();
+            params.set('limit', String(limit));
+            const mapping = {
+                trace_id: techObserverInputValue('techTraceIdInput'),
+                ticket_id: techObserverInputValue('techTraceTicketIdInput'),
+                job_id: techObserverInputValue('techTraceJobIdInput'),
+                operation_id: techObserverInputValue('techTraceOperationIdInput'),
+                device_id: techObserverInputValue('techTraceDeviceIdInput'),
+                tool_name: techObserverInputValue('techTraceToolInput'),
+                module_name: techObserverInputValue('techTraceModuleInput'),
+                error_signature: techObserverInputValue('techTraceSignatureInput'),
+            };
+            Object.entries(mapping).forEach(([key, value]) => {
+                if (value) params.set(key, value);
+            });
+            return params;
+        }
+
+        function techSetObserverStatus(message, isError) {
+            const host = document.getElementById('techTraceSearchStatus');
+            if (!host) return;
+            host.textContent = message || '—';
+            host.classList.toggle('error-message', !!isError);
+        }
+
+        function renderTechObserverResults() {
+            const host = document.getElementById('techTraceResults');
+            if (!host) return;
+            const items = techObserverState.results || [];
+            if (!items.length) {
+                host.innerHTML = '<div class="tech-agent-detail"><div class="tech-empty-note">Совпадений пока нет.</div></div>';
+                return;
+            }
+            if (techObserverState.mode === 'signatures') {
+                host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                    <thead><tr><th>Signature</th><th>Title</th><th>Occurrences</th><th>Last seen</th><th></th></tr></thead>
+                    <tbody>
+                        ${items.map(item => `<tr class="${techObserverState.selectedId === item.error_signature ? 'tech-row-selected' : ''}">
+                            <td><code>${escapeHtml(item.error_signature || '—')}</code></td>
+                            <td>${escapeHtml(item.title || item.error_kind || '—')}</td>
+                            <td>${escapeHtml(String(item.occurrences_count ?? 0))}</td>
+                            <td>${escapeHtml(techFormatDate(item.last_seen_at))}</td>
+                            <td><button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="signature" data-tech-observer-id="${escapeHtml(item.error_signature || '')}">Открыть</button></td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table></div>`;
+                return;
+            }
+            host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                <thead><tr><th>Trace</th><th>Status</th><th>Ticket / op</th><th>Errors</th><th>Started</th><th></th></tr></thead>
+                <tbody>
+                    ${items.map(item => `<tr class="${techObserverState.selectedId === item.trace_id ? 'tech-row-selected' : ''}">
+                        <td><code>${escapeHtml(item.trace_id || '—')}</code><div class="tech-device-meta">${escapeHtml(item.root_kind || 'trace')}</div></td>
+                        <td>${techStatusChip(item.status || 'unknown')}</td>
+                        <td><div>${escapeHtml(item.ticket_id || '—')}</div><div class="tech-device-meta">${escapeHtml(item.operation_id || '—')}</div></td>
+                        <td>${escapeHtml(`${item.error_count ?? 0} / ${item.span_count ?? 0}`)}</td>
+                        <td>${escapeHtml(techFormatDate(item.started_at))}</td>
+                        <td><button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="trace" data-tech-observer-id="${escapeHtml(item.trace_id || '')}">Открыть</button></td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>`;
+        }
+
+        function renderTechObserverDetail() {
+            const host = document.getElementById('techTraceDetail');
+            if (!host) return;
+            const detail = techObserverState.detail;
+            if (!detail) {
+                host.innerHTML = '<div class="tech-agent-detail"><div class="tech-empty-note">Откройте trace или signature из списка слева.</div></div>';
+                return;
+            }
+            if (techObserverState.mode === 'signatures') {
+                const signature = detail.signature || {};
+                const occurrences = detail.occurrences || [];
+                host.innerHTML = `<div class="tech-agent-detail">
+                    <div class="tech-agent-head">
+                        <div>
+                            <h3>${escapeHtml(signature.title || signature.error_signature || 'Signature')}</h3>
+                            <div class="tech-agent-subtitle"><code>${escapeHtml(signature.error_signature || '—')}</code></div>
+                        </div>
+                        <div class="tech-inline-list">
+                            ${techPill(signature.component || 'component n/a', 'neutral')}
+                            ${techPill(signature.module_name || 'module n/a', 'neutral')}
+                            ${techPill(signature.tool_name || 'tool n/a', 'neutral')}
+                        </div>
+                    </div>
+                    <div class="tech-kpi-grid">
+                        <div class="tech-kpi-card"><label>Occurrences</label><value>${escapeHtml(String(signature.occurrences_count ?? 0))}</value></div>
+                        <div class="tech-kpi-card"><label>Affected devices</label><value>${escapeHtml(String(signature.affected_devices_count ?? 0))}</value></div>
+                        <div class="tech-kpi-card"><label>First seen</label><value>${escapeHtml(techFormatDate(signature.first_seen_at))}</value></div>
+                        <div class="tech-kpi-card"><label>Last seen</label><value>${escapeHtml(techFormatDate(signature.last_seen_at))}</value></div>
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Последние occurrences</h4>
+                        ${occurrences.length ? `<div class="tech-table-wrap"><table class="tech-table">
+                            <thead><tr><th>Trace</th><th>Stage</th><th>Severity</th><th>Message</th><th>Created</th></tr></thead>
+                            <tbody>
+                                ${occurrences.map(item => `<tr>
+                                    <td><code>${escapeHtml(item.trace_id || '—')}</code></td>
+                                    <td>${escapeHtml(item.failure_stage || '—')}</td>
+                                    <td>${escapeHtml(item.severity || '—')}</td>
+                                    <td>${escapeHtml(item.message_norm || '—')}</td>
+                                    <td>${escapeHtml(techFormatDate(item.created_at))}</td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table></div>` : '<div class="tech-empty-note">Occurrences пока нет.</div>'}
+                    </div>
+                </div>`;
+                return;
+            }
+
+            const trace = detail.trace || {};
+            const spans = detail.spans || [];
+            const occurrences = detail.error_occurrences || [];
+            const links = detail.span_links || [];
+            const agentActions = detail.agent_actions || [];
+            const actionError = detail.agent_actions_error;
+            host.innerHTML = `<div class="tech-agent-detail">
+                <div class="tech-agent-head">
+                    <div>
+                        <h3>${escapeHtml(trace.root_kind || 'trace')}</h3>
+                        <div class="tech-agent-subtitle"><code>${escapeHtml(trace.trace_id || '—')}</code></div>
+                    </div>
+                    <div class="tech-inline-list">
+                        ${techStatusChip(trace.status || 'unknown')}
+                        ${techPill(trace.device_id || 'device n/a', 'neutral')}
+                    </div>
+                </div>
+                <div class="tech-kpi-grid">
+                    <div class="tech-kpi-card"><label>Ticket</label><value>${escapeHtml(trace.ticket_id || '—')}</value></div>
+                    <div class="tech-kpi-card"><label>Operation</label><value>${escapeHtml(trace.operation_id || '—')}</value></div>
+                    <div class="tech-kpi-card"><label>Duration</label><value>${escapeHtml(trace.duration_ms != null ? `${trace.duration_ms} ms` : '—')}</value></div>
+                    <div class="tech-kpi-card"><label>Spans / errors</label><value>${escapeHtml(`${trace.span_count ?? 0} / ${trace.error_count ?? 0}`)}</value></div>
+                </div>
+                <div class="tech-mini-grid">
+                    <div class="tech-mini-panel">
+                        <h4>Error occurrences</h4>
+                        ${occurrences.length ? `<div class="tech-timeline">${occurrences.map(item => `<div class="tech-timeline-item">
+                            <strong>${escapeHtml(item.error_signature || item.error_kind || 'error')}</strong>
+                            <span>${escapeHtml(item.failure_stage || '—')} · ${escapeHtml(item.severity || '—')} · ${escapeHtml(techFormatDate(item.created_at))}</span>
+                            <div class="tech-device-meta">${escapeHtml(item.message_norm || '—')}</div>
+                        </div>`).join('')}</div>` : '<div class="tech-empty-note">Ошибок в этой trace пока нет.</div>'}
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Links / attrs</h4>
+                        <div class="tech-device-meta">Links: ${escapeHtml(String(links.length))}</div>
+                        <div class="tech-json-preview">${techRenderDetails(trace.attrs_json || {})}</div>
+                    </div>
+                </div>
+                <div class="tech-mini-panel">
+                    <h4>Spans</h4>
+                    ${spans.length ? `<div class="tech-table-wrap"><table class="tech-table">
+                        <thead><tr><th>Name</th><th>Status</th><th>Source</th><th>Tool / module</th><th>Started</th><th>Duration</th></tr></thead>
+                        <tbody>
+                            ${spans.map(span => `<tr>
+                                <td><strong>${escapeHtml(span.name || '—')}</strong><div class="tech-device-meta"><code>${escapeHtml(span.span_id || '—')}</code></div></td>
+                                <td>${techStatusChip(span.status || 'unknown')}</td>
+                                <td>${escapeHtml(span.source_type || '—')}</td>
+                                <td>${escapeHtml([span.tool_name, span.module_name].filter(Boolean).join(' / ') || '—')}</td>
+                                <td>${escapeHtml(techFormatDate(span.started_at))}</td>
+                                <td>${escapeHtml(span.duration_ms != null ? `${span.duration_ms} ms` : '—')}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>` : '<div class="tech-empty-note">Spans пока нет.</div>'}
+                </div>
+                <div class="tech-mini-panel">
+                    <h4>Action trace агента</h4>
+                    ${actionError ? `<div class="error-message">${escapeHtml(actionError)}</div>` : ''}
+                    ${agentActions.length ? `<pre class="tech-result-box">${escapeHtml(JSON.stringify(agentActions, null, 2))}</pre>` : '<div class="tech-empty-note">Action trace не запрошен или не найден.</div>'}
+                </div>
+            </div>`;
+        }
+
+        async function loadTechObserverSearch(mode) {
+            const headers = getAuthHeaders();
+            const endpoint = mode === 'signatures' ? '/api/admin/tech/signatures' : '/api/admin/tech/traces';
+            techSetObserverStatus('Загрузка observer search…', false);
+            const response = await fetch(`${endpoint}?${techObserverFilters().toString()}`, { headers });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer search failed');
+            }
+            techObserverState.mode = mode;
+            techObserverState.results = mode === 'signatures' ? (data.signatures || []) : (data.traces || []);
+            techObserverState.detail = null;
+            techObserverState.selectedId = null;
+            renderTechObserverResults();
+            renderTechObserverDetail();
+            techSetObserverStatus(`Найдено ${data.count || 0} ${mode === 'signatures' ? 'signatures' : 'traces'}.`, false);
+            const first = techObserverState.results[0];
+            if (first) {
+                const selectedId = mode === 'signatures' ? first.error_signature : first.trace_id;
+                await loadTechObserverDetail(mode, selectedId, false);
+            }
+        }
+
+        async function loadTechObserverDetail(mode, itemId, announce = true) {
+            if (!itemId) return;
+            const headers = getAuthHeaders();
+            const params = new URLSearchParams();
+            if (mode === 'traces' && document.getElementById('techTraceIncludeAgentActions')?.checked) {
+                params.set('include_agent_actions', '1');
+                params.set('action_limit', '100');
+            }
+            const endpoint = mode === 'signatures'
+                ? `/api/admin/tech/signatures/${encodeURIComponent(itemId)}`
+                : `/api/admin/tech/traces/${encodeURIComponent(itemId)}`;
+            if (announce) {
+                techSetObserverStatus(`Открываю ${mode === 'signatures' ? 'signature' : 'trace'} ${itemId}…`, false);
+            }
+            const response = await fetch(`${endpoint}${params.toString() ? `?${params.toString()}` : ''}`, { headers });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer detail failed');
+            }
+            techObserverState.mode = mode;
+            techObserverState.detail = data;
+            techObserverState.selectedId = itemId;
+            renderTechObserverResults();
+            renderTechObserverDetail();
+            if (announce) {
+                techSetObserverStatus(`${mode === 'signatures' ? 'Signature' : 'Trace'} ${itemId} загружена.`, false);
+            }
+        }
+
+        async function rebuildTechObserverTraces() {
+            const headers = getAuthHeaders(true);
+            techSetObserverStatus('Пересборка observer traces…', false);
+            const response = await fetch(`/api/admin/tech/traces/rebuild?${techObserverFilters(50).toString()}`, {
+                method: 'POST',
+                headers,
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer rebuild failed');
+            }
+            techSetObserverStatus(`Пересобрано traces: ${data.projected_count || 0}.`, false);
+            if (techObserverState.mode) {
+                await loadTechObserverSearch(techObserverState.mode);
+            }
         }
 
         function renderTechAgentsTable(devices) {
