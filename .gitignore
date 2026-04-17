@@ -20,6 +20,10 @@ uploads/
 server/data/
 server/reports/
 server/uploads/
+!server/uploads/
+server/uploads/*
+!server/uploads/__init__.py
+!server/uploads/handlers.py
 server/venv/
 pc_agent/venv/
 pc_agent/data/
