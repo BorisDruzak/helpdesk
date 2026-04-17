@@ -446,6 +446,73 @@
             liveEl.textContent = wsLive ? '● Онлайн' : '○ Обновление по опросу';
             liveEl.className = wsLive ? 'tb-live' : 'tb-degraded';
         }
+        renderEmbeddedComposerActions();
+    }
+
+    function closeComposerAttachMenu() {
+        const menu = el('composerAttachMenu');
+        if (!menu) return;
+        menu.open = false;
+    }
+
+    function canRenderEmbeddedStatusActions() {
+        return EMBED_MODE && canPerformActions();
+    }
+
+    function embeddedStatusActionSpecs() {
+        if (!canRenderEmbeddedStatusActions()) {
+            return [];
+        }
+        const specs = [];
+        if (meta.status === 'in_progress') {
+            specs.push({ id: 'to_waiting_user', label: 'Ждём пользователя', kind: 'secondary', disabled: false });
+        }
+        if (meta.status === 'in_progress' || meta.status === 'waiting_on_user' || meta.status === 'waiting_on_vendor') {
+            specs.push({
+                id: 'to_resolved',
+                label: 'Решено',
+                kind: 'primary',
+                disabled: meta.status === 'waiting_on_user',
+                title: meta.status === 'waiting_on_user' ? 'Сначала дождитесь ответа пользователя или верните тикет в работу.' : '',
+            });
+        }
+        return specs;
+    }
+
+    function requestSupportWorkspaceAction(actionId) {
+        if (!EMBED_MODE || window.parent === window || !window.parent) {
+            return false;
+        }
+        window.parent.postMessage({
+            type: 'support-ticket-action',
+            ticketId,
+            action: actionId,
+        }, window.location.origin);
+        return true;
+    }
+
+    function renderEmbeddedComposerActions() {
+        const host = el('embeddedStatusActions');
+        if (!host) {
+            return;
+        }
+        const actions = embeddedStatusActionSpecs();
+        host.classList.toggle('hidden', actions.length === 0);
+        host.innerHTML = actions.map((action) => {
+            const btnClass = action.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
+            const disabledAttr = action.disabled ? ' disabled' : '';
+            const titleAttr = action.title ? ` title="${escapeHtml(action.title)}"` : '';
+            return `<button type="button" class="${btnClass}" data-embedded-action="${escapeHtml(action.id)}"${disabledAttr}${titleAttr}>${escapeHtml(action.label)}</button>`;
+        }).join('');
+        host.querySelectorAll('[data-embedded-action]').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (button.disabled) {
+                    return;
+                }
+                closeComposerAttachMenu();
+                requestSupportWorkspaceAction(button.getAttribute('data-embedded-action') || '');
+            });
+        });
     }
 
     function hasBoundDevice() {
@@ -2179,8 +2246,17 @@
         }
         const attachBtn = el('attachButton');
         const attachInput = el('attachFileInput');
+        const attachMenu = el('composerAttachMenu');
+        if (attachMenu) {
+            attachMenu.addEventListener('toggle', () => {
+                attachMenu.classList.toggle('open', attachMenu.open);
+            });
+        }
         if (attachBtn && attachInput) {
-            attachBtn.addEventListener('click', () => attachInput.click());
+            attachBtn.addEventListener('click', () => {
+                closeComposerAttachMenu();
+                attachInput.click();
+            });
             attachInput.addEventListener('change', async () => {
                 const files = attachInput.files ? Array.from(attachInput.files) : [];
                 if (!files.length) return;
@@ -2202,12 +2278,14 @@
         const quickScreenshotBtn = el('quickScreenshotBtn');
         if (quickScreenshotBtn) {
             quickScreenshotBtn.addEventListener('click', () => {
+                closeComposerAttachMenu();
                 void runQuickTool('screen.collect', {}, 'Запрос на скриншот отправлен');
             });
         }
         const quickRecordBtn = el('quickRecordBtn');
         if (quickRecordBtn) {
             quickRecordBtn.addEventListener('click', () => {
+                closeComposerAttachMenu();
                 void runQuickTool('screen.record', { duration_sec: 15 }, 'Запрос на запись видео отправлен');
             });
         }

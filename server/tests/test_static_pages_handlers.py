@@ -60,7 +60,7 @@ async def test_support_page_serves_workspace_shell():
     assert response.status == 200
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
     assert "/web_shared.js?v=20260414a" in response.text
-    assert "/support.js?v=20260414c" in response.text
+    assert "/support.js?v=20260417a" in response.text
     assert "Support Workspace" in response.text
     assert "id=\"workspaceShell\"" in response.text
     assert "id=\"workspaceModeSwitch\"" in response.text

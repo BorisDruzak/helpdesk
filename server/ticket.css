@@ -658,12 +658,6 @@ body.ticket-embedded .ticket-app {
     bottom: 0;
     z-index: 20;
 }
-.ticket-composer .composer-topbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
-}
 .ticket-composer .composer-reply {
     display: flex;
     align-items: flex-start;
@@ -706,14 +700,6 @@ body.ticket-embedded .ticket-app {
 .ticket-composer .composer-reply-close:hover {
     color: #1e40af;
 }
-.ticket-composer .composer-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #475569;
-    user-select: none;
-}
 .ticket-composer .composer-input-row {
     margin-bottom: 8px;
 }
@@ -731,10 +717,48 @@ body.ticket-embedded .ticket-app {
 .ticket-composer textarea:focus { outline: none; border-color: #007aff; }
 .ticket-composer textarea::placeholder { color: #9ca3af; }
 .ticket-composer .composer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ticket-composer .internal-toggle {
-    display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; cursor: pointer; user-select: none;
+.ticket-composer .composer-attach-menu {
+    position: relative;
 }
-.ticket-composer .internal-toggle input { width: 16px; height: 16px; cursor: pointer; }
+.ticket-composer .composer-attach-menu summary {
+    list-style: none;
+}
+.ticket-composer .composer-attach-menu summary::-webkit-details-marker {
+    display: none;
+}
+.ticket-composer .composer-attach-trigger {
+    display: inline-flex;
+}
+.ticket-composer .composer-attach-popover {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    display: grid;
+    gap: 8px;
+    min-width: 180px;
+    padding: 10px;
+    border-radius: 14px;
+    border: 1px solid #d8d2c4;
+    background: rgba(255, 251, 244, 0.98);
+    box-shadow: 0 14px 28px rgba(41, 45, 38, 0.14);
+    z-index: 5;
+}
+.ticket-composer .composer-attach-menu:not([open]) .composer-attach-popover {
+    display: none;
+}
+.ticket-composer .composer-attach-option {
+    justify-content: flex-start;
+    width: 100%;
+}
+.ticket-composer .composer-status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+}
+.ticket-composer .composer-status-actions.hidden {
+    display: none !important;
+}
 .ticket-composer .btn-send {
     padding: 10px 20px; background: #007aff; color: #fff; border: none; border-radius: 10px;
     font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s;
@@ -891,10 +915,6 @@ body.ticket-embedded .timeline-item .ti-reply-ref {
     border-color: rgba(29, 92, 84, 0.18);
 }
 
-body.ticket-embedded .ticket-composer .composer-topbar {
-    margin-bottom: 10px;
-}
-
 body.ticket-embedded .ticket-composer textarea {
     background: #fffdf8;
     border-color: #d8d2c4;
@@ -907,10 +927,6 @@ body.ticket-embedded .ticket-composer textarea:focus {
     box-shadow: 0 0 0 3px rgba(29, 92, 84, 0.12);
 }
 
-body.ticket-embedded .ticket-composer .composer-toggle {
-    color: #5f625a;
-}
-
 body.ticket-embedded .ticket-composer .btn.btn-secondary {
     background: #fffaf3;
     border-color: #d8d2c4;
@@ -921,6 +937,10 @@ body.ticket-embedded .ticket-composer .btn.btn-primary {
     background: #1d5c54;
     border-color: #1d5c54;
     color: #fff;
+}
+
+body.ticket-embedded .ticket-composer .composer-status-actions .btn:disabled {
+    opacity: 0.48;
 }
 
 body.ticket-embedded .pending-attachment {
@@ -955,8 +975,25 @@ body.ticket-embedded .pending-attachment-remove:hover {
 @media (max-width: 800px) {
     .ticket-composer .composer-actions {
         width: 100%;
-        justify-content: space-between;
+        justify-content: flex-start;
         padding-top: 8px;
+    }
+
+    .ticket-composer .composer-attach-menu,
+    .ticket-composer .composer-attach-trigger,
+    .ticket-composer .composer-status-actions,
+    .ticket-composer #sendButton {
+        width: 100%;
+    }
+
+    .ticket-composer .composer-status-actions {
+        margin-left: 0;
+    }
+
+    .ticket-composer .composer-attach-popover {
+        left: 0;
+        right: 0;
+        min-width: 0;
     }
 
     .sidebar-inline-controls select,

@@ -258,12 +258,7 @@
                 </section>
 
                 <section id="composer" class="ticket-composer">
-                    <div class="composer-topbar">
-                        <label class="composer-toggle">
-                            <input id="internalToggle" type="checkbox">
-                            <span>Внутреннее сообщение</span>
-                        </label>
-                    </div>
+                    <input id="internalToggle" type="checkbox" class="hidden" tabindex="-1" aria-hidden="true">
                     <div id="replyBanner" class="composer-reply hidden">
                         <div class="composer-reply-body">
                             <span class="composer-reply-label">Ответ на сообщение</span>
@@ -276,9 +271,15 @@
                     </div>
                     <div id="pendingAttachments" class="pending-attachments hidden"></div>
                     <div class="composer-actions">
-                        <button id="quickScreenshotBtn" class="btn btn-secondary" type="button">Скриншот ПК</button>
-                        <button id="quickRecordBtn" class="btn btn-secondary" type="button">Видео 15с</button>
-                        <button id="attachButton" class="btn btn-secondary" type="button">Вложение</button>
+                        <details id="composerAttachMenu" class="composer-attach-menu">
+                            <summary class="btn btn-secondary composer-attach-trigger">Добавить</summary>
+                            <div class="composer-attach-popover">
+                                <button id="quickScreenshotBtn" class="btn btn-secondary composer-attach-option" type="button">Скриншот ПК</button>
+                                <button id="quickRecordBtn" class="btn btn-secondary composer-attach-option" type="button">Видео 15с</button>
+                                <button id="attachButton" class="btn btn-secondary composer-attach-option" type="button">Вложение</button>
+                            </div>
+                        </details>
+                        <div id="embeddedStatusActions" class="composer-status-actions hidden"></div>
                         <input id="attachFileInput" type="file" hidden multiple>
                         <button id="sendButton" class="btn btn-primary" type="button">Отправить</button>
                     </div>
@@ -291,6 +292,6 @@
     <div id="ticketError" class="ticket-state-screen hidden"></div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/ticket.js?v=20260414a"></script>
+    <script src="/ticket.js?v=20260417a"></script>
 </body>
 </html>

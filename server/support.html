@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260414b">
+    <link rel="stylesheet" href="/support.css?v=20260417a">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -54,31 +54,28 @@
         <div id="supportLayout" class="support-layout">
             <main id="workspaceShell" class="workspace-shell">
                 <section class="workspace-shell-head">
-                    <section id="queueCommandDeck" class="support-card queue-command-deck">
+                    <section id="queueCommandDeck" class="queue-command-deck">
                         <div id="workspaceModeSwitch" class="workspace-mode-board" role="tablist" aria-label="Режим работы поддержки">
                             <section class="workspace-mode-board-card workspace-mode-board-card-queue" data-mode-card="queue">
                                 <button class="workspace-mode-board-toggle active" type="button" data-workspace-view="queue">
-                                    <span class="workspace-mode-board-label">Очередь тикетов</span>
+                                    <span class="workspace-mode-board-label">Очередь</span>
                                     <strong class="workspace-mode-board-title">Рабочая доска</strong>
-                                    <span class="workspace-mode-board-note">Фильтры, поиск, сортировка и вся очередь на одном полотне.</span>
+                                    <span class="workspace-mode-board-note">Фильтры, поиск и поток обращений без лишних рамок.</span>
                                 </button>
+                                <div class="workspace-mode-board-utility workspace-mode-board-utility-queue">
+                                    <div id="queueHeadScopeDock" class="queue-scope-dock queue-scope-dock-compact"></div>
+                                    <div id="queueHeadBoardMeta" class="ticket-list-meta workspace-mode-board-meta">Загрузка очереди…</div>
+                                </div>
                                 <div id="queueHeadSummaryStrip" class="queue-summary-strip workspace-mode-summary"></div>
                             </section>
                             <section class="workspace-mode-board-card workspace-mode-board-card-ticket" data-mode-card="ticket">
                                 <button class="workspace-mode-board-toggle" type="button" data-workspace-view="ticket">
-                                    <span class="workspace-mode-board-label">Рабочий тикет</span>
-                                    <strong id="selectedTicketTitle" class="workspace-mode-board-title">Тикет не выбран</strong>
-                                    <span class="workspace-mode-board-note">Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.</span>
+                                    <span class="workspace-mode-board-label">Тикеты</span>
+                                    <strong id="selectedTicketTitle" class="workspace-mode-board-title">Открытый диалог</strong>
+                                    <span class="workspace-mode-board-note">Чат, контекст и быстрые действия по выбранному тикету.</span>
                                 </button>
                                 <div id="selectedTicketMeta" class="selected-ticket-meta workspace-ticket-meta"></div>
                             </section>
-                        </div>
-                        <div class="queue-command-head">
-                            <div class="queue-command-title">
-                                <p class="section-eyebrow">Очередь тикетов</p>
-                                <h3>Панель очереди</h3>
-                            </div>
-                            <div id="queueHeadBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
                     </section>
                 </section>
@@ -90,7 +87,6 @@
                             <div id="queueBoardMeta" class="ticket-list-meta">Загрузка очереди…</div>
                         </div>
                         <div class="queue-search-sort-rail">
-                            <div id="queueHeadScopeDock" class="queue-scope-dock queue-scope-dock-compact"></div>
                             <div id="queueSearchSortDock" class="queue-search-sort-dock"></div>
                         </div>
                     </section>
@@ -260,6 +256,6 @@
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/support.js?v=20260414c"></script>
+    <script src="/support.js?v=20260417a"></script>
 </body>
 </html>

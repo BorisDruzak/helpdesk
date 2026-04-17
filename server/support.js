@@ -20,7 +20,7 @@
     const CONTEXT_ACCORDIONS_KEY = 'support_workspace_context_accordions';
     const CHAT_WINDOW_SIZE_KEY = 'support_workspace_chat_window_size';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260414b';
+    const SUPPORT_SHELL_VERSION = '20260417a';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -254,6 +254,39 @@
 
     function normalizeTicketScope(value) {
         return value === TICKET_SCOPES.ALL ? TICKET_SCOPES.ALL : TICKET_SCOPES.MINE;
+    }
+
+    function captureQueueSearchFocusState() {
+        const input = byId('queueTicketSearchInput');
+        if (!input || document.activeElement !== input) {
+            return null;
+        }
+        return {
+            start: Number.isFinite(input.selectionStart) ? input.selectionStart : String(input.value || '').length,
+            end: Number.isFinite(input.selectionEnd) ? input.selectionEnd : String(input.value || '').length,
+        };
+    }
+
+    function restoreQueueSearchFocusState(focusState) {
+        if (!focusState) {
+            return;
+        }
+        const input = byId('queueTicketSearchInput');
+        if (!input) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            const nextInput = byId('queueTicketSearchInput');
+            if (!nextInput) {
+                return;
+            }
+            nextInput.focus({ preventScroll: true });
+            try {
+                nextInput.setSelectionRange(focusState.start, focusState.end);
+            } catch (error) {
+                console.warn('Failed to restore queue search selection', error);
+            }
+        });
     }
 
     function getToken() {
@@ -1190,19 +1223,11 @@
             metaNode.innerHTML = '';
             return;
         }
-        const mode = currentMode();
-        const presence = snapshot?.presence || {};
-        const deviceSummary = snapshot?.device_summary || {};
         const items = [
             ['Код', ticket.ticket_code || ticket.ticket_id],
             ['Статус', statusLabel(ticket.status)],
             ['Очередь', ticket.queue_code || snapshot?.queue_code || ticket.queue_id || '—'],
             ['Исполнитель', ticket.assignee_id || 'Не назначен'],
-            ['Инициатор', snapshot?.requester_display_name || ticket.requester_display_name || ticket.requester_id || '—'],
-            ['Инициатор в чате', formatPresenceState(Boolean(presence.requester_online), presence.requester_last_seen_at, 'онлайн', 'офлайн')],
-            ['Агент', formatPresenceState(Boolean(deviceSummary.online), deviceSummary.last_seen_at, 'онлайн', 'офлайн')],
-            ['Приоритет', ticket.priority_class ? priorityLabel(ticket.priority_class) : '—'],
-            ['Режим', mode === 'work' ? 'Работа' : (mode === 'observe' ? 'Наблюдение' : 'Предпросмотр')],
         ];
         metaNode.innerHTML = items.map(([label, value]) => `
             <div class="selected-ticket-meta-item">
@@ -1213,35 +1238,8 @@
     }
 
     function quickActionButtons(ticket) {
-        if (!ticket) {
-            return [];
-        }
-        const actions = [];
-        if (state.workspaceView !== WORKSPACE_VIEWS.TICKET) {
-            actions.push({ id: 'open_ticket_desk', label: 'Открыть рабочий тикет', kind: 'primary' });
-        }
-        if (canTakeSelf(ticket)) {
-            actions.push({ id: 'take_self', label: 'Взять себе', kind: 'secondary' });
-        }
-        if (shouldWorkTicket(ticket) && canWrite()) {
-            if (ticket.status === 'new' || ticket.status === 'triaged' || ticket.status === 'waiting_on_user' || ticket.status === 'waiting_on_vendor') {
-                actions.push({ id: 'to_in_progress', label: ticket.status === 'waiting_on_user' ? 'Вернуть в работу' : 'В работу', kind: 'primary' });
-            }
-            if (ticket.status === 'in_progress') {
-                actions.push({ id: 'to_waiting_user', label: 'Ждём пользователя', kind: 'secondary' });
-            }
-            if (ticket.status === 'in_progress' || ticket.status === 'waiting_on_user' || ticket.status === 'waiting_on_vendor') {
-                actions.push({ id: 'to_resolved', label: 'Решено', kind: 'primary' });
-            }
-        }
-        if (canWrite()) {
-            actions.push({ id: 'reroute_queue', label: 'Пересчитать очередь', kind: 'secondary' });
-        }
-        actions.push({ id: 'refresh', label: 'Обновить', kind: 'secondary' });
-        if (ticket.device_id) {
-            actions.push({ id: 'open_tools', label: 'Инструменты', kind: 'secondary' });
-        }
-        return actions;
+        void ticket;
+        return [];
     }
 
     function queuePrimaryAction(ticket) {
@@ -1268,22 +1266,24 @@
             return;
         }
         if (!ticket) {
-            titleNode.textContent = 'Тикет не выбран';
+            titleNode.textContent = 'Открытый диалог';
             if (ticketModeNote) {
-                ticketModeNote.textContent = 'Выберите карточку в очереди, чтобы открыть рабочий режим без лишних панелей.';
+                ticketModeNote.textContent = 'Выберите карточку в очереди, чтобы открыть диалог.';
             }
             actionsNode.innerHTML = '';
+            actionsNode.classList.add('hidden');
             renderSelectedMeta(null, null);
             applyLayoutClasses();
             return;
         }
-        titleNode.textContent = (ticket.ticket_code || ticket.ticket_id) + ' • ' + (ticket.title || 'Без названия');
+        titleNode.textContent = 'Открытый диалог';
         if (ticketModeNote) {
-            ticketModeNote.textContent = buildTicketMetaLine(ticket);
+            ticketModeNote.textContent = 'Чат, контекст и быстрые действия по выбранному тикету.';
         }
         renderSelectedMeta(ticket, snapshot);
         applyLayoutClasses();
         const actions = quickActionButtons(ticket);
+        actionsNode.classList.toggle('hidden', actions.length === 0);
         actionsNode.innerHTML = actions.length ? `
             <div class="stage-actions-card">
                 <div class="stage-actions-title">Управление тикетом</div>
@@ -1471,11 +1471,20 @@
         const searchSortNode = byId('queueSearchSortDock');
         const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
+        const searchFocusState = captureQueueSearchFocusState();
         const slaHelpText = 'SLA — внешний дедлайн для пользователя, OLA — внутренний дедлайн очереди. Вверх поднимаются breach и ближайшие сроки.';
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
         const summaryItems = queueSummaryStats();
         const summaryDisabled = state.ticketScope === TICKET_SCOPES.ALL;
+        const unreadReplyTickets = state.tickets
+            .filter((ticket) => isRequesterReplyMineTicket(ticket))
+            .sort((left, right) => {
+                const leftTime = parseServerDate(left.updated_at || left.created_at);
+                const rightTime = parseServerDate(right.updated_at || right.created_at);
+                return (rightTime ? rightTime.getTime() : 0) - (leftTime ? leftTime.getTime() : 0);
+            })
+            .slice(0, 6);
         const sortActions = [
             { id: 'updated_desc', label: 'Свежие' },
             { id: 'updated_asc', label: 'Старые' },
@@ -1487,11 +1496,26 @@
 
         if (summaryNode) {
             summaryNode.innerHTML = summaryItems.map((item) => `
-                <button type="button" class="queue-summary-line" data-queue-filter="${escapeHtml(item.id)}" data-tone="${escapeHtml(item.tone || 'default')}" data-active="${state.ticketScope === TICKET_SCOPES.MINE && state.currentFilter === item.id ? 'true' : 'false'}" data-disabled="${summaryDisabled ? 'true' : 'false'}" data-hotkey="${escapeHtml(item.hotkey || '')}">
-                    <span class="queue-summary-line-label">${escapeHtml(item.label)}</span>
-                    <strong class="queue-summary-line-value">${escapeHtml(item.value)}</strong>
-                    <span class="queue-summary-line-note">${escapeHtml(item.note)}</span>
-                </button>
+                <div class="queue-summary-item" data-summary-item="${escapeHtml(item.id)}">
+                    <button type="button" class="queue-summary-line" data-queue-filter="${escapeHtml(item.id)}" data-tone="${escapeHtml(item.tone || 'default')}" data-active="${state.ticketScope === TICKET_SCOPES.MINE && state.currentFilter === item.id ? 'true' : 'false'}" data-disabled="${summaryDisabled ? 'true' : 'false'}" data-hotkey="${escapeHtml(item.hotkey || '')}">
+                        <span class="queue-summary-line-label">${escapeHtml(item.label)}</span>
+                        <strong class="queue-summary-line-value">${escapeHtml(item.value)}</strong>
+                        <span class="queue-summary-line-note">${escapeHtml(item.note)}</span>
+                    </button>
+                    ${item.id === 'requester_reply' && unreadReplyTickets.length ? `
+                        <div class="queue-summary-hovercard" role="dialog" aria-label="Тикеты с новыми ответами">
+                            <div class="queue-summary-hovercard-title">Новые ответы пользователя</div>
+                            <div class="queue-summary-hovercard-list">
+                                ${unreadReplyTickets.map((ticket) => `
+                                    <button type="button" class="queue-summary-hovercard-ticket" data-summary-ticket-id="${escapeHtml(ticket.ticket_id)}">
+                                        <span class="queue-summary-hovercard-code">${escapeHtml(ticket.ticket_code || ticket.ticket_id)}</span>
+                                        <span class="queue-summary-hovercard-name">${escapeHtml(ticket.title || 'Без названия')}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
             `).join('');
             summaryNode.querySelectorAll('[data-queue-filter]').forEach((button) => {
                 button.addEventListener('click', () => {
@@ -1502,6 +1526,16 @@
                     state.currentFilter = normalizeTicketFilter(button.getAttribute('data-queue-filter') || 'mine');
                     renderTicketList();
                     renderQueueDesk();
+                });
+            });
+            summaryNode.querySelectorAll('[data-summary-ticket-id]').forEach((button) => {
+                button.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    const ticketId = button.getAttribute('data-summary-ticket-id') || '';
+                    if (!ticketId) {
+                        return;
+                    }
+                    await selectTicket(ticketId, { view: WORKSPACE_VIEWS.TICKET });
                 });
             });
         }
@@ -1564,7 +1598,7 @@
             const searchInput = byId('queueTicketSearchInput');
             if (searchInput) {
                 searchInput.addEventListener('input', () => {
-                    state.ticketQuery = String(searchInput.value || '').trim();
+                    state.ticketQuery = String(searchInput.value || '');
                     renderTicketList();
                     renderQueueDesk();
                 });
@@ -1578,11 +1612,13 @@
         }
 
         if (!boardListNode) {
+            restoreQueueSearchFocusState(searchFocusState);
             return;
         }
         captureScrollPosition('queueBoardList');
         if (!tickets.length) {
             boardListNode.innerHTML = '<div class="activity-item">По текущему фильтру нет тикетов. Попробуйте сменить фильтр или строку поиска.</div>';
+            restoreQueueSearchFocusState(searchFocusState);
             return;
         }
         boardListNode.innerHTML = sections.map((section) => `
@@ -1650,6 +1686,7 @@
             });
         });
         restoreScrollPosition('queueBoardList');
+        restoreQueueSearchFocusState(searchFocusState);
     }
 
     function historyItemsFromSnapshot(snapshot) {
@@ -2074,6 +2111,25 @@
             }
             showToast(error.message || 'Не удалось выполнить действие', true);
         }
+    }
+
+    async function handleEmbeddedTicketActionMessage(event) {
+        if (event.origin !== window.location.origin) {
+            return;
+        }
+        const payload = event.data;
+        if (!payload || payload.type !== 'support-ticket-action') {
+            return;
+        }
+        const actionId = String(payload.action || '').trim();
+        const ticketId = String(payload.ticketId || '').trim();
+        if (!['to_waiting_user', 'to_resolved'].includes(actionId)) {
+            return;
+        }
+        if (!ticketId || ticketId !== state.selectedTicketId) {
+            return;
+        }
+        await handleQuickAction(actionId);
     }
 
     async function handleComposerSubmit(event) {
@@ -2846,6 +2902,11 @@
             if (event.target instanceof HTMLElement && event.target.getAttribute('data-dialog-close') === '1') {
                 closeResolutionDialog(new Error('Операция отменена'));
             }
+        });
+        window.addEventListener('message', (event) => {
+            handleEmbeddedTicketActionMessage(event).catch((error) => {
+                showToast(error.message || 'Не удалось выполнить действие из тикета', true);
+            });
         });
         byId('resolutionDialogApply')?.addEventListener('click', () => {
             const resolve = resolutionDialogResolve;
