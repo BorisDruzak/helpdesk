@@ -307,6 +307,23 @@
         });
     }
 
+    function updateQueueSearchSection(node, visibleCount) {
+        if (!node) {
+            return;
+        }
+        const searchInput = byId('queueTicketSearchInput');
+        if (searchInput && searchInput.value !== state.ticketQuery) {
+            searchInput.value = state.ticketQuery;
+        }
+        const captions = node.querySelectorAll('.queue-search-meta .queue-search-caption');
+        if (captions[0]) {
+            captions[0].textContent = 'Найдено: ' + String(visibleCount) + ' из ' + String(state.tickets.length);
+        }
+        if (captions[1]) {
+            captions[1].textContent = state.ticketScope === TICKET_SCOPES.MINE ? 'Режим: мои тикеты' : 'Режим: все тикеты';
+        }
+    }
+
     function getToken() {
         const token = localStorage.getItem(AUTH_TOKEN_KEY);
         return typeof token === 'string' ? token.trim() : '';
@@ -1582,7 +1599,9 @@
             });
         }
 
-        if (searchSortNode) {
+        if (searchSortNode && searchFocusStateOverride && byId('queueTicketSearchInput')) {
+            updateQueueSearchSection(searchSortNode, tickets.length);
+        } else if (searchSortNode) {
             searchSortNode.innerHTML = `
                 <section class="queue-search-shell">
                     <span class="queue-stack-title">Поиск по тикетам</span>
