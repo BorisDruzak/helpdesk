@@ -256,9 +256,15 @@
         return value === TICKET_SCOPES.ALL ? TICKET_SCOPES.ALL : TICKET_SCOPES.MINE;
     }
 
-    function captureQueueSearchFocusState() {
-        const input = byId('queueTicketSearchInput');
-        if (!input || document.activeElement !== input) {
+    let queueSearchRestoreToken = 0;
+
+    function captureQueueSearchFocusState(sourceInput) {
+        const input = sourceInput || byId('queueTicketSearchInput');
+        if (!input) {
+            return null;
+        }
+        const isActive = document.activeElement === input;
+        if (!isActive) {
             return null;
         }
         return {
@@ -271,21 +277,33 @@
         if (!focusState) {
             return;
         }
-        const input = byId('queueTicketSearchInput');
-        if (!input) {
-            return;
-        }
-        window.requestAnimationFrame(() => {
+        const restoreToken = ++queueSearchRestoreToken;
+        const applyFocus = (attemptsLeft) => {
+            if (restoreToken !== queueSearchRestoreToken) {
+                return;
+            }
             const nextInput = byId('queueTicketSearchInput');
             if (!nextInput) {
+                if (attemptsLeft > 0) {
+                    window.setTimeout(() => applyFocus(attemptsLeft - 1), 35);
+                }
                 return;
             }
             nextInput.focus({ preventScroll: true });
             try {
-                nextInput.setSelectionRange(focusState.start, focusState.end);
+                const valueLength = String(nextInput.value || '').length;
+                const start = Math.max(0, Math.min(Number(focusState.start) || 0, valueLength));
+                const end = Math.max(start, Math.min(Number(focusState.end) || start, valueLength));
+                nextInput.setSelectionRange(start, end);
             } catch (error) {
                 console.warn('Failed to restore queue search selection', error);
             }
+            if (document.activeElement !== nextInput && attemptsLeft > 0) {
+                window.setTimeout(() => applyFocus(attemptsLeft - 1), 35);
+            }
+        };
+        window.requestAnimationFrame(() => {
+            applyFocus(6);
         });
     }
 
@@ -1465,13 +1483,13 @@
         await handleQuickAction(actionId);
     }
 
-    function renderQueueDesk() {
+    function renderQueueDesk(searchFocusStateOverride) {
         const summaryNode = byId('queueHeadSummaryStrip') || byId('queueSummaryStrip');
         const scopeNode = byId('queueHeadScopeDock');
         const searchSortNode = byId('queueSearchSortDock');
         const boardMetaNode = byId('queueHeadBoardMeta') || byId('queueBoardMeta');
         const boardListNode = byId('queueBoardList');
-        const searchFocusState = captureQueueSearchFocusState();
+        const searchFocusState = searchFocusStateOverride || captureQueueSearchFocusState();
         const slaHelpText = 'SLA — внешний дедлайн для пользователя, OLA — внутренний дедлайн очереди. Вверх поднимаются breach и ближайшие сроки.';
         const sections = ticketSections(state.currentFilter, { includeUnassignedInMine: false });
         const tickets = sections.flatMap((section) => section.tickets);
@@ -1598,9 +1616,10 @@
             const searchInput = byId('queueTicketSearchInput');
             if (searchInput) {
                 searchInput.addEventListener('input', () => {
+                    const nextSearchFocusState = captureQueueSearchFocusState(searchInput);
                     state.ticketQuery = String(searchInput.value || '');
                     renderTicketList();
-                    renderQueueDesk();
+                    renderQueueDesk(nextSearchFocusState);
                 });
             }
         }
