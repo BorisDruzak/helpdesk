@@ -660,7 +660,17 @@ async def search_trace_by_operation(api: ApiClient, *, admin_token: str, operati
 
 async def wait_trace_for_operation(api: ApiClient, *, admin_token: str, operation_id: str, timeout_sec: float = 90.0) -> dict[str, Any]:
     async def _poll() -> dict[str, Any] | None:
-        payload = await search_trace_by_operation(api, admin_token=admin_token, operation_id=operation_id)
+        operation = await get_operation(api, admin_token=admin_token, operation_id=operation_id)
+        trace_id = str(operation.get("trace_id") or "").strip()
+        if not trace_id:
+            return None
+        payload = await api.request_json(
+            "GET",
+            f"/api/admin/tech/traces?trace_id={trace_id}",
+            token=admin_token,
+            expected_statuses=(200,),
+        )
+        payload = payload[1]
         traces = payload.get("traces") or []
         if traces:
             return traces[0]
