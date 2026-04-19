@@ -51,3 +51,15 @@ def test_remote_force_operation_timeout_code_varies_by_mode() -> None:
     assert "240" in execution_code
     assert "op-consent" in consent_code
     assert "op-execution" in execution_code
+
+
+def test_remote_create_waiting_consent_operation_code_contains_expected_contract() -> None:
+    code = suite.remote_create_waiting_consent_operation_code(
+        device_id="device-1",
+        ticket_id="ticket-1",
+        tool_name="observer_canary_demo.consent_probe",
+    )
+
+    assert "initial_status=\"waiting_consent\"" in code
+    assert "tool_call_started" in code
+    assert "observer_canary_demo.consent_probe" in code

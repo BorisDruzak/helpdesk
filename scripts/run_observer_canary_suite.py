@@ -468,6 +468,53 @@ def remote_inject_retry_exhausted_code(device_id: str) -> str:
     ).strip()
 
 
+def remote_create_waiting_consent_operation_code(*, device_id: str, ticket_id: str, tool_name: str) -> str:
+    return textwrap.dedent(
+        f"""
+        import asyncio
+        import json
+        import uuid
+        from app.db import get_session
+        from app.services.operation_service import OperationService
+        from app.repos.ticket_events_repo import TicketEventsRepo
+
+        async def main() -> None:
+            operation_id = str(uuid.uuid4())
+            trace_id = str(uuid.uuid4())
+            async with get_session() as session:
+                op_service = OperationService(session, publisher=None)
+                await op_service.enqueue_operation(
+                    operation_id=operation_id,
+                    device_id={device_id!r},
+                    ticket_id={ticket_id!r},
+                    kind="tool_call",
+                    tool_name={tool_name!r},
+                    actor_role="support",
+                    trace_id=trace_id,
+                    initial_status="waiting_consent",
+                )
+                events_repo = TicketEventsRepo(session)
+                await events_repo.add_event(
+                    ticket_id={ticket_id!r},
+                    device_id={device_id!r},
+                    agent_seq=None,
+                    event_type="tool_call_started",
+                    payload={{
+                        "tool_name": {tool_name!r},
+                        "params": {{}},
+                        "call_id": operation_id,
+                    }},
+                    trace_id=trace_id,
+                    operation_id=operation_id,
+                )
+                await session.commit()
+            print(json.dumps({{"operation_id": operation_id, "trace_id": trace_id}}, ensure_ascii=False))
+
+        asyncio.run(main())
+        """
+    ).strip()
+
+
 async def ensure_support_user(
     api: ApiClient,
     *,
@@ -743,6 +790,33 @@ async def scenario_consent(
         params=params,
     )
     approve_operation_id = str(approve_payload.get("operation_id") or "")
+    approve_precheck_operation = await get_operation(api, admin_token=admin_token, operation_id=approve_operation_id)
+    use_remote_consent_seed = str(approve_precheck_operation.get("status") or "") != "waiting_consent"
+    if use_remote_consent_seed:
+        results.append(
+            ScenarioResult(
+                name="consent_waiting_consent_precheck",
+                ok=False,
+                summary="Support run_tool for a consent-gated managed-module tool did not stop in waiting_consent.",
+                details={
+                    "ticket_id": ticket_id,
+                    "tool_name": tool_name,
+                    "operation_id": approve_operation_id,
+                    "status": approve_precheck_operation.get("status"),
+                    "trace_id": approve_precheck_operation.get("trace_id"),
+                },
+            )
+        )
+        raw = await run_remote_python(
+            remote=remote,
+            code=remote_create_waiting_consent_operation_code(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                tool_name=tool_name,
+            ),
+        )
+        approve_seed = json.loads(raw.splitlines()[-1])
+        approve_operation_id = str(approve_seed["operation_id"])
     await approve_consent(api, token=admin_token, operation_id=approve_operation_id, reason="observer canary approve")
     approve_operation = await wait_operation_status(
         api,
@@ -766,15 +840,28 @@ async def scenario_consent(
         )
     )
 
-    deny_payload = await run_ticket_tool(
-        api,
-        token=support_token,
-        device_id=device_id,
-        ticket_id=ticket_id,
-        tool_name=tool_name,
-        params=params,
-    )
-    deny_operation_id = str(deny_payload.get("operation_id") or "")
+    deny_operation_id = ""
+    if use_remote_consent_seed:
+        raw = await run_remote_python(
+            remote=remote,
+            code=remote_create_waiting_consent_operation_code(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                tool_name=tool_name,
+            ),
+        )
+        deny_seed = json.loads(raw.splitlines()[-1])
+        deny_operation_id = str(deny_seed["operation_id"])
+    else:
+        deny_payload = await run_ticket_tool(
+            api,
+            token=support_token,
+            device_id=device_id,
+            ticket_id=ticket_id,
+            tool_name=tool_name,
+            params=params,
+        )
+        deny_operation_id = str(deny_payload.get("operation_id") or "")
     await deny_consent(api, token=admin_token, operation_id=deny_operation_id, reason="observer canary deny")
     deny_operation = await wait_operation_status(
         api,
@@ -798,15 +885,28 @@ async def scenario_consent(
         )
     )
 
-    timeout_payload = await run_ticket_tool(
-        api,
-        token=support_token,
-        device_id=device_id,
-        ticket_id=ticket_id,
-        tool_name=tool_name,
-        params=params,
-    )
-    timeout_operation_id = str(timeout_payload.get("operation_id") or "")
+    timeout_operation_id = ""
+    if use_remote_consent_seed:
+        raw = await run_remote_python(
+            remote=remote,
+            code=remote_create_waiting_consent_operation_code(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                tool_name=tool_name,
+            ),
+        )
+        timeout_seed = json.loads(raw.splitlines()[-1])
+        timeout_operation_id = str(timeout_seed["operation_id"])
+    else:
+        timeout_payload = await run_ticket_tool(
+            api,
+            token=support_token,
+            device_id=device_id,
+            ticket_id=ticket_id,
+            tool_name=tool_name,
+            params=params,
+        )
+        timeout_operation_id = str(timeout_payload.get("operation_id") or "")
     await run_remote_python(remote=remote, code=remote_force_operation_timeout_code(timeout_operation_id, mode="consent"))
     timeout_operation = await wait_operation_status(
         api,
