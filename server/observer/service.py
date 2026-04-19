@@ -294,7 +294,7 @@ class ObserverOverlayService:
             device_id=trace_meta["device_id"],
             operation_id=trace_meta["operation_id"],
             job_id=trace_meta["job_id"],
-            status=trace_meta["status"],
+            status=self._projected_trace_status(trace_meta["status"], occurrence_payloads),
             started_at=trace_meta["started_at"],
             finished_at=trace_meta["finished_at"],
             duration_ms=_duration_ms(trace_meta["started_at"], trace_meta["finished_at"]),
@@ -812,6 +812,71 @@ class ObserverOverlayService:
                 }
             )
 
+        result_keys: set[tuple[Optional[str], Optional[str]]] = set()
+        for event in sources.ticket_events:
+            if event.event_type != "tool_call_result":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            result_keys.add(
+                (
+                    _compact_text(event.operation_id),
+                    _compact_text(payload.get("call_id")),
+                )
+            )
+
+        for event in sources.ticket_events:
+            if event.event_type != "tool_call_started":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            operation_id = _compact_text(event.operation_id)
+            call_id = _compact_text(payload.get("call_id"))
+            if (operation_id, call_id) in result_keys:
+                continue
+            if operation_id and operation_id in operation_lookup:
+                continue
+
+            module_name, tool_name = _split_tool_name(_compact_text(payload.get("tool_name")))
+            error_kind = "TOOL_DISPATCH_ORPHANED"
+            failure_stage = "tool_call_started"
+            message_norm = _normalize_message(
+                f"tool dispatch started without persisted operation or result for {tool_name or 'unknown_tool'}"
+            )
+            signature = self._make_error_signature(
+                error_kind=error_kind,
+                component="ticket_events",
+                module_name=module_name,
+                tool_name=tool_name,
+                exception_type=None,
+                failure_stage=failure_stage,
+                message_norm=message_norm,
+            )
+            occurrences.append(
+                {
+                    "trace_id": trace_id,
+                    "span_id": span_ids_by_source.get(("ticket_event", str(event.id))),
+                    "error_signature": signature,
+                    "device_id": event.device_id,
+                    "ticket_id": event.ticket_id,
+                    "operation_id": operation_id,
+                    "component": "ticket_events",
+                    "module_name": module_name,
+                    "tool_name": tool_name,
+                    "error_kind": error_kind,
+                    "exception_type": None,
+                    "failure_stage": failure_stage,
+                    "severity": "error",
+                    "message_norm": message_norm,
+                    "stack_hash": hashlib.sha1((message_norm or "").encode("utf-8")).hexdigest()[:16] if message_norm else None,
+                    "attrs_json": {
+                        "event_type": event.event_type,
+                        "missing_operation": operation_id not in operation_lookup if operation_id else True,
+                        "call_id": call_id,
+                        "payload": payload,
+                    },
+                    "created_at": event.created_at,
+                }
+            )
+
         return occurrences
 
     def _summarize_trace_status(self, sources: TraceProjectionSources) -> str:
@@ -827,6 +892,11 @@ class ObserverOverlayService:
         if operation_statuses and operation_statuses <= TERMINAL_OPERATION_STATUSES:
             return "ok"
         return "ok"
+
+    def _projected_trace_status(self, base_status: str, occurrences: list[dict[str, Any]]) -> str:
+        if any(str(item.get("severity") or "").strip().lower() in ERROR_AUDIT_SEVERITIES for item in occurrences):
+            return "error"
+        return base_status
 
     def _make_error_signature(
         self,

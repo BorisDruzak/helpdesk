@@ -196,3 +196,95 @@ async def test_get_device_toolset_returns_empty_snapshot_when_device_has_no_snap
     assert payload["missing_snapshot"] is True
     assert payload["tool_count"] == 0
     assert payload["tools_by_module"] == {}
+
+
+@pytest.mark.asyncio
+async def test_trace_overlay_marks_orphaned_tool_dispatch_as_error_signature(test_client):
+    now = datetime.now(timezone.utc)
+    trace_id = "00000000-0000-0000-0000-00000000aa02"
+    ticket_id = "00000000-0000-0000-0000-00000000bb02"
+    device_id = "00000000-0000-0000-0000-00000000cc02"
+    operation_id = "00000000-0000-0000-0000-00000000dd02"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.15",
+                hostname="orphan-trace-host",
+                os="windows",
+                capabilities=[],
+                tools_version="t2",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=20),
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-TRACE02",
+                device_id=device_id,
+                title="Orphaned tool dispatch",
+                description="tool_call_started exists without persisted operation",
+                status="in_progress",
+                created_at=now - timedelta(minutes=10),
+                updated_at=now,
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="tool_call_started",
+                payload={
+                    "tool_name": "network_ping.ping",
+                    "call_id": "call-orphan-1",
+                    "params": {"host": "127.0.0.1"},
+                },
+                trace_id=trace_id,
+                operation_id=operation_id,
+                created_at=now - timedelta(minutes=3),
+            )
+        )
+        await session.commit()
+
+    trace_search_resp = await test_client.get(
+        f"/api/admin/tech/traces?trace_id={trace_id}",
+        headers=_auth(),
+    )
+    assert trace_search_resp.status == 200
+    trace_search_payload = await trace_search_resp.json()
+    assert trace_search_payload["status"] == "ok"
+    assert trace_search_payload["count"] == 1
+    trace_summary = trace_search_payload["traces"][0]
+    assert trace_summary["status"] == "error"
+    assert trace_summary["error_count"] == 1
+
+    detail_resp = await test_client.get(
+        f"/api/admin/tech/traces/{trace_id}",
+        headers=_auth(),
+    )
+    assert detail_resp.status == 200
+    detail_payload = await detail_resp.json()
+    assert detail_payload["status"] == "ok"
+    assert detail_payload["trace"]["status"] == "error"
+    assert len(detail_payload["error_occurrences"]) == 1
+    occurrence = detail_payload["error_occurrences"][0]
+    assert occurrence["error_kind"] == "TOOL_DISPATCH_ORPHANED"
+    assert occurrence["failure_stage"] == "tool_call_started"
+    assert occurrence["component"] == "ticket_events"
+    assert occurrence["error_signature"].startswith("tool_dispatch_orphaned")
+
+    signature_resp = await test_client.get(
+        f"/api/admin/tech/signatures?ticket_id={ticket_id}",
+        headers=_auth(),
+    )
+    assert signature_resp.status == 200
+    signature_payload = await signature_resp.json()
+    assert signature_payload["status"] == "ok"
+    assert signature_payload["count"] == 1
+    assert signature_payload["signatures"][0]["error_signature"] == occurrence["error_signature"]
