@@ -707,7 +707,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries and the canonical `/support` ticket-trace drawer.",
+        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, single-flight UI polling, and the canonical `/support` ticket-trace drawer.",
         aliases=(
             "observer",
             "trace overlay",
@@ -1000,7 +1000,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
     DriftRule(
         key="observer",
         title="Observer layer changed",
-        reason="Observer runtime, quick diagnosis, trace APIs and dangerous-flow instrumentation must stay aligned with canonical observer docs.",
+        reason="Observer runtime, quick diagnosis, trace APIs, projection-session behavior and dangerous-flow instrumentation must stay aligned with canonical observer docs.",
         path_prefixes=("server/observer/",),
         exact_paths=(
             "server/tech/handlers.py",

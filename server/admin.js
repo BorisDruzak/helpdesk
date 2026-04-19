@@ -5,6 +5,7 @@
 
         const AUTH_TOKEN_KEY = 'admin_auth_token';
         let pollInterval = null;
+        let rootPollingInFlight = false;
         let currentTools = [];
         let selectedTool = null;
         let currentEditorTab = 'form';
@@ -54,10 +55,20 @@
                 return;
             }
             // Poll every 3 seconds
-            pollInterval = setInterval(() => {
-                loadAgents();
-                loadTickets();
-                loadPendingConnections();
+            pollInterval = setInterval(async () => {
+                if (rootPollingInFlight) {
+                    return;
+                }
+                rootPollingInFlight = true;
+                try {
+                    await Promise.allSettled([
+                        loadAgents(),
+                        loadTickets(),
+                        loadPendingConnections(),
+                    ]);
+                } finally {
+                    rootPollingInFlight = false;
+                }
             }, 3000);
         }
         
@@ -3936,6 +3947,7 @@
         }
 
         let techPollTimer = null;
+        let techPanelLoadPromise = null;
         let techSelectedDeviceId = null;
         let techDevicesCache = [];
         let techSelectedModules = [];
@@ -4711,22 +4723,32 @@
         async function loadTechPanel(force) {
             const isActive = document.getElementById('tab-tech')?.classList.contains('active');
             if (!isActive && !force) return;
-            const results = await Promise.allSettled([loadTechMainPanels(), loadTechControlPanels()]);
-            if (results[0]?.status === 'rejected') {
-                renderTechMainUnavailable(results[0].reason?.message || String(results[0].reason || 'Main server API error'));
+            if (techPanelLoadPromise) {
+                return techPanelLoadPromise;
             }
-            if (results[1]?.status === 'rejected') {
-                const message = results[1].reason?.message || String(results[1].reason || 'Control-plane error');
-                techControlBadge('control-plane offline', 'bad');
-                renderTechServerStatus(null, message);
-                renderTechServerLogs(null, message);
-                techControlNote(message, true);
+            techPanelLoadPromise = (async () => {
+                const results = await Promise.allSettled([loadTechMainPanels(), loadTechControlPanels()]);
+                if (results[0]?.status === 'rejected') {
+                    renderTechMainUnavailable(results[0].reason?.message || String(results[0].reason || 'Main server API error'));
+                }
+                if (results[1]?.status === 'rejected') {
+                    const message = results[1].reason?.message || String(results[1].reason || 'Control-plane error');
+                    techControlBadge('control-plane offline', 'bad');
+                    renderTechServerStatus(null, message);
+                    renderTechServerLogs(null, message);
+                    techControlNote(message, true);
+                }
+                if (techPollTimer) clearInterval(techPollTimer);
+                techPollTimer = setInterval(() => {
+                    const active = document.getElementById('tab-tech')?.classList.contains('active');
+                    if (active) loadTechPanel(false);
+                }, 10000);
+            })();
+            try {
+                await techPanelLoadPromise;
+            } finally {
+                techPanelLoadPromise = null;
             }
-            if (techPollTimer) clearInterval(techPollTimer);
-            techPollTimer = setInterval(() => {
-                const active = document.getElementById('tab-tech')?.classList.contains('active');
-                if (active) loadTechPanel(false);
-            }, 10000);
         }
 
         function renderTechOverviewCards(overview) {

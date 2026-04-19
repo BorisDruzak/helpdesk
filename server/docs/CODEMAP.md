@@ -115,7 +115,7 @@
 | `server/app/services/playbook_scheduler.py` | Планировщик playbook |
 | `server/app/services/module_reconcile_scheduler.py` | Реконсиляция модулей |
 | `server/app/services/artifact_service.py` | Артефакты |
-| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; observer v3 умеет canonical ticket-root trace, synthetic `ticket.lifecycle` span, materialized `agent_action` spans/links, redacted attrs/details export и degradation queries (`min_duration_ms`, `min_retry_count`, timeout/retry/slow rates) |
+| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; observer v3 умеет canonical ticket-root trace, synthetic `ticket.lifecycle` span, materialized `agent_action` spans/links, redacted attrs/details export и degradation queries (`min_duration_ms`, `min_retry_count`, timeout/retry/slow rates); request-side `_ensure_projected`/`rebuild_traces` теперь завершают source read-транзакцию и materialize traces в отдельных short-lived projection sessions, чтобы tech/support polling не держал idle-in-transaction соединения во время trace-lock wait |
 | `server/observer/runtime.py` | Background refresh для observer traces: сканирует committed source rows, enqueue-ит hot ticket-root traces, делает исторический backfill missing projections без ручного rebuild/search и obey-ит DB-backed retention/sampling settings |
 
 ### 2.5 Доменные модули (handlers + service)

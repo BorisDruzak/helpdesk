@@ -102,6 +102,7 @@
         chatWindowSize: null,
         ticketClickTimer: 0,
         pollTimer: null,
+        pollInFlight: false,
         tools: [],
         toolsDeviceId: '',
         toolSearch: '',
@@ -705,6 +706,10 @@
     function startPolling() {
         stopPolling();
         state.pollTimer = window.setInterval(async () => {
+            if (state.pollInFlight) {
+                return;
+            }
+            state.pollInFlight = true;
             try {
                 await loadTickets({ preserveSelection: true, silent: true });
                 if (state.selectedTicketId) {
@@ -712,6 +717,8 @@
                 }
             } catch (error) {
                 console.warn('support polling', error);
+            } finally {
+                state.pollInFlight = false;
             }
         }, POLL_INTERVAL_MS);
     }
@@ -721,6 +728,7 @@
             window.clearInterval(state.pollTimer);
             state.pollTimer = null;
         }
+        state.pollInFlight = false;
     }
 
     function selectedTicket() {

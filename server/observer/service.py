@@ -13,6 +13,7 @@ from weakref import WeakValueDictionary
 from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import get_session
 from app.db.models import (
     AgentRuntimeAudit,
     DeviceEvent,
@@ -752,9 +753,13 @@ class ObserverOverlayService:
 
     async def rebuild_traces(self, filters: TraceOverlayFilters, *, limit: int = 100) -> list[str]:
         candidate_ids = await self._candidate_trace_ids(filters, limit=limit)
+        await self._release_projection_source_transaction()
         projected: list[str] = []
         for trace_id in candidate_ids:
-            if await self.project_trace(trace_id, force=True):
+            async with get_session() as projection_session:
+                projected_trace = await ObserverOverlayService(projection_session).project_trace(trace_id, force=True)
+                await projection_session.commit()
+            if projected_trace:
                 projected.append(trace_id)
         return projected
 
@@ -853,8 +858,19 @@ class ObserverOverlayService:
 
     async def _ensure_projected(self, filters: TraceOverlayFilters, *, limit: int, force: bool) -> None:
         candidate_ids = await self._candidate_trace_ids(filters, limit=limit)
+        await self._release_projection_source_transaction()
         for trace_id in candidate_ids:
-            await self.project_trace(trace_id, force=force)
+            async with get_session() as projection_session:
+                await ObserverOverlayService(projection_session).project_trace(trace_id, force=force)
+                await projection_session.commit()
+
+    async def _release_projection_source_transaction(self) -> None:
+        """Close the current read transaction before waiting on per-trace projection locks."""
+        if not self.session.in_transaction():
+            return
+        if self.session.new or self.session.dirty or self.session.deleted:
+            return
+        await self.session.commit()
 
     async def _candidate_trace_ids(self, filters: TraceOverlayFilters, *, limit: int) -> list[str]:
         if filters.trace_id:
