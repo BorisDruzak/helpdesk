@@ -31,6 +31,7 @@ def test_build_remote_python_command_uses_remote_shell() -> None:
     assert command[0] == "ssh"
     assert command[-2:] == ["altserver@192.168.100.17", suite.build_remote_python_shell()]
     assert input_text == "print('hello')"
+    assert "PYTHONPATH=" in suite.build_remote_python_shell()
 
 
 def test_run_subprocess_supports_positional_cwd_argument(tmp_path: Path) -> None:

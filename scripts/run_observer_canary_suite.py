@@ -59,7 +59,13 @@ def _json_dump(value: Any) -> str:
 
 
 def build_remote_python_shell(*, remote_root: str = REMOTE_ROOT, remote_python: str = REMOTE_SERVER_PYTHON) -> str:
-    return f"cd {shlex.quote(remote_root)} && {shlex.quote(remote_python)} -"
+    server_root = f"{remote_root.rstrip('/')}/server"
+    pythonpath = f"{server_root}:{remote_root.rstrip('/')}"
+    return (
+        f"cd {shlex.quote(server_root)} && "
+        f"PYTHONPATH={shlex.quote(pythonpath)} "
+        f"{shlex.quote(remote_python)} -"
+    )
 
 
 def build_canary_module_payload(module_name: str, version: str) -> dict[str, Any]:
