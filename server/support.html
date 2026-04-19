@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Support Workspace</title>
-    <link rel="stylesheet" href="/support.css?v=20260417a">
+    <link rel="stylesheet" href="/support.css?v=20260419a">
 </head>
 <body>
     <div id="loginContainer" class="support-login-shell hidden">
@@ -181,6 +181,7 @@
                             </div>
 
                             <div class="drawer-tabs" id="drawerTabs">
+                                <button class="drawer-tab" type="button" data-tab="observer">Трасса</button>
                                 <button class="drawer-tab active" type="button" data-tab="context">Контекст</button>
                                 <button class="drawer-tab" type="button" data-tab="tools">Инструменты</button>
                                 <button class="drawer-tab" type="button" data-tab="pipeline">Пайплайн</button>
@@ -189,6 +190,8 @@
                             <section id="drawerTab-context" class="drawer-tab-panel">
                                 <div id="contextPanel" class="context-panel"></div>
                             </section>
+
+                            <section id="drawerTab-observer" class="drawer-tab-panel hidden"></section>
 
                             <section id="drawerTab-tools" class="drawer-tab-panel hidden">
                                 <div class="drawer-search-wrap">
@@ -256,6 +259,6 @@
     <div id="toast" class="support-toast hidden" aria-live="polite"></div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/support.js?v=20260417a"></script>
+    <script src="/support.js?v=20260419a"></script>
 </body>
 </html>

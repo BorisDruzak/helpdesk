@@ -13,6 +13,7 @@
 - `docs/PROTOCOL_V3.md` (полная спецификация протокола)
 - `docs/AUTHENTICATION.md` (источники токена: `AUTH_TOKEN` → `auth_tokens` → legacy `identity.json`)
 - `docs/MODULES.md`, `docs/ORCHESTRATOR.md`, `docs/SENDER.md`
+- `../server/docs/OBSERVER_LAYER.md` и `../server/docs/OBSERVER_AUTHORING_RULES.md`, если задача затрагивает action trace, module breadcrumbs, update trace или agent-side dangerous flow instrumentation
 
 ## Обязательное правило для новых модулей
 
@@ -25,7 +26,7 @@
 
 - Каноническая карта агента — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `pc_agent/docs/CODEMAP.md`).
 - Перед анализом/правками сначала смотреть этот файл.
-- При изменении структуры агентского кода, точек входа или runtime-потоков **обязательно** обновлять `pc_agent/docs/CODEMAP.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
+- При изменении структуры агентского кода, точек входа или runtime-потоков **обязательно** обновлять `pc_agent/docs/CODEMAP.md`. Если меняется agent-side observer coverage, module breadcrumbs, action trace bridge или dangerous flow instrumentation, синхронно обновлять и `../server/docs/OBSERVER_LAYER.md` + `../server/docs/OBSERVER_AUTHORING_RULES.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
 
 ## Инварианты Protocol V3
 

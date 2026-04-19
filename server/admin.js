@@ -3961,6 +3961,7 @@
             busy: false,
             runtime: null,
             settings: null,
+            quick: null,
         };
 
         function techStatusClass(kind) {
@@ -4347,7 +4348,7 @@
 
         async function loadTechMainPanels() {
             const headers = getAuthHeaders();
-            const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes, observerRuntimeRes] = await Promise.all([
+            const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes, observerRuntimeRes, observerQuickRes] = await Promise.all([
                 fetch('/api/admin/tech/overview', { headers }),
                 fetch('/api/admin/tech/alerts', { headers }),
                 fetch('/api/admin/tech/logs?limit=50', { headers }),
@@ -4356,6 +4357,7 @@
                 fetch('/api/admin/tech/users/audit?limit=50', { headers }),
                 fetch('/api/admin/tech/operations/stuck', { headers }),
                 fetch('/api/admin/tech/traces/runtime', { headers }),
+                fetch(`/api/admin/tech/observer/quick?${techObserverFilters(12).toString()}`, { headers }),
             ]);
             const overviewData = await responseToJson(overviewRes);
             const alertsData = await responseToJson(alertsRes);
@@ -4365,12 +4367,21 @@
             const usersData = await responseToJson(usersAuditRes);
             const stuckData = await responseToJson(stuckOpsRes);
             const observerRuntimeData = await responseToJson(observerRuntimeRes);
+            const observerQuickData = await responseToJson(observerQuickRes);
             const overview = overviewData.overview || {};
             renderTechOverviewCards(overview);
             renderTechAlerts(alertsData.alerts || overview.alerts || []);
             renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
             techObserverState.runtime = observerRuntimeData.runtime || null;
             renderTechObserverRuntimeStatus();
+            techObserverState.quick = observerQuickData.status === 'ok' ? observerQuickData : null;
+            renderTechObserverQuickDiagnosis();
+            techSetObserverQuickStatus(
+                observerQuickData.status === 'ok'
+                    ? `Горячих traces ${observerQuickData.summary?.hot_trace_count ?? 0}, signatures ${observerQuickData.summary?.signature_count ?? 0}, деградаций ${observerQuickData.summary?.degradation_group_count ?? 0}.`
+                    : (observerQuickData.error || 'Быстрая диагностика недоступна.'),
+                observerQuickData.status !== 'ok'
+            );
             if (!techObserverState.settings) {
                 techPopulateObserverSettings(observerRuntimeData.runtime?.settings || {});
             }
@@ -4668,6 +4679,8 @@
                             techRunObserverInteraction(() => loadTechObserverSearch('degradations')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         } else if (action === 'search-signatures') {
                             techRunObserverInteraction(() => loadTechObserverSearch('signatures')).catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        } else if (action === 'quick') {
+                            techRunObserverInteraction(() => loadTechObserverQuickDiagnosis()).catch((err) => techSetObserverQuickStatus(err.message || String(err), true));
                         } else if (action === 'rebuild') {
                             techRunObserverInteraction(() => rebuildTechObserverTraces()).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         }
@@ -4690,6 +4703,7 @@
             });
             window.addEventListener('resize', techCloseContextMenu);
             window.addEventListener('scroll', techCloseContextMenu, true);
+            renderTechObserverQuickDiagnosis();
             renderTechObserverResults();
             renderTechObserverDetail();
         }
@@ -4895,6 +4909,13 @@
             host.classList.toggle('error-message', !!isError);
         }
 
+        function techSetObserverQuickStatus(message, isError) {
+            const host = document.getElementById('techObserverQuickStatus');
+            if (!host) return;
+            host.textContent = message || '—';
+            host.classList.toggle('error-message', !!isError);
+        }
+
         function techPopulateObserverSettings(settings) {
             const next = settings || {};
             techObserverState.settings = next;
@@ -4975,6 +4996,27 @@
             }
             techObserverState.runtime = data.runtime || null;
             renderTechObserverRuntimeStatus();
+        }
+
+        async function loadTechObserverQuickDiagnosis() {
+            const headers = getAuthHeaders();
+            techSetObserverQuickStatus('Собираю быструю диагностику…', false);
+            const params = techObserverFilters(12);
+            params.set('hot_limit', '8');
+            params.set('signature_limit', '6');
+            params.set('degradation_limit', '6');
+            params.set('flow_limit', '6');
+            const response = await fetch(`/api/admin/tech/observer/quick?${params.toString()}`, { headers });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer quick diagnosis failed');
+            }
+            techObserverState.quick = data;
+            renderTechObserverQuickDiagnosis();
+            techSetObserverQuickStatus(
+                `Горячих traces ${data.summary?.hot_trace_count ?? 0}, signatures ${data.summary?.signature_count ?? 0}, деградаций ${data.summary?.degradation_group_count ?? 0}.`,
+                false
+            );
         }
 
         async function loadTechObserverSettings() {
@@ -5078,6 +5120,99 @@
                     </tr>`).join('')}
                 </tbody>
             </table></div>`;
+        }
+
+        function renderTechObserverQuickDiagnosis() {
+            const host = document.getElementById('techObserverQuickPanel');
+            if (!host) return;
+            const payload = techObserverState.quick;
+            if (!payload) {
+                host.innerHTML = '<div class="tech-agent-detail"><div class="tech-empty-note">Быстрая диагностика ещё не загружена.</div></div>';
+                return;
+            }
+            const summary = payload.summary || {};
+            const hotTraces = payload.hot_traces || [];
+            const topSignatures = payload.top_signatures || [];
+            const topDegradations = payload.top_degradations || [];
+            const dangerousFlows = payload.dangerous_flows || [];
+            host.innerHTML = `
+                <div class="tech-kpi-grid">
+                    <div class="tech-kpi-card"><label>Recent traces</label><value>${escapeHtml(String(summary.recent_trace_count ?? 0))}</value></div>
+                    <div class="tech-kpi-card"><label>Hot traces</label><value>${escapeHtml(String(summary.hot_trace_count ?? 0))}</value></div>
+                    <div class="tech-kpi-card"><label>Top signatures</label><value>${escapeHtml(String(summary.signature_count ?? 0))}</value></div>
+                    <div class="tech-kpi-card"><label>Degradations</label><value>${escapeHtml(String(summary.degradation_group_count ?? 0))}</value></div>
+                </div>
+                <div class="tech-observer-quick-grid">
+                    <div class="tech-mini-panel">
+                        <h4>Горячие traces</h4>
+                        ${hotTraces.length ? `<div class="tech-observer-quick-list">${hotTraces.map((item) => `
+                            <div class="tech-observer-quick-item">
+                                <div class="tech-observer-quick-head">
+                                    <strong>${escapeHtml(item.root_kind || 'trace')}</strong>
+                                    ${techStatusChip(item.status || 'unknown')}
+                                </div>
+                                <div class="tech-observer-quick-meta">${escapeHtml(item.trace_id || '—')}</div>
+                                <div class="tech-observer-quick-meta">${escapeHtml([item.ticket_id, item.operation_id].filter(Boolean).join(' • ') || 'без ticket/op')}</div>
+                                <div class="tech-observer-quick-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="trace" data-tech-observer-id="${escapeHtml(item.trace_id || '')}">Открыть trace</button>
+                                </div>
+                            </div>
+                        `).join('')}</div>` : '<div class="tech-empty-note">Горячих traces не найдено.</div>'}
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Массовые signatures</h4>
+                        ${topSignatures.length ? `<div class="tech-observer-quick-list">${topSignatures.map((item) => `
+                            <div class="tech-observer-quick-item">
+                                <div class="tech-observer-quick-head">
+                                    <strong>${escapeHtml(item.title || item.error_signature || 'signature')}</strong>
+                                    <span>${escapeHtml(String(item.occurrences_count ?? 0))}</span>
+                                </div>
+                                <div class="tech-observer-quick-meta"><code>${escapeHtml(item.error_signature || '—')}</code></div>
+                                <div class="tech-observer-quick-meta">${escapeHtml([item.component, item.module_name, item.tool_name].filter(Boolean).join(' • ') || 'без component/module/tool')}</div>
+                                <div class="tech-observer-quick-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="signature" data-tech-observer-id="${escapeHtml(item.error_signature || '')}">Открыть signature</button>
+                                </div>
+                            </div>
+                        `).join('')}</div>` : '<div class="tech-empty-note">Signatures за текущее окно нет.</div>'}
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Опасные flow</h4>
+                        ${dangerousFlows.length ? `<div class="tech-observer-quick-list">${dangerousFlows.map((item) => `
+                            <div class="tech-observer-quick-item">
+                                <div class="tech-observer-quick-head">
+                                    <strong>${escapeHtml(item.root_kind || 'unknown')}</strong>
+                                    <span>${escapeHtml(String(item.operations_count ?? 0))} ops</span>
+                                </div>
+                                <div class="tech-observer-quick-meta">error ${escapeHtml(String(item.error_count ?? 0))} • timeout ${escapeHtml(String(item.timeout_count ?? 0))} • retry ${escapeHtml(String(item.retried_count ?? 0))} • active ${escapeHtml(String(item.active_count ?? 0))}</div>
+                                <div class="tech-observer-quick-meta">${escapeHtml(item.latest_operation_at ? techFormatDate(item.latest_operation_at) : 'без recent activity')}</div>
+                                <div class="tech-observer-quick-actions">
+                                    ${Array.isArray(item.sample_trace_ids) && item.sample_trace_ids[0]
+                                        ? `<button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="trace" data-tech-observer-id="${escapeHtml(item.sample_trace_ids[0])}">Открыть пример</button>`
+                                        : '<span class="muted">Нет sample trace</span>'}
+                                </div>
+                            </div>
+                        `).join('')}</div>` : '<div class="tech-empty-note">Опасных flow за lookback не найдено.</div>'}
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Деградации</h4>
+                        ${topDegradations.length ? `<div class="tech-observer-quick-list">${topDegradations.map((item) => `
+                            <div class="tech-observer-quick-item">
+                                <div class="tech-observer-quick-head">
+                                    <strong>${escapeHtml(item.operation_kind || 'unknown')}</strong>
+                                    <span>${escapeHtml(String(item.operations_count ?? 0))} ops</span>
+                                </div>
+                                <div class="tech-observer-quick-meta">${escapeHtml([item.tool_name, item.module_name].filter(Boolean).join(' • ') || 'без tool/module')}</div>
+                                <div class="tech-observer-quick-meta">timeout ${escapeHtml(String(Math.round((item.timeout_rate || 0) * 100)))}% • retry ${escapeHtml(String(Math.round((item.retry_rate || 0) * 100)))}% • slow ${escapeHtml(String(Math.round((item.slow_rate || 0) * 100)))}%</div>
+                                <div class="tech-observer-quick-actions">
+                                    ${Array.isArray(item.sample_trace_ids) && item.sample_trace_ids[0]
+                                        ? `<button type="button" class="btn btn-secondary btn-sm" data-tech-observer-open="trace" data-tech-observer-id="${escapeHtml(item.sample_trace_ids[0])}">Открыть пример</button>`
+                                        : '<span class="muted">Нет sample trace</span>'}
+                                </div>
+                            </div>
+                        `).join('')}</div>` : '<div class="tech-empty-note">Деградаций по текущим фильтрам нет.</div>'}
+                    </div>
+                </div>
+            `;
         }
 
         function renderTechObserverDetail() {
@@ -5282,6 +5417,7 @@
             }
             techSetObserverStatus(`Пересобрано traces: ${data.projected_count || 0}.`, false);
             await loadTechObserverRuntimeStatus();
+            await loadTechObserverQuickDiagnosis();
             if (techObserverState.mode) {
                 await loadTechObserverSearch(techObserverState.mode);
             }

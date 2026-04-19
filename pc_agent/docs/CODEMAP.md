@@ -9,6 +9,7 @@
 - Если задача начинается с diff, сначала выполните `python scripts/diff_context.py`.
 - Если тема пересекает сервер и агент или неясно, где вход, откройте `docs/QUICK_LOOKUP.md`.
 - Для точечного поиска по агенту используйте `python scripts/agent_find.py "<ключевое слово>" --dir pc_agent`.
+- Если тема касается observer, module breadcrumbs, update trace или action-trace bridge, дополнительно откройте `server/docs/OBSERVER_LAYER.md` и `server/docs/OBSERVER_AUTHORING_RULES.md`.
 
 ### Truth baseline
 
@@ -48,7 +49,7 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/core/orchestrator.py` | Фасад orchestrator-команд: dispatch, run_tool, collect/list/update, lifecycle операций, orchestration над `ConsentService`, кэш модулей; collect/job/uptime ветки полностью делегированы в helper-модули, cancel-operation flow доведён до канонического agent-side terminal результата и ticket event publish; `run_tool`, `list_tools` и `describe_tool` теперь резолвят канонический semantic tool id и legacy aliases через текущий registry без отдельного V2-контура, а observer drilldown получает guaranteed action-trace breakdown по `module.resolve` и `module.execute` даже для “молчащих” модулей |
-| `pc_agent/core/action_trace.py` | Локальный JSONL action trace для tech drilldown и поиска по `ticket_id` / `operation_id` / `tool_name`; теперь служит обязательным fallback-слоем module-level observability, если модуль не пишет собственный runtime audit, а все writes проходят через redaction helpers |
+| `pc_agent/core/action_trace.py` | Локальный JSONL action trace для tech drilldown и поиска по `ticket_id` / `operation_id` / `tool_name`; теперь служит обязательным fallback-слоем module-level observability, если модуль не пишет собственный runtime audit, а все writes проходят через redaction helpers; observer expansion rules описаны в `server/docs/OBSERVER_AUTHORING_RULES.md` |
 | `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py`, `pc_agent/core/orchestrator_shared.py` | Helper-слой распила orchestrator: каноническая collect/job/uptime логика и общий mojibake-safe logger; в `orchestrator.py` не должно оставаться дублированных тел этих handler-веток |
 | `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
@@ -71,7 +72,7 @@
 ### 2.2 Модули (modules/)
 | Файл/каталог | Назначение |
 |--------------|------------|
-| `pc_agent/modules/base_module.py` | Базовый контракт модуля + mandatory observer SDK (`bind_trace`, `trace_event`, `trace_span`) для новых tool methods |
+| `pc_agent/modules/base_module.py` | Базовый контракт модуля + mandatory observer SDK (`bind_trace`, `trace_event`, `trace_span`) для новых tool methods; dangerous module steps обязаны следовать `server/docs/OBSERVER_AUTHORING_RULES.md` |
 | `pc_agent/modules/impl/` | Встроенные реализации модулей |
 | `pc_agent/modules/dynamic/` | Legacy (загрузчик использует только пакеты из modules_store) |
 | `pc_agent/modules/__init__.py` | extra_paths, поддержка test_<name> для тестов |
@@ -177,5 +178,6 @@
 - добавление/удаление/перенос ключевых модулей или точек входа в `pc_agent/`;
 - новые или переименованные ключевые файлы в core/, modules/, ui_gui/, ui_bridge/;
 - смена назначения существующих модулей или потоков.
+- если change затрагивает agent-side observer coverage, action trace bridge, module breadcrumbs или dangerous flow instrumentation — синхронно обновлять и `server/docs/OBSERVER_LAYER.md` + `server/docs/OBSERVER_AUTHORING_RULES.md`.
 
 Проверка: ключевые термины и файлы из раздела «Быстрый поиск» и «Структура каталогов» должны соответствовать коду.

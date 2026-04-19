@@ -88,6 +88,7 @@
         selectedTicketId: '',
         selectedSnapshot: null,
         selectedLifecycle: null,
+        selectedObserverSummary: null,
         detailLoading: false,
         workspaceView: WORKSPACE_VIEWS.QUEUE,
         drawerTab: 'context',
@@ -1093,6 +1094,7 @@
             ticket.requester_display_name || ticket.requester_id || '—',
             statusLabel(ticket.status),
             ticket.assignee_id ? ('Исполнитель: ' + ticket.assignee_id) : 'Без исполнителя',
+            ['Трасса', rootTrace ? ((rootTrace.root_kind || 'trace') + ' • ' + (rootTrace.status || 'unknown')) : ((traceSummary.trace_count || 0) + ' traces')],
         ];
         if (ticket.priority_class) {
             parts.push(priorityLabel(ticket.priority_class));
@@ -1258,11 +1260,15 @@
             metaNode.innerHTML = '';
             return;
         }
+        const observerSummary = state.selectedObserverSummary;
+        const traceSummary = observerSummary?.summary || {};
+        const rootTrace = observerSummary?.root_trace || null;
         const items = [
             ['Код', ticket.ticket_code || ticket.ticket_id],
             ['Статус', statusLabel(ticket.status)],
             ['Очередь', ticket.queue_code || snapshot?.queue_code || ticket.queue_id || '—'],
             ['Исполнитель', ticket.assignee_id || 'Не назначен'],
+            ['Трасса', rootTrace ? ((rootTrace.root_kind || 'trace') + ' • ' + (rootTrace.status || 'unknown')) : ((traceSummary.trace_count || 0) + ' traces')],
         ];
         metaNode.innerHTML = items.map(([label, value]) => `
             <div class="selected-ticket-meta-item">
@@ -1840,6 +1846,135 @@
             : '<div class="activity-item">Для этого тикета пока нет дерева lifecycle.</div>';
     }
 
+    function observerTraceSummaryLabel(trace) {
+        if (!trace) {
+            return 'Трасса ещё не собрана';
+        }
+        const parts = [
+            trace.root_kind || 'trace',
+            trace.status || 'unknown',
+            trace.duration_ms != null ? (trace.duration_ms + ' ms') : null,
+        ].filter(Boolean);
+        return parts.join(' • ');
+    }
+
+    function renderObserverPanel() {
+        const panel = byId('drawerTab-observer');
+        if (!panel) {
+            return;
+        }
+        const ticket = selectedTicket();
+        const payload = state.selectedObserverSummary;
+        if (!ticket) {
+            panel.innerHTML = '<article class="support-card drawer-card observer-empty-card">Выберите тикет, чтобы увидеть observer trace summary.</article>';
+            return;
+        }
+        if (!payload) {
+            panel.innerHTML = '<article class="support-card drawer-card observer-empty-card">Загружаем trace summary…</article>';
+            return;
+        }
+        if (payload.error) {
+            panel.innerHTML = '<article class="support-card drawer-card observer-empty-card">Observer summary временно недоступен: ' + escapeHtml(payload.error) + '</article>';
+            return;
+        }
+
+        const summary = payload.summary || {};
+        const rootTrace = payload.root_trace || null;
+        const rootExcerpt = payload.root_trace_excerpt || {};
+        const relatedTraces = Array.isArray(payload.related_traces) ? payload.related_traces : [];
+        const signatures = Array.isArray(payload.signatures) ? payload.signatures : [];
+        const recentOccurrences = Array.isArray(payload.recent_occurrences) ? payload.recent_occurrences : [];
+        const excerptSpans = Array.isArray(rootExcerpt.spans) ? rootExcerpt.spans : [];
+        const excerptErrors = Array.isArray(rootExcerpt.error_occurrences) ? rootExcerpt.error_occurrences : [];
+
+        panel.innerHTML = `
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Trace summary</h3>
+                </div>
+                <div class="observer-summary-grid">
+                    <div class="observer-summary-card">
+                        <span class="observer-summary-label">Root trace</span>
+                        <strong>${escapeHtml(rootTrace?.trace_id || summary.root_trace_id || '—')}</strong>
+                        <div class="observer-summary-note">${escapeHtml(observerTraceSummaryLabel(rootTrace))}</div>
+                    </div>
+                    <div class="observer-summary-card">
+                        <span class="observer-summary-label">Связанные traces</span>
+                        <strong>${escapeHtml(String(summary.trace_count || relatedTraces.length || 0))}</strong>
+                        <div class="observer-summary-note">active ${escapeHtml(String(summary.active_trace_count || 0))} • error ${escapeHtml(String(summary.error_trace_count || 0))}</div>
+                    </div>
+                    <div class="observer-summary-card">
+                        <span class="observer-summary-label">Signatures</span>
+                        <strong>${escapeHtml(String(summary.signature_count || signatures.length || 0))}</strong>
+                        <div class="observer-summary-note">${escapeHtml(summary.latest_trace_at ? ('последняя trace ' + formatDate(summary.latest_trace_at)) : 'без recent trace')}</div>
+                    </div>
+                </div>
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Root trace excerpt</h3>
+                </div>
+                <div class="observer-block">
+                    <div class="observer-block-title">Spans</div>
+                    ${excerptSpans.length ? `<div class="observer-list">${excerptSpans.map((span) => `
+                        <div class="observer-list-item">
+                            <strong>${escapeHtml(span.name || 'span')}</strong>
+                            <span>${escapeHtml((span.status || 'unknown') + (span.duration_ms != null ? (' • ' + span.duration_ms + ' ms') : ''))}</span>
+                            <div class="observer-list-meta">${escapeHtml([span.source_type, span.tool_name, span.module_name].filter(Boolean).join(' • ') || 'observer span')}</div>
+                        </div>
+                    `).join('')}</div>` : '<div class="observer-empty-note">В root trace пока нет span-ов.</div>'}
+                </div>
+                <div class="observer-block">
+                    <div class="observer-block-title">Ошибки</div>
+                    ${excerptErrors.length ? `<div class="observer-list">${excerptErrors.map((item) => `
+                        <div class="observer-list-item">
+                            <strong>${escapeHtml(item.error_signature || item.error_kind || 'error')}</strong>
+                            <span>${escapeHtml(item.failure_stage || '—')}</span>
+                            <div class="observer-list-meta">${escapeHtml(item.message_norm || '—')}</div>
+                        </div>
+                    `).join('')}</div>` : '<div class="observer-empty-note">В root trace пока нет error occurrences.</div>'}
+                </div>
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Связанные traces</h3>
+                </div>
+                ${relatedTraces.length ? `<div class="observer-list">${relatedTraces.map((trace) => `
+                    <div class="observer-list-item">
+                        <strong>${escapeHtml((trace.trace_id || '—').slice(0, 18))}</strong>
+                        <span>${escapeHtml(observerTraceSummaryLabel(trace))}</span>
+                        <div class="observer-list-meta">${escapeHtml([trace.ticket_id, trace.operation_id].filter(Boolean).join(' • ') || 'ticket trace')}</div>
+                    </div>
+                `).join('')}</div>` : '<div class="observer-empty-note">Для этого тикета trace-ов пока нет.</div>'}
+            </article>
+            <article class="support-card drawer-card">
+                <div class="card-head">
+                    <h3>Signatures и последние occurrences</h3>
+                </div>
+                <div class="observer-block">
+                    <div class="observer-block-title">Signatures</div>
+                    ${signatures.length ? `<div class="observer-list">${signatures.map((item) => `
+                        <div class="observer-list-item">
+                            <strong>${escapeHtml(item.title || item.error_signature || 'signature')}</strong>
+                            <span>${escapeHtml(String(item.occurrences_count || 0) + ' occurrences')}</span>
+                            <div class="observer-list-meta">${escapeHtml(item.error_signature || '—')}</div>
+                        </div>
+                    `).join('')}</div>` : '<div class="observer-empty-note">Signature-групп пока нет.</div>'}
+                </div>
+                <div class="observer-block">
+                    <div class="observer-block-title">Последние occurrences</div>
+                    ${recentOccurrences.length ? `<div class="observer-list">${recentOccurrences.map((item) => `
+                        <div class="observer-list-item">
+                            <strong>${escapeHtml(item.error_signature || item.error_kind || 'occurrence')}</strong>
+                            <span>${escapeHtml(item.created_at ? formatDate(item.created_at) : '—')}</span>
+                            <div class="observer-list-meta">${escapeHtml(item.message_norm || '—')}</div>
+                        </div>
+                    `).join('')}</div>` : '<div class="observer-empty-note">Recent occurrences пока нет.</div>'}
+                </div>
+            </article>
+        `;
+    }
+
     function displayRole(payload) {
         const role = String(payload?.sender_role || payload?.from || payload?.actor_role || 'system').toLowerCase();
         if (role === 'support' || role === 'admin') {
@@ -2014,6 +2149,7 @@
         sessionStorage.setItem(LAST_TICKET_KEY, ticketId);
         state.selectedSnapshot = null;
         state.selectedLifecycle = null;
+        state.selectedObserverSummary = null;
         state.tools = [];
         state.toolsDeviceId = '';
         state.selectedToolKey = '';
@@ -2034,6 +2170,7 @@
         if (!ticket) {
             state.selectedSnapshot = null;
             state.selectedLifecycle = null;
+            state.selectedObserverSummary = null;
             renderStage();
             renderContextPanel();
             renderToolPanels();
@@ -2046,12 +2183,15 @@
         const lifecyclePromise = shouldObserveTicket(ticket)
             ? fetchJson('/api/admin/tech/tickets/' + encodeURIComponent(ticket.ticket_id) + '/lifecycle', { headers: authHeaders() })
             : Promise.resolve(null);
-        const results = await Promise.all([snapshotPromise, lifecyclePromise]);
+        const observerPromise = fetchJson('/api/tickets/' + encodeURIComponent(ticket.ticket_id) + '/observer', { headers: authHeaders() })
+            .catch((error) => ({ error: error.message || String(error) }));
+        const results = await Promise.all([snapshotPromise, lifecyclePromise, observerPromise]);
         if (ticket.ticket_id !== state.selectedTicketId) {
             return;
         }
         state.selectedSnapshot = results[0];
         state.selectedLifecycle = results[1];
+        state.selectedObserverSummary = results[2];
         renderStage();
         renderContextPanel();
         renderToolPanels();
@@ -2815,11 +2955,13 @@
         const toolsPanel = byId('drawerTab-tools');
         const pipelinePanel = byId('drawerTab-pipeline');
         const contextPanel = byId('drawerTab-context');
-        if (!toolsPanel || !pipelinePanel || !contextPanel) {
+        const observerPanel = byId('drawerTab-observer');
+        if (!toolsPanel || !pipelinePanel || !contextPanel || !observerPanel) {
             return;
         }
         sessionStorage.setItem(DRAWER_TAB_KEY, state.drawerTab);
         contextPanel.classList.toggle('hidden', state.drawerTab !== 'context');
+        observerPanel.classList.toggle('hidden', state.drawerTab !== 'observer');
         toolsPanel.classList.toggle('hidden', state.drawerTab !== 'tools');
         pipelinePanel.classList.toggle('hidden', state.drawerTab !== 'pipeline');
         document.querySelectorAll('.drawer-tab').forEach((tab) => {
@@ -2833,6 +2975,7 @@
                 showToast(error.message || 'Не удалось загрузить инструменты', true);
             }
         }
+        renderObserverPanel();
         renderToolScenarioChips();
         renderToolList();
         renderToolInspector();

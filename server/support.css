@@ -198,6 +198,66 @@ body {
     padding: 12px 14px;
 }
 
+.observer-summary-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.observer-summary-card {
+    background: rgba(29, 92, 84, 0.06);
+    border: 1px solid rgba(29, 92, 84, 0.12);
+    border-radius: 16px;
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+}
+
+.observer-summary-label,
+.observer-block-title {
+    color: var(--support-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.observer-summary-note,
+.observer-list-meta,
+.observer-empty-note {
+    color: var(--support-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.observer-block {
+    display: grid;
+    gap: 10px;
+}
+
+.observer-block + .observer-block {
+    margin-top: 16px;
+}
+
+.observer-list {
+    display: grid;
+    gap: 10px;
+}
+
+.observer-list-item {
+    background: rgba(255, 255, 255, 0.76);
+    border: 1px solid rgba(185, 175, 155, 0.36);
+    border-radius: 14px;
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+}
+
+.observer-empty-card {
+    color: var(--support-muted);
+    text-align: center;
+}
+
 .support-shell {
     display: flex;
     flex-direction: column;

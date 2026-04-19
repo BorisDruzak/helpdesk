@@ -14,12 +14,13 @@
 - `docs/README.md`
 - `docs/SECURITY_AND_AUTH.md`
 - `docs/PROTOCOL_V3.md` (серверные требования + ссылка на полную спецификацию у агента)
+- `docs/OBSERVER_LAYER.md` и `docs/OBSERVER_AUTHORING_RULES.md`, если задача затрагивает trace, dangerous flow, техпанель, support trace summary или observer API
 
 ## CODEMAP
 
 - Каноническая карта сервера — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `server/docs/CODEMAP.md`).
 - Перед анализом/правками сначала смотреть этот файл.
-- При изменении структуры серверного кода, маршрутов или runtime-потоков **обязательно** обновлять `server/docs/CODEMAP.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
+- При изменении структуры серверного кода, маршрутов или runtime-потоков **обязательно** обновлять `server/docs/CODEMAP.md`. Если change касается observer-слоя, dangerous flow или trace-visible API/UI, синхронно обновлять и `server/docs/OBSERVER_LAYER.md` + `server/docs/OBSERVER_AUTHORING_RULES.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
 
 ## Единый URL GUI
 
@@ -32,4 +33,3 @@
   - успех/ошибка/consent_required → `device_outbox: delivered`, а `operations` отражает результат выполнения
   - таймаут → `device_outbox: failed` с `TIMEOUT` (см. `docs/COMMAND_RESULT_LIFECYCLE.md`)
 - `tool_call_started` создаётся сервером до отправки команды (см. `docs/TOOL_CALL_STARTED_INVARIANT.md`)
-

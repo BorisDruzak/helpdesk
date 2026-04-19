@@ -246,6 +246,14 @@ class ObserverOverlayService:
             stmt = stmt.where(ObserverTrace.root_kind == filters.root_kind)
         if filters.status:
             stmt = stmt.where(ObserverTrace.status == filters.status)
+        if filters.lookback_hours:
+            window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
+            stmt = stmt.where(
+                or_(
+                    ObserverTrace.started_at >= window_start,
+                    ObserverTrace.finished_at >= window_start,
+                )
+            )
         if filters.tool_name:
             stmt = stmt.where(
                 exists(
@@ -394,6 +402,105 @@ class ObserverOverlayService:
             reverse=True,
         )
         return items[:limit]
+
+    async def get_quick_diagnosis(
+        self,
+        filters: TraceOverlayFilters,
+        *,
+        hot_limit: int = 8,
+        signature_limit: int = 6,
+        degradation_limit: int = 6,
+        flow_limit: int = 6,
+    ) -> dict[str, Any]:
+        recent_traces = await self.search_traces(filters, limit=max(24, hot_limit * 3))
+        hot_traces = self._select_hot_traces(recent_traces, limit=hot_limit)
+        top_signatures = await self.search_signatures(filters, limit=signature_limit)
+        top_degradations = await self.search_degradations(filters, limit=degradation_limit)
+        dangerous_flows = await self._summarize_dangerous_flows(filters, limit=flow_limit)
+        return {
+            "summary": {
+                "recent_trace_count": len(recent_traces),
+                "hot_trace_count": len(hot_traces),
+                "signature_count": len(top_signatures),
+                "degradation_group_count": len(top_degradations),
+                "dangerous_flow_count": len(dangerous_flows),
+            },
+            "hot_traces": hot_traces,
+            "recent_traces": recent_traces[:hot_limit],
+            "top_signatures": top_signatures,
+            "top_degradations": top_degradations,
+            "dangerous_flows": dangerous_flows,
+        }
+
+    async def get_ticket_observer_summary(
+        self,
+        ticket_id: str,
+        *,
+        trace_limit: int = 8,
+        signature_limit: int = 6,
+        span_limit: int = 12,
+        occurrence_limit: int = 6,
+    ) -> dict[str, Any]:
+        filters = TraceOverlayFilters(ticket_id=ticket_id)
+        await self._ensure_projected(filters, limit=max(trace_limit, 12), force=False)
+
+        root_trace_id = await self._load_ticket_root_trace_id(ticket_id)
+        related_rows = (
+            await self.session.execute(
+                select(ObserverTrace)
+                .where(ObserverTrace.ticket_id == ticket_id)
+                .order_by(ObserverTrace.started_at.desc(), ObserverTrace.trace_id.desc())
+                .limit(max(trace_limit, 1))
+            )
+        ).scalars().all()
+        total_traces = await self.session.scalar(
+            select(func.count()).select_from(ObserverTrace).where(ObserverTrace.ticket_id == ticket_id)
+        )
+        signatures = await self.search_signatures(TraceOverlayFilters(ticket_id=ticket_id), limit=signature_limit)
+        recent_occurrences = (
+            await self.session.execute(
+                select(ObserverErrorOccurrence)
+                .where(ObserverErrorOccurrence.ticket_id == ticket_id)
+                .order_by(ObserverErrorOccurrence.created_at.desc())
+                .limit(max(occurrence_limit, 1))
+            )
+        ).scalars().all()
+
+        root_detail = await self.get_trace_detail(root_trace_id) if root_trace_id else None
+        root_trace = root_detail["trace"] if root_detail else None
+        root_excerpt = {
+            "spans": (root_detail or {}).get("spans", [])[:span_limit],
+            "error_occurrences": (root_detail or {}).get("error_occurrences", [])[:occurrence_limit],
+        }
+        active_related = [
+            self._serialize_trace(row)
+            for row in related_rows
+            if str(row.status or "").strip().lower() in ACTIVE_OPERATION_STATUSES or str(row.status or "").strip().lower() == "running"
+        ]
+        error_related = [
+            self._serialize_trace(row)
+            for row in related_rows
+            if int(row.error_count or 0) > 0 or str(row.status or "").strip().lower() in {"error", "failed", "timed_out", "canceled"}
+        ]
+
+        return {
+            "summary": {
+                "ticket_id": ticket_id,
+                "root_trace_id": root_trace_id,
+                "trace_count": int(total_traces or 0),
+                "active_trace_count": len(active_related),
+                "error_trace_count": len(error_related),
+                "signature_count": len(signatures),
+                "latest_trace_at": _iso(related_rows[0].started_at) if related_rows else None,
+            },
+            "root_trace": root_trace,
+            "root_trace_excerpt": root_excerpt,
+            "related_traces": [self._serialize_trace(row) for row in related_rows],
+            "signatures": signatures,
+            "recent_occurrences": [self._serialize_occurrence(item) for item in recent_occurrences],
+            "active_traces": active_related[:trace_limit],
+            "error_traces": error_related[:trace_limit],
+        }
 
     async def get_trace_detail(self, trace_id: str) -> Optional[dict[str, Any]]:
         trace = await self.project_trace(trace_id, force=False)
@@ -606,6 +713,9 @@ class ObserverOverlayService:
                     )
                 )
             )
+        if filters.lookback_hours:
+            window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
+            stmt = stmt.where(ObserverErrorSignature.last_seen_at >= window_start)
         if filters.trace_id or filters.ticket_id or filters.device_id or filters.operation_id:
             subquery = select(ObserverErrorOccurrence.occurrence_id).where(
                 ObserverErrorOccurrence.error_signature == ObserverErrorSignature.error_signature
@@ -1702,3 +1812,107 @@ class ObserverOverlayService:
             "attrs_json": redact_sensitive_payload(occurrence.attrs_json or {}),
             "created_at": _iso(occurrence.created_at),
         }
+
+    def _select_hot_traces(self, traces: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+        def _rank(item: dict[str, Any]) -> tuple[int, int, int, str]:
+            status = str(item.get("status") or "").strip().lower()
+            error_count = int(item.get("error_count") or 0)
+            is_error = 1 if error_count > 0 or status in {"error", "failed", "timed_out"} else 0
+            is_active = 1 if status in ACTIVE_OPERATION_STATUSES or status == "running" else 0
+            is_dangerous = 1 if str(item.get("root_kind") or "") in {"agent_update", "module_install", "module_remove", "consent"} else 0
+            return (is_error + is_dangerous, is_active, error_count, str(item.get("started_at") or ""))
+
+        ordered = sorted(traces, key=_rank, reverse=True)
+        hot = [item for item in ordered if _rank(item)[0] > 0 or _rank(item)[1] > 0]
+        if len(hot) < limit:
+            seen = {item.get("trace_id") for item in hot}
+            hot.extend(item for item in ordered if item.get("trace_id") not in seen)
+        return hot[:limit]
+
+    async def _summarize_dangerous_flows(self, filters: TraceOverlayFilters, *, limit: int) -> list[dict[str, Any]]:
+        lookback_hours = max(int(filters.lookback_hours or 24), 1)
+        window_start = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+        stmt = select(Operation).where(
+            or_(
+                Operation.queued_at >= window_start,
+                Operation.finished_at >= window_start,
+                Operation.canceled_at >= window_start,
+            )
+        )
+        if filters.ticket_id:
+            stmt = stmt.where(Operation.ticket_id == filters.ticket_id)
+        if filters.job_id:
+            stmt = stmt.where(Operation.job_id == filters.job_id)
+        if filters.operation_id:
+            stmt = stmt.where(Operation.operation_id == filters.operation_id)
+        if filters.device_id:
+            stmt = stmt.where(Operation.device_id == filters.device_id)
+        if filters.root_kind:
+            stmt = stmt.where(Operation.kind == filters.root_kind)
+        if filters.tool_name:
+            stmt = stmt.where(Operation.tool_name == filters.tool_name)
+        if filters.module_name:
+            stmt = stmt.where(Operation.tool_name.like(f"{filters.module_name}.%"))
+        rows = (
+            await self.session.execute(
+                stmt.order_by(Operation.queued_at.desc()).limit(max(limit * 40, 40))
+            )
+        ).scalars().all()
+
+        grouped: dict[str, dict[str, Any]] = {}
+        for operation in rows:
+            root_kind = _compact_text(operation.kind) or "unknown"
+            item = grouped.get(root_kind)
+            if item is None:
+                item = grouped[root_kind] = {
+                    "root_kind": root_kind,
+                    "operations_count": 0,
+                    "error_count": 0,
+                    "timeout_count": 0,
+                    "retried_count": 0,
+                    "active_count": 0,
+                    "latest_operation_at": None,
+                    "sample_trace_ids": [],
+                }
+            item["operations_count"] += 1
+            status = str(operation.status or "").strip().lower()
+            if status in {"failed", "timed_out", "canceled"}:
+                item["error_count"] += 1
+            if status == "timed_out":
+                item["timeout_count"] += 1
+            if int(operation.retry_count or 0) > 0:
+                item["retried_count"] += 1
+            if status in ACTIVE_OPERATION_STATUSES:
+                item["active_count"] += 1
+            latest_at = _operation_finished_at(operation) or operation.queued_at
+            if latest_at and (item["latest_operation_at"] is None or latest_at > item["latest_operation_at"]):
+                item["latest_operation_at"] = latest_at
+            trace_id = _compact_text(operation.trace_id)
+            if trace_id and trace_id not in item["sample_trace_ids"] and len(item["sample_trace_ids"]) < 5:
+                item["sample_trace_ids"].append(trace_id)
+
+        items = [
+            {
+                "root_kind": item["root_kind"],
+                "operations_count": item["operations_count"],
+                "error_count": item["error_count"],
+                "timeout_count": item["timeout_count"],
+                "retried_count": item["retried_count"],
+                "active_count": item["active_count"],
+                "latest_operation_at": _iso(item["latest_operation_at"]),
+                "sample_trace_ids": item["sample_trace_ids"],
+            }
+            for item in grouped.values()
+        ]
+        items.sort(
+            key=lambda entry: (
+                entry["error_count"],
+                entry["timeout_count"],
+                entry["retried_count"],
+                entry["active_count"],
+                entry["operations_count"],
+                entry["latest_operation_at"] or "",
+            ),
+            reverse=True,
+        )
+        return items[:limit]

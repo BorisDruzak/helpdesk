@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Панель администратора</title>
-    <link rel="stylesheet" href="/admin.css?v=20260416d">
+    <link rel="stylesheet" href="/admin.css?v=20260419a">
 </head>
 <body>
     <!-- Форма входа -->
@@ -920,6 +920,19 @@
                             <p class="muted" style="margin-top: 6px;">Поиск observer traces и error signatures поверх operations, ticket_events, device_events, runtime audit и action trace агента.</p>
                         </div>
                     </div>
+                    <div class="tech-mini-panel" style="margin-bottom: 12px;">
+                        <div class="tech-section-head" style="margin-bottom: 10px;">
+                            <div>
+                                <h3 style="margin:0;">Быстрая диагностика</h3>
+                                <p class="muted" style="margin-top: 6px;">Горячие traces, массовые signatures, опасные flow и деградации за текущее окно lookback.</p>
+                            </div>
+                            <div class="tech-actions-bar">
+                                <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="quick">Обновить диагностику</button>
+                            </div>
+                        </div>
+                        <div id="techObserverQuickStatus" class="tech-control-note">Быстрая диагностика ещё не загружена.</div>
+                        <div id="techObserverQuickPanel"></div>
+                    </div>
                     <div class="tech-control-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
                         <div class="form-group">
                             <label for="techTraceIdInput">Trace ID</label>
@@ -1399,7 +1412,7 @@
     </div>
 
     <script src="/web_shared.js?v=20260414a"></script>
-    <script src="/admin.js?v=20260416d"></script>
+    <script src="/admin.js?v=20260419a"></script>
     <script src="/admin_modules_workbench.js?v=20260416a"></script>
     <script src="/admin_ticket_forms_builder.js?v=20260416d"></script>
 </body>

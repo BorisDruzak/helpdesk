@@ -38,8 +38,11 @@
 
 - затронутый `CODEMAP`;
 - `docs/QUICK_LOOKUP.md`;
+- `server/docs/OBSERVER_LAYER.md` и `server/docs/OBSERVER_AUTHORING_RULES.md`, если change затрагивает observer, dangerous flow, tech/support trace UI или trace-visible API;
 - при необходимости `scripts/navigation_catalog.py`;
 - при необходимости `PLANS.md`, если задача ведётся в несколько шагов.
+
+Observer docs поддерживаются в актуальном состоянии наравне с CODEMAP. Изменение dangerous flow без синхронного обновления observer docs считается незавершённой работой.
 
 ## Профильные режимы
 

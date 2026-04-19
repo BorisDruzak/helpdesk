@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.serializers import serialize_datetime_recursive, ticket_to_dict
 from app.db import get_session
+from observer.service import ObserverOverlayService
 from app.repos import (
     ArtifactsRepo,
     ChangeLinksRepo,
@@ -1132,6 +1133,17 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
                 "update_summary": update_summary,
             }
         )
+
+
+async def handle_ticket_get_observer_summary(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+        if error:
+            return error
+        service = ObserverOverlayService(session)
+        payload = await service.get_ticket_observer_summary(ticket.ticket_id)
+        await session.commit()
+    return _json_ok(**payload)
 
 
 async def handle_ticket_send_message(request: web.Request) -> web.Response:

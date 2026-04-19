@@ -31,6 +31,7 @@ TESTS_SKILL_PATH = Path(".cursor/skills/pc-client-tests/SKILL.md")
 BROWSER_CHECK_SKILL_PATH = Path(".cursor/skills/pc-client-browser-check/SKILL.md")
 AGENT_UPDATES_SKILL_PATH = Path(".cursor/skills/pc-client-agent-updates/SKILL.md")
 AGENT_RUNTIME_SKILL_PATH = Path(".cursor/skills/pc-client-agent-runtime/SKILL.md")
+OBSERVER_DIAGNOSTICS_SKILL_PATH = Path(".cursor/skills/pc-client-observer-diagnostics/SKILL.md")
 
 
 def repo_path(value: str | Path) -> str:
@@ -730,6 +731,8 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(QUICK_LOOKUP_PATH),
             repo_path(SERVER_CODEMAP_PATH),
             repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/OBSERVER_LAYER.md",
+            "server/docs/OBSERVER_AUTHORING_RULES.md",
         ),
         suggested_commands=(
             'python scripts/agent_find.py "ObserverOverlayService" --dir server',
@@ -741,6 +744,7 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(DOCS_SYNC_SKILL_PATH),
             repo_path(BROWSER_CHECK_SKILL_PATH),
             repo_path(TESTS_SKILL_PATH),
+            repo_path(OBSERVER_DIAGNOSTICS_SKILL_PATH),
         ),
         checks=(
             "python scripts/verify_workspace.py",
@@ -753,6 +757,9 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(QUICK_LOOKUP_PATH),
             repo_path(SERVER_CODEMAP_PATH),
             repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/OBSERVER_LAYER.md",
+            "server/docs/OBSERVER_AUTHORING_RULES.md",
+            repo_path(OBSERVER_DIAGNOSTICS_SKILL_PATH),
         ),
         path_prefixes=(
             "server/observer/",
@@ -985,6 +992,31 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "pc_agent/docs/AUTHENTICATION.md",
+            "pc_agent/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+        ),
+    ),
+    DriftRule(
+        key="observer",
+        title="Observer layer changed",
+        reason="Observer runtime, quick diagnosis, trace APIs and dangerous-flow instrumentation must stay aligned with canonical observer docs.",
+        path_prefixes=("server/observer/",),
+        exact_paths=(
+            "server/tech/handlers.py",
+            "server/tickets/handlers.py",
+            "server/admin.html",
+            "server/admin.js",
+            "server/support.html",
+            "server/support.js",
+            "pc_agent/core/action_trace.py",
+            "pc_agent/modules/base_module.py",
+            "server/app/repos/observer_settings_repo.py",
+        ),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
+        required_docs=(
+            "server/docs/OBSERVER_LAYER.md",
+            "server/docs/OBSERVER_AUTHORING_RULES.md",
+            "server/docs/CODEMAP.md",
             "pc_agent/docs/CODEMAP.md",
             "docs/QUICK_LOOKUP.md",
         ),

@@ -68,6 +68,7 @@ from tickets.handlers import (
     handle_ticket_close,
     handle_ticket_status,
     handle_ticket_get_snapshot,
+    handle_ticket_get_observer_summary,
     handle_ticket_reroute,
     handle_ticket_classify,
     handle_ticket_queue,
@@ -245,6 +246,7 @@ from jobs.handlers import handle_get_job_events, handle_start_job
 from tech.handlers import (
     handle_observer_settings_get,
     handle_observer_settings_patch,
+    handle_tech_observer_quick,
     handle_tech_overview,
     handle_tech_alerts,
     handle_tech_agents_audit,
@@ -392,6 +394,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/tickets/bulk_assign', handle_tickets_bulk_assign),
         web.get('/api/tickets/{ticket_id}', handle_ticket_get),
         web.get('/api/tickets/{ticket_id}/snapshot', handle_ticket_get_snapshot),  # New snapshot endpoint
+        web.get('/api/tickets/{ticket_id}/observer', handle_ticket_get_observer_summary),
         web.post('/api/tickets/{ticket_id}/message', handle_ticket_send_message),
         web.post('/api/tickets/{ticket_id}/close', handle_ticket_close),
         web.post('/api/tickets/{ticket_id}/status', handle_ticket_status),
@@ -517,6 +520,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),
         web.get('/api/admin/tech/operations/stuck', handle_tech_operations_stuck),
+        web.get('/api/admin/tech/observer/quick', handle_tech_observer_quick),
         web.get('/api/admin/settings/observer', handle_observer_settings_get),
         web.patch('/api/admin/settings/observer', handle_observer_settings_patch),
         web.get('/api/admin/tech/traces/runtime', handle_tech_traces_runtime),

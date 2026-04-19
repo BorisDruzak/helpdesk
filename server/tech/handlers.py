@@ -1637,6 +1637,28 @@ async def handle_tech_traces_runtime(request: web.Request) -> web.Response:
 
 
 @require_auth("admin", "support", "auditor")
+async def handle_tech_observer_quick(request: web.Request) -> web.Response:
+    filters = _trace_filters_from_request(request)
+    hot_limit = _parse_query_limit(request.query.get("hot_limit"), default=8, cap=20)
+    signature_limit = _parse_query_limit(request.query.get("signature_limit"), default=6, cap=20)
+    degradation_limit = _parse_query_limit(request.query.get("degradation_limit"), default=6, cap=20)
+    flow_limit = _parse_query_limit(request.query.get("flow_limit"), default=6, cap=20)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        payload = await service.get_quick_diagnosis(
+            filters,
+            hot_limit=hot_limit,
+            signature_limit=signature_limit,
+            degradation_limit=degradation_limit,
+            flow_limit=flow_limit,
+        )
+        await session.commit()
+    payload["status"] = "ok"
+    payload["filters"] = _serialize_trace_filters(filters)
+    return web.json_response(payload)
+
+
+@require_auth("admin", "support", "auditor")
 async def handle_tech_traces_search(request: web.Request) -> web.Response:
     limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
     filters = _trace_filters_from_request(request)

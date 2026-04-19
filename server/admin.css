@@ -969,6 +969,12 @@
         .tech-json-preview { font-family: Consolas, Monaco, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
         .tech-result-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #0f172a; color: #d7e3ff; max-height: 280px; overflow: auto; font-family: Consolas, Monaco, monospace; font-size: 12px; white-space: pre-wrap; }
         .tech-empty-note { color: var(--muted); font-size: 13px; }
+        .tech-observer-quick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+        .tech-observer-quick-list { display: grid; gap: 10px; }
+        .tech-observer-quick-item { border: 1px solid var(--border); border-radius: 10px; background: #fbfcfe; padding: 10px 12px; display: grid; gap: 6px; }
+        .tech-observer-quick-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+        .tech-observer-quick-meta { color: var(--muted); font-size: 12px; line-height: 1.45; word-break: break-word; }
+        .tech-observer-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
         .tech-log-level { font-weight: 700; }
         .tech-log-level.warning { color: #8a5a00; }
         .tech-log-level.error, .tech-log-level.critical { color: #b42318; }
