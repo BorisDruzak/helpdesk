@@ -93,3 +93,17 @@ def test_remote_create_waiting_consent_operation_code_contains_expected_contract
     assert "tool_call_started" in code
     assert "observer_canary_demo.consent_probe" in code
     assert "await init_db()" in code
+
+
+def test_remote_trigger_ws_rate_limit_code_contains_expected_contract() -> None:
+    code = suite.remote_trigger_ws_rate_limit_code(
+        device_id="device-1",
+        agent_token="agent-token-1",
+        ticket_id="ticket-1",
+    )
+
+    assert "\"type\": \"handshake\"" in code
+    assert "\"type\": \"outbox_item\"" in code
+    assert "ticket-1" in code
+    assert "observer-rate-remote" in code
+    assert "\"nack\": payload" in code

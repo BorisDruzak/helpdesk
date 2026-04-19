@@ -593,6 +593,101 @@ def remote_create_waiting_consent_operation_code(*, device_id: str, ticket_id: s
     ).strip()
 
 
+def remote_trigger_ws_rate_limit_code(
+    *,
+    device_id: str,
+    agent_token: str,
+    ticket_id: str,
+    ws_url: str = "ws://127.0.0.1:8666/ws",
+    burst_size: int = 600,
+) -> str:
+    return textwrap.dedent(
+        f"""
+        import asyncio
+        import json
+        import uuid
+
+        import aiohttp
+
+        async def main() -> None:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+                async with session.ws_connect({ws_url!r}, timeout=20) as ws:
+                    await ws.send_json(
+                        {{
+                            "type": "handshake",
+                            "request_id": str(uuid.uuid4()),
+                            "device_id": {device_id!r},
+                            "protocol_version": "ws_ticket_v3",
+                            "trace_id": str(uuid.uuid4()),
+                            "token": {agent_token!r},
+                            "meta": {{"actor_role": "agent", "capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]}},
+                            "payload": {{
+                                "device_id": {device_id!r},
+                                "machine_id": {device_id!r},
+                                "hostname": "observer-canary-rate-remote",
+                                "agent_version": "3.1.19",
+                                "os": "Windows",
+                                "os_type": "windows",
+                                "modules": [],
+                                "modules_inventory": [],
+                            }},
+                        }}
+                    )
+                    while True:
+                        message = await ws.receive(timeout=10)
+                        if message.type == aiohttp.WSMsgType.TEXT:
+                            payload = json.loads(message.data)
+                            if payload.get("type") == "handshake_ack":
+                                break
+                        elif message.type in {{aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}}:
+                            raise RuntimeError(f"ws closed during handshake: {{message.type}}")
+
+                    for index in range({burst_size}):
+                        await ws.send_json(
+                            {{
+                                "type": "outbox_item",
+                                "request_id": str(uuid.uuid4()),
+                                "device_id": {device_id!r},
+                                "protocol_version": "ws_ticket_v3",
+                                "trace_id": str(uuid.uuid4()),
+                                "ticket_id": {ticket_id!r},
+                                "meta": {{"actor_role": "agent"}},
+                                "payload": {{
+                                    "outbox_id": f"observer-rate-remote-{{index}}",
+                                    "item_type": "job_event",
+                                    "agent_seq": 1000 + index,
+                                    "event": {{
+                                        "event": "chat_message",
+                                        "from": "agent",
+                                        "text": f"rate remote {{index}}",
+                                        "ticket_id": {ticket_id!r},
+                                    }},
+                                }},
+                            }}
+                        )
+
+                    observed = []
+                    deadline = asyncio.get_running_loop().time() + 12.0
+                    while asyncio.get_running_loop().time() < deadline:
+                        try:
+                            message = await ws.receive(timeout=1.0)
+                        except TimeoutError:
+                            continue
+                        if message.type == aiohttp.WSMsgType.TEXT:
+                            payload = json.loads(message.data)
+                            observed.append(payload)
+                            if payload.get("type") == "outbox_nack":
+                                print(json.dumps({{"nack": payload, "observed_tail": observed[-10:]}}, ensure_ascii=False))
+                                return
+                        elif message.type in {{aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}}:
+                            break
+                    print(json.dumps({{"nack": None, "observed_tail": observed[-10:]}}, ensure_ascii=False))
+
+        asyncio.run(main())
+        """
+    ).strip()
+
+
 async def ensure_support_user(
     api: ApiClient,
     *,
@@ -1207,7 +1302,15 @@ async def scenario_retry_exhausted(api: ApiClient, *, admin_token: str, device_i
     )
 
 
-async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, support_token: str, ws_url: str, ui_ws_url: str) -> list[ScenarioResult]:
+async def scenario_ws_ack_nack_replay(
+    api: ApiClient,
+    *,
+    admin_token: str,
+    support_token: str,
+    ws_url: str,
+    ui_ws_url: str,
+    remote: str,
+) -> list[ScenarioResult]:
     results: list[ScenarioResult] = []
     device_id = str(uuid.uuid4())
     agent_token = await api.issue_agent_token(device_id)
@@ -1322,35 +1425,40 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
                 )
             )
 
-            rate_limited = None
-            for index in range(400):
-                await ws.send_json(
-                    build_ws_chat_outbox_item(
-                        device_id=device_id,
-                        ticket_id=ticket_id,
-                        outbox_id=f"observer-rate-{index}",
-                        agent_seq=10 + index,
-                        trace_id=str(uuid.uuid4()),
-                        text=f"rate {index}",
-                    )
-                )
-            burst_messages = await ws_expect_messages(
-                ws,
-                expected_types={"outbox_nack"},
-                limit=512,
-                timeout_sec=10.0,
-                allow_timeout=True,
+            rate_device_id = str(uuid.uuid4())
+            rate_agent_token = await api.issue_agent_token(rate_device_id)
+            rate_ticket = await create_ticket(
+                api,
+                token=support_token,
+                device_id=rate_device_id,
+                title="Observer canary WS rate limit",
+                description="WS rate-limit canary",
+                user_display_name="Observer Canary",
             )
-            for item in reversed(burst_messages):
-                if (item.get("payload", {}).get("error", {}) or {}).get("code") == "RATE_LIMITED":
-                    rate_limited = item
-                    break
+            rate_ticket_id = str(rate_ticket["ticket_id"])
+            rate_limit_result = json.loads(
+                await run_remote_python(
+                    remote=remote,
+                    code=remote_trigger_ws_rate_limit_code(
+                        device_id=rate_device_id,
+                        agent_token=rate_agent_token,
+                        ticket_id=rate_ticket_id,
+                    ),
+                )
+            )
+            rate_limited = rate_limit_result.get("nack")
+            rate_limited_payload = rate_limited.get("payload") if isinstance(rate_limited, dict) else None
             results.append(
                 ScenarioResult(
                     name="ws_rate_limited_nack",
-                    ok=rate_limited is not None,
+                    ok=((rate_limited_payload or {}).get("error", {}) or {}).get("code") == "RATE_LIMITED",
                     summary="Outbox ingest burst exceeded rate limit and produced retryable RATE_LIMITED nack.",
-                    details={"payload": rate_limited.get("payload") if rate_limited else None},
+                    details={
+                        "device_id": rate_device_id,
+                        "ticket_id": rate_ticket_id,
+                        "payload": rate_limited_payload,
+                        "observed_tail": rate_limit_result.get("observed_tail"),
+                    },
                 )
             )
 
@@ -1382,7 +1490,7 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
                 )
             last_event_id = int(catchup_done.get("last_event_id") or 0)
 
-        await send_ticket_message(api, token=support_token, ticket_id=replay_ticket_id, text="observer replay follow-up")
+        await send_ticket_message(api, token=admin_token, ticket_id=replay_ticket_id, text="observer replay follow-up")
 
         replay_message = None
         async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
