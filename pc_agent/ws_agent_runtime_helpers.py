@@ -13,6 +13,7 @@ from pc_agent.auth.connection_request import run_connection_request_flow
 from pc_agent.auth.rejected_flag import connection_rejected_flag_path
 from pc_agent.auth.token_source import load_auth_token, load_auth_token_from_db
 from pc_agent.config.config_loader import get_config
+from pc_agent.core.action_trace import get_action_trace_recorder
 from pc_agent.version import EXIT_UPDATE_PENDING
 
 
@@ -101,6 +102,20 @@ async def shutdown_for_update(
     operation_id: str,
 ) -> None:
     await asyncio.sleep(delay_sec)
+    get_action_trace_recorder().record(
+        get_action_trace_recorder().context(
+            source="runtime",
+            action="agent.update.shutdown",
+            category="update",
+            operation_id=operation_id or None,
+            request_id=operation_id or None,
+            tool_name="update",
+        ),
+        stage="triggered",
+        status="ok",
+        summary="agent runtime is exiting for update",
+        details={"reason": reason, "version": version, "delay_sec": delay_sec},
+    )
     try:
         await agent._publish_connection_state("restarting", f"self-update: {version or 'pending'}")
     except Exception:

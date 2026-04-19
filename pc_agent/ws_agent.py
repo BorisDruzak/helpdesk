@@ -611,9 +611,22 @@ class WSAgent:
 
     async def trigger_recommended_update(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = payload or {}
+        action_trace = get_action_trace_recorder().context(
+            source="ws_agent",
+            action="agent.update.request",
+            category="update",
+            tool_name="update",
+        )
         recommendation = await self._fetch_update_status(force=True)
         recommended_build = recommendation.get("recommended_build")
         if not recommendation.get("update_available") or not isinstance(recommended_build, dict):
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="request",
+                status="skipped",
+                summary="recommended update is not available",
+                details={"recommendation": recommendation},
+            )
             logger.info(
                 "[update] update request skipped: "
                 f"device_id={self.device_id or 'unknown'} available={bool(recommendation.get('update_available'))} "
@@ -639,6 +652,16 @@ class WSAgent:
             "version": recommended_build.get("version"),
             "reason": str(payload.get("reason") or "agent_gui_self_update"),
         }
+        action_trace.operation_id = None
+        action_trace.request_id = str(uuid.uuid4())
+        action_trace.trace_id = recommendation.get("pending_update_operation_id") or recommendation.get("last_update_operation_id")
+        get_action_trace_recorder().record(
+            action_trace,
+            stage="request",
+            status="started",
+            summary="requesting recommended update from server",
+            details={"request_body": request_body, "recommendation": recommendation},
+        )
         logger.info(
             "[update] requesting recommended build: "
             f"device_id={self.device_id} target={request_body['target']} "
@@ -660,12 +683,28 @@ class WSAgent:
                 result = await response.json(content_type=None)
                 if response.status != 202:
                     error_message = result.get("error") if isinstance(result, dict) else None
+                    get_action_trace_recorder().record(
+                        action_trace,
+                        stage="response",
+                        status="error",
+                        summary=error_message or f"HTTP {response.status}",
+                        details={"status": response.status, "response": result},
+                    )
                     raise RuntimeError(error_message or f"HTTP {response.status}")
+                operation_id = (result or {}).get("operation_id") if isinstance(result, dict) else None
+                action_trace.operation_id = str(operation_id) if operation_id else action_trace.operation_id
                 logger.info(
                     "[update] request accepted: "
                     f"device_id={self.device_id} "
                     f"operation_id={(result or {}).get('operation_id') if isinstance(result, dict) else 'unknown'} "
                     f"version={request_body['version']}"
+                )
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="accepted",
+                    summary="server accepted update request",
+                    details={"request_body": request_body, "response": result},
                 )
                 self._cached_update_checked_at = datetime.now(timezone.utc).isoformat()
                 self._cached_update_status = {
@@ -680,6 +719,13 @@ class WSAgent:
                     "server_response": result if isinstance(result, dict) else {"result": result},
                 }
         except Exception as exc:
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="response",
+                status="error",
+                summary="recommended update request failed",
+                details={"exception_type": type(exc).__name__, "message": str(exc)},
+            )
             logger.error(f"[update] request failed: {exc!r}")
             raise
         finally:

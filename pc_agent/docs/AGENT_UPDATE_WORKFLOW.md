@@ -97,6 +97,7 @@ python pc_agent/build_windows_release_v2.py
    - `recent_operations`
    - `timeline`
    - `problem_logs`
+   - `data/logs/action_trace.jsonl` или tech drilldown `include_agent_actions=1` для stages `agent.update.request`, `agent.update.command`, `agent.update.shutdown`, `agent.update.apply`
    - handshake-confirmed success/failure
 3. Только после canary запускать bulk rollout.
 

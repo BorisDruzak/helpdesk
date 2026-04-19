@@ -1361,6 +1361,31 @@ class AgentOrchestrator:
         Returns:
             ToolResponse с результатом операции обновления
         """
+        operation_id = (meta.request_id or "") if hasattr(meta, "request_id") else ""
+        update_trace = get_action_trace_recorder().context(
+            source="orchestrator",
+            action="agent.update.command",
+            category="update",
+            operation_id=operation_id or None,
+            request_id=getattr(meta, "request_id", None),
+            tool_name="update",
+        )
+
+        def _record_update_trace(
+            stage: str,
+            *,
+            status: str,
+            summary: str,
+            details: Optional[Dict[str, Any]] = None,
+        ) -> None:
+            get_action_trace_recorder().record(
+                update_trace,
+                stage=stage,
+                status=status,
+                summary=summary,
+                details=details or {},
+            )
+
         try:
             actor_role = (command.get("actor_role") or "user").lower()
             # `update` приходит только с сервера по доверенному WS-каналу. Помимо admin/system
@@ -1377,16 +1402,38 @@ class AgentOrchestrator:
             expected_size = command.get("size")
             restart_delay_sec = command.get("restart_delay_sec")
             archive_type = command.get("archive_type") or "zip"
-            operation_id = (meta.request_id or "") if hasattr(meta, "request_id") else ""
             requested_by = (command.get("requested_by") or actor_role or "admin").lower()
 
+            _record_update_trace(
+                "request",
+                status="started",
+                summary="update command received",
+                details={
+                    "version": version,
+                    "target": target,
+                    "channel": channel,
+                    "archive_type": archive_type,
+                    "requested_by": requested_by,
+                    "requested_reason": command.get("reason"),
+                },
+            )
+
             if not version:
+                _record_update_trace("response", status="error", summary="Missing version")
                 return fail(code="UPDATE_FAILED", message="Missing version", meta=meta, retriable=False)
             if not download_url:
+                _record_update_trace("response", status="error", summary="Missing download_url")
                 return fail(code="UPDATE_FAILED", message="Missing download_url", meta=meta, retriable=False)
             if not expected_sha256:
+                _record_update_trace("response", status="error", summary="Missing sha256")
                 return fail(code="UPDATE_FAILED", message="Missing sha256", meta=meta, retriable=False)
             if archive_type not in ("zip", "tar.gz", "tgz"):
+                _record_update_trace(
+                    "response",
+                    status="error",
+                    summary="Unsupported archive_type",
+                    details={"archive_type": archive_type},
+                )
                 return fail(code="UPDATE_FAILED", message="Unsupported archive_type", meta=meta, retriable=False)
             # tgz — алиас для tar.gz (launcher/installer поддерживает оба)
 
@@ -1408,6 +1455,16 @@ class AgentOrchestrator:
                 expected_sha256=expected_sha256,
                 expected_size=expected_size,
             )
+            _record_update_trace(
+                "downloaded",
+                status="ok",
+                summary="update artifact downloaded",
+                details={
+                    "artifact_path": str(artifact_path),
+                    "downloaded_sha256": dl_sha256,
+                    "downloaded_size": dl_size,
+                },
+            )
 
             received_at = datetime.now(timezone.utc).isoformat()
             # Launcher ожидает archive_type "zip" или "tar.gz"/"tgz"; сохраняем нормализованный для распаковки
@@ -1427,6 +1484,12 @@ class AgentOrchestrator:
             }
             pending_path = updates_dir / "pending_update.json"
             pending_path.write_text(json.dumps(pending_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            _record_update_trace(
+                "pending_written",
+                status="ok",
+                summary="pending update payload written",
+                details={"pending_path": str(pending_path), "received_at": received_at},
+            )
 
             restart_delay = 2
             if isinstance(restart_delay_sec, int) and 0 <= restart_delay_sec <= 60:
@@ -1444,8 +1507,20 @@ class AgentOrchestrator:
                 else:
                     loop = asyncio.get_running_loop()
                     loop.call_later(restart_delay, lambda: os._exit(EXIT_UPDATE_PENDING))
+                _record_update_trace(
+                    "shutdown_scheduled",
+                    status="ok",
+                    summary="update shutdown scheduled",
+                    details={"delay_sec": restart_delay, "exit_code_pending": EXIT_UPDATE_PENDING},
+                )
             except Exception as e:
                 logger.warning(f"[update] Failed to schedule exit: {e}")
+                _record_update_trace(
+                    "shutdown_scheduled",
+                    status="warning",
+                    summary="failed to schedule update shutdown cleanly",
+                    details={"exception_type": type(e).__name__, "message": str(e)},
+                )
 
             observations = {
                 "message": "scheduled",
@@ -1458,9 +1533,21 @@ class AgentOrchestrator:
                 "downloaded_size": dl_size,
                 "exit_code_pending": EXIT_UPDATE_PENDING,
             }
+            _record_update_trace(
+                "response",
+                status="ok",
+                summary="update scheduled",
+                details=observations,
+            )
             return ok(data=ToolData(observations=observations), meta=meta)
             
         except Exception as e:
+            _record_update_trace(
+                "response",
+                status="error",
+                summary="update command failed",
+                details={"exception_type": type(e).__name__, "message": str(e)},
+            )
             logger.error(f"Ошибка в _handle_update: {e}")
             raise
 

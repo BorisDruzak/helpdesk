@@ -14,6 +14,7 @@ from pc_agent.launcher.installer import apply_update
 from pc_agent.ws_agent import WSAgent
 from core.orchestrator import AgentOrchestrator
 from core.tool_response import ToolMeta
+from pc_agent.core.action_trace import ActionTraceRecorder, configure_action_trace
 from pc_agent.config.config_loader import ConfigLoader, init_config
 
 
@@ -200,6 +201,57 @@ async def test_update_command_accepts_agent_role_for_server_authorized_self_upda
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_update_command_records_action_trace_stages(tmp_path, monkeypatch):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+    configure_action_trace(tmp_path)
+
+    orchestrator = AgentOrchestrator(enabled_modules=[], data_root=tmp_path)
+    await orchestrator.initialize()
+
+    artifact_bytes = b"agent-update-zip"
+
+    async def fake_download_file_to_path(**kwargs):
+        dest_path = kwargs["dest_path"]
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(artifact_bytes)
+        return ("deadbeef", len(artifact_bytes))
+
+    async def fake_schedule_update_exit(_payload):
+        return {"status": "ok", "scheduled": True}
+
+    monkeypatch.setattr(orchestrator, "_download_file_to_path", fake_download_file_to_path)
+    orchestrator.schedule_update_exit = fake_schedule_update_exit
+
+    result = await orchestrator._handle_update(
+        {
+            "actor_role": "agent",
+            "version": "3.1.18",
+            "target": "windows_amd64",
+            "channel": "stable",
+            "download_url": "http://example.test/api/agent_builds/windows_amd64/stable/3.1.18/download",
+            "sha256": "deadbeef",
+            "size": len(artifact_bytes),
+            "archive_type": "zip",
+            "reason": "agent_gui_self_update",
+        },
+        _update_meta(),
+    )
+
+    assert result.status == "success"
+    recorder = ActionTraceRecorder(tmp_path)
+    rows = recorder.search(limit=20, operation_id="req-self-update", tool_name="update", source="orchestrator")
+    stages = {(row["stage"], row["status"]) for row in rows if row["action"] == "agent.update.command"}
+    assert ("request", "started") in stages
+    assert ("downloaded", "ok") in stages
+    assert ("pending_written", "ok") in stages
+    assert ("shutdown_scheduled", "ok") in stages
+    assert ("response", "ok") in stages
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_update_command_still_blocks_unprivileged_actor_role(tmp_path):
     ConfigLoader._instance = None
     ConfigLoader._config = None
@@ -314,6 +366,53 @@ async def test_runtime_status_includes_recommended_update_fields(tmp_path, monke
     assert status["last_applied_update_version"] == "3.1.3"
     assert status["last_failed_update_version"] == "3.1.2"
     assert status["last_failed_update_reason"] == "verify_failed"
+
+
+def test_apply_update_failure_records_launcher_action_trace(tmp_path):
+    install_root = tmp_path / "install"
+    data_root = tmp_path / "data"
+    updates_dir = data_root / "updates"
+    downloads_dir = updates_dir / "downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    (install_root / "versions").mkdir(parents=True, exist_ok=True)
+    (install_root / "current.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+
+    artifact_path = downloads_dir / "build.zip"
+    with zipfile.ZipFile(artifact_path, "w") as zf:
+        zf.writestr("README.txt", "no agent binary here")
+
+    pending_path = updates_dir / "pending_update.json"
+    pending_path.write_text(
+        json.dumps(
+            {
+                "version": "2.0.0",
+                "archive_type": "zip",
+                "artifact_path": str(artifact_path),
+                "operation_id": "op-launcher-update",
+                "requested_by": "admin",
+                "requested_reason": "test rollout",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    ok, message = apply_update(install_root=install_root, data_root=data_root, pending_path=pending_path)
+
+    assert ok is False
+    assert "Agent binary not found" in message
+
+    recorder = ActionTraceRecorder(data_root)
+    rows = recorder.search(limit=20, operation_id="op-launcher-update", source="launcher")
+    assert any(row["action"] == "agent.update.apply" and row["stage"] == "start" for row in rows)
+    assert any(
+        row["action"] == "agent.update.apply"
+        and row["stage"] == "finish"
+        and row["status"] == "error"
+        and "binary_not_found" in str(row.get("details") or {})
+        for row in rows
+    )
 
 
 @pytest.mark.asyncio

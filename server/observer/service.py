@@ -43,12 +43,16 @@ class TraceOverlayFilters:
     job_id: Optional[str] = None
     operation_id: Optional[str] = None
     device_id: Optional[str] = None
+    root_kind: Optional[str] = None
     tool_name: Optional[str] = None
     module_name: Optional[str] = None
     error_signature: Optional[str] = None
     status: Optional[str] = None
     min_duration_ms: Optional[int] = None
     min_retry_count: Optional[int] = None
+    min_timeout_rate: Optional[float] = None
+    min_retry_rate: Optional[float] = None
+    min_slow_rate: Optional[float] = None
     lookback_hours: Optional[int] = None
 
 
@@ -175,7 +179,25 @@ class ObserverOverlayService:
     async def search_traces(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
         await self._ensure_projected(filters, limit=limit, force=False)
         stmt = select(ObserverTrace)
-        ticket_root_trace_id = await self._load_ticket_root_trace_id(filters.ticket_id) if filters.ticket_id else None
+        prefer_ticket_root = (
+            filters.ticket_id is not None
+            and not any(
+                [
+                    filters.trace_id,
+                    filters.job_id,
+                    filters.operation_id,
+                    filters.device_id,
+                    filters.root_kind not in (None, "ticket"),
+                    filters.tool_name,
+                    filters.module_name,
+                    filters.error_signature,
+                    filters.status,
+                    filters.min_duration_ms,
+                    filters.min_retry_count,
+                ]
+            )
+        )
+        ticket_root_trace_id = await self._load_ticket_root_trace_id(filters.ticket_id) if prefer_ticket_root else None
         if filters.trace_id:
             stmt = stmt.where(ObserverTrace.trace_id == filters.trace_id)
         elif ticket_root_trace_id:
@@ -188,6 +210,8 @@ class ObserverOverlayService:
             stmt = stmt.where(ObserverTrace.operation_id == filters.operation_id)
         if filters.device_id:
             stmt = stmt.where(ObserverTrace.device_id == filters.device_id)
+        if filters.root_kind:
+            stmt = stmt.where(ObserverTrace.root_kind == filters.root_kind)
         if filters.status:
             stmt = stmt.where(ObserverTrace.status == filters.status)
         if filters.tool_name:
@@ -244,19 +268,23 @@ class ObserverOverlayService:
             stmt = stmt.where(Operation.operation_id == filters.operation_id)
         if filters.device_id:
             stmt = stmt.where(Operation.device_id == filters.device_id)
+        if filters.root_kind:
+            stmt = stmt.where(Operation.kind == filters.root_kind)
         if filters.tool_name:
             stmt = stmt.where(Operation.tool_name == filters.tool_name)
         if filters.module_name:
             stmt = stmt.where(Operation.tool_name.like(f"{filters.module_name}.%"))
         rows = (await self.session.execute(stmt.order_by(Operation.queued_at.desc()).limit(max(limit * 20, limit)))).scalars().all()
 
-        grouped: dict[tuple[Optional[str], Optional[str]], dict[str, Any]] = {}
+        grouped: dict[tuple[Optional[str], Optional[str], Optional[str]], dict[str, Any]] = {}
         for operation in rows:
             module_name, tool_name = _split_tool_name(operation.tool_name)
-            key = (module_name, tool_name)
+            operation_kind = _compact_text(operation.kind)
+            key = (operation_kind, module_name, tool_name)
             item = grouped.get(key)
             if item is None:
                 item = {
+                    "operation_kind": operation_kind,
                     "module_name": module_name,
                     "tool_name": tool_name,
                     "operations_count": 0,
@@ -278,7 +306,7 @@ class ObserverOverlayService:
                 item["timeout_count"] += 1
             if int(operation.retry_count or 0) >= retry_threshold:
                 item["retried_operations_count"] += 1
-            if duration_ms >= slow_threshold_ms:
+            if duration_ms > slow_threshold_ms:
                 item["slow_operations_count"] += 1
             if latest_operation_at and (
                 item["latest_operation_at"] is None or latest_operation_at > item["latest_operation_at"]
@@ -294,6 +322,7 @@ class ObserverOverlayService:
             avg_duration_ms = int(item["avg_duration_total_ms"] / operations_count)
             items.append(
                 {
+                    "operation_kind": item["operation_kind"],
                     "module_name": item["module_name"],
                     "tool_name": item["tool_name"],
                     "operations_count": operations_count,
@@ -309,6 +338,18 @@ class ObserverOverlayService:
                     "sample_trace_ids": item["sample_trace_ids"],
                 }
             )
+
+        min_timeout_rate = max(float(filters.min_timeout_rate or 0), 0.0)
+        min_retry_rate = max(float(filters.min_retry_rate or 0), 0.0)
+        min_slow_rate = max(float(filters.min_slow_rate or 0), 0.0)
+        if min_timeout_rate > 0 or min_retry_rate > 0 or min_slow_rate > 0:
+            items = [
+                item
+                for item in items
+                if item["timeout_rate"] >= min_timeout_rate
+                and item["retry_rate"] >= min_retry_rate
+                and item["slow_rate"] >= min_slow_rate
+            ]
 
         items.sort(
             key=lambda entry: (
@@ -362,6 +403,17 @@ class ObserverOverlayService:
             stmt = stmt.where(ObserverErrorSignature.module_name == filters.module_name)
         if filters.tool_name:
             stmt = stmt.where(ObserverErrorSignature.tool_name == filters.tool_name)
+        if filters.root_kind:
+            stmt = stmt.where(
+                exists(
+                    select(ObserverErrorOccurrence.occurrence_id)
+                    .join(ObserverTrace, ObserverTrace.trace_id == ObserverErrorOccurrence.trace_id)
+                    .where(
+                        ObserverErrorOccurrence.error_signature == ObserverErrorSignature.error_signature,
+                        ObserverTrace.root_kind == filters.root_kind,
+                    )
+                )
+            )
         if filters.status:
             stmt = stmt.where(
                 exists(
@@ -528,6 +580,15 @@ class ObserverOverlayService:
         if filters.ticket_id:
             _remember([await self._load_ticket_root_trace_id(filters.ticket_id)])
 
+        if filters.root_kind in (None, "ticket"):
+            ticket_root_stmt = select(Ticket.observer_root_trace_id).where(Ticket.observer_root_trace_id.isnot(None))
+            if filters.ticket_id:
+                ticket_root_stmt = ticket_root_stmt.where(Ticket.ticket_id == filters.ticket_id)
+            if filters.device_id:
+                ticket_root_stmt = ticket_root_stmt.where(Ticket.device_id == filters.device_id)
+            ticket_root_stmt = ticket_root_stmt.order_by(Ticket.created_at.desc()).limit(limit)
+            _remember((await self.session.execute(ticket_root_stmt)).scalars().all())
+
         op_stmt = select(Operation.trace_id).where(Operation.trace_id.isnot(None))
         if filters.ticket_id:
             op_stmt = op_stmt.where(Operation.ticket_id == filters.ticket_id)
@@ -537,6 +598,8 @@ class ObserverOverlayService:
             op_stmt = op_stmt.where(Operation.operation_id == filters.operation_id)
         if filters.device_id:
             op_stmt = op_stmt.where(Operation.device_id == filters.device_id)
+        if filters.root_kind and filters.root_kind != "ticket":
+            op_stmt = op_stmt.where(Operation.kind == filters.root_kind)
         if filters.tool_name:
             op_stmt = op_stmt.where(Operation.tool_name == filters.tool_name)
         if filters.module_name:
@@ -730,9 +793,9 @@ class ObserverOverlayService:
             )
             if min_duration_ms > 0:
                 operation_durations = [_operation_duration_ms(item) or 0 for item in scoped_operations]
-                if not operation_durations and (trace.duration_ms or 0) < min_duration_ms:
+                if not operation_durations and (trace.duration_ms or 0) <= min_duration_ms:
                     continue
-                if operation_durations and max(operation_durations) < min_duration_ms:
+                if operation_durations and max(operation_durations) <= min_duration_ms:
                     continue
             if min_retry_count > 0 and not any(int(item.retry_count or 0) >= min_retry_count for item in scoped_operations):
                 continue

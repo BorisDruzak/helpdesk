@@ -352,7 +352,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_server",
         title="Server UI / admin pages",
-        summary="Admin, ticket and public pages plus control-plane backed tech panel, observer drilldown and static route handlers.",
+        summary="Admin, ticket and public pages plus control-plane backed tech panel, observer drilldown, degradation search and static route handlers.",
         aliases=(
             "admin ui",
             "admin page",
@@ -362,6 +362,11 @@ TOPICS: tuple[Topic, ...] = (
             "browser check",
             "tech panel",
             "control plane",
+            "degradation",
+            "timeout rate",
+            "retry rate",
+            "slow rate",
+            "root_kind",
         ),
         first_files=(
             "server/admin.js",
@@ -467,7 +472,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior and runtime diagnostics/logging.",
+        summary="Always-on runtime lifecycle, tray behavior, runtime diagnostics/logging and local update request/shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
@@ -476,6 +481,8 @@ TOPICS: tuple[Topic, ...] = (
             "runtime logging",
             "agent shutdown",
             "close to tray",
+            "trigger recommended update",
+            "action trace",
         ),
         first_files=(
             "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
@@ -622,7 +629,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout and recommended-version behavior.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",
@@ -634,6 +641,10 @@ TOPICS: tuple[Topic, ...] = (
             "recommended build",
             "recommended version",
             "update availability",
+            "pending_update",
+            "update_history",
+            "agent.update.apply",
+            "agent.update.command",
         ),
         first_files=(
             "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",

@@ -278,3 +278,49 @@ def get_action_trace_recorder() -> ActionTraceRecorder | NullActionTraceRecorder
 
 def search_action_trace(**filters: Any) -> List[Dict[str, Any]]:
     return get_action_trace_recorder().search(**filters)
+
+
+def record_external_action_trace(
+    *,
+    data_root: Path,
+    source: str,
+    action: str,
+    category: str,
+    stage: str,
+    status: str = "ok",
+    summary: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    action_id: Optional[str] = None,
+    parent_action_id: Optional[str] = None,
+    ticket_id: Any = None,
+    operation_id: Any = None,
+    message_id: Any = None,
+    tool_name: Any = None,
+    trace_id: Any = None,
+    request_id: Any = None,
+    session_key: Any = None,
+    consent_token: Any = None,
+) -> Dict[str, Any]:
+    recorder = ActionTraceRecorder(Path(data_root))
+    context = recorder.context(
+        source=source,
+        action=action,
+        category=category,
+        action_id=action_id,
+        parent_action_id=parent_action_id,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        message_id=message_id,
+        tool_name=tool_name,
+        trace_id=trace_id,
+        request_id=request_id,
+        session_key=session_key,
+        consent_token=consent_token,
+    )
+    return recorder.record(
+        context,
+        stage=stage,
+        status=status,
+        summary=summary,
+        details=details,
+    )

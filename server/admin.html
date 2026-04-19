@@ -942,6 +942,10 @@
                             <input type="text" id="techTraceDeviceIdInput" placeholder="uuid device">
                         </div>
                         <div class="form-group">
+                            <label for="techTraceRootKindInput">Flow / root kind</label>
+                            <input type="text" id="techTraceRootKindInput" placeholder="agent_update">
+                        </div>
+                        <div class="form-group">
                             <label for="techTraceToolInput">Tool</label>
                             <input type="text" id="techTraceToolInput" placeholder="screen.collect">
                         </div>
@@ -960,6 +964,18 @@
                         <div class="form-group">
                             <label for="techTraceMinRetryInput">Min retry count</label>
                             <input type="number" id="techTraceMinRetryInput" min="0" step="1" placeholder="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceMinTimeoutRateInput">Min timeout rate</label>
+                            <input type="number" id="techTraceMinTimeoutRateInput" min="0" max="100" step="1" placeholder="50">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceMinRetryRateInput">Min retry rate</label>
+                            <input type="number" id="techTraceMinRetryRateInput" min="0" max="100" step="1" placeholder="50">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceMinSlowRateInput">Min slow rate</label>
+                            <input type="number" id="techTraceMinSlowRateInput" min="0" max="100" step="1" placeholder="50">
                         </div>
                         <div class="form-group">
                             <label for="techTraceLookbackHoursInput">Lookback (hours)</label>

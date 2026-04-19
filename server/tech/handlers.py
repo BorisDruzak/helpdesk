@@ -1516,12 +1516,16 @@ def _trace_filters_from_request(request: web.Request) -> TraceOverlayFilters:
         job_id=_compact_query_value(request.query.get("job_id")),
         operation_id=_compact_query_value(request.query.get("operation_id")),
         device_id=_compact_query_value(request.query.get("device_id")),
+        root_kind=_compact_query_value(request.query.get("root_kind")),
         tool_name=_compact_query_value(request.query.get("tool_name")),
         module_name=_compact_query_value(request.query.get("module_name")),
         error_signature=_compact_query_value(request.query.get("error_signature")),
         status=_compact_query_value(request.query.get("status")),
         min_duration_ms=_parse_query_int(request.query.get("min_duration_ms")),
         min_retry_count=_parse_query_int(request.query.get("min_retry_count")),
+        min_timeout_rate=_parse_query_ratio(request.query.get("min_timeout_rate")),
+        min_retry_rate=_parse_query_ratio(request.query.get("min_retry_rate")),
+        min_slow_rate=_parse_query_ratio(request.query.get("min_slow_rate")),
         lookback_hours=_parse_query_int(request.query.get("lookback_hours")),
     )
 
@@ -1539,6 +1543,21 @@ def _parse_query_int(raw: Optional[str]) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_query_ratio(raw: Optional[str]) -> Optional[float]:
+    value = _compact_query_value(raw)
+    if value is None:
+        return None
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return None
+    if ratio > 1:
+        ratio = ratio / 100.0
+    if ratio < 0:
+        return None
+    return min(ratio, 1.0)
 
 
 def _extract_action_trace_entries(response: dict[str, Any]) -> list[dict[str, Any]]:

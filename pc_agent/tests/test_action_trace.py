@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pc_agent.core.action_trace import ActionTraceRecorder, resolve_action_trace_text_filter
+from pc_agent.core.action_trace import (
+    ActionTraceRecorder,
+    record_external_action_trace,
+    resolve_action_trace_text_filter,
+)
 
 
 def test_action_trace_recorder_writes_and_filters(tmp_path: Path) -> None:
@@ -65,3 +69,25 @@ def test_resolve_action_trace_text_filter_prefers_structured_ids_over_trace_id()
 def test_resolve_action_trace_text_filter_falls_back_to_trace_id_without_structured_ids() -> None:
     assert resolve_action_trace_text_filter(text=None, trace_id="trace-1") == "trace-1"
     assert resolve_action_trace_text_filter(text="explicit", trace_id="trace-1") == "explicit"
+
+
+def test_record_external_action_trace_appends_launcher_compatible_entry(tmp_path: Path) -> None:
+    payload = record_external_action_trace(
+        data_root=tmp_path,
+        source="launcher",
+        action="agent.update.apply",
+        category="update",
+        operation_id="op-update-1",
+        tool_name="update",
+        stage="finish",
+        status="ok",
+        summary="update applied",
+        details={"version": "3.1.18"},
+    )
+
+    assert payload["operation_id"] == "op-update-1"
+    recorder = ActionTraceRecorder(tmp_path)
+    rows = recorder.search(limit=10, operation_id="op-update-1", source="launcher")
+    assert len(rows) == 1
+    assert rows[0]["action"] == "agent.update.apply"
+    assert rows[0]["summary"] == "update applied"

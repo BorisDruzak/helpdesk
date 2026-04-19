@@ -8,7 +8,7 @@
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, and `pc_agent/ui_gui/chat_panel.py`.
-- Observer trace overlay now lives in `server/observer/service.py`, `server/observer/runtime.py`, `server/tech/handlers.py`, `server/app/db/models.py`, `server/websocket/agent_services.py`, and `pc_agent/core/action_trace.py`; observer v2 adds canonical ticket-root traces, degradation queries (`duration > N`, timeout rate, retry rate) and automatic historical backfill.
+- Observer trace overlay now lives in `server/observer/service.py`, `server/observer/runtime.py`, `server/tech/handlers.py`, `server/app/db/models.py`, `server/websocket/agent_services.py`, and `pc_agent/core/action_trace.py`; observer v2 adds canonical ticket-root traces, first-class degradation queries (`duration > N`, timeout/retry/slow rate, `root_kind` flow filtering), automatic historical backfill, and full client-update tracing from request to launcher apply.
 - The admin `/admin` shell has a dedicated `Конструктор форм` tab for versioned request-form packs, served by `/api/ticket_forms/current`, `/public_api/ticket_forms/current`, and `/api/ticket_forms/packs/*`.
 - Public `/help` and the local agent ticket dialog now submit `form_key`, `form_payload`, and `ticket_type`; the agent caches the latest form pack in its local data root and refreshes only when the server reports a newer version.
 

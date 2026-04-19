@@ -4856,11 +4856,15 @@
                 job_id: techObserverInputValue('techTraceJobIdInput'),
                 operation_id: techObserverInputValue('techTraceOperationIdInput'),
                 device_id: techObserverInputValue('techTraceDeviceIdInput'),
+                root_kind: techObserverInputValue('techTraceRootKindInput'),
                 tool_name: techObserverInputValue('techTraceToolInput'),
                 module_name: techObserverInputValue('techTraceModuleInput'),
                 error_signature: techObserverInputValue('techTraceSignatureInput'),
                 min_duration_ms: techObserverInputValue('techTraceMinDurationInput'),
                 min_retry_count: techObserverInputValue('techTraceMinRetryInput'),
+                min_timeout_rate: techObserverInputValue('techTraceMinTimeoutRateInput'),
+                min_retry_rate: techObserverInputValue('techTraceMinRetryRateInput'),
+                min_slow_rate: techObserverInputValue('techTraceMinSlowRateInput'),
                 lookback_hours: techObserverInputValue('techTraceLookbackHoursInput'),
             };
             Object.entries(mapping).forEach(([key, value]) => {
@@ -4938,14 +4942,16 @@
             }
             if (techObserverState.mode === 'degradations') {
                 host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
-                    <thead><tr><th>Tool</th><th>Operations</th><th>Timeout rate</th><th>Retry rate</th><th>Slow rate</th><th>Latest</th></tr></thead>
+                    <thead><tr><th>Flow</th><th>Tool</th><th>Operations</th><th>Timeout rate</th><th>Retry rate</th><th>Slow rate</th><th>Duration</th><th>Latest</th></tr></thead>
                     <tbody>
                         ${items.map(item => `<tr>
+                            <td><strong>${escapeHtml(item.operation_kind || 'unknown')}</strong></td>
                             <td><strong>${escapeHtml(item.tool_name || '—')}</strong><div class="tech-device-meta">${escapeHtml(item.module_name || '—')}</div></td>
                             <td>${escapeHtml(String(item.operations_count ?? 0))}</td>
                             <td>${escapeHtml(`${Math.round((item.timeout_rate || 0) * 100)}% (${item.timeout_count || 0})`)}</td>
                             <td>${escapeHtml(`${Math.round((item.retry_rate || 0) * 100)}% (${item.retried_operations_count || 0})`)}</td>
                             <td>${escapeHtml(`${Math.round((item.slow_rate || 0) * 100)}% (${item.slow_operations_count || 0})`)}</td>
+                            <td>${escapeHtml(`${item.avg_duration_ms || 0} / ${item.max_duration_ms || 0} ms`)}</td>
                             <td>${escapeHtml(techFormatDate(item.latest_operation_at))}</td>
                         </tr>`).join('')}
                     </tbody>
@@ -4992,10 +4998,15 @@
             }
             if (techObserverState.mode === 'degradations') {
                 const items = detail.items || [];
+                const rootKind = techObserverInputValue('techTraceRootKindInput') || 'all flows';
+                const minTimeoutRate = techObserverInputValue('techTraceMinTimeoutRateInput') || '0';
+                const minRetryRate = techObserverInputValue('techTraceMinRetryRateInput') || '0';
+                const minSlowRate = techObserverInputValue('techTraceMinSlowRateInput') || '0';
                 host.innerHTML = `<div class="tech-agent-detail">
                     <div class="tech-agent-head">
                         <div>
                             <h3>Degradation summary</h3>
+                            <div class="tech-agent-subtitle">Flow ${escapeHtml(rootKind)} · timeout/retry/slow rate >= ${escapeHtml(minTimeoutRate)} / ${escapeHtml(minRetryRate)} / ${escapeHtml(minSlowRate)}%</div>
                             <div class="tech-agent-subtitle">Порог slow = ${escapeHtml(techObserverInputValue('techTraceMinDurationInput') || '2000')} ms, retry >= ${escapeHtml(techObserverInputValue('techTraceMinRetryInput') || '1')}</div>
                         </div>
                     </div>

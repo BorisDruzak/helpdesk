@@ -295,3 +295,134 @@ async def test_observer_degradation_queries_report_slow_timeout_and_retry_rates(
     assert item["timeout_rate"] == pytest.approx(1 / 3, rel=1e-4)
     assert item["retry_rate"] == pytest.approx(2 / 3, rel=1e-4)
     assert item["slow_rate"] == pytest.approx(2 / 3, rel=1e-4)
+
+
+@pytest.mark.asyncio
+async def test_observer_can_filter_agent_update_traces_and_rate_threshold_degradations(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000e201"
+    ticket_id = "00000000-0000-0000-0000-00000000e202"
+    update_trace_ids = [
+        "00000000-0000-0000-0000-00000000e211",
+        "00000000-0000-0000-0000-00000000e212",
+    ]
+    update_operation_ids = [
+        "00000000-0000-0000-0000-00000000e221",
+        "00000000-0000-0000-0000-00000000e222",
+    ]
+    tool_trace_id = "00000000-0000-0000-0000-00000000e213"
+    tool_operation_id = "00000000-0000-0000-0000-00000000e223"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.17",
+                hostname="observer-v2-update-host",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-v2",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=30),
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-OBSUPD01",
+                device_id=device_id,
+                title="Observer update traces",
+                description="agent_update should be queryable as a dangerous flow",
+                status="in_progress",
+                created_at=now - timedelta(minutes=30),
+                updated_at=now,
+            )
+        )
+        session.add_all(
+            [
+                Operation(
+                    operation_id=update_operation_ids[0],
+                    device_id=device_id,
+                    ticket_id=ticket_id,
+                    kind="agent_update",
+                    tool_name="update",
+                    actor_role="admin",
+                    trace_id=update_trace_ids[0],
+                    status="timed_out",
+                    queued_at=now - timedelta(minutes=12),
+                    started_at=now - timedelta(minutes=12) + timedelta(seconds=1),
+                    finished_at=now - timedelta(minutes=12) + timedelta(seconds=8),
+                    retry_count=2,
+                    error_code="TIMEOUT",
+                    error_message="launcher update timeout",
+                ),
+                Operation(
+                    operation_id=update_operation_ids[1],
+                    device_id=device_id,
+                    ticket_id=ticket_id,
+                    kind="agent_update",
+                    tool_name="update",
+                    actor_role="admin",
+                    trace_id=update_trace_ids[1],
+                    status="succeeded",
+                    queued_at=now - timedelta(minutes=8),
+                    started_at=now - timedelta(minutes=8) + timedelta(seconds=1),
+                    finished_at=now - timedelta(minutes=8) + timedelta(seconds=2),
+                    retry_count=0,
+                    result_summary="confirmed_by_handshake:3.1.18",
+                ),
+                Operation(
+                    operation_id=tool_operation_id,
+                    device_id=device_id,
+                    ticket_id=ticket_id,
+                    kind="tool_call",
+                    tool_name="screen.collect",
+                    actor_role="support",
+                    trace_id=tool_trace_id,
+                    status="failed",
+                    queued_at=now - timedelta(minutes=6),
+                    started_at=now - timedelta(minutes=6) + timedelta(seconds=1),
+                    finished_at=now - timedelta(minutes=6) + timedelta(seconds=2),
+                    retry_count=0,
+                    error_code="TOOL_FAILED",
+                    error_message="screen collect failed",
+                ),
+            ]
+        )
+        await session.commit()
+
+    trace_search = await test_client.get(
+        "/api/admin/tech/traces?root_kind=agent_update",
+        headers=_auth(),
+    )
+    assert trace_search.status == 200
+    trace_payload = await trace_search.json()
+    assert trace_payload["status"] == "ok"
+    assert {item["trace_id"] for item in trace_payload["traces"]} == set(update_trace_ids)
+
+    degradation_resp = await test_client.get(
+        (
+            "/api/admin/tech/degradations"
+            "?root_kind=agent_update"
+            "&lookback_hours=24"
+            "&min_duration_ms=2000"
+            "&min_timeout_rate=0.5"
+            "&min_retry_rate=0.5"
+            "&min_slow_rate=0.5"
+        ),
+        headers=_auth(),
+    )
+    assert degradation_resp.status == 200
+    degradation_payload = await degradation_resp.json()
+    assert degradation_payload["status"] == "ok"
+    assert degradation_payload["count"] == 1
+    item = degradation_payload["items"][0]
+    assert item["tool_name"] == "update"
+    assert item["operation_kind"] == "agent_update"
+    assert item["operations_count"] == 2
+    assert item["timeout_rate"] == pytest.approx(0.5, rel=1e-4)
+    assert item["retry_rate"] == pytest.approx(0.5, rel=1e-4)
+    assert item["slow_rate"] == pytest.approx(0.5, rel=1e-4)

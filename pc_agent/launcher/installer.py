@@ -21,6 +21,36 @@ DOWNLOAD_RETENTION_LIMIT = 8
 DB_BACKUP_RETENTION_LIMIT = 10
 
 
+def _record_launcher_update_trace(
+    *,
+    data_root: Path,
+    operation_id: Any,
+    stage: str,
+    status: str,
+    summary: str,
+    details: Optional[dict[str, Any]] = None,
+) -> None:
+    try:
+        from pc_agent.core.action_trace import record_external_action_trace
+
+        record_external_action_trace(
+            data_root=data_root,
+            source="launcher",
+            action="agent.update.apply",
+            category="update",
+            operation_id=operation_id,
+            request_id=operation_id,
+            tool_name="update",
+            stage=stage,
+            status=status,
+            summary=summary,
+            details=details or {},
+        )
+    except Exception:
+        # Launcher update flow must keep running even if the observer bridge is unavailable.
+        return
+
+
 def _safe_join(base: Path, path: str) -> Path:
     """Проверка path traversal: итоговый путь должен быть внутри base."""
     resolved = (base / path).resolve()
@@ -250,12 +280,41 @@ def apply_update(
     version = payload.get("version")
     archive_type = payload.get("archive_type", "zip")
     artifact_path = Path(payload.get("artifact_path", ""))
+    operation_id = payload.get("operation_id")
     versions_dir = install_root / "versions"
     current_path = install_root / "current.json"
     db_backups_dir = updates_dir / "db_backups"
     staging = install_root / "versions" / "_staging" / str(version or "_unknown")
 
+    _record_launcher_update_trace(
+        data_root=data_root,
+        operation_id=operation_id,
+        stage="start",
+        status="started",
+        summary="launcher started applying update",
+        details={
+            "version": version,
+            "archive_type": archive_type,
+            "artifact_path": str(artifact_path),
+            "requested_by": payload.get("requested_by"),
+            "requested_reason": payload.get("requested_reason"),
+        },
+    )
+
     def fail_update(reason: str, message: str) -> Tuple[bool, str]:
+        _record_launcher_update_trace(
+            data_root=data_root,
+            operation_id=operation_id,
+            stage="finish",
+            status="error",
+            summary=message,
+            details={
+                "reason": reason,
+                "version": version,
+                "archive_type": archive_type,
+                "artifact_path": str(artifact_path),
+            },
+        )
         entry = {
             "version": version,
             "success": False,
@@ -283,12 +342,28 @@ def apply_update(
     staging.mkdir(parents=True, exist_ok=True)
     try:
         extract_artifact(archive_type, artifact_path, staging)
+        _record_launcher_update_trace(
+            data_root=data_root,
+            operation_id=operation_id,
+            stage="extract",
+            status="ok",
+            summary="update artifact extracted",
+            details={"staging_path": str(staging)},
+        )
     except Exception as e:
         log(f"Extract failed: {e}")
         return fail_update("extract_failed", str(e))
 
     # Backup DB
     backup_storage_db(data_root, db_backups_dir)
+    _record_launcher_update_trace(
+        data_root=data_root,
+        operation_id=operation_id,
+        stage="backup",
+        status="ok",
+        summary="database backup completed",
+        details={"backup_dir": str(db_backups_dir)},
+    )
     log("DB backup done")
 
     # Verify new version
@@ -304,6 +379,14 @@ def apply_update(
         if backups:
             shutil.copy2(backups[0], data_root / "storage.db")
         return fail_update("verify_failed", "Verify failed")
+    _record_launcher_update_trace(
+        data_root=data_root,
+        operation_id=operation_id,
+        stage="verify",
+        status="ok",
+        summary="launcher verify succeeded",
+        details={"binary_path": str(binary_path)},
+    )
     # Publish: move staging -> versions/<version>
     previous = None
     if current_path.exists():
@@ -320,6 +403,14 @@ def apply_update(
         current_path.write_text(
             json.dumps({"version": version, "previous": previous or version}, ensure_ascii=False, indent=2),
             encoding="utf-8",
+        )
+        _record_launcher_update_trace(
+            data_root=data_root,
+            operation_id=operation_id,
+            stage="publish",
+            status="ok",
+            summary="launcher published new version",
+            details={"version_dir": str(target_version_dir), "previous_version": previous},
         )
     except Exception as e:
         log(f"Publish failed: {e}")
@@ -344,5 +435,13 @@ def apply_update(
     except Exception:
         pass
     _cleanup_update_artifacts(updates_dir, artifact_path)
+    _record_launcher_update_trace(
+        data_root=data_root,
+        operation_id=operation_id,
+        stage="finish",
+        status="ok",
+        summary="update applied successfully",
+        details={"version": version, "previous_version": previous},
+    )
     log(f"Update to {version} applied")
     return True, version
