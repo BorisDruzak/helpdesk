@@ -843,6 +843,28 @@ async def ws_expect_messages(
     return await _read() or messages
 
 
+async def ws_collect_until_types(
+    ws: aiohttp.ClientWebSocketResponse,
+    *,
+    required_types: set[str],
+    limit: int = 100,
+    timeout_sec: float = 10.0,
+) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    while len(messages) < limit and not required_types.issubset(seen):
+        msg = await ws.receive(timeout=timeout_sec)
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            payload = json.loads(msg.data)
+            messages.append(payload)
+            message_type = str(payload.get("type") or "")
+            if message_type:
+                seen.add(message_type)
+        elif msg.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}:
+            raise RuntimeError(f"WebSocket closed while waiting for {required_types}: {msg.type}")
+    return messages
+
+
 async def run_remote_python(*, remote: str, code: str) -> str:
     command, input_text = build_remote_python_command(remote=remote, code=code)
     completed = await asyncio.to_thread(run_subprocess, command, WORKSPACE, input_text)
@@ -1190,179 +1212,205 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
     device_id = str(uuid.uuid4())
     agent_token = await api.issue_agent_token(device_id)
     ticket_id = ""
-
-    async with api.session.ws_connect(ws_url, timeout=20) as ws:
-        handshake = {
-            "type": "handshake",
-            "request_id": str(uuid.uuid4()),
-            "device_id": device_id,
-            "protocol_version": "ws_ticket_v3",
-            "trace_id": str(uuid.uuid4()),
-            "token": agent_token,
-            "meta": {"actor_role": "agent", "capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
-            "payload": {
-                "device_id": device_id,
-                "machine_id": device_id,
-                "hostname": "observer-canary-ws",
-                "agent_version": "3.1.19",
-                "os": "Windows",
-                "os_type": "windows",
-                "modules": [],
-                "modules_inventory": [],
-            },
-        }
-        await ws.send_json(handshake)
-        handshake_messages = await ws_expect_messages(ws, expected_types={"handshake_ack"})
-        assert any(item.get("type") == "handshake_ack" for item in handshake_messages)
-        ticket = await create_ticket(
-            api,
-            token=support_token,
-            device_id=device_id,
-            title="Observer canary WS flows",
-            description="WS ack/nack/replay canary",
-            user_display_name="Observer Canary",
-        )
-        ticket_id = str(ticket["ticket_id"])
-
-        unauthorized_trace_id = str(uuid.uuid4())
-        await ws.send_json(
-            {
-                "type": "outbox_item",
+    try:
+        async with api.session.ws_connect(ws_url, timeout=20) as ws:
+            handshake = {
+                "type": "handshake",
                 "request_id": str(uuid.uuid4()),
                 "device_id": device_id,
                 "protocol_version": "ws_ticket_v3",
-                "trace_id": unauthorized_trace_id,
-                "ticket_id": ticket_id,
-                "meta": {"actor_role": "user"},
+                "trace_id": str(uuid.uuid4()),
+                "token": agent_token,
+                "meta": {"actor_role": "agent", "capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
                 "payload": {
-                    "outbox_id": "observer-unauthorized-1",
-                    "item_type": "job_event",
-                    "agent_seq": 1,
-                    "event": {"event": "chat_message", "from": "user", "text": "unauthorized"},
+                    "device_id": device_id,
+                    "machine_id": device_id,
+                    "hostname": "observer-canary-ws",
+                    "agent_version": "3.1.19",
+                    "os": "Windows",
+                    "os_type": "windows",
+                    "modules": [],
+                    "modules_inventory": [],
                 },
             }
-        )
-        unauthorized_messages = await ws_expect_messages(ws, expected_types={"outbox_nack"})
-        unauthorized_nack = next(item for item in reversed(unauthorized_messages) if item.get("type") == "outbox_nack")
-        results.append(
-            ScenarioResult(
-                name="ws_unauthorized_nack",
-                ok=(unauthorized_nack.get("payload", {}).get("error", {}) or {}).get("code") == "UNAUTHORIZED",
-                summary="Post-handshake unauthorized outbox_item was rejected with typed outbox_nack.",
-                details={
-                    "trace_id": unauthorized_nack.get("trace_id"),
-                    "payload": unauthorized_nack.get("payload"),
-                },
+            await ws.send_json(handshake)
+            handshake_messages = await ws_expect_messages(ws, expected_types={"handshake_ack"})
+            assert any(item.get("type") == "handshake_ack" for item in handshake_messages)
+            ticket = await create_ticket(
+                api,
+                token=support_token,
+                device_id=device_id,
+                title="Observer canary WS flows",
+                description="WS ack/nack/replay canary",
+                user_display_name="Observer Canary",
             )
-        )
+            ticket_id = str(ticket["ticket_id"])
 
-        duplicate_trace_id = str(uuid.uuid4())
-        duplicate_message = build_ws_chat_outbox_item(
-            device_id=device_id,
-            ticket_id=ticket_id,
-            outbox_id="observer-duplicate-1",
-            agent_seq=2,
-            trace_id=duplicate_trace_id,
-            text="duplicate",
-        )
-        await ws.send_json(duplicate_message)
-        ack_messages = await ws_expect_messages(
-            ws,
-            expected_types={"outbox_ack", "outbox_nack"},
-            allow_timeout=True,
-        )
-        first_ack = find_ws_message(ack_messages, "outbox_ack")
-        first_nack = find_ws_message(ack_messages, "outbox_nack")
-        await ws.send_json(duplicate_message)
-        duplicate_ack_messages = await ws_expect_messages(
-            ws,
-            expected_types={"outbox_ack", "outbox_nack"},
-            allow_timeout=True,
-        )
-        duplicate_ack = find_ws_message(duplicate_ack_messages, "outbox_ack")
-        duplicate_nack = find_ws_message(duplicate_ack_messages, "outbox_nack")
-        results.append(
-            ScenarioResult(
-                name="ws_duplicate_ack",
-                ok=(
-                    first_ack is not None
-                    and duplicate_ack is not None
-                    and "observer-duplicate-1" in first_ack.get("payload", {}).get("outbox_ids", [])
-                    and "observer-duplicate-1" in duplicate_ack.get("payload", {}).get("outbox_ids", [])
-                ),
-                summary="Duplicate outbox_item received direct ACK on replayed outbox_id.",
-                details={
-                    "first_ack": first_ack.get("payload") if first_ack else None,
-                    "first_nack": first_nack.get("payload") if first_nack else None,
-                    "duplicate_ack": duplicate_ack.get("payload") if duplicate_ack else None,
-                    "duplicate_nack": duplicate_nack.get("payload") if duplicate_nack else None,
-                },
-            )
-        )
-
-        rate_limited = None
-        for index in range(64):
+            unauthorized_trace_id = str(uuid.uuid4())
             await ws.send_json(
-                build_ws_chat_outbox_item(
-                    device_id=device_id,
-                    ticket_id=ticket_id,
-                    outbox_id=f"observer-rate-{index}",
-                    agent_seq=10 + index,
-                    trace_id=str(uuid.uuid4()),
-                    text=f"rate {index}",
+                {
+                    "type": "outbox_item",
+                    "request_id": str(uuid.uuid4()),
+                    "device_id": device_id,
+                    "protocol_version": "ws_ticket_v3",
+                    "trace_id": unauthorized_trace_id,
+                    "ticket_id": ticket_id,
+                    "meta": {"actor_role": "user"},
+                    "payload": {
+                        "outbox_id": "observer-unauthorized-1",
+                        "item_type": "job_event",
+                        "agent_seq": 1,
+                        "event": {"event": "chat_message", "from": "user", "text": "unauthorized"},
+                    },
+                }
+            )
+            unauthorized_messages = await ws_expect_messages(ws, expected_types={"outbox_nack"})
+            unauthorized_nack = next(item for item in reversed(unauthorized_messages) if item.get("type") == "outbox_nack")
+            results.append(
+                ScenarioResult(
+                    name="ws_unauthorized_nack",
+                    ok=(unauthorized_nack.get("payload", {}).get("error", {}) or {}).get("code") == "UNAUTHORIZED",
+                    summary="Post-handshake unauthorized outbox_item was rejected with typed outbox_nack.",
+                    details={
+                        "trace_id": unauthorized_nack.get("trace_id"),
+                        "payload": unauthorized_nack.get("payload"),
+                    },
                 )
             )
-        burst_messages = await ws_expect_messages(
-            ws,
-            expected_types={"outbox_nack"},
-            limit=256,
-            timeout_sec=15.0,
-            allow_timeout=True,
-        )
-        for item in reversed(burst_messages):
-            if (item.get("payload", {}).get("error", {}) or {}).get("code") == "RATE_LIMITED":
-                rate_limited = item
-                break
+
+            duplicate_trace_id = str(uuid.uuid4())
+            duplicate_message = build_ws_chat_outbox_item(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                outbox_id="observer-duplicate-1",
+                agent_seq=2,
+                trace_id=duplicate_trace_id,
+                text="duplicate",
+            )
+            await ws.send_json(duplicate_message)
+            ack_messages = await ws_expect_messages(
+                ws,
+                expected_types={"outbox_ack", "outbox_nack"},
+                allow_timeout=True,
+            )
+            first_ack = find_ws_message(ack_messages, "outbox_ack")
+            first_nack = find_ws_message(ack_messages, "outbox_nack")
+            await ws.send_json(duplicate_message)
+            duplicate_ack_messages = await ws_expect_messages(
+                ws,
+                expected_types={"outbox_ack", "outbox_nack"},
+                allow_timeout=True,
+            )
+            duplicate_ack = find_ws_message(duplicate_ack_messages, "outbox_ack")
+            duplicate_nack = find_ws_message(duplicate_ack_messages, "outbox_nack")
+            results.append(
+                ScenarioResult(
+                    name="ws_duplicate_ack",
+                    ok=(
+                        first_ack is not None
+                        and duplicate_ack is not None
+                        and "observer-duplicate-1" in first_ack.get("payload", {}).get("outbox_ids", [])
+                        and "observer-duplicate-1" in duplicate_ack.get("payload", {}).get("outbox_ids", [])
+                    ),
+                    summary="Duplicate outbox_item received direct ACK on replayed outbox_id.",
+                    details={
+                        "first_ack": first_ack.get("payload") if first_ack else None,
+                        "first_nack": first_nack.get("payload") if first_nack else None,
+                        "duplicate_ack": duplicate_ack.get("payload") if duplicate_ack else None,
+                        "duplicate_nack": duplicate_nack.get("payload") if duplicate_nack else None,
+                    },
+                )
+            )
+
+            rate_limited = None
+            for index in range(64):
+                await ws.send_json(
+                    build_ws_chat_outbox_item(
+                        device_id=device_id,
+                        ticket_id=ticket_id,
+                        outbox_id=f"observer-rate-{index}",
+                        agent_seq=10 + index,
+                        trace_id=str(uuid.uuid4()),
+                        text=f"rate {index}",
+                    )
+                )
+            burst_messages = await ws_expect_messages(
+                ws,
+                expected_types={"outbox_nack"},
+                limit=256,
+                timeout_sec=15.0,
+                allow_timeout=True,
+            )
+            for item in reversed(burst_messages):
+                if (item.get("payload", {}).get("error", {}) or {}).get("code") == "RATE_LIMITED":
+                    rate_limited = item
+                    break
+            results.append(
+                ScenarioResult(
+                    name="ws_rate_limited_nack",
+                    ok=rate_limited is not None,
+                    summary="Outbox ingest burst exceeded rate limit and produced retryable RATE_LIMITED nack.",
+                    details={"payload": rate_limited.get("payload") if rate_limited else None},
+                )
+            )
+
+        async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
+            await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
+            hello_messages = await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
+            assert any(item.get("type") == "ui_hello_ack" for item in hello_messages)
+            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": 0})
+            first_sub_messages = await ws_collect_until_types(
+                ui_ws,
+                required_types={"subscribe_ack", "catchup_done"},
+                limit=64,
+            )
+            catchup_done = next(item for item in reversed(first_sub_messages) if item.get("type") == "catchup_done")
+            last_event_id = int(catchup_done.get("last_event_id") or 0)
+
+        await send_ticket_message(api, token=support_token, ticket_id=ticket_id, text="observer replay follow-up")
+
+        replay_message = None
+        async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
+            await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
+            await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
+            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": last_event_id})
+            second_sub_messages = await ws_collect_until_types(
+                ui_ws,
+                required_types={"subscribe_ack", "catchup_done"},
+                limit=64,
+            )
+            second_sub_messages.extend(
+                await ws_expect_messages(
+                    ui_ws,
+                    expected_types={"ticket_event_committed"},
+                    limit=64,
+                    timeout_sec=3.0,
+                    allow_timeout=True,
+                )
+            )
+            for item in second_sub_messages:
+                if item.get("type") == "ticket_event_committed" and item.get("event_type") == "chat_message":
+                    payload = item.get("payload") or {}
+                    if payload.get("text") == "observer replay follow-up":
+                        replay_message = item
+                        break
         results.append(
             ScenarioResult(
-                name="ws_rate_limited_nack",
-                ok=rate_limited is not None,
-                summary="Outbox ingest burst exceeded rate limit and produced retryable RATE_LIMITED nack.",
-                details={"payload": rate_limited.get("payload") if rate_limited else None},
+                name="ws_ui_replay",
+                ok=replay_message is not None,
+                summary="UI reconnect replay delivered the missing ticket event via since_event_id catch-up.",
+                details={"ticket_id": ticket_id, "replayed_event": replay_message},
             )
         )
-
-    async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
-        await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
-        hello_messages = await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
-        assert any(item.get("type") == "ui_hello_ack" for item in hello_messages)
-        await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": 0})
-        first_sub_messages = await ws_expect_messages(ui_ws, expected_types={"subscribe_ack", "catchup_done"}, limit=64)
-        catchup_done = next(item for item in reversed(first_sub_messages) if item.get("type") == "catchup_done")
-        last_event_id = int(catchup_done.get("last_event_id") or 0)
-
-    await send_ticket_message(api, token=support_token, ticket_id=ticket_id, text="observer replay follow-up")
-
-    replay_message = None
-    async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
-        await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
-        await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
-        await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": last_event_id})
-        second_sub_messages = await ws_expect_messages(ui_ws, expected_types={"subscribe_ack", "catchup_done", "ticket_event_committed"}, limit=64)
-        for item in second_sub_messages:
-            if item.get("type") == "ticket_event_committed" and item.get("event_type") == "chat_message":
-                payload = item.get("payload") or {}
-                if payload.get("text") == "observer replay follow-up":
-                    replay_message = item
-                    break
-    results.append(
-        ScenarioResult(
-            name="ws_ui_replay",
-            ok=replay_message is not None,
-            summary="UI reconnect replay delivered the missing ticket event via since_event_id catch-up.",
-            details={"ticket_id": ticket_id, "replayed_event": replay_message},
+    except Exception as exc:
+        results.append(
+            ScenarioResult(
+                name="ws_suite_internal_error",
+                ok=False,
+                summary="WS ack/nack/replay canary hit an unexpected internal error before completion.",
+                details={"ticket_id": ticket_id or None, "error": repr(exc)},
+            )
         )
-    )
     return results
 
 
