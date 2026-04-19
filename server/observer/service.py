@@ -189,6 +189,7 @@ class ObserverOverlayService:
 
     async def search_traces(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
         await self._ensure_projected(filters, limit=limit, force=False)
+        await self.session.flush()
         stmt = select(ObserverTrace)
         prefer_ticket_root = (
             filters.ticket_id is not None

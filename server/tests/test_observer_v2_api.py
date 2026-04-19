@@ -642,3 +642,56 @@ async def test_trace_detail_redacts_runtime_audit_attrs_in_occurrences(test_clie
     assert span_details["authorization"] == "***REDACTED***"
     assert span_details["nested"]["password"] == "***REDACTED***"
     assert span_details["token_hash_prefix"] == "safe-prefix"
+
+
+@pytest.mark.asyncio
+async def test_trace_search_by_operation_id_sees_just_projected_execution_trace(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000e501"
+    trace_id = "00000000-0000-0000-0000-00000000e502"
+    operation_id = "00000000-0000-0000-0000-00000000e503"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.19",
+                hostname="observer-op-search-host",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-v3",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=5),
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                kind="module_install",
+                actor_role="admin",
+                trace_id=trace_id,
+                status="succeeded",
+                queued_at=now - timedelta(seconds=20),
+                sent_at=now - timedelta(seconds=18),
+                accepted_at=now - timedelta(seconds=16),
+                finished_at=now - timedelta(seconds=10),
+                retry_count=0,
+                result_summary="installed observer canary module",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/admin/tech/traces?operation_id={operation_id}",
+        headers=_auth(),
+    )
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["count"] == 1
+    assert payload["traces"][0]["trace_id"] == trace_id
+    assert payload["traces"][0]["operation_id"] == operation_id
