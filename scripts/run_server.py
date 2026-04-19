@@ -20,10 +20,17 @@ def main():
     pid = os.getpid()
     PID_FILE.write_text(str(pid), encoding="utf-8")
     print(f"[run_server] PID {pid} -> {PID_FILE}", flush=True)
+    env = os.environ.copy()
+    existing_pythonpath = str(env.get("PYTHONPATH") or "").strip()
+    pythonpath_parts = [str(WORKSPACE)]
+    if existing_pythonpath:
+        pythonpath_parts.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
     proc = subprocess.Popen(
         [sys.executable, "server.py"],
         cwd=WORKSPACE / "server",
+        env=env,
         stdin=subprocess.DEVNULL,
         stdout=sys.stdout,
         stderr=sys.stderr,

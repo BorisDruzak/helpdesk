@@ -173,6 +173,9 @@ def _parse_users_from_env() -> dict[str, str]:
 
 
 def _should_warn_about_default_admin_password(users: dict[str, str]) -> bool:
+    warn_flag = str(os.getenv("UI_WARN_ON_DEFAULT_ADMIN_PASSWORD") or "").strip().lower()
+    if warn_flag not in {"1", "true", "yes", "on"}:
+        return False
     configured_users_json = str(os.getenv("UI_USERS_JSON") or "").strip()
     configured_admin_password = os.getenv("UI_ADMIN_PASSWORD")
     if configured_users_json:

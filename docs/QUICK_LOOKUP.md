@@ -5,6 +5,7 @@
 - Agent-side observer correlation for tech drilldown now uses `pc_agent/core/action_trace.py` plus the `search_action_trace` RPC in `pc_agent/ws_agent.py`; admin tech trace detail requests agent actions via `include_agent_actions=1`, and the agent now emits guaranteed module-level execution breakdown (`module.resolve`, `module.execute`) even when a tool module has no custom runtime audit hooks.
 - New module authoring canon: every new `BaseCollector` tool must emit observer breadcrumbs through `trace_span(...)` / `trace_event(...)`; generated workbench modules now scaffold this automatically in `server/utils/module_builder.py`.
 - Local Windows launcher canary flow still goes through `python scripts/manage_local_agent.py start <name> --launcher`, with release artifacts built by `python pc_agent/build_windows_release_v2.py`.
+- Server/control runtime wrappers (`scripts/run_server.py`, `scripts/run_control_plane.py`) now always bootstrap repo-root import visibility for shared packages like `shared.redaction`; when debugging Linux boot failures, treat those wrappers as canonical entrypoints instead of ad-hoc `python server/server.py`.
 
 ## 2026-04-16 intake forms
 

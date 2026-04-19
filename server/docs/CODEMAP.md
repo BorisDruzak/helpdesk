@@ -32,8 +32,8 @@
 
 | Файл | Назначение |
 |------|------------|
-| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; поднимает background `ObserverRefreshRuntime` для incremental trace projection и historical backfill ticket-root traces; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
-| `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
+| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; поднимает background `ObserverRefreshRuntime` для incremental trace projection и historical backfill ticket-root traces; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; bootstrap-ит repo root в `sys.path`, чтобы sibling-пакет `shared/*` был доступен в canonical runtime wrappers; legacy `server_old.py` удалён из активного runtime tree |
+| `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера; так же bootstrap-ит repo root в `sys.path` для shared runtime helpers |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation`, module rollout settings `GET/PATCH /api/modules/rollout_settings` и device-scoped module lifecycle endpoints |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
 | `server/runtime_control.py` | Канонический runtime-control слой для `systemctl`/`journalctl`, control-plane state, smoke/status/log filtering и unit-level lifecycle |

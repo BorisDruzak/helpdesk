@@ -3,12 +3,18 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+import sys
 
 import aiohttp
 from aiohttp import web
 from loguru import logger
+
+WORKSPACE_DIR = Path(__file__).resolve().parent.parent
+if str(WORKSPACE_DIR) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE_DIR))
 
 from app.db import get_session, init_db, shutdown_db
 from app.repos.ui_users_repo import UiUsersRepo

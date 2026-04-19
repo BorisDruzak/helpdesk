@@ -20,6 +20,11 @@ import sys
 from aiohttp import web
 from loguru import logger
 from pathlib import Path
+
+WORKSPACE_DIR = Path(__file__).resolve().parent.parent
+if str(WORKSPACE_DIR) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE_DIR))
+
 from tech.log_buffer import capture_loguru_message
 
 # Import configuration and core modules
