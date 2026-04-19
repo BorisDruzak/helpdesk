@@ -953,9 +953,22 @@
                             <label for="techTraceSignatureInput">Error signature</label>
                             <input type="text" id="techTraceSignatureInput" placeholder="ws_ack_timeout">
                         </div>
+                        <div class="form-group">
+                            <label for="techTraceMinDurationInput">Min duration (ms)</label>
+                            <input type="number" id="techTraceMinDurationInput" min="0" step="100" placeholder="2500">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceMinRetryInput">Min retry count</label>
+                            <input type="number" id="techTraceMinRetryInput" min="0" step="1" placeholder="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="techTraceLookbackHoursInput">Lookback (hours)</label>
+                            <input type="number" id="techTraceLookbackHoursInput" min="1" step="1" value="24">
+                        </div>
                     </div>
                     <div class="tech-actions-bar" style="margin-top: 12px;">
                         <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="search-traces">Искать traces</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="search-degradations">Искать деградации</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="search-signatures">Искать signatures</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-tech-observer-action="rebuild">Пересобрать traces</button>
                         <label class="muted" style="display:flex; align-items:center; gap:8px; margin-left:auto;">

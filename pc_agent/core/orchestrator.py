@@ -2628,6 +2628,15 @@ class AgentOrchestrator:
         logger.info(f"[AGENT] run_tool tool={tool} chat_job_id={chat_job_id} tool_params_keys={list(tool_params.keys())}")
         
         logger.info(f"[AGENT] run_tool start tool={tool} actor_role={actor_role} request_id={meta.request_id}")
+        action_trace = get_action_trace_recorder().context(
+            source="orchestrator",
+            action="tool.run",
+            category="tool",
+            ticket_id=ticket_id,
+            operation_id=getattr(meta, "request_id", None),
+            request_id=getattr(meta, "request_id", None),
+            tool_name=tool,
+        )
         
         try:
             
@@ -2741,6 +2750,17 @@ class AgentOrchestrator:
                     meta=meta,
                     retriable=False
                 )
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="module.resolve",
+                status="ok",
+                summary="module and tool method resolved",
+                details={
+                    "module_name": module_name,
+                    "method_name": method_name,
+                    "tool_name": tool,
+                },
+            )
             
             # Получаем method_info из registry для policy check
             # (module_info уже получен выше, если tool не содержал точку)
@@ -2885,15 +2905,6 @@ class AgentOrchestrator:
                     "request_id": meta.request_id,
                     "command": meta.command or "run_tool"
                 }
-            )
-            action_trace = get_action_trace_recorder().context(
-                source="orchestrator",
-                action="tool.run",
-                category="tool",
-                ticket_id=ticket_id,
-                operation_id=getattr(meta, "request_id", None),
-                request_id=getattr(meta, "request_id", None),
-                tool_name=tool,
             )
             get_action_trace_recorder().record(
                 action_trace,
@@ -3105,6 +3116,29 @@ class AgentOrchestrator:
                 params_to_use["operation_id"] = operation_id
             
             # Создаем task для выполнения tool и регистрируем в running_tasks
+            module_action_trace = get_action_trace_recorder().context(
+                source="module",
+                action="module.execute",
+                category="tool",
+                parent_action_id=action_trace.action_id,
+                ticket_id=ticket_id,
+                operation_id=operation_id,
+                request_id=getattr(meta, "request_id", None),
+                tool_name=tool,
+            )
+            module_execution_started = time.perf_counter()
+            get_action_trace_recorder().record(
+                module_action_trace,
+                stage="start",
+                status="running",
+                summary="module execution entered",
+                details={
+                    "module_name": module_name,
+                    "method_name": method_name,
+                    "is_async": inspect.iscoroutinefunction(method),
+                },
+            )
+
             async def _execute_tool():
                 """Внутренняя функция для выполнения tool в task."""
                 try:
@@ -3151,6 +3185,18 @@ class AgentOrchestrator:
                     summary="tool timed out",
                     details={"effective_timeout": effective_timeout, "operation_id": operation_id},
                 )
+                get_action_trace_recorder().record(
+                    module_action_trace,
+                    stage="finish",
+                    status="timeout",
+                    summary="module execution timed out",
+                    details={
+                        "module_name": module_name,
+                        "method_name": method_name,
+                        "duration_ms": int((time.perf_counter() - module_execution_started) * 1000),
+                        "operation_id": operation_id,
+                    },
+                )
                 return fail(
                     code="TIMEOUT",
                     message=f'Инструмент "{tool}" превысил таймаут {effective_timeout} сек.',
@@ -3180,6 +3226,19 @@ class AgentOrchestrator:
                     status="error",
                     summary=str(e),
                     details={"exception_type": type(e).__name__, "operation_id": operation_id},
+                )
+                get_action_trace_recorder().record(
+                    module_action_trace,
+                    stage="finish",
+                    status="error",
+                    summary=str(e),
+                    details={
+                        "module_name": module_name,
+                        "method_name": method_name,
+                        "duration_ms": int((time.perf_counter() - module_execution_started) * 1000),
+                        "exception_type": type(e).__name__,
+                        "operation_id": operation_id,
+                    },
                 )
                 
                 return fail(
@@ -3368,6 +3427,20 @@ class AgentOrchestrator:
             if upload_errors:
                 logger.warning(f"[AGENT] run_tool partial tool={tool} duration_ms={duration_ms} artifacts={len(uploaded_artifacts)} upload_errors={len(upload_errors)}")
                 get_action_trace_recorder().record(
+                    module_action_trace,
+                    stage="finish",
+                    status="partial",
+                    summary="module execution completed with upload warnings",
+                    details={
+                        "module_name": module_name,
+                        "method_name": method_name,
+                        "duration_ms": int((time.perf_counter() - module_execution_started) * 1000),
+                        "artifact_count": len(uploaded_artifacts),
+                        "upload_error_count": len(upload_errors),
+                        "operation_id": operation_id,
+                    },
+                )
+                get_action_trace_recorder().record(
                     action_trace,
                     stage="response",
                     status="partial",
@@ -3382,6 +3455,19 @@ class AgentOrchestrator:
                 return partial(data=data, meta=meta, warnings=warnings, errors=upload_errors)
             else:
                 logger.success(f"[AGENT] run_tool ok tool={tool} duration_ms={duration_ms} artifacts={len(uploaded_artifacts)}")
+                get_action_trace_recorder().record(
+                    module_action_trace,
+                    stage="finish",
+                    status="ok",
+                    summary="module execution completed",
+                    details={
+                        "module_name": module_name,
+                        "method_name": method_name,
+                        "duration_ms": int((time.perf_counter() - module_execution_started) * 1000),
+                        "artifact_count": len(uploaded_artifacts),
+                        "operation_id": operation_id,
+                    },
+                )
                 get_action_trace_recorder().record(
                     action_trace,
                     stage="response",

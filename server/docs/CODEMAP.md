@@ -32,7 +32,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; поднимает background `ObserverRefreshRuntime` для incremental trace projection; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
+| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; поднимает background `ObserverRefreshRuntime` для incremental trace projection и historical backfill ticket-root traces; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
 | `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation`, module rollout settings `GET/PATCH /api/modules/rollout_settings` и device-scoped module lifecycle endpoints |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
@@ -55,7 +55,7 @@
 | `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
-| `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id |
+| `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id; ticket-bound `send_ws_command` теперь пытается закрепить canonical `observer_root_trace_id` тикета до создания operation/outbox entry |
 | `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, DB lease claim, reconcile) |
 | `server/websocket/validator.py` | Валидация событий, device binding |
 | `server/websocket/modules_sync.py` | Синхронизация модулей с UI/агентом |
@@ -70,7 +70,7 @@
 | `server/api/operations.py` | Lifecycle операций, consent/cancel |
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
-| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), trace/signature search (`/traces`, `/signatures`, `/traces/rebuild`, `/traces/runtime`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
+| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), trace/signature/degradation search (`/traces`, `/signatures`, `/degradations`, `/traces/rebuild`, `/traces/runtime`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
 | `server/control_plane.py` | Внешний runtime API `/api/control/server/*`: status, full journal logs, download logs, lifecycle actions `start/stop/restart/smoke` |
 
 ### 2.2.1 Tools / единый путь run_tool
@@ -89,7 +89,7 @@
 | `server/app/db/migrations/versions/*.py` | Alembic миграции |
 | `server/app/repos/device_outbox_repo.py` | device_outbox (pending/sent/delivered) |
 | `server/app/repos/device_events_repo.py` | События устройства |
-| `server/app/repos/ticket_events_repo.py` | События тикета |
+| `server/app/repos/ticket_events_repo.py` | События тикета; canonical observer trace resolution для ticket-bound lifecycle events, lazy bootstrap `tickets.observer_root_trace_id` и связь server-originated событий с operation trace/root trace |
 | `server/app/repos/operations_repo.py` | Операции |
 | `server/app/repos/modules_repo.py` | Модули в БД |
 | `server/app/repos/device_modules_repo.py` | Установленные модули на устройстве |
@@ -110,8 +110,8 @@
 | `server/app/services/playbook_scheduler.py` | Планировщик playbook |
 | `server/app/services/module_reconcile_scheduler.py` | Реконсиляция модулей |
 | `server/app/services/artifact_service.py` | Артефакты |
-| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; мосты из operations/ticket_events/device_events/agent_runtime_audit |
-| `server/observer/runtime.py` | Background incremental refresh для hot traces: сканирует committed source rows, дебаунсит trace_id и обновляет overlay без ручного rebuild/search |
+| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; observer v2 умеет canonical ticket-root trace, synthetic `ticket.lifecycle` span, группировку исторических ticket-bound rows в одну trace и degradation queries (`min_duration_ms`, `min_retry_count`, timeout/retry/slow rates) |
+| `server/observer/runtime.py` | Background refresh для observer traces: сканирует committed source rows, enqueue-ит hot ticket-root traces, а также исторический backfill missing projections без ручного rebuild/search |
 
 ### 2.5 Доменные модули (handlers + service)
 | Каталог/файл | Назначение |
@@ -141,7 +141,7 @@
 ### 2.7 UI (статика)
 | Файл | Назначение |
 |------|------------|
-| `server/admin.html`, `server/admin.js`, `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket; вкладка `Модули` теперь разделена на подтемы `Разработка модулей` / `Список модулей` / `Редактор модулей` / `Модули на устройствах`, а workbench живёт в отдельном fragment+script |
+| `server/admin.html`, `server/admin.js`, `server/admin_modules_workbench.html`, `server/admin_modules_workbench.js`, `server/admin.css`, `server/web_shared.js` | Админка и shared web-shell helpers (`authHeaders`, `responseToJson`, `escapeHtml`, `parseServerDate`, `formatDate`) для admin/support/ticket; вкладка `Модули` теперь разделена на подтемы `Разработка модулей` / `Список модулей` / `Редактор модулей` / `Модули на устройствах`, а observer-блок техпанели теперь ищет traces/signatures/degradations, умеет thresholds по duration/retry и показывает runtime status/backfill |
 | `server/control_plane.py`, `server/runtime_control.py` | Control-plane и runtime orchestration для техпанели: статус сервера (включая `started_at`/`uptime` из systemd и его timezone-offset timestamps вида `+05`), корректный `stop -> stopped/inactive` без ложного `failed`, health summary main API, полные логи (по умолчанию `Info+`), подтверждённые lifecycle actions с аудитом |
 | `server/login.html`, `server/login.js`, `server/login.css` | Единая страница логина: выбор целевой роли (`admin` или `support`), POST `/api/ui_login` c `expected_role`, redirect в нужный shell |
 | `server/support.html`, `server/support.js`, `server/support.css` | Отдельный support workspace: двухрежимный экран `Очередь` + `Тикеты`; runtime теперь опирается на `web_shared.js` для общих auth/date/html helpers, чтобы не дублировать базовый shell-код. Переключатель режимов собран в верхние twin-cards внутри workspace: слева компактная доска очереди с summary-плитками, встроенным scope-toggle и hover-подсказкой по новым ответам пользователя, справа компактный вход в рабочий тикет без дублирования длинной мета-строки. В `Очереди` основное место отдано доске тикетов, поиск/сортировка живут отдельной полосой ниже, а поиск сохраняет фокус при каждом вводе. В `Рабочем тикете` используются режимы preview/work/observe и встроенный ticket workbench (`Контекст`, `Инструменты`, `Пайплайн`), а быстрые статусы `Ждём пользователя` / `Решено` делегируются в embedded composer тикета через postMessage bridge. Dev-only тестовая учётка support для локальных/browser проверок: `op1` / `1.Abcdef` (убрать перед production) |
@@ -269,6 +269,13 @@
 - New observer storage lives in `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, and `observer_error_signatures` (migration `052_observer_trace_overlay`).
 - Tech API now exposes `GET /api/admin/tech/traces`, `GET /api/admin/tech/traces/runtime`, `GET /api/admin/tech/traces/{trace_id}`, `POST /api/admin/tech/traces/rebuild`, `GET /api/admin/tech/signatures`, and `GET /api/admin/tech/signatures/{error_signature}`.
 - The projection bridges `operations`, `ticket_events`, `device_events`, `agent_runtime_audit`, and optional agent-side `action_trace` search for drilldown near failures.
+
+## 2026-04-19 Observer v2
+
+- `tickets.observer_root_trace_id` (migration `053_ticket_observer_root_trace`) is the technical anchor for a full ticket lifecycle trace; server-originated ticket events resolve to this root instead of ad-hoc random trace ids.
+- `server/observer/service.py` can project a ticket-root trace by `ticket_id`, even if historical source rows were written with multiple old trace ids; the resulting detail includes a synthetic `ticket.lifecycle` root span and nested operation/event spans.
+- `server/observer/runtime.py` now discovers hot ticket-root traces plus missing historical projections, so archive tickets no longer rely on manual rebuild as the normal path.
+- Tech API and `/admin` now expose degradation search (`GET /api/admin/tech/degradations`) alongside trace/signature drilldown, with first-class filters for `min_duration_ms`, `min_retry_count`, and `lookback_hours`.
 - Everyday authoring should happen through the direct form -> field -> parameter flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
 - The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.

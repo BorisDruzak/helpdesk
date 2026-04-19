@@ -238,3 +238,99 @@ async def test_observer_refresh_runtime_refreshes_existing_trace_after_new_sourc
             assert "device.command_result" in span_names
     finally:
         await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_observer_refresh_runtime_backfills_historical_trace_without_manual_rebuild():
+    now = datetime.now(timezone.utc)
+    trace_id = "00000000-0000-0000-0000-00000000fa30"
+    ticket_id = "00000000-0000-0000-0000-00000000fb30"
+    device_id = "00000000-0000-0000-0000-00000000fc30"
+    operation_id = "00000000-0000-0000-0000-00000000fd30"
+    historical = now - timedelta(days=14)
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.16",
+                hostname="observer-runtime-history-host",
+                os="windows",
+                capabilities=[],
+                tools_version="runtime-history",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=historical - timedelta(days=30),
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-RUNTIME30",
+                device_id=device_id,
+                title="Historical observer projection",
+                description="Old traces should be backfilled automatically",
+                status="resolved",
+                created_at=historical,
+                updated_at=historical + timedelta(minutes=1),
+                observer_root_trace_id=trace_id,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="system.collect",
+                actor_role="support",
+                trace_id=trace_id,
+                status="succeeded",
+                queued_at=historical,
+                sent_at=historical + timedelta(seconds=1),
+                accepted_at=historical + timedelta(seconds=2),
+                started_at=historical + timedelta(seconds=3),
+                finished_at=historical + timedelta(seconds=5),
+                result_summary="historical ok",
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="tool_call_started",
+                payload={"tool_name": "system.collect", "call_id": "runtime-history-1"},
+                trace_id=trace_id,
+                operation_id=operation_id,
+                created_at=historical + timedelta(seconds=1),
+            )
+        )
+        await session.commit()
+
+    runtime = ObserverRefreshRuntime(
+        scan_interval_sec=0.05,
+        scan_overlap_sec=1.0,
+        bootstrap_lookback_sec=5.0,
+        debounce_sec=0.01,
+        max_batch=10,
+    )
+    await runtime.start()
+    try:
+        async def _trace_exists() -> bool:
+            async with get_session() as session:
+                projected = await session.get(ObserverTrace, trace_id)
+                return projected is not None
+
+        await _wait_until(_trace_exists, timeout=4.0)
+
+        async with get_session() as session:
+            projected = await session.get(ObserverTrace, trace_id)
+            assert projected is not None
+            assert projected.trace_id == trace_id
+            assert projected.ticket_id == ticket_id
+            assert projected.started_at == historical
+    finally:
+        await runtime.stop()

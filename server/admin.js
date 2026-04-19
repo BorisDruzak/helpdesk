@@ -4656,6 +4656,8 @@
                         const action = observerActionBtn.getAttribute('data-tech-observer-action');
                         if (action === 'search-traces') {
                             techRunObserverInteraction(() => loadTechObserverSearch('traces')).catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        } else if (action === 'search-degradations') {
+                            techRunObserverInteraction(() => loadTechObserverSearch('degradations')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         } else if (action === 'search-signatures') {
                             techRunObserverInteraction(() => loadTechObserverSearch('signatures')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         } else if (action === 'rebuild') {
@@ -4857,6 +4859,9 @@
                 tool_name: techObserverInputValue('techTraceToolInput'),
                 module_name: techObserverInputValue('techTraceModuleInput'),
                 error_signature: techObserverInputValue('techTraceSignatureInput'),
+                min_duration_ms: techObserverInputValue('techTraceMinDurationInput'),
+                min_retry_count: techObserverInputValue('techTraceMinRetryInput'),
+                lookback_hours: techObserverInputValue('techTraceLookbackHoursInput'),
             };
             Object.entries(mapping).forEach(([key, value]) => {
                 if (value) params.set(key, value);
@@ -4884,8 +4889,10 @@
             const parts = [
                 runtime.running ? 'Background refresh active' : 'Background refresh stopped',
                 stats.last_scan_completed_at ? `последний scan ${techFormatDate(stats.last_scan_completed_at)}` : 'scan ещё не выполнялся',
+                stats.last_backfill_scan_completed_at ? `backfill ${techFormatDate(stats.last_backfill_scan_completed_at)}` : 'backfill ещё не выполнялся',
                 `pending ${stats.pending_trace_count ?? 0}`,
                 `projected ${stats.projected_trace_count ?? 0}`,
+                `backfill discovered ${stats.discovered_backfill_trace_count ?? 0}`,
             ];
             host.textContent = parts.join(' · ');
             host.classList.toggle('error-message', !runtime.running || !!stats.last_error);
@@ -4929,6 +4936,22 @@
                 host.innerHTML = '<div class="tech-agent-detail"><div class="tech-empty-note">Совпадений пока нет.</div></div>';
                 return;
             }
+            if (techObserverState.mode === 'degradations') {
+                host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
+                    <thead><tr><th>Tool</th><th>Operations</th><th>Timeout rate</th><th>Retry rate</th><th>Slow rate</th><th>Latest</th></tr></thead>
+                    <tbody>
+                        ${items.map(item => `<tr>
+                            <td><strong>${escapeHtml(item.tool_name || '—')}</strong><div class="tech-device-meta">${escapeHtml(item.module_name || '—')}</div></td>
+                            <td>${escapeHtml(String(item.operations_count ?? 0))}</td>
+                            <td>${escapeHtml(`${Math.round((item.timeout_rate || 0) * 100)}% (${item.timeout_count || 0})`)}</td>
+                            <td>${escapeHtml(`${Math.round((item.retry_rate || 0) * 100)}% (${item.retried_operations_count || 0})`)}</td>
+                            <td>${escapeHtml(`${Math.round((item.slow_rate || 0) * 100)}% (${item.slow_operations_count || 0})`)}</td>
+                            <td>${escapeHtml(techFormatDate(item.latest_operation_at))}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table></div>`;
+                return;
+            }
             if (techObserverState.mode === 'signatures') {
                 host.innerHTML = `<div class="tech-table-wrap"><table class="tech-table">
                     <thead><tr><th>Signature</th><th>Title</th><th>Occurrences</th><th>Last seen</th><th></th></tr></thead>
@@ -4965,6 +4988,22 @@
             const detail = techObserverState.detail;
             if (!detail) {
                 host.innerHTML = '<div class="tech-agent-detail"><div class="tech-empty-note">Откройте trace или signature из списка слева.</div></div>';
+                return;
+            }
+            if (techObserverState.mode === 'degradations') {
+                const items = detail.items || [];
+                host.innerHTML = `<div class="tech-agent-detail">
+                    <div class="tech-agent-head">
+                        <div>
+                            <h3>Degradation summary</h3>
+                            <div class="tech-agent-subtitle">Порог slow = ${escapeHtml(techObserverInputValue('techTraceMinDurationInput') || '2000')} ms, retry >= ${escapeHtml(techObserverInputValue('techTraceMinRetryInput') || '1')}</div>
+                        </div>
+                    </div>
+                    <div class="tech-mini-panel">
+                        <h4>Группы деградаций</h4>
+                        <pre class="tech-result-box">${escapeHtml(JSON.stringify(items, null, 2))}</pre>
+                    </div>
+                </div>`;
                 return;
             }
             if (techObserverState.mode === 'signatures') {
@@ -5071,7 +5110,9 @@
 
         async function loadTechObserverSearch(mode) {
             const headers = getAuthHeaders();
-            const endpoint = mode === 'signatures' ? '/api/admin/tech/signatures' : '/api/admin/tech/traces';
+            const endpoint = mode === 'signatures'
+                ? '/api/admin/tech/signatures'
+                : (mode === 'degradations' ? '/api/admin/tech/degradations' : '/api/admin/tech/traces');
             techSetObserverStatus('Загрузка observer search…', false);
             await loadTechObserverRuntimeStatus();
             const response = await fetch(`${endpoint}?${techObserverFilters().toString()}`, { headers });
@@ -5080,12 +5121,15 @@
                 throw new Error(data.error || 'Observer search failed');
             }
             techObserverState.mode = mode;
-            techObserverState.results = mode === 'signatures' ? (data.signatures || []) : (data.traces || []);
-            techObserverState.detail = null;
+            techObserverState.results = mode === 'signatures' ? (data.signatures || []) : (mode === 'degradations' ? (data.items || []) : (data.traces || []));
+            techObserverState.detail = mode === 'degradations' ? { items: data.items || [] } : null;
             techObserverState.selectedId = null;
             renderTechObserverResults();
             renderTechObserverDetail();
-            techSetObserverStatus(`Найдено ${data.count || 0} ${mode === 'signatures' ? 'signatures' : 'traces'}.`, false);
+            techSetObserverStatus(`Найдено ${data.count || 0} ${mode === 'signatures' ? 'signatures' : (mode === 'degradations' ? 'degradation groups' : 'traces')}.`, false);
+            if (mode === 'degradations') {
+                return;
+            }
             const first = techObserverState.results[0];
             if (first) {
                 const selectedId = mode === 'signatures' ? first.error_signature : first.trace_id;

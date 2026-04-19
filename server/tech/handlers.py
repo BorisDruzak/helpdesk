@@ -1520,12 +1520,25 @@ def _trace_filters_from_request(request: web.Request) -> TraceOverlayFilters:
         module_name=_compact_query_value(request.query.get("module_name")),
         error_signature=_compact_query_value(request.query.get("error_signature")),
         status=_compact_query_value(request.query.get("status")),
+        min_duration_ms=_parse_query_int(request.query.get("min_duration_ms")),
+        min_retry_count=_parse_query_int(request.query.get("min_retry_count")),
+        lookback_hours=_parse_query_int(request.query.get("lookback_hours")),
     )
 
 
 def _compact_query_value(raw: Optional[str]) -> Optional[str]:
     value = str(raw or "").strip()
     return value or None
+
+
+def _parse_query_int(raw: Optional[str]) -> Optional[int]:
+    value = _compact_query_value(raw)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_action_trace_entries(response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1600,15 +1613,23 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
         device_id = detail["trace"].get("device_id")
         if device_id:
             try:
+                operation_source_refs = {
+                    str(span.get("source_ref") or "").strip()
+                    for span in detail.get("spans", [])
+                    if span.get("source_type") == "operation"
+                }
+                params = {
+                    "trace_id": trace_id,
+                    "ticket_id": detail["trace"].get("ticket_id"),
+                    "limit": action_limit,
+                }
+                if len(operation_source_refs) == 1:
+                    params["operation_id"] = next(iter(operation_source_refs))
                 response = await send_ws_rpc_request(
                     state=request.app["state"],
                     device_id=device_id,
                     method="search_action_trace",
-                    params={
-                        "trace_id": trace_id,
-                        "operation_id": detail["trace"].get("operation_id"),
-                        "limit": action_limit,
-                    },
+                    params=params,
                     actor_role="support",
                     timeout=20,
                 )
@@ -1636,6 +1657,24 @@ async def handle_tech_signatures_search(request: web.Request) -> web.Response:
                 "count": len(signatures),
                 "filters": _serialize_trace_filters(filters),
                 "signatures": signatures,
+            }
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_degradations_search(request: web.Request) -> web.Response:
+    limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
+    filters = _trace_filters_from_request(request)
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        items = await service.search_degradations(filters, limit=limit)
+        await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "count": len(items),
+                "filters": _serialize_trace_filters(filters),
+                "items": items,
             }
         )
 

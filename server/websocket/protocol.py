@@ -427,15 +427,14 @@ async def send_ws_command(
     else:
         command_id = str(uuid.uuid4())
     request_id = command_id  # Используем тот же UUID
-    if not trace_id:
-        trace_id = str(uuid.uuid4())
-    
+
     # Phase C: Enqueue command in device_outbox AND create operation
     # КРИТИЧНО: operation_id = command_id = request_id (единый UUID)
     try:
         # Import here to avoid circular dependency
         from app.db import get_session
         from app.repos import DeviceOutboxRepo
+        from app.repos.ticket_events_repo import TicketEventsRepo
         from app.services import OperationService
         
         # Extract ticket_id and job_id from params (if present)
@@ -457,6 +456,14 @@ async def send_ws_command(
         # send_ws_command остается transport-слоем: enqueue + wait.
         
         async with get_session() as session:
+            if not trace_id and ticket_id:
+                ticket_trace_repo = TicketEventsRepo(session)
+                try:
+                    trace_id = await ticket_trace_repo.ensure_ticket_observer_root_trace_id(ticket_id)
+                except Exception as exc:
+                    logger.debug(f"[send_ws_command] ticket root trace fallback skipped: ticket_id={ticket_id} error={exc}")
+            if not trace_id:
+                trace_id = str(uuid.uuid4())
             # Атомарно в одной транзакции:
             # 1. Enqueue command в device_outbox
             repo = DeviceOutboxRepo(session)

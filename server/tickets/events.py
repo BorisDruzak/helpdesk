@@ -107,20 +107,22 @@ class TicketEventsManager:
                 # 4) Определяем event_type
                 event_type = event.get("event") or event.get("event_type") or event.get("type") or "unknown"
                 
-                # 5) Для server-originated событий (agent_seq=None) генерируем trace_id и event_id если не переданы
-                if agent_seq is None:
-                    # Генерируем trace_id для корреляции, если не передан
-                    if not trace_id and 'trace_id' not in event:
-                        trace_id = str(uuid.uuid4())
-                        event['trace_id'] = trace_id
-                        logger.debug(f"Generated trace_id for server-originated event: {trace_id}")
-                    
-                    # Генерируем event_id для дедупликации, если не передан
-                    if event_id is None and 'event_id' not in event:
-                        # Используем message_id из payload как event_id, если есть
-                        event_id = event.get('message_id') or str(uuid.uuid4())
-                        event['event_id'] = event_id
-                        logger.debug(f"Generated event_id for server-originated event: {event_id}")
+                # 5) Для ticket-bound событий trace_id канонизируется через observer root trace тикета
+                resolved_trace_id = await repo.resolve_ticket_trace_id(
+                    ticket_id,
+                    trace_id=trace_id or event.get("trace_id"),
+                    operation_id=operation_id or event.get("operation_id"),
+                    agent_seq=agent_seq,
+                )
+                if resolved_trace_id:
+                    trace_id = resolved_trace_id
+                    event["trace_id"] = resolved_trace_id
+
+                if agent_seq is None and event_id is None and 'event_id' not in event:
+                    # Используем message_id из payload как event_id, если есть
+                    event_id = event.get('message_id') or str(uuid.uuid4())
+                    event['event_id'] = event_id
+                    logger.debug(f"Generated event_id for server-originated event: {event_id}")
                 
                 # 6) Добавляем событие через репозиторий
                 # КРИТИЧНО: operation_id может быть в event или передан отдельно

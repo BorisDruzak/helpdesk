@@ -6,7 +6,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
 from weakref import WeakValueDictionary
 
@@ -22,6 +22,7 @@ from app.db.models import (
     ObserverSpanLink,
     ObserverTrace,
     Operation,
+    Ticket,
     TicketEvent,
 )
 
@@ -46,6 +47,9 @@ class TraceOverlayFilters:
     module_name: Optional[str] = None
     error_signature: Optional[str] = None
     status: Optional[str] = None
+    min_duration_ms: Optional[int] = None
+    min_retry_count: Optional[int] = None
+    lookback_hours: Optional[int] = None
 
 
 @dataclass(slots=True)
@@ -54,10 +58,11 @@ class TraceProjectionSources:
     ticket_events: list[TicketEvent]
     device_events: list[DeviceEvent]
     runtime_audits: list[AgentRuntimeAudit]
+    root_ticket: Optional[Ticket] = None
 
     @property
     def empty(self) -> bool:
-        return not any((self.operations, self.ticket_events, self.device_events, self.runtime_audits))
+        return not any((self.operations, self.ticket_events, self.device_events, self.runtime_audits, self.root_ticket))
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -68,6 +73,14 @@ def _duration_ms(started_at: Optional[datetime], finished_at: Optional[datetime]
     if not started_at or not finished_at:
         return None
     return max(0, int((finished_at - started_at).total_seconds() * 1000))
+
+
+def _operation_finished_at(operation: Operation) -> Optional[datetime]:
+    return operation.canceled_at or operation.finished_at or operation.started_at or operation.accepted_at or operation.sent_at or operation.queued_at
+
+
+def _operation_duration_ms(operation: Operation) -> Optional[int]:
+    return _duration_ms(operation.queued_at, _operation_finished_at(operation))
 
 
 def _compact_text(value: Any) -> Optional[str]:
@@ -123,6 +136,15 @@ def _span_status_from_operation(status: Optional[str]) -> str:
     return "ok"
 
 
+def _span_status_from_ticket_status(status: Optional[str]) -> str:
+    key = str(status or "").strip().lower()
+    if key in {"resolved", "closed"}:
+        return "ok"
+    if key in {"new", "triaged", "in_progress", "waiting_on_user", "waiting_on_vendor"}:
+        return "running"
+    return "ok"
+
+
 def _span_status_from_severity(severity: Optional[str]) -> str:
     key = str(severity or "").strip().lower()
     if key in ERROR_AUDIT_SEVERITIES:
@@ -153,9 +175,12 @@ class ObserverOverlayService:
     async def search_traces(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
         await self._ensure_projected(filters, limit=limit, force=False)
         stmt = select(ObserverTrace)
+        ticket_root_trace_id = await self._load_ticket_root_trace_id(filters.ticket_id) if filters.ticket_id else None
         if filters.trace_id:
             stmt = stmt.where(ObserverTrace.trace_id == filters.trace_id)
-        if filters.ticket_id:
+        elif ticket_root_trace_id:
+            stmt = stmt.where(ObserverTrace.trace_id == ticket_root_trace_id)
+        elif filters.ticket_id:
             stmt = stmt.where(ObserverTrace.ticket_id == filters.ticket_id)
         if filters.job_id:
             stmt = stmt.where(ObserverTrace.job_id == filters.job_id)
@@ -192,9 +217,110 @@ class ObserverOverlayService:
                     )
                 )
             )
-        stmt = stmt.order_by(ObserverTrace.started_at.desc()).limit(limit)
+        stmt = stmt.order_by(ObserverTrace.started_at.desc()).limit(max(limit * 5, limit))
         rows = (await self.session.execute(stmt)).scalars().all()
+        rows = await self._filter_traces_by_degradation(rows, filters)
+        rows = rows[:limit]
         return [self._serialize_trace(row) for row in rows]
+
+    async def search_degradations(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
+        lookback_hours = max(int(filters.lookback_hours or 24), 1)
+        retry_threshold = max(int(filters.min_retry_count or 1), 1)
+        slow_threshold_ms = max(int(filters.min_duration_ms or 2000), 1)
+        window_start = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+
+        stmt = select(Operation).where(
+            or_(
+                Operation.queued_at >= window_start,
+                Operation.finished_at >= window_start,
+                Operation.canceled_at >= window_start,
+            )
+        )
+        if filters.ticket_id:
+            stmt = stmt.where(Operation.ticket_id == filters.ticket_id)
+        if filters.job_id:
+            stmt = stmt.where(Operation.job_id == filters.job_id)
+        if filters.operation_id:
+            stmt = stmt.where(Operation.operation_id == filters.operation_id)
+        if filters.device_id:
+            stmt = stmt.where(Operation.device_id == filters.device_id)
+        if filters.tool_name:
+            stmt = stmt.where(Operation.tool_name == filters.tool_name)
+        if filters.module_name:
+            stmt = stmt.where(Operation.tool_name.like(f"{filters.module_name}.%"))
+        rows = (await self.session.execute(stmt.order_by(Operation.queued_at.desc()).limit(max(limit * 20, limit)))).scalars().all()
+
+        grouped: dict[tuple[Optional[str], Optional[str]], dict[str, Any]] = {}
+        for operation in rows:
+            module_name, tool_name = _split_tool_name(operation.tool_name)
+            key = (module_name, tool_name)
+            item = grouped.get(key)
+            if item is None:
+                item = {
+                    "module_name": module_name,
+                    "tool_name": tool_name,
+                    "operations_count": 0,
+                    "timeout_count": 0,
+                    "retried_operations_count": 0,
+                    "slow_operations_count": 0,
+                    "max_duration_ms": 0,
+                    "avg_duration_total_ms": 0,
+                    "latest_operation_at": None,
+                    "sample_trace_ids": [],
+                }
+                grouped[key] = item
+            duration_ms = _operation_duration_ms(operation) or 0
+            latest_operation_at = _operation_finished_at(operation) or operation.queued_at
+            item["operations_count"] += 1
+            item["avg_duration_total_ms"] += duration_ms
+            item["max_duration_ms"] = max(item["max_duration_ms"], duration_ms)
+            if str(operation.status or "").strip().lower() == "timed_out":
+                item["timeout_count"] += 1
+            if int(operation.retry_count or 0) >= retry_threshold:
+                item["retried_operations_count"] += 1
+            if duration_ms >= slow_threshold_ms:
+                item["slow_operations_count"] += 1
+            if latest_operation_at and (
+                item["latest_operation_at"] is None or latest_operation_at > item["latest_operation_at"]
+            ):
+                item["latest_operation_at"] = latest_operation_at
+            trace_id = _compact_text(operation.trace_id)
+            if trace_id and trace_id not in item["sample_trace_ids"] and len(item["sample_trace_ids"]) < 5:
+                item["sample_trace_ids"].append(trace_id)
+
+        items: list[dict[str, Any]] = []
+        for item in grouped.values():
+            operations_count = max(int(item["operations_count"]), 1)
+            avg_duration_ms = int(item["avg_duration_total_ms"] / operations_count)
+            items.append(
+                {
+                    "module_name": item["module_name"],
+                    "tool_name": item["tool_name"],
+                    "operations_count": operations_count,
+                    "timeout_count": int(item["timeout_count"]),
+                    "timeout_rate": item["timeout_count"] / operations_count,
+                    "retried_operations_count": int(item["retried_operations_count"]),
+                    "retry_rate": item["retried_operations_count"] / operations_count,
+                    "slow_operations_count": int(item["slow_operations_count"]),
+                    "slow_rate": item["slow_operations_count"] / operations_count,
+                    "avg_duration_ms": avg_duration_ms,
+                    "max_duration_ms": int(item["max_duration_ms"]),
+                    "latest_operation_at": _iso(item["latest_operation_at"]),
+                    "sample_trace_ids": item["sample_trace_ids"],
+                }
+            )
+
+        items.sort(
+            key=lambda entry: (
+                entry["timeout_count"],
+                entry["retried_operations_count"],
+                entry["slow_operations_count"],
+                entry["max_duration_ms"],
+                entry["latest_operation_at"] or "",
+            ),
+            reverse=True,
+        )
+        return items[:limit]
 
     async def get_trace_detail(self, trace_id: str) -> Optional[dict[str, Any]]:
         trace = await self.project_trace(trace_id, force=False)
@@ -399,6 +525,9 @@ class ObserverOverlayService:
                     seen.add(value)
                     candidates.append(value)
 
+        if filters.ticket_id:
+            _remember([await self._load_ticket_root_trace_id(filters.ticket_id)])
+
         op_stmt = select(Operation.trace_id).where(Operation.trace_id.isnot(None))
         if filters.ticket_id:
             op_stmt = op_stmt.where(Operation.ticket_id == filters.ticket_id)
@@ -444,7 +573,21 @@ class ObserverOverlayService:
 
         return candidates[:limit]
 
+    async def _load_ticket_root_trace_id(self, ticket_id: Optional[str]) -> Optional[str]:
+        if not ticket_id:
+            return None
+        row = await self.session.execute(
+            select(Ticket.observer_root_trace_id).where(Ticket.ticket_id == ticket_id).limit(1)
+        )
+        return _compact_text(row.scalar_one_or_none())
+
     async def _collect_sources(self, trace_id: str) -> TraceProjectionSources:
+        root_ticket = (
+            await self.session.execute(select(Ticket).where(Ticket.observer_root_trace_id == trace_id).limit(1))
+        ).scalar_one_or_none()
+        if root_ticket is not None:
+            return await self._collect_ticket_root_sources(trace_id, root_ticket)
+
         operations = (
             await self.session.execute(select(Operation).where(Operation.trace_id == trace_id).order_by(Operation.queued_at.asc()))
         ).scalars().all()
@@ -477,6 +620,64 @@ class ObserverOverlayService:
             runtime_audits=list(runtime_audits),
         )
 
+    async def _collect_ticket_root_sources(self, trace_id: str, ticket: Ticket) -> TraceProjectionSources:
+        operations = (
+            await self.session.execute(
+                select(Operation)
+                .where(Operation.ticket_id == ticket.ticket_id)
+                .order_by(Operation.queued_at.asc(), Operation.operation_id.asc())
+            )
+        ).scalars().all()
+        ticket_events = (
+            await self.session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket.ticket_id)
+                .order_by(TicketEvent.created_at.asc(), TicketEvent.id.asc())
+            )
+        ).scalars().all()
+
+        operation_ids = [item.operation_id for item in operations if item.operation_id]
+        device_events: list[DeviceEvent] = []
+        runtime_audits: list[AgentRuntimeAudit] = []
+        if operation_ids:
+            device_events = (
+                await self.session.execute(
+                    select(DeviceEvent)
+                    .where(or_(DeviceEvent.operation_id.in_(operation_ids), DeviceEvent.trace_id == trace_id))
+                    .order_by(DeviceEvent.created_at.asc(), DeviceEvent.id.asc())
+                )
+            ).scalars().all()
+            runtime_audits = (
+                await self.session.execute(
+                    select(AgentRuntimeAudit)
+                    .where(or_(AgentRuntimeAudit.operation_id.in_(operation_ids), AgentRuntimeAudit.ticket_id == ticket.ticket_id))
+                    .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
+                )
+            ).scalars().all()
+        else:
+            device_events = (
+                await self.session.execute(
+                    select(DeviceEvent)
+                    .where(DeviceEvent.trace_id == trace_id)
+                    .order_by(DeviceEvent.created_at.asc(), DeviceEvent.id.asc())
+                )
+            ).scalars().all()
+            runtime_audits = (
+                await self.session.execute(
+                    select(AgentRuntimeAudit)
+                    .where(AgentRuntimeAudit.ticket_id == ticket.ticket_id)
+                    .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
+                )
+            ).scalars().all()
+
+        return TraceProjectionSources(
+            operations=list(operations),
+            ticket_events=list(ticket_events),
+            device_events=list(device_events),
+            runtime_audits=list(runtime_audits),
+            root_ticket=ticket,
+        )
+
     async def _clear_trace_dependents(self, trace_id: str) -> None:
         span_ids_subquery = select(ObserverSpan.span_id).where(ObserverSpan.trace_id == trace_id)
         await self.session.execute(delete(ObserverErrorOccurrence).where(ObserverErrorOccurrence.trace_id == trace_id))
@@ -496,6 +697,48 @@ class ObserverOverlayService:
         advisory_key = int.from_bytes(hashlib.blake2b(trace_id.encode("utf-8"), digest_size=8).digest(), "big", signed=True)
         await self.session.execute(select(func.pg_advisory_xact_lock(advisory_key)))
 
+    async def _filter_traces_by_degradation(
+        self,
+        traces: list[ObserverTrace],
+        filters: TraceOverlayFilters,
+    ) -> list[ObserverTrace]:
+        if not traces:
+            return traces
+        min_duration_ms = int(filters.min_duration_ms or 0)
+        min_retry_count = int(filters.min_retry_count or 0)
+        if min_duration_ms <= 0 and min_retry_count <= 0:
+            return traces
+
+        trace_ids = [trace.trace_id for trace in traces]
+        ticket_ids = [trace.ticket_id for trace in traces if trace.root_kind == "ticket" and trace.ticket_id]
+        stmt = select(Operation).where(or_(Operation.trace_id.in_(trace_ids), Operation.ticket_id.in_(ticket_ids)))
+        operations = (await self.session.execute(stmt)).scalars().all()
+
+        operations_by_trace_id: dict[str, list[Operation]] = {}
+        operations_by_ticket_id: dict[str, list[Operation]] = {}
+        for operation in operations:
+            operations_by_trace_id.setdefault(operation.trace_id, []).append(operation)
+            if operation.ticket_id:
+                operations_by_ticket_id.setdefault(operation.ticket_id, []).append(operation)
+
+        filtered: list[ObserverTrace] = []
+        for trace in traces:
+            scoped_operations = (
+                operations_by_ticket_id.get(trace.ticket_id or "", [])
+                if trace.root_kind == "ticket" and trace.ticket_id
+                else operations_by_trace_id.get(trace.trace_id, [])
+            )
+            if min_duration_ms > 0:
+                operation_durations = [_operation_duration_ms(item) or 0 for item in scoped_operations]
+                if not operation_durations and (trace.duration_ms or 0) < min_duration_ms:
+                    continue
+                if operation_durations and max(operation_durations) < min_duration_ms:
+                    continue
+            if min_retry_count > 0 and not any(int(item.retry_count or 0) >= min_retry_count for item in scoped_operations):
+                continue
+            filtered.append(trace)
+        return filtered
+
     def _projection_needs_refresh(self, trace: ObserverTrace, source_last_seen_at: Optional[datetime]) -> bool:
         if source_last_seen_at is None:
             return trace.span_count == 0
@@ -506,6 +749,16 @@ class ObserverOverlayService:
 
     def _source_last_seen_at(self, sources: TraceProjectionSources) -> Optional[datetime]:
         candidates = [
+            *[
+                timestamp
+                for timestamp in (
+                    getattr(sources.root_ticket, "created_at", None),
+                    getattr(sources.root_ticket, "updated_at", None),
+                    getattr(sources.root_ticket, "resolved_at", None),
+                    getattr(sources.root_ticket, "closed_at", None),
+                )
+                if timestamp
+            ],
             *[
                 timestamp
                 for operation in sources.operations
@@ -541,22 +794,55 @@ class ObserverOverlayService:
         payloads: list[dict[str, Any]] = []
         links: list[dict[str, Any]] = []
         operation_span_ids: dict[str, str] = {}
+        root_ticket = sources.root_ticket
 
         primary_operation = sources.operations[0] if sources.operations else None
-        primary_ticket = primary_operation.ticket_id if primary_operation else next((item.ticket_id for item in sources.ticket_events), None)
-        primary_device = primary_operation.device_id if primary_operation else next(
+        primary_ticket = root_ticket.ticket_id if root_ticket else (
+            primary_operation.ticket_id if primary_operation else next((item.ticket_id for item in sources.ticket_events), None)
+        )
+        primary_device = root_ticket.device_id if root_ticket else (
+            primary_operation.device_id if primary_operation else next(
             (item.device_id for item in [*sources.ticket_events, *sources.device_events, *sources.runtime_audits] if getattr(item, "device_id", None)),
             None,
-        )
+        ))
         primary_job_id = primary_operation.job_id if primary_operation else None
+        root_span_id = None
+
+        if root_ticket is not None:
+            root_span_id = _trace_scoped_uuid(trace_id, f"ticket_root:{root_ticket.ticket_id}")
+            payloads.append(
+                {
+                    "span_id": root_span_id,
+                    "trace_id": trace_id,
+                    "parent_span_id": None,
+                    "source_type": "ticket_root",
+                    "source_ref": root_ticket.ticket_id,
+                    "name": "ticket.lifecycle",
+                    "kind": "internal",
+                    "component": "tickets",
+                    "event_type": root_ticket.status,
+                    "module_name": None,
+                    "tool_name": None,
+                    "status": _span_status_from_ticket_status(root_ticket.status),
+                    "started_at": root_ticket.created_at,
+                    "finished_at": root_ticket.closed_at or root_ticket.resolved_at,
+                    "duration_ms": _duration_ms(root_ticket.created_at, root_ticket.closed_at or root_ticket.resolved_at),
+                    "attrs_json": {
+                        "ticket_id": root_ticket.ticket_id,
+                        "ticket_code": root_ticket.ticket_code,
+                        "ticket_status": root_ticket.status,
+                        "observer_root_trace_id": root_ticket.observer_root_trace_id,
+                    },
+                }
+            )
 
         for index, operation in enumerate(sources.operations):
             module_name, tool_name = _split_tool_name(operation.tool_name)
             span_id = _trace_scoped_uuid(trace_id, f"operation:{operation.operation_id}")
-            parent_span_id = None
-            if index > 0 and primary_operation:
+            parent_span_id = root_span_id
+            if index > 0 and primary_operation and root_span_id is None:
                 parent_span_id = operation_span_ids.get(primary_operation.operation_id)
-            finished_at = operation.canceled_at or operation.finished_at or operation.started_at or operation.accepted_at or operation.sent_at or operation.queued_at
+            finished_at = _operation_finished_at(operation)
             operation_span_ids[operation.operation_id] = span_id
             payloads.append(
                 {
@@ -580,6 +866,8 @@ class ObserverOverlayService:
                         "kind": operation.kind,
                         "status": operation.status,
                         "actor_role": operation.actor_role,
+                        "retry_count": operation.retry_count,
+                        "max_retries": operation.max_retries,
                         "error_code": operation.error_code,
                         "error_message": operation.error_message,
                         "result_summary": operation.result_summary,
@@ -588,7 +876,8 @@ class ObserverOverlayService:
             )
             payloads.extend(self._build_operation_stage_spans(trace_id, operation, span_id))
 
-        root_span_id = operation_span_ids.get(primary_operation.operation_id) if primary_operation else None
+        if root_span_id is None:
+            root_span_id = operation_span_ids.get(primary_operation.operation_id) if primary_operation else None
 
         for event in sources.ticket_events:
             span_id = _trace_scoped_uuid(trace_id, f"ticket_event:{event.id}")
@@ -694,6 +983,7 @@ class ObserverOverlayService:
                 root_span_id = span_id
 
         all_times = [
+            *([root_ticket.created_at] if root_ticket and root_ticket.created_at else []),
             *[item.queued_at for item in sources.operations if item.queued_at],
             *[item.created_at for item in sources.ticket_events],
             *[item.created_at for item in sources.device_events],
@@ -704,6 +994,14 @@ class ObserverOverlayService:
         finished_at = None
         if trace_status not in {"running"}:
             terminal_times = [
+                *[
+                    timestamp
+                    for timestamp in (
+                        getattr(root_ticket, "resolved_at", None),
+                        getattr(root_ticket, "closed_at", None),
+                    )
+                    if timestamp
+                ],
                 *[item.canceled_at or item.finished_at for item in sources.operations if (item.canceled_at or item.finished_at)],
                 *[item.created_at for item in sources.ticket_events],
                 *[item.created_at for item in sources.device_events],
@@ -712,12 +1010,15 @@ class ObserverOverlayService:
             finished_at = max(terminal_times) if terminal_times else None
 
         attrs_json = {
+            "root_scope": "ticket" if root_ticket else "execution",
             "source_counts": {
                 "operations": len(sources.operations),
                 "ticket_events": len(sources.ticket_events),
                 "device_events": len(sources.device_events),
                 "agent_runtime_audit": len(sources.runtime_audits),
             },
+            "operation_count": len(sources.operations),
+            "max_retry_count": max((int(item.retry_count or 0) for item in sources.operations), default=0),
             "source_last_seen_at": _iso(source_last_seen_at),
             "tool_names": sorted(
                 {
@@ -732,13 +1033,17 @@ class ObserverOverlayService:
                 }
             ),
         }
+        if root_ticket is not None:
+            attrs_json["ticket_status"] = root_ticket.status
+            attrs_json["ticket_code"] = root_ticket.ticket_code
+            attrs_json["observer_root_trace_id"] = root_ticket.observer_root_trace_id
 
         return payloads, links, {
             "root_span_id": root_span_id,
-            "root_kind": primary_operation.kind if primary_operation else (sources.ticket_events[0].event_type if sources.ticket_events else "trace"),
+            "root_kind": "ticket" if root_ticket is not None else (primary_operation.kind if primary_operation else (sources.ticket_events[0].event_type if sources.ticket_events else "trace")),
             "ticket_id": primary_ticket,
             "device_id": primary_device,
-            "operation_id": primary_operation.operation_id if primary_operation else None,
+            "operation_id": primary_operation.operation_id if (primary_operation and len(sources.operations) == 1) else None,
             "job_id": primary_job_id,
             "status": trace_status,
             "started_at": started_at,
@@ -784,6 +1089,7 @@ class ObserverOverlayService:
                     "attrs_json": {
                         "operation_id": operation.operation_id,
                         "stage": stage,
+                        "retry_count": operation.retry_count,
                     },
                 }
             )
@@ -960,6 +1266,8 @@ class ObserverOverlayService:
             return "error"
         if any(str(item.severity or "").strip().lower() in ERROR_AUDIT_SEVERITIES for item in sources.runtime_audits):
             return "error"
+        if sources.root_ticket is not None and str(sources.root_ticket.status or "").strip().lower() not in {"resolved", "closed"}:
+            return "running"
         if operation_statuses == {"canceled"}:
             return "canceled"
         if operation_statuses and operation_statuses <= TERMINAL_OPERATION_STATUSES:

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.orchestrator import AgentOrchestrator
 from core.registry import exposed_tool
 from core.tool_response import ToolMeta
+from pc_agent.core.action_trace import configure_action_trace, search_action_trace
 from pc_agent.config.config_loader import ConfigLoader, init_config
 
 
@@ -208,3 +209,58 @@ async def test_run_tool_normalizes_partial_metadata_before_policy(tmp_path):
     envelope = result.data.result
     assert envelope["status"] == "ok"
     assert envelope["output"]["path"] == "normalized"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_run_tool_emits_module_level_action_trace_breakdown(tmp_path):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+    configure_action_trace(tmp_path)
+
+    orchestrator = AgentOrchestrator(enabled_modules=[], data_root=tmp_path)
+    await orchestrator.initialize()
+
+    class TraceCollector:
+        @property
+        def name(self) -> str:
+            return "custom"
+
+        @exposed_tool(
+            name="custom.traceable",
+            description="Traceable custom tool",
+            metadata_risk_level="safe_read",
+            metadata_allow_roles=["admin"],
+            resources={"max_runtime_sec": 5},
+        )
+        async def run(self, value: int = 1):
+            return {"ok": True, "value": value}
+
+    collector = TraceCollector()
+    orchestrator.loaded_modules.append(collector)
+    orchestrator.registry.register(collector)
+
+    result = await orchestrator._handle_run_tool(
+        tool="custom.traceable",
+        params={"tool": "custom.traceable", "ticket_id": "ticket-traceable", "params": {"value": 7}},
+        actor_role="admin",
+        meta=_meta(),
+    )
+
+    assert result.status == "success"
+    rows = search_action_trace(limit=20, operation_id="req-runtime-envelope", ticket_id="ticket-traceable")
+    assert rows
+    assert any(
+        row["stage"] == "module.resolve"
+        and row.get("details", {}).get("module_name") == "custom"
+        and row.get("details", {}).get("method_name") == "run"
+        for row in rows
+    )
+    assert any(
+        row["action"] == "module.execute"
+        and row["stage"] == "finish"
+        and row["status"] == "ok"
+        and row.get("details", {}).get("module_name") == "custom"
+        for row in rows
+    )

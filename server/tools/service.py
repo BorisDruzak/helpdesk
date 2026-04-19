@@ -618,10 +618,21 @@ class ToolService:
             timeout = TOOL_EXECUTION_TIMEOUT
         
         logger.info(f"🔧 Запуск tool {tool_name} на {device_id}")
-        trace_id = str(uuid.uuid4())
         requested_operation_id_raw = params.get("_operation_id")
         requested_operation_id = str(requested_operation_id_raw).strip() if requested_operation_id_raw else None
         actor_role = getattr(auth_context, "actor_role", None) or "support"
+        trace_id = None
+
+        if ticket_id and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+            try:
+                async with self._session_context() as session:
+                    ticket_repo = TicketEventsRepo(session)
+                    trace_id = await ticket_repo.ensure_ticket_observer_root_trace_id(ticket_id)
+                    await session.commit()
+            except Exception as exc:
+                logger.warning(f"[ToolService] failed to resolve ticket root trace for ticket_id={ticket_id}: {exc}")
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
         
         # Проверка и при необходимости установка модуля по owner module из server registry.
         ensure_err = await self._ensure_module_installed(device_id, tool_name, auth_context)

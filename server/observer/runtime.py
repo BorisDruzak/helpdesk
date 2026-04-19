@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import distinct, or_, select
+from sqlalchemy import distinct, exists, func, or_, select
 
 from app.db import get_session
-from app.db.models import AgentRuntimeAudit, DeviceEvent, Operation, TicketEvent
+from app.db.models import AgentRuntimeAudit, DeviceEvent, ObserverTrace, Operation, Ticket, TicketEvent
 from observer.service import ObserverOverlayService
 
 
@@ -18,9 +18,12 @@ class ObserverRefreshStats:
     started_at: Optional[datetime] = None
     last_scan_started_at: Optional[datetime] = None
     last_scan_completed_at: Optional[datetime] = None
+    last_backfill_scan_started_at: Optional[datetime] = None
+    last_backfill_scan_completed_at: Optional[datetime] = None
     last_projected_at: Optional[datetime] = None
     last_error: Optional[str] = None
     discovered_trace_count: int = 0
+    discovered_backfill_trace_count: int = 0
     projected_trace_count: int = 0
     pending_trace_count: int = 0
 
@@ -29,9 +32,12 @@ class ObserverRefreshStats:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "last_scan_started_at": self.last_scan_started_at.isoformat() if self.last_scan_started_at else None,
             "last_scan_completed_at": self.last_scan_completed_at.isoformat() if self.last_scan_completed_at else None,
+            "last_backfill_scan_started_at": self.last_backfill_scan_started_at.isoformat() if self.last_backfill_scan_started_at else None,
+            "last_backfill_scan_completed_at": self.last_backfill_scan_completed_at.isoformat() if self.last_backfill_scan_completed_at else None,
             "last_projected_at": self.last_projected_at.isoformat() if self.last_projected_at else None,
             "last_error": self.last_error,
             "discovered_trace_count": self.discovered_trace_count,
+            "discovered_backfill_trace_count": self.discovered_backfill_trace_count,
             "projected_trace_count": self.projected_trace_count,
             "pending_trace_count": self.pending_trace_count,
         }
@@ -48,12 +54,14 @@ class ObserverRefreshRuntime:
         bootstrap_lookback_sec: float = 30.0,
         debounce_sec: float = 0.25,
         max_batch: int = 100,
+        historical_backfill_enabled: bool = True,
     ) -> None:
         self.scan_interval_sec = max(scan_interval_sec, 0.05)
         self.scan_overlap_sec = max(scan_overlap_sec, 0.0)
         self.bootstrap_lookback_sec = max(bootstrap_lookback_sec, 1.0)
         self.debounce_sec = max(debounce_sec, 0.0)
         self.max_batch = max(max_batch, 1)
+        self.historical_backfill_enabled = bool(historical_backfill_enabled)
         self._task: Optional[asyncio.Task[None]] = None
         self._pending: dict[str, float] = {}
         self._pending_lock = asyncio.Lock()
@@ -74,6 +82,7 @@ class ObserverRefreshRuntime:
                 "bootstrap_lookback_sec": self.bootstrap_lookback_sec,
                 "debounce_sec": self.debounce_sec,
                 "max_batch": self.max_batch,
+                "historical_backfill_enabled": self.historical_backfill_enabled,
             },
             "stats": self._stats.to_dict(),
         }
@@ -118,6 +127,10 @@ class ObserverRefreshRuntime:
         discovered = await self._discover_recent_trace_ids()
         for trace_id in discovered:
             await self.enqueue_trace(trace_id)
+        if self.historical_backfill_enabled:
+            historical = await self._discover_historical_trace_ids()
+            for trace_id in historical:
+                await self.enqueue_trace(trace_id, delay_sec=0.0)
         await self._project_due_traces()
 
     async def _run_loop(self) -> None:
@@ -148,6 +161,41 @@ class ObserverRefreshRuntime:
                     discovered.append(trace_id)
 
         async with get_session() as session:
+            recent_ticket_ids: list[str] = []
+
+            ticket_id_rows = await session.execute(
+                select(distinct(TicketEvent.ticket_id))
+                .where(TicketEvent.ticket_id.isnot(None), TicketEvent.created_at >= window_start)
+                .limit(self.max_batch * 2)
+            )
+            recent_ticket_ids.extend([value for value in ticket_id_rows.scalars().all() if value])
+
+            op_ticket_rows = await session.execute(
+                select(distinct(Operation.ticket_id))
+                .where(
+                    Operation.ticket_id.isnot(None),
+                    or_(
+                        Operation.queued_at >= window_start,
+                        Operation.sent_at >= window_start,
+                        Operation.accepted_at >= window_start,
+                        Operation.started_at >= window_start,
+                        Operation.finished_at >= window_start,
+                        Operation.cancel_requested_at >= window_start,
+                        Operation.canceled_at >= window_start,
+                    ),
+                )
+                .limit(self.max_batch * 2)
+            )
+            recent_ticket_ids.extend([value for value in op_ticket_rows.scalars().all() if value])
+
+            if recent_ticket_ids:
+                ticket_root_rows = await session.execute(
+                    select(distinct(Ticket.observer_root_trace_id))
+                    .where(Ticket.ticket_id.in_(recent_ticket_ids), Ticket.observer_root_trace_id.isnot(None))
+                    .limit(self.max_batch * 2)
+                )
+                _remember(list(ticket_root_rows.scalars().all()))
+
             ticket_rows = await session.execute(
                 select(distinct(TicketEvent.trace_id))
                 .where(TicketEvent.trace_id.isnot(None), TicketEvent.created_at >= window_start)
@@ -197,6 +245,65 @@ class ObserverRefreshRuntime:
         self._last_scan_at = now
         self._stats.last_scan_completed_at = datetime.now(timezone.utc)
         self._stats.discovered_trace_count = len(discovered)
+        return discovered[: self.max_batch * 2]
+
+    async def _discover_historical_trace_ids(self) -> list[str]:
+        self._stats.last_backfill_scan_started_at = datetime.now(timezone.utc)
+        discovered: list[str] = []
+        seen: set[str] = set()
+
+        def _remember(values: list[Optional[str]]) -> None:
+            for value in values:
+                trace_id = str(value or "").strip()
+                if trace_id and trace_id not in seen:
+                    seen.add(trace_id)
+                    discovered.append(trace_id)
+
+        async with self._pending_lock:
+            if len(self._pending) >= self.max_batch * 4:
+                self._stats.discovered_backfill_trace_count = 0
+                self._stats.last_backfill_scan_completed_at = datetime.now(timezone.utc)
+                return []
+
+        async with get_session() as session:
+            ticket_root_rows = await session.execute(
+                select(Ticket.observer_root_trace_id)
+                .where(
+                    Ticket.observer_root_trace_id.isnot(None),
+                    ~exists(select(ObserverTrace.trace_id).where(ObserverTrace.trace_id == Ticket.observer_root_trace_id)),
+                )
+                .order_by(Ticket.created_at.asc())
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(ticket_root_rows.scalars().all()))
+
+            op_rows = await session.execute(
+                select(Operation.trace_id)
+                .where(
+                    Operation.trace_id.isnot(None),
+                    Operation.ticket_id.is_(None),
+                    ~exists(select(ObserverTrace.trace_id).where(ObserverTrace.trace_id == Operation.trace_id)),
+                )
+                .group_by(Operation.trace_id)
+                .order_by(func.min(Operation.queued_at).asc())
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(op_rows.scalars().all()))
+
+            orphan_ticket_rows = await session.execute(
+                select(TicketEvent.trace_id)
+                .where(
+                    TicketEvent.trace_id.isnot(None),
+                    ~exists(select(ObserverTrace.trace_id).where(ObserverTrace.trace_id == TicketEvent.trace_id)),
+                )
+                .group_by(TicketEvent.trace_id)
+                .order_by(func.min(TicketEvent.created_at).asc())
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(orphan_ticket_rows.scalars().all()))
+
+        self._stats.discovered_backfill_trace_count = len(discovered)
+        self._stats.last_backfill_scan_completed_at = datetime.now(timezone.utc)
         return discovered[: self.max_batch * 2]
 
     async def _project_due_traces(self) -> None:

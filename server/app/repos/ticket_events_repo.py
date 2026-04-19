@@ -1,6 +1,7 @@
 """
 Repository for ticket_events table operations.
 """
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,7 @@ from loguru import logger
 from app.db.models import (
     TicketEvent,
     Ticket,
+    Operation,
     TicketQueue,
     TicketQueueMember,
     TicketRoutingRule,
@@ -47,6 +49,55 @@ class TicketEventsRepo:
             session: Async SQLAlchemy session
         """
         self.session = session
+
+    async def ensure_ticket_observer_root_trace_id(
+        self,
+        ticket_id: str,
+        *,
+        preferred_trace_id: Optional[str] = None,
+    ) -> str:
+        await self.session.flush()
+        ticket = await self.get_ticket(ticket_id)
+        if ticket is None:
+            raise ValueError(f"Ticket not found: {ticket_id}")
+        trace_id = str(getattr(ticket, "observer_root_trace_id", None) or "").strip()
+        if trace_id:
+            return trace_id
+        trace_id = str(preferred_trace_id or uuid.uuid4()).strip()
+        ticket.observer_root_trace_id = trace_id
+        await self.session.flush()
+        return trace_id
+
+    async def resolve_ticket_trace_id(
+        self,
+        ticket_id: str,
+        *,
+        trace_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        agent_seq: Optional[int] = None,
+    ) -> Optional[str]:
+        await self.session.flush()
+        requested_trace_id = str(trace_id or "").strip() or None
+        resolved_operation_id = str(operation_id or "").strip() or None
+
+        if resolved_operation_id:
+            operation = await self.session.get(Operation, resolved_operation_id)
+            if operation is not None:
+                operation_trace_id = str(getattr(operation, "trace_id", None) or "").strip()
+                if operation_trace_id:
+                    return operation_trace_id
+
+        try:
+            ticket_root_trace_id = await self.ensure_ticket_observer_root_trace_id(
+                ticket_id,
+                preferred_trace_id=requested_trace_id,
+            )
+        except ValueError:
+            return requested_trace_id
+
+        if agent_seq is None:
+            return ticket_root_trace_id
+        return requested_trace_id or ticket_root_trace_id
     
     async def add_event(
         self,
@@ -151,6 +202,13 @@ class TicketEventsRepo:
                 )
                 return None
         
+        resolved_trace_id = await self.resolve_ticket_trace_id(
+            ticket_id,
+            trace_id=trace_id,
+            operation_id=operation_id,
+            agent_seq=agent_seq,
+        )
+
         # Create insert statement
         stmt = insert(TicketEvent).values(
             ticket_id=ticket_id,
@@ -158,7 +216,7 @@ class TicketEventsRepo:
             agent_seq=agent_seq,
             event_type=event_type,
             payload=payload,
-            trace_id=trace_id,
+            trace_id=resolved_trace_id,
             event_id=event_id,
             operation_id=operation_id,  # КРИТИЧНО: связь с операцией
             created_at=datetime.now(timezone.utc)
@@ -809,6 +867,7 @@ class TicketEventsRepo:
             created_at=now,
             updated_at=now,
             requester_id=requester_id,
+            observer_root_trace_id=str(uuid.uuid4()),
         )
         
         self.session.add(ticket)

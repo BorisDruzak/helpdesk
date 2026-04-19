@@ -253,7 +253,7 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             
             # Создать cancel-op операцию
             cancel_operation_id = str(uuid.uuid4())
-            cancel_trace_id = str(uuid.uuid4())
+            cancel_trace_id = str(getattr(target_op, "trace_id", None) or "").strip() or str(uuid.uuid4())
             
             # КРИТИЧНО: Используем UiPublisher из state для push обновлений
             state = request.app.get('state')

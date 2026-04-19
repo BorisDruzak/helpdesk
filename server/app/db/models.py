@@ -89,6 +89,7 @@ class Ticket(Base):
     asset_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tags: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
     custom_fields: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    observer_root_trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     resolution_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

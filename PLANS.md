@@ -1,5 +1,27 @@
 # PLANS.md
 
+## 2026-04-19 Observer v2: full ticket trace + degradations + historical backfill
+
+- Scope:
+  - make a ticket-scoped observer root trace canonical for the full lifecycle of a ticket;
+  - ensure server-originated ticket events and ticket-bound operations converge on the same trace instead of ad-hoc `uuid4()` values;
+  - extend observer search with first-class degradation queries (`duration > N`, timeout rate, retry rate);
+  - add automatic historical backfill to the observer runtime so older traces do not require manual rebuild;
+  - guarantee deeper module-level agent breakdown through action-trace instrumentation even when a module does not emit custom runtime audit entries.
+- Deliverables:
+  1. schema support for canonical ticket observer root trace;
+  2. server-side trace propagation and observer API/runtime upgrades;
+  3. degradation query endpoint and tech-panel UI for it;
+  4. agent-side module execution breakdown in action trace;
+  5. updated docs/CODEMAP/QUICK_LOOKUP for observer v2;
+  6. local tests, Linux deploy, browser E2E, and rollback-safe stop of the remote server.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` for new server observer tests and agent action-trace tests
+  - `node --check server/admin.js`
+  - remote release via `python scripts/release_server_to_remote.py`
+  - browser verification at `http://192.168.100.17:8666/admin`
+
 ## 2026-04-17 Trace overlay + observer hardening
 
 - Scope:

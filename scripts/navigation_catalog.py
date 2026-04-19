@@ -137,7 +137,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="run_tool",
         title="run_tool / consent",
-        summary="Single path for tool execution, consent approval and operation queueing.",
+        summary="Single path for tool execution, consent approval, operation queueing and agent-side module execution tracing.",
         aliases=(
             "run_tool",
             "tool_call_started",
@@ -241,7 +241,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, SLA, chat, public access and queue behavior.",
+        summary="Ticket lifecycle, SLA, chat, public access, queue behavior and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -352,7 +352,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_server",
         title="Server UI / admin pages",
-        summary="Admin, ticket and public pages plus control-plane backed tech panel and static route handlers.",
+        summary="Admin, ticket and public pages plus control-plane backed tech panel, observer drilldown and static route handlers.",
         aliases=(
             "admin ui",
             "admin page",
