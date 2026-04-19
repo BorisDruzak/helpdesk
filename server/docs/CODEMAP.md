@@ -90,7 +90,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/app/db/models.py` | SQLAlchemy модели (в т.ч. modules.manifest_json, validation_json) |
-| `server/app/db/engine.py` | Async engine/session |
+| `server/app/db/engine.py` | Async engine/session; DB pool tunables via `PC_CLIENT_DB_POOL_SIZE`, `PC_CLIENT_DB_MAX_OVERFLOW`, `PC_CLIENT_DB_POOL_TIMEOUT_SEC`, `PC_CLIENT_DB_POOL_RECYCLE_SEC` |
 | `server/app/db/migrations/versions/*.py` | Alembic миграции |
 | `server/app/repos/device_outbox_repo.py` | device_outbox (pending/sent/delivered) |
 | `server/app/repos/device_events_repo.py` | События устройства |

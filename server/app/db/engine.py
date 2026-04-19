@@ -20,6 +20,11 @@ from app.db.base import Base
 _engine: Optional[AsyncEngine] = None
 _session_maker: Optional[async_sessionmaker[AsyncSession]] = None
 
+DEFAULT_DB_POOL_SIZE = 10
+DEFAULT_DB_MAX_OVERFLOW = 20
+DEFAULT_DB_POOL_TIMEOUT_SEC = 30
+DEFAULT_DB_POOL_RECYCLE_SEC = 1800
+
 
 def get_engine() -> AsyncEngine:
     """
@@ -95,13 +100,15 @@ async def init_db(database_url: Optional[str] = None) -> None:
     logger.info(f"🗄️  Initializing database connection...")
     logger.debug(f"Database URL: {database_url.split('@')[-1] if '@' in database_url else 'local'}")
     
+    pool_options = _load_engine_pool_options()
+    logger.debug("Database pool config: {}", pool_options)
+
     # Create async engine
     _engine = create_async_engine(
         database_url,
         echo=False,  # Set to True for SQL query logging
         pool_pre_ping=True,  # Verify connections before using
-        pool_size=5,
-        max_overflow=10,
+        **pool_options,
     )
     
     # Create session maker
@@ -124,6 +131,31 @@ async def init_db(database_url: Optional[str] = None) -> None:
         raise
 
 
+def _load_engine_pool_options() -> dict[str, int | bool]:
+    return {
+        "pool_size": _read_env_int("PC_CLIENT_DB_POOL_SIZE", DEFAULT_DB_POOL_SIZE, minimum=1),
+        "max_overflow": _read_env_int("PC_CLIENT_DB_MAX_OVERFLOW", DEFAULT_DB_MAX_OVERFLOW, minimum=0),
+        "pool_timeout": _read_env_int("PC_CLIENT_DB_POOL_TIMEOUT_SEC", DEFAULT_DB_POOL_TIMEOUT_SEC, minimum=1),
+        "pool_recycle": _read_env_int("PC_CLIENT_DB_POOL_RECYCLE_SEC", DEFAULT_DB_POOL_RECYCLE_SEC, minimum=0),
+        "pool_use_lifo": True,
+    }
+
+
+def _read_env_int(name: str, default: int, *, minimum: int) -> int:
+    raw = str(os.getenv(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid {}={!r}; using default {}", name, raw, default)
+        return default
+    if value < minimum:
+        logger.warning("Ignoring {}={} below minimum {}; using default {}", name, value, minimum, default)
+        return default
+    return value
+
+
 async def shutdown_db() -> None:
     """
     Dispose of the database engine and clean up resources.
@@ -136,5 +168,3 @@ async def shutdown_db() -> None:
         _engine = None
         _session_maker = None
         logger.success("✅ Database connections closed")
-
-
