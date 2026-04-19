@@ -125,6 +125,9 @@ Support workspace:
 - related traces;
 - signatures и recent occurrences.
 
+Канонический operator UX для ticket-scoped trace живёт в `/support`.
+Legacy `/ticket` shell остаётся отдельной рабочей страницей тикета и не считается основной observer-поверхностью для support workflow.
+
 ## 9. First-class деградации
 
 Observer поддерживает первоклассные observer query по:

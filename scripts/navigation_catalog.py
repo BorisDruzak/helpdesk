@@ -707,7 +707,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health and degradation queries.",
+        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries and the canonical `/support` ticket-trace drawer.",
         aliases=(
             "observer",
             "trace overlay",
@@ -726,6 +726,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/observer/runtime.py",
             "server/tech/handlers.py",
             "server/admin.js",
+            "server/support.js",
         ),
         related_docs=(
             repo_path(QUICK_LOOKUP_PATH),

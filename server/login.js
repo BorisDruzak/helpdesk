@@ -3,8 +3,8 @@
     const USER_LOGIN_KEY = 'admin_user_login';
     const ROLE_KEY = 'admin_actor_role';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const ADMIN_SHELL_VERSION = '20260330b';
-    const SUPPORT_SHELL_VERSION = '20260330b';
+    const ADMIN_SHELL_VERSION = '20260419a';
+    const SUPPORT_SHELL_VERSION = '20260419a';
     const ROLE_META = {
         admin: {
             title: 'Вход в админку',

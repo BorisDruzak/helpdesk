@@ -20,7 +20,7 @@
     const CONTEXT_ACCORDIONS_KEY = 'support_workspace_context_accordions';
     const CHAT_WINDOW_SIZE_KEY = 'support_workspace_chat_window_size';
     const LOGIN_SHELL_VERSION = '20260330a';
-    const SUPPORT_SHELL_VERSION = '20260417a';
+    const SUPPORT_SHELL_VERSION = '20260419a';
     const POLL_INTERVAL_MS = 8000;
     const CLOSED_TICKET_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
     const SLA_RISK_WINDOW_MS = 90 * 60 * 1000;
@@ -1090,11 +1090,18 @@
     }
 
     function buildTicketMetaLine(ticket) {
+        const observerSummary = ticket && ticket.ticket_id === state.selectedTicketId
+            ? state.selectedObserverSummary
+            : null;
+        const traceSummary = observerSummary?.summary || {};
+        const rootTrace = observerSummary?.root_trace || null;
         const parts = [
             ticket.requester_display_name || ticket.requester_id || '—',
             statusLabel(ticket.status),
             ticket.assignee_id ? ('Исполнитель: ' + ticket.assignee_id) : 'Без исполнителя',
-            ['Трасса', rootTrace ? ((rootTrace.root_kind || 'trace') + ' • ' + (rootTrace.status || 'unknown')) : ((traceSummary.trace_count || 0) + ' traces')],
+            'trace: ' + (rootTrace
+                ? ((rootTrace.root_kind || 'trace') + ' • ' + (rootTrace.status || 'unknown'))
+                : ((traceSummary.trace_count || 0) + ' traces')),
         ];
         if (ticket.priority_class) {
             parts.push(priorityLabel(ticket.priority_class));
