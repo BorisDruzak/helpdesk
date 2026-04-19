@@ -224,7 +224,7 @@ class OperationService:
         if deadline:
             await self.repo.update_status(
                 operation_id=operation_id,
-                new_status="queued",
+                new_status=initial_status,
                 deadline_at=deadline
             )
             operation.deadline_at = deadline

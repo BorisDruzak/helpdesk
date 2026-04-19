@@ -61,3 +61,49 @@ async def test_enqueue_operation_uses_canonical_ticket_root_trace_for_ticket_bou
         )
         await session.commit()
         assert operation.trace_id == root_trace_id
+
+
+@pytest.mark.asyncio
+async def test_enqueue_operation_preserves_waiting_consent_initial_status():
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000f601"
+    operation_id = "00000000-0000-0000-0000-00000000f602"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.19",
+                hostname="operation-consent-host",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-v3",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=5),
+            )
+        )
+        await session.commit()
+
+    async with get_session() as session:
+        service = OperationService(session)
+        operation = await service.enqueue_operation(
+            operation_id=operation_id,
+            device_id=device_id,
+            kind="tool_call",
+            actor_role="support",
+            trace_id="22222222-2222-2222-2222-222222222222",
+            tool_name="observer_canary.consent_probe",
+            initial_status="waiting_consent",
+        )
+        await session.commit()
+
+    async with get_session() as session:
+        verify_service = OperationService(session)
+        stored = await verify_service.repo.get_by_operation_id(operation_id)
+        assert stored is not None
+        assert stored.status == "waiting_consent"
+        assert stored.deadline_at is not None
+        assert operation.status == "waiting_consent"
