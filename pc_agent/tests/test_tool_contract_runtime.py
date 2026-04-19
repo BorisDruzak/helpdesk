@@ -12,6 +12,7 @@ from core.registry import exposed_tool
 from core.tool_response import ToolMeta
 from pc_agent.core.action_trace import configure_action_trace, search_action_trace
 from pc_agent.config.config_loader import ConfigLoader, init_config
+from modules.base_module import BaseCollector
 
 
 def _meta(command: str = "run_tool") -> ToolMeta:
@@ -263,4 +264,62 @@ async def test_run_tool_emits_module_level_action_trace_breakdown(tmp_path):
         and row["status"] == "ok"
         and row.get("details", {}).get("module_name") == "custom"
         for row in rows
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_run_tool_emits_nested_module_sdk_steps(tmp_path):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+    configure_action_trace(tmp_path)
+
+    orchestrator = AgentOrchestrator(enabled_modules=[], data_root=tmp_path)
+    await orchestrator.initialize()
+
+    class InstrumentedCollector(BaseCollector):
+        @property
+        def name(self) -> str:
+            return "custom"
+
+        @exposed_tool(
+            name="custom.instrumented",
+            description="Tool with nested module trace steps",
+            metadata_risk_level="safe_read",
+            metadata_allow_roles=["admin"],
+            resources={"max_runtime_sec": 5},
+        )
+        async def collect(self):
+            with self.trace_span("resolve", details={"phase": "resolve"}):
+                pass
+            self.trace_event("emit", summary="post-resolve event", details={"phase": "emit"})
+            return {"ok": True}
+
+    collector = InstrumentedCollector()
+    orchestrator.loaded_modules.append(collector)
+    orchestrator.registry.register(collector)
+
+    result = await orchestrator._handle_run_tool(
+        tool="custom.instrumented",
+        params={"tool": "custom.instrumented", "ticket_id": "ticket-module-sdk", "params": {}},
+        actor_role="admin",
+        meta=_meta(),
+    )
+
+    assert result.status == "success"
+    rows = search_action_trace(limit=30, operation_id="req-runtime-envelope", ticket_id="ticket-module-sdk")
+    nested_rows = [row for row in rows if row["action"] == "module.step"]
+    assert nested_rows
+    assert any(
+        row["stage"] == "finish"
+        and row["status"] == "ok"
+        and row.get("details", {}).get("step") == "resolve"
+        and row.get("details", {}).get("module_name") == "custom"
+        for row in nested_rows
+    )
+    assert any(
+        row["stage"] == "event"
+        and row.get("details", {}).get("step") == "emit"
+        for row in nested_rows
     )

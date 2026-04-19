@@ -172,13 +172,23 @@ def _parse_users_from_env() -> dict[str, str]:
     return users
 
 
+def _should_warn_about_default_admin_password(users: dict[str, str]) -> bool:
+    configured_users_json = str(os.getenv("UI_USERS_JSON") or "").strip()
+    configured_admin_password = os.getenv("UI_ADMIN_PASSWORD")
+    if configured_users_json:
+        return False
+    if configured_admin_password is not None:
+        return False
+    return users.get("admin") == "admin123"
+
+
 # Хранилище пользователей (логин: пароль).
 # Для production задавайте UI_USERS_JSON, дефолты только для локальной разработки.
 USERS = _parse_users_from_env() or {
     "admin": os.getenv("UI_ADMIN_PASSWORD", "admin123"),
     "user": os.getenv("UI_USER_PASSWORD", "12345"),
 }
-if USERS.get("admin") == "admin123":
+if _should_warn_about_default_admin_password(USERS):
     logger.warning(
         "Using default admin password from config; set UI_USERS_JSON or UI_ADMIN_PASSWORD in production."
     )

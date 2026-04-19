@@ -67,9 +67,11 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
     )
     async def {method_name}(self, **kwargs) -> Dict[str, Any]:
         params = {{**{defaults_literal}, **kwargs}}
-        # user code begins
+        with self.trace_span("tool.entry", details={{"tool_name": {tool_name_literal}}}):
+            self.trace_event("params.normalized", summary="module builder defaults applied", details={{"tool_name": {tool_name_literal}}})
+            # user code begins
 {user_function_body}
-        # user code ends
+            # user code ends
 """
 
 ALLOWED_RISK_LEVELS = ("safe_readonly", "safe_write", "dangerous", "safe_read", "sensitive_read", "system_write", "code_exec")

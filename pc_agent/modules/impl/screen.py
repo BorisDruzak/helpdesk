@@ -181,17 +181,27 @@ class ScreenCollector(BaseCollector):
         timestamp = int(time.time())
         temp_path = self.temp_dir / f"screenshot_{timestamp}.png"
         try:
-            capture_region, capture_mode = self._resolve_capture_region(
-                monitor=monitor,
-                left=left,
-                top=top,
-                width=width,
-                height=height,
-            )
-            image = self.sct.grab(capture_region)
-            self._write_screenshot(image, temp_path)
+            with self.trace_span(
+                "collect.resolve_region",
+                details={"monitor": monitor, "region_requested": any(v is not None for v in (left, top, width, height))},
+            ):
+                capture_region, capture_mode = self._resolve_capture_region(
+                    monitor=monitor,
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                )
+            with self.trace_span("collect.capture_png", details={"capture_mode": capture_mode}):
+                image = self.sct.grab(capture_region)
+                self._write_screenshot(image, temp_path)
             absolute_path = temp_path.resolve()
             resolution = f"{capture_region['width']}x{capture_region['height']}"
+            self.trace_event(
+                "collect.summary",
+                summary="screen capture complete",
+                details={"capture_mode": capture_mode, "resolution": resolution},
+            )
             logger.success(f"[{self.name}] screenshot saved: {absolute_path}")
             return {
                 "resolution": resolution,
@@ -262,7 +272,8 @@ class ScreenCollector(BaseCollector):
         monitor: int = 1,
         operation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        ffmpeg_path = _get_ffmpeg_path()
+        with self.trace_span("record.resolve_ffmpeg"):
+            ffmpeg_path = _get_ffmpeg_path()
         if not ffmpeg_path:
             raise RuntimeError(
                 "ffmpeg not found. Install a system ffmpeg binary or imageio-ffmpeg."
@@ -271,21 +282,30 @@ class ScreenCollector(BaseCollector):
         timestamp = int(time.time())
         temp_path = self.temp_dir / f"recording_{timestamp}.mp4"
         try:
-            result = await asyncio.to_thread(
-                _record_sync,
-                ffmpeg_path,
-                monitor,
-                fps,
-                duration_sec,
-                max_width,
-                quality_crf,
-                SIZE_LIMIT_BYTES,
-                str(temp_path),
-                stop_event,
-            )
+            with self.trace_span(
+                "record.capture",
+                details={"monitor": monitor, "fps": fps, "duration_sec": duration_sec, "max_width": max_width},
+            ):
+                result = await asyncio.to_thread(
+                    _record_sync,
+                    ffmpeg_path,
+                    monitor,
+                    fps,
+                    duration_sec,
+                    max_width,
+                    quality_crf,
+                    SIZE_LIMIT_BYTES,
+                    str(temp_path),
+                    stop_event,
+                )
             if result.get("error"):
                 raise RuntimeError(result["error"])
             absolute_path = temp_path.resolve()
+            self.trace_event(
+                "record.summary",
+                summary="screen recording complete",
+                details={"frames_captured": result.get("frames_captured", 0), "output_path": str(absolute_path)},
+            )
             return {
                 "frames_captured": result.get("frames_captured", 0),
                 "duration_sec": result.get("duration_actual_sec", 0),

@@ -10,6 +10,7 @@ from .service import AgentService
 from app.db import get_session
 from app.repos.connection_requests_repo import ConnectionRequestsRepo
 from auth.middleware import require_auth
+from shared.redaction import redact_sensitive_payload
 
 
 def _serialize_provisioning_state(
@@ -519,7 +520,7 @@ async def handle_get_device_update_diagnostics(request):
                             "source": item.source,
                             "operation_id": item.operation_id,
                             "created_at": item.created_at.isoformat() if item.created_at else None,
-                            "details": item.details_json if isinstance(item.details_json, dict) else {},
+                            "details": redact_sensitive_payload(item.details_json or {}),
                         }
                     )
 

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -265,9 +266,18 @@ def _request_json(method: str, url: str, payload: dict[str, object] | None = Non
 
 
 def _issue_agent_token(api_url: str, device_id: str) -> str:
+    parsed = urllib.parse.urlsplit(str(api_url or "").strip())
+    normalized_path = parsed.path.rstrip("/")
+    if normalized_path.endswith("/login"):
+        normalized_path = normalized_path[: -len("/login")]
+    if not normalized_path.endswith("/api"):
+        normalized_path = f"{normalized_path}/api" if normalized_path else "/api"
+    login_url = urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, f"{normalized_path}/login", "", ""),
+    )
     status, payload = _request_json(
         "POST",
-        f"{api_url.rstrip('/')}/login",
+        login_url,
         {"uuid": device_id},
     )
     if status != 200 or str(payload.get("status") or "").lower() not in {"success", "ok"}:

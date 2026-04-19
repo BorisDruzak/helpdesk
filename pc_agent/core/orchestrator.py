@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import importlib.util
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Any, List, Optional
@@ -3230,12 +3231,26 @@ class AgentOrchestrator:
                 """Внутренняя функция для выполнения tool в task."""
                 try:
                     is_async = inspect.iscoroutinefunction(method)
-                    
-                    if is_async:
-                        return await method(**params_to_use)
-                    else:
-                        # Выполняем sync метод в threadpool
-                        return await asyncio.to_thread(method, **params_to_use)
+                    method_owner = getattr(method, "__self__", None)
+                    trace_binding = (
+                        method_owner.bind_trace(
+                            tool_name=tool,
+                            ticket_id=ticket_id,
+                            operation_id=operation_id,
+                            trace_id=getattr(meta, "trace_id", None),
+                            request_id=getattr(meta, "request_id", None),
+                            parent_action_id=module_action_trace.action_id,
+                        )
+                        if hasattr(method_owner, "bind_trace")
+                        else nullcontext()
+                    )
+
+                    with trace_binding:
+                        if is_async:
+                            return await method(**params_to_use)
+                        else:
+                            # Выполняем sync метод в threadpool
+                            return await asyncio.to_thread(method, **params_to_use)
                 finally:
                     # Удаляем из running_tasks после завершения
                     self.running_tasks.pop(operation_id, None)

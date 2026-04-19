@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRuntimeAudit
+from shared.redaction import redact_sensitive_payload
 
 
 class AgentRuntimeAuditRepo:
@@ -34,7 +35,7 @@ class AgentRuntimeAuditRepo:
             ticket_id=ticket_id,
             actor_id=actor_id,
             actor_role=actor_role,
-            details_json=details_json,
+            details_json=redact_sensitive_payload(details_json or {}),
         )
         self.session.add(rec)
         await self.session.flush()

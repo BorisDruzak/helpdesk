@@ -243,6 +243,8 @@ from modules.handlers import (
 )
 from jobs.handlers import handle_get_job_events, handle_start_job
 from tech.handlers import (
+    handle_observer_settings_get,
+    handle_observer_settings_patch,
     handle_tech_overview,
     handle_tech_alerts,
     handle_tech_agents_audit,
@@ -515,6 +517,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),
         web.get('/api/admin/tech/operations/stuck', handle_tech_operations_stuck),
+        web.get('/api/admin/settings/observer', handle_observer_settings_get),
+        web.patch('/api/admin/settings/observer', handle_observer_settings_patch),
         web.get('/api/admin/tech/traces/runtime', handle_tech_traces_runtime),
         web.get('/api/admin/tech/traces', handle_tech_traces_search),
         web.post('/api/admin/tech/traces/rebuild', handle_tech_traces_rebuild),

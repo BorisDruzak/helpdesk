@@ -1,5 +1,30 @@
 # PLANS.md
 
+## 2026-04-19 Observer v3: spans, propagation, health, module SDK, settings, security
+
+- Scope:
+  - materialize agent-side `action_trace` entries into first-class `observer_spans` / `observer_span_links` instead of returning them only as an attached JSON block in trace detail;
+  - finish trace propagation for remaining server-originated paths so ticket-bound work converges on canonical ticket root traces and dangerous background flows stop generating isolated ad-hoc traces by default;
+  - promote observer runtime into a monitored subsystem with explicit health/config/status payloads suitable for alerts and the tech/settings UI;
+  - introduce a standard module-level observability SDK/hook in `BaseCollector`, make it the required path for new modules, and update current built-in modules to emit nested trace breadcrumbs consistently;
+  - add small default retention/sampling settings for testing, store them in server settings, and expose them in the settings UI;
+  - harden security by fixing `manage_local_agent --issue-token`, removing noisy default-admin-password warnings, and redacting sensitive fields from `details_json`, action traces, observer attrs, and tech exports.
+- Deliverables:
+  1. observer action-trace projection into persisted spans/links;
+  2. centralized trace propagation updates and regression coverage;
+  3. observer health/settings repo + tech/settings API + UI wiring;
+  4. module instrumentation SDK + built-in module updates + docs/rules update;
+  5. redaction helpers applied to runtime audit, action trace, observer payloads, and tech endpoints;
+  6. fixed local token issue flow, new agent build, Linux deploy, browser verification, and post-check server stop.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` for observer/settings/tech/manage_local_agent tests
+  - targeted `pytest` for `pc_agent/tests` covering action-trace/module instrumentation
+  - `node --check server/admin.js`
+  - `python pc_agent/build_windows_release_v2.py`
+  - remote release via `python scripts/release_server_to_remote.py`
+  - browser verification at `http://192.168.100.17:8666/admin`
+
 ## 2026-04-19 Observer v2: full ticket trace + degradations + historical backfill
 
 - Scope:

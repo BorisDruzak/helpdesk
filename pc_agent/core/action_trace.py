@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional
 from loguru import logger
 
 from pc_agent.core import runtime_paths
+from shared.redaction import redact_context_scalar, redact_sensitive_payload
 
 
 def _utc_now() -> str:
@@ -82,7 +83,7 @@ class ActionTraceContext:
             "trace_id": self.trace_id,
             "request_id": self.request_id,
             "session_key": self.session_key,
-            "consent_token": self.consent_token,
+            "consent_token": redact_context_scalar(self.consent_token, field_name="consent_token"),
         }
 
 
@@ -145,7 +146,7 @@ class ActionTraceRecorder:
             "stage": str(stage or "").strip() or "event",
             "status": str(status or "").strip() or "ok",
             "summary": _normalize_scalar(summary),
-            "details": _safe_json(details or {}),
+            "details": redact_sensitive_payload(_safe_json(details or {})),
         }
         line = json.dumps(payload, ensure_ascii=False)
         with self._lock:

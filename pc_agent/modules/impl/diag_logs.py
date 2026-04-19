@@ -119,6 +119,10 @@ class DiagLogsModule(BaseCollector):
                 sources = system_paths + app_paths
             else:
                 sources = system_paths
+        self.trace_event(
+            "collect.resolve_sources",
+            details={"mode": mode, "preset": preset, "sources_count": len(sources)},
+        )
         
         # Определяем allowlist dirs
         if os_name == "linux":
@@ -275,6 +279,15 @@ class DiagLogsModule(BaseCollector):
                 except (OSError, ValueError) as e:
                     logger.warning(f"[{self.name}] Ошибка при обходе директории {source_path}: {e}")
                     continue
+
+        self.trace_event(
+            "collect.files_enumerated",
+            details={
+                "file_count": file_count,
+                "collected_bytes": collected_bytes,
+                "truncated": truncated,
+            },
+        )
         
         # Создаем zip файл
         zip_path = temp_dir / f"diagnostics_logs_{epoch}.zip"
@@ -367,6 +380,16 @@ class DiagLogsModule(BaseCollector):
                         logger.warning(f"[{self.name}] {journal_error}")
         
         logger.info(f"[{self.name}] Собрано файлов: {file_count}, байт: {collected_bytes}, truncated: {truncated}")
+        self.trace_event(
+            "collect.archive_ready",
+            summary="diagnostic logs archive created",
+            details={
+                "file_count": file_count,
+                "collected_bytes": collected_bytes,
+                "journal_included": journal_included,
+                "tail_applied_count": tail_applied_count,
+            },
+        )
         
         # Формируем observations
         providers_used = ["file"]
@@ -400,4 +423,3 @@ class DiagLogsModule(BaseCollector):
             observations["journal_error"] = journal_error
         
         return observations
-

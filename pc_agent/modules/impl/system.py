@@ -204,7 +204,8 @@ class SystemCollector(BaseCollector):
         hostname = socket.gethostname()
 
         if flags["include_cpu"]:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            with self.trace_span("collect.cpu", details={"preset": flags["preset"]}):
+                cpu_percent = psutil.cpu_percent(interval=1)
             cpu_info = {
                 "percent": cpu_percent,
                 "logical_cores": psutil.cpu_count(logical=True),
@@ -215,7 +216,8 @@ class SystemCollector(BaseCollector):
             result["selected_sections"].append("cpu")
 
         if flags["include_memory"]:
-            memory = psutil.virtual_memory()
+            with self.trace_span("collect.memory"):
+                memory = psutil.virtual_memory()
             memory_info = {
                 "percent": memory.percent,
                 "total_bytes": memory.total,
@@ -227,8 +229,9 @@ class SystemCollector(BaseCollector):
             result["selected_sections"].append("memory")
 
         if flags["include_disk"]:
-            disk_path = self._disk_path()
-            disk_usage = psutil.disk_usage(disk_path)
+            with self.trace_span("collect.disk"):
+                disk_path = self._disk_path()
+                disk_usage = psutil.disk_usage(disk_path)
             disk_info = {
                 "path": disk_path,
                 "percent": disk_usage.percent,
@@ -241,6 +244,14 @@ class SystemCollector(BaseCollector):
             result["selected_sections"].append("disk")
 
         if flags["include_hostname"] or flags["include_ip"] or flags["include_network"]:
+            self.trace_event(
+                "collect.network.identity",
+                details={
+                    "include_hostname": flags["include_hostname"],
+                    "include_ip": flags["include_ip"],
+                    "include_network": flags["include_network"],
+                },
+            )
             network_info: Dict[str, Any] = {}
             if flags["include_hostname"]:
                 result["hostname"] = hostname
@@ -272,19 +283,27 @@ class SystemCollector(BaseCollector):
                 result["selected_sections"].append("network")
 
         if flags["include_platform"]:
-            platform_info = {
-                "system": platform.system(),
-                "release": platform.release(),
-                "version": platform.version(),
-                "machine": platform.machine(),
-                "python_version": platform.python_version(),
-            }
+            with self.trace_span("collect.platform"):
+                platform_info = {
+                    "system": platform.system(),
+                    "release": platform.release(),
+                    "version": platform.version(),
+                    "machine": platform.machine(),
+                    "python_version": platform.python_version(),
+                }
             result["sections"]["platform"] = platform_info
             result["selected_sections"].append("platform")
 
         if flags["include_boot_time"]:
-            boot_ts = psutil.boot_time()
+            with self.trace_span("collect.boot_time"):
+                boot_ts = psutil.boot_time()
             result["sections"]["boot_time"] = {"epoch": boot_ts}
             result["selected_sections"].append("boot_time")
+
+        self.trace_event(
+            "collect.summary",
+            summary="system collect finished",
+            details={"selected_sections": list(result["selected_sections"])},
+        )
 
         return result

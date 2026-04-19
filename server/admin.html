@@ -993,6 +993,53 @@
                         </label>
                     </div>
                     <div id="techTraceRuntimeStatus" class="tech-control-note">Background refresh ещё не проверен.</div>
+                    <div class="tech-mini-panel" style="margin-top: 12px;">
+                        <div class="tech-section-head" style="margin-bottom: 10px;">
+                            <div>
+                                <h3 style="margin:0;">Observer settings</h3>
+                                <p class="muted" style="margin-top: 6px;">Тестовые настройки retention, sampling и action sync для observer runtime.</p>
+                            </div>
+                        </div>
+                        <div class="tech-control-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                            <div class="form-group">
+                                <label for="techObserverSampleRateInput">Success sample rate (%)</label>
+                                <input type="number" id="techObserverSampleRateInput" min="0" max="100" step="1" placeholder="35">
+                            </div>
+                            <div class="form-group">
+                                <label for="techObserverOkRetentionInput">OK retention (hours)</label>
+                                <input type="number" id="techObserverOkRetentionInput" min="1" step="1" placeholder="24">
+                            </div>
+                            <div class="form-group">
+                                <label for="techObserverErrorRetentionInput">Error retention (hours)</label>
+                                <input type="number" id="techObserverErrorRetentionInput" min="1" step="1" placeholder="168">
+                            </div>
+                            <div class="form-group">
+                                <label for="techObserverActionLimitInput">Action sync limit</label>
+                                <input type="number" id="techObserverActionLimitInput" min="1" step="1" placeholder="120">
+                            </div>
+                            <div class="form-group" style="display:flex; align-items:flex-end;">
+                                <label class="muted" style="display:flex; align-items:center; gap:8px;">
+                                    <input type="checkbox" id="techObserverBackfillEnabledInput">
+                                    Historical backfill enabled
+                                </label>
+                            </div>
+                            <div class="form-group" style="display:flex; align-items:flex-end;">
+                                <label class="muted" style="display:flex; align-items:center; gap:8px;">
+                                    <input type="checkbox" id="techObserverActionSyncEnabledInput">
+                                    Action sync enabled
+                                </label>
+                            </div>
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label for="techObserverKeepRootKindsInput">Always keep root kinds</label>
+                                <input type="text" id="techObserverKeepRootKindsInput" placeholder="ticket,agent_update,module_install,consent">
+                            </div>
+                        </div>
+                        <div class="tech-actions-bar" style="margin-top: 10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" id="techObserverSettingsReloadBtn">Загрузить settings</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="techObserverSettingsSaveBtn">Сохранить settings</button>
+                        </div>
+                        <div id="techObserverSettingsStatus" class="tech-control-note">Observer settings ещё не загружены.</div>
+                    </div>
                     <div id="techTraceSearchStatus" class="tech-control-note">Задайте фильтры и запустите поиск.</div>
                     <div class="tech-split-grid" style="margin-top: 12px;">
                         <div>

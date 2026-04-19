@@ -211,6 +211,26 @@ def test_issue_agent_token_returns_token_without_logging_raw_value(monkeypatch):
     }
 
 
+def test_issue_agent_token_normalizes_root_api_url(monkeypatch):
+    captured = {}
+
+    def _fake_request(method, url, payload=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["payload"] = payload
+        return 200, {"status": "ok", "token": "issued-from-root"}
+
+    monkeypatch.setattr(manage_local_agent, "_request_json", _fake_request)
+
+    token = manage_local_agent._issue_agent_token(
+        "http://example",
+        "7a3429ec-1c0b-5495-9aad-b284f08ae965",
+    )
+
+    assert token == "issued-from-root"
+    assert captured["url"] == "http://example/api/login"
+
+
 def test_status_treats_reused_pid_as_stopped(tmp_path, monkeypatch, capsys):
     instance_root = tmp_path / "instances"
     instance_dir = instance_root / "launcher-automation-3111"

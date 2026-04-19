@@ -14,6 +14,13 @@
 - `docs/AUTHENTICATION.md` (источники токена: `AUTH_TOKEN` → `auth_tokens` → legacy `identity.json`)
 - `docs/MODULES.md`, `docs/ORCHESTRATOR.md`, `docs/SENDER.md`
 
+## Обязательное правило для новых модулей
+
+- Каждый новый `BaseCollector`-модуль обязан использовать observer SDK из `pc_agent/modules/base_module.py`.
+- Минимум: один верхнеуровневый `with self.trace_span("tool.entry", ...)` на каждый tool method и дополнительные `self.trace_event(...)` или `self.trace_span(...)` на опасных шагах (`subprocess`, `network`, `retry`, `timeout`, `artifact`, `consent`, `publish`).
+- В `details` нельзя класть сырой токен, пароль, cookie, consent token или другие чувствительные поля; они должны идти через built-in redaction helpers.
+- Если модуль создаётся через workbench/builder, generated scaffold с trace SDK нельзя удалять без осознанной замены эквивалентной инструментировкой.
+
 ## CODEMAP
 
 - Каноническая карта агента — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `pc_agent/docs/CODEMAP.md`).
@@ -24,4 +31,3 @@
 
 - Тип события определяется ТОЛЬКО по `device_seq` vs `agent_seq` (см. `docs/PROTOCOL_V3.md`).
 - ACK удаляет outbox записи (нет статуса “sent” → ACK ⇒ DELETE) (см. `docs/SENDER.md`).
-

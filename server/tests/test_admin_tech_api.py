@@ -258,7 +258,7 @@ async def test_tech_audit_and_logs_are_localized(test_client):
                 event_type="invalid_token",
                 severity="error",
                 source="test",
-                details_json={"reason": "invalid_token"},
+                details_json={"reason": "invalid_token", "authorization": "Bearer secret"},
                 created_at=now,
             )
         )
@@ -297,6 +297,8 @@ async def test_tech_audit_and_logs_are_localized(test_client):
         item["event_label"] == "Неверный токен" and item["severity_label"] == "Ошибка"
         for item in agents_body["events"]
     )
+    invalid_token_event = next(item for item in agents_body["events"] if item["event_type"] == "invalid_token")
+    assert invalid_token_event["details_json"]["authorization"] == "***REDACTED***"
     assert any(item["action_label"] == "Неудачная попытка входа" for item in users_body["events"])
     assert any(
         item["level_label"] == "Предупреждение" and "Device warning surfaced" in item["message"]

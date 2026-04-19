@@ -25,6 +25,7 @@ from app.db.models import (
     Ticket,
     TicketEvent,
 )
+from shared.redaction import redact_sensitive_payload
 
 
 OBSERVER_NAMESPACE = uuid.UUID("7f646dd0-36d4-4789-953b-fc8d1dd0d3e9")
@@ -127,6 +128,16 @@ def _split_tool_name(tool_name: Optional[str]) -> tuple[Optional[str], Optional[
 
 def _trace_scoped_uuid(trace_id: str, label: str) -> str:
     return str(uuid.uuid5(OBSERVER_NAMESPACE, f"{trace_id}:{label}"))
+
+
+def _parse_action_timestamp(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _span_status_from_operation(status: Optional[str]) -> str:
@@ -393,6 +404,157 @@ class ObserverOverlayService:
             "span_links": [self._serialize_span_link(link) for link in links],
             "error_occurrences": [self._serialize_occurrence(item) for item in occurrences],
         }
+
+    async def sync_agent_action_spans(self, trace_id: str, entries: list[dict[str, Any]]) -> int:
+        trace = await self.project_trace(trace_id, force=False)
+        if trace is None:
+            return 0
+        span_rows = (
+            await self.session.execute(
+                select(ObserverSpan).where(ObserverSpan.trace_id == trace_id).order_by(ObserverSpan.started_at.asc())
+            )
+        ).scalars().all()
+        existing_agent_action_span_ids = [span.span_id for span in span_rows if span.source_type == "agent_action"]
+        if existing_agent_action_span_ids:
+            await self.session.execute(delete(ObserverSpanLink).where(ObserverSpanLink.span_id.in_(existing_agent_action_span_ids)))
+            await self.session.execute(
+                delete(ObserverSpan).where(
+                    ObserverSpan.trace_id == trace_id,
+                    ObserverSpan.source_type == "agent_action",
+                )
+            )
+            await self.session.flush()
+
+        if not entries:
+            trace.span_count = await self._count_trace_spans(trace_id)
+            return 0
+
+        operation_span_ids = {
+            span.source_ref: span.span_id
+            for span in span_rows
+            if span.source_type == "operation" and span.source_ref
+        }
+        grouped: dict[str, dict[str, Any]] = {}
+        ordered_action_ids: list[str] = []
+
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            action_id = _compact_text(entry.get("action_id")) or _trace_scoped_uuid(trace_id, f"agent_action:{index}")
+            ts = _parse_action_timestamp(entry.get("ts")) or trace.started_at or datetime.now(timezone.utc)
+            details = entry.get("details") if isinstance(entry.get("details"), dict) else {}
+            redacted_details = redact_sensitive_payload(details or {})
+            group = grouped.get(action_id)
+            if group is None:
+                module_name, tool_name = _split_tool_name(_compact_text(entry.get("tool_name")))
+                grouped[action_id] = group = {
+                    "action_id": action_id,
+                    "parent_action_id": _compact_text(entry.get("parent_action_id")),
+                    "source": _compact_text(entry.get("source")) or "agent",
+                    "action": _compact_text(entry.get("action")) or "agent.action",
+                    "category": _compact_text(entry.get("category")) or "tool",
+                    "ticket_id": _compact_text(entry.get("ticket_id")) or trace.ticket_id,
+                    "operation_id": _compact_text(entry.get("operation_id")) or trace.operation_id,
+                    "tool_name": _compact_text(entry.get("tool_name")) or tool_name,
+                    "module_name": _compact_text(redacted_details.get("module_name")) or module_name,
+                    "request_id": _compact_text(entry.get("request_id")),
+                    "session_key": _compact_text(entry.get("session_key")),
+                    "started_at": ts,
+                    "finished_at": ts,
+                    "last_stage": _compact_text(entry.get("stage")) or "event",
+                    "status": str(entry.get("status") or "ok").strip().lower() or "ok",
+                    "summary": _compact_text(entry.get("summary")),
+                    "details_preview": redacted_details,
+                    "stages": [],
+                }
+                ordered_action_ids.append(action_id)
+            else:
+                group["started_at"] = min(group["started_at"], ts)
+                group["finished_at"] = max(group["finished_at"], ts)
+                current_status = str(group.get("status") or "ok").strip().lower()
+                new_status = str(entry.get("status") or current_status).strip().lower() or current_status
+                if new_status in {"error", "timeout", "canceled"}:
+                    group["status"] = new_status
+                elif current_status not in {"error", "timeout", "canceled"}:
+                    group["status"] = new_status
+                group["last_stage"] = _compact_text(entry.get("stage")) or group["last_stage"]
+                group["summary"] = _compact_text(entry.get("summary")) or group["summary"]
+                if redacted_details:
+                    group["details_preview"] = redacted_details
+                    group["module_name"] = _compact_text(redacted_details.get("module_name")) or group["module_name"]
+                    group["tool_name"] = _compact_text(entry.get("tool_name")) or group["tool_name"]
+            group["stages"].append(
+                {
+                    "ts": _iso(ts),
+                    "stage": _compact_text(entry.get("stage")) or "event",
+                    "status": str(entry.get("status") or "ok").strip().lower() or "ok",
+                    "summary": _compact_text(entry.get("summary")),
+                }
+            )
+
+        span_id_by_action_id = {
+            action_id: _trace_scoped_uuid(trace_id, f"agent_action_span:{action_id}")
+            for action_id in ordered_action_ids
+        }
+        for action_id in ordered_action_ids:
+            item = grouped[action_id]
+            parent_action_id = str(item.get("parent_action_id") or "")
+            linked_parent_span_id = span_id_by_action_id.get(parent_action_id)
+            parent_span_id = linked_parent_span_id or operation_span_ids.get(str(item.get("operation_id") or "")) or trace.root_span_id
+
+            self.session.add(
+                ObserverSpan(
+                    span_id=span_id_by_action_id[action_id],
+                    trace_id=trace_id,
+                    parent_span_id=parent_span_id,
+                    source_type="agent_action",
+                    source_ref=action_id,
+                    name=str(item["action"]),
+                    kind="internal",
+                    component="agent_action",
+                    event_type=str(item["last_stage"]),
+                    module_name=item.get("module_name"),
+                    tool_name=item.get("tool_name"),
+                    status=str(item["status"]),
+                    started_at=item["started_at"],
+                    finished_at=item["finished_at"],
+                    duration_ms=_duration_ms(item["started_at"], item["finished_at"]),
+                    attrs_json={
+                        "source": item.get("source"),
+                        "category": item.get("category"),
+                        "request_id": item.get("request_id"),
+                        "session_key": item.get("session_key"),
+                        "details_preview": item.get("details_preview") or {},
+                        "stages": item.get("stages") or [],
+                        "summary": item.get("summary"),
+                    },
+                )
+            )
+            if linked_parent_span_id:
+                self.session.add(
+                    ObserverSpanLink(
+                        span_id=span_id_by_action_id[action_id],
+                        linked_trace_id=trace_id,
+                        linked_span_id=linked_parent_span_id,
+                        reason="agent_action_parent",
+                        attrs_json={},
+                    )
+                )
+            operation_span_id = operation_span_ids.get(str(item.get("operation_id") or ""))
+            if operation_span_id:
+                self.session.add(
+                    ObserverSpanLink(
+                        span_id=span_id_by_action_id[action_id],
+                        linked_trace_id=trace_id,
+                        linked_span_id=operation_span_id,
+                        reason="operation_id_bridge",
+                        attrs_json={},
+                    )
+                )
+
+        await self.session.flush()
+        trace.span_count = await self._count_trace_spans(trace_id)
+        return len(ordered_action_ids)
 
     async def search_signatures(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
         await self._ensure_projected(filters, limit=limit, force=False)
@@ -847,6 +1009,12 @@ class ObserverOverlayService:
         )
         return {value for value in rows.scalars().all() if value}
 
+    async def _count_trace_spans(self, trace_id: str) -> int:
+        row = await self.session.execute(
+            select(func.count()).select_from(ObserverSpan).where(ObserverSpan.trace_id == trace_id)
+        )
+        return int(row.scalar_one() or 0)
+
     def _build_span_payloads(
         self,
         trace_id: str,
@@ -1005,8 +1173,9 @@ class ObserverOverlayService:
         for audit in sources.runtime_audits:
             linked_operation_span_id = operation_span_ids.get(audit.operation_id or "")
             span_id = _trace_scoped_uuid(trace_id, f"runtime_audit:{audit.id}")
-            module_name = _compact_text((audit.details_json or {}).get("module_name"))
-            tool_name = _compact_text((audit.details_json or {}).get("tool_name"))
+            redacted_details = redact_sensitive_payload(audit.details_json or {})
+            module_name = _compact_text(redacted_details.get("module_name"))
+            tool_name = _compact_text(redacted_details.get("tool_name"))
             payloads.append(
                 {
                     "span_id": span_id,
@@ -1028,7 +1197,7 @@ class ObserverOverlayService:
                         "audit_id": audit.id,
                         "severity": audit.severity,
                         "source": audit.source,
-                        "details_json": audit.details_json or {},
+                        "details_json": redacted_details,
                     },
                 }
             )
@@ -1214,7 +1383,7 @@ class ObserverOverlayService:
         for audit in sources.runtime_audits:
             if str(audit.severity or "").strip().lower() not in ERROR_AUDIT_SEVERITIES:
                 continue
-            details = audit.details_json or {}
+            details = redact_sensitive_payload(audit.details_json or {})
             linked_operation = operation_lookup.get(audit.operation_id or "")
             linked_module_name, linked_tool_name = _split_tool_name(linked_operation.tool_name if linked_operation else None)
             module_name = _compact_text(details.get("module_name")) or linked_module_name
@@ -1439,7 +1608,7 @@ class ObserverOverlayService:
             "duration_ms": trace.duration_ms,
             "span_count": trace.span_count,
             "error_count": trace.error_count,
-            "attrs_json": trace.attrs_json or {},
+            "attrs_json": redact_sensitive_payload(trace.attrs_json or {}),
         }
 
     def _serialize_span(self, span: ObserverSpan) -> dict[str, Any]:
@@ -1459,7 +1628,7 @@ class ObserverOverlayService:
             "started_at": _iso(span.started_at),
             "finished_at": _iso(span.finished_at),
             "duration_ms": span.duration_ms,
-            "attrs_json": span.attrs_json or {},
+            "attrs_json": redact_sensitive_payload(span.attrs_json or {}),
         }
 
     def _serialize_span_link(self, link: ObserverSpanLink) -> dict[str, Any]:
@@ -1469,7 +1638,7 @@ class ObserverOverlayService:
             "linked_trace_id": link.linked_trace_id,
             "linked_span_id": link.linked_span_id,
             "reason": link.reason,
-            "attrs_json": link.attrs_json or {},
+            "attrs_json": redact_sensitive_payload(link.attrs_json or {}),
             "created_at": _iso(link.created_at),
         }
 
@@ -1488,7 +1657,7 @@ class ObserverOverlayService:
             "last_seen_at": _iso(signature.last_seen_at),
             "occurrences_count": signature.occurrences_count,
             "affected_devices_count": signature.affected_devices_count,
-            "attrs_json": signature.attrs_json or {},
+            "attrs_json": redact_sensitive_payload(signature.attrs_json or {}),
         }
 
     def _serialize_occurrence(self, occurrence: ObserverErrorOccurrence) -> dict[str, Any]:
@@ -1509,6 +1678,6 @@ class ObserverOverlayService:
             "severity": occurrence.severity,
             "message_norm": occurrence.message_norm,
             "stack_hash": occurrence.stack_hash,
-            "attrs_json": occurrence.attrs_json or {},
+            "attrs_json": redact_sensitive_payload(occurrence.attrs_json or {}),
             "created_at": _iso(occurrence.created_at),
         }

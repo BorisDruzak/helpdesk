@@ -72,8 +72,14 @@ class InputCollector(BaseCollector):
         self._keyboard_events = 0
         self._mouse_events = 0
 
-        idle_seconds, source = self._detect_idle_seconds()
+        with self.trace_span("collect.idle_state"):
+            idle_seconds, source = self._detect_idle_seconds()
         active_recently = idle_seconds is not None and idle_seconds < 60
+        self.trace_event(
+            "collect.summary",
+            summary="input activity snapshot ready",
+            details={"idle_seconds": idle_seconds, "activity_source": source},
+        )
 
         return {
             "keyboard": current_keyboard,

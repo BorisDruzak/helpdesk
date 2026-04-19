@@ -23,6 +23,15 @@ Legacy aliases остаются только для compat resolution в registr
 - регистрация всех tools через `ModuleRegistry`
 - execution через `AgentOrchestrator._handle_run_tool`
 
+## Observer instrumentation
+
+- Каждый tool method должен оставлять observer trail через `BaseCollector.trace_span(...)` и `BaseCollector.trace_event(...)`.
+- Минимальный обязательный каркас:
+  - `with self.trace_span("tool.entry", details={"tool_name": "my.tool"}):`
+  - дополнительные шаги на опасных местах: subprocess, network, retries, timeouts, artifact write/upload, consent-sensitive branch.
+- `AgentOrchestrator` автоматически bind-ит `ticket_id`, `operation_id`, `trace_id`, `request_id` и `parent_action_id`, поэтому модулю достаточно вызывать SDK-хелперы из `BaseCollector`.
+- Любые `details` должны быть JSON-совместимыми и безопасными для redaction; сырые секреты в trace/event payload запрещены.
+
 ## Contract guarantees
 
 Каждый tool spec должен нести:

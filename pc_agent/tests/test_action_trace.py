@@ -44,7 +44,7 @@ def test_action_trace_text_filter_matches_serialized_details(tmp_path: Path) -> 
 
     rows = recorder.search(limit=5, text="role_not_allowed")
     assert len(rows) == 1
-    assert rows[0]["consent_token"] == "consent-1"
+    assert rows[0]["consent_token"] == "***REDACTED***"
 
 
 def test_resolve_action_trace_text_filter_prefers_structured_ids_over_trace_id() -> None:
@@ -91,3 +91,32 @@ def test_record_external_action_trace_appends_launcher_compatible_entry(tmp_path
     assert len(rows) == 1
     assert rows[0]["action"] == "agent.update.apply"
     assert rows[0]["summary"] == "update applied"
+
+
+def test_action_trace_redacts_sensitive_details_and_context(tmp_path: Path) -> None:
+    recorder = ActionTraceRecorder(tmp_path)
+    context = recorder.context(
+        source="orchestrator",
+        action="consent.decision",
+        category="consent",
+        operation_id="op-redact-1",
+        consent_token="consent-secret-token",
+    )
+    recorder.record(
+        context,
+        stage="finish",
+        status="error",
+        summary="denied",
+        details={
+            "access_token": "super-secret",
+            "nested": {"password": "pw123"},
+            "token_hash_prefix": "abc123",
+        },
+    )
+
+    rows = recorder.search(limit=5, operation_id="op-redact-1")
+    assert len(rows) == 1
+    assert rows[0]["consent_token"] == "***REDACTED***"
+    assert rows[0]["details"]["access_token"] == "***REDACTED***"
+    assert rows[0]["details"]["nested"]["password"] == "***REDACTED***"
+    assert rows[0]["details"]["token_hash_prefix"] == "abc123"

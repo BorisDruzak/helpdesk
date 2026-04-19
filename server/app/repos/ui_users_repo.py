@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
 from app.db.models import UiUser, UiUserAudit
+from shared.redaction import redact_sensitive_payload
 
 VALID_ROLES = ("admin", "support", "auditor", "user")
 
@@ -167,7 +168,7 @@ class UiUsersRepo:
             user_login=user_login,
             action=action,
             actor_id=actor_id,
-            details_json=details_json,
+            details_json=redact_sensitive_payload(details_json or {}),
         )
         self.session.add(audit)
 

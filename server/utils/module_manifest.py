@@ -134,7 +134,12 @@ def _normalize_aliases(module_name: str, canonical_tool_name: str, raw_aliases: 
     return list(dict.fromkeys(aliases))
 
 
-def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str], List[str]]:
+def _normalize_tool_entry(
+    module_name: str,
+    raw_tool: Dict[str, Any],
+    *,
+    compat_legacy_defaults: bool = False,
+) -> Tuple[Dict[str, Any], List[str], List[str]]:
     warnings: List[str] = []
     errors: List[str] = []
 
@@ -233,14 +238,20 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
         errors.append(f"Tool '{tool_name}' metadata.origin must be a string")
     contract_version = str(raw_tool.get("contract_version") or "").strip()
     if not contract_version:
-        errors.append(f"Tool '{tool_name}' is missing contract_version")
+        if compat_legacy_defaults:
+            warnings.append(f"Tool '{tool_name}' contract_version defaulted to 1.0.0 for legacy manifest")
+        else:
+            errors.append(f"Tool '{tool_name}' is missing contract_version")
         contract_version = "1.0.0"
     elif not SEMVER_RE.match(contract_version):
         errors.append(f"Tool '{tool_name}' contract_version must be semver")
 
     dependencies = raw_tool.get("dependencies")
     if not isinstance(dependencies, dict):
-        errors.append(f"Tool '{tool_name}' dependencies must be an object")
+        if compat_legacy_defaults and dependencies is None:
+            warnings.append(f"Tool '{tool_name}' dependencies defaulted to empty object for legacy manifest")
+        else:
+            errors.append(f"Tool '{tool_name}' dependencies must be an object")
         dependencies = {}
     for dep_key in ("required_binaries", "required_python_packages", "required_services", "required_permissions"):
         dep_value = dependencies.get(dep_key)
@@ -254,18 +265,27 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
 
     lifecycle = str(raw_tool.get("lifecycle") or "").strip().lower()
     if not lifecycle:
-        errors.append(f"Tool '{tool_name}' is missing lifecycle")
+        if compat_legacy_defaults:
+            warnings.append(f"Tool '{tool_name}' lifecycle defaulted to stable for legacy manifest")
+        else:
+            errors.append(f"Tool '{tool_name}' is missing lifecycle")
         lifecycle = "stable"
     elif lifecycle not in ALLOWED_LIFECYCLES:
         errors.append(f"Tool '{tool_name}' lifecycle must be one of: {', '.join(sorted(ALLOWED_LIFECYCLES))}")
 
     error_codes = raw_tool.get("error_codes")
-    if not isinstance(error_codes, list) or any(not isinstance(item, str) or not item.strip() for item in error_codes):
+    if error_codes is None and compat_legacy_defaults:
+        warnings.append(f"Tool '{tool_name}' error_codes defaulted to empty list for legacy manifest")
+        error_codes = []
+    elif not isinstance(error_codes, list) or any(not isinstance(item, str) or not item.strip() for item in error_codes):
         errors.append(f"Tool '{tool_name}' error_codes must be a list of non-empty strings")
         error_codes = []
 
     artifact_types = raw_tool.get("artifact_types")
-    if not isinstance(artifact_types, list):
+    if artifact_types is None and compat_legacy_defaults:
+        warnings.append(f"Tool '{tool_name}' artifact_types defaulted to empty list for legacy manifest")
+        artifact_types = []
+    elif not isinstance(artifact_types, list):
         errors.append(f"Tool '{tool_name}' artifact_types must be a list")
         artifact_types = []
     for index, artifact in enumerate(artifact_types, start=1):
@@ -277,20 +297,42 @@ def _normalize_tool_entry(module_name: str, raw_tool: Dict[str, Any]) -> Tuple[D
 
     redaction = raw_tool.get("redaction")
     if not isinstance(redaction, dict):
-        errors.append(f"Tool '{tool_name}' redaction must be an object")
+        if compat_legacy_defaults and redaction is None:
+            warnings.append(f"Tool '{tool_name}' redaction defaults applied for legacy manifest")
+        else:
+            errors.append(f"Tool '{tool_name}' redaction must be an object")
         redaction = {}
     if "enabled" not in redaction:
-        errors.append(f"Tool '{tool_name}' redaction.enabled is required")
+        if compat_legacy_defaults:
+            redaction["enabled"] = True
+        else:
+            errors.append(f"Tool '{tool_name}' redaction.enabled is required")
     if "allow_raw_sensitive_data" not in redaction:
-        errors.append(f"Tool '{tool_name}' redaction.allow_raw_sensitive_data is required")
+        if compat_legacy_defaults:
+            redaction["allow_raw_sensitive_data"] = False
+        else:
+            errors.append(f"Tool '{tool_name}' redaction.allow_raw_sensitive_data is required")
+    if compat_legacy_defaults:
+        redaction.setdefault("redact_headers", True)
+        redaction.setdefault("redact_env", True)
+        redaction.setdefault("redact_fields", [])
 
     resources = raw_tool.get("resources")
     if not isinstance(resources, dict):
-        errors.append(f"Tool '{tool_name}' resources must be an object")
+        if compat_legacy_defaults and resources is None:
+            warnings.append(f"Tool '{tool_name}' resources defaults applied for legacy manifest")
+        else:
+            errors.append(f"Tool '{tool_name}' resources must be an object")
         resources = {}
     for required_key in ("max_runtime_sec", "max_artifact_count", "max_artifact_bytes"):
         if required_key not in resources:
-            errors.append(f"Tool '{tool_name}' resources.{required_key} is required")
+            if compat_legacy_defaults:
+                if required_key == "max_runtime_sec":
+                    resources[required_key] = 30
+                else:
+                    resources[required_key] = 0
+            else:
+                errors.append(f"Tool '{tool_name}' resources.{required_key} is required")
     normalized = {
         "tool": tool_name,
         "aliases": aliases,
@@ -443,7 +485,11 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
         if not isinstance(raw_tool, dict):
             validation["errors"]["tools"].append("Tool entry must be a JSON object")
             continue
-        normalized_tool, warnings, errors = _normalize_tool_entry(module_name, raw_tool)
+        normalized_tool, warnings, errors = _normalize_tool_entry(
+            module_name,
+            raw_tool,
+            compat_legacy_defaults=not is_v2,
+        )
         validation["warnings"].extend(warnings)
         validation["errors"]["tools"].extend(errors)
         normalized["tools"].append(normalized_tool)

@@ -70,7 +70,7 @@
 | `server/api/operations.py` | Lifecycle операций, consent/cancel |
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
-| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), trace/signature/degradation search (`/traces`, `/signatures`, `/degradations`, `/traces/rebuild`, `/traces/runtime`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
+| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), trace/signature/degradation search (`/traces`, `/signatures`, `/degradations`, `/traces/rebuild`, `/traces/runtime`), observer settings API (`GET/PATCH /api/admin/settings/observer`), lazy sync agent action trace в first-class observer spans, быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
 | `server/control_plane.py` | Внешний runtime API `/api/control/server/*`: status, full journal logs, download logs, lifecycle actions `start/stop/restart/smoke` |
 
 ### 2.2.1 Tools / единый путь run_tool
@@ -110,8 +110,8 @@
 | `server/app/services/playbook_scheduler.py` | Планировщик playbook |
 | `server/app/services/module_reconcile_scheduler.py` | Реконсиляция модулей |
 | `server/app/services/artifact_service.py` | Артефакты |
-| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; observer v2 умеет canonical ticket-root trace, synthetic `ticket.lifecycle` span, группировку исторических ticket-bound rows в одну trace и degradation queries (`min_duration_ms`, `min_retry_count`, timeout/retry/slow rates) |
-| `server/observer/runtime.py` | Background refresh для observer traces: сканирует committed source rows, enqueue-ит hot ticket-root traces, а также исторический backfill missing projections без ручного rebuild/search |
+| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; observer v3 умеет canonical ticket-root trace, synthetic `ticket.lifecycle` span, materialized `agent_action` spans/links, redacted attrs/details export и degradation queries (`min_duration_ms`, `min_retry_count`, timeout/retry/slow rates) |
+| `server/observer/runtime.py` | Background refresh для observer traces: сканирует committed source rows, enqueue-ит hot ticket-root traces, делает исторический backfill missing projections без ручного rebuild/search и obey-ит DB-backed retention/sampling settings |
 
 ### 2.5 Доменные модули (handlers + service)
 | Каталог/файл | Назначение |

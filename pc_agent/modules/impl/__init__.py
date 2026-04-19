@@ -16,7 +16,8 @@
 1. Создайте файл modules/impl/your_module.py
 2. Унаследуйтесь от BaseCollector
 3. Реализуйте требуемые методы
-4. Добавьте имя модуля в config/settings.yaml
+4. Обязательно оберните опасные шаги в `self.trace_span(...)` и `self.trace_event(...)`
+5. Добавьте имя модуля в config/settings.yaml
 """
 
 # Этот файл намеренно оставлен пустым (кроме docstring)

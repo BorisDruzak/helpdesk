@@ -27,6 +27,7 @@ from app.db.models import (
     TicketAdminAudit,
 )
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+from app.repos.observer_settings_repo import ObserverSettingsRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from config import (
     OPERATION_DELIVERY_TIMEOUT,
@@ -37,6 +38,7 @@ from tech.dismiss_store import dismiss_alert, is_alert_dismissed
 from tech.log_buffer import list_log_records, remove_log_record
 from websocket.protocol import send_ws_command, send_ws_rpc_request
 from observer.service import ObserverOverlayService, TraceOverlayFilters
+from shared.redaction import redact_sensitive_payload
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -230,7 +232,7 @@ def _serialize_agent_audit_row(item: AgentRuntimeAudit) -> dict[str, Any]:
         "ticket_id": item.ticket_id,
         "actor_id": item.actor_id,
         "actor_role": item.actor_role,
-        "details_json": item.details_json or {},
+        "details_json": redact_sensitive_payload(item.details_json or {}),
         "created_at": _iso(item.created_at),
     }
 
@@ -242,7 +244,7 @@ def _serialize_user_audit_row(row: UiUserAudit) -> dict[str, Any]:
         "action": row.action,
         "action_label": _label_audit_event(row.action),
         "actor_id": row.actor_id,
-        "details_json": row.details_json or {},
+        "details_json": redact_sensitive_payload(row.details_json or {}),
         "created_at": _iso(row.created_at),
     }
 
@@ -899,6 +901,12 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             ]
             alerts.extend(_build_log_alerts(limit=8))
             alerts = [item for item in alerts if not is_alert_dismissed(str(item.get("id") or ""))]
+            observer_runtime = request.app._state.get("observer_refresh_runtime")
+            observer_runtime_status = (
+                observer_runtime.status_snapshot()
+                if observer_runtime is not None
+                else {"enabled": False, "running": False, "health": {"status": "down"}}
+            )
 
             overview = {
                 "service_health": {
@@ -910,6 +918,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     "operation_watchdog": "ok" if getattr(request.app.get("operation_watchdog"), "_running", False) else "down",
                     "ticket_sla_watchdog": "ok" if getattr(request.app.get("ticket_sla_watchdog"), "_running", False) else "down",
                     "ticket_auto_close_watchdog": "ok" if getattr(request.app.get("ticket_auto_close_watchdog"), "_running", False) else "down",
+                    "observer_refresh_runtime": observer_runtime_status.get("health", {}).get("status") or "unknown",
                 },
                 "postgres_health": postgres_health,
                 "agent_health": {
@@ -938,6 +947,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     "ui_logins_recent": int(ui_logins_recent),
                     "admin_changes_recent": int(admin_changes_recent),
                 },
+                "observer_health": observer_runtime_status,
                 "alerts": alerts,
                 "problem_logs": problem_logs,
             }
@@ -1586,11 +1596,43 @@ def _serialize_trace_filters(filters: TraceOverlayFilters) -> dict[str, Any]:
     return payload
 
 
+@require_auth("admin")
+async def handle_observer_settings_get(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        repo = ObserverSettingsRepo(session)
+        settings = await repo.get_settings()
+        await session.commit()
+    return web.json_response({"status": "ok", "settings": settings})
+
+
+@require_auth("admin")
+async def handle_observer_settings_patch(request: web.Request) -> web.Response:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        return web.json_response({"status": "error", "error": "JSON object expected"}, status=400)
+    async with get_session() as session:
+        repo = ObserverSettingsRepo(session)
+        settings = await repo.set_settings(payload)
+        await session.commit()
+    runtime = request.app._state.get("observer_refresh_runtime")
+    if runtime is not None:
+        await runtime.reload_settings()
+    return web.json_response({"status": "ok", "settings": settings})
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_tech_traces_runtime(request: web.Request) -> web.Response:
     runtime = request.app._state.get("observer_refresh_runtime")
     if runtime is None:
-        return web.json_response({"status": "ok", "runtime": {"enabled": False, "running": False}})
+        async with get_session() as session:
+            settings = await ObserverSettingsRepo(session).get_settings()
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "runtime": {"enabled": False, "running": False, "settings": settings, "health": {"status": "down"}},
+            }
+        )
     return web.json_response({"status": "ok", "runtime": runtime.status_snapshot()})
 
 
@@ -1617,6 +1659,15 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
     trace_id = request.match_info["trace_id"]
     include_agent_actions = _parse_bool(request.query.get("include_agent_actions"))
     action_limit = _parse_query_limit(request.query.get("action_limit"), default=50, cap=200)
+    action_sync_enabled = True
+    action_sync_limit = action_limit
+
+    async with get_session() as session:
+        observer_settings = await ObserverSettingsRepo(session).get_settings()
+        await session.commit()
+    action_sync_enabled = bool(observer_settings.get("action_sync_enabled", True))
+    action_sync_limit = max(1, min(int(observer_settings.get("action_sync_limit", action_limit) or action_limit), 500))
+    action_limit = min(action_limit, action_sync_limit)
 
     async with get_session() as session:
         service = ObserverOverlayService(session)
@@ -1652,13 +1703,23 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
                     actor_role="support",
                     timeout=20,
                 )
-                agent_actions = _extract_action_trace_entries(response)
+                agent_actions = [redact_sensitive_payload(item) for item in _extract_action_trace_entries(response)]
+                if agent_actions and action_sync_enabled:
+                    async with get_session() as sync_session:
+                        sync_service = ObserverOverlayService(sync_session)
+                        await sync_service.sync_agent_action_spans(trace_id, agent_actions)
+                        detail = await sync_service.get_trace_detail(trace_id)
+                        await sync_session.commit()
             except Exception as exc:
                 agent_actions_error = str(exc)
 
     detail["status"] = "ok"
     detail["agent_actions"] = agent_actions
     detail["agent_actions_error"] = agent_actions_error
+    detail["observer_settings"] = {
+        "action_sync_enabled": action_sync_enabled,
+        "action_sync_limit": action_sync_limit,
+    }
     return web.json_response(detail)
 
 

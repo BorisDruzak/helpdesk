@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy import and_, delete, distinct, exists, func, or_, select
 
 from app.db import get_session
 from app.db.models import AgentRuntimeAudit, DeviceEvent, ObserverTrace, Operation, Ticket, TicketEvent
+from app.repos.observer_settings_repo import DEFAULT_OBSERVER_SETTINGS, ObserverSettingsRepo
 from observer.service import ObserverOverlayService
 
 
@@ -21,10 +23,15 @@ class ObserverRefreshStats:
     last_backfill_scan_started_at: Optional[datetime] = None
     last_backfill_scan_completed_at: Optional[datetime] = None
     last_projected_at: Optional[datetime] = None
+    last_cleanup_at: Optional[datetime] = None
+    last_settings_loaded_at: Optional[datetime] = None
     last_error: Optional[str] = None
     discovered_trace_count: int = 0
     discovered_backfill_trace_count: int = 0
     projected_trace_count: int = 0
+    deleted_trace_count: int = 0
+    sampled_out_trace_count: int = 0
+    consecutive_failures: int = 0
     pending_trace_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -35,10 +42,15 @@ class ObserverRefreshStats:
             "last_backfill_scan_started_at": self.last_backfill_scan_started_at.isoformat() if self.last_backfill_scan_started_at else None,
             "last_backfill_scan_completed_at": self.last_backfill_scan_completed_at.isoformat() if self.last_backfill_scan_completed_at else None,
             "last_projected_at": self.last_projected_at.isoformat() if self.last_projected_at else None,
+            "last_cleanup_at": self.last_cleanup_at.isoformat() if self.last_cleanup_at else None,
+            "last_settings_loaded_at": self.last_settings_loaded_at.isoformat() if self.last_settings_loaded_at else None,
             "last_error": self.last_error,
             "discovered_trace_count": self.discovered_trace_count,
             "discovered_backfill_trace_count": self.discovered_backfill_trace_count,
             "projected_trace_count": self.projected_trace_count,
+            "deleted_trace_count": self.deleted_trace_count,
+            "sampled_out_trace_count": self.sampled_out_trace_count,
+            "consecutive_failures": self.consecutive_failures,
             "pending_trace_count": self.pending_trace_count,
         }
 
@@ -67,12 +79,28 @@ class ObserverRefreshRuntime:
         self._pending_lock = asyncio.Lock()
         self._last_scan_at: Optional[datetime] = None
         self._stats = ObserverRefreshStats()
+        self._settings: dict[str, Any] = dict(DEFAULT_OBSERVER_SETTINGS)
 
     @property
     def running(self) -> bool:
         return self._task is not None and not self._task.done()
 
     def status_snapshot(self) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        last_projected_age_sec = None
+        if self._stats.last_projected_at:
+            last_projected_age_sec = max(0, int((now - self._stats.last_projected_at).total_seconds()))
+        health_status = "ok"
+        issues: list[str] = []
+        if self._stats.last_error:
+            health_status = "degraded"
+            issues.append("last_error")
+        if self._stats.pending_trace_count > self.max_batch * 4:
+            health_status = "degraded"
+            issues.append("pending_backlog")
+        if self.running and last_projected_age_sec is not None and last_projected_age_sec > int(self.scan_interval_sec * 20):
+            health_status = "degraded"
+            issues.append("projection_lag")
         return {
             "enabled": True,
             "running": self.running,
@@ -84,12 +112,29 @@ class ObserverRefreshRuntime:
                 "max_batch": self.max_batch,
                 "historical_backfill_enabled": self.historical_backfill_enabled,
             },
+            "settings": dict(self._settings),
+            "health": {
+                "status": health_status,
+                "issues": issues,
+                "pending_trace_count": self._stats.pending_trace_count,
+                "last_projected_age_sec": last_projected_age_sec,
+            },
             "stats": self._stats.to_dict(),
         }
+
+    async def reload_settings(self) -> dict[str, Any]:
+        async with get_session() as session:
+            settings = await ObserverSettingsRepo(session).get_settings()
+            await session.commit()
+        self._settings = dict(settings)
+        self.historical_backfill_enabled = bool(settings.get("historical_backfill_enabled", self.historical_backfill_enabled))
+        self._stats.last_settings_loaded_at = datetime.now(timezone.utc)
+        return dict(self._settings)
 
     async def start(self) -> None:
         if self.running:
             return
+        await self.reload_settings()
         self._stats.started_at = datetime.now(timezone.utc)
         self._stats.last_error = None
         self._last_scan_at = self._stats.started_at - timedelta(seconds=self.bootstrap_lookback_sec)
@@ -124,14 +169,16 @@ class ObserverRefreshRuntime:
         return True
 
     async def run_once(self) -> None:
+        await self.reload_settings()
         discovered = await self._discover_recent_trace_ids()
         for trace_id in discovered:
             await self.enqueue_trace(trace_id)
-        if self.historical_backfill_enabled:
+        if self._settings.get("historical_backfill_enabled", self.historical_backfill_enabled):
             historical = await self._discover_historical_trace_ids()
             for trace_id in historical:
                 await self.enqueue_trace(trace_id, delay_sec=0.0)
         await self._project_due_traces()
+        await self._cleanup_expired_traces()
 
     async def _run_loop(self) -> None:
         while True:
@@ -141,7 +188,10 @@ class ObserverRefreshRuntime:
                 raise
             except Exception as exc:
                 self._stats.last_error = str(exc)
+                self._stats.consecutive_failures += 1
                 logger.opt(exception=exc).warning("[observer_refresh] loop failed")
+            else:
+                self._stats.consecutive_failures = 0
             await asyncio.sleep(self.scan_interval_sec)
 
     async def _discover_recent_trace_ids(self) -> list[str]:
@@ -324,9 +374,13 @@ class ObserverRefreshRuntime:
             try:
                 async with get_session() as session:
                     service = ObserverOverlayService(session)
-                    await service.project_trace(trace_id, force=False)
+                    trace = await service.project_trace(trace_id, force=False)
+                    if trace is not None and self._should_sample_out_trace(trace):
+                        await session.execute(delete(ObserverTrace).where(ObserverTrace.trace_id == trace_id))
+                        self._stats.sampled_out_trace_count += 1
+                    else:
+                        projected += 1
                     await session.commit()
-                projected += 1
             except Exception as exc:
                 self._stats.last_error = str(exc)
                 logger.opt(exception=exc).warning(
@@ -338,3 +392,43 @@ class ObserverRefreshRuntime:
         if projected:
             self._stats.projected_trace_count += projected
             self._stats.last_projected_at = datetime.now(timezone.utc)
+
+    def _should_sample_out_trace(self, trace: ObserverTrace) -> bool:
+        sample_rate = float(self._settings.get("success_trace_sample_rate", 1.0) or 0.0)
+        if sample_rate >= 1.0:
+            return False
+        if trace.status != "ok" or int(trace.error_count or 0) > 0:
+            return False
+        keep_root_kinds = {
+            str(item).strip()
+            for item in (self._settings.get("always_keep_root_kinds") or [])
+            if str(item or "").strip()
+        }
+        if str(trace.root_kind or "").strip() in keep_root_kinds:
+            return False
+        if sample_rate <= 0:
+            return True
+        bucket = int.from_bytes(hashlib.blake2b(trace.trace_id.encode("utf-8"), digest_size=8).digest(), "big") / float(2**64)
+        return bucket > sample_rate
+
+    async def _cleanup_expired_traces(self) -> None:
+        ok_cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=int(self._settings.get("ok_trace_retention_hours", DEFAULT_OBSERVER_SETTINGS["ok_trace_retention_hours"]))
+        )
+        error_cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=int(self._settings.get("error_trace_retention_hours", DEFAULT_OBSERVER_SETTINGS["error_trace_retention_hours"]))
+        )
+        async with get_session() as session:
+            delete_result = await session.execute(
+                delete(ObserverTrace).where(
+                    or_(
+                        and_(ObserverTrace.status.in_(["ok", "canceled"]), ObserverTrace.started_at < ok_cutoff),
+                        and_(ObserverTrace.status == "error", ObserverTrace.started_at < error_cutoff),
+                    )
+                )
+            )
+            await session.commit()
+        deleted_count = int(delete_result.rowcount or 0)
+        if deleted_count:
+            self._stats.deleted_trace_count += deleted_count
+        self._stats.last_cleanup_at = datetime.now(timezone.utc)

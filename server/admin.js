@@ -3960,6 +3960,7 @@
             selectedId: null,
             busy: false,
             runtime: null,
+            settings: null,
         };
 
         function techStatusClass(kind) {
@@ -4370,6 +4371,9 @@
             renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
             techObserverState.runtime = observerRuntimeData.runtime || null;
             renderTechObserverRuntimeStatus();
+            if (!techObserverState.settings) {
+                techPopulateObserverSettings(observerRuntimeData.runtime?.settings || {});
+            }
             techDevicesCache = devicesData.devices || [];
             renderTechAgentsTable(techDevicesCache);
             renderTechAuditTable('techAgentsAuditTable', agentsData.events || [], 'agent');
@@ -4546,6 +4550,10 @@
             if (logsCopyBtn) logsCopyBtn.addEventListener('click', () => techCopyServerLogs().catch((e) => techControlNote(e.message || String(e), true)));
             const logsDownloadBtn = document.getElementById('techServerLogsDownloadBtn');
             if (logsDownloadBtn) logsDownloadBtn.addEventListener('click', () => techDownloadServerLogs().catch((e) => techControlNote(e.message || String(e), true)));
+            const observerSettingsReloadBtn = document.getElementById('techObserverSettingsReloadBtn');
+            if (observerSettingsReloadBtn) observerSettingsReloadBtn.addEventListener('click', () => loadTechObserverSettings().catch((e) => techSetObserverSettingsStatus(e.message || String(e), true)));
+            const observerSettingsSaveBtn = document.getElementById('techObserverSettingsSaveBtn');
+            if (observerSettingsSaveBtn) observerSettingsSaveBtn.addEventListener('click', () => saveTechObserverSettings().catch((e) => techSetObserverSettingsStatus(e.message || String(e), true)));
             const logsSearch = document.getElementById('techServerLogsSearch');
             if (logsSearch) logsSearch.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -4880,16 +4888,67 @@
             host.classList.toggle('error-message', !!isError);
         }
 
+        function techSetObserverSettingsStatus(message, isError) {
+            const host = document.getElementById('techObserverSettingsStatus');
+            if (!host) return;
+            host.textContent = message || '—';
+            host.classList.toggle('error-message', !!isError);
+        }
+
+        function techPopulateObserverSettings(settings) {
+            const next = settings || {};
+            techObserverState.settings = next;
+            const sampleRateInput = document.getElementById('techObserverSampleRateInput');
+            if (sampleRateInput) {
+                const rate = Number(next.success_trace_sample_rate);
+                sampleRateInput.value = Number.isFinite(rate) ? String(Math.round(rate * 100)) : '';
+            }
+            const okRetentionInput = document.getElementById('techObserverOkRetentionInput');
+            if (okRetentionInput) okRetentionInput.value = next.ok_trace_retention_hours != null ? String(next.ok_trace_retention_hours) : '';
+            const errorRetentionInput = document.getElementById('techObserverErrorRetentionInput');
+            if (errorRetentionInput) errorRetentionInput.value = next.error_trace_retention_hours != null ? String(next.error_trace_retention_hours) : '';
+            const actionLimitInput = document.getElementById('techObserverActionLimitInput');
+            if (actionLimitInput) actionLimitInput.value = next.action_sync_limit != null ? String(next.action_sync_limit) : '';
+            const backfillInput = document.getElementById('techObserverBackfillEnabledInput');
+            if (backfillInput) backfillInput.checked = !!next.historical_backfill_enabled;
+            const actionSyncInput = document.getElementById('techObserverActionSyncEnabledInput');
+            if (actionSyncInput) actionSyncInput.checked = !!next.action_sync_enabled;
+            const keepRootKindsInput = document.getElementById('techObserverKeepRootKindsInput');
+            if (keepRootKindsInput) {
+                keepRootKindsInput.value = Array.isArray(next.always_keep_root_kinds) ? next.always_keep_root_kinds.join(',') : '';
+            }
+        }
+
+        function techObserverSettingsPayload() {
+            return {
+                success_trace_sample_rate: Number(document.getElementById('techObserverSampleRateInput')?.value || 0),
+                ok_trace_retention_hours: Number(document.getElementById('techObserverOkRetentionInput')?.value || 0),
+                error_trace_retention_hours: Number(document.getElementById('techObserverErrorRetentionInput')?.value || 0),
+                historical_backfill_enabled: !!document.getElementById('techObserverBackfillEnabledInput')?.checked,
+                action_sync_enabled: !!document.getElementById('techObserverActionSyncEnabledInput')?.checked,
+                action_sync_limit: Number(document.getElementById('techObserverActionLimitInput')?.value || 0),
+                always_keep_root_kinds: (document.getElementById('techObserverKeepRootKindsInput')?.value || '')
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+            };
+        }
+
         function renderTechObserverRuntimeStatus() {
             const host = document.getElementById('techTraceRuntimeStatus');
             if (!host) return;
             const runtime = techObserverState.runtime || {};
+            if (runtime.settings) {
+                techPopulateObserverSettings(runtime.settings);
+                techSetObserverSettingsStatus('Observer settings загружены из runtime.', false);
+            }
             if (!runtime.enabled) {
                 host.textContent = 'Background refresh отключён.';
                 host.classList.remove('error-message');
                 return;
             }
             const stats = runtime.stats || {};
+            const health = runtime.health || {};
             const parts = [
                 runtime.running ? 'Background refresh active' : 'Background refresh stopped',
                 stats.last_scan_completed_at ? `последний scan ${techFormatDate(stats.last_scan_completed_at)}` : 'scan ещё не выполнялся',
@@ -4897,9 +4956,14 @@
                 `pending ${stats.pending_trace_count ?? 0}`,
                 `projected ${stats.projected_trace_count ?? 0}`,
                 `backfill discovered ${stats.discovered_backfill_trace_count ?? 0}`,
+                `cleanup ${stats.deleted_trace_count ?? 0}`,
+                `sampled out ${stats.sampled_out_trace_count ?? 0}`,
             ];
+            if (Array.isArray(health.issues) && health.issues.length) {
+                parts.push(`issues ${health.issues.join(',')}`);
+            }
             host.textContent = parts.join(' · ');
-            host.classList.toggle('error-message', !runtime.running || !!stats.last_error);
+            host.classList.toggle('error-message', (health.status || 'ok') !== 'ok' || !!stats.last_error);
         }
 
         async function loadTechObserverRuntimeStatus() {
@@ -4911,6 +4975,34 @@
             }
             techObserverState.runtime = data.runtime || null;
             renderTechObserverRuntimeStatus();
+        }
+
+        async function loadTechObserverSettings() {
+            const headers = getAuthHeaders();
+            const response = await fetch('/api/admin/settings/observer', { headers });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer settings failed');
+            }
+            techPopulateObserverSettings(data.settings || {});
+            techSetObserverSettingsStatus('Observer settings загружены.', false);
+        }
+
+        async function saveTechObserverSettings() {
+            const headers = getAuthHeaders(true);
+            techSetObserverSettingsStatus('Сохраняю observer settings…', false);
+            const response = await fetch('/api/admin/settings/observer', {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify(techObserverSettingsPayload()),
+            });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer settings update failed');
+            }
+            techPopulateObserverSettings(data.settings || {});
+            techSetObserverSettingsStatus('Observer settings сохранены.', false);
+            await loadTechObserverRuntimeStatus();
         }
 
         function techSetObserverBusy(isBusy) {

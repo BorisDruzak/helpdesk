@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.repos.operations_repo import OperationsRepo
+from app.repos.ticket_events_repo import TicketEventsRepo
 from app.db.models import Operation
 from websocket.ui_publisher import UiPublisher, NoOpUiPublisher
 import config
@@ -161,7 +162,7 @@ class OperationService:
         device_id: str,
         kind: str,
         actor_role: str,
-        trace_id: str,
+        trace_id: Optional[str] = None,
         ticket_id: Optional[str] = None,
         job_id: Optional[str] = None,
         tool_name: Optional[str] = None,
@@ -191,12 +192,23 @@ class OperationService:
         Returns:
             Created Operation instance
         """
+        resolved_trace_id = str(trace_id or "").strip() or None
+        if ticket_id:
+            ticket_repo = TicketEventsRepo(self.session)
+            resolved_trace_id = await ticket_repo.ensure_ticket_observer_root_trace_id(
+                ticket_id,
+                preferred_trace_id=resolved_trace_id,
+            )
+        if not resolved_trace_id:
+            import uuid
+
+            resolved_trace_id = str(uuid.uuid4())
         operation = await self.repo.create_operation(
             operation_id=operation_id,
             device_id=device_id,
             kind=kind,
             actor_role=actor_role,
-            trace_id=trace_id,
+            trace_id=resolved_trace_id,
             ticket_id=ticket_id,
             job_id=job_id,
             tool_name=tool_name,
@@ -219,7 +231,7 @@ class OperationService:
         
         logger.info(
             f"[OperationService] Enqueued operation: "
-            f"operation_id={operation_id} kind={kind} deadline={deadline}"
+            f"operation_id={operation_id} kind={kind} trace_id={resolved_trace_id} deadline={deadline}"
         )
         
         # Push update to UI (operation created)

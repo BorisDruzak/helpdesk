@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 
 from app.db import get_session
-from app.db.models import Device, Operation, Ticket, TicketEvent
+from app.db.models import AgentRuntimeAudit, Device, Operation, Ticket, TicketEvent
 from app.repos.ticket_events_repo import TicketEventsRepo
 
 
@@ -426,3 +426,219 @@ async def test_observer_can_filter_agent_update_traces_and_rate_threshold_degrad
     assert item["timeout_rate"] == pytest.approx(0.5, rel=1e-4)
     assert item["retry_rate"] == pytest.approx(0.5, rel=1e-4)
     assert item["slow_rate"] == pytest.approx(0.5, rel=1e-4)
+
+
+@pytest.mark.asyncio
+async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch: pytest.MonkeyPatch, test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000e301"
+    ticket_id = "00000000-0000-0000-0000-00000000e302"
+    trace_id = "00000000-0000-0000-0000-00000000e303"
+    operation_id = "00000000-0000-0000-0000-00000000e304"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.18",
+                hostname="observer-agent-actions-host",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-v3",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=10),
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-OBSACT01",
+                device_id=device_id,
+                title="Observer agent actions",
+                description="Agent action trace should become persisted spans",
+                status="in_progress",
+                created_at=now - timedelta(minutes=8),
+                updated_at=now,
+                observer_root_trace_id=trace_id,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="system.collect",
+                actor_role="support",
+                trace_id=trace_id,
+                status="succeeded",
+                queued_at=now - timedelta(minutes=5),
+                started_at=now - timedelta(minutes=5) + timedelta(seconds=1),
+                finished_at=now - timedelta(minutes=5) + timedelta(seconds=2),
+                result_summary="ok",
+            )
+        )
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                operation_id=operation_id,
+                ticket_id=ticket_id,
+                event_type="tool_completed",
+                severity="info",
+                source="agent",
+                details_json={"tool_name": "system.collect"},
+                created_at=now - timedelta(minutes=5) + timedelta(seconds=2),
+            )
+        )
+        await session.commit()
+
+    async def _fake_send_ws_rpc_request(**_: object) -> dict[str, object]:
+        return {
+            "payload": {
+                "data": {
+                    "observations": {
+                        "entries": [
+                            {
+                                "ts": (now - timedelta(seconds=5)).isoformat(),
+                                "source": "module",
+                                "action": "module.execute",
+                                "category": "tool",
+                                "action_id": "action-root-1",
+                                "parent_action_id": None,
+                                "ticket_id": ticket_id,
+                                "operation_id": operation_id,
+                                "tool_name": "system.collect",
+                                "trace_id": trace_id,
+                                "request_id": operation_id,
+                                "stage": "finish",
+                                "status": "ok",
+                                "summary": "done",
+                                "details": {
+                                    "module_name": "system",
+                                    "method_name": "collect",
+                                    "access_token": "super-secret",
+                                },
+                            },
+                            {
+                                "ts": (now - timedelta(seconds=4)).isoformat(),
+                                "source": "module",
+                                "action": "module.step",
+                                "category": "tool",
+                                "action_id": "action-step-1",
+                                "parent_action_id": "action-root-1",
+                                "ticket_id": ticket_id,
+                                "operation_id": operation_id,
+                                "tool_name": "system.collect",
+                                "trace_id": trace_id,
+                                "request_id": operation_id,
+                                "stage": "finish",
+                                "status": "ok",
+                                "summary": "cpu collected",
+                                "details": {
+                                    "step": "collect.cpu",
+                                    "module_name": "system",
+                                },
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+
+    monkeypatch.setattr("tech.handlers.send_ws_rpc_request", _fake_send_ws_rpc_request)
+
+    detail_resp = await test_client.get(
+        f"/api/admin/tech/traces/{trace_id}?include_agent_actions=1",
+        headers=_auth(),
+    )
+    assert detail_resp.status == 200
+    detail_payload = await detail_resp.json()
+    assert detail_payload["status"] == "ok"
+    assert len(detail_payload["agent_actions"]) == 2
+    assert detail_payload["agent_actions"][0]["details"]["access_token"] == "***REDACTED***"
+    assert any(
+        span["source_type"] == "agent_action"
+        and span["source_ref"] == "action-root-1"
+        and span["name"] == "module.execute"
+        for span in detail_payload["spans"]
+    )
+    assert any(
+        link["reason"] == "agent_action_parent"
+        for link in detail_payload["span_links"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_trace_detail_redacts_runtime_audit_attrs_in_occurrences(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000e401"
+    trace_id = "00000000-0000-0000-0000-00000000e402"
+    operation_id = "00000000-0000-0000-0000-00000000e403"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.18",
+                hostname="observer-redaction-host",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-v3",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=10),
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                kind="tool_call",
+                tool_name="diag.logs.collect",
+                actor_role="support",
+                trace_id=trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=2),
+                started_at=now - timedelta(minutes=2) + timedelta(seconds=1),
+                finished_at=now - timedelta(minutes=2) + timedelta(seconds=2),
+                error_code="TOOL_EXEC_FAILED",
+                error_message="failed to collect logs",
+            )
+        )
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                operation_id=operation_id,
+                event_type="tool_failed",
+                severity="error",
+                source="agent",
+                details_json={
+                    "tool_name": "diag.logs.collect",
+                    "message": "boom",
+                    "authorization": "Bearer secret-token",
+                    "nested": {"password": "pw"},
+                    "token_hash_prefix": "safe-prefix",
+                },
+                created_at=now - timedelta(minutes=2) + timedelta(seconds=2),
+            )
+        )
+        await session.commit()
+
+    detail_resp = await test_client.get(
+        f"/api/admin/tech/traces/{trace_id}",
+        headers=_auth(),
+    )
+    assert detail_resp.status == 200
+    payload = await detail_resp.json()
+    assert payload["status"] == "ok"
+    runtime_spans = [span for span in payload["spans"] if span["source_type"] == "agent_runtime_audit"]
+    assert runtime_spans
+    span_details = runtime_spans[0]["attrs_json"]["details_json"]
+    assert span_details["authorization"] == "***REDACTED***"
+    assert span_details["nested"]["password"] == "***REDACTED***"
+    assert span_details["token_hash_prefix"] == "safe-prefix"

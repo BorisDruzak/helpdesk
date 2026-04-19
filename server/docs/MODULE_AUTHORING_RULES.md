@@ -53,6 +53,21 @@
 - Import-time side effects запрещены: нельзя делать сеть, subprocess, запись на диск или сбор данных при импорте модуля.
 - Секреты и чувствительные поля должны редактироваться по `redaction` policy.
 
+## Observer SDK is mandatory
+
+- Каждый новый module tool обязан быть instrumented через `pc_agent.modules.base_module.BaseCollector`.
+- Минимальный обязательный слой:
+  - один верхнеуровневый `with self.trace_span("tool.entry", details={"tool_name": "<canonical id>"})`
+  - `self.trace_event(...)` или вложенные `self.trace_span(...)` на опасных шагах
+- Обязательные dangerous checkpoints:
+  - subprocess / shell execution
+  - network I/O
+  - retries / timeout boundaries
+  - artifact creation or upload
+  - consent-sensitive or state-changing branch
+- Workbench/builder-generated scaffold с trace hooks считается частью канона и не должен удаляться без эквивалентной ручной инструментировки.
+- В `details` нельзя класть сырой токен, cookie, password, secret, consent token или другие чувствительные данные.
+
 ## Naming and ownership
 
 - Reserved core namespaces: `dns.*`, `network.*`, `tcp.*`, `http.*`, `tls.*`, `system.*`, `service.*`, `file.*`, `process.*`, `browser.*`.
