@@ -1712,7 +1712,16 @@ async def main_async() -> int:
                 )
             )
             results.append(await scenario_retry_exhausted(api, admin_token=admin_token, device_id=device_id, remote=args.remote))
-            results.extend(await scenario_ws_ack_nack_replay(api, admin_token=admin_token, support_token=support_token, ws_url=args.ws_url, ui_ws_url=args.ui_ws_url))
+            results.extend(
+                await scenario_ws_ack_nack_replay(
+                    api,
+                    admin_token=admin_token,
+                    support_token=support_token,
+                    ws_url=args.ws_url,
+                    ui_ws_url=args.ui_ws_url,
+                    remote=args.remote,
+                )
+            )
             results.append(
                 await scenario_disconnect(
                     api,
