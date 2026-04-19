@@ -4,9 +4,10 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import BigInteger
 
 from app.db import get_session
-from app.db.models import Device, DeviceEvent, ObserverTrace, Operation, Ticket, TicketEvent
+from app.db.models import Device, DeviceEvent, ObserverSpan, ObserverTrace, Operation, Ticket, TicketEvent
 from observer.service import ObserverOverlayService
 from observer.runtime import ObserverRefreshRuntime
 
@@ -247,7 +248,7 @@ async def test_observer_refresh_runtime_backfills_historical_trace_without_manua
     ticket_id = "00000000-0000-0000-0000-00000000fb30"
     device_id = "00000000-0000-0000-0000-00000000fc30"
     operation_id = "00000000-0000-0000-0000-00000000fd30"
-    historical = now - timedelta(days=14)
+    historical = now - timedelta(days=70)
 
     async with get_session() as session:
         session.add(
@@ -272,9 +273,10 @@ async def test_observer_refresh_runtime_backfills_historical_trace_without_manua
                 device_id=device_id,
                 title="Historical observer projection",
                 description="Old traces should be backfilled automatically",
-                status="resolved",
+                status="closed",
                 created_at=historical,
-                updated_at=historical + timedelta(minutes=1),
+                updated_at=now,
+                closed_at=now,
                 observer_root_trace_id=trace_id,
             )
         )
@@ -332,5 +334,35 @@ async def test_observer_refresh_runtime_backfills_historical_trace_without_manua
             assert projected.trace_id == trace_id
             assert projected.ticket_id == ticket_id
             assert projected.started_at == historical
+            assert projected.duration_ms is not None
+            assert projected.duration_ms > 2_147_483_647
     finally:
         await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_observer_refresh_runtime_projection_error_logging_survives_json_braces(monkeypatch: pytest.MonkeyPatch):
+    runtime = ObserverRefreshRuntime(
+        scan_interval_sec=0.05,
+        scan_overlap_sec=1.0,
+        bootstrap_lookback_sec=5.0,
+        debounce_sec=0.0,
+        max_batch=10,
+    )
+    await runtime.enqueue_trace("00000000-0000-0000-0000-00000000faff", delay_sec=0.0)
+
+    async def _boom(self, trace_id: str, *, force: bool = False):  # type: ignore[override]
+        raise RuntimeError('{"root_scope":"ticket","duration_ms":4986150502}')
+
+    monkeypatch.setattr(ObserverOverlayService, "project_trace", _boom)
+
+    await runtime._project_due_traces()
+
+    status = runtime.status_snapshot()
+    assert "root_scope" in str(status["stats"]["last_error"])
+    assert status["stats"]["pending_trace_count"] == 1
+
+
+def test_observer_duration_columns_use_bigint() -> None:
+    assert isinstance(ObserverTrace.__table__.c.duration_ms.type, BigInteger)
+    assert isinstance(ObserverSpan.__table__.c.duration_ms.type, BigInteger)

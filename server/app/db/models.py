@@ -1395,7 +1395,7 @@ class ObserverTrace(Base):
         index=True,
     )
     finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     span_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
@@ -1445,7 +1445,7 @@ class ObserverSpan(Base):
         index=True,
     )
     finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (

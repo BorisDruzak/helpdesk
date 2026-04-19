@@ -141,7 +141,7 @@ class ObserverRefreshRuntime:
                 raise
             except Exception as exc:
                 self._stats.last_error = str(exc)
-                logger.warning(f"[observer_refresh] loop failed: {exc}", exc_info=True)
+                logger.opt(exception=exc).warning("[observer_refresh] loop failed")
             await asyncio.sleep(self.scan_interval_sec)
 
     async def _discover_recent_trace_ids(self) -> list[str]:
@@ -329,9 +329,9 @@ class ObserverRefreshRuntime:
                 projected += 1
             except Exception as exc:
                 self._stats.last_error = str(exc)
-                logger.warning(
-                    f"[observer_refresh] failed to project trace_id={trace_id}: {exc}",
-                    exc_info=True,
+                logger.opt(exception=exc).warning(
+                    "[observer_refresh] failed to project trace_id={}",
+                    trace_id,
                 )
                 await self.enqueue_trace(trace_id, delay_sec=max(self.scan_interval_sec, 0.25))
 
