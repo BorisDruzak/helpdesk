@@ -1323,7 +1323,7 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
             )
 
             rate_limited = None
-            for index in range(64):
+            for index in range(400):
                 await ws.send_json(
                     build_ws_chat_outbox_item(
                         device_id=device_id,
@@ -1337,8 +1337,8 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
             burst_messages = await ws_expect_messages(
                 ws,
                 expected_types={"outbox_nack"},
-                limit=256,
-                timeout_sec=15.0,
+                limit=512,
+                timeout_sec=10.0,
                 allow_timeout=True,
             )
             for item in reversed(burst_messages):
@@ -1354,30 +1354,45 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
                 )
             )
 
+        replay_ticket = await create_ticket(
+            api,
+            token=support_token,
+            device_id=device_id,
+            title="Observer canary UI replay",
+            description="WS UI replay canary",
+            user_display_name="Observer Canary",
+        )
+        replay_ticket_id = str(replay_ticket["ticket_id"])
+
         async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
             await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
             hello_messages = await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
             assert any(item.get("type") == "ui_hello_ack" for item in hello_messages)
-            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": 0})
+            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": replay_ticket_id, "since_event_id": 0})
             first_sub_messages = await ws_collect_until_types(
                 ui_ws,
                 required_types={"subscribe_ack", "catchup_done"},
-                limit=64,
+                limit=256,
             )
-            catchup_done = next(item for item in reversed(first_sub_messages) if item.get("type") == "catchup_done")
+            catchup_done = find_ws_message(first_sub_messages, "catchup_done")
+            if catchup_done is None:
+                raise RuntimeError(
+                    "missing catchup_done during initial UI replay subscribe: "
+                    + ", ".join(str(item.get("type")) for item in first_sub_messages)
+                )
             last_event_id = int(catchup_done.get("last_event_id") or 0)
 
-        await send_ticket_message(api, token=support_token, ticket_id=ticket_id, text="observer replay follow-up")
+        await send_ticket_message(api, token=support_token, ticket_id=replay_ticket_id, text="observer replay follow-up")
 
         replay_message = None
         async with api.session.ws_connect(ui_ws_url, timeout=20) as ui_ws:
             await ui_ws.send_json({"type": "ui_hello", "token": admin_token})
             await ws_expect_messages(ui_ws, expected_types={"ui_hello_ack"})
-            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": ticket_id, "since_event_id": last_event_id})
+            await ui_ws.send_json({"type": "subscribe_ticket", "ticket_id": replay_ticket_id, "since_event_id": last_event_id})
             second_sub_messages = await ws_collect_until_types(
                 ui_ws,
                 required_types={"subscribe_ack", "catchup_done"},
-                limit=64,
+                limit=256,
             )
             second_sub_messages.extend(
                 await ws_expect_messages(
@@ -1399,7 +1414,7 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
                 name="ws_ui_replay",
                 ok=replay_message is not None,
                 summary="UI reconnect replay delivered the missing ticket event via since_event_id catch-up.",
-                details={"ticket_id": ticket_id, "replayed_event": replay_message},
+                details={"ticket_id": replay_ticket_id, "replayed_event": replay_message},
             )
         )
     except Exception as exc:
