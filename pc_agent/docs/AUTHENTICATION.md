@@ -14,6 +14,8 @@ PC Agent использует **Bearer-токен аутентификацию**
 | 2 | **Таблица `auth_tokens`** | Основной персистентный источник. Хранит токены в SQLite `storage.db`; lookup идёт сначала по каноническому `machine_id`, а затем по legacy secondary ID (`install_id`, исторический `uuid`) для controlled migration. |
 | 3 | **identity.json** | Legacy. Токен в поле `token`. Не рекомендуется — основной источник теперь БД. |
 
+Для Windows portable/release launcher действует дополнительный локальный fallback: если агент стартует из отдельного `data_root` (например `pc_agent/dist/data`) без собственного токена, launcher может импортировать активный токен из primary install `%LOCALAPPDATA%\PCClientAgent\data`, но только при совпадающем `machine_id`.
+
 ### Переменная окружения AUTH_TOKEN
 
 ```bash

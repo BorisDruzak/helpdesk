@@ -2,6 +2,10 @@
 
 Канон для авторов модулей и tool-реализаций в текущем in-place runtime.
 
+Практический пошаговый guide:
+
+- `server/docs/MODULE_CREATION_GUIDE.md`
+
 ## Core model
 
 - `module` — pack доставки, versioning, ownership и capability bundle.

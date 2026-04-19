@@ -11,7 +11,7 @@ from navigation_catalog import collect_changed_paths, iter_triggered_drift_rules
 
 
 TRACKED_ARTIFACT_SUFFIXES = (".md", ".mdc", ".toml")
-TRACKED_ARTIFACT_FILES = {"PLANS.md"}
+TRACKED_ARTIFACT_FILES = {"PLANS.md", "scripts/navigation_catalog.py"}
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -73,10 +73,19 @@ def main() -> int:
 
     failures: list[dict[str, object]] = []
     for rule, matched in triggered:
-        if any(doc in changed_artifacts for doc in rule.required_docs):
-            continue
         matched_paths = ", ".join(sorted(change.path for change in matched))
+        missing_all = [artifact for artifact in rule.required_artifacts_all if artifact not in changed_artifacts]
+        has_any_required = any(doc in changed_artifacts for doc in rule.required_docs)
+        if not missing_all and has_any_required:
+            continue
+
         required_docs = ", ".join(rule.required_docs)
+        missing_all_text = ", ".join(missing_all)
+        parts: list[str] = [f"{rule.title}: {rule.reason} Changed: {matched_paths}."]
+        if missing_all:
+            parts.append(f"Required artifacts missing: {missing_all_text}.")
+        if not has_any_required:
+            parts.append(f"Update at least one of: {required_docs}")
         failures.append(
             {
                 "rule": rule.key,
@@ -84,10 +93,8 @@ def main() -> int:
                 "reason": rule.reason,
                 "changed": sorted(change.path for change in matched),
                 "required_artifacts": list(rule.required_docs),
-                "message": (
-                    f"{rule.title}: {rule.reason} "
-                    f"Changed: {matched_paths}. Update at least one of: {required_docs}"
-                ),
+                "required_artifacts_all": list(rule.required_artifacts_all),
+                "message": " ".join(parts),
             }
         )
 

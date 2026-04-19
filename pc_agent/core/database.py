@@ -1855,6 +1855,17 @@ class DatabaseManager:
             )
             await db.commit()
             return (cursor.rowcount or 0) > 0
+
+    async def is_message_seen(self, job_id: str, message_id: str) -> bool:
+        """Returns True when message_id already exists in seen_messages for the job."""
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            cursor = await db.execute(
+                "SELECT 1 FROM seen_messages WHERE job_id = ? AND message_id = ? LIMIT 1",
+                (job_id, message_id),
+            )
+            row = await cursor.fetchone()
+            return row is not None
     
     async def cleanup_old_seen_messages(self, ttl_seconds: int = 1209600) -> int:
         """Удаляет старые записи из seen_messages."""

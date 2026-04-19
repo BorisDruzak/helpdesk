@@ -1,3 +1,10 @@
+## 2026-04-19 agent runtime and launcher flow
+
+- Local launcher/runtime work now starts from `pc_agent/launcher_portable_main.py`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/main_window.py`, and `pc_agent/ui_gui/automation_controller.py`.
+- Recommended-update diagnostics and local update state are surfaced through `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main_window.py`, and `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`.
+- Agent-side observer correlation for tech drilldown now uses `pc_agent/core/action_trace.py` plus the `search_action_trace` RPC in `pc_agent/ws_agent.py`; admin tech trace detail requests agent actions via `include_agent_actions=1`.
+- Local Windows launcher canary flow still goes through `python scripts/manage_local_agent.py start <name> --launcher`, with release artifacts built by `python pc_agent/build_windows_release_v2.py`.
+
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, and `pc_agent/ui_gui/chat_panel.py`.

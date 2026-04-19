@@ -63,6 +63,8 @@ HTTP API сервер для UI Bridge.
 
 - `POST /ui/chat_send` - отправка сообщения в чат тикета (ticket_id, text, from_role, attachment_refs, metadata). Требует on_chat_send в агенте.
 
+- `GET /ui/automation/status` - localhost-only snapshot for scripted GUI checks
+- `POST /ui/automation/run` - localhost-only automation runner for window/profile/ticket/event actions
 - `GET /health` - health check
 
 **Пример использования SSE:**
@@ -101,7 +103,6 @@ UI Bridge автоматически инициализируется при з�
 ## Конфигурация
 
 По умолчанию сервер запускается на `127.0.0.1:8765`. Это можно изменить в `ws_agent.py` при создании `UiApiServer`.
-
 
 
 

@@ -44,6 +44,7 @@ from core.job_manager import JobManager
 from core.recording_controller import get_recording_controller
 from pc_agent.config.config_loader import CORE_ENABLED_MODULES, get_config
 from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
+from pc_agent.core.action_trace import get_action_trace_recorder
 from pc_agent.core.orchestrator_collect_helpers import handle_collect as helper_handle_collect
 from pc_agent.core.orchestrator_job_helpers import (
     format_uptime as helper_format_uptime,
@@ -305,10 +306,10 @@ class AgentOrchestrator:
                 await self.db_manager.init_db()
                 logger.success("База данных инициализирована")
                 # Уведомляем сервер об удалённых сломанных модулях (после готовности БД)
+                startup_reason = "startup_inventory_sync"
                 if broken_modules_deleted:
-                    await self._emit_module_state_changed(
-                        reason=f"broken_removed_at_startup:{','.join(broken_modules_deleted)}"
-                    )
+                    startup_reason += f";broken_removed={','.join(broken_modules_deleted)}"
+                await self._emit_module_state_changed(reason=startup_reason)
             
         except Exception as e:
             logger.error(f"Ошибка инициализации оркестратора: {e}")
@@ -1339,11 +1340,14 @@ class AgentOrchestrator:
             )
         else:
             # Операция не найдена или уже завершена
-            return fail(
-                code="UNKNOWN_OPERATION",
-                message=f"Operation {target_operation_id} not found or already finished",
-                meta=meta,
-                retriable=False
+            return ok(
+                data=ToolData(
+                    observations={
+                        "cancel_status": "already_finished",
+                        "target_operation_id": target_operation_id,
+                    }
+                ),
+                meta=meta
             )
     
     async def _handle_update(self, command: Dict[str, Any], meta: ToolMeta) -> ToolResponse:
@@ -2832,18 +2836,24 @@ class AgentOrchestrator:
             spec_dict = tool_spec.get('spec', {})
             metadata_dict = spec_dict.get('metadata', {})
             
-            # Если metadata отсутствует, проставляем default значения
-            if not metadata_dict:
-                metadata_dict = {
-                    'risk_level': 'safe_read',
-                    'scopes': [],
-                    'requires_consent': False,
-                    'allow_roles': None
-                }
-            
+            # Приводим metadata к контрактному виду, чтобы частичные/legacy spec не ломали policy.
+            metadata_payload = {
+                'domain': metadata_dict.get('domain') or (tool.split('.', 1)[0] if '.' in tool else 'system'),
+                'platforms': metadata_dict.get('platforms') or ['any'],
+                'risk_level': metadata_dict.get('risk_level') or 'safe_read',
+                'scopes': metadata_dict.get('scopes') or [],
+                'requires_consent': bool(metadata_dict.get('requires_consent', False)),
+                'allow_roles': metadata_dict.get('allow_roles'),
+                'timeout_sec': metadata_dict.get('timeout_sec'),
+                'idempotent': bool(metadata_dict.get('idempotent', False)),
+                'origin': metadata_dict.get('origin') or 'builtin',
+                'side_effects': bool(metadata_dict.get('side_effects', False)),
+                'tool_kind': metadata_dict.get('tool_kind') or 'diagnostic',
+            }
+
             # Преобразуем metadata в ToolMetadata
             try:
-                metadata = ToolMetadata(**metadata_dict)
+                metadata = ToolMetadata(**metadata_payload)
             except Exception as e:
                 logger.warning(f"Ошибка создания ToolMetadata для {tool}: {e}, используем default")
                 metadata = ToolMetadata()
@@ -2875,6 +2885,26 @@ class AgentOrchestrator:
                     "request_id": meta.request_id,
                     "command": meta.command or "run_tool"
                 }
+            )
+            action_trace = get_action_trace_recorder().context(
+                source="orchestrator",
+                action="tool.run",
+                category="tool",
+                ticket_id=ticket_id,
+                operation_id=getattr(meta, "request_id", None),
+                request_id=getattr(meta, "request_id", None),
+                tool_name=tool,
+            )
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="request",
+                status="started",
+                summary="tool request received",
+                details={
+                    "actor_role": actor_role,
+                    "requires_consent": decision.get("requires_consent", False),
+                    "policy_allow": decision.get("allow", False),
+                },
             )
             
             # Проверяем решение политики
@@ -2922,6 +2952,17 @@ class AgentOrchestrator:
                     if self.ui_bus:
                         await self.ui_bus.publish(event)
                         logger.info(f"Событие consent_required опубликовано: consent_token={consent_token}, tool={tool}")
+                    get_action_trace_recorder().record(
+                        action_trace,
+                        stage="consent_wait",
+                        status="waiting",
+                        summary="tool waiting consent",
+                        details={
+                            "consent_token": consent_token,
+                            "session_key": session_key,
+                            "reason": decision_reason,
+                        },
+                    )
                     
                     # 7.2 Публикуем событие tool_waiting_consent в chat job
                     if chat_job_id:
@@ -2974,6 +3015,13 @@ class AgentOrchestrator:
                         "ok": False,
                         "error": f"{error_code}: {error_msg}",
                     }, ticket_id=ticket_id)
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="forbidden",
+                    summary=error_msg,
+                    details=details,
+                )
                 return fail(
                     code=error_code,
                     message=error_msg,
@@ -3023,6 +3071,13 @@ class AgentOrchestrator:
                     "event": "tool_running",
                     "tool": tool
                 }, ticket_id=ticket_id)
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="running",
+                status="running",
+                summary="tool execution started",
+                details={"operation_id": getattr(meta, "request_id", None)},
+            )
             
             # КРИТИЧНО: operation_id берется из meta.request_id (это же command_id в Protocol V3)
             operation_id = meta.request_id
@@ -3089,6 +3144,13 @@ class AgentOrchestrator:
                         "error": f"TIMEOUT: exceeded {effective_timeout} sec",
                     }, ticket_id=ticket_id)
                 await self._publish_screen_ui_done(tool, operation_id)
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="timeout",
+                    summary="tool timed out",
+                    details={"effective_timeout": effective_timeout, "operation_id": operation_id},
+                )
                 return fail(
                     code="TIMEOUT",
                     message=f'Инструмент "{tool}" превысил таймаут {effective_timeout} сек.',
@@ -3112,6 +3174,13 @@ class AgentOrchestrator:
                 
                 # Этап 4: уведомление GUI о завершении захвата/записи (окно восстановить, STOP скрыть)
                 await self._publish_screen_ui_done(tool, operation_id)
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="error",
+                    summary=str(e),
+                    details={"exception_type": type(e).__name__, "operation_id": operation_id},
+                )
                 
                 return fail(
                     code="TOOL_EXEC_FAILED",
@@ -3298,9 +3367,32 @@ class AgentOrchestrator:
             # Если есть ошибки загрузки, но основной результат успешен - partial
             if upload_errors:
                 logger.warning(f"[AGENT] run_tool partial tool={tool} duration_ms={duration_ms} artifacts={len(uploaded_artifacts)} upload_errors={len(upload_errors)}")
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="partial",
+                    summary="tool completed with upload warnings",
+                    details={
+                        "duration_ms": duration_ms,
+                        "artifact_count": len(uploaded_artifacts),
+                        "upload_error_count": len(upload_errors),
+                        "operation_id": operation_id,
+                    },
+                )
                 return partial(data=data, meta=meta, warnings=warnings, errors=upload_errors)
             else:
                 logger.success(f"[AGENT] run_tool ok tool={tool} duration_ms={duration_ms} artifacts={len(uploaded_artifacts)}")
+                get_action_trace_recorder().record(
+                    action_trace,
+                    stage="response",
+                    status="ok",
+                    summary="tool completed",
+                    details={
+                        "duration_ms": duration_ms,
+                        "artifact_count": len(uploaded_artifacts),
+                        "operation_id": operation_id,
+                    },
+                )
                 return ok(data=data, meta=meta)
             
         except Exception as e:
@@ -3317,6 +3409,13 @@ class AgentOrchestrator:
                     "ok": False,
                     "error": str(e),
                 }, ticket_id=ticket_id)
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="response",
+                status="error",
+                summary=str(e),
+                details={"exception_type": type(e).__name__},
+            )
             
             return fail(
                 code="COMMAND_FAILED",
@@ -3345,6 +3444,21 @@ class AgentOrchestrator:
             ToolResponse с результатом обработки решения
         """
         try:
+            consent_trace = get_action_trace_recorder().context(
+                source="orchestrator",
+                action="consent.decision",
+                category="consent",
+                consent_token=consent_token,
+                request_id=getattr(meta, "request_id", None),
+                operation_id=getattr(meta, "request_id", None),
+            )
+            get_action_trace_recorder().record(
+                consent_trace,
+                stage="request",
+                status="started",
+                summary="consent decision received",
+                details={"approved": approved, "session_key": session_key},
+            )
             # Валидация параметров
             if not consent_token:
                 return fail(
@@ -3391,6 +3505,8 @@ class AgentOrchestrator:
             if consent_record.state == ConsentState.APPROVED:
                 # Выполняем инструмент
                 logger.info(f"OK Согласие получено, выполняю tool: {tool_name}, consent_token={consent_token}")
+                consent_trace.tool_name = tool_name
+                consent_trace.ticket_id = pending_ticket_id
                 
                 # Добавляем consent_token в tool_params, чтобы PolicyEngine разрешил выполнение
                 tool_params_with_consent = tool_params.copy()
@@ -3443,11 +3559,20 @@ class AgentOrchestrator:
                 if self.ui_bus:
                     await self.ui_bus.publish(event)
                     logger.info(f"Событие tool_executed опубликовано: consent_token={consent_token}, tool={tool_name}")
+                get_action_trace_recorder().record(
+                    consent_trace,
+                    stage="response",
+                    status="approved",
+                    summary="consent approved",
+                    details={"tool_name": tool_name, "ticket_id": pending_ticket_id},
+                )
                 
                 return result
             else:
                 # Отклонено - публикуем событие tool_denied
                 logger.info(f"ERROR Согласие отклонено: consent_token={consent_token}, tool={tool_name}")
+                consent_trace.tool_name = tool_name
+                consent_trace.ticket_id = pending_ticket_id
                 
                 event = {
                     "event_type": "tool_denied",
@@ -3465,6 +3590,13 @@ class AgentOrchestrator:
                 if self.ui_bus:
                     await self.ui_bus.publish(event)
                     logger.info(f"Событие tool_denied опубликовано: consent_token={consent_token}, tool={tool_name}")
+                get_action_trace_recorder().record(
+                    consent_trace,
+                    stage="response",
+                    status="denied",
+                    summary="consent denied",
+                    details={"tool_name": tool_name, "ticket_id": pending_ticket_id},
+                )
                 
                 return fail(
                     code="CONSENT_DENIED",
@@ -3482,6 +3614,20 @@ class AgentOrchestrator:
             error_msg = f"Ошибка обработки consent_decision: {str(e)}"
             logger.error(error_msg)
             logger.exception(e)
+            get_action_trace_recorder().record(
+                get_action_trace_recorder().context(
+                    source="orchestrator",
+                    action="consent.decision",
+                    category="consent",
+                    consent_token=consent_token,
+                    request_id=getattr(meta, "request_id", None),
+                    operation_id=getattr(meta, "request_id", None),
+                ),
+                stage="response",
+                status="error",
+                summary=str(e),
+                details={"exception_type": type(e).__name__},
+            )
             return fail(
                 code="COMMAND_FAILED",
                 message=error_msg,

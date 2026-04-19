@@ -177,3 +177,48 @@ async def test_ui_api_server_update_endpoint():
     finally:
         await session.close()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_ui_api_server_automation_endpoints():
+    server = UiApiServer(
+        EventBus(),
+        host="127.0.0.1",
+        port=0,
+        on_get_automation_status=lambda: {
+            "window_visible": True,
+            "active_ticket_id": "ticket-1",
+        },
+        on_run_automation=lambda payload: {
+            "status": "ok",
+            "action": payload.get("action"),
+            "echo": payload,
+        },
+    )
+    await server.start()
+
+    sockets = getattr(getattr(server.site, "_server", None), "sockets", None)
+    assert sockets
+    port = sockets[0].getsockname()[1]
+
+    session = aiohttp.ClientSession()
+    try:
+        async with session.get(f"http://127.0.0.1:{port}/ui/automation/status") as response:
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["status"] == "ok"
+            assert payload["window_visible"] is True
+            assert payload["active_ticket_id"] == "ticket-1"
+
+        async with session.post(
+            f"http://127.0.0.1:{port}/ui/automation/run",
+            json={"action": "window.show", "force": True},
+        ) as response:
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["status"] == "ok"
+            assert payload["action"] == "window.show"
+            assert payload["echo"]["force"] is True
+    finally:
+        await session.close()
+        await server.stop()

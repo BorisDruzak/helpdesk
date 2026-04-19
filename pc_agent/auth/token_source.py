@@ -1,4 +1,6 @@
+import asyncio
 import os
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from loguru import logger
@@ -116,3 +118,104 @@ async def load_auth_token(
             return token
 
     return None
+
+
+def import_missing_auth_token_from_data_roots(
+    source_data_root: str | Path,
+    target_data_root: str | Path,
+    *,
+    log_message: Optional[Callable[[str], None]] = None,
+) -> bool:
+    """
+    Import the active auth token from another data root if the current one is empty.
+
+    This is used by local Windows testing flows where a portable launcher or an
+    isolated instance should reuse the token of the primary agent install on the
+    same machine, but only when both data roots resolve to the same machine_id.
+    """
+    source_root = Path(source_data_root).expanduser().resolve()
+    target_root = Path(target_data_root).expanduser().resolve()
+    if source_root == target_root:
+        return False
+
+    source_db_path = source_root / "storage.db"
+    if not source_db_path.exists():
+        return False
+
+    def _emit(message: str) -> None:
+        if log_message is not None:
+            try:
+                log_message(message)
+            except Exception:
+                pass
+
+    async def _copy() -> tuple[bool, Optional[str]]:
+        from pc_agent.core.database import DatabaseManager
+        from pc_agent.core.identity import IdentityManager
+
+        target_identity = IdentityManager(target_root / "identity.json")
+        target_payload = target_identity.load_or_create()
+        source_identity = IdentityManager(source_root / "identity.json")
+        source_payload = source_identity.load_or_create()
+
+        target_machine_id = str(target_payload.get("machine_id") or "").strip().lower()
+        source_machine_id = str(source_payload.get("machine_id") or "").strip().lower()
+        if not target_machine_id or target_machine_id != source_machine_id:
+            return (
+                False,
+                f"skip auth token import: machine_id mismatch source={source_machine_id[:8]} target={target_machine_id[:8]}",
+            )
+
+        DatabaseManager._instance = None
+        target_db = DatabaseManager(str(target_root / "storage.db"))
+        await target_db.init_db()
+        existing_token = await load_auth_token_from_db(
+            target_db,
+            target_identity,
+            migrate_to_primary=False,
+        )
+        if existing_token:
+            return False, None
+
+        DatabaseManager._instance = None
+        source_db = DatabaseManager(str(source_db_path))
+        await source_db.init_db()
+        source_token = await load_auth_token_from_db(source_db, source_identity)
+        if not source_token:
+            return False, None
+
+        DatabaseManager._instance = None
+        target_db = DatabaseManager(str(target_root / "storage.db"))
+        await target_db.init_db()
+        saved = await target_db.save_auth_token(source_token, target_machine_id)
+        if not saved:
+            return False, None
+
+        return (
+            True,
+            f"imported auth token from {source_root} for machine_id={target_machine_id[:8]}",
+        )
+
+    try:
+        imported, note = asyncio.run(_copy())
+    except Exception as exc:
+        logger.warning(
+            "Failed to import local auth token from {} to {}: {}",
+            source_root,
+            target_root,
+            exc,
+        )
+        _emit(f"warning: failed to import local auth token: {exc}")
+        return False
+    finally:
+        try:
+            from pc_agent.core.database import DatabaseManager
+
+            DatabaseManager._instance = None
+        except Exception:
+            pass
+
+    if note:
+        logger.info(note)
+        _emit(note)
+    return imported

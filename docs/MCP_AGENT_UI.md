@@ -1,4 +1,4 @@
-# MCP Agent UI — подключение к Cursor (пошагово)
+# MCP Agent UI — подключение в Codex (пошагово)
 
 MCP-сервер **agent-ui-bridge** даёт доступ к UI Bridge агента pc_agent (те же действия, что в Qt GUI: здоровье, события, consent, настройки, отправка сообщений в чат и т.д.).
 
@@ -18,13 +18,13 @@ pip install -r mcp_agent_ui/requirements.txt
 
 ## Шаг 2. Конфиг MCP уже в проекте
 
-В проекте уже есть файл **`.cursor/mcp.json`** с сервером `agent-ui-bridge`:
+В проекте уже есть файл **`.cursor/mcp.json`** с сервером `agent-ui-bridge`. Для Codex его удобнее рассматривать как repo-local пример; рабочую настройку предпочтительно держать в `C:\Users\admin-2\.codex\config.toml` или через UI настроек приложения:
 
 - **command:** `python`
 - **args:** `["mcp_agent_ui/server.py"]`
-- Cursor запускает процесс с **рабочей директорией = корень проекта**, поэтому такой путь корректен.
+- MCP-клиент должен запускать процесс с **рабочей директорией = корень проекта**, поэтому такой путь корректен.
 
-Если у вас Python не в PATH при запуске Cursor (или нужен другой интерпретатор), откройте `.cursor/mcp.json` и замените `"command": "python"` на полный путь, например:
+Если у вас Python не в PATH при запуске Codex app (или нужен другой интерпретатор), используйте тот же пример и замените `"command": "python"` на полный путь, например:
 
 ```json
 "command": "C:/Users/admin-2/AppData/Local/Programs/Python/Python314/python.exe"
@@ -50,13 +50,11 @@ pip install -r mcp_agent_ui/requirements.txt
 
 ---
 
-## Шаг 3. Открыть настройки MCP в Cursor
+## Шаг 3. Открыть настройки MCP в Codex
 
-1. Откройте **Cursor** с проектом **pc_client** (корень репозитория как папка/workspace).
-2. Откройте настройки:
-   - **Windows/Linux:** `Ctrl + Shift + J`
-   - **Mac:** `Cmd + Shift + J`
-3. В левой панели выберите **Tools & MCP** (или **Features → MCP** / **MCP** — в зависимости от версии).
+1. Откройте Codex app с проектом **pc_client**.
+2. Настройте MCP либо через UI настроек приложения, либо через `C:\Users\admin-2\.codex\config.toml`.
+3. Если используете repo-local пример, перенесите параметры сервера из `.cursor/mcp.json` в codex-конфиг без изменения команды и аргументов.
 
 ---
 
@@ -70,12 +68,12 @@ pip install -r mcp_agent_ui/requirements.txt
 
 ---
 
-## Шаг 5. Полный перезапуск Cursor
+## Шаг 5. Перезапуск приложения
 
-MCP-серверы подхватываются при старте Cursor.
+MCP-серверы обычно подхватываются при старте приложения.
 
-1. Закройте Cursor полностью (все окна).
-2. Запустите Cursor снова и откройте проект **pc_client**.
+1. Закройте Codex app полностью.
+2. Запустите приложение снова и откройте проект **pc_client**.
 
 После перезапуска сервер `agent-ui-bridge` должен быть в списке и активен.
 
@@ -95,18 +93,18 @@ MCP-серверы подхватываются при старте Cursor.
 
 | Проблема | Что сделать |
 |----------|-------------|
-| Сервер не появляется в списке | Проверить наличие и синтаксис `.cursor/mcp.json`. Полный перезапуск Cursor. Открыт ли именно корень pc_client. |
+| Сервер не появляется в списке | Проверить синтаксис записи MCP в Codex config или app settings. При необходимости свериться с `.cursor/mcp.json` как с repo-local примером. Полностью перезапустить приложение. |
 | Ошибка «python not found» / не запускается | В `.cursor/mcp.json` указать полный путь к `python.exe` в `command`. |
 | Ошибка импорта (mcp, httpx) | Выполнить `pip install -r mcp_agent_ui/requirements.txt` для того же Python, что указан в `command`. |
 | Ошибка подключения к UI Bridge | Запустить агент с UI Bridge (8765). Для удалённого агента задать `AGENT_UI_BASE_URL` в `env` в `.cursor/mcp.json`. |
-| Логи MCP | В Cursor: **View → Output** (или `Ctrl+Shift+U` / `Cmd+Shift+U`), в выпадающем списке выбрать **MCP** или **MCP Logs**. |
+| Логи MCP | Смотреть через встроенные логи приложения или диагностический вывод Codex для MCP-серверов. |
 
 ---
 
 ## Предварительные условия (кратко)
 
 - Агент запущен с **UI Bridge** (`ui.enabled: true`, по умолчанию порт **8765**).
-- В окружении, откуда Cursor запускает `python`, установлены зависимости из `mcp_agent_ui/requirements.txt`.
+- В окружении, откуда Codex app запускает `python`, установлены зависимости из `mcp_agent_ui/requirements.txt`.
 
 ---
 

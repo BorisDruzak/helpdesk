@@ -36,3 +36,4 @@ ui:
   minimize_to_tray: true
   start_hidden: false
   notifications_enabled: true
+  theme_mode: "light"

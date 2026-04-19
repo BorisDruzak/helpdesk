@@ -53,7 +53,7 @@ async def test_persistent_dedup(db: DatabaseManager, job_manager: JobManager):
     
     # Создаем тестовый job
     job_id = str(uuid4())
-    device_id = "test_device_01"
+    device_id = "11111111-1111-1111-1111-111111111111"
     
     result = await job_manager.start_job(
         job_type="support_chat",
@@ -122,7 +122,7 @@ async def test_idempotent_start_job(db: DatabaseManager, job_manager: JobManager
     logger.info("=" * 70)
     
     job_id = str(uuid4())
-    device_id = "test_device_02"
+    device_id = "22222222-2222-2222-2222-222222222222"
     
     # Первый вызов start_job
     logger.info("📞 Первый вызов start_job...")
@@ -181,7 +181,7 @@ async def test_recovery_on_startup(db: DatabaseManager, job_manager: JobManager)
     # Создаем два job в БД напрямую (имитация состояния после restart)
     job_id_active = str(uuid4())
     job_id_expired = str(uuid4())
-    device_id = "test_device_03"
+    device_id = "33333333-3333-3333-3333-333333333333"
     
     # Job 1: Активный (недавно созданный)
     logger.info("📝 Создаю активный job в БД...")
@@ -272,7 +272,7 @@ async def test_seq_persistence(db: DatabaseManager, job_manager: JobManager):
     logger.info("=" * 70)
     
     job_id = str(uuid4())
-    device_id = "test_device_04"
+    device_id = "44444444-4444-4444-4444-444444444444"
     
     # Создаем job
     result = await job_manager.start_job(
@@ -412,7 +412,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 
 
 

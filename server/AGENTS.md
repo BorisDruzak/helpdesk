@@ -1,4 +1,4 @@
-# AGENTS.md — инструкции для Codex и Cursor (server)
+# AGENTS.md — инструкции для Codex (server)
 
 Канон инструкций и доков — **локальная рабочая копия** монорепо; шара `\\192.168.100.17\NTFS_Share\pc_client` и Linux `/var/chat_bot/pc_client` — зеркала. См. корневой `AGENTS.md`.
 
@@ -19,7 +19,7 @@
 
 - Каноническая карта сервера — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `server/docs/CODEMAP.md`).
 - Перед анализом/правками сначала смотреть этот файл.
-- При изменении структуры серверного кода, маршрутов или runtime-потоков **обязательно** обновлять `server/docs/CODEMAP.md`. Критерии — в конце файла и в `.cursor/rules/codemap.mdc`.
+- При изменении структуры серверного кода, маршрутов или runtime-потоков **обязательно** обновлять `server/docs/CODEMAP.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
 
 ## Единый URL GUI
 
@@ -32,5 +32,4 @@
   - успех/ошибка/consent_required → `device_outbox: delivered`, а `operations` отражает результат выполнения
   - таймаут → `device_outbox: failed` с `TIMEOUT` (см. `docs/COMMAND_RESULT_LIFECYCLE.md`)
 - `tool_call_started` создаётся сервером до отправки команды (см. `docs/TOOL_CALL_STARTED_INVARIANT.md`)
-
 

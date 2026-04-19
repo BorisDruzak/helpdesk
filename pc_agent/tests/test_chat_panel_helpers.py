@@ -11,6 +11,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     merge_ticket_stream,
     message_visual_role,
     prepend_ticket_stream,
+    ticket_request_form_summary_rows,
     ticket_matches_query,
     ticket_status_label,
 )
@@ -39,6 +40,65 @@ def test_message_visual_role_treats_agent_messages_as_outgoing_for_gui():
 def test_can_user_confirm_close_only_for_resolved_ticket():
     assert can_user_confirm_close({"status": "resolved"}) is True
     assert can_user_confirm_close({"status": "in_progress"}) is False
+
+
+def test_ticket_request_form_summary_rows_extracts_form_title_and_fields():
+    rows = ticket_request_form_summary_rows(
+        {
+            "custom_fields": {
+                "request_form_title": "Поломка",
+                "request_form_summary": [
+                    {"label": "Что сломалось", "value": "МФУ"},
+                    {"label": "Кабинет", "value": "4"},
+                ],
+            }
+        }
+    )
+
+    assert rows == [
+        ("Форма", "Поломка"),
+        ("Что сломалось", "МФУ"),
+        ("Кабинет", "4"),
+    ]
+
+
+def test_build_ticket_meta_html_includes_request_form_summary():
+    panel = ChatPanel.__new__(ChatPanel)
+    panel._format_ts = lambda value: value or ""
+    panel._support_presence_text = lambda _ticket: "онлайн"
+    panel._escape_html = lambda value: str(value)
+
+    html = panel._build_ticket_meta_html(
+        {
+            "requester_display_name": "Фигаро",
+            "requester_profile": {
+                "full_name": "ФФигаро",
+                "building": "Фигаро",
+                "room": "4",
+                "phone": "123",
+            },
+            "priority_class": "P0",
+            "queue_code": "servicedesk_l1",
+            "assignee_id": "op1",
+            "created_at": "2026-04-16T14:57:09+00:00",
+            "updated_at": "2026-04-16T14:58:09+00:00",
+            "resolved_at": None,
+            "closed_at": None,
+            "description": "Сломался принтер",
+            "custom_fields": {
+                "request_form_title": "Поломка",
+                "request_form_summary": [
+                    {"label": "Что сломалось", "value": "МФУ"},
+                    {"label": "Инвентарный номер", "value": "939218408214"},
+                ],
+            },
+        }
+    )
+
+    assert "Форма" in html
+    assert "Поломка" in html
+    assert "Что сломалось" in html
+    assert "МФУ" in html
 
 
 def test_ticket_status_label_is_localized():

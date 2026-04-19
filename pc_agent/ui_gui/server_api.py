@@ -10,6 +10,8 @@ import aiohttp
 from aiohttp import ClientSession, ClientTimeout
 from loguru import logger
 
+from pc_agent.core.action_trace import ActionTraceContext, get_action_trace_recorder
+
 
 class ServerApiClient:
     """
@@ -55,6 +57,68 @@ class ServerApiClient:
         
         logger.debug(f"Инициализирован ServerApiClient: base_url={base_url}, device_id={device_id}, actor_role={actor_role}")
     
+    def _trace_context(
+        self,
+        *,
+        action: str,
+        category: str,
+        parent_action_id: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> ActionTraceContext:
+        return get_action_trace_recorder().context(
+            source="ticket_api",
+            action=action,
+            category=category,
+            parent_action_id=parent_action_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            message_id=message_id,
+            tool_name=tool_name,
+        )
+
+    @staticmethod
+    def _trace_payload_preview(payload: dict) -> dict:
+        preview = dict(payload or {})
+        text = str(preview.get("text") or "")
+        if text:
+            preview["text"] = text[:160]
+            preview["text_length"] = len(text)
+        return preview
+
+    def _trace_context(
+        self,
+        *,
+        action: str,
+        category: str,
+        parent_action_id: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> ActionTraceContext:
+        return get_action_trace_recorder().context(
+            source="ticket_api",
+            action=action,
+            category=category,
+            parent_action_id=parent_action_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            message_id=message_id,
+            tool_name=tool_name,
+        )
+
+    @staticmethod
+    def _trace_payload_preview(payload: dict) -> dict:
+        preview = dict(payload or {})
+        text = str(preview.get("text") or "")
+        if text:
+            preview["text"] = text[:160]
+            preview["text_length"] = len(text)
+        return preview
+
     async def _get_session(self) -> ClientSession:
         """
         Получает или создает aiohttp ClientSession (ленивая инициализация).
@@ -322,7 +386,38 @@ class TicketApiClient:
         self.auth_token = auth_token
         
         logger.debug(f"Инициализирован TicketApiClient: base_url={base_url}, device_id={device_id}, user_display_name={user_display_name}, has_token={bool(self.auth_token)}")
-    
+
+    def _trace_context(
+        self,
+        *,
+        action: str,
+        category: str,
+        parent_action_id: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> ActionTraceContext:
+        return get_action_trace_recorder().context(
+            source="ticket_api",
+            action=action,
+            category=category,
+            parent_action_id=parent_action_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            message_id=message_id,
+            tool_name=tool_name,
+        )
+
+    @staticmethod
+    def _trace_payload_preview(payload: dict) -> dict:
+        preview = dict(payload or {})
+        text = str(preview.get("text") or "")
+        if text:
+            preview["text"] = text[:160]
+            preview["text_length"] = len(text)
+        return preview
+
     async def _get_session(self) -> ClientSession:
         """
         Получает или создает aiohttp ClientSession (ленивая инициализация).
@@ -371,6 +466,7 @@ class TicketApiClient:
         form_pack_version: Optional[str] = None,
         form_payload: Optional[dict] = None,
         ticket_type: Optional[str] = None,
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Создает новый тикет.
@@ -414,6 +510,18 @@ class TicketApiClient:
             payload["form_payload"] = form_payload
         if ticket_type is not None:
             payload["ticket_type"] = ticket_type
+        trace = self._trace_context(
+            action="ticket.create",
+            category="ticket",
+            parent_action_id=trace_parent_action_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="POST /tickets/create",
+            details={"payload": self._trace_payload_preview(payload)},
+        )
         
         logger.debug(f"POST {url} с payload: {payload}")
         
@@ -431,10 +539,29 @@ class TicketApiClient:
                 result = json.loads(response_text)
                 ticket_data = result.get('ticket', {})
                 ticket_id = ticket_data.get('ticket_id', 'N/A')
+                trace.ticket_id = str(ticket_id or "") or trace.ticket_id
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="ticket created",
+                    details={
+                        "http_status": response.status,
+                        "ticket_id": ticket_id,
+                        "public_access_code": result.get("public_access_code"),
+                    },
+                )
                 logger.debug(f"create_ticket успешно: ticket_id={ticket_id}")
                 return result
                 
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при create_ticket: {e}")
             raise Exception(f"Network error: {e}")
     
@@ -470,7 +597,7 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при get_ticket_form_pack_current: {e}")
             raise Exception(f"Network error: {e}")
 
-    async def list_tickets(self) -> dict:
+    async def list_tickets(self, *, trace_parent_action_id: Optional[str] = None) -> dict:
         """
         Получает список тикетов. Для агента передаётся device_id — сервер возвращает только тикеты этого устройства.
         
@@ -482,6 +609,18 @@ class TicketApiClient:
         """
         url = f"{self.base_url}/tickets"
         params = {"device_id": self.device_id}
+        trace = self._trace_context(
+            action="ticket.list",
+            category="ticket",
+            parent_action_id=trace_parent_action_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="GET /tickets",
+            details={"device_id": self.device_id},
+        )
         logger.debug(f"GET {url} device_id={self.device_id[:8]}...")
         
         session = await self._get_session()
@@ -497,10 +636,24 @@ class TicketApiClient:
 
                 result = await response.json()
                 tickets = result.get("tickets", [])
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="ticket list loaded",
+                    details={"http_status": response.status, "ticket_count": len(tickets)},
+                )
                 logger.debug(f"list_tickets успешно: получено {len(tickets)} тикетов (device_id={self.device_id[:8]}...)")
                 return result
                 
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при list_tickets: {e}")
             raise Exception(f"Network error: {e}")
     
@@ -511,6 +664,7 @@ class TicketApiClient:
         since_event_id: Optional[int] = None,
         before_event_id: Optional[int] = None,
         limit: Optional[int] = None,
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Получает информацию о тикете, включая сообщения и события.
@@ -539,6 +693,19 @@ class TicketApiClient:
                 params["before_event_id"] = int(before_event_id)
             if limit is not None:
                 params["limit"] = int(limit)
+        trace = self._trace_context(
+            action="ticket.get",
+            category="ticket",
+            parent_action_id=trace_parent_action_id,
+            ticket_id=ticket_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="GET /tickets/{ticket_id}",
+            details={"params": params or {}},
+        )
         
         logger.debug(f"GET {url}")
         
@@ -561,10 +728,28 @@ class TicketApiClient:
                 result = await response.json()
                 messages_count = len(result.get('messages', []))
                 events_count = len(result.get('events', []))
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="ticket detail loaded",
+                    details={
+                        "http_status": response.status,
+                        "messages_count": messages_count,
+                        "events_count": events_count,
+                    },
+                )
                 logger.debug(f"get_ticket успешно: ticket_id={ticket_id}, messages={messages_count}, events={events_count}")
                 return result
                 
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при get_ticket: {e}")
             raise Exception(f"Network error: {e}")
     
@@ -577,6 +762,7 @@ class TicketApiClient:
         attachment_refs: Optional[list[str]] = None,
         metadata: Optional[dict] = None,
         reply_to: Optional[dict] = None,
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Отправляет сообщение в тикет.
@@ -612,6 +798,20 @@ class TicketApiClient:
             payload["metadata"] = metadata
         if reply_to:
             payload["reply_to"] = reply_to
+        trace = self._trace_context(
+            action="ticket.message.send",
+            category="message",
+            parent_action_id=trace_parent_action_id,
+            ticket_id=ticket_id,
+            message_id=message_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="POST /tickets/{ticket_id}/message",
+            details={"payload": self._trace_payload_preview(payload)},
+        )
         
         logger.debug(f"POST {url} с payload: {payload}")
         
@@ -637,10 +837,24 @@ class TicketApiClient:
                     raise Exception(error_msg)
                 
                 result = await response.json()
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="message sent",
+                    details={"http_status": response.status, "message_id": message_id},
+                )
                 logger.debug(f"send_message успешно: ticket_id={ticket_id}, message_id={message_id}")
                 return result
                 
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при send_message: {e}")
             raise Exception(f"Network error: {e}")
 
@@ -696,6 +910,7 @@ class TicketApiClient:
         ticket_id: str,
         file_path: str,
         kind: str = "file",
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Загружает вложение в artifacts через multipart: POST /api/upload.
@@ -720,6 +935,19 @@ class TicketApiClient:
         headers = self._get_headers()
 
         form = aiohttp.FormData()
+        trace = self._trace_context(
+            action="ticket.attachment.upload",
+            category="attachment",
+            parent_action_id=trace_parent_action_id,
+            ticket_id=ticket_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="POST /upload",
+            details={"file_path": str(path), "kind": kind},
+        )
         with path.open("rb") as f:
             form.add_field(
                 "file",
@@ -741,6 +969,18 @@ class TicketApiClient:
                         raise Exception(error_msg)
 
                     result = await response.json()
+                    get_action_trace_recorder().record(
+                        trace,
+                        stage="response",
+                        status="ok",
+                        summary="attachment uploaded",
+                        details={
+                            "http_status": response.status,
+                            "artifact_id": result.get("artifact_id"),
+                            "size": result.get("size"),
+                            "kind": result.get("kind"),
+                        },
+                    )
                     logger.debug(
                         "upload_attachment успешно: artifact_id={}, size={}",
                         result.get("artifact_id"),
@@ -754,6 +994,13 @@ class TicketApiClient:
                         "kind": result.get("kind"),
                     }
             except aiohttp.ClientError as e:
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="error",
+                    summary="network error",
+                    details={"exception_type": type(e).__name__, "error": str(e)},
+                )
                 logger.error(f"Ошибка сети при upload_attachment: {e}")
                 raise Exception(f"Network error: {e}")
     
@@ -761,7 +1008,8 @@ class TicketApiClient:
         self,
         ticket_id: str,
         reason: str = "user_closed",
-        closed_by_role: str = "user"
+        closed_by_role: str = "user",
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Закрывает тикет.
@@ -782,6 +1030,19 @@ class TicketApiClient:
             "closed_by_role": closed_by_role,
             "reason": reason
         }
+        trace = self._trace_context(
+            action="ticket.close",
+            category="ticket",
+            parent_action_id=trace_parent_action_id,
+            ticket_id=ticket_id,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="POST /tickets/{ticket_id}/close",
+            details={"payload": payload},
+        )
         
         logger.debug(f"POST {url} с payload: {payload}")
         
@@ -802,6 +1063,13 @@ class TicketApiClient:
                     raise Exception(error_msg)
                 
                 result = await response.json()
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="ticket closed",
+                    details={"http_status": response.status, "already_closed": result.get("already_closed", False)},
+                )
                 already_closed = result.get("already_closed", False)
                 if already_closed:
                     logger.info(f"close_ticket: тикет {ticket_id} уже был закрыт")
@@ -810,6 +1078,13 @@ class TicketApiClient:
                 return result
                 
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при close_ticket: {e}")
             raise Exception(f"Network error: {e}")
 
@@ -820,6 +1095,7 @@ class TicketApiClient:
         tool_name: str,
         preset_id: Optional[str] = None,
         params: Optional[dict] = None,
+        trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
         Запускает инструмент в контексте тикета: POST /api/tools/run.
@@ -846,6 +1122,20 @@ class TicketApiClient:
             payload["preset_id"] = preset_id
         if params is not None:
             payload["params"] = params
+        trace = self._trace_context(
+            action="ticket.tool.run",
+            category="tool",
+            parent_action_id=trace_parent_action_id,
+            ticket_id=ticket_id,
+            tool_name=tool_name,
+        )
+        get_action_trace_recorder().record(
+            trace,
+            stage="request",
+            status="started",
+            summary="POST /tools/run",
+            details={"payload": payload},
+        )
 
         logger.debug(f"POST {url} tool_name={tool_name}, ticket_id={ticket_id}")
 
@@ -863,8 +1153,27 @@ class TicketApiClient:
                     raise Exception(f"HTTP {response.status}: {response_text}")
 
                 result = json.loads(response_text) if response_text.strip() else {}
+                trace.operation_id = str(result.get("operation_id") or "") or trace.operation_id
+                get_action_trace_recorder().record(
+                    trace,
+                    stage="response",
+                    status="ok",
+                    summary="tool run accepted",
+                    details={
+                        "http_status": response.status,
+                        "operation_id": result.get("operation_id"),
+                        "result_status": result.get("status"),
+                    },
+                )
                 logger.debug(f"run_tool успешно: tool_name={tool_name}, status={response.status}, result={result}")
                 return result
         except aiohttp.ClientError as e:
+            get_action_trace_recorder().record(
+                trace,
+                stage="response",
+                status="error",
+                summary="network error",
+                details={"exception_type": type(e).__name__, "error": str(e)},
+            )
             logger.error(f"Ошибка сети при run_tool: {e}")
             raise Exception(f"Network error: {e}")

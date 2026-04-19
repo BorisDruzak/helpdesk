@@ -56,6 +56,8 @@ class UiApiServer:
         on_chat_send: Optional[
             Callable[..., Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]
         ] = None,
+        on_get_automation_status: Optional[Callable[[], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
+        on_run_automation: Optional[Callable[[Dict[str, Any]], Union[Dict[str, Any], Awaitable[Dict[str, Any]]]]] = None,
     ):
         """
         Инициализация UiApiServer.
@@ -80,6 +82,8 @@ class UiApiServer:
         self.on_get_runtime_status = on_get_runtime_status
         self.on_get_runtime_logs = on_get_runtime_logs
         self.on_chat_send = on_chat_send
+        self.on_get_automation_status = on_get_automation_status
+        self.on_run_automation = on_run_automation
         self.app = web.Application()
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -111,6 +115,8 @@ class UiApiServer:
         self.app.router.add_post("/ui/agent/shutdown", self.handle_shutdown_agent)
         self.app.router.add_get("/ui/agent/status", self.handle_runtime_status)
         self.app.router.add_get("/ui/agent/logs", self.handle_runtime_logs)
+        self.app.router.add_get("/ui/automation/status", self.handle_automation_status)
+        self.app.router.add_post("/ui/automation/run", self.handle_run_automation)
         
         # Health check
         self.app.router.add_get("/health", self.handle_health)
@@ -718,9 +724,69 @@ class UiApiServer:
         payload = {
             "source": request.query.get("source", "agent"),
             "lines": request.query.get("lines", "120"),
+            "action_id": request.query.get("action_id"),
+            "parent_action_id": request.query.get("parent_action_id"),
+            "ticket_id": request.query.get("ticket_id"),
+            "operation_id": request.query.get("operation_id"),
+            "message_id": request.query.get("message_id"),
+            "tool_name": request.query.get("tool_name"),
+            "status": request.query.get("status"),
+            "text": request.query.get("text"),
         }
         try:
             result = await self._invoke_maybe_async(self.on_get_runtime_logs, payload)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except ValueError as e:
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=400,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+    async def handle_automation_status(self, request: Request) -> Response:
+        if not self.on_get_automation_status:
+            return web.json_response(
+                {"status": "error", "error": "automation status provider not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        try:
+            result = await self._invoke_maybe_async(self.on_get_automation_status)
+            if not isinstance(result, dict):
+                result = {"result": result}
+            result.setdefault("status", "ok")
+            return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response(
+                {"status": "error", "error": str(e)},
+                status=500,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+    async def handle_run_automation(self, request: Request) -> Response:
+        if not self.on_run_automation:
+            return web.json_response(
+                {"status": "error", "error": "automation runner not configured"},
+                status=501,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        try:
+            result = await self._invoke_maybe_async(self.on_run_automation, payload)
             if not isinstance(result, dict):
                 result = {"result": result}
             result.setdefault("status", "ok")
@@ -783,6 +849,8 @@ class UiApiServer:
             logger.info(f"   - POST /ui/agent/shutdown")
             logger.info(f"   - GET  /ui/agent/status")
             logger.info(f"   - GET  /ui/agent/logs")
+            logger.info(f"   - GET  /ui/automation/status")
+            logger.info(f"   - POST /ui/automation/run")
             logger.info(f"   - GET  /health")
             return True
 

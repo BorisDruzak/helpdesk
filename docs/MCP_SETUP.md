@@ -4,7 +4,7 @@
 
 Для взаимодействия с GUI агента через тот же API, что использует Qt (здоровье, события, consent, настройки, стоп записи и т.д.), используйте MCP-сервер **agent-ui-bridge**.
 
-- **Установка и настройка в Cursor:** [MCP_AGENT_UI.md](MCP_AGENT_UI.md)
+- **Установка и настройка в Codex:** [MCP_AGENT_UI.md](MCP_AGENT_UI.md)
 - **Код и инструменты:** каталог `mcp_agent_ui/`, README в `mcp_agent_ui/README.md`
 
 ---
@@ -131,9 +131,9 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-#### Шаг 2: Настройка в Cursor
+#### Шаг 2: Настройка в Codex
 
-1. Откройте **Cursor → Settings → AI Settings → MCP Servers**
+1. Откройте настройки Codex app или `C:\Users\admin-2\.codex\config.toml`
 2. Нажмите **"Add Server"**
 3. Заполните:
    - **Name**: `sqlite-agent-db`
@@ -141,7 +141,7 @@ if __name__ == "__main__":
    - **Args**: `["/var/chat_bot/pc_client/mcp_sqlite_server.py"]`
    - **Env**: (можно оставить пустым)
 
-4. Сохраните и перезапустите Cursor
+4. Сохраните изменения и перезапустите приложение, если MCP-сервер не появился сразу
 
 #### Шаг 3: Проверка
 
@@ -155,7 +155,7 @@ if __name__ == "__main__":
 npm install -g @modelcontextprotocol/server-mysql
 ```
 
-Затем в настройках Cursor:
+Затем в настройках Codex:
 - **Command**: `npx`
 - **Args**: `["-y", "@modelcontextprotocol/server-mysql", "--connection-string", "mysql://user:password@host:port/database"]`
 
@@ -221,4 +221,3 @@ python scripts/view_db.py --info outbox
 ```bash
 sqlite3 pc_agent/data/storage.db ".schema"
 ```
-

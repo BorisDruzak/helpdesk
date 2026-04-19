@@ -1,3 +1,5 @@
+import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -5,7 +7,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pc_agent.auth.token_source import load_auth_token
+from pc_agent.auth.token_source import (
+    import_missing_auth_token_from_data_roots,
+    load_auth_token,
+)
 
 
 class _FakeDb:
@@ -38,6 +43,25 @@ class _FakeIdentity:
         if self.install_id:
             result.append(self.install_id)
         return result
+
+
+def _write_identity(data_dir: Path, *, machine_id: str, install_id: str) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "identity.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "uuid": machine_id,
+                "machine_id": machine_id,
+                "install_id": install_id,
+                "machine_id_source": "windows_machine_guid",
+                "token": None,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
@@ -112,4 +136,67 @@ async def test_load_auth_token_falls_back_to_legacy_install_id_and_migrates(monk
     assert token == "legacy-token"
     assert identity.token == "legacy-token"
     assert db.saved == [("legacy-token", "machine-dev")]
+
+
+def test_import_missing_auth_token_from_data_roots_copies_token_for_same_machine(tmp_path):
+    machine_id = "7a3429ec-1c0b-5495-9aad-b284f08ae965"
+    source_data = tmp_path / "source-data"
+    target_data = tmp_path / "target-data"
+
+    _write_identity(source_data, machine_id=machine_id, install_id="1dad7556-bd05-4c5f-ac3a-cbdd176244e6")
+    _write_identity(target_data, machine_id=machine_id, install_id="ea184549-1277-475e-bf83-a1db92f303e1")
+
+    from pc_agent.core.database import DatabaseManager
+
+    DatabaseManager._instance = None
+    source_db = DatabaseManager(str(source_data / "storage.db"))
+    asyncio.run(source_db.init_db())
+    asyncio.run(source_db.save_auth_token("primary-token-value", machine_id))
+
+    imported = import_missing_auth_token_from_data_roots(source_data, target_data)
+
+    DatabaseManager._instance = None
+    target_db = DatabaseManager(str(target_data / "storage.db"))
+    asyncio.run(target_db.init_db())
+    imported_token = asyncio.run(target_db.get_auth_token(machine_id))
+
+    assert imported is True
+    assert imported_token == "primary-token-value"
+
+
+def test_import_missing_auth_token_from_data_roots_skips_machine_id_mismatch(tmp_path, monkeypatch):
+    source_data = tmp_path / "source-data"
+    target_data = tmp_path / "target-data"
+
+    _write_identity(
+        source_data,
+        machine_id="7a3429ec-1c0b-5495-9aad-b284f08ae965",
+        install_id="1dad7556-bd05-4c5f-ac3a-cbdd176244e6",
+    )
+    _write_identity(
+        target_data,
+        machine_id="11111111-2222-4333-8444-555555555555",
+        install_id="ea184549-1277-475e-bf83-a1db92f303e1",
+    )
+
+    from pc_agent.core.database import DatabaseManager
+    import pc_agent.core.identity as identity_module
+
+    DatabaseManager._instance = None
+    source_db = DatabaseManager(str(source_data / "storage.db"))
+    asyncio.run(source_db.init_db())
+    asyncio.run(source_db.save_auth_token("primary-token-value", "7a3429ec-1c0b-5495-9aad-b284f08ae965"))
+
+    resolved_values = iter(
+        [
+            ("11111111-2222-4333-8444-555555555555", "test-target"),
+            ("7a3429ec-1c0b-5495-9aad-b284f08ae965", "test-source"),
+        ]
+    )
+    monkeypatch.setattr(identity_module, "resolve_machine_identity", lambda: next(resolved_values))
+
+    imported = import_missing_auth_token_from_data_roots(source_data, target_data)
+
+    assert imported is False
+    assert not (target_data / "storage.db").exists()
 

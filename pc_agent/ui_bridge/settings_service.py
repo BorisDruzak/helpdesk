@@ -86,7 +86,7 @@ class AgentSettingsService:
             "config_changed": config_changed,
             "token_changed": token_changed,
             "changed_keys": sorted(changed_keys),
-            "requires_restart": config_changed,
+            "requires_restart": any(str(key) != "ui.theme_mode" for key in changed_keys),
         }
 
     async def test_connection(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

@@ -164,3 +164,47 @@ async def test_run_tool_blocks_when_required_binary_is_missing(tmp_path):
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "DEPENDENCY_MISSING"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_run_tool_normalizes_partial_metadata_before_policy(tmp_path):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+
+    orchestrator = AgentOrchestrator(enabled_modules=[], data_root=tmp_path)
+    await orchestrator.initialize()
+
+    class PartialMetadataCollector:
+        @property
+        def name(self) -> str:
+            return "custom"
+
+        @exposed_tool(
+            name="custom.partial_metadata",
+            description="Tool with partially populated metadata",
+            metadata_risk_level="safe_read",
+            metadata_allow_roles=["agent"],
+        )
+        async def run(self):
+            return {"ok": True, "path": "normalized"}
+
+    collector = PartialMetadataCollector()
+    orchestrator.loaded_modules.append(collector)
+    orchestrator.registry.register(collector)
+    tool_spec = orchestrator.registry.get_tool("custom.partial_metadata")
+    assert tool_spec is not None
+    tool_spec["spec"]["metadata"]["origin"] = None
+
+    result = await orchestrator._handle_run_tool(
+        tool="custom.partial_metadata",
+        params={"tool": "custom.partial_metadata", "params": {}},
+        actor_role="agent",
+        meta=_meta(),
+    )
+
+    assert result.status == "success"
+    envelope = result.data.result
+    assert envelope["status"] == "ok"
+    assert envelope["output"]["path"] == "normalized"

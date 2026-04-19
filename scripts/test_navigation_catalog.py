@@ -1,4 +1,5 @@
 from scripts import navigation_catalog as nav
+from pathlib import Path
 
 
 def test_find_topics_for_query_includes_planning_topic() -> None:
@@ -20,3 +21,51 @@ def test_harness_drift_rules_require_non_markdown_artifacts() -> None:
 
     assert ".cursor/rules/navigation-tools.mdc" in navigation_rule.required_docs
     assert ".cursor/skills/pc-client-release/SKILL.md" in workflow_rule.required_docs
+
+
+def test_agent_updates_query_prefers_agent_updates_topic() -> None:
+    topics = nav.find_topics_for_query("launcher rollout")
+
+    assert topics[0].key == "agent_updates"
+    assert topics[0].playbook == ".cursor/rules/agent-updates-pc-client.mdc"
+    assert topics[0].plan_required is True
+
+
+def test_collect_docs_to_update_uses_drift_rules_for_task_intake() -> None:
+    docs = nav.collect_docs_to_update((), paths=("scripts/task_intake.py",))
+
+    assert "AGENTS.md" in docs
+    assert "docs/QUICK_LOOKUP.md" in docs
+    assert ".cursor/rules/navigation-tools.mdc" in docs
+
+
+def test_all_topic_artifacts_exist() -> None:
+    missing: list[str] = []
+    for topic in nav.TOPICS:
+        for artifact in nav.iter_topic_artifacts(topic):
+            if not (nav.REPO_ROOT / Path(artifact)).exists():
+                missing.append(artifact)
+
+    assert missing == []
+
+
+def test_domain_drift_rules_require_navigation_catalog_and_quick_lookup() -> None:
+    rule_keys = {
+        "server_entrypoints",
+        "server_protocol",
+        "agent_protocol",
+        "server_auth",
+        "agent_auth",
+        "modules",
+        "tickets",
+        "server_ui_structure",
+        "agent_gui_structure",
+        "agent_updates_flow",
+        "agent_runtime",
+    }
+
+    for rule in nav.DRIFT_RULES:
+        if rule.key not in rule_keys:
+            continue
+        assert "docs/QUICK_LOOKUP.md" in rule.required_artifacts_all
+        assert "scripts/navigation_catalog.py" in rule.required_artifacts_all

@@ -6,6 +6,7 @@ alwaysApply: false
 # Work modes pc_client
 
 Это **не отдельные процессы**, а **подключаемые playbook-и**. По типу задачи переключаться на один режим и **не смешивать** с чужой областью.
+Обычно основной режим выбирается через `python scripts/task_intake.py`.
 
 ## Быстрый выбор
 
@@ -94,16 +95,16 @@ alwaysApply: false
 
 ## 5. Режим «Release / deploy»
 
+Подробный playbook вынесен в `.cursor/rules/release-pc-client.mdc`.
+
 **Когда:** готовность к коммиту, выкладка на Linux, smoke, браузерная проверка админки, остановка сервера, подготовка к push.
 
 **Назначение:** канонический pipeline без ad-hoc SSH/ручного копирования на сервер.
 
 **Делать:**
 
-- Локально: verify + релевантный pytest → коммит.
-- На стенд: `deploy_workspace_to_remote.py` (без `--allow-local-dirty`, если не осознанно) → поднять `control` → `manage_remote_stack.py` start/smoke server → при изменении веба — браузер на `http://192.168.100.17:8666/admin` (скилл **pc-client-browser-check**) → для техпанели проверить status/health/full logs и confirm для `stop/restart` → **stop server**, если не просили оставить.
-- Полный сценарий: `python scripts/release_server_to_remote.py` по **AGENTS.md**.
-- Перед push: скилл **pc-client-release** (что зафиксировать в отчёте).
+- Переключиться на `.cursor/rules/release-pc-client.mdc`.
+- Перед push использовать skill **pc-client-release**.
 
 **Не делать:**
 
@@ -113,32 +114,27 @@ alwaysApply: false
 
 ## 6. Режим «Agent updates / rollout»
 
+Подробный playbook вынесен в `.cursor/rules/agent-updates-pc-client.mdc`.
+
 **Когда:** изменения в `pc_agent/launcher/*`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/*`, `pc_agent/ui_gui/*`, server-side update API/diagnostics или admin UI раздел Agent Updates.
 
 **Назначение:** выпускать agent/launcher изменения по versioned release-сценарию, а не “подменой exe”, и подтверждать успех только после handshake/diagnostics.
 
 **Делать:**
 
-- Читать и держать под рукой:
-  - `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`
-  - `pc_agent/docs/SELF_UPDATE.md`
-  - `server/docs/AGENT_UPDATES_API.md`
-  - `pc_agent/docs/CODEMAP.md`
+- Переключиться на `.cursor/rules/agent-updates-pc-client.mdc`.
 - Использовать skill **pc-client-agent-updates**.
-- Если меняется распространяемый бинарь, bump-ать `pc_agent/version.py`.
-- После правок прогонять verify + agent pytest + точечные server update-contract tests, если затронута серверная часть.
-- Собирать новый release через `python pc_agent/build_windows_release_v2.py`.
-- Делать upload нового build, затем canary update, затем проверять diagnostics/timeline/problem logs и только после этого запускать bulk rollout.
 
 **Не делать:**
 
 - Не выпускать новый ZIP под старой версией как обычный путь.
 - Не считать `scheduled` финальным успехом.
-- Не ограничиваться только логом агента без проверки launcher/update history/admin diagnostics.
 
 ---
 
 ## 7. Режим «Agent runtime / tray / logs»
+
+Подробный playbook вынесен в `.cursor/rules/agent-runtime-pc-client.mdc`.
 
 **Когда:** изменения в `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/*`, `pc_agent/ui_bridge/*`, lifecycle главного окна, tray, local shutdown/restart path или runtime diagnostics.
 
@@ -146,23 +142,12 @@ alwaysApply: false
 
 **Делать:**
 
-- Читать:
-  - `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`
-  - `pc_agent/docs/CODEMAP.md`
-  - `docs/QUICK_LOOKUP.md`
-- После правок прогонять:
-  - `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short`
-  - `python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short`
-- Делать живой локальный сценарий через `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`:
-  - проверить `GET /ui/agent/status`
-  - закрыть окно `Maria Agent`
-  - подтвердить, что процесс и локальный API продолжают жить
-  - завершить агент через `POST /ui/agent/shutdown`
+- Переключиться на `.cursor/rules/agent-runtime-pc-client.mdc`.
+- Использовать skill **pc-client-agent-runtime**.
 
 **Не делать:**
 
 - Не считать `CloseMainWindow()` штатным shutdown path.
-- Не оставлять forced `DEBUG` логирование как production default.
 - Не выпускать изменения lifecycle без живой локальной проверки.
 
 ---

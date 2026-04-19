@@ -12,14 +12,14 @@ from PySide6.QtWidgets import (
     QStatusBar, QLabel, QGroupBox, QHBoxLayout, QPushButton,
     QMessageBox, QApplication, QDialog, QLineEdit, QFormLayout,
     QCheckBox, QSpinBox, QSplitter, QScrollArea, QFrame,
-    QComboBox, QPlainTextEdit,
+    QComboBox, QPlainTextEdit, QStackedWidget, QToolButton,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from loguru import logger
 
 from .consent_dialog import ConsentDialog
-from .chat_panel import ChatPanel, ProfileSidebarWidget
+from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
 from . import theme
 from pc_agent.version import AGENT_VERSION
 
@@ -62,6 +62,14 @@ class MainWindow(QMainWindow):
         self._server_connection_detail: str = ""
         self._runtime_logs_dir: Optional[str] = None
         self._update_status_snapshot: Dict[str, Any] = {}
+        self._runtime_status_refresh_in_flight: bool = False
+        self._sidebar_expanded: bool = True
+        self._sidebar_content_width: int = 272
+        self._active_sidebar_view: str = "tickets"
+        self._theme_combo_sync_in_progress: bool = False
+        self._settings_sections: list[QFrame] = []
+        self._settings_section_titles: list[QLabel] = []
+        self._settings_section_subtitles: list[QLabel] = []
         
         self.setWindowTitle(f"Maria Agent v{AGENT_VERSION}")
         self.setMinimumSize(1200, 760)
@@ -116,75 +124,232 @@ class MainWindow(QMainWindow):
         top_bar.setContentsMargins(0, 0, 0, 0)
         top_bar.setSpacing(8)
 
-        self.title_label = QLabel(f"Maria Agent v{AGENT_VERSION}")
+        self.title_label = QLabel("Maria Agent")
         self.title_label.setStyleSheet(
             f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
         )
         top_bar.addWidget(self.title_label)
-        self.profile_top_status = QLabel("")
-        self.profile_top_status.setStyleSheet(
-            f"padding: 6px 10px; border-radius: 999px; background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-weight: 700;"
-        )
-        top_bar.addWidget(self.profile_top_status)
-        self.release_badge = QLabel("Версия: —")
-        self.release_badge.setStyleSheet(
-            f"padding: 6px 10px; border-radius: 999px; background: {theme.BG_INPUT}; color: {theme.TEXT_SECONDARY}; font-weight: 700;"
-        )
-        top_bar.addWidget(self.release_badge)
-        self.update_agent_btn = QPushButton("Проверить update")
-        self.update_agent_btn.setObjectName("SecondaryButton")
-        self.update_agent_btn.clicked.connect(self._on_trigger_update_clicked)
-        top_bar.addWidget(self.update_agent_btn)
         top_bar.addStretch()
-
-        self.settings_btn = QPushButton("Настройки")
-        self.settings_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {theme.BORDER}; border-radius: 14px; background: {theme.BG_INPUT}; padding: 8px 14px; color: {theme.TEXT_PRIMARY}; }}"
-            f"QPushButton:hover {{ background: {theme.LIST_ITEM_HOVER}; }}"
-        )
-        self.settings_btn.clicked.connect(self._show_settings_dialog)
-        top_bar.addWidget(self.settings_btn)
         layout.addLayout(top_bar)
 
         self.chat_panel = ChatPanel(base_url=None, auth_token=self.auth_token)
         self.profile_sidebar = ProfileSidebarWidget(self.chat_panel)
+        self.profile_sidebar.setMinimumWidth(0)
+        self.profile_sidebar.setMaximumWidth(16777215)
+        self.tickets_sidebar = TicketsSidebarWidget(self.chat_panel)
+        self.tickets_sidebar.setMinimumWidth(0)
+        self.tickets_sidebar.setMaximumWidth(16777215)
+        self.ticket_create_page = TicketCreateWizardWidget(self.chat_panel)
+        self.ticket_create_page.ticketCreated.connect(self._on_ticket_created_from_wizard)
+        self.ticket_create_page.cancelled.connect(lambda: self._select_sidebar_view("tickets", expand=True))
         self.chat_panel.set_profile_sidebar(self.profile_sidebar)
+        self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.body_splitter.setChildrenCollapsible(False)
-        self.body_splitter.addWidget(self.profile_sidebar)
-        self.body_splitter.addWidget(self.chat_panel)
+
+        self.sidebar_shell = QFrame()
+        self.sidebar_shell.setObjectName("AgentSidebarShell")
+        self.sidebar_shell.setStyleSheet(
+            "QFrame#AgentSidebarShell {"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {theme.current_palette().sidebar_shell_bg}, stop:1 {theme.current_palette().sidebar_shell_bg_alt});"
+            " border-radius: 24px;"
+            f" border: 1px solid {theme.current_palette().sidebar_border};"
+            "}"
+            "QLabel#SidebarTitle {"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-size: 13px;"
+            " font-weight: 700;"
+            " background: transparent;"
+            "}"
+            "QLabel#SidebarCaption {"
+            f" color: {theme.current_palette().sidebar_text_muted};"
+            " font-size: 10px;"
+            " font-weight: 600;"
+            " letter-spacing: 0.08em;"
+            " background: transparent;"
+            "}"
+            "QToolButton#SidebarToggleButton {"
+            f" background: {theme.current_palette().sidebar_nav_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
+            " border-radius: 14px;"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-size: 18px;"
+            " font-weight: 700;"
+            " min-width: 42px;"
+            " min-height: 42px;"
+            "}"
+            f"QToolButton#SidebarToggleButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
+            "QPushButton#SidebarActionButton {"
+            " text-align: left;"
+            " padding: 12px 14px;"
+            " border-radius: 16px;"
+            f" background: {theme.current_palette().sidebar_action_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_action_border};"
+            f" color: {theme.current_palette().sidebar_action_text};"
+            " font-weight: 800;"
+            "}"
+            f"QPushButton#SidebarActionButton:hover {{ background: {theme.current_palette().primary_btn_hover}; }}"
+            "QPushButton#SidebarNavButton {"
+            " text-align: left;"
+            " padding: 12px 14px;"
+            " border-radius: 16px;"
+            f" background: {theme.current_palette().sidebar_nav_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-weight: 700;"
+            "}"
+            f"QPushButton#SidebarNavButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
+            "QPushButton#SidebarNavButton:checked {"
+            f" background: {theme.current_palette().sidebar_nav_bg_selected};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border_selected};"
+            "}"
+        )
+        sidebar_shell_layout = QVBoxLayout(self.sidebar_shell)
+        sidebar_shell_layout.setContentsMargins(12, 14, 12, 14)
+        sidebar_shell_layout.setSpacing(12)
+        self.sidebar_shell_layout = sidebar_shell_layout
+
+        sidebar_header = QHBoxLayout()
+        sidebar_header.setContentsMargins(0, 0, 0, 0)
+        sidebar_header.setSpacing(8)
+        self.sidebar_toggle_btn = QToolButton()
+        self.sidebar_toggle_btn.setObjectName("SidebarToggleButton")
+        self.sidebar_toggle_btn.setText("☰")
+        self.sidebar_toggle_btn.setToolTip("Свернуть или развернуть меню")
+        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar_expanded)
+        sidebar_header.addWidget(self.sidebar_toggle_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        sidebar_header_labels = QVBoxLayout()
+        sidebar_header_labels.setContentsMargins(0, 2, 0, 0)
+        sidebar_header_labels.setSpacing(1)
+        self.sidebar_title_label = QLabel("Меню")
+        self.sidebar_title_label.setObjectName("SidebarTitle")
+        sidebar_header_labels.addWidget(self.sidebar_title_label)
+        self.sidebar_subtitle_label = QLabel("Рабочие разделы агента")
+        self.sidebar_subtitle_label.setObjectName("SidebarCaption")
+        sidebar_header_labels.addWidget(self.sidebar_subtitle_label)
+        sidebar_header.addLayout(sidebar_header_labels, 1)
+        sidebar_shell_layout.addLayout(sidebar_header)
+
+        self.sidebar_create_ticket_btn = QPushButton()
+        self.sidebar_create_ticket_btn.setObjectName("SidebarActionButton")
+        self.sidebar_create_ticket_btn.clicked.connect(self._on_create_ticket_from_menu)
+        sidebar_shell_layout.addWidget(self.sidebar_create_ticket_btn)
+
+        self.sidebar_tickets_btn = QPushButton()
+        self.sidebar_tickets_btn.setObjectName("SidebarNavButton")
+        self.sidebar_tickets_btn.setCheckable(True)
+        self.sidebar_tickets_btn.clicked.connect(lambda: self._select_sidebar_view("tickets", expand=True))
+        sidebar_shell_layout.addWidget(self.sidebar_tickets_btn)
+
+        self.sidebar_settings_btn = QPushButton()
+        self.sidebar_settings_btn.setObjectName("SidebarNavButton")
+        self.sidebar_settings_btn.setCheckable(True)
+        self.sidebar_settings_btn.clicked.connect(self._show_settings_dialog)
+        sidebar_shell_layout.addWidget(self.sidebar_settings_btn)
+        sidebar_shell_layout.addStretch(1)
+
+        self.sidebar_profile_btn = QPushButton()
+        self.sidebar_profile_btn.setObjectName("SidebarNavButton")
+        self.sidebar_profile_btn.setCheckable(True)
+        self.sidebar_profile_btn.clicked.connect(lambda: self._select_sidebar_view("profile", expand=True))
+        sidebar_shell_layout.addWidget(self.sidebar_profile_btn)
+
+        self.main_content_stack = QStackedWidget()
+        self.main_content_stack.setStyleSheet("QStackedWidget { background: transparent; border: none; }")
+        self.main_content_stack.addWidget(self.tickets_sidebar)
+        self.main_content_stack.addWidget(self.chat_panel)
+        self.main_content_stack.addWidget(self.profile_sidebar)
+        self.main_content_stack.addWidget(self.ticket_create_page)
+
+        self.body_splitter.addWidget(self.sidebar_shell)
+        self.body_splitter.addWidget(self.main_content_stack)
         self.body_splitter.setStretchFactor(0, 0)
         self.body_splitter.setStretchFactor(1, 1)
-        self.body_splitter.setSizes([320, 980])
-        self._split_sizes_with_profile = [320, 980]
+        self.body_splitter.setSizes([300, 1000])
 
         layout.addWidget(self.body_splitter, 1)
         self.chat_panel.chatSessionChanged.connect(self._on_chat_session_changed)
         self.chat_panel.requesterProfileChanged.connect(self._render_profile_status)
         self.chat_panel.listNavigationVisibilityChanged.connect(self._on_list_navigation_visibility_changed)
         self._render_profile_status()
-        self._on_list_navigation_visibility_changed(True)
+        self._select_sidebar_view("tickets", expand=True)
 
-        self.settings_dialog = QDialog(self)
-        self.settings_dialog.setWindowTitle("Настройки")
-        self.settings_dialog.setModal(True)
-        self.settings_dialog.setMinimumWidth(520)
-        self.settings_dialog.setMinimumHeight(400)
-        self.settings_dialog.setMaximumHeight(900)
+        self.settings_page = QWidget()
+        self.settings_page.setObjectName("AgentSettingsPage")
+        self.settings_page.setMinimumWidth(520)
+        settings_page_root = QVBoxLayout(self.settings_page)
+        settings_page_root.setContentsMargins(8, 8, 8, 8)
+        settings_page_root.setSpacing(8)
 
-        dlg_root = QVBoxLayout(self.settings_dialog)
-        dlg_root.setContentsMargins(8, 8, 8, 8)
-        dlg_root.setSpacing(8)
+        self.settings_header = QLabel("Настройки")
+        self.settings_header.setStyleSheet(
+            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent; padding: 4px 6px;"
+        )
+        settings_page_root.addWidget(self.settings_header)
+        self.settings_subtitle = QLabel(
+            "Параметры сгруппированы по смыслу: сначала подключение, затем интерфейс, диагностика и локальные данные."
+        )
+        self.settings_subtitle.setWordWrap(True)
+        self.settings_subtitle.setStyleSheet(
+            f"font-size: 11px; color: {theme.TEXT_MUTED}; background: transparent; padding: 0 6px 4px 6px;"
+        )
+        settings_page_root.addWidget(self.settings_subtitle)
 
-        scroll = QScrollArea(self.settings_dialog)
+        scroll = QScrollArea(self.settings_page)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_content = QWidget()
         settings_layout = QVBoxLayout(scroll_content)
         settings_layout.setContentsMargins(8, 8, 8, 8)
-        settings_layout.setSpacing(12)
+        settings_layout.setSpacing(14)
+
+        def create_settings_section(title: str, subtitle: str) -> tuple[QFrame, QVBoxLayout]:
+            section = QFrame()
+            section.setStyleSheet(
+                f"QFrame {{ background: {theme.BG_CARD_ALT}; border: 1px solid {theme.BORDER_SOFT}; border-radius: 22px; }}"
+            )
+            section_layout = QVBoxLayout(section)
+            section_layout.setContentsMargins(18, 18, 18, 18)
+            section_layout.setSpacing(12)
+            title_label = QLabel(title)
+            title_label.setStyleSheet(
+                f"font-size: 15px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+            )
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setWordWrap(True)
+            subtitle_label.setStyleSheet(
+                f"font-size: 11px; color: {theme.TEXT_MUTED}; background: transparent;"
+            )
+            section_layout.addWidget(title_label)
+            section_layout.addWidget(subtitle_label)
+            self._settings_sections.append(section)
+            self._settings_section_titles.append(title_label)
+            self._settings_section_subtitles.append(subtitle_label)
+            return section, section_layout
+
+        identity_section, identity_section_layout = create_settings_section(
+            "Устройство и хранение",
+            "Параметры этого экземпляра агента: идентификатор, путь к рабочему конфигу и локальное хранилище.",
+        )
+        connection_section, connection_section_layout = create_settings_section(
+            "Подключение",
+            "Адреса сервера и токен доступа. Здесь всё, что влияет на соединение агента с backend.",
+        )
+        interface_section, interface_section_layout = create_settings_section(
+            "Интерфейс",
+            "Настройки окна, tray и локального UI-моста, через который GUI разговаривает с работающим агентом.",
+        )
+        diagnostics_section, diagnostics_section_layout = create_settings_section(
+            "Диагностика и логи",
+            "Логирование, статус always-on runtime и быстрый доступ к журналам без выхода из окна.",
+        )
+        modules_section, modules_section_layout = create_settings_section(
+            "Модули и безопасность",
+            "Что агент загружает локально, где хранит данные и какие расширенные возможности разрешены.",
+        )
 
         device_group = QGroupBox("Информация об устройстве")
         device_layout = QFormLayout(device_group)
@@ -216,9 +381,9 @@ class MainWindow(QMainWindow):
         self.config_path_hint.setWordWrap(True)
         self.config_path_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
         device_layout.addRow(self.config_path_hint)
-        settings_layout.addWidget(device_group)
+        identity_section_layout.addWidget(device_group)
 
-        server_group = QGroupBox("Сервер")
+        server_group = QGroupBox("Адреса сервера")
         server_form = QFormLayout(server_group)
         self.api_url_input = QLineEdit()
         self.ws_url_input = QLineEdit()
@@ -228,9 +393,9 @@ class MainWindow(QMainWindow):
         server_form.addRow("API URL:", self.api_url_input)
         server_form.addRow("WS URL:", self.ws_url_input)
         server_form.addRow("Интервал reconnect (с):", self.reconnect_spin)
-        settings_layout.addWidget(server_group)
+        connection_section_layout.addWidget(server_group)
 
-        ui_bridge_group = QGroupBox("Локальный UI-мост (только этот компьютер)")
+        ui_bridge_group = QGroupBox("Локальный UI-мост")
         ui_bridge_outer = QVBoxLayout(ui_bridge_group)
         ui_bridge_form = QFormLayout()
         ui_bridge_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -252,16 +417,36 @@ class MainWindow(QMainWindow):
         self.ui_bridge_hint.setWordWrap(True)
         self.ui_bridge_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
         ui_bridge_outer.addWidget(self.ui_bridge_hint)
-        settings_layout.addWidget(ui_bridge_group)
+        interface_section_layout.addWidget(ui_bridge_group)
 
-        runtime_group = QGroupBox("Always-on и логи")
-        runtime_outer = QVBoxLayout(runtime_group)
-        runtime_form = QFormLayout()
-        runtime_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        appearance_group = QGroupBox("Внешний вид")
+        appearance_form = QFormLayout(appearance_group)
+        appearance_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.theme_mode_combo = QComboBox()
+        self.theme_mode_combo.addItem("Светлая", "light")
+        self.theme_mode_combo.addItem("Тёмная", "dark")
+        appearance_form.addRow("Тема интерфейса:", self.theme_mode_combo)
+        interface_section_layout.addWidget(appearance_group)
+
+        tray_group = QGroupBox("Окно и tray")
+        tray_outer = QVBoxLayout(tray_group)
+        tray_form = QFormLayout()
+        tray_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         self.ui_tray_enabled_checkbox = QCheckBox("Включить tray")
         self.ui_minimize_to_tray_checkbox = QCheckBox("Закрытие окна сворачивает в tray")
         self.ui_start_hidden_checkbox = QCheckBox("Запускать окно скрытым в tray")
         self.ui_notifications_checkbox = QCheckBox("Показывать tray-уведомления")
+        tray_form.addRow("", self.ui_tray_enabled_checkbox)
+        tray_form.addRow("", self.ui_minimize_to_tray_checkbox)
+        tray_form.addRow("", self.ui_start_hidden_checkbox)
+        tray_form.addRow("", self.ui_notifications_checkbox)
+        tray_outer.addLayout(tray_form)
+        interface_section_layout.addWidget(tray_group)
+
+        logging_group = QGroupBox("Логи и состояние runtime")
+        logging_outer = QVBoxLayout(logging_group)
+        logging_form = QFormLayout()
+        logging_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         self.logging_level_combo = QComboBox()
         self.logging_console_level_combo = QComboBox()
         for level_name in ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]:
@@ -270,16 +455,12 @@ class MainWindow(QMainWindow):
         self.logging_rotation_input = QLineEdit()
         self.logging_retention_input = QLineEdit()
         self.logging_compression_input = QLineEdit()
-        runtime_form.addRow("", self.ui_tray_enabled_checkbox)
-        runtime_form.addRow("", self.ui_minimize_to_tray_checkbox)
-        runtime_form.addRow("", self.ui_start_hidden_checkbox)
-        runtime_form.addRow("", self.ui_notifications_checkbox)
-        runtime_form.addRow("Уровень файла:", self.logging_level_combo)
-        runtime_form.addRow("Уровень консоли:", self.logging_console_level_combo)
-        runtime_form.addRow("Rotation:", self.logging_rotation_input)
-        runtime_form.addRow("Retention:", self.logging_retention_input)
-        runtime_form.addRow("Compression:", self.logging_compression_input)
-        runtime_outer.addLayout(runtime_form)
+        logging_form.addRow("Уровень файла:", self.logging_level_combo)
+        logging_form.addRow("Уровень консоли:", self.logging_console_level_combo)
+        logging_form.addRow("Rotation:", self.logging_rotation_input)
+        logging_form.addRow("Retention:", self.logging_retention_input)
+        logging_form.addRow("Compression:", self.logging_compression_input)
+        logging_outer.addLayout(logging_form)
         diagnostics_actions = QHBoxLayout()
         self.refresh_runtime_btn = QPushButton("Обновить диагностику")
         self.refresh_runtime_btn.setObjectName("SecondaryButton")
@@ -290,7 +471,7 @@ class MainWindow(QMainWindow):
         self.open_logs_btn.clicked.connect(self._on_open_logs_clicked)
         diagnostics_actions.addWidget(self.open_logs_btn)
         diagnostics_actions.addStretch()
-        runtime_outer.addLayout(diagnostics_actions)
+        logging_outer.addLayout(diagnostics_actions)
         self.runtime_status_label = QLabel("Диагностика ещё не загружена.")
         self.runtime_status_label.setWordWrap(True)
         self.runtime_status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -298,19 +479,19 @@ class MainWindow(QMainWindow):
             f"padding: 8px; background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; "
             f"border-radius: 10px; color: {theme.TEXT_SECONDARY};"
         )
-        runtime_outer.addWidget(self.runtime_status_label)
+        logging_outer.addWidget(self.runtime_status_label)
         self.runtime_logs_view = QPlainTextEdit()
         self.runtime_logs_view.setReadOnly(True)
         self.runtime_logs_view.setMinimumHeight(180)
         self.runtime_logs_view.setPlaceholderText("Последние строки agent.log появятся здесь.")
-        runtime_outer.addWidget(self.runtime_logs_view)
-        settings_layout.addWidget(runtime_group)
+        logging_outer.addWidget(self.runtime_logs_view)
+        diagnostics_section_layout.addWidget(logging_group)
 
-        paths_group = QGroupBox("Пути (относительно data_root)")
+        paths_group = QGroupBox("Локальные папки")
         paths_form = QFormLayout(paths_group)
         self.data_dir_input = QLineEdit()
         paths_form.addRow("data_dir:", self.data_dir_input)
-        settings_layout.addWidget(paths_group)
+        identity_section_layout.addWidget(paths_group)
 
         modules_group = QGroupBox("Модули и безопасность")
         modules_form = QFormLayout(modules_group)
@@ -337,9 +518,9 @@ class MainWindow(QMainWindow):
         modules_form.addRow(self.enabled_modules_hint)
         modules_form.addRow("", self.allow_remote_code_checkbox)
         modules_form.addRow("Установленные модули:", self.installed_modules_label)
-        settings_layout.addWidget(modules_group)
+        modules_section_layout.addWidget(modules_group)
 
-        auth_group = QGroupBox("Токен агента")
+        auth_group = QGroupBox("Доступ и токен")
         auth_form = QFormLayout(auth_group)
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Введите новый токен (или оставьте пустым)")
@@ -349,25 +530,20 @@ class MainWindow(QMainWindow):
         auth_form.addRow("Новый токен:", self.token_input)
         auth_form.addRow("", self.clear_token_checkbox)
         auth_form.addRow("", self.token_hint_label)
-        settings_layout.addWidget(auth_group)
+        connection_section_layout.addWidget(auth_group)
 
-        profile_group = QGroupBox("Профиль инициатора")
-        profile_form = QFormLayout(profile_group)
-        self.profile_summary_label = QLabel(self.chat_panel.current_requester_profile_summary())
-        self.profile_summary_label.setWordWrap(True)
-        self.profile_manage_btn = QPushButton("Открыть профили")
-        self.profile_manage_btn.setObjectName("PrimaryButton")
-        self.profile_manage_btn.clicked.connect(self._on_manage_requester_profiles_clicked)
-        profile_form.addRow("Активный профиль:", self.profile_summary_label)
-        profile_form.addRow("", self.profile_manage_btn)
-        settings_layout.addWidget(profile_group)
+        settings_layout.addWidget(identity_section)
+        settings_layout.addWidget(connection_section)
+        settings_layout.addWidget(interface_section)
+        settings_layout.addWidget(diagnostics_section)
+        settings_layout.addWidget(modules_section)
 
         self.settings_status_label = QLabel("")
         self.settings_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
         settings_layout.addWidget(self.settings_status_label)
 
         scroll.setWidget(scroll_content)
-        dlg_root.addWidget(scroll, 1)
+        settings_page_root.addWidget(scroll, 1)
 
         buttons_layout = QHBoxLayout()
         self.test_connection_btn = QPushButton("Проверить соединение")
@@ -385,14 +561,10 @@ class MainWindow(QMainWindow):
         self.restart_agent_btn.clicked.connect(self._on_restart_agent_clicked)
         buttons_layout.addWidget(self.restart_agent_btn)
         buttons_layout.addStretch()
+        settings_page_root.addLayout(buttons_layout)
 
-        close_settings_btn = QPushButton("Закрыть")
-        close_settings_btn.setObjectName("SecondaryButton")
-        close_settings_btn.clicked.connect(self.settings_dialog.reject)
-        buttons_layout.addWidget(close_settings_btn)
-        dlg_root.addLayout(buttons_layout)
-
-        theme.apply_agent_dialog_theme(self.settings_dialog)
+        theme.apply_agent_dialog_theme(self.settings_page)
+        self.main_content_stack.addWidget(self.settings_page)
 
         self.api_url_input.textChanged.connect(self._on_settings_field_changed)
         self.ws_url_input.textChanged.connect(self._on_settings_field_changed)
@@ -405,6 +577,7 @@ class MainWindow(QMainWindow):
         self.ui_minimize_to_tray_checkbox.toggled.connect(self._on_settings_field_changed)
         self.ui_start_hidden_checkbox.toggled.connect(self._on_settings_field_changed)
         self.ui_notifications_checkbox.toggled.connect(self._on_settings_field_changed)
+        self.theme_mode_combo.currentIndexChanged.connect(self._on_theme_mode_changed)
         self.logging_level_combo.currentIndexChanged.connect(self._on_settings_field_changed)
         self.logging_console_level_combo.currentIndexChanged.connect(self._on_settings_field_changed)
         self.logging_rotation_input.textChanged.connect(self._on_settings_field_changed)
@@ -418,30 +591,134 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_label = QLabel("")
-        self.status_label.setStyleSheet(
-            f"padding: 6px 12px; border-radius: 999px; background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-weight: 700;"
+        self.footer_status_block = QFrame()
+        self.footer_status_block.setObjectName("FooterStatusBlock")
+        self.footer_status_block.setStyleSheet(
+            f"QFrame#FooterStatusBlock {{ background: {theme.current_palette().footer_block_bg}; "
+            f"border: 1px solid {theme.current_palette().footer_block_border}; border-radius: 16px; }}"
         )
-        self.status_bar.addWidget(self.status_label)
+        footer_layout = QHBoxLayout(self.footer_status_block)
+        footer_layout.setContentsMargins(10, 6, 10, 6)
+        footer_layout.setSpacing(10)
+        self.connection_status_btn = QPushButton("Офлайн")
+        self.connection_status_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.connection_status_btn.clicked.connect(self._show_settings_dialog)
+        self.agent_footer_label = QLabel(f"Агент v{AGENT_VERSION}")
+        self.agent_footer_label.setStyleSheet(
+            f"color: {theme.current_palette().footer_label}; font-weight: 700; background: transparent;"
+        )
+        self.agent_footer_meta = QLabel("Подключение и версия")
+        self.agent_footer_meta.setStyleSheet(
+            f"color: {theme.current_palette().footer_label_muted}; background: transparent;"
+        )
+        footer_texts = QVBoxLayout()
+        footer_texts.setContentsMargins(0, 0, 0, 0)
+        footer_texts.setSpacing(0)
+        footer_texts.addWidget(self.agent_footer_label)
+        footer_texts.addWidget(self.agent_footer_meta)
+        self.update_agent_btn = QPushButton("")
+        self.update_agent_btn.setObjectName("SecondaryButton")
+        self.update_agent_btn.clicked.connect(self._on_trigger_update_clicked)
+        self.update_agent_btn.hide()
+        footer_layout.addWidget(self.connection_status_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        footer_layout.addLayout(footer_texts, 1)
+        footer_layout.addWidget(self.update_agent_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.status_bar.addWidget(self.footer_status_block, 1)
 
         self._repair_widget_texts(self)
-        self._repair_widget_texts(self.settings_dialog)
+        self._repair_widget_texts(self.settings_page)
         self._add_log("GUI запущен", "info")
         self._load_device_uuid()
+        self._preview_theme_mode(theme.current_theme_mode())
         self._render_update_status()
+        self._runtime_refresh_timer = QTimer(self)
+        self._runtime_refresh_timer.setInterval(15000)
+        self._runtime_refresh_timer.timeout.connect(lambda: self._queue_runtime_status_refresh(update_panel=False))
+        self._runtime_refresh_timer.start()
         QTimer.singleShot(250, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
 
     def _on_list_navigation_visibility_changed(self, list_mode: bool) -> None:
-        """В режиме чата скрываем панель профиля — область тикета на всю ширину."""
-        if not list_mode:
-            cur = self.body_splitter.sizes()
-            if cur and cur[0] > 0:
-                self._split_sizes_with_profile = list(cur)
-        self.profile_sidebar.setVisible(list_mode)
+        """Возвращаем пользователя к панели тикетов, когда чат просит список."""
         if list_mode:
-            w = max(280, self._split_sizes_with_profile[0] if self._split_sizes_with_profile else 320)
-            rest = max(400, self.body_splitter.width() - w - 12)
-            self.body_splitter.setSizes([w, rest])
+            self._select_sidebar_view("tickets", expand=True)
+        else:
+            self._set_sidebar_selection_state(tickets=True)
+            self.main_content_stack.setCurrentWidget(self.chat_panel)
+
+    def _set_sidebar_expanded(self, expanded: bool) -> None:
+        self._sidebar_expanded = bool(expanded)
+        target_width = self._sidebar_content_width if self._sidebar_expanded else 84
+        self.sidebar_shell.setMinimumWidth(target_width)
+        self.sidebar_shell.setMaximumWidth(target_width)
+        sizes = self.body_splitter.sizes()
+        total = sum(sizes) if sizes else self.width()
+        chat_width = max(640, total - target_width - 12)
+        self.body_splitter.setSizes([target_width, chat_width])
+        self.sidebar_toggle_btn.setToolTip(
+            "Свернуть функции" if self._sidebar_expanded else "Развернуть функции"
+        )
+        self.sidebar_title_label.setVisible(self._sidebar_expanded)
+        self.sidebar_subtitle_label.setVisible(self._sidebar_expanded)
+        self._refresh_sidebar_labels()
+
+    def _toggle_sidebar_expanded(self) -> None:
+        self._set_sidebar_expanded(not self._sidebar_expanded)
+
+    def _refresh_sidebar_labels(self) -> None:
+        profile_summary = self.chat_panel.current_requester_profile_summary().strip()
+        profile_line = profile_summary if profile_summary else "Профиль не выбран"
+        if self._sidebar_expanded:
+            self.sidebar_create_ticket_btn.setText("+  Создать тикет")
+            self.sidebar_tickets_btn.setText("🗂  Тикеты")
+            self.sidebar_profile_btn.setText(f"👤  Профиль инициатора\n{profile_line}")
+            self.sidebar_settings_btn.setText("⚙  Настройки")
+            self.sidebar_profile_btn.setMinimumHeight(72)
+        else:
+            self.sidebar_create_ticket_btn.setText("+")
+            self.sidebar_tickets_btn.setText("🗂")
+            self.sidebar_profile_btn.setText("👤")
+            self.sidebar_settings_btn.setText("⚙")
+            self.sidebar_profile_btn.setMinimumHeight(48)
+
+    def _set_sidebar_selection_state(
+        self,
+        *,
+        settings: bool = False,
+        tickets: bool = False,
+        profile: bool = False,
+    ) -> None:
+        self.sidebar_settings_btn.setChecked(settings)
+        self.sidebar_tickets_btn.setChecked(tickets)
+        self.sidebar_profile_btn.setChecked(profile)
+
+    def _on_create_ticket_from_menu(self) -> None:
+        self._select_sidebar_view("create", expand=True)
+        asyncio.create_task(self.ticket_create_page.async_prepare())
+
+    def _select_sidebar_view(self, view_name: str, *, expand: bool) -> None:
+        self._active_sidebar_view = view_name
+        if expand:
+            self._set_sidebar_expanded(True)
+        if view_name == "tickets":
+            self._set_sidebar_selection_state(tickets=True)
+            self.main_content_stack.setCurrentWidget(self.tickets_sidebar)
+            self.chat_panel._refresh_ticket_list_async()
+        elif view_name == "profile":
+            self._set_sidebar_selection_state(profile=True)
+            self.main_content_stack.setCurrentWidget(self.profile_sidebar)
+            self.profile_sidebar.refresh_from_panel()
+        elif view_name == "create":
+            self._set_sidebar_selection_state()
+            self.main_content_stack.setCurrentWidget(self.ticket_create_page)
+        elif view_name == "settings":
+            self._set_sidebar_selection_state(settings=True)
+            self.main_content_stack.setCurrentWidget(self.settings_page)
+        else:
+            self._set_sidebar_selection_state()
+
+    def _on_ticket_created_from_wizard(self, _ticket_id: str) -> None:
+        self._set_sidebar_selection_state(tickets=True)
+        self.main_content_stack.setCurrentWidget(self.chat_panel)
 
     def _add_log(self, message: str, level: str = "info"):
         """
@@ -456,35 +733,17 @@ class MainWindow(QMainWindow):
         return
 
     def _show_settings_dialog(self):
-        """Открывает диалог настроек."""
+        """Открывает страницу настроек."""
+        self._select_sidebar_view("settings", expand=True)
         self._settings_form_loaded = False
         self._settings_snapshot = None
         self._load_device_uuid()
-        self.profile_summary_label.setText(self.chat_panel.current_requester_profile_summary())
         self._render_profile_status()
         self._set_settings_status("Загрузка настроек...", error=False)
         QTimer.singleShot(0, lambda: asyncio.create_task(self._async_load_settings()))
-        self.settings_dialog.exec()
-
-    def _on_manage_requester_profiles_clicked(self):
-        self.chat_panel.open_profile_manager()
-        self.profile_summary_label.setText(self.chat_panel.current_requester_profile_summary())
-        self._render_profile_status()
 
     def _render_profile_status(self) -> None:
-        has_profile = bool(self.chat_panel.has_active_profile())
-        if has_profile:
-            text = f"Профиль: {self.chat_panel.current_requester_profile_summary()}"
-            bg = "#e0ead8"
-            fg = "#2d4a22"
-        else:
-            text = "Профиль не выбран (обязательно)"
-            bg = "#f5e4e0"
-            fg = "#8b2c1a"
-        self.profile_top_status.setText(self._repair_text(text))
-        self.profile_top_status.setStyleSheet(
-            f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
-        )
+        self._refresh_sidebar_labels()
 
     def _ui_bridge_host_port(self) -> tuple[str, int]:
         """Адрес локального UiApiServer — из актуального get_config().ui (как при bind в ws_agent)."""
@@ -521,6 +780,139 @@ class MainWindow(QMainWindow):
         self.test_connection_btn.setEnabled(enabled)
         self.save_settings_btn.setEnabled(enabled)
         self.restart_agent_btn.setEnabled(enabled)
+
+    def _apply_settings_page_theme(self) -> None:
+        self.settings_header.setStyleSheet(
+            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent; padding: 4px 6px;"
+        )
+        self.settings_subtitle.setStyleSheet(
+            f"font-size: 11px; color: {theme.TEXT_MUTED}; background: transparent; padding: 0 6px 4px 6px;"
+        )
+        for section in self._settings_sections:
+            section.setStyleSheet(
+                f"QFrame {{ background: {theme.BG_CARD_ALT}; border: 1px solid {theme.BORDER_SOFT}; border-radius: 22px; }}"
+            )
+        for label in self._settings_section_titles:
+            label.setStyleSheet(
+                f"font-size: 15px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+            )
+        for label in self._settings_section_subtitles:
+            label.setStyleSheet(
+                f"font-size: 11px; color: {theme.TEXT_MUTED}; background: transparent;"
+            )
+        self.device_uuid_label.setStyleSheet(
+            f"font-family: monospace; font-size: 13px; padding: 8px; "
+            f"background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; border-radius: 10px; "
+            f"color: {theme.TEXT_PRIMARY};"
+        )
+        self.config_path_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.ui_bridge_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.runtime_status_label.setStyleSheet(
+            f"padding: 8px; background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; "
+            f"border-radius: 10px; color: {theme.TEXT_SECONDARY};"
+        )
+        self.installed_modules_label.setStyleSheet(
+            f"font-family: Consolas, 'Courier New', monospace; font-size: 11px; padding: 8px; "
+            f"background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; border-radius: 10px; "
+            f"color: {theme.TEXT_SECONDARY};"
+        )
+        self.enabled_modules_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.token_hint_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
+        if not self.settings_status_label.text():
+            self.settings_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
+
+    def _preview_theme_mode(self, mode: str) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_application_theme(app, mode)
+        self.centralWidget().setStyleSheet(f"background: {theme.BG_PAGE};")
+        self.title_label.setStyleSheet(
+            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+        )
+        self.sidebar_shell.setStyleSheet(
+            "QFrame#AgentSidebarShell {"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {theme.current_palette().sidebar_shell_bg}, stop:1 {theme.current_palette().sidebar_shell_bg_alt});"
+            " border-radius: 24px;"
+            f" border: 1px solid {theme.current_palette().sidebar_border};"
+            "}"
+            "QLabel#SidebarTitle {"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-size: 13px;"
+            " font-weight: 700;"
+            " background: transparent;"
+            "}"
+            "QLabel#SidebarCaption {"
+            f" color: {theme.current_palette().sidebar_text_muted};"
+            " font-size: 10px;"
+            " font-weight: 600;"
+            " letter-spacing: 0.08em;"
+            " background: transparent;"
+            "}"
+            "QToolButton#SidebarToggleButton {"
+            f" background: {theme.current_palette().sidebar_nav_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
+            " border-radius: 14px;"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-size: 18px;"
+            " font-weight: 700;"
+            " min-width: 42px;"
+            " min-height: 42px;"
+            "}"
+            f"QToolButton#SidebarToggleButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
+            "QPushButton#SidebarActionButton {"
+            " text-align: left;"
+            " padding: 12px 14px;"
+            " border-radius: 16px;"
+            f" background: {theme.current_palette().sidebar_action_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_action_border};"
+            f" color: {theme.current_palette().sidebar_action_text};"
+            " font-weight: 800;"
+            "}"
+            f"QPushButton#SidebarActionButton:hover {{ background: {theme.current_palette().primary_btn_hover}; }}"
+            "QPushButton#SidebarNavButton {"
+            " text-align: left;"
+            " padding: 12px 14px;"
+            " border-radius: 16px;"
+            f" background: {theme.current_palette().sidebar_nav_bg};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
+            f" color: {theme.current_palette().sidebar_text};"
+            " font-weight: 700;"
+            "}"
+            f"QPushButton#SidebarNavButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
+            "QPushButton#SidebarNavButton:checked {"
+            f" background: {theme.current_palette().sidebar_nav_bg_selected};"
+            f" border: 1px solid {theme.current_palette().sidebar_nav_border_selected};"
+            "}"
+        )
+        self.footer_status_block.setStyleSheet(
+            f"QFrame#FooterStatusBlock {{ background: {theme.current_palette().footer_block_bg}; "
+            f"border: 1px solid {theme.current_palette().footer_block_border}; border-radius: 16px; }}"
+        )
+        self.agent_footer_label.setStyleSheet(
+            f"color: {theme.current_palette().footer_label}; font-weight: 700; background: transparent;"
+        )
+        self.agent_footer_meta.setStyleSheet(
+            f"color: {theme.current_palette().footer_label_muted}; background: transparent;"
+        )
+        self.update_agent_btn.setStyleSheet(
+            f"border: 1px solid {theme.BORDER}; border-radius: 12px; background: {theme.BG_INPUT}; "
+            f"color: {theme.TEXT_PRIMARY}; padding: 8px 14px; font-weight: 700;"
+        )
+        self.chat_panel.setStyleSheet(theme.chat_panel_stylesheet())
+        if hasattr(self.chat_panel, "refresh_theme"):
+            self.chat_panel.refresh_theme()
+        self.profile_sidebar.setStyleSheet(theme.profile_sidebar_stylesheet())
+        self.tickets_sidebar.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
+        if hasattr(self.tickets_sidebar, "refresh_theme"):
+            self.tickets_sidebar.refresh_theme()
+        self.ticket_create_page.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
+        if hasattr(self.ticket_create_page, "refresh_theme"):
+            self.ticket_create_page.refresh_theme()
+        theme.apply_agent_dialog_theme(self.settings_page)
+        self._apply_settings_page_theme()
+        self._render_connection_status()
+        self._render_update_status()
+        self._refresh_sidebar_labels()
 
     def _show_nonblocking_message(
         self,
@@ -589,6 +981,7 @@ class MainWindow(QMainWindow):
                     "minimize_to_tray": bool(self.ui_minimize_to_tray_checkbox.isChecked()),
                     "start_hidden": bool(self.ui_start_hidden_checkbox.isChecked()),
                     "notifications_enabled": bool(self.ui_notifications_checkbox.isChecked()),
+                    "theme_mode": str(self.theme_mode_combo.currentData() or "light"),
                 },
             }
         }
@@ -623,77 +1016,106 @@ class MainWindow(QMainWindow):
         else:
             self._set_settings_status("Изменений нет.", error=False)
 
-    async def _async_ui_request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _on_theme_mode_changed(self, *_args) -> None:
+        if self._theme_combo_sync_in_progress:
+            return
+        self._preview_theme_mode(str(self.theme_mode_combo.currentData() or "light"))
+        self._on_settings_field_changed()
+
+    async def _async_ui_request(
+        self,
+        method: str,
+        path: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        timeout_sec: float = 10,
+    ) -> Dict[str, Any]:
         url = self._settings_api_url(path)
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(total=timeout_sec)
         kw: Dict[str, Any] = {}
         if payload is not None and method.upper() != "GET":
             kw["json"] = payload
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(
-                method.upper(),
-                url,
-                headers={"Accept": "application/json"},
-                **kw,
-            ) as resp:
-                text = await resp.text()
-                try:
-                    data = json.loads(text) if text.strip() else {}
-                except json.JSONDecodeError:
-                    snippet = (text or "").strip().replace("\n", " ")[:280]
-                    hint = ""
-                    if resp.status == 404 and ("<!DOCTYPE" in text or "File not found" in text):
-                        hint = (
-                            f" Запрос: {url}. На этом адресе нет /ui/settings у pc_agent "
-                            f"(нужен запущенный UiApiServer на ui.host/ui.port из data_root/settings.yaml)."
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.request(
+                    method.upper(),
+                    url,
+                    headers={"Accept": "application/json"},
+                    **kw,
+                ) as resp:
+                    text = await resp.text()
+                    try:
+                        data = json.loads(text) if text.strip() else {}
+                    except json.JSONDecodeError:
+                        snippet = (text or "").strip().replace("\n", " ")[:280]
+                        hint = ""
+                        if resp.status == 404 and ("<!DOCTYPE" in text or "File not found" in text):
+                            hint = (
+                                f" Запрос: {url}. На этом адресе нет /ui/settings у pc_agent "
+                                f"(нужен запущенный UiApiServer на ui.host/ui.port из data_root/settings.yaml)."
+                            )
+                        logger.error("Ответ UI-моста не JSON: HTTP {} — {}{}", resp.status, snippet, hint)
+                        raise RuntimeError(
+                            f"Ожидался JSON от локального моста (HTTP {resp.status}).{hint or ' Проверьте порт и процесс ws_agent.'}"
                         )
-                    logger.error("Ответ UI-моста не JSON: HTTP {} — {}{}", resp.status, snippet, hint)
-                    raise RuntimeError(
-                        f"Ожидался JSON от локального моста (HTTP {resp.status}).{hint or ' Проверьте порт и процесс ws_agent.'}"
-                    )
-                if resp.status >= 400:
-                    error = data.get("error") if isinstance(data, dict) else None
-                    raise Exception(str(error or text or f"HTTP {resp.status}"))
-                if not isinstance(data, dict):
-                    return {"status": "ok", "result": data}
-                return data
+                    if resp.status >= 400:
+                        error = data.get("error") if isinstance(data, dict) else None
+                        raise Exception(str(error or text or f"HTTP {resp.status}"))
+                    if not isinstance(data, dict):
+                        return {"status": "ok", "result": data}
+                    return data
+        except asyncio.TimeoutError as exc:
+            logger.error(f"Таймаут UI-запроса: method={method} path={path} timeout={timeout_sec}s")
+            raise RuntimeError(f"Локальный UI-мост не ответил за {timeout_sec:.0f} сек.") from exc
 
     def _on_refresh_runtime_clicked(self) -> None:
         asyncio.create_task(self._async_load_runtime_diagnostics())
+
+    def _queue_runtime_status_refresh(self, *, update_panel: bool) -> None:
+        if not self._bridge_connected or self._runtime_status_refresh_in_flight:
+            return
+        asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=update_panel))
 
     def _render_update_status(self) -> None:
         snapshot = self._update_status_snapshot or {}
         version = str(snapshot.get("agent_version") or AGENT_VERSION)
         is_release = bool(snapshot.get("is_release"))
-        release_channel = str(snapshot.get("release_channel") or ("stable" if is_release else "non_release"))
         update_available = bool(snapshot.get("update_available"))
         recommended_version = str(snapshot.get("recommended_version") or "").strip()
-        error_message = str(snapshot.get("update_status_error") or "").strip()
+        comparison = str(snapshot.get("comparison") or "unknown").strip()
+        recommendation_source = str(snapshot.get("recommendation_source") or "none").strip()
+        assigned_rollout = snapshot.get("assigned_rollout") if isinstance(snapshot.get("assigned_rollout"), dict) else None
+        assigned_version = str((assigned_rollout or {}).get("version") or "").strip()
 
-        if is_release:
-            badge_text = f"Release • {version}"
-            bg = "#dcfce7"
-            fg = "#166534"
-        else:
-            badge_text = f"Non-release ({release_channel}) • {version}"
-            bg = "#fef3c7"
-            fg = "#b45309"
-        if error_message:
-            badge_text = f"{badge_text} • update: {error_message}"
-        self.release_badge.setText(self._repair_text(badge_text))
-        self.release_badge.setStyleSheet(
-            f"padding: 6px 10px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
-        )
+        version_text = f"Агент v{version}"
+        if not is_release:
+            version_text = f"{version_text} • test build"
+        self.agent_footer_label.setText(self._repair_text(version_text))
 
         if update_available and recommended_version:
-            self.update_agent_btn.setText(self._repair_text(f"Обновить до {recommended_version}"))
-            self.update_agent_btn.setEnabled(True)
-        elif not is_release:
-            self.update_agent_btn.setText("Проверить release update")
+            if comparison == "recommended_release_is_older":
+                button_text = f"Откатить до {recommended_version}"
+            elif recommendation_source == "assigned_rollout":
+                button_text = f"Привести к {recommended_version}"
+            else:
+                button_text = f"Обновить до {recommended_version}"
+            self.update_agent_btn.setText(self._repair_text(button_text))
             self.update_agent_btn.setEnabled(True)
         else:
-            self.update_agent_btn.setText("Release актуален")
+            self.update_agent_btn.setText("")
             self.update_agent_btn.setEnabled(False)
+
+        target_version = assigned_version or recommended_version
+        if self.update_agent_btn.text():
+            self.update_agent_btn.show()
+            self.agent_footer_meta.setText(
+                self._repair_text(f"Доступно действие для версии {target_version or version}")
+            )
+        else:
+            self.update_agent_btn.hide()
+            self.agent_footer_meta.setText(
+                self._repair_text("Релиз актуален" if is_release else "Подключён тестовый билд")
+            )
 
     def _apply_runtime_status_snapshot(self, runtime: Dict[str, Any], *, update_panel: bool) -> None:
         self._update_status_snapshot = {
@@ -705,6 +1127,9 @@ class MainWindow(QMainWindow):
             "recommended_channel": runtime.get("recommended_channel"),
             "recommended_reason": runtime.get("recommended_reason"),
             "recommended_build": runtime.get("recommended_build"),
+            "comparison": runtime.get("comparison"),
+            "recommendation_source": runtime.get("recommendation_source"),
+            "assigned_rollout": runtime.get("assigned_rollout"),
             "update_status_error": runtime.get("update_status_error"),
             "update_checked_at": runtime.get("update_checked_at"),
         }
@@ -719,6 +1144,13 @@ class MainWindow(QMainWindow):
         recommended_line = f"Recommended: {runtime.get('recommended_version') or '—'} / {runtime.get('recommended_channel') or '—'}"
         if runtime.get("recommended_reason"):
             recommended_line = f"{recommended_line} / {runtime.get('recommended_reason')}"
+        if runtime.get("comparison"):
+            recommended_line = f"{recommended_line} / {runtime.get('comparison')}"
+        rollout = runtime.get("assigned_rollout") if isinstance(runtime.get("assigned_rollout"), dict) else {}
+        rollout_line = (
+            f"Server rollout: {rollout.get('target', '—')} / {rollout.get('channel', '—')} / {rollout.get('version', '—')}"
+            if rollout else "Server rollout: —"
+        )
         summary_lines = [
             f"Device ID: {runtime.get('device_id', '—')}",
             f"Agent: {runtime.get('agent_version', AGENT_VERSION)}",
@@ -726,6 +1158,8 @@ class MainWindow(QMainWindow):
             release_line,
             f"Update available: {'yes' if runtime.get('update_available') else 'no'}",
             recommended_line,
+            f"Recommendation source: {runtime.get('recommendation_source', '—')}",
+            rollout_line,
             f"Changed at: {runtime.get('connection_changed_at', '—')}",
             f"Uptime: {runtime.get('uptime_seconds', '—')} сек",
             f"UI bridge: {'up' if runtime.get('ui_bridge_running') else 'down'}",
@@ -733,6 +1167,27 @@ class MainWindow(QMainWindow):
             f"Log level: {log_runtime.get('level', '—')} (console {log_runtime.get('console_level', '—')})",
             f"Log file: {log_runtime.get('file', '—')}",
         ]
+        if runtime.get("pending_update_version"):
+            summary_lines.append(
+                f"Pending update: {runtime.get('pending_update_version')} / op {runtime.get('pending_update_operation_id') or '—'}"
+            )
+        if runtime.get("pending_update_received_at"):
+            summary_lines.append(f"Pending received: {runtime.get('pending_update_received_at')}")
+        if runtime.get("pending_update_reason"):
+            summary_lines.append(f"Pending reason: {runtime.get('pending_update_reason')}")
+        if runtime.get("last_applied_update_version"):
+            summary_lines.append(
+                f"Last applied: {runtime.get('last_applied_update_version')} at {runtime.get('last_applied_update_at') or '—'}"
+            )
+        if runtime.get("last_failed_update_version"):
+            failure_line = (
+                f"Last failed: {runtime.get('last_failed_update_version')} at {runtime.get('last_failed_update_at') or '—'}"
+            )
+            if runtime.get("last_failed_update_reason"):
+                failure_line = f"{failure_line} / {runtime.get('last_failed_update_reason')}"
+            summary_lines.append(failure_line)
+        if runtime.get("last_failed_update_message"):
+            summary_lines.append(f"Last failed message: {runtime.get('last_failed_update_message')}")
         if runtime.get("update_checked_at"):
             summary_lines.append(f"Update checked: {runtime.get('update_checked_at')}")
         if runtime.get("update_status_error"):
@@ -740,9 +1195,13 @@ class MainWindow(QMainWindow):
         self.runtime_status_label.setText(self._repair_text("\n".join(summary_lines)))
 
     async def _async_refresh_runtime_snapshot(self, *, update_panel: bool) -> Dict[str, Any]:
-        runtime = await self._async_ui_request("GET", "/ui/agent/status")
-        self._apply_runtime_status_snapshot(runtime, update_panel=update_panel)
-        return runtime
+        self._runtime_status_refresh_in_flight = True
+        try:
+            runtime = await self._async_ui_request("GET", "/ui/agent/status")
+            self._apply_runtime_status_snapshot(runtime, update_panel=update_panel)
+            return runtime
+        finally:
+            self._runtime_status_refresh_in_flight = False
 
     async def _async_load_runtime_diagnostics(self) -> None:
         try:
@@ -761,7 +1220,7 @@ class MainWindow(QMainWindow):
     async def _async_trigger_update(self) -> None:
         self.update_agent_btn.setEnabled(False)
         try:
-            response = await self._async_ui_request("POST", "/ui/agent/update", payload={})
+            response = await self._async_ui_request("POST", "/ui/agent/update", payload={}, timeout_sec=30)
             if response.get("status") == "accepted":
                 recommended = response.get("recommendation") or {}
                 version = recommended.get("recommended_version") or "новой версии"
@@ -852,6 +1311,12 @@ class MainWindow(QMainWindow):
         self.ui_minimize_to_tray_checkbox.setChecked(bool(ui_cfg.get("minimize_to_tray", True)))
         self.ui_start_hidden_checkbox.setChecked(bool(ui_cfg.get("start_hidden", False)))
         self.ui_notifications_checkbox.setChecked(bool(ui_cfg.get("notifications_enabled", True)))
+        theme_idx = self.theme_mode_combo.findData(str(ui_cfg.get("theme_mode", "light")))
+        self._theme_combo_sync_in_progress = True
+        self.theme_mode_combo.blockSignals(True)
+        self.theme_mode_combo.setCurrentIndex(theme_idx if theme_idx >= 0 else 0)
+        self.theme_mode_combo.blockSignals(False)
+        self._theme_combo_sync_in_progress = False
         self.logging_level_combo.setCurrentText(str(logging_cfg.get("level", "INFO")))
         self.logging_console_level_combo.setCurrentText(str(logging_cfg.get("console_level", "INFO")))
         self.logging_rotation_input.setText(str(logging_cfg.get("rotation", "20 MB")))
@@ -868,7 +1333,8 @@ class MainWindow(QMainWindow):
         self.token_hint_label.setText(self._repair_text(f"Текущий токен: {token_masked}"))
         self.config_path_label.setText(str(meta.get("config_path", "—")))
         self._runtime_logs_dir = None
-        self._repair_widget_texts(self.settings_dialog)
+        self._repair_widget_texts(self.settings_page)
+        self._apply_settings_page_theme()
 
         self._settings_snapshot = self._collect_settings_payload(include_auth=False).get("settings", {})
         self._settings_form_loaded = True
@@ -934,12 +1400,15 @@ class MainWindow(QMainWindow):
 
             config_changed = bool(result.get("config_changed"))
             token_changed = bool(result.get("token_changed"))
+            requires_restart = bool(result.get("requires_restart"))
             changed_keys = result.get("changed_keys", [])
 
             settings_payload = payload.get("settings", {})
             api_url = settings_payload.get("server", {}).get("api_url")
             if api_url:
                 self._apply_runtime_api_url(str(api_url))
+            ui_payload = settings_payload.get("ui", {})
+            self._preview_theme_mode(str(ui_payload.get("theme_mode") or "light"))
 
             if token_changed:
                 if token_clear:
@@ -956,7 +1425,7 @@ class MainWindow(QMainWindow):
             self._set_settings_status(f"Сохранено. Изменено полей: {changed_count}.", error=False)
 
             should_restart = request_restart
-            if config_changed and not request_restart:
+            if config_changed and requires_restart and not request_restart:
                 restart_msg = "Настройки сохранены. Перезапустить агент сейчас?"
                 if isinstance(changed_keys, list) and any(
                     str(k).startswith("ui.") for k in changed_keys
@@ -1057,37 +1526,47 @@ class MainWindow(QMainWindow):
     
     def _render_connection_status(self) -> None:
         if not self._bridge_connected:
-            text = "GUI ↔ агент: нет связи"
-            bg = "#fee2e2"
-            fg = "#b42318"
+            text = "Офлайн"
+            meta = "Локальный мост недоступен"
+            bg = theme.current_palette().status_offline_bg
+            fg = theme.current_palette().status_offline_fg
         elif self._server_connection_state == "connected":
-            text = "Сервер: подключено"
-            bg = "#dcfce7"
-            fg = "#166534"
+            text = "Онлайн"
+            meta = "Сервер доступен"
+            bg = theme.current_palette().status_online_bg
+            fg = theme.current_palette().status_online_fg
         elif self._server_connection_state in {"connecting", "authorizing", "starting"}:
-            text = "Сервер: подключение..."
-            bg = "#fef3c7"
-            fg = "#b45309"
+            text = "Онлайн"
+            meta = "Идёт подключение"
+            bg = theme.current_palette().status_busy_bg
+            fg = theme.current_palette().status_busy_fg
         elif self._server_connection_state == "auth_required":
-            text = "Сервер: нужен токен"
-            bg = "#fee2e2"
-            fg = "#b42318"
+            text = "Офлайн"
+            meta = "Нужен токен"
+            bg = theme.current_palette().status_offline_bg
+            fg = theme.current_palette().status_offline_fg
         elif self._server_connection_state == "rejected":
-            text = "Сервер: доступ отклонён"
-            bg = "#fee2e2"
-            fg = "#b42318"
+            text = "Офлайн"
+            meta = "Доступ отклонён"
+            bg = theme.current_palette().status_offline_bg
+            fg = theme.current_palette().status_offline_fg
         else:
-            text = "Сервер: отключено"
-            bg = "#e2e8f0"
-            fg = "#475569"
+            text = "Офлайн"
+            meta = "Нет соединения с сервером"
+            bg = theme.current_palette().status_offline_bg
+            fg = theme.current_palette().status_offline_fg
 
         if self._server_connection_detail:
-            text = f"{text} • {self._server_connection_detail}"
+            meta = f"{meta}: {self._server_connection_detail}"
 
-        self.status_label.setText(self._repair_text(text))
-        self.status_label.setStyleSheet(
-            f"padding: 6px 12px; border-radius: 999px; background: {bg}; color: {fg}; font-weight: 700;"
+        self.connection_status_btn.setText(self._repair_text(text))
+        self.connection_status_btn.setStyleSheet(
+            f"padding: 6px 14px; border-radius: 999px; background: {bg}; color: {fg}; "
+            f"font-weight: 800; border: 1px solid {bg};"
         )
+        self.connection_status_btn.setToolTip(self._repair_text("Открыть настройки подключения"))
+        if not self.update_agent_btn.isVisible():
+            self.agent_footer_meta.setText(self._repair_text(meta))
 
     def set_bridge_connected(self, connected: bool) -> None:
         self._bridge_connected = connected
@@ -1100,7 +1579,7 @@ class MainWindow(QMainWindow):
         self._server_connection_detail = detail.strip()
         self._render_connection_status()
         if self._bridge_connected and self._server_connection_state == "connected":
-            QTimer.singleShot(400, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
+            QTimer.singleShot(400, lambda: self._queue_runtime_status_refresh(update_panel=False))
 
     def set_connected(self, connected: bool):
         self.set_connection_state("connected" if connected else "disconnected")

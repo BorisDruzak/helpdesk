@@ -106,6 +106,7 @@ python pc_agent/build_windows_release_v2.py
 
 - Build upload проходит без overwrite существующей версии.
 - Launcher стартует новую версию и сохраняет layout `install_root/versions/<version>/`.
+- При немедленном crash-loop новой версии launcher явно логирует ошибку и откатывает `current.json` на `previous`, а не уходит в бесконечный silent restart.
 - Агент после update реально делает следующий handshake с новой версией.
 - В diagnostics видны `operation_id`, timeline и итоговый статус.
 - Если менялся GUI/`ui_bridge`, поздний SSE-подписчик не теряет последнее `connection_state`.
@@ -123,6 +124,7 @@ python pc_agent/build_windows_release_v2.py
   - `pc_agent/dist/data/updates/pending_update.json`
   - `pc_agent/dist/data/updates/update_history.json`
   - `pc_agent/dist/data/updates/last_failed_pending_update.json`
+  - `pc_agent/dist/data/updates/last_failed_launch.json`
 
 На сервере:
 

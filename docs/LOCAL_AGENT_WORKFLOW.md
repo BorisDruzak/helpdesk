@@ -58,6 +58,29 @@ python scripts/manage_local_agent.py logs test-agent
 python scripts/manage_local_agent.py stop test-agent
 ```
 
+## Scripted automation
+
+После запуска GUI-инстанса можно управлять им без ручных кликов через localhost automation surface:
+
+```powershell
+python scripts/agent_test_driver.py status gui-agent
+python scripts/agent_test_driver.py upsert-profile gui-agent --display-name "QA User" --full-name "QA User" --building HQ --room 101
+python scripts/agent_test_driver.py create-ticket gui-agent --title "Printer issue" --description "Тестовая заявка" --form-key printer --ticket-type incident --form-payload-json "{\"cabinet\":\"101\",\"model\":\"HP\",\"printer_number\":\"PR-1\"}"
+python scripts/agent_test_driver.py send-message gui-agent --text "Проверка ответа от пользователя"
+python scripts/agent_test_driver.py inject-event gui-agent --event-json "{\"event_type\":\"connection_state\",\"data\":{\"state\":\"connected\",\"detail\":\"scripted\"}}"
+python scripts/agent_test_driver.py run gui-agent window.close
+```
+
+For PowerShell-heavy payloads, pass JSON via stdin or `@file` instead of inline quoting:
+
+```powershell
+@{ event_type = "connection_state"; data = @{ state = "connected"; detail = "scripted" } } |
+  ConvertTo-Json -Compress |
+  python scripts/agent_test_driver.py inject-event gui-agent --event-json -
+```
+
+Под капотом driver использует `GET /ui/automation/status` и `POST /ui/automation/run` локального `UiApiServer`, поэтому сценарий остаётся в рамках именованного инстанса и не требует ad-hoc desktop automation.
+
 ## Сервер по умолчанию
 
 По умолчанию локальные инстансы идут на удалённый Linux-сервер:

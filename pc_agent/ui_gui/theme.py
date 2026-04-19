@@ -1,110 +1,463 @@
 """
-Тёплая бежевая палитра для GUI агента (Qt stylesheets и константы).
+Theme tokens and QSS helpers for the desktop agent GUI.
+
+The module exposes semantic color tokens through module attributes like
+`theme.BG_PAGE` and keeps them dynamic so existing widgets can read the
+currently selected light or dark palette without large rewrites.
 """
 
 from __future__ import annotations
 
-# --- Базовые поверхности ---
-BG_PAGE = "#f2ebe0"
-BG_CARD = "#faf6ef"
-BG_CARD_ALT = "#f7f1e8"
-BG_INPUT = "#fffdf9"
-BORDER = "#d4c4b0"
-BORDER_SOFT = "#e5d9ca"
-TEXT_PRIMARY = "#2a2319"
-TEXT_SECONDARY = "#5a5248"
-TEXT_MUTED = "#7d7366"
-ACCENT = "#8b6914"
-ACCENT_SOFT = "#c9a227"
-PRIMARY_BTN = "#9a7b4f"
-PRIMARY_BTN_HOVER = "#7f6540"
-PRIMARY_BTN_TEXT = "#fffdf9"
-DANGER_BG = "#f8e8e4"
-DANGER_FG = "#9a3412"
-DANGER_BORDER = "#e7b5a8"
-INFO_BG = "#ebe3d4"
-INFO_FG = "#5c4a2e"
-LINK = "#6b5a3a"
-SELECTION = "#c4a574"
+from dataclasses import dataclass
 
-# Список тикетов
-LIST_ITEM_BG = "#fffdf9"
-LIST_ITEM_BORDER = BORDER_SOFT
-LIST_ITEM_HOVER = "#f0e8dc"
-LIST_ITEM_HOVER_BORDER = "#c9b89a"
-LIST_ITEM_SELECTED_BG = "#e8dcc8"
-LIST_ITEM_SELECTED_BORDER = ACCENT
 
-# Статусы тикетов (fg, bg) — приглушённые тёплые тона
-STATUS_COLORS_WARM: dict[str, tuple[str, str]] = {
-    "new": ("#1e4d8c", "#d8e4f5"),
-    "triaged": ("#5b3d7a", "#e8dff2"),
-    "in_progress": ("#1d6b5c", "#d4efe8"),
-    "waiting_on_user": ("#8a5b12", "#f5e9c9"),
-    "waiting_on_vendor": ("#7a4a1a", "#f0e0b8"),
-    "resolved": ("#1f5c45", "#d5ebe0"),
-    "closed": ("#5c564c", "#e8e4de"),
-    "unknown": ("#5c564c", "#e8e4de"),
+@dataclass(frozen=True)
+class ThemePalette:
+    mode: str
+    bg_page: str
+    bg_card: str
+    bg_card_alt: str
+    bg_input: str
+    border: str
+    border_soft: str
+    text_primary: str
+    text_secondary: str
+    text_muted: str
+    accent: str
+    accent_soft: str
+    primary_btn: str
+    primary_btn_hover: str
+    primary_btn_text: str
+    danger_bg: str
+    danger_fg: str
+    danger_border: str
+    info_bg: str
+    info_fg: str
+    link: str
+    selection: str
+    list_item_bg: str
+    list_item_border: str
+    list_item_hover: str
+    list_item_hover_border: str
+    list_item_selected_bg: str
+    list_item_selected_border: str
+    bubble_self_bg: str
+    bubble_self_border: str
+    bubble_self_fg: str
+    bubble_support_bg: str
+    bubble_support_border: str
+    bubble_support_fg: str
+    bubble_event_bg: str
+    bubble_event_border: str
+    bubble_event_fg: str
+    bubble_event_muted: str
+    timeline_scroll_bg: str
+    chat_screen_solid_open: str
+    chat_screen_solid_resolved: str
+    chat_screen_solid_closed: str
+    chat_send_bg: str
+    chat_send_bg_hover: str
+    chat_send_border: str
+    chat_send_text: str
+    sidebar_shell_bg: str
+    sidebar_shell_bg_alt: str
+    sidebar_border: str
+    sidebar_text: str
+    sidebar_text_muted: str
+    sidebar_action_bg: str
+    sidebar_action_border: str
+    sidebar_action_text: str
+    sidebar_nav_bg: str
+    sidebar_nav_bg_hover: str
+    sidebar_nav_bg_selected: str
+    sidebar_nav_border: str
+    sidebar_nav_border_selected: str
+    sidebar_profile_badge_bg: str
+    sidebar_profile_badge_fg: str
+    status_online_bg: str
+    status_online_fg: str
+    status_busy_bg: str
+    status_busy_fg: str
+    status_offline_bg: str
+    status_offline_fg: str
+    footer_block_bg: str
+    footer_block_border: str
+    footer_label: str
+    footer_label_muted: str
+
+
+LIGHT_THEME = ThemePalette(
+    mode="light",
+    bg_page="#f3f7fb",
+    bg_card="#ffffff",
+    bg_card_alt="#eef3f8",
+    bg_input="#ffffff",
+    border="#d6e0ea",
+    border_soft="#e7eef5",
+    text_primary="#17212b",
+    text_secondary="#4c5d70",
+    text_muted="#76879a",
+    accent="#2f6fed",
+    accent_soft="#8ab2ff",
+    primary_btn="#2f6fed",
+    primary_btn_hover="#245ed0",
+    primary_btn_text="#f8fbff",
+    danger_bg="#feeaec",
+    danger_fg="#a53b46",
+    danger_border="#f4c5cb",
+    info_bg="#ebf3ff",
+    info_fg="#264f84",
+    link="#2f6fed",
+    selection="#cbdfff",
+    list_item_bg="#ffffff",
+    list_item_border="#dee8f1",
+    list_item_hover="#f2f7fd",
+    list_item_hover_border="#bdd2ea",
+    list_item_selected_bg="#e5f0ff",
+    list_item_selected_border="#2f6fed",
+    bubble_self_bg="#e8f0ff",
+    bubble_self_border="#c2d7ff",
+    bubble_self_fg="#17212b",
+    bubble_support_bg="#eaf5ef",
+    bubble_support_border="#c4dfcf",
+    bubble_support_fg="#1c3f2d",
+    bubble_event_bg="#f1f5f9",
+    bubble_event_border="#dde6ef",
+    bubble_event_fg="#4c5d70",
+    bubble_event_muted="#76879a",
+    timeline_scroll_bg="#edf2f7",
+    chat_screen_solid_open="#f5f8fc",
+    chat_screen_solid_resolved="#eef7f1",
+    chat_screen_solid_closed="#f1f4f8",
+    chat_send_bg="#2f6fed",
+    chat_send_bg_hover="#245ed0",
+    chat_send_border="#1f54be",
+    chat_send_text="#f8fbff",
+    sidebar_shell_bg="#244c82",
+    sidebar_shell_bg_alt="#1a3963",
+    sidebar_border="rgba(255, 255, 255, 0.12)",
+    sidebar_text="#f7fbff",
+    sidebar_text_muted="rgba(247, 251, 255, 0.74)",
+    sidebar_action_bg="#2f6fed",
+    sidebar_action_border="#79a5ff",
+    sidebar_action_text="#f8fbff",
+    sidebar_nav_bg="rgba(255, 255, 255, 0.08)",
+    sidebar_nav_bg_hover="rgba(255, 255, 255, 0.16)",
+    sidebar_nav_bg_selected="rgba(255, 255, 255, 0.24)",
+    sidebar_nav_border="rgba(255, 255, 255, 0.12)",
+    sidebar_nav_border_selected="rgba(255, 255, 255, 0.28)",
+    sidebar_profile_badge_bg="rgba(255, 255, 255, 0.12)",
+    sidebar_profile_badge_fg="#dfefff",
+    status_online_bg="#dcf4e6",
+    status_online_fg="#1d6c45",
+    status_busy_bg="#e9f1ff",
+    status_busy_fg="#295aa0",
+    status_offline_bg="#ecf1f6",
+    status_offline_fg="#5d6b7a",
+    footer_block_bg="#ffffff",
+    footer_block_border="#d6e0ea",
+    footer_label="#17212b",
+    footer_label_muted="#76879a",
+)
+
+DARK_THEME = ThemePalette(
+    mode="dark",
+    bg_page="#0f141b",
+    bg_card="#161d26",
+    bg_card_alt="#1d2632",
+    bg_input="#0c1117",
+    border="#2b3a4d",
+    border_soft="#213041",
+    text_primary="#eaf1f8",
+    text_secondary="#b4c3d5",
+    text_muted="#7f90a4",
+    accent="#5d9bff",
+    accent_soft="#8fbcff",
+    primary_btn="#5d9bff",
+    primary_btn_hover="#78adff",
+    primary_btn_text="#0f141b",
+    danger_bg="#40262c",
+    danger_fg="#ffbec8",
+    danger_border="#7a4e58",
+    info_bg="#1d2f47",
+    info_fg="#d9e7ff",
+    link="#8fbcff",
+    selection="#234a86",
+    list_item_bg="#141b24",
+    list_item_border="#273547",
+    list_item_hover="#1d2a3a",
+    list_item_hover_border="#3d5878",
+    list_item_selected_bg="#203b61",
+    list_item_selected_border="#5d9bff",
+    bubble_self_bg="#20334d",
+    bubble_self_border="#36557d",
+    bubble_self_fg="#eaf1f8",
+    bubble_support_bg="#18342a",
+    bubble_support_border="#315a49",
+    bubble_support_fg="#d9f3e5",
+    bubble_event_bg="#1a2430",
+    bubble_event_border="#28394d",
+    bubble_event_fg="#b4c3d5",
+    bubble_event_muted="#7f90a4",
+    timeline_scroll_bg="#121922",
+    chat_screen_solid_open="#101720",
+    chat_screen_solid_resolved="#101c16",
+    chat_screen_solid_closed="#161d26",
+    chat_send_bg="#5d9bff",
+    chat_send_bg_hover="#78adff",
+    chat_send_border="#8fbcff",
+    chat_send_text="#0f141b",
+    sidebar_shell_bg="#152333",
+    sidebar_shell_bg_alt="#1b2d43",
+    sidebar_border="rgba(255, 255, 255, 0.10)",
+    sidebar_text="#eef5fb",
+    sidebar_text_muted="rgba(238, 245, 251, 0.70)",
+    sidebar_action_bg="#5d9bff",
+    sidebar_action_border="#8fbcff",
+    sidebar_action_text="#0f141b",
+    sidebar_nav_bg="rgba(255, 255, 255, 0.06)",
+    sidebar_nav_bg_hover="rgba(255, 255, 255, 0.12)",
+    sidebar_nav_bg_selected="rgba(255, 255, 255, 0.18)",
+    sidebar_nav_border="rgba(255, 255, 255, 0.10)",
+    sidebar_nav_border_selected="rgba(255, 255, 255, 0.22)",
+    sidebar_profile_badge_bg="rgba(255, 255, 255, 0.08)",
+    sidebar_profile_badge_fg="#d3e6ff",
+    status_online_bg="#17392b",
+    status_online_fg="#9de0b9",
+    status_busy_bg="#1d2f47",
+    status_busy_fg="#bcd6ff",
+    status_offline_bg="#202a36",
+    status_offline_fg="#bcc8d6",
+    footer_block_bg="#161d26",
+    footer_block_border="#2b3a4d",
+    footer_label="#eaf1f8",
+    footer_label_muted="#7f90a4",
+)
+
+PALETTES = {
+    "light": LIGHT_THEME,
+    "dark": DARK_THEME,
 }
 
-# Пузыри чата
-BUBBLE_SELF_BG = "#e8dfd0"
-BUBBLE_SELF_BORDER = "#c9b89a"
-BUBBLE_SELF_FG = "#2a2319"
-BUBBLE_SUPPORT_BG = "#dde8d4"
-BUBBLE_SUPPORT_BORDER = "#a8bc96"
-BUBBLE_SUPPORT_FG = "#1e3318"
-BUBBLE_EVENT_BG = "#f2ebe3"
-BUBBLE_EVENT_BORDER = BORDER_SOFT
-BUBBLE_EVENT_FG = TEXT_SECONDARY
-BUBBLE_EVENT_MUTED = TEXT_MUTED
+TOKEN_MAP = {
+    "BG_PAGE": "bg_page",
+    "BG_CARD": "bg_card",
+    "BG_CARD_ALT": "bg_card_alt",
+    "BG_INPUT": "bg_input",
+    "BORDER": "border",
+    "BORDER_SOFT": "border_soft",
+    "TEXT_PRIMARY": "text_primary",
+    "TEXT_SECONDARY": "text_secondary",
+    "TEXT_MUTED": "text_muted",
+    "ACCENT": "accent",
+    "ACCENT_SOFT": "accent_soft",
+    "PRIMARY_BTN": "primary_btn",
+    "PRIMARY_BTN_HOVER": "primary_btn_hover",
+    "PRIMARY_BTN_TEXT": "primary_btn_text",
+    "DANGER_BG": "danger_bg",
+    "DANGER_FG": "danger_fg",
+    "DANGER_BORDER": "danger_border",
+    "INFO_BG": "info_bg",
+    "INFO_FG": "info_fg",
+    "LINK": "link",
+    "SELECTION": "selection",
+    "LIST_ITEM_BG": "list_item_bg",
+    "LIST_ITEM_BORDER": "list_item_border",
+    "LIST_ITEM_HOVER": "list_item_hover",
+    "LIST_ITEM_HOVER_BORDER": "list_item_hover_border",
+    "LIST_ITEM_SELECTED_BG": "list_item_selected_bg",
+    "LIST_ITEM_SELECTED_BORDER": "list_item_selected_border",
+    "BUBBLE_SELF_BG": "bubble_self_bg",
+    "BUBBLE_SELF_BORDER": "bubble_self_border",
+    "BUBBLE_SELF_FG": "bubble_self_fg",
+    "BUBBLE_SUPPORT_BG": "bubble_support_bg",
+    "BUBBLE_SUPPORT_BORDER": "bubble_support_border",
+    "BUBBLE_SUPPORT_FG": "bubble_support_fg",
+    "BUBBLE_EVENT_BG": "bubble_event_bg",
+    "BUBBLE_EVENT_BORDER": "bubble_event_border",
+    "BUBBLE_EVENT_FG": "bubble_event_fg",
+    "BUBBLE_EVENT_MUTED": "bubble_event_muted",
+    "TIMELINE_SCROLL_BG": "timeline_scroll_bg",
+    "CHAT_SCREEN_SOLID_OPEN": "chat_screen_solid_open",
+    "CHAT_SCREEN_SOLID_RESOLVED": "chat_screen_solid_resolved",
+    "CHAT_SCREEN_SOLID_CLOSED": "chat_screen_solid_closed",
+    "CHAT_SEND_BG": "chat_send_bg",
+    "CHAT_SEND_BG_HOVER": "chat_send_bg_hover",
+    "CHAT_SEND_BORDER": "chat_send_border",
+    "CHAT_SEND_TEXT": "chat_send_text",
+}
 
-# Область таймлайна (только непрозрачные цвета — иначе на Windows «двойной экран» / смаз)
-TIMELINE_SCROLL_BG = "#ebe4d8"
+STATUS_COLOR_TEMPLATES = {
+    "light": {
+        "new": ("#1f5da6", "#d9e8fb"),
+        "triaged": ("#6a4392", "#eaddf7"),
+        "in_progress": ("#1f715d", "#d7efe7"),
+        "waiting_on_user": ("#9a6618", "#f8e8c2"),
+        "waiting_on_vendor": ("#83501b", "#f0debc"),
+        "resolved": ("#255f46", "#d4eadc"),
+        "closed": ("#60594f", "#e7e1d9"),
+        "unknown": ("#60594f", "#e7e1d9"),
+    },
+    "dark": {
+        "new": ("#abd0ff", "#1a3858"),
+        "triaged": ("#d4b6ff", "#37244d"),
+        "in_progress": ("#a9ebd2", "#173b32"),
+        "waiting_on_user": ("#ffd89a", "#49381a"),
+        "waiting_on_vendor": ("#efc998", "#423116"),
+        "resolved": ("#b6e8cb", "#1c3a2b"),
+        "closed": ("#d2d7df", "#2b313a"),
+        "unknown": ("#d2d7df", "#2b313a"),
+    },
+}
 
-# Фон корня экрана чата (без alpha)
-CHAT_SCREEN_SOLID_OPEN = "#e6dfd3"
-CHAT_SCREEN_SOLID_RESOLVED = "#d2e0d6"
-CHAT_SCREEN_SOLID_CLOSED = "#dbd6ce"
-
-# Кнопка «Отправить» в чате — выше контраст
-CHAT_SEND_BG = "#5a4030"
-CHAT_SEND_BG_HOVER = "#6d4f3b"
-CHAT_SEND_BORDER = "#3d2a1f"
-CHAT_SEND_TEXT = "#fffdf8"
-
-# Типографика (pt — стабильнее на Windows, чем наследование QFont с pointSize -1)
-UI_FONT_FAMILY = 'Segoe UI", "Tahoma", "Noto Sans'
+UI_FONT_FAMILY = '"Segoe UI", "Tahoma", "Noto Sans"'
 UI_FONT_PT = 10
 BODY_PT = 11
 TITLE_PT = 12
 BUBBLE_BODY_PT = 14
 
+_current_mode = "light"
+
+
+def normalize_theme_mode(mode: str | None) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized not in PALETTES:
+        return "light"
+    return normalized
+
+
+def current_theme_mode() -> str:
+    return _current_mode
+
+
+def set_theme_mode(mode: str | None) -> str:
+    global _current_mode
+    _current_mode = normalize_theme_mode(mode)
+    return _current_mode
+
+
+def current_palette() -> ThemePalette:
+    return PALETTES[_current_mode]
+
+
+def status_colors() -> dict[str, tuple[str, str]]:
+    return STATUS_COLOR_TEMPLATES[_current_mode]
+
+
+def build_palette():
+    from PySide6.QtGui import QColor, QPalette
+
+    p = current_palette()
+    pal = QPalette()
+    pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_page))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor(p.text_primary))
+    pal.setColor(QPalette.ColorRole.Base, QColor(p.bg_input))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(p.bg_card_alt))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(p.bg_card))
+    pal.setColor(QPalette.ColorRole.ToolTipText, QColor(p.text_primary))
+    pal.setColor(QPalette.ColorRole.Text, QColor(p.text_primary))
+    pal.setColor(QPalette.ColorRole.Button, QColor(p.bg_card))
+    pal.setColor(QPalette.ColorRole.ButtonText, QColor(p.text_primary))
+    pal.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
+    pal.setColor(QPalette.ColorRole.Link, QColor(p.link))
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(p.accent))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor(p.primary_btn_text if p.mode == "dark" else p.text_primary))
+    pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(p.text_muted))
+    try:
+        pal.setColor(QPalette.ColorRole.Accent, QColor(p.accent))
+    except Exception:
+        pass
+    return pal
+
+
+def application_stylesheet() -> str:
+    p = current_palette()
+    return f"""
+        QMainWindow, QWidget {{
+            color: {p.text_primary};
+        }}
+        QStatusBar {{
+            background: transparent;
+            color: {p.footer_label};
+            border-top: 1px solid {p.footer_block_border};
+        }}
+        QStatusBar::item {{
+            border: none;
+        }}
+        QScrollArea {{
+            border: none;
+            background: transparent;
+        }}
+        QScrollBar:vertical {{
+            background: {p.bg_card_alt};
+            width: 12px;
+            margin: 6px 0px 6px 0px;
+            border-radius: 6px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {p.border};
+            min-height: 28px;
+            border-radius: 6px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {p.accent_soft};
+        }}
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical,
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            height: 0px;
+            background: transparent;
+        }}
+        QPlainTextEdit {{
+            background: {p.bg_input};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 14px;
+            selection-background-color: {p.selection};
+            selection-color: {p.text_primary};
+        }}
+    """
+
+
+def apply_application_theme(app, mode: str | None = None) -> str:
+    resolved = set_theme_mode(mode)
+    app.setStyle("Fusion")
+    app.setPalette(build_palette())
+    app.setStyleSheet(application_stylesheet())
+    return resolved
+
+
+def apply_widget_palette(widget) -> None:
+    widget.setAutoFillBackground(True)
+    widget.setPalette(build_palette())
+
 
 def chat_panel_stylesheet() -> str:
+    p = current_palette()
     return f"""
         QWidget#AgentChatPanel {{
-            background-color: {BG_PAGE};
+            background-color: {p.bg_page};
         }}
         QStackedWidget#TicketStack {{
-            background-color: {BG_PAGE};
+            background-color: {p.bg_page};
         }}
         QWidget#TicketListScreen, QWidget#ChatScreenRoot {{
-            background-color: {BG_PAGE};
+            background-color: {p.bg_page};
         }}
         QWidget {{
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background-color: transparent;
         }}
         QGroupBox {{
             font-weight: 700;
             font-size: {TITLE_PT}pt;
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 20px;
             margin-top: 12px;
-            background: {BG_CARD};
+            background: {p.bg_card};
         }}
         QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 4px 8px; }}
         QListWidget {{
@@ -119,14 +472,13 @@ def chat_panel_stylesheet() -> str:
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
             border: none;
-            background: {BG_CARD_ALT};
+            background: {p.bg_card_alt};
             outline: none;
             padding: 4px;
             border-radius: 16px;
         }}
-        /* Viewport — дочерний QWidget; иначе матчится QWidget{{transparent}} и на Windows даёт чёрный/битый фон */
         QListView#TicketsListView > QWidget {{
-            background-color: {BG_CARD_ALT};
+            background-color: {p.bg_card_alt};
         }}
         QListView::item {{
             border: none;
@@ -137,33 +489,34 @@ def chat_panel_stylesheet() -> str:
         QListView::item:selected {{ background: transparent; }}
         QListView::item:hover {{ background: transparent; }}
         QPushButton {{
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 14px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 10px 18px;
             min-height: 22px;
             font-weight: 600;
             font-size: {BODY_PT}pt;
+            color: {p.text_primary};
         }}
-        QPushButton:hover {{ background: {LIST_ITEM_HOVER}; border-color: {LIST_ITEM_HOVER_BORDER}; }}
+        QPushButton:hover {{ background: {p.list_item_hover}; border-color: {p.list_item_hover_border}; }}
         QPushButton#SecondaryButton {{
-            background: {BG_CARD_ALT};
-            color: {TEXT_PRIMARY};
+            background: {p.bg_card_alt};
+            color: {p.text_primary};
             font-weight: 700;
         }}
-        QPushButton#SecondaryButton:hover {{ background: {LIST_ITEM_HOVER}; }}
+        QPushButton#SecondaryButton:hover {{ background: {p.list_item_hover}; }}
         QToolButton {{
-            border: 2px solid {BORDER};
+            border: 2px solid {p.border};
             border-radius: 14px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 10px 14px;
             font-size: 12pt;
             font-weight: 700;
             min-width: 44px;
             min-height: 40px;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
         }}
-        QToolButton:hover {{ background: {LIST_ITEM_HOVER}; border-color: {ACCENT}; }}
+        QToolButton:hover {{ background: {p.list_item_hover}; border-color: {p.accent}; }}
         QToolButton#JumpToLatestButton {{
             min-width: 48px;
             min-height: 48px;
@@ -171,31 +524,31 @@ def chat_panel_stylesheet() -> str:
             max-height: 48px;
             padding: 0px;
             border-radius: 24px;
-            border: 1px solid {PRIMARY_BTN};
-            background: {PRIMARY_BTN};
-            color: {PRIMARY_BTN_TEXT};
+            border: 1px solid {p.primary_btn};
+            background: {p.primary_btn};
+            color: {p.primary_btn_text};
             font-size: 16pt;
             font-weight: 800;
             margin: 0 16px 16px 0;
         }}
         QToolButton#JumpToLatestButton:hover {{
-            background: {PRIMARY_BTN_HOVER};
-            border-color: {PRIMARY_BTN_HOVER};
+            background: {p.primary_btn_hover};
+            border-color: {p.primary_btn_hover};
         }}
         QPushButton#PrimaryButton {{
-            background: {PRIMARY_BTN};
-            color: {PRIMARY_BTN_TEXT};
-            border-color: {PRIMARY_BTN};
+            background: {p.primary_btn};
+            color: {p.primary_btn_text};
+            border-color: {p.primary_btn};
             font-weight: 700;
             font-size: {BODY_PT}pt;
             padding: 12px 22px;
             min-height: 24px;
         }}
-        QPushButton#PrimaryButton:hover {{ background: {PRIMARY_BTN_HOVER}; }}
+        QPushButton#PrimaryButton:hover {{ background: {p.primary_btn_hover}; }}
         QPushButton#ChatSendButton {{
-            background-color: {CHAT_SEND_BG};
-            color: {CHAT_SEND_TEXT};
-            border: 2px solid {CHAT_SEND_BORDER};
+            background-color: {p.chat_send_bg};
+            color: {p.chat_send_text};
+            border: 2px solid {p.chat_send_border};
             font-weight: 800;
             font-size: 12pt;
             padding: 14px 28px;
@@ -203,71 +556,67 @@ def chat_panel_stylesheet() -> str:
             min-height: 28px;
         }}
         QPushButton#ChatSendButton:hover {{
-            background-color: {CHAT_SEND_BG_HOVER};
-            border-color: {CHAT_SEND_BORDER};
+            background-color: {p.chat_send_bg_hover};
+            border-color: {p.chat_send_border};
         }}
         QPushButton#ChatSendButton:pressed {{
-            background-color: {CHAT_SEND_BORDER};
+            background-color: {p.chat_send_border};
         }}
         QPushButton#DangerButton {{
-            background: {DANGER_BG};
-            color: {DANGER_FG};
-            border-color: {DANGER_BORDER};
+            background: {p.danger_bg};
+            color: {p.danger_fg};
+            border-color: {p.danger_border};
             font-weight: 700;
         }}
-        QPushButton#DangerButton:hover {{ background: #f0ddd8; }}
         QPushButton#DangerButton:disabled {{
-            background: {BG_CARD_ALT};
-            color: {TEXT_MUTED};
-            border-color: {BORDER_SOFT};
+            background: {p.bg_card_alt};
+            color: {p.text_muted};
+            border-color: {p.border_soft};
         }}
         QLineEdit, QTextEdit, QComboBox {{
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 14px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 10px 14px;
             font-size: {BODY_PT}pt;
-            selection-background-color: {SELECTION};
-            selection-color: {TEXT_PRIMARY};
+            selection-background-color: {p.selection};
+            selection-color: {p.text_primary};
+            color: {p.text_primary};
         }}
         QLineEdit#ChatInputLine {{
-            border: 2px solid {BORDER};
+            border: 2px solid {p.border};
             padding: 12px 16px;
             font-size: {BUBBLE_BODY_PT}pt;
-            background: {LIST_ITEM_BG};
+            background: {p.list_item_bg};
         }}
-        QLineEdit#ChatInputLine:focus {{ border-color: {ACCENT}; }}
+        QLineEdit#ChatInputLine:focus {{ border-color: {p.accent}; }}
         QScrollArea#TimelineScroll {{
-            background-color: {TIMELINE_SCROLL_BG};
-            border: 1px solid {BORDER};
+            background-color: {p.timeline_scroll_bg};
+            border: 1px solid {p.border};
             border-radius: 22px;
         }}
         QScrollArea#TimelineScroll > QWidget > QWidget {{
-            background-color: {TIMELINE_SCROLL_BG};
+            background-color: {p.timeline_scroll_bg};
         }}
         QScrollArea#TimelineScroll QScrollBar:vertical {{
-            background: #dfd5c7;
+            background: {p.bg_card_alt};
             width: 12px;
             margin: 8px 6px 8px 0px;
             border-radius: 8px;
         }}
         QScrollArea#TimelineScroll QScrollBar::handle:vertical {{
-            background: #a68b6a;
+            background: {p.border};
             min-height: 40px;
             border-radius: 8px;
         }}
         QScrollArea#TimelineScroll QScrollBar::add-line:vertical,
         QScrollArea#TimelineScroll QScrollBar::sub-line:vertical {{ height: 0px; }}
-        QScrollArea#TimelineScroll QScrollBar:vertical:hover,
-        QScrollArea#TimelineScroll QScrollBar:vertical:pressed {{
-            background: #d4c4b0;
-        }}
         QComboBox QAbstractItemView,
         QMenu,
         QMenu#AgentPopupMenu {{
-            background: {BG_INPUT};
-            color: {TEXT_PRIMARY};
-            border: 1px solid {BORDER};
+            background: {p.bg_input};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
             border-radius: 14px;
             outline: none;
             padding: 6px;
@@ -283,49 +632,49 @@ def chat_panel_stylesheet() -> str:
         QComboBox QAbstractItemView::item:selected,
         QMenu::item:selected,
         QMenu#AgentPopupMenu::item:selected {{
-            background: {LIST_ITEM_HOVER};
-            color: {TEXT_PRIMARY};
+            background: {p.list_item_hover};
+            color: {p.text_primary};
         }}
         QMenu::separator,
         QMenu#AgentPopupMenu::separator {{
             height: 1px;
-            background: {BORDER_SOFT};
+            background: {p.border_soft};
             margin: 6px 10px;
         }}
     """
 
 
 def agent_dialog_stylesheet() -> str:
-    """QSS для модальных QDialog (настройки, профили): тёплый фон без «прозрачного» чёрного на Windows."""
+    p = current_palette()
     return f"""
-        QDialog#AgentAppDialog {{
-            background-color: {BG_PAGE};
+        QDialog#AgentAppDialog, QWidget#AgentAppDialog {{
+            background-color: {p.bg_page};
         }}
         QWidget {{
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background-color: transparent;
         }}
         QLabel {{
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background-color: transparent;
         }}
         QGroupBox {{
             font-weight: 700;
             font-size: {TITLE_PT}pt;
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 16px;
             margin-top: 12px;
-            background: {BG_CARD};
+            background: {p.bg_card};
             padding-top: 8px;
         }}
         QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 4px 8px; }}
         QListWidget {{
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
-            border: 1px solid {BORDER};
-            background-color: {BG_CARD_ALT};
+            border: 1px solid {p.border};
+            background-color: {p.bg_card_alt};
             border-radius: 14px;
             padding: 6px;
             outline: none;
@@ -335,110 +684,113 @@ def agent_dialog_stylesheet() -> str:
             border-radius: 8px;
         }}
         QListWidget::item:selected {{
-            background: {LIST_ITEM_SELECTED_BG};
-            color: {TEXT_PRIMARY};
+            background: {p.list_item_selected_bg};
+            color: {p.text_primary};
         }}
         QListWidget::item:hover {{
-            background: {LIST_ITEM_HOVER};
+            background: {p.list_item_hover};
         }}
         QPushButton {{
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 14px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 10px 18px;
             min-height: 22px;
             font-weight: 600;
             font-size: {BODY_PT}pt;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
         }}
-        QPushButton:hover {{ background: {LIST_ITEM_HOVER}; border-color: {LIST_ITEM_HOVER_BORDER}; }}
+        QPushButton:hover {{ background: {p.list_item_hover}; border-color: {p.list_item_hover_border}; }}
         QPushButton#PrimaryButton {{
-            background: {PRIMARY_BTN};
-            color: {PRIMARY_BTN_TEXT};
-            border-color: {PRIMARY_BTN};
+            background: {p.primary_btn};
+            color: {p.primary_btn_text};
+            border-color: {p.primary_btn};
             font-weight: 700;
         }}
-        QPushButton#PrimaryButton:hover {{ background: {PRIMARY_BTN_HOVER}; }}
+        QPushButton#PrimaryButton:hover {{ background: {p.primary_btn_hover}; }}
         QPushButton#SecondaryButton {{
-            background: {BG_CARD_ALT};
-            color: {TEXT_PRIMARY};
+            background: {p.bg_card_alt};
+            color: {p.text_primary};
             font-weight: 700;
         }}
-        QPushButton#SecondaryButton:hover {{ background: {LIST_ITEM_HOVER}; }}
+        QPushButton#SecondaryButton:hover {{ background: {p.list_item_hover}; }}
         QLineEdit, QTextEdit, QComboBox {{
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 14px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 10px 14px;
             font-size: {BODY_PT}pt;
-            selection-background-color: {SELECTION};
-            selection-color: {TEXT_PRIMARY};
-            color: {TEXT_PRIMARY};
+            selection-background-color: {p.selection};
+            selection-color: {p.text_primary};
+            color: {p.text_primary};
         }}
         QSpinBox {{
-            border: 1px solid {BORDER};
+            border: 1px solid {p.border};
             border-radius: 12px;
-            background: {BG_INPUT};
+            background: {p.bg_input};
             padding: 6px 10px;
             min-height: 28px;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
         }}
         QCheckBox {{
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background: transparent;
         }}
         QCheckBox::indicator {{
             width: 18px;
             height: 18px;
             border-radius: 4px;
-            border: 1px solid {BORDER};
-            background: {BG_INPUT};
+            border: 1px solid {p.border};
+            background: {p.bg_input};
         }}
         QCheckBox::indicator:checked {{
-            background: {SELECTION};
-            border-color: {ACCENT};
+            background: {p.selection};
+            border-color: {p.accent};
         }}
     """
 
 
 def apply_agent_dialog_theme(dialog) -> None:
-    """Сплошной фон окна + QSS (важно для QDialog без родительского AgentChatPanel)."""
-    from PySide6.QtGui import QColor, QPalette
-
     dialog.setObjectName("AgentAppDialog")
     dialog.setStyleSheet(agent_dialog_stylesheet())
-    dialog.setAutoFillBackground(True)
-    pal = QPalette(dialog.palette())
-    pal.setColor(QPalette.ColorRole.Window, QColor(BG_PAGE))
-    dialog.setPalette(pal)
+    apply_widget_palette(dialog)
 
 
 def profile_sidebar_stylesheet() -> str:
+    p = current_palette()
     return f"""
         QFrame#ProfileSidebar {{
-            background: {BG_CARD};
-            border: 1px solid {BORDER};
+            background: {p.bg_card};
+            border: 1px solid {p.border};
             border-radius: 18px;
         }}
         QLabel#ProfileSidebarTitle {{
             font-size: 15px;
             font-weight: 700;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background: transparent;
         }}
         QLabel#ProfileFieldLabel {{
             font-size: 11px;
-            color: {TEXT_MUTED};
+            color: {p.text_muted};
             background: transparent;
         }}
         QLabel#ProfileFieldValue {{
             font-size: 13px;
-            color: {TEXT_PRIMARY};
+            color: {p.text_primary};
             background: transparent;
         }}
         QLabel#ProfileHint {{
             font-size: 12px;
-            color: {TEXT_MUTED};
+            color: {p.text_muted};
             background: transparent;
         }}
     """
+
+
+def __getattr__(name: str):
+    if name == "STATUS_COLORS_WARM":
+        return status_colors()
+    if name in TOKEN_MAP:
+        return getattr(current_palette(), TOKEN_MAP[name])
+    raise AttributeError(name)

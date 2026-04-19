@@ -12,6 +12,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import urllib.error
+import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +30,7 @@ DEFAULT_WS_URL = "ws://192.168.100.17:8666/ws"
 DEFAULT_API_URL = "http://192.168.100.17:8666/api"
 DEFAULT_UI_PORT = 8765
 DEFAULT_RELEASE_BUILD_ROOT = WORKSPACE / "pc_agent" / "dist"
+LOCAL_AGENT_MACHINE_ID_NAMESPACE = uuid.UUID("9242c452-fc83-4792-9f9f-ea07a5b13251")
 
 
 def _configure_stdio() -> None:
@@ -128,18 +132,108 @@ def _bootstrap(python_exe: str, reinstall: bool) -> int:
 
 
 def _pid_is_running(pid: int) -> bool:
+    return _get_process_snapshot(pid) is not None
+
+
+def _normalize_process_text(value: str | None) -> str:
+    return str(value or "").strip().strip('"').replace("/", "\\").lower()
+
+
+def _path_hint_matches_command_line(command_line: str | None, path_hint: str | Path | None) -> bool:
+    normalized_hint = _normalize_process_text(str(path_hint or ""))
+    if not normalized_hint:
+        return True
+    normalized_command = _normalize_process_text(command_line)
+    return normalized_hint in normalized_command
+
+
+def _get_process_snapshot(pid: int) -> dict[str, object] | None:
+    if pid <= 0:
+        return None
+    ps_command = (
+        f"$p = Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\"; "
+        "if ($null -eq $p) { exit 1 }; "
+        "$p | Select-Object ProcessId, Name, ExecutablePath, CommandLine | ConvertTo-Json -Compress"
+    )
     result = subprocess.run(
-        ["tasklist", "/FI", f"PID eq {pid}"],
+        ["powershell", "-NoProfile", "-Command", ps_command],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         check=False,
     )
-    return str(pid) in result.stdout
+    if result.returncode != 0:
+        return None
+    raw = str(result.stdout or "").strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "pid": int(payload.get("ProcessId") or pid),
+        "name": str(payload.get("Name") or ""),
+        "executable_path": str(payload.get("ExecutablePath") or ""),
+        "command_line": str(payload.get("CommandLine") or ""),
+    }
 
 
-def _build_env(ws_url: str, api_url: str, auth_token: str | None, ui_port: int | None = None) -> dict[str, str]:
+def _pid_matches_instance(payload: dict | None) -> bool:
+    if not payload:
+        return False
+    pid = int(payload.get("pid") or 0)
+    snapshot = _get_process_snapshot(pid)
+    if not snapshot:
+        return False
+
+    command_line = str(snapshot.get("command_line") or "")
+    executable_path = _normalize_process_text(str(snapshot.get("executable_path") or ""))
+    process_name = _normalize_process_text(str(snapshot.get("name") or ""))
+    start_mode = str(payload.get("start_mode") or "source").strip().lower()
+
+    if start_mode == "launcher":
+        expected_launcher = Path(payload.get("install_root") or "") / "launcher.exe"
+        normalized_expected_launcher = _normalize_process_text(str(expected_launcher))
+        if executable_path and normalized_expected_launcher and executable_path != normalized_expected_launcher:
+            return False
+        if not executable_path and process_name != "launcher.exe":
+            return False
+        return _path_hint_matches_command_line(command_line, payload.get("data_dir"))
+
+    expected_python = _normalize_process_text(str(payload.get("venv_python") or ""))
+    if expected_python and executable_path and executable_path != expected_python:
+        return False
+    if not executable_path and process_name not in {"python.exe", "pythonw.exe"}:
+        return False
+    if "pc_agent.ws_agent" not in command_line.lower():
+        return False
+    return (
+        _path_hint_matches_command_line(command_line, payload.get("data_dir"))
+        and _path_hint_matches_command_line(command_line, payload.get("install_root"))
+    )
+
+
+def _normalize_machine_id(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return str(uuid.UUID(raw)).lower()
+    except ValueError:
+        return str(uuid.uuid5(LOCAL_AGENT_MACHINE_ID_NAMESPACE, raw))
+
+
+def _build_env(
+    ws_url: str,
+    api_url: str,
+    auth_token: str | None,
+    ui_port: int | None = None,
+    machine_id: str | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     env["PC_AGENT_WS_URL"] = ws_url
     env["PC_AGENT_API_URL"] = api_url
@@ -147,7 +241,45 @@ def _build_env(ws_url: str, api_url: str, auth_token: str | None, ui_port: int |
         env["AUTH_TOKEN"] = auth_token
     if ui_port is not None:
         env["PC_AGENT_UI_PORT"] = str(ui_port)
+    if machine_id:
+        env["PC_AGENT_MACHINE_ID"] = machine_id
     return env
+
+
+def _request_json(method: str, url: str, payload: dict[str, object] | None = None) -> tuple[int, dict[str, object]]:
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json; charset=utf-8"
+    request = urllib.request.Request(url, data=body, headers=headers, method=method.upper())
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return exc.code, json.loads(raw) if raw else {"error": f"HTTP {exc.code}"}
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"Request failed for {url}: {exc}") from exc
+
+
+def _issue_agent_token(api_url: str, device_id: str) -> str:
+    status, payload = _request_json(
+        "POST",
+        f"{api_url.rstrip('/')}/login",
+        {"uuid": device_id},
+    )
+    if status != 200 or str(payload.get("status") or "").lower() not in {"success", "ok"}:
+        raise SystemExit(
+            f"Failed to issue local agent token for device_id={device_id}: "
+            f"HTTP {status} {json.dumps(payload, ensure_ascii=False)}"
+        )
+    token = str(payload.get("token") or "").strip()
+    if not token:
+        raise SystemExit(f"Server response did not contain agent token for device_id={device_id}")
+    print(f"[manage_local_agent] issued isolated token for device_id={device_id}")
+    return token
 
 
 def _choose_ui_port(preferred: int = DEFAULT_UI_PORT) -> int:
@@ -185,60 +317,14 @@ def _sync_instance_token_from_primary_install(instance_name: str, instance_data_
     if primary_data_dir == instance_data_dir:
         return False
 
-    primary_db_path = primary_data_dir / "storage.db"
-    if not primary_db_path.exists():
-        return False
-
-    async def _copy_token() -> bool:
-        from pc_agent.auth.token_source import load_auth_token_from_db
-        from pc_agent.core.database import DatabaseManager
-        from pc_agent.core.identity import IdentityManager
-
-        target_identity = IdentityManager(instance_data_dir / "identity.json")
-        target_payload = target_identity.load_or_create()
-        source_identity = IdentityManager(primary_data_dir / "identity.json")
-        source_payload = source_identity.load_or_create()
-
-        target_machine_id = str(target_payload.get("machine_id") or "").strip().lower()
-        source_machine_id = str(source_payload.get("machine_id") or "").strip().lower()
-        if not target_machine_id or target_machine_id != source_machine_id:
-            print(
-                f"[manage_local_agent] skip primary token import for '{instance_name}': "
-                f"machine_id mismatch"
-            )
-            return False
-
-        DatabaseManager._instance = None
-        target_db = DatabaseManager(str(instance_data_dir / "storage.db"))
-        await target_db.init_db()
-        existing_token = await load_auth_token_from_db(
-            target_db,
-            target_identity,
-            migrate_to_primary=False,
-        )
-        if existing_token:
-            return False
-
-        DatabaseManager._instance = None
-        source_db = DatabaseManager(str(primary_db_path))
-        await source_db.init_db()
-        source_token = await load_auth_token_from_db(source_db, source_identity)
-        if not source_token:
-            return False
-
-        DatabaseManager._instance = None
-        target_db = DatabaseManager(str(instance_data_dir / "storage.db"))
-        await target_db.init_db()
-        saved = await target_db.save_auth_token(source_token, target_machine_id)
-        if saved:
-            print(
-                f"[manage_local_agent] imported auth token for '{instance_name}' "
-                f"from primary install ({target_machine_id[:8]}...)"
-            )
-        return saved
-
     try:
-        return asyncio.run(_copy_token())
+        from pc_agent.auth.token_source import import_missing_auth_token_from_data_roots
+
+        return import_missing_auth_token_from_data_roots(
+            primary_data_dir,
+            instance_data_dir,
+            log_message=lambda message: print(f"[manage_local_agent] {message}"),
+        )
     except Exception as exc:
         print(
             f"[manage_local_agent] warning: failed to import token from primary install "
@@ -294,11 +380,18 @@ def _seed_release_install(name: str, build_root: Path) -> str:
     return version
 
 
-def _verify(name: str, ws_url: str, api_url: str, auth_token: str | None, ui_port: int | None = None) -> int:
+def _verify(
+    name: str,
+    ws_url: str,
+    api_url: str,
+    auth_token: str | None,
+    ui_port: int | None = None,
+    machine_id: str | None = None,
+) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
     layout = _ensure_instance_layout(name)
-    env = _build_env(ws_url, api_url, auth_token, ui_port)
+    env = _build_env(ws_url, api_url, auth_token, ui_port, _normalize_machine_id(machine_id))
     cmd = [
         str(VENV_PYTHON),
         "-m",
@@ -323,20 +416,28 @@ def _start(
     ui_port: int | None = None,
     use_launcher: bool = False,
     build_root: Path = DEFAULT_RELEASE_BUILD_ROOT,
+    machine_id: str | None = None,
+    issue_token: bool = False,
 ) -> int:
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
     current = _load_instance(name)
-    if current and current.get("pid") and _pid_is_running(int(current["pid"])):
+    if current and _pid_matches_instance(current):
         raise SystemExit(f"Instance '{name}' is already running with PID {current['pid']}")
 
     layout = _ensure_instance_layout(name)
-    if not auth_token:
+    resolved_machine_id = _normalize_machine_id(machine_id)
+    resolved_auth_token = auth_token
+    if issue_token and not resolved_auth_token:
+        if not resolved_machine_id:
+            resolved_machine_id = _normalize_machine_id(f"local-agent:{name}")
+        resolved_auth_token = _issue_agent_token(api_url, resolved_machine_id)
+    if not resolved_auth_token and not resolved_machine_id:
         _sync_instance_token_from_primary_install(name, layout["data_dir"])
     resolved_ui_port = ui_port if ui_port is not None else _choose_ui_port()
-    env = _build_env(ws_url, api_url, auth_token, ui_port)
+    env = _build_env(ws_url, api_url, resolved_auth_token, ui_port, resolved_machine_id)
     env["PC_AGENT_UI_PORT"] = str(resolved_ui_port)
-    if not gui and not auth_token:
+    if not gui and not resolved_auth_token:
         print("[manage_local_agent] warning: headless start without --auth-token usually exits after token prompt")
     start_mode = "launcher" if use_launcher else "source"
     seeded_version = None
@@ -392,6 +493,7 @@ def _start(
         "ws_url": ws_url,
         "api_url": api_url,
         "ui_port": resolved_ui_port,
+        "machine_id": resolved_machine_id,
         "start_mode": start_mode,
         "seeded_version": seeded_version,
         "build_root": str(build_root) if use_launcher else None,
@@ -415,7 +517,7 @@ def _stop(name: str) -> int:
         print(f"[manage_local_agent] instance '{name}' is not registered")
         return 0
     pid = int(payload.get("pid") or 0)
-    if not pid or not _pid_is_running(pid):
+    if not pid or not _pid_matches_instance(payload):
         print(f"[manage_local_agent] instance '{name}' is already stopped")
         return 0
     print(f"[manage_local_agent] stop '{name}' pid={pid}")
@@ -462,7 +564,7 @@ def _status(name: str | None) -> int:
         if not payload:
             continue
         pid = int(payload.get("pid") or 0)
-        running = _pid_is_running(pid) if pid else False
+        running = _pid_matches_instance(payload) if pid else False
         state = "running" if running else "stopped"
         ui_mode = "gui" if payload.get("gui") else "headless"
         start_mode = payload.get("start_mode") or "source"
@@ -483,6 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--ws-url", default=DEFAULT_WS_URL)
     verify.add_argument("--api-url", default=DEFAULT_API_URL)
     verify.add_argument("--auth-token", default=None)
+    verify.add_argument(
+        "--machine-id",
+        default=None,
+        help="Override PC_AGENT_MACHINE_ID for this instance; accepts UUID or arbitrary stable seed",
+    )
 
     start = subparsers.add_parser("start", help="Start a named local agent instance")
     start.add_argument("name")
@@ -491,6 +598,16 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--ws-url", default=DEFAULT_WS_URL)
     start.add_argument("--api-url", default=DEFAULT_API_URL)
     start.add_argument("--auth-token", default=None)
+    start.add_argument(
+        "--machine-id",
+        default=None,
+        help="Override PC_AGENT_MACHINE_ID for this instance; accepts UUID or arbitrary stable seed",
+    )
+    start.add_argument(
+        "--issue-token",
+        action="store_true",
+        help="Request a fresh agent token for the resolved machine_id via /api/login before startup",
+    )
     start.add_argument("--ui-port", type=int, default=None, metavar="PORT", help="UI API port (default 8765; use if port is busy)")
     start.add_argument("--launcher", action="store_true", help="Run the built Windows launcher.exe instead of source ws_agent")
     start.add_argument("--build-root", default=str(DEFAULT_RELEASE_BUILD_ROOT), help="Path to built launcher.exe and pc_agent/ directory")
@@ -515,7 +632,14 @@ def main() -> int:
     if args.command == "bootstrap":
         return _bootstrap(args.python, args.reinstall)
     if args.command == "verify":
-        return _verify(args.name, args.ws_url, args.api_url, args.auth_token, getattr(args, "ui_port", None))
+        return _verify(
+            args.name,
+            args.ws_url,
+            args.api_url,
+            args.auth_token,
+            getattr(args, "ui_port", None),
+            getattr(args, "machine_id", None),
+        )
     if args.command == "start":
         return _start(
             args.name,
@@ -527,6 +651,8 @@ def main() -> int:
             getattr(args, "ui_port", None),
             getattr(args, "launcher", False),
             Path(args.build_root),
+            getattr(args, "machine_id", None),
+            getattr(args, "issue_token", False),
         )
     if args.command == "stop":
         return _stop(args.name)

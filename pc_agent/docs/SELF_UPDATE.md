@@ -57,6 +57,7 @@ PC Agent поддерживает удалённое обновление чер
 - При завершении дочернего процесса:
   - если **exit code 42** или существует **pending_update.json** — выполняет установку обновления (см. ниже);
   - иначе — перезапуск с backoff (tray-режим).
+- Если только что переключённая версия несколько раз подряд падает сразу после старта, launcher пишет причину в `launcher.log`, сохраняет `last_failed_launch.json`, добавляет failure entry в `update_history.json` и откатывает `current.json` на `previous`.
 - **Установка обновления** (модуль `launcher/installer.py`):
   - распаковка архива в `install_root/versions/_staging/<version>/` (защита от path traversal);
   - backup `storage.db` в `data_root/updates/db_backups/`;
@@ -75,6 +76,7 @@ PC Agent поддерживает удалённое обновление чер
 - `data_root/updates/pending_update.json` — параметры ожидающего обновления.
 - `data_root/updates/update_history.json` — история применённых/неудачных обновлений.
 - `data_root/updates/last_failed_pending_update.json` — последний провалившийся pending payload и текст ошибки.
+- `data_root/updates/last_failed_launch.json` — последний terminal startup crash новой версии после переключения launcher.
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
 - Если update "успешен" по логам агента, но GUI показывает `Сервер: подключение...`, проверьте локальный `ui_bridge`: поздний SSE-подписчик должен сразу получать последнее `connection_state`; см. `pc_agent/ui_bridge/event_bus.py`, `pc_agent/ui_bridge/api_server.py`.

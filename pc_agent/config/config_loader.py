@@ -91,6 +91,15 @@ class UiConfig(BaseModel):
     minimize_to_tray: bool = Field(default=True, description="При закрытии окна сворачивать его в tray")
     start_hidden: bool = Field(default=False, description="Запускать GUI скрытым в tray")
     notifications_enabled: bool = Field(default=True, description="Показывать tray-уведомления")
+    theme_mode: str = Field(default="light", description="Тема GUI: light или dark")
+
+    @field_validator("theme_mode")
+    @classmethod
+    def validate_theme_mode(cls, v: str) -> str:
+        mode = str(v or "").strip().lower()
+        if mode not in {"light", "dark"}:
+            raise ValueError("ui.theme_mode должен быть light или dark")
+        return mode
 
 
 class ModulesConfig(BaseModel):

@@ -5,14 +5,16 @@
 import asyncio
 import aiohttp
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from loguru import logger
 
 from pc_agent.auth.token_source import load_auth_token_from_db
 from pc_agent.core import runtime_paths
+from . import theme
 from .main_window import MainWindow
+from .automation_controller import GuiAutomationController
 from .sse_client import SseClient
 from .token_dialog import TokenDialog
 from .tray_manager import TrayManager
@@ -338,6 +340,7 @@ async def run_gui(
     auth_complete_event: Optional[asyncio.Event] = None,
     *,
     ui_bridge_listening: Optional[bool] = None,
+    ui_api_server: Any = None,
 ):
     """
     Запускает GUI приложение.
@@ -386,11 +389,14 @@ async def run_gui(
     # Получаем конфигурацию для API URL (дефолт — сервер 192.168.100.17, не localhost)
     try:
         from pc_agent.config.config_loader import get_config
-        api_url = get_config().server.api_url
+        cfg = get_config()
+        api_url = cfg.server.api_url
+        theme.apply_application_theme(app, getattr(cfg.ui, "theme_mode", "light"))
     except Exception as e:
         from pc_agent.config.config_loader import ServerConfig
         logger.warning(f"Не удалось загрузить конфиг, используем дефолтный API URL: {e}")
         api_url = ServerConfig().api_url
+        theme.apply_application_theme(app, "light")
     
     # Получаем device UUID для диалога
     try:
@@ -553,6 +559,16 @@ async def run_gui(
             tray_manager.show()
         else:
             tray_manager = None
+
+    automation_controller: Optional[GuiAutomationController] = None
+    if ui_api_server is not None:
+        automation_controller = GuiAutomationController(
+            window,
+            tray_manager=tray_manager,
+            request_exit=exit_agent_from_tray,
+        )
+        ui_api_server.on_get_automation_status = automation_controller.get_status
+        ui_api_server.on_run_automation = automation_controller.run_action
 
     def after_event(event: dict) -> None:
         if not tray_manager:
@@ -735,6 +751,10 @@ async def run_gui(
     async def cleanup_gui_resources() -> None:
         if not window_closed.is_set():
             on_window_closed()
+
+        if ui_api_server is not None:
+            ui_api_server.on_get_automation_status = None
+            ui_api_server.on_run_automation = None
 
         if hasattr(window, "chat_panel") and window.chat_panel:
             cp = window.chat_panel

@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from pc_agent.core.action_trace import ActionTraceRecorder, resolve_action_trace_text_filter
+
+
+def test_action_trace_recorder_writes_and_filters(tmp_path: Path) -> None:
+    recorder = ActionTraceRecorder(tmp_path)
+    context = recorder.context(
+        source="gui_automation",
+        action="ticket.tool.run",
+        category="tool",
+        action_id="action-1",
+        ticket_id="ticket-1",
+        tool_name="screen.collect",
+    )
+    recorder.record(context, stage="start", status="started", summary="tool start", details={"step": 1})
+    recorder.record(context, stage="finish", status="ok", summary="tool done", details={"operation_id": "op-1"})
+
+    rows = recorder.search(limit=10, action_id="action-1")
+    assert len(rows) == 2
+    assert rows[0]["status"] == "ok"
+    assert rows[1]["status"] == "started"
+
+    tool_rows = recorder.search(limit=10, ticket_id="ticket-1", tool_name="screen.collect")
+    assert len(tool_rows) == 2
+    assert all(row["ticket_id"] == "ticket-1" for row in tool_rows)
+
+
+def test_action_trace_text_filter_matches_serialized_details(tmp_path: Path) -> None:
+    recorder = ActionTraceRecorder(tmp_path)
+    context = recorder.context(
+        source="orchestrator",
+        action="consent.decision",
+        category="consent",
+        consent_token="consent-1",
+    )
+    recorder.record(context, stage="response", status="denied", summary="consent denied", details={"reason": "ROLE_NOT_ALLOWED"})
+
+    rows = recorder.search(limit=5, text="role_not_allowed")
+    assert len(rows) == 1
+    assert rows[0]["consent_token"] == "consent-1"
+
+
+def test_resolve_action_trace_text_filter_prefers_structured_ids_over_trace_id() -> None:
+    assert (
+        resolve_action_trace_text_filter(
+            text=None,
+            trace_id="trace-1",
+            operation_id="op-1",
+        )
+        is None
+    )
+    assert (
+        resolve_action_trace_text_filter(
+            text=None,
+            trace_id="trace-1",
+            ticket_id="ticket-1",
+        )
+        is None
+    )
+
+
+def test_resolve_action_trace_text_filter_falls_back_to_trace_id_without_structured_ids() -> None:
+    assert resolve_action_trace_text_filter(text=None, trace_id="trace-1") == "trace-1"
+    assert resolve_action_trace_text_filter(text="explicit", trace_id="trace-1") == "explicit"

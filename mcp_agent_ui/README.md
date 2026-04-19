@@ -22,7 +22,7 @@ pip install -r mcp_agent_ui/requirements.txt
 
 ## Запуск
 
-Сервер работает через stdio (ожидает, что Cursor или другой MCP-клиент запустит процесс и обменивается JSON-RPC по stdin/stdout):
+Сервер работает через stdio (ожидает, что Codex app или другой MCP-клиент запустит процесс и обменивается JSON-RPC по stdin/stdout):
 
 ```bash
 python mcp_agent_ui/server.py
@@ -61,6 +61,6 @@ python -m mcp_agent_ui.server
 
 Подробности эндпоинтов — в `pc_agent/ui_bridge/api_server.py` и `pc_agent/ui_bridge/README.md`.
 
-## Настройка в Cursor
+## Настройка в Codex
 
 См. [docs/MCP_AGENT_UI.md](../docs/MCP_AGENT_UI.md).

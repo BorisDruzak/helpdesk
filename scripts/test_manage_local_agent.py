@@ -157,3 +157,96 @@ def test_sync_instance_token_from_primary_install_skips_machine_id_mismatch(tmp_
     assert copied is False
     if (instance_data / "storage.db").exists():
         assert _active_tokens(instance_data / "storage.db") == []
+
+
+def test_normalize_machine_id_accepts_uuid_and_seed():
+    original = "7A3429EC-1C0B-5495-9AAD-B284F08AE965"
+    assert manage_local_agent._normalize_machine_id(original) == "7a3429ec-1c0b-5495-9aad-b284f08ae965"
+
+    seeded_first = manage_local_agent._normalize_machine_id("qa-launcher-device")
+    seeded_second = manage_local_agent._normalize_machine_id("qa-launcher-device")
+    other_seed = manage_local_agent._normalize_machine_id("qa-source-device")
+
+    assert seeded_first == seeded_second
+    assert seeded_first != other_seed
+
+
+def test_build_env_includes_machine_id_and_auth_token():
+    env = manage_local_agent._build_env(
+        "ws://example/ws",
+        "http://example/api",
+        "secret-token",
+        8878,
+        "7a3429ec-1c0b-5495-9aad-b284f08ae965",
+    )
+
+    assert env["PC_AGENT_WS_URL"] == "ws://example/ws"
+    assert env["PC_AGENT_API_URL"] == "http://example/api"
+    assert env["AUTH_TOKEN"] == "secret-token"
+    assert env["PC_AGENT_UI_PORT"] == "8878"
+    assert env["PC_AGENT_MACHINE_ID"] == "7a3429ec-1c0b-5495-9aad-b284f08ae965"
+
+
+def test_issue_agent_token_returns_token_without_logging_raw_value(monkeypatch):
+    captured = {}
+
+    def _fake_request(method, url, payload=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["payload"] = payload
+        return 200, {"status": "success", "token": "very-secret-token"}
+
+    monkeypatch.setattr(manage_local_agent, "_request_json", _fake_request)
+
+    token = manage_local_agent._issue_agent_token(
+        "http://example/api",
+        "7a3429ec-1c0b-5495-9aad-b284f08ae965",
+    )
+
+    assert token == "very-secret-token"
+    assert captured == {
+        "method": "POST",
+        "url": "http://example/api/login",
+        "payload": {"uuid": "7a3429ec-1c0b-5495-9aad-b284f08ae965"},
+    }
+
+
+def test_status_treats_reused_pid_as_stopped(tmp_path, monkeypatch, capsys):
+    instance_root = tmp_path / "instances"
+    instance_dir = instance_root / "launcher-automation-3111"
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    (instance_dir / "instance.json").write_text(
+        json.dumps(
+            {
+                "name": "launcher-automation-3111",
+                "pid": 19092,
+                "gui": True,
+                "start_mode": "launcher",
+                "ws_url": "ws://192.168.100.17:8666/ws",
+                "data_dir": str(instance_dir / "data"),
+                "install_root": str(instance_dir / "install"),
+                "launcher_log": str(instance_dir / "launcher.log"),
+                "stopped_at": "2026-04-16T16:36:25.271694+00:00",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(manage_local_agent, "INSTANCE_ROOT", instance_root)
+    monkeypatch.setattr(
+        manage_local_agent,
+        "_get_process_snapshot",
+        lambda pid: {
+            "pid": pid,
+            "name": "explorer.exe",
+            "command_line": "C:\\Windows\\Explorer.EXE",
+            "executable_path": "C:\\Windows\\explorer.exe",
+        },
+    )
+
+    exit_code = manage_local_agent._status("launcher-automation-3111")
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "launcher-automation-3111: stopped" in out

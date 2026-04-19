@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Вызов инструмента агента через Admin API (run_tool) из командной строки / Cursor.
+Вызов инструмента агента через Admin API (run_tool) из командной строки / Codex.
 
 Требуется токен админки. Варианты:
   1) ADMIN_TOKEN=... python scripts/admin_run_tool.py ...

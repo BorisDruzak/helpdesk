@@ -15,6 +15,26 @@ SERVER_CODEMAP_PATH = Path("server/docs/CODEMAP.md")
 AGENT_CODEMAP_PATH = Path("pc_agent/docs/CODEMAP.md")
 PLANS_PATH = Path("PLANS.md")
 CODEX_CONFIG_PATH = Path(".codex/config.toml")
+TASK_INTAKE_PATH = Path("scripts/task_intake.py")
+
+SUBAGENTS_PLAYBOOK_PATH = Path(".cursor/rules/subagents-pc-client.mdc")
+NAVIGATION_PLAYBOOK_PATH = Path(".cursor/rules/navigation-tools.mdc")
+RELEASE_PLAYBOOK_PATH = Path(".cursor/rules/release-pc-client.mdc")
+AGENT_UPDATES_PLAYBOOK_PATH = Path(".cursor/rules/agent-updates-pc-client.mdc")
+AGENT_RUNTIME_PLAYBOOK_PATH = Path(".cursor/rules/agent-runtime-pc-client.mdc")
+
+DOCS_SYNC_SKILL_PATH = Path(".cursor/skills/pc-client-docs-sync/SKILL.md")
+MIGRATIONS_SKILL_PATH = Path(".cursor/skills/pc-client-migrations/SKILL.md")
+PLANS_SKILL_PATH = Path(".cursor/skills/pc-client-plans/SKILL.md")
+RELEASE_SKILL_PATH = Path(".cursor/skills/pc-client-release/SKILL.md")
+TESTS_SKILL_PATH = Path(".cursor/skills/pc-client-tests/SKILL.md")
+BROWSER_CHECK_SKILL_PATH = Path(".cursor/skills/pc-client-browser-check/SKILL.md")
+AGENT_UPDATES_SKILL_PATH = Path(".cursor/skills/pc-client-agent-updates/SKILL.md")
+AGENT_RUNTIME_SKILL_PATH = Path(".cursor/skills/pc-client-agent-runtime/SKILL.md")
+
+
+def repo_path(value: str | Path) -> str:
+    return str(value).replace("\\", "/").strip("/")
 
 
 @dataclass(frozen=True)
@@ -26,6 +46,12 @@ class Topic:
     first_files: tuple[str, ...]
     related_docs: tuple[str, ...]
     suggested_commands: tuple[str, ...]
+    mode: str | None = None
+    playbook: str | None = None
+    skills: tuple[str, ...] = ()
+    checks: tuple[str, ...] = ()
+    plan_required: bool = False
+    docs_to_update: tuple[str, ...] = ()
     path_prefixes: tuple[str, ...] = ()
     exact_paths: tuple[str, ...] = ()
 
@@ -36,6 +62,7 @@ class DriftRule:
     title: str
     reason: str
     required_docs: tuple[str, ...]
+    required_artifacts_all: tuple[str, ...] = ()
     path_prefixes: tuple[str, ...] = ()
     exact_paths: tuple[str, ...] = ()
     statuses: tuple[str, ...] = ("A", "D", "M", "R")
@@ -82,6 +109,24 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "handshake"',
             "python scripts/diff_context.py",
         ),
+        mode="Protocol V3 / WS",
+        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+            "python -m pytest pc_agent/tests/ ...",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/PROTOCOL_V3.md",
+            "pc_agent/docs/PROTOCOL_V3.md",
+            "server/docs/COMMAND_RESULT_LIFECYCLE.md",
+            "server/docs/TOOL_CALL_STARTED_INVARIANT.md",
+        ),
         path_prefixes=("server/websocket/",),
         exact_paths=(
             "pc_agent/ws_agent.py",
@@ -116,6 +161,19 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "run_tool" --dir server',
             "python scripts/diff_context.py",
+        ),
+        mode="Tool execution / operations",
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+            "python -m pytest pc_agent/tests/ ...",
+        ),
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/TOOL_CALL_STARTED_INVARIANT.md",
         ),
         path_prefixes=(
             "server/tools/",
@@ -157,6 +215,20 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "auth" --dir server',
             'python scripts/agent_find.py "token" --dir pc_agent',
         ),
+        mode="Auth / token bootstrap",
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+            "python -m pytest pc_agent/tests/ ...",
+        ),
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/SECURITY_AND_AUTH.md",
+            "pc_agent/docs/AUTHENTICATION.md",
+        ),
         path_prefixes=(
             "server/auth/",
             "pc_agent/auth/",
@@ -194,6 +266,18 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "ticket" --dir server',
             'python scripts/agent_find.py "chat" --dir server',
+        ),
+        mode="Tickets / chat / queue",
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+        ),
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            "server/docs/TICKET_SYSTEM.md",
+            "server/docs/CHAT_MESSAGE_CONTRACT.md",
         ),
         path_prefixes=(
             "server/tickets/",
@@ -233,6 +317,22 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "modules" --dir server',
             'python scripts/agent_find.py "module_manager" --dir pc_agent',
+        ),
+        mode="Modules / reconcile",
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+            "python -m pytest pc_agent/tests/ ...",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/MODULES_API.md",
+            "server/docs/MODULES_DRIFT_AND_SNAPSHOTS.md",
+            "pc_agent/docs/MODULES.md",
         ),
         path_prefixes=(
             "server/modules/",
@@ -281,6 +381,23 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
             "GUI check via MCP at http://192.168.100.17:8666/admin",
         ),
+        mode="Release / deploy / web admin",
+        playbook=repo_path(RELEASE_PLAYBOOK_PATH),
+        skills=(
+            repo_path(BROWSER_CHECK_SKILL_PATH),
+            repo_path(RELEASE_SKILL_PATH),
+            repo_path(TESTS_SKILL_PATH),
+        ),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+            "GUI check via MCP at http://192.168.100.17:8666/admin",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+        ),
         path_prefixes=("server/static_pages/",),
         exact_paths=(
             "server/admin.html",
@@ -327,6 +444,20 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "connection_state" --dir pc_agent',
             "python scripts/diff_context.py",
         ),
+        mode="Agent runtime / tray / logs",
+        playbook=repo_path(AGENT_RUNTIME_PLAYBOOK_PATH),
+        skills=(repo_path(AGENT_RUNTIME_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short",
+            "python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+        ),
         path_prefixes=(
             "pc_agent/ui_gui/",
             "pc_agent/ui_bridge/",
@@ -362,6 +493,21 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "tray" --dir pc_agent',
             'python scripts/agent_find.py "runtime_logging" --dir pc_agent',
             "python scripts/manage_local_agent.py status",
+        ),
+        mode="Agent runtime / tray / logs",
+        playbook=repo_path(AGENT_RUNTIME_PLAYBOOK_PATH),
+        skills=(repo_path(AGENT_RUNTIME_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short",
+            "python -m pytest pc_agent/tests/test_runtime_logging.py -v --tb=short",
+            "python scripts/manage_local_agent.py start <name> --gui --ui-port <port>",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
         ),
         exact_paths=(
             "pc_agent/ws_agent.py",
@@ -403,8 +549,138 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "alembic" --dir server',
             'python scripts/agent_find.py "DB_SCHEMA_VERSION" --dir pc_agent',
         ),
+        mode="Database / migrations",
+        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
+        skills=(repo_path(MIGRATIONS_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/ ...",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            "server/docs/DATABASE.md",
+            "pc_agent/docs/DATABASE.md",
+        ),
         path_prefixes=("server/app/db/",),
         exact_paths=("pc_agent/core/database.py",),
+    ),
+    Topic(
+        key="docs_sync",
+        title="Docs + CODEMAP",
+        summary="Routes, API contracts, entrypoints and navigation docs that must stay in sync with code.",
+        aliases=(
+            "route",
+            "routes",
+            "api route",
+            "endpoint",
+            "contract",
+            "contracts",
+            "docs",
+            "documentation",
+            "codemap",
+            "entrypoint",
+            "entrypoints",
+        ),
+        first_files=(
+            "AGENTS.md",
+            "docs/QUICK_LOOKUP.md",
+            "server/docs/CODEMAP.md",
+            "pc_agent/docs/CODEMAP.md",
+        ),
+        related_docs=(
+            "AGENTS.md",
+            "docs/QUICK_LOOKUP.md",
+            "server/docs/CODEMAP.md",
+            "pc_agent/docs/CODEMAP.md",
+            repo_path(DOCS_SYNC_SKILL_PATH),
+        ),
+        suggested_commands=(
+            "python scripts/task_intake.py --task \"add new API route\"",
+            "python scripts/diff_context.py",
+        ),
+        mode="Docs + CODEMAP",
+        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH),),
+        checks=("python scripts/verify_workspace.py",),
+        docs_to_update=(
+            "AGENTS.md",
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+        ),
+        path_prefixes=("docs/", "server/api/", "server/routes/", "server/app/api/"),
+        exact_paths=(
+            "server/routes.py",
+            "server/server.py",
+            "server/config.py",
+            "AGENTS.md",
+        ),
+    ),
+    Topic(
+        key="agent_updates",
+        title="Agent updates / rollout",
+        summary="Launcher builds, self-update, upload, canary rollout and recommended-version behavior.",
+        aliases=(
+            "agent update",
+            "agent updates",
+            "self update",
+            "self-update",
+            "launcher",
+            "rollout",
+            "canary",
+            "recommended build",
+            "recommended version",
+            "update availability",
+        ),
+        first_files=(
+            "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
+            "pc_agent/docs/SELF_UPDATE.md",
+            "server/docs/AGENT_UPDATES_API.md",
+            "pc_agent/version.py",
+        ),
+        related_docs=(
+            repo_path(QUICK_LOOKUP_PATH),
+            "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
+            "pc_agent/docs/SELF_UPDATE.md",
+            "server/docs/AGENT_UPDATES_API.md",
+            repo_path(AGENT_CODEMAP_PATH),
+            repo_path(AGENT_UPDATES_SKILL_PATH),
+        ),
+        suggested_commands=(
+            'python scripts/agent_find.py "launcher" --dir pc_agent',
+            'python scripts/agent_find.py "agent_builds" --dir server',
+            "python scripts/diff_context.py",
+        ),
+        mode="Agent updates / rollout",
+        playbook=repo_path(AGENT_UPDATES_PLAYBOOK_PATH),
+        skills=(repo_path(AGENT_UPDATES_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest pc_agent/tests/ -v --tb=short",
+            "python -m pytest server/tests/test_p0_workbench_update_contracts.py -v --tb=short",
+            "python pc_agent/build_windows_release_v2.py",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
+            "pc_agent/docs/SELF_UPDATE.md",
+            "server/docs/AGENT_UPDATES_API.md",
+        ),
+        path_prefixes=("pc_agent/launcher/",),
+        exact_paths=(
+            "pc_agent/ws_agent.py",
+            "pc_agent/ui_bridge/api_server.py",
+            "pc_agent/ui_gui/main_window.py",
+            "pc_agent/version.py",
+            "server/agents/agent_builds_handlers.py",
+            "server/app/repos/agent_rollout_repo.py",
+        ),
     ),
     Topic(
         key="planning",
@@ -431,6 +707,10 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             "python scripts/verify_workspace.py",
         ),
+        mode="Planning / handoff",
+        skills=(repo_path(PLANS_SKILL_PATH), repo_path(RELEASE_SKILL_PATH)),
+        plan_required=True,
+        docs_to_update=(repo_path(PLANS_PATH),),
         exact_paths=(
             "PLANS.md",
             ".codex/config.toml",
@@ -468,6 +748,21 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/release_server_to_remote.py",
             "python scripts/manage_remote_stack.py status control",
         ),
+        mode="Release / deploy",
+        playbook=repo_path(RELEASE_PLAYBOOK_PATH),
+        skills=(repo_path(RELEASE_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python scripts/run_ci_suite.py",
+            "python scripts/manage_remote_stack.py status control",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            "AGENTS.md",
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(PLANS_PATH),
+            "docs/LOCAL_WORKFLOW.md",
+        ),
         path_prefixes=("scripts/",),
         exact_paths=(),
     ),
@@ -484,6 +779,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "scripts/diff_context.py",
             "scripts/agent_find.py",
             "scripts/docs_drift_check.py",
+            "scripts/task_intake.py",
         ),
         required_docs=(
             "AGENTS.md",
@@ -537,6 +833,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         title="Server entrypoints or routes changed",
         reason="Routes, startup wiring and key server entrypoints are navigation-critical.",
         exact_paths=("server/server.py", "server/routes.py", "server/config.py"),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=("server/docs/CODEMAP.md", "docs/QUICK_LOOKUP.md"),
     ),
     DriftRule(
@@ -551,6 +848,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "server/websocket/command_result_components.py",
             "server/websocket/validator.py",
         ),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "server/docs/PROTOCOL_V3.md",
             "server/docs/COMMAND_RESULT_LIFECYCLE.md",
@@ -569,6 +867,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "pc_agent/core/database.py",
             "pc_agent/core/orchestrator.py",
         ),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "pc_agent/docs/PROTOCOL_V3.md",
             "pc_agent/docs/SENDER.md",
@@ -583,6 +882,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         reason="Auth and token flow changes should stay aligned with security docs.",
         path_prefixes=("server/auth/",),
         exact_paths=("server/app/repos/auth_tokens_repo.py",),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "server/docs/SECURITY_AND_AUTH.md",
             "server/docs/CODEMAP.md",
@@ -595,6 +895,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         reason="Token bootstrap and connection-request flow should stay aligned with agent auth docs.",
         path_prefixes=("pc_agent/auth/",),
         exact_paths=("pc_agent/core/identity.py",),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "pc_agent/docs/AUTHENTICATION.md",
             "pc_agent/docs/CODEMAP.md",
@@ -616,6 +917,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "pc_agent/core/loader.py",
             "pc_agent/core/registry.py",
         ),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "server/docs/MODULES_API.md",
             "server/docs/MODULES_DRIFT_AND_SNAPSHOTS.md",
@@ -631,6 +933,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         reason="Ticket lifecycle and chat contracts should stay discoverable in docs.",
         path_prefixes=("server/tickets/", "server/chat/"),
         exact_paths=("server/api/events.py", "server/api/operations.py"),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=(
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/CHAT_MESSAGE_CONTRACT.md",
@@ -643,6 +946,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         title="Server UI structure changed",
         reason="Added, removed or renamed page files should stay visible in navigation docs.",
         path_prefixes=("server/static_pages/",),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         exact_paths=(
             "server/admin.html",
             "server/admin.js",
@@ -666,13 +970,48 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         path_prefixes=("pc_agent/ui_gui/", "pc_agent/ui_bridge/"),
         exact_paths=("pc_agent/ui_gui/main.py",),
         statuses=("A", "D", "R"),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
         required_docs=("pc_agent/docs/CODEMAP.md", "docs/QUICK_LOOKUP.md"),
     ),
+    DriftRule(
+        key="agent_updates_flow",
+        title="Agent update or rollout flow changed",
+        reason="Launcher, recommended update and rollout logic must stay aligned with update docs and routing metadata.",
+        path_prefixes=("pc_agent/launcher/",),
+        exact_paths=(
+            "pc_agent/ws_agent.py",
+            "pc_agent/ui_bridge/api_server.py",
+            "pc_agent/ui_gui/main_window.py",
+            "pc_agent/version.py",
+            "server/agents/agent_builds_handlers.py",
+            "server/app/repos/agent_rollout_repo.py",
+        ),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
+        required_docs=(
+            "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
+            "pc_agent/docs/SELF_UPDATE.md",
+            "server/docs/AGENT_UPDATES_API.md",
+            "pc_agent/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+        ),
+    ),
+    DriftRule(
+        key="agent_runtime",
+        title="Agent runtime or tray flow changed",
+        reason="Always-on runtime, tray and ui_bridge behavior must stay aligned with runtime docs and routing metadata.",
+        exact_paths=(
+            "pc_agent/core/runtime_logging.py",
+            "pc_agent/ws_agent.py",
+        ),
+        path_prefixes=("pc_agent/ui_gui/", "pc_agent/ui_bridge/"),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
+        required_docs=(
+            "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+            "pc_agent/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+        ),
+    ),
 )
-
-
-def repo_path(value: str | Path) -> str:
-    return str(value).replace("\\", "/").strip("/")
 
 
 def path_matches(path: str, *, exact_paths: Sequence[str], path_prefixes: Sequence[str]) -> bool:
@@ -747,6 +1086,109 @@ def collect_first_files(topics: Sequence[Topic]) -> list[str]:
             if normalized in seen:
                 continue
             seen.add(normalized)
+            ordered.append(normalized)
+    return ordered
+
+
+def collect_skills(topics: Sequence[Topic]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        for path in topic.skills:
+            normalized = repo_path(path)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered.append(normalized)
+    return ordered
+
+
+def collect_checks(topics: Sequence[Topic], *, paths: Sequence[str] = ()) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for check in recommend_checks(paths):
+        if check in seen:
+            continue
+        seen.add(check)
+        ordered.append(check)
+    for topic in topics:
+        for check in topic.checks:
+            if check in seen:
+                continue
+            seen.add(check)
+            ordered.append(check)
+    return ordered
+
+
+def collect_docs_to_update(topics: Sequence[Topic], *, paths: Sequence[str] = ()) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add_path(value: str) -> None:
+        normalized = repo_path(value)
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        ordered.append(normalized)
+
+    for topic in topics:
+        for path in topic.docs_to_update:
+            add_path(path)
+
+    if paths:
+        synthetic_changes = [ChangedPath(status="M", path=repo_path(path)) for path in paths]
+        for rule, _ in iter_triggered_drift_rules(synthetic_changes):
+            for path in rule.required_docs:
+                add_path(path)
+
+    return ordered
+
+
+def select_mode(topics: Sequence[Topic]) -> str:
+    if not topics:
+        return "General / explore first"
+    return topics[0].mode or topics[0].title
+
+
+def select_playbook(topics: Sequence[Topic]) -> str | None:
+    for topic in topics:
+        if topic.playbook:
+            return repo_path(topic.playbook)
+    return None
+
+
+def is_plan_required(topics: Sequence[Topic], *, paths: Sequence[str] = ()) -> bool:
+    if any(topic.plan_required for topic in topics):
+        return True
+
+    normalized = [repo_path(path) for path in paths]
+    subsystems: set[str] = set()
+    for path in normalized:
+        if path.startswith("server/"):
+            subsystems.add("server")
+        elif path.startswith("pc_agent/"):
+            subsystems.add("pc_agent")
+        elif path.startswith("scripts/"):
+            subsystems.add("scripts")
+        elif path.startswith("docs/") or path == "AGENTS.md":
+            subsystems.add("docs")
+
+    code_subsystems = {"server", "pc_agent"} & subsystems
+    return len(code_subsystems) > 1 or ("scripts" in subsystems and bool(code_subsystems))
+
+
+def iter_topic_artifacts(topic: Topic) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in (*topic.first_files, *topic.related_docs, *topic.skills, *topic.docs_to_update):
+        normalized = repo_path(value)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    if topic.playbook:
+        normalized = repo_path(topic.playbook)
+        if normalized not in seen:
             ordered.append(normalized)
     return ordered
 

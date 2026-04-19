@@ -37,6 +37,7 @@ ui:
   minimize_to_tray: True
   start_hidden: False
   notifications_enabled: True
+  theme_mode: "light"
 
 modules:
   extra_paths: []

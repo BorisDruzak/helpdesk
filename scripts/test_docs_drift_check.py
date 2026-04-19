@@ -88,3 +88,43 @@ def test_main_json_failure_reports_required_artifacts(
     assert payload["status"] == "failed"
     assert payload["failures"][0]["rule"] == "navigation_harness"
     assert ".cursor/rules/navigation-tools.mdc" in payload["failures"][0]["required_artifacts"]
+
+
+def test_main_fails_when_required_all_artifacts_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        drift,
+        "parse_args",
+        lambda: argparse.Namespace(base=None, staged=False, paths=None, json=False),
+    )
+    monkeypatch.setattr(
+        drift,
+        "collect_changed_paths",
+        lambda **kwargs: [
+            ChangedPath(status="M", path="server/modules/handlers.py"),
+            ChangedPath(status="M", path="server/docs/MODULES_API.md"),
+        ],
+    )
+    monkeypatch.setattr(
+        drift,
+        "iter_triggered_drift_rules",
+        lambda changes: [
+            (
+                DriftRule(
+                    key="modules",
+                    title="Module pipeline changed",
+                    reason="Module docs and navigation must stay aligned.",
+                    required_docs=("server/docs/MODULES_API.md",),
+                    required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
+                ),
+                [ChangedPath(status="M", path="server/modules/handlers.py")],
+            )
+        ],
+    )
+
+    assert drift.main() == 1
+    output = capsys.readouterr().out
+    assert "Required artifacts missing" in output
+    assert "scripts/navigation_catalog.py" in output

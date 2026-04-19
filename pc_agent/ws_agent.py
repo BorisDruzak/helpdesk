@@ -51,6 +51,12 @@ from core.http_client import AioHttpClient
 from pc_agent.config.config_loader import get_config, init_config
 from pc_agent.core import runtime_paths
 from pc_agent.core.runtime_logging import RuntimeLogBuffer, configure_runtime_logging, read_log_tail, format_log_tail
+from pc_agent.core.action_trace import (
+    configure_action_trace,
+    get_action_trace_recorder,
+    resolve_action_trace_text_filter,
+    search_action_trace,
+)
 from network.uploader import get_uploader
 from ui_bridge import EventBus, UiApiServer
 from ui_bridge.models import ConsentDecision
@@ -291,6 +297,70 @@ class WSAgent:
             return "linux_alt_x86_64"
         return None
 
+    @staticmethod
+    def _read_json_file(path: Path) -> Optional[Any]:
+        try:
+            if not path.exists():
+                return None
+            return jsonlib.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.debug(f"[update] failed to read {path.name}: {exc}")
+            return None
+
+    def _read_local_update_state(self) -> Dict[str, Any]:
+        data_root = Path(self._data_root or runtime_paths.resolve_data_root())
+        updates_dir = data_root / "updates"
+        pending_payload = self._read_json_file(updates_dir / "pending_update.json")
+        history_payload = self._read_json_file(updates_dir / "update_history.json")
+        failed_payload = self._read_json_file(updates_dir / "last_failed_pending_update.json")
+
+        state = {
+            "pending_update_version": None,
+            "pending_update_operation_id": None,
+            "pending_update_received_at": None,
+            "pending_update_reason": None,
+            "last_applied_update_version": None,
+            "last_applied_update_at": None,
+            "last_applied_update_operation_id": None,
+            "last_failed_update_version": None,
+            "last_failed_update_at": None,
+            "last_failed_update_operation_id": None,
+            "last_failed_update_reason": None,
+            "last_failed_update_message": None,
+        }
+
+        if isinstance(pending_payload, dict):
+            state["pending_update_version"] = pending_payload.get("version")
+            state["pending_update_operation_id"] = pending_payload.get("operation_id")
+            state["pending_update_received_at"] = pending_payload.get("received_at")
+            state["pending_update_reason"] = pending_payload.get("requested_reason")
+
+        if isinstance(history_payload, list):
+            entries = [item for item in history_payload if isinstance(item, dict)]
+            if entries:
+                entries.sort(key=lambda item: item.get("at") or "", reverse=True)
+                latest_success = next((item for item in entries if item.get("success") is True), None)
+                latest_failure = next((item for item in entries if item.get("success") is False), None)
+                if latest_success:
+                    state["last_applied_update_version"] = latest_success.get("version")
+                    state["last_applied_update_at"] = latest_success.get("at")
+                    state["last_applied_update_operation_id"] = latest_success.get("operation_id")
+                if latest_failure:
+                    state["last_failed_update_version"] = latest_failure.get("version")
+                    state["last_failed_update_at"] = latest_failure.get("at")
+                    state["last_failed_update_operation_id"] = latest_failure.get("operation_id")
+                    state["last_failed_update_reason"] = latest_failure.get("reason")
+                    state["last_failed_update_message"] = latest_failure.get("message")
+
+        if isinstance(failed_payload, dict):
+            pending_failed = failed_payload.get("pending_payload") if isinstance(failed_payload.get("pending_payload"), dict) else {}
+            state["last_failed_update_version"] = state["last_failed_update_version"] or pending_failed.get("version")
+            state["last_failed_update_operation_id"] = state["last_failed_update_operation_id"] or pending_failed.get("operation_id")
+            state["last_failed_update_reason"] = state["last_failed_update_reason"] or failed_payload.get("error_message")
+            state["last_failed_update_message"] = state["last_failed_update_message"] or failed_payload.get("error_message")
+
+        return state
+
     def _base_update_status(self) -> Dict[str, Any]:
         return {
             "agent_version": AGENT_VERSION,
@@ -301,6 +371,9 @@ class WSAgent:
             "recommended_channel": None,
             "recommended_reason": None,
             "recommended_build": None,
+            "comparison": "unknown",
+            "recommendation_source": "none",
+            "assigned_rollout": None,
             "update_status_error": None,
             "update_checked_at": self._cached_update_checked_at,
         }
@@ -315,6 +388,8 @@ class WSAgent:
                 "recommended_reason",
                 "recommended_build",
                 "comparison",
+                "recommendation_source",
+                "assigned_rollout",
                 "update_status_error",
                 "update_checked_at",
             ):
@@ -385,6 +460,10 @@ class WSAgent:
         if target:
             query.append(f"target={quote(target)}")
         recommendation_url = f"{api_url}/devices/{quote(self.device_id)}/agent/update_recommendation?{'&'.join(query)}"
+        logger.info(
+            "[update] fetching recommendation: "
+            f"device_id={self.device_id} current_version={AGENT_VERSION} target={target or 'auto'}"
+        )
 
         session = self._http_session
         created_session = False
@@ -412,9 +491,17 @@ class WSAgent:
                 payload["update_checked_at"] = now_iso
                 self._cached_update_checked_at = now_iso
                 self._cached_update_status = dict(payload)
+                logger.info(
+                    "[update] recommendation received: "
+                    f"device_id={self.device_id} current={AGENT_VERSION} "
+                    f"recommended={payload.get('recommended_version') or 'none'} "
+                    f"source={payload.get('recommendation_source') or 'none'} "
+                    f"comparison={payload.get('comparison') or 'unknown'} "
+                    f"available={bool(payload.get('update_available'))}"
+                )
                 return self._merge_update_status(payload)
         except Exception as exc:
-            logger.debug(f"[update] recommendation fetch failed: {exc}")
+            logger.warning(f"[update] recommendation fetch failed: {exc}")
             if self._cached_update_status:
                 cached = dict(self._cached_update_status)
                 cached["update_status_error"] = str(exc)
@@ -513,6 +600,7 @@ class WSAgent:
             "logs_dir": str(logs_dir),
             "event_bus_subscribers": self.event_bus.get_subscriber_count() if self.event_bus else 0,
         }
+        status.update(self._read_local_update_state())
         status.update(self._merge_update_status(self._cached_update_status))
         return status
 
@@ -526,6 +614,12 @@ class WSAgent:
         recommendation = await self._fetch_update_status(force=True)
         recommended_build = recommendation.get("recommended_build")
         if not recommendation.get("update_available") or not isinstance(recommended_build, dict):
+            logger.info(
+                "[update] update request skipped: "
+                f"device_id={self.device_id or 'unknown'} available={bool(recommendation.get('update_available'))} "
+                f"recommended={recommendation.get('recommended_version') or 'none'} "
+                f"comparison={recommendation.get('comparison') or 'unknown'}"
+            )
             return {
                 "status": "ok",
                 "update_available": False,
@@ -545,6 +639,12 @@ class WSAgent:
             "version": recommended_build.get("version"),
             "reason": str(payload.get("reason") or "agent_gui_self_update"),
         }
+        logger.info(
+            "[update] requesting recommended build: "
+            f"device_id={self.device_id} target={request_body['target']} "
+            f"channel={request_body['channel']} version={request_body['version']} "
+            f"reason={request_body['reason']}"
+        )
 
         session = self._http_session
         created_session = False
@@ -561,6 +661,12 @@ class WSAgent:
                 if response.status != 202:
                     error_message = result.get("error") if isinstance(result, dict) else None
                     raise RuntimeError(error_message or f"HTTP {response.status}")
+                logger.info(
+                    "[update] request accepted: "
+                    f"device_id={self.device_id} "
+                    f"operation_id={(result or {}).get('operation_id') if isinstance(result, dict) else 'unknown'} "
+                    f"version={request_body['version']}"
+                )
                 self._cached_update_checked_at = datetime.now(timezone.utc).isoformat()
                 self._cached_update_status = {
                     **recommendation,
@@ -573,6 +679,9 @@ class WSAgent:
                     "recommendation": recommendation,
                     "server_response": result if isinstance(result, dict) else {"result": result},
                 }
+        except Exception as exc:
+            logger.error(f"[update] request failed: {exc!r}")
+            raise
         finally:
             if created_session:
                 await session.close()
@@ -592,6 +701,15 @@ class WSAgent:
                 "path": None,
                 "lines": self._runtime_log_buffer.snapshot(max_lines),
                 "text": format_log_tail(self._runtime_log_buffer.snapshot(max_lines)),
+            }
+        if normalized_source == "actions":
+            rows = search_action_trace(limit=max_lines)
+            return {
+                "source": "actions",
+                "path": str(get_action_trace_recorder().path) if getattr(get_action_trace_recorder(), "path", None) else None,
+                "entries": rows,
+                "lines": [jsonlib.dumps(item, ensure_ascii=False) for item in rows],
+                "text": "\n".join(jsonlib.dumps(item, ensure_ascii=False) for item in rows),
             }
 
         file_map = {
@@ -628,6 +746,7 @@ class WSAgent:
                 role_name="agent",
                 memory_buffer=self._runtime_log_buffer,
             )
+            configure_action_trace(data_root)
             logger.success(
                 "✅ Логирование настроено: "
                 f"level={self._logging_runtime['level']}, "
@@ -915,7 +1034,27 @@ class WSAgent:
                     lines = int(lines_raw)
                 except (TypeError, ValueError):
                     lines = 120
-                return self.get_runtime_logs(source=source, lines=lines)
+                if source.strip().lower() != "actions":
+                    return self.get_runtime_logs(source=source, lines=lines)
+                rows = search_action_trace(
+                    limit=lines,
+                    action_id=payload.get("action_id"),
+                    parent_action_id=payload.get("parent_action_id"),
+                    ticket_id=payload.get("ticket_id"),
+                    operation_id=payload.get("operation_id"),
+                    message_id=payload.get("message_id"),
+                    tool_name=payload.get("tool_name"),
+                    status=payload.get("status"),
+                    text=payload.get("text"),
+                )
+                recorder = get_action_trace_recorder()
+                return {
+                    "source": "actions",
+                    "path": str(recorder.path) if getattr(recorder, "path", None) else None,
+                    "entries": rows,
+                    "lines": [jsonlib.dumps(item, ensure_ascii=False) for item in rows],
+                    "text": "\n".join(jsonlib.dumps(item, ensure_ascii=False) for item in rows),
+                }
 
             async def on_chat_send(
                 ticket_id: str,
@@ -1966,7 +2105,12 @@ class WSAgent:
                 logger.debug(f"📬 Результат от оркестратора: {result}")
                 
                 # НЕ добавляем device_id - он будет в envelope
-                logger.success(f"✅ Команда '{command}' успешно выполнена оркестратором")
+                if result.get("status") == "success":
+                    logger.success(f"✅ Команда '{command}' успешно выполнена оркестратором")
+                else:
+                    logger.warning(
+                        f"Команда '{command}' завершилась со статусом {result.get('status')}"
+                    )
                 return result
             
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2012,6 +2156,50 @@ class WSAgent:
             # ИНФОРМАЦИЯ О СИСТЕМЕ (специфичная команда ws_agent)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
+            elif command == "search_action_trace":
+                """Поиск action trace для tech/observer drilldown."""
+                from core.tool_response import ToolMeta, ToolData, ok
+                from datetime import datetime, timezone
+
+                meta = ToolMeta(
+                    timestamp_iso=datetime.now(timezone.utc).isoformat(),
+                    command=command,
+                    request_id=request_id,
+                    agent_id=None,
+                    duration_ms=None,
+                )
+                limit_raw = params.get("limit", 50)
+                try:
+                    limit = max(1, min(int(limit_raw), 200))
+                except (TypeError, ValueError):
+                    limit = 50
+                rows = search_action_trace(
+                    limit=limit,
+                    action_id=params.get("action_id"),
+                    parent_action_id=params.get("parent_action_id"),
+                    ticket_id=params.get("ticket_id"),
+                    operation_id=params.get("operation_id"),
+                    message_id=params.get("message_id"),
+                    tool_name=params.get("tool_name"),
+                    status=params.get("status"),
+                    text=resolve_action_trace_text_filter(
+                        text=params.get("text"),
+                        trace_id=params.get("trace_id"),
+                        operation_id=params.get("operation_id"),
+                        ticket_id=params.get("ticket_id"),
+                    ),
+                )
+                recorder = get_action_trace_recorder()
+                data = ToolData(
+                    observations={
+                        "entries": rows,
+                        "count": len(rows),
+                        "path": str(recorder.path) if getattr(recorder, "path", None) else None,
+                    }
+                )
+                response = ok(data=data, meta=meta)
+                return response.model_dump()
+
             elif command == "get_info":
                 """Получить системную информацию (быстрый запрос без модулей)"""
                 from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
@@ -2954,6 +3142,9 @@ async def main_async(
     # Событие для остановки
     stop_event = asyncio.Event()
     stop_wait_task: Optional[asyncio.Task] = None
+    agent_task: Optional[asyncio.Task] = None
+    gui_task: Optional[asyncio.Task] = None
+    auth_state_machine: Optional[GuiAuthStateMachine] = None
     
     async def sync_agent_token_from_db(*, retries: int = 1, delay: float = 0.0, log_reason: str) -> Optional[str]:
         token_from_db_local = None
@@ -3002,8 +3193,6 @@ async def main_async(
         
         # Если GUI включен, сначала запускаем GUI и ждем авторизации
         # Затем запускаем агента, который будет использовать уже сохраненный токен
-        gui_task = None
-        auth_state_machine = None
         logger.info(f"🔍 Проверка enable_gui в main_async: {enable_gui}")
         if enable_gui:
             ui_config = get_config().ui
@@ -3050,6 +3239,7 @@ async def main_async(
                             stop_event,
                             gui_auth_complete,
                             ui_bridge_listening=ui_bridge_listening,
+                            ui_api_server=agent.ui_api_server,
                         )
                         gui_auth_complete.set()
                     except Exception as e:
