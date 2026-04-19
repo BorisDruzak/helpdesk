@@ -378,10 +378,13 @@ def remote_force_operation_timeout_code(operation_id: str, *, mode: str) -> str:
         f"""
         import asyncio
         from datetime import datetime, timezone, timedelta
-        from app.db import get_session
+        from dotenv import load_dotenv
+        from app.db import get_session, init_db
         from app.db.models import Operation
 
         async def main() -> None:
+            load_dotenv(".env")
+            await init_db()
             async with get_session() as session:
                 operation = await session.get(Operation, {operation_id!r})
                 if operation is None:
@@ -402,7 +405,8 @@ def remote_inject_retry_exhausted_code(device_id: str) -> str:
         import asyncio
         import json
         import uuid
-        from app.db import get_session
+        from dotenv import load_dotenv
+        from app.db import get_session, init_db
         from app.repos.device_outbox_repo import DeviceOutboxRepo
         from app.services.operation_service import OperationService
         from websocket.device_outbox_sender import _sync_operation_delivery_state
@@ -411,6 +415,8 @@ def remote_inject_retry_exhausted_code(device_id: str) -> str:
             ui_publisher = None
 
         async def main() -> None:
+            load_dotenv(".env")
+            await init_db()
             operation_id = str(uuid.uuid4())
             trace_id = str(uuid.uuid4())
             async with get_session() as session:
@@ -480,11 +486,14 @@ def remote_create_waiting_consent_operation_code(*, device_id: str, ticket_id: s
         import asyncio
         import json
         import uuid
-        from app.db import get_session
+        from dotenv import load_dotenv
+        from app.db import get_session, init_db
         from app.services.operation_service import OperationService
         from app.repos.ticket_events_repo import TicketEventsRepo
 
         async def main() -> None:
+            load_dotenv(".env")
+            await init_db()
             operation_id = str(uuid.uuid4())
             trace_id = str(uuid.uuid4())
             async with get_session() as session:

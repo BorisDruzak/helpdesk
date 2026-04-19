@@ -52,6 +52,7 @@ def test_remote_force_operation_timeout_code_varies_by_mode() -> None:
     assert "240" in execution_code
     assert "op-consent" in consent_code
     assert "op-execution" in execution_code
+    assert "await init_db()" in consent_code
 
 
 def test_remote_create_waiting_consent_operation_code_contains_expected_contract() -> None:
@@ -64,3 +65,4 @@ def test_remote_create_waiting_consent_operation_code_contains_expected_contract
     assert "initial_status=\"waiting_consent\"" in code
     assert "tool_call_started" in code
     assert "observer_canary_demo.consent_probe" in code
+    assert "await init_db()" in code
