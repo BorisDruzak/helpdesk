@@ -3959,6 +3959,7 @@
             detail: null,
             selectedId: null,
             busy: false,
+            runtime: null,
         };
 
         function techStatusClass(kind) {
@@ -4345,7 +4346,7 @@
 
         async function loadTechMainPanels() {
             const headers = getAuthHeaders();
-            const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes] = await Promise.all([
+            const [overviewRes, alertsRes, logsRes, devicesRes, agentsAuditRes, usersAuditRes, stuckOpsRes, observerRuntimeRes] = await Promise.all([
                 fetch('/api/admin/tech/overview', { headers }),
                 fetch('/api/admin/tech/alerts', { headers }),
                 fetch('/api/admin/tech/logs?limit=50', { headers }),
@@ -4353,6 +4354,7 @@
                 fetch('/api/admin/tech/agents/audit?limit=50', { headers }),
                 fetch('/api/admin/tech/users/audit?limit=50', { headers }),
                 fetch('/api/admin/tech/operations/stuck', { headers }),
+                fetch('/api/admin/tech/traces/runtime', { headers }),
             ]);
             const overviewData = await responseToJson(overviewRes);
             const alertsData = await responseToJson(alertsRes);
@@ -4361,10 +4363,13 @@
             const agentsData = await responseToJson(agentsAuditRes);
             const usersData = await responseToJson(usersAuditRes);
             const stuckData = await responseToJson(stuckOpsRes);
+            const observerRuntimeData = await responseToJson(observerRuntimeRes);
             const overview = overviewData.overview || {};
             renderTechOverviewCards(overview);
             renderTechAlerts(alertsData.alerts || overview.alerts || []);
             renderTechProblemLogs(logsData.logs || overview.problem_logs || []);
+            techObserverState.runtime = observerRuntimeData.runtime || null;
+            renderTechObserverRuntimeStatus();
             techDevicesCache = devicesData.devices || [];
             renderTechAgentsTable(techDevicesCache);
             renderTechAuditTable('techAgentsAuditTable', agentsData.events || [], 'agent');
@@ -4866,6 +4871,37 @@
             host.classList.toggle('error-message', !!isError);
         }
 
+        function renderTechObserverRuntimeStatus() {
+            const host = document.getElementById('techTraceRuntimeStatus');
+            if (!host) return;
+            const runtime = techObserverState.runtime || {};
+            if (!runtime.enabled) {
+                host.textContent = 'Background refresh отключён.';
+                host.classList.remove('error-message');
+                return;
+            }
+            const stats = runtime.stats || {};
+            const parts = [
+                runtime.running ? 'Background refresh active' : 'Background refresh stopped',
+                stats.last_scan_completed_at ? `последний scan ${techFormatDate(stats.last_scan_completed_at)}` : 'scan ещё не выполнялся',
+                `pending ${stats.pending_trace_count ?? 0}`,
+                `projected ${stats.projected_trace_count ?? 0}`,
+            ];
+            host.textContent = parts.join(' · ');
+            host.classList.toggle('error-message', !runtime.running || !!stats.last_error);
+        }
+
+        async function loadTechObserverRuntimeStatus() {
+            const headers = getAuthHeaders();
+            const response = await fetch('/api/admin/tech/traces/runtime', { headers });
+            const data = await responseToJson(response);
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Observer runtime status failed');
+            }
+            techObserverState.runtime = data.runtime || null;
+            renderTechObserverRuntimeStatus();
+        }
+
         function techSetObserverBusy(isBusy) {
             techObserverState.busy = !!isBusy;
             document.querySelectorAll('#tab-tech [data-tech-observer-action], #tab-tech [data-tech-observer-open]').forEach((button) => {
@@ -5037,6 +5073,7 @@
             const headers = getAuthHeaders();
             const endpoint = mode === 'signatures' ? '/api/admin/tech/signatures' : '/api/admin/tech/traces';
             techSetObserverStatus('Загрузка observer search…', false);
+            await loadTechObserverRuntimeStatus();
             const response = await fetch(`${endpoint}?${techObserverFilters().toString()}`, { headers });
             const data = await responseToJson(response);
             if (!response.ok || data.status !== 'ok') {
@@ -5097,6 +5134,7 @@
                 throw new Error(data.error || 'Observer rebuild failed');
             }
             techSetObserverStatus(`Пересобрано traces: ${data.projected_count || 0}.`, false);
+            await loadTechObserverRuntimeStatus();
             if (techObserverState.mode) {
                 await loadTechObserverSearch(techObserverState.mode);
             }

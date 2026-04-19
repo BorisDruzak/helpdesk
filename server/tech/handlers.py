@@ -1555,6 +1555,14 @@ def _serialize_trace_filters(filters: TraceOverlayFilters) -> dict[str, Any]:
 
 
 @require_auth("admin", "support", "auditor")
+async def handle_tech_traces_runtime(request: web.Request) -> web.Response:
+    runtime = request.app._state.get("observer_refresh_runtime")
+    if runtime is None:
+        return web.json_response({"status": "ok", "runtime": {"enabled": False, "running": False}})
+    return web.json_response({"status": "ok", "runtime": runtime.status_snapshot()})
+
+
+@require_auth("admin", "support", "auditor")
 async def handle_tech_traces_search(request: web.Request) -> web.Response:
     limit = _parse_query_limit(request.query.get("limit"), default=50, cap=200)
     filters = _trace_filters_from_request(request)

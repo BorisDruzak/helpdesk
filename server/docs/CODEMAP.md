@@ -32,7 +32,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
+| `server/server.py` | Запуск aiohttp, startup/shutdown, watchdog/scheduler; поднимает background `ObserverRefreshRuntime` для incremental trace projection; перед настройкой loguru принудительно включает UTF-8 для stdout/stderr на Windows, чтобы консоль и логи не превращались в mojibake; legacy `server_old.py` удалён из активного runtime tree |
 | `server/control_plane.py` | Отдельный aiohttp control-plane на порту `8667`: status/logs/download/actions для server runtime, auth/CORS/audit и переживание `stop/restart` основного сервера |
 | `server/routes.py` | Регистрация всех HTTP и WS маршрутов, включая shell-страницы `/login`, `/admin`, `/support`, `/ticket`, session endpoint `GET /api/ui_session`, device update recommendation `GET /api/devices/{device_id}/agent/update_recommendation`, module rollout settings `GET/PATCH /api/modules/rollout_settings` и device-scoped module lifecycle endpoints |
 | `server/config.py` | Конфигурация, feature flags, таймауты SLA/operations/playbook |
@@ -70,7 +70,7 @@
 | `server/api/operations.py` | Lifecycle операций, consent/cancel |
 | `server/api/admin.py` | admin_run_tool и др. |
 | `server/api/protocol.py` | Endpoint протокола |
-| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
+| `server/tech/handlers.py` | Техпанель `/api/admin/tech/*`: overview/alerts/logs, русифицированный аудит агентов/пользователей, drilldown по агенту (`/agents/{device_id}/timeline`), trace/signature search (`/traces`, `/signatures`, `/traces/rebuild`, `/traces/runtime`), быстрые диагностические actions, lifecycle тикета (`milestone_rail`, `sla_lane`, ссылки ticket/device/operation), dismiss endpoint `/api/admin/tech/dismiss`, suppression шумных UI WebSocket alert и удаление log/alert из панели |
 | `server/control_plane.py` | Внешний runtime API `/api/control/server/*`: status, full journal logs, download logs, lifecycle actions `start/stop/restart/smoke` |
 
 ### 2.2.1 Tools / единый путь run_tool
@@ -110,6 +110,8 @@
 | `server/app/services/playbook_scheduler.py` | Планировщик playbook |
 | `server/app/services/module_reconcile_scheduler.py` | Реконсиляция модулей |
 | `server/app/services/artifact_service.py` | Артефакты |
+| `server/observer/service.py` | Trace overlay projection/search: `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`; мосты из operations/ticket_events/device_events/agent_runtime_audit |
+| `server/observer/runtime.py` | Background incremental refresh для hot traces: сканирует committed source rows, дебаунсит trace_id и обновляет overlay без ручного rebuild/search |
 
 ### 2.5 Доменные модули (handlers + service)
 | Каталог/файл | Назначение |
@@ -165,6 +167,7 @@
 - **модули (install, desired, reconcile, preferred version, rollout policy, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
+- **observer traces / signatures** — `observer/service.py`, `observer/runtime.py`, `tech/handlers.py`, `app/db/models.py`, `websocket/agent_services.py`, `pc_agent/core/action_trace.py`
 - **тикеты (SLA, назначение, очереди, structured confirmation, public access, описание заявки)** — `tickets/handlers.py`, `tickets/assignment_service.py`, `tickets/sla_service.py`, `tickets/workflow_service.py`, `tickets/public_queue_handlers.py`, `tickets/public_ticket_handlers.py`, `tickets/public_access.py`, `auth/admin_users_handlers.py`
 - **ticket snapshot / workbench payload** — `tickets/handlers.py` (`GET /api/tickets/{ticket_id}/snapshot`: relations, worklogs, watchers/links/kb, device/provisioning/update summary, latest operations, notification counters, device_metadata, OLA-блок, а также queue_members / assignable_users / available_queues / queue_auto_assign_enabled для основной рабочей области)
 - **аутентификация, RBAC, login routing** — `auth/`, `auth/agent_token_service.py`, `routes.py`, `static_pages/handlers.py`, `docs/SECURITY_AND_AUTH.md`
@@ -172,7 +175,7 @@
 - **обновление агента (builds, upload, delete, update, mass, diagnostics, recommendation, global rollout policy)** — `agents/agent_builds_handlers.py`, `agents/handlers.py`, `app/repos/agent_rollout_repo.py`, `websocket/agent_handshake.py`, `docs/AGENT_UPDATES_API.md`, `../../docs/AGENT_UPDATE_CONTRACT.md`, `../../pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, маршруты `POST/GET/DELETE /api/agent_builds*`, `GET/PATCH /api/agent_updates/rollout_policy`, `POST /api/devices/{id}/agent/update`, `GET /api/devices/{id}/agent/update_recommendation`, `POST /api/agents/update_bulk`, `GET /api/devices/{id}/agent/update_diagnostics`
   - Инвариант recommendation: `assigned_rollout` — source of truth; любой version mismatch с rollout actionable, включая controlled rollback на более старую release-версию.
   - Инвариант cleanup: rollout-assigned build нельзя удалять, пока он назначен source of truth для target.
-- **tech observability / tech panel** — `tech/handlers.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблица `agent_runtime_audit`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, audits)
+- **tech observability / tech panel** — `tech/handlers.py`, `observer/service.py`, `observer/runtime.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблицы `agent_runtime_audit` + `observer_*`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, traces/signatures/runtime, audits)
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 
 ---
@@ -232,7 +235,7 @@
 
 Каноническая карта сервера — этот файл: `server/docs/CODEMAP.md` (других CODEMAP для дерева `server/` нет).
 
-При изменениях, затрагивающих структуру кода сервера, его **нужно** обновить (сводка критериев — `.cursor/rules/codemap.mdc`):
+При изменениях, затрагивающих структуру кода сервера, его **нужно** обновить:
 
 - добавление/удаление/перенос маршрутов (routes) или ключевых обработчиков;
 - новые или переименованные ключевые каталоги/файлы в `server/`;
@@ -258,6 +261,14 @@
 - `server/admin_ticket_forms_builder.html` / `server/admin_ticket_forms_builder.js` are the dedicated admin UI entrypoints for the request-form catalog.
 - The UI is now organized around one working catalog: a left navigator, a central form editor, and a right field-parameters panel with shared height and independent scrolling.
 - Clicking a form opens its fields directly; clicking a field opens its parameters. The builder keeps `title` / `description` of the catalog in a hidden service section so the main flow stays focused on forms.
+
+## 2026-04-17 Trace overlay
+
+- `server/observer/service.py` projects a technical trace overlay over existing domain data instead of replacing ticket/problem entities.
+- `server/observer/runtime.py` keeps hot traces fresh in the background by scanning newly committed source rows and re-projecting only changed trace ids.
+- New observer storage lives in `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, and `observer_error_signatures` (migration `052_observer_trace_overlay`).
+- Tech API now exposes `GET /api/admin/tech/traces`, `GET /api/admin/tech/traces/runtime`, `GET /api/admin/tech/traces/{trace_id}`, `POST /api/admin/tech/traces/rebuild`, `GET /api/admin/tech/signatures`, and `GET /api/admin/tech/signatures/{error_signature}`.
+- The projection bridges `operations`, `ticket_events`, `device_events`, `agent_runtime_audit`, and optional agent-side `action_trace` search for drilldown near failures.
 - Everyday authoring should happen through the direct form -> field -> parameter flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
 - The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.

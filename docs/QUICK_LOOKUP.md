@@ -1,6 +1,7 @@
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, and `pc_agent/ui_gui/chat_panel.py`.
+- Observer trace overlay now lives in `server/observer/service.py`, `server/observer/runtime.py`, `server/tech/handlers.py`, `server/app/db/models.py`, `server/websocket/agent_services.py`, and `pc_agent/core/action_trace.py`.
 - The admin `/admin` shell has a dedicated `Конструктор форм` tab for versioned request-form packs, served by `/api/ticket_forms/current`, `/public_api/ticket_forms/current`, and `/api/ticket_forms/packs/*`.
 - Public `/help` and the local agent ticket dialog now submit `form_key`, `form_payload`, and `ticket_type`; the agent caches the latest form pack in its local data root and refreshes only when the server reports a newer version.
 
@@ -86,10 +87,11 @@ Windows note:
 |------|------------|------|
 | Protocol V3 / handshake | `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | Tool execution / operations | `server/tools/service.py`, `server/tools/handlers.py`, `server/app/services/operation_service.py`, `pc_agent/core/orchestrator.py`, `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py` | `server/docs/TOOL_CALL_STARTED_INVARIANT.md`, `pc_agent/docs/CODEMAP.md` |
+| Observer traces / tech drilldown | `server/observer/service.py`, `server/observer/runtime.py`, `server/tech/handlers.py`, `server/app/db/models.py`, `server/websocket/agent_services.py`, `pc_agent/core/action_trace.py` | `server/docs/CODEMAP.md`, `PLANS.md` |
 | Agent updates / recommended version / rollout policy | `server/agents/agent_builds_handlers.py`, `server/app/repos/agent_rollout_repo.py`, `server/routes.py`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main_window.py` | `server/docs/AGENT_UPDATES_API.md`, `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` |
 | Modules / desired state / reconcile / workbench | `server/modules/handlers.py`, `server/modules/workbench_service.py`, `server/tools/service.py`, `server/websocket/outbox_ingest_components.py`, `server/modules/reconcile.py`, `server/admin_modules_workbench.js`, `pc_agent/core/module_manager.py`, `shared/tool_contracts.py` | `server/docs/MODULE_CREATION_GUIDE.md`, `server/docs/MODULES_API.md`, `server/docs/MODULE_AUTHORING_RULES.md`, `server/docs/REGISTRY_PUBLICATION_RULES.md`, `server/docs/RUNTIME_EXECUTION_CONTRACT.md`, `pc_agent/docs/MODULES.md` |
 | Ticket flows / helpdesk | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md` |
-| Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
+| Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/launcher_portable_main.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
 | Agent runtime / UI bridge | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/chat_panel.py` | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/CODEMAP.md` |
 | Release / deploy / CI | `scripts/task_intake.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
 

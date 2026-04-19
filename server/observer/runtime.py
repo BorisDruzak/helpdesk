@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from loguru import logger
+from sqlalchemy import distinct, or_, select
+
+from app.db import get_session
+from app.db.models import AgentRuntimeAudit, DeviceEvent, Operation, TicketEvent
+from observer.service import ObserverOverlayService
+
+
+@dataclass(slots=True)
+class ObserverRefreshStats:
+    started_at: Optional[datetime] = None
+    last_scan_started_at: Optional[datetime] = None
+    last_scan_completed_at: Optional[datetime] = None
+    last_projected_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    discovered_trace_count: int = 0
+    projected_trace_count: int = 0
+    pending_trace_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "last_scan_started_at": self.last_scan_started_at.isoformat() if self.last_scan_started_at else None,
+            "last_scan_completed_at": self.last_scan_completed_at.isoformat() if self.last_scan_completed_at else None,
+            "last_projected_at": self.last_projected_at.isoformat() if self.last_projected_at else None,
+            "last_error": self.last_error,
+            "discovered_trace_count": self.discovered_trace_count,
+            "projected_trace_count": self.projected_trace_count,
+            "pending_trace_count": self.pending_trace_count,
+        }
+
+
+class ObserverRefreshRuntime:
+    """Background incremental projector for hot observer traces."""
+
+    def __init__(
+        self,
+        *,
+        scan_interval_sec: float = 2.0,
+        scan_overlap_sec: float = 2.0,
+        bootstrap_lookback_sec: float = 30.0,
+        debounce_sec: float = 0.25,
+        max_batch: int = 100,
+    ) -> None:
+        self.scan_interval_sec = max(scan_interval_sec, 0.05)
+        self.scan_overlap_sec = max(scan_overlap_sec, 0.0)
+        self.bootstrap_lookback_sec = max(bootstrap_lookback_sec, 1.0)
+        self.debounce_sec = max(debounce_sec, 0.0)
+        self.max_batch = max(max_batch, 1)
+        self._task: Optional[asyncio.Task[None]] = None
+        self._pending: dict[str, float] = {}
+        self._pending_lock = asyncio.Lock()
+        self._last_scan_at: Optional[datetime] = None
+        self._stats = ObserverRefreshStats()
+
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    def status_snapshot(self) -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "running": self.running,
+            "config": {
+                "scan_interval_sec": self.scan_interval_sec,
+                "scan_overlap_sec": self.scan_overlap_sec,
+                "bootstrap_lookback_sec": self.bootstrap_lookback_sec,
+                "debounce_sec": self.debounce_sec,
+                "max_batch": self.max_batch,
+            },
+            "stats": self._stats.to_dict(),
+        }
+
+    async def start(self) -> None:
+        if self.running:
+            return
+        self._stats.started_at = datetime.now(timezone.utc)
+        self._stats.last_error = None
+        self._last_scan_at = self._stats.started_at - timedelta(seconds=self.bootstrap_lookback_sec)
+        self._task = asyncio.create_task(self._run_loop(), name="observer-refresh-runtime")
+        logger.info("[observer_refresh] runtime started")
+
+    async def stop(self) -> None:
+        if self._task is None:
+            return
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._task = None
+            async with self._pending_lock:
+                self._pending.clear()
+                self._stats.pending_trace_count = 0
+        logger.info("[observer_refresh] runtime stopped")
+
+    async def enqueue_trace(self, trace_id: Optional[str], *, delay_sec: Optional[float] = None) -> bool:
+        trace_value = (trace_id or "").strip()
+        if not trace_value:
+            return False
+        due_at = asyncio.get_running_loop().time() + (self.debounce_sec if delay_sec is None else max(delay_sec, 0.0))
+        async with self._pending_lock:
+            current = self._pending.get(trace_value)
+            if current is None or due_at < current:
+                self._pending[trace_value] = due_at
+            self._stats.pending_trace_count = len(self._pending)
+        return True
+
+    async def run_once(self) -> None:
+        discovered = await self._discover_recent_trace_ids()
+        for trace_id in discovered:
+            await self.enqueue_trace(trace_id)
+        await self._project_due_traces()
+
+    async def _run_loop(self) -> None:
+        while True:
+            try:
+                await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._stats.last_error = str(exc)
+                logger.warning(f"[observer_refresh] loop failed: {exc}", exc_info=True)
+            await asyncio.sleep(self.scan_interval_sec)
+
+    async def _discover_recent_trace_ids(self) -> list[str]:
+        now = datetime.now(timezone.utc)
+        self._stats.last_scan_started_at = now
+        window_start = (self._last_scan_at or now - timedelta(seconds=self.bootstrap_lookback_sec)) - timedelta(
+            seconds=self.scan_overlap_sec
+        )
+        discovered: list[str] = []
+        seen: set[str] = set()
+
+        def _remember(values: list[Optional[str]]) -> None:
+            for value in values:
+                trace_id = (value or "").strip()
+                if trace_id and trace_id not in seen:
+                    seen.add(trace_id)
+                    discovered.append(trace_id)
+
+        async with get_session() as session:
+            ticket_rows = await session.execute(
+                select(distinct(TicketEvent.trace_id))
+                .where(TicketEvent.trace_id.isnot(None), TicketEvent.created_at >= window_start)
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(ticket_rows.scalars().all()))
+
+            device_rows = await session.execute(
+                select(distinct(DeviceEvent.trace_id))
+                .where(DeviceEvent.trace_id.isnot(None), DeviceEvent.created_at >= window_start)
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(device_rows.scalars().all()))
+
+            operation_rows = await session.execute(
+                select(distinct(Operation.trace_id))
+                .where(
+                    Operation.trace_id.isnot(None),
+                    or_(
+                        Operation.queued_at >= window_start,
+                        Operation.sent_at >= window_start,
+                        Operation.accepted_at >= window_start,
+                        Operation.started_at >= window_start,
+                        Operation.finished_at >= window_start,
+                        Operation.cancel_requested_at >= window_start,
+                        Operation.canceled_at >= window_start,
+                    ),
+                )
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(operation_rows.scalars().all()))
+
+            audit_operation_rows = await session.execute(
+                select(distinct(AgentRuntimeAudit.operation_id))
+                .where(AgentRuntimeAudit.created_at >= window_start, AgentRuntimeAudit.operation_id.isnot(None))
+                .limit(self.max_batch * 2)
+            )
+            audit_operation_ids = [value for value in audit_operation_rows.scalars().all() if value]
+            if audit_operation_ids:
+                audit_trace_rows = await session.execute(
+                    select(distinct(Operation.trace_id))
+                    .where(Operation.trace_id.isnot(None), Operation.operation_id.in_(audit_operation_ids))
+                    .limit(self.max_batch * 2)
+                )
+                _remember(list(audit_trace_rows.scalars().all()))
+
+        self._last_scan_at = now
+        self._stats.last_scan_completed_at = datetime.now(timezone.utc)
+        self._stats.discovered_trace_count = len(discovered)
+        return discovered[: self.max_batch * 2]
+
+    async def _project_due_traces(self) -> None:
+        now_monotonic = asyncio.get_running_loop().time()
+        async with self._pending_lock:
+            due_trace_ids = sorted(
+                [trace_id for trace_id, due_at in self._pending.items() if due_at <= now_monotonic]
+            )[: self.max_batch]
+            for trace_id in due_trace_ids:
+                self._pending.pop(trace_id, None)
+            self._stats.pending_trace_count = len(self._pending)
+
+        if not due_trace_ids:
+            return
+
+        projected = 0
+        for trace_id in due_trace_ids:
+            try:
+                async with get_session() as session:
+                    service = ObserverOverlayService(session)
+                    await service.project_trace(trace_id, force=False)
+                    await session.commit()
+                projected += 1
+            except Exception as exc:
+                self._stats.last_error = str(exc)
+                logger.warning(
+                    f"[observer_refresh] failed to project trace_id={trace_id}: {exc}",
+                    exc_info=True,
+                )
+                await self.enqueue_trace(trace_id, delay_sec=max(self.scan_interval_sec, 0.25))
+
+        if projected:
+            self._stats.projected_trace_count += projected
+            self._stats.last_projected_at = datetime.now(timezone.utc)

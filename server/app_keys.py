@@ -11,6 +11,7 @@ from state_manager import StateManager
 
 STATE_APP_KEY = web.AppKey("state", StateManager)
 OUTBOX_SENDER_APP_KEY = web.AppKey("outbox_sender", Any)
+OBSERVER_REFRESH_RUNTIME_APP_KEY = web.AppKey("observer_refresh_runtime", Any)
 
 
 def bind_app_value(

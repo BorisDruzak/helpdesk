@@ -4,8 +4,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, replace_bound_app_value
 from app.db import get_session
 from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent, UiUserAudit
+from observer.runtime import ObserverRefreshRuntime
 from tech.log_buffer import append_log_record
 
 
@@ -31,6 +33,31 @@ async def test_tech_overview_roles(test_client):
     assert body["status"] == "ok"
     assert "overview" in body
     assert "alerts" in body["overview"]
+
+
+@pytest.mark.asyncio
+async def test_tech_trace_runtime_status_endpoint(test_client):
+    runtime = ObserverRefreshRuntime(scan_interval_sec=0.05, debounce_sec=0.01, max_batch=10)
+    await runtime.start()
+    replace_bound_app_value(
+        test_client.app,
+        key=OBSERVER_REFRESH_RUNTIME_APP_KEY,
+        legacy_name="observer_refresh_runtime",
+        value=runtime,
+    )
+    try:
+        response = await test_client.get("/api/admin/tech/traces/runtime", headers=_auth(ADMIN_TOKEN))
+
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["status"] == "ok"
+        runtime_payload = payload["runtime"]
+        assert runtime_payload["enabled"] is True
+        assert "running" in runtime_payload
+        assert "config" in runtime_payload
+        assert "stats" in runtime_payload
+    finally:
+        await runtime.stop()
 
 
 @pytest.mark.asyncio

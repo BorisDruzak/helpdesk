@@ -36,7 +36,7 @@ from config import (
 # Этап 7.2: очистка истёкших артефактов
 ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
 from state_manager import StateManager
-from app_keys import STATE_APP_KEY, OUTBOX_SENDER_APP_KEY, bind_app_value
+from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, OUTBOX_SENDER_APP_KEY, bind_app_value
 from routes import setup_routes
 
 # Import database initialization
@@ -241,6 +241,18 @@ async def on_startup(app: web.Application):
             )
             logger.success("✅ Module reconcile scheduler started")
 
+            from observer.runtime import ObserverRefreshRuntime
+
+            observer_refresh_runtime = ObserverRefreshRuntime()
+            await observer_refresh_runtime.start()
+            bind_app_value(
+                app,
+                key=OBSERVER_REFRESH_RUNTIME_APP_KEY,
+                legacy_name="observer_refresh_runtime",
+                value=observer_refresh_runtime,
+            )
+            logger.success("✅ Observer refresh runtime started")
+
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
             logger.warning("⚠️  Server will run WITHOUT database persistence (in-memory only)")
@@ -318,6 +330,12 @@ async def on_cleanup(app: web.Application):
         except Exception:
             pass
     
+    observer_refresh_runtime = app._state.get(OBSERVER_REFRESH_RUNTIME_APP_KEY)
+    if observer_refresh_runtime is not None:
+        logger.info("⏹️ Stopping observer refresh runtime...")
+        await observer_refresh_runtime.stop()
+        logger.success("✅ Observer refresh runtime stopped")
+
     # Phase C: Stop device outbox sender
     if 'outbox_sender' in app:
         logger.info("⏹️ Stopping device outbox sender...")

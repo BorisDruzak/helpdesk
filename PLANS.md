@@ -1,5 +1,69 @@
 # PLANS.md
 
+## 2026-04-17 Trace overlay + observer hardening
+
+- Scope:
+  - ввести observer-domain поверх текущей доменной модели без замены `tickets/problems/operations`;
+  - добавить сущности `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`;
+  - построить projection/overlay из текущих источников: `operations`, `ticket_events`, `device_events`, `agent_runtime_audit`, agent `action_trace`;
+  - дать tech API для поиска и drilldown по `trace_id`, `ticket_id`, `job_id`, `operation_id`, `device_id`, `tool_name`, `module_name`, `error_signature`;
+  - закрыть найденные баги: ложный `running` у `manage_local_agent`, шумный `404` по пустому toolset snapshot, зависание cancel-flow.
+- Deliverables:
+  1. схема БД + миграция + projection service для trace overlay;
+  2. tech API для traces/signatures/detail/rebuild и bridge к agent action trace;
+  3. incremental/background refresh runtime для hot traces + runtime status endpoint в tech panel;
+  4. regression fixes по runtime/toolset/cancel-flow;
+  5. sync docs/CODEMAP/QUICK_LOOKUP по новым observer entrypoints;
+  6. подтверждённые локальные тесты и browser check техпанели.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` для `server/tests` и `scripts/test_manage_local_agent.py`
+  - regression run для `server/tests/test_cancel_operations.py`
+  - browser check на `http://192.168.100.17:8666/admin`
+  - если поднимался Linux-стенд, в конце остановить `server`, если пользователь отдельно не просил оставить его запущенным.
+
+## 2026-04-16 Agent tracing + automation hardening
+
+- Scope:
+  - закрыть баги, найденные на живом launcher/GUI прогоне: tool RBAC/policy gaps, stale tool metadata, неполный refresh/detail и локальную automation response path;
+  - усилить agent/server logging до action-trace уровня, чтобы ticket/message/tool/confirm/reply/screenshot/video flows легко искались по `ticket_id`, `operation_id`, `trace_id`, `message_id` и локальному `action_id`;
+  - расширить localhost automation surface агента до полного smoke/E2E набора: ticket create, smart-form fill, send message, screenshot, video, focused log collection, chat snapshot и server-event injection;
+  - провести ручной и полуавтоматический E2E прогон через launcher agent + `/admin` + server/agent logs + DB, включая формы, RBAC, новый tool и confirmation flow.
+- Deliverables:
+  1. локально подтверждённые fixes на agent/server;
+  2. новый trace/logging слой и способы получить focused trace по действию;
+  3. рабочий automation driver для полного agent smoke;
+  4. оформленный manual QA checklist/result с фактами из UI, логов и БД.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` для `server/tests` и `pc_agent/tests`
+  - launcher smoke через `python scripts/manage_local_agent.py start <name> --launcher --gui --ui-port <port>`
+  - remote server smoke + browser/manual checks на `http://192.168.100.17:8666/admin`
+  - в конце, если пользователь отдельно не просит оставить стенд, remote server должен быть остановлен.
+
+## 2026-04-16 Agent GUI themes + ticket wizard
+
+- Scope:
+  - довести обе темы GUI до согласованной light/dark palette вместо partial recolor;
+  - переделать создание тикета из модального диалога в page-wizard внутри основного окна;
+  - сделать creation flow пошаговым: профиль -> тип/доп. поля -> описание/вложения -> срочность/важность;
+  - добавить вложения скриншота/видео на этапе создания тикета с отправкой первым сообщением после create.
+- Verification target:
+  - локальный GUI инстанс без коммита и без деплоя;
+  - `verify_workspace` и релевантные agent GUI tests;
+  - ручная локальная проверка page-wizard и переключения тем.
+
+## 2026-04-16 Agent GUI sidebar UX
+
+- Scope:
+  - свернуть старую левую панель профиля в новую функциональную навигацию;
+  - перенести настройки в верх навигационной рейки;
+  - вынести список тикетов в отдельную функцию слева с открытием чата по двойному клику;
+  - убрать дублирующую кнопку из профиля инициатора.
+- Verification target:
+  - локальный запуск GUI агента без коммита и без выкладки на Linux;
+  - точечные проверки `verify_workspace` и/или релевантные agent GUI тесты, насколько они не конфликтуют с текущим WIP.
+
 ## Goal
 
 - Довести первую production-волну hardening/modularization до состояния, где проект можно проверять и выпускать без ручной магии.
@@ -200,3 +264,40 @@
   - `python -m pytest server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_contracts.py server/tests/test_ticket_device_binding.py -v --tb=short`
   - `python -m pytest pc_agent/tests -v --tb=short`
   - browser/manual QA against `http://192.168.100.17:8666/admin`
+
+## 2026-04-16 Agent update normalization
+
+- Scope:
+  - server-side rollout recommendation and actionability;
+  - agent runtime polling/logging for recommended release;
+  - GUI wording for current version vs server rollout;
+  - diagnostics for pending/applied/failed update state.
+- Root cause captured:
+  - `assigned_rollout` older than current agent version was treated as "актуально" instead of actionable rollback;
+  - agent GUI badge showed only the local release version, which looked like the server rollout version;
+  - runtime status omitted `comparison`, `recommendation_source`, `assigned_rollout`, and local update-state files, so troubleshooting required raw logs/files.
+- Current fix wave:
+  1. make any assigned-rollout mismatch actionable on the server, including older recommended release;
+  2. log recommendation fetch/request details in `pc_agent/ws_agent.py`;
+  3. expose pending/history/failure update state through `/ui/agent/status`;
+  4. update GUI badge/button/diagnostics wording to distinguish local agent version from server rollout and surface rollback clearly;
+  5. sync update docs and targeted tests, then rebuild the Windows release.
+
+## 2026-04-17 Full-system verification wave
+
+- Scope:
+  - провести безопасный baseline-прогон по текущему локальному WIP без откатов и принудительной очистки дерева;
+  - проверить минимальный канон `verify_workspace`, затем server/agent pytest и доступные локальные runtime/API/browser-smoke;
+  - использовать локально запущенный agent, а при необходимости проверить bootstrap/update path штатными скриптами;
+  - собрать фактический список багов, регрессий, broken flows и непроверенных зон с привязкой к командам и артефактам.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - `python -m pytest server/tests/ -v --tb=short`
+  - `python -m pytest pc_agent/tests/ -v --tb=short`
+  - локальные проверки через `python scripts/manage_local_agent.py ...`
+  - browser/API smoke для доступных UI-flow, если main server/runtime доступны
+- Reporting target:
+  - отдельно зафиксировать, что прошло;
+  - что упало и с какими симптомами;
+  - что не удалось проверить;
+  - нужен ли rebuild/update локального агента для продолжения.
