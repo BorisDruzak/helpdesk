@@ -453,6 +453,7 @@ class ObserverOverlayService:
         await self.session.execute(delete(ObserverSpanLink).where(ObserverSpanLink.span_id.in_(span_ids_subquery)))
         await self.session.execute(delete(ObserverSpan).where(ObserverSpan.trace_id == trace_id))
         await self.session.execute(delete(ObserverTrace).where(ObserverTrace.trace_id == trace_id))
+        await self.session.flush()
 
     async def _existing_trace_signatures(self, trace_id: str) -> set[str]:
         rows = await self.session.execute(

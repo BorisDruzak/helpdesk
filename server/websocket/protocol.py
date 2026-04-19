@@ -527,6 +527,15 @@ async def send_ws_command(
                     logger.debug(f"[send_ws_command] dispatch enqueue skipped: {dispatch_exc}")
     except Exception as e:
         logger.error(f"[send_ws_command] Failed to enqueue command: {e}")
+        if acquired_run_tool:
+            run_tool_sem.release()
+            acquired_run_tool = False
+        if acquired_global:
+            global_sem.release()
+            acquired_global = False
+        if acquired_device:
+            device_sem.release()
+            acquired_device = False
         raise ValueError(f"Failed to enqueue command: {e}")
     
     if not wait_for_result:
@@ -534,6 +543,15 @@ async def send_ws_command(
             f"[send_ws_command] Enqueued without waiting: "
             f"command_id={command_id} device_id={device_id} command={command}"
         )
+        if acquired_run_tool:
+            run_tool_sem.release()
+            acquired_run_tool = False
+        if acquired_global:
+            global_sem.release()
+            acquired_global = False
+        if acquired_device:
+            device_sem.release()
+            acquired_device = False
         return {
             "status": "accepted",
             "command_id": command_id,

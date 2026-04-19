@@ -125,3 +125,87 @@ async def test_tools_run_uses_server_registry_metadata_when_device_snapshot_is_s
 
     assert response.status == 202
     assert payload["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_tools_run_async_surfaces_dispatch_error(test_client_no_db, monkeypatch):
+    async def _fake_get_tools_list(self, _device_id):
+        return []
+
+    async def _fake_get_tools_from_server(self, _device_id):
+        return []
+
+    async def _fake_run_tool(self, **kwargs):
+        operation_id = kwargs["params"]["_operation_id"]
+        return {
+            "status": "error",
+            "error": "WS command queue full",
+            "error_code": "WS_COMMAND_QUEUE_FULL",
+            "operation_id": operation_id,
+            "trace_id": "trace-async-failure",
+        }
+
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _fake_run_tool)
+
+    response = await test_client_no_db.post(
+        "/api/tools/run",
+        json={
+            "device_id": "device-async-fail",
+            "ticket_id": "ticket-async-fail",
+            "tool_name": TEST_ECHO_TOOL,
+            "params": {"message": "hello"},
+        },
+    )
+    assert response.status == 429
+    payload = await response.json()
+
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "WS_COMMAND_QUEUE_FULL"
+    assert payload["operation_id"]
+    assert payload["poll_url"] == f"/api/operations/{payload['operation_id']}"
+    assert payload["trace_id"] == "trace-async-failure"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_tools_run_wait_mode_surfaces_dispatch_error(test_client_no_db, monkeypatch):
+    async def _fake_get_tools_list(self, _device_id):
+        return []
+
+    async def _fake_get_tools_from_server(self, _device_id):
+        return []
+
+    async def _fake_run_tool(self, **kwargs):
+        operation_id = kwargs["params"]["_operation_id"]
+        return {
+            "status": "error",
+            "error": "Agent not connected",
+            "error_code": "AGENT_NOT_CONNECTED",
+            "operation_id": operation_id,
+            "trace_id": "trace-sync-failure",
+        }
+
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _fake_run_tool)
+
+    response = await test_client_no_db.post(
+        "/api/tools/run?wait=1",
+        json={
+            "device_id": "device-sync-fail",
+            "ticket_id": "ticket-sync-fail",
+            "tool_name": TEST_ECHO_TOOL,
+            "params": {"message": "hello"},
+        },
+    )
+    assert response.status == 503
+    payload = await response.json()
+
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "AGENT_NOT_CONNECTED"
+    assert payload["operation_id"]
+    assert payload["poll_url"] == f"/api/operations/{payload['operation_id']}"
+    assert payload["trace_id"] == "trace-sync-failure"

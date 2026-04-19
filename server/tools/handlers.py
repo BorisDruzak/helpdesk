@@ -14,6 +14,55 @@ from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 
 
+def _tool_error_status_code(result: dict) -> int:
+    error_code = str(result.get("error_code") or "").strip().upper()
+    if error_code == "WS_COMMAND_QUEUE_FULL":
+        return 429
+    if error_code == "AUTH_REQUIRED":
+        return 401
+    if error_code == "AGENT_NOT_CONNECTED":
+        return 503
+    if error_code in {"TIMEOUT", "MODULE_INSTALL_TIMEOUT"}:
+        return 504
+    if error_code == "DEVICE_NOT_FOUND":
+        return 404
+    if error_code in {
+        "MODULE_NOT_ON_SERVER",
+        "MODULE_TOOL_OWNER_CONFLICT",
+        "MODULE_PLATFORM_MISMATCH",
+        "AGENT_VERSION_TOO_OLD",
+        "AGENT_VERSION_UNKNOWN",
+        "DEVICE_OS_UNKNOWN",
+    }:
+        return 409
+    return 500
+
+
+def _tool_error_response(
+    result: dict,
+    *,
+    operation_id: str,
+    poll_url: str,
+    ticket_id: str,
+    device_id: str,
+) -> web.Response:
+    resolved_operation_id = result.get("operation_id") or operation_id
+    payload = {
+        "status": "error",
+        "error": result.get("error") or "Tool dispatch failed",
+        "error_code": result.get("error_code") or "TOOL_DISPATCH_FAILED",
+        "operation_id": resolved_operation_id,
+        "ticket_id": ticket_id,
+        "device_id": device_id,
+    }
+    trace_id = result.get("trace_id")
+    if trace_id:
+        payload["trace_id"] = trace_id
+    if resolved_operation_id:
+        payload["poll_url"] = poll_url
+    return web.json_response(payload, status=_tool_error_status_code(result))
+
+
 async def handle_get_tools(request):
     """
     HTTP API для получения списка tools: GET /api/tools
@@ -251,6 +300,15 @@ async def handle_tools_run(request):
                 auth_context=auth_context  # Передаем AuthContext
             )
             
+            if result.get("status") == "error":
+                return _tool_error_response(
+                    result,
+                    operation_id=operation_id,
+                    poll_url=poll_url,
+                    ticket_id=ticket_id,
+                    device_id=device_id,
+                )
+
             payload = result.get("payload", {})
             tool_status = payload.get("status", "error")
             tool_result = payload.get("data", {})
@@ -265,7 +323,7 @@ async def handle_tools_run(request):
         else:
             # Production: async mode - только enqueue, без ожидания command_result.
             # Это снижает количество долгоживущих корутин под высокой нагрузкой.
-            await tool_service.run_tool(
+            result = await tool_service.run_tool(
                 device_id=device_id,
                 ticket_id=ticket_id,
                 tool_name=tool_name,
@@ -274,13 +332,22 @@ async def handle_tools_run(request):
                 auth_context=auth_context,  # Передаем AuthContext
                 wait_for_result=False,
             )
+            if result.get("status") != "accepted":
+                return _tool_error_response(
+                    result,
+                    operation_id=operation_id,
+                    poll_url=poll_url,
+                    ticket_id=ticket_id,
+                    device_id=device_id,
+                )
 
             return web.json_response({
                 "status": "accepted",
-                "operation_id": operation_id,
+                "operation_id": result.get("operation_id") or operation_id,
                 "poll_url": poll_url,
                 "ticket_id": ticket_id,
-                "device_id": device_id
+                "device_id": device_id,
+                "trace_id": result.get("trace_id"),
             }, status=202)
     
     except asyncio.TimeoutError:

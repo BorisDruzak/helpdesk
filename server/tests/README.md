@@ -18,6 +18,12 @@
 
 ## Test database
 
+Windows default:
+
+- If `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test`.
+- In that default mode the harness opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
+- If you need isolated ephemeral test DBs from Windows, set `TEST_DATABASE_ADMIN_URL` explicitly.
+
 По умолчанию server suite больше не должен использовать общий `pc_support_test`.
 
 Канонические env vars:
@@ -67,5 +73,5 @@ python scripts/run_ci_suite.py
 ## Notes
 
 - `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не должен попадать в обычный suite.
-- `/api/tools/run` теперь канонически async: default response — `202 Accepted` с `operation_id` и `poll_url`; sync path только через явный `wait=1`.
+- `/api/tools/run` теперь канонически async: `202 Accepted` возвращается только если команда реально enqueue-нулась; transport/precheck ошибки обязаны возвращать явный error-ответ с `operation_id`, `poll_url` и `error_code`. Sync path только через явный `wait=1`.
 - Исторические point-in-time отчёты о тестах вынесены в [docs/archive/server-tests](../../docs/archive/server-tests/README.md) и не являются каноном.

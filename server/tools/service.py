@@ -20,7 +20,6 @@ from config import (
 # Lazy import для избежания circular dependency
 DB_AVAILABLE = False
 try:
-    from app.db.engine import get_session
     from app.repos.ticket_events_repo import TicketEventsRepo
     DB_AVAILABLE = True
 except ImportError:
@@ -36,6 +35,12 @@ class ToolService:
     def __init__(self, state_manager):
         self.state = state_manager
         self.cache = ToolsCache(state_manager)
+
+    @staticmethod
+    def _session_context():
+        from app.db import get_session as runtime_get_session
+
+        return runtime_get_session()
 
     @staticmethod
     def _tool_matches_manifest_entry(tool_entry: Dict, tool_name: str) -> bool:
@@ -146,7 +151,7 @@ class ToolService:
             try:
                 from app.repos import ToolsetSnapshotsRepo
                 
-                async with get_session() as session:
+                async with self._session_context() as session:
                     repo = ToolsetSnapshotsRepo(session)
                     snapshot = await repo.get_latest_snapshot(device_id)
                     
@@ -225,7 +230,7 @@ class ToolService:
             return []
         result: List[Dict] = []
         seen_tool_names: set = set()
-        async with get_session() as session:
+        async with self._session_context() as session:
             for m in (await self._get_preferred_server_modules(session)).values():
                 manifest = get_module_manifest(m)
                 tools = manifest.get("tools") or []
@@ -295,7 +300,7 @@ class ToolService:
             return None
 
         actor_role = "admin"
-        async with get_session() as session:
+        async with self._session_context() as session:
             resolution = await self._resolve_preferred_server_module_for_tool(session, tool_name)
             if resolution.get("status") == "conflict":
                 logger.error(f"[ensure_module] {resolution.get('error')}")
@@ -469,7 +474,121 @@ class ToolService:
             }
         logger.info(f"✅ Модуль {module_name}@{version} установлен на {device_id}, продолжаем run_tool")
         return None
-    
+
+    @staticmethod
+    def _derive_transport_error_code(error: object, fallback: str = "TOOL_DISPATCH_FAILED") -> str:
+        explicit = getattr(error, "error_code", None)
+        if explicit:
+            return str(explicit)
+        message = str(error or "").strip().lower()
+        if "not connected" in message:
+            return "AGENT_NOT_CONNECTED"
+        if "timeout" in message:
+            return "TIMEOUT"
+        return fallback
+
+    async def _record_terminal_tool_failure(
+        self,
+        *,
+        operation_id: Optional[str],
+        trace_id: str,
+        ticket_id: str,
+        device_id: str,
+        tool_name: str,
+        call_id: str,
+        actor_role: str,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        if not (DB_AVAILABLE and ENABLE_DB_PERSISTENCE and operation_id and ticket_id):
+            return
+
+        summary = f"Tool {tool_name} failed: {error_message}"
+        payload = {
+            "type": "tool_call_result",
+            "status": "error",
+            "tool_name": tool_name,
+            "call_id": call_id,
+            "summary": summary,
+            "error": error_message,
+            "error_code": error_code,
+            "result": {},
+            "operation_id": operation_id,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        result_event = None
+
+        try:
+            from app.repos.operations_repo import OperationsRepo
+            from app.services.operation_service import OperationService
+            from websocket.ui_handler import push_ticket_event_committed
+
+            async with self._session_context() as session:
+                ui_publisher = self.state.ui_publisher if hasattr(self.state, "ui_publisher") else None
+                op_service = OperationService(session, publisher=ui_publisher)
+                op_repo = OperationsRepo(session)
+                operation = await op_repo.get_by_operation_id(operation_id)
+                if operation is None:
+                    operation = await op_service.enqueue_operation(
+                        operation_id=operation_id,
+                        device_id=device_id,
+                        kind="tool_call",
+                        tool_name=tool_name,
+                        ticket_id=ticket_id,
+                        job_id=None,
+                        actor_role=actor_role,
+                        trace_id=trace_id,
+                    )
+
+                await op_service.mark_failed(
+                    operation_id=operation_id,
+                    error_code=error_code,
+                    error_message=error_message,
+                    expected_statuses=["queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"],
+                )
+
+                ticket_events_repo = TicketEventsRepo(session)
+                result_event = await ticket_events_repo.add_event(
+                    ticket_id=ticket_id,
+                    device_id=device_id,
+                    agent_seq=None,
+                    event_type="tool_call_result",
+                    payload=payload,
+                    trace_id=trace_id,
+                    event_id=None,
+                    operation_id=operation_id,
+                )
+                if result_event is not None:
+                    await op_repo.update_status(
+                        operation_id=operation_id,
+                        new_status="failed",
+                        expected_statuses=["failed"],
+                        error_code=error_code,
+                        error_message=error_message,
+                        result_summary=summary,
+                        result_event_id=result_event[0],
+                        deadline_at=None,
+                    )
+
+                await session.commit()
+
+            if result_event is not None:
+                await push_ticket_event_committed(
+                    self.state,
+                    ticket_id,
+                    result_event[0],
+                    "tool_call_result",
+                    operation_id,
+                    None,
+                    result_event[1],
+                    payload,
+                )
+        except Exception as exc:
+            logger.warning(
+                f"[ToolService] Failed to materialize terminal tool failure: "
+                f"operation_id={operation_id} error={exc}"
+            )
+
     async def run_tool(
         self,
         device_id: str,
@@ -499,14 +618,40 @@ class ToolService:
             timeout = TOOL_EXECUTION_TIMEOUT
         
         logger.info(f"🔧 Запуск tool {tool_name} на {device_id}")
+        trace_id = str(uuid.uuid4())
+        requested_operation_id_raw = params.get("_operation_id")
+        requested_operation_id = str(requested_operation_id_raw).strip() if requested_operation_id_raw else None
+        actor_role = getattr(auth_context, "actor_role", None) or "support"
         
         # Проверка и при необходимости установка модуля по owner module из server registry.
         ensure_err = await self._ensure_module_installed(device_id, tool_name, auth_context)
         if ensure_err:
-            return ensure_err
+            error_message = str(ensure_err.get("error") or "Tool dispatch precheck failed")
+            error_code = str(ensure_err.get("error_code") or "TOOL_PRECHECK_FAILED")
+            await self._record_terminal_tool_failure(
+                operation_id=requested_operation_id,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                tool_name=tool_name,
+                call_id=call_id,
+                actor_role=actor_role,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            return {
+                **ensure_err,
+                "status": "error",
+                "error": error_message,
+                "error_code": error_code,
+                "operation_id": requested_operation_id,
+                "trace_id": trace_id,
+            }
+        
+        operation_id = requested_operation_id
         
         try:
-            from websocket.protocol import send_ws_command
+            from websocket.protocol import WsCommandQueueFullError, send_ws_command
             
             # Получаем job_id из сессии тикета (опционально, для обратной совместимости)
             # КРИТИЧНО: В Protocol V3 события сохраняются в ticket_events, а не в job_events
@@ -517,6 +662,10 @@ class ToolService:
             # КРИТИЧНО: Извлекаем operation_id из params (если есть)
             # operation_id должен быть передан из handlers.py для корреляции
             operation_id = params.pop("_operation_id", None)  # Извлекаем и удаляем из params
+            if operation_id:
+                operation_id = str(operation_id).strip()
+            else:
+                operation_id = requested_operation_id
             
             # Формируем параметры команды
             command_params = {
@@ -531,9 +680,6 @@ class ToolService:
                 command_params["_operation_id"] = operation_id
                 logger.debug(f"📋 Передача _operation_id в send_ws_command: {operation_id}")
             
-            # Генерируем trace_id для корреляции (будет использован в send_ws_command и для события)
-            trace_id = str(uuid.uuid4())
-            
             # КРИТИЧНО: Создаём событие tool_call_started ПЕРЕД отправкой команды
             # 
             # ИНВАРИАНТ: tool_call_started всегда создаётся сервером до отправки run_tool команды.
@@ -542,7 +688,7 @@ class ToolService:
             # WHERE operation_id IS NOT NULL.
             if operation_id and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
                 try:
-                    async with get_session() as session:
+                    async with self._session_context() as session:
                         ticket_events_repo = TicketEventsRepo(session)
                         
                         # Санитизация params для payload (убираем внутренние поля)
@@ -550,8 +696,6 @@ class ToolService:
                             k: v for k, v in params.items() 
                             if not k.startswith("_")  # Убираем внутренние поля типа _operation_id
                         }
-                        
-                        actor_role = getattr(auth_context, "actor_role", None) or "support"
 
                         # Создаём событие tool_call_started с operation_id сразу
                         result = await ticket_events_repo.add_event(
@@ -618,18 +762,76 @@ class ToolService:
             
             return result
         
-        except asyncio.TimeoutError:
-            logger.error(f"⏱️  Таймаут выполнения tool {tool_name}")
+        except WsCommandQueueFullError as e:
+            error_code = self._derive_transport_error_code(e, fallback="WS_COMMAND_QUEUE_FULL")
+            error_message = str(e)
+            logger.error(
+                f"❌ Очередь WS-команд переполнена для tool {tool_name}: "
+                f"device_id={device_id} operation_id={operation_id}"
+            )
+            await self._record_terminal_tool_failure(
+                operation_id=operation_id,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                tool_name=tool_name,
+                call_id=call_id,
+                actor_role=actor_role,
+                error_code=error_code,
+                error_message=error_message,
+            )
             return {
                 "status": "error",
-                "error": "timeout"
+                "error": error_message,
+                "error_code": error_code,
+                "operation_id": operation_id,
+                "trace_id": trace_id,
+            }
+        
+        except asyncio.TimeoutError:
+            logger.error(f"⏱️  Таймаут выполнения tool {tool_name}")
+            error_code = "TIMEOUT"
+            error_message = "timeout"
+            await self._record_terminal_tool_failure(
+                operation_id=operation_id,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                tool_name=tool_name,
+                call_id=call_id,
+                actor_role=actor_role,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            return {
+                "status": "error",
+                "error": error_message,
+                "error_code": error_code,
+                "operation_id": operation_id,
+                "trace_id": trace_id,
             }
         
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения tool {tool_name}: {e}")
+            error_code = self._derive_transport_error_code(e)
+            error_message = str(e)
+            await self._record_terminal_tool_failure(
+                operation_id=operation_id,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                tool_name=tool_name,
+                call_id=call_id,
+                actor_role=actor_role,
+                error_code=error_code,
+                error_message=error_message,
+            )
             return {
                 "status": "error",
-                "error": str(e)
+                "error": error_message,
+                "error_code": error_code,
+                "operation_id": operation_id,
+                "trace_id": trace_id,
             }
 
 
