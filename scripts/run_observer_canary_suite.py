@@ -58,6 +58,69 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def extract_tool_result_version(tool_result: Any) -> Optional[str]:
+    if not isinstance(tool_result, dict):
+        return None
+    top_level = tool_result.get("version")
+    if isinstance(top_level, str) and top_level.strip():
+        return top_level.strip()
+    observations = tool_result.get("observations")
+    if isinstance(observations, dict):
+        observed = observations.get("version")
+        if isinstance(observed, str) and observed.strip():
+            return observed.strip()
+    nested_result = tool_result.get("result")
+    if isinstance(nested_result, dict):
+        nested_top_level = nested_result.get("version")
+        if isinstance(nested_top_level, str) and nested_top_level.strip():
+            return nested_top_level.strip()
+        output = nested_result.get("output")
+        if isinstance(output, dict):
+            output_version = output.get("version")
+            if isinstance(output_version, str) and output_version.strip():
+                return output_version.strip()
+    return None
+
+
+def build_ws_chat_outbox_item(
+    *,
+    device_id: str,
+    ticket_id: str,
+    outbox_id: str,
+    agent_seq: int,
+    trace_id: str,
+    text: str,
+    actor_role: str = "agent",
+) -> dict[str, Any]:
+    return {
+        "type": "outbox_item",
+        "request_id": str(uuid.uuid4()),
+        "device_id": device_id,
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": trace_id,
+        "ticket_id": ticket_id,
+        "meta": {"actor_role": actor_role},
+        "payload": {
+            "outbox_id": outbox_id,
+            "item_type": "job_event",
+            "agent_seq": agent_seq,
+            "event": {
+                "event": "chat_message",
+                "from": actor_role,
+                "text": text,
+                "ticket_id": ticket_id,
+            },
+        },
+    }
+
+
+def find_ws_message(messages: list[dict[str, Any]], message_type: str) -> Optional[dict[str, Any]]:
+    for item in reversed(messages):
+        if item.get("type") == message_type:
+            return item
+    return None
+
+
 def build_remote_python_shell(*, remote_root: str = REMOTE_ROOT, remote_python: str = REMOTE_SERVER_PYTHON) -> str:
     server_root = f"{remote_root.rstrip('/')}/server"
     pythonpath = f"{server_root}:{remote_root.rstrip('/')}"
@@ -752,18 +815,30 @@ async def get_trace_detail(api: ApiClient, *, admin_token: str, trace_id: str, i
     return payload
 
 
-async def ws_expect_messages(ws: aiohttp.ClientWebSocketResponse, *, expected_types: set[str], limit: int = 100, timeout_sec: float = 10.0) -> list[dict[str, Any]]:
+async def ws_expect_messages(
+    ws: aiohttp.ClientWebSocketResponse,
+    *,
+    expected_types: set[str],
+    limit: int = 100,
+    timeout_sec: float = 10.0,
+    allow_timeout: bool = False,
+) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     async def _read() -> list[dict[str, Any]] | None:
-        while len(messages) < limit:
-            msg = await ws.receive(timeout=timeout_sec)
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                payload = json.loads(msg.data)
-                messages.append(payload)
-                if payload.get("type") in expected_types:
-                    return messages
-            elif msg.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}:
-                raise RuntimeError(f"WebSocket closed while waiting for {expected_types}: {msg.type}")
+        try:
+            while len(messages) < limit:
+                msg = await ws.receive(timeout=timeout_sec)
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    payload = json.loads(msg.data)
+                    messages.append(payload)
+                    if payload.get("type") in expected_types:
+                        return messages
+                elif msg.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}:
+                    raise RuntimeError(f"WebSocket closed while waiting for {expected_types}: {msg.type}")
+        except TimeoutError:
+            if allow_timeout:
+                return messages
+            raise
         return messages
     return await _read() or messages
 
@@ -958,7 +1033,6 @@ async def scenario_module_lifecycle(
     results: list[ScenarioResult] = []
     module_name = f"observer_canary_{uuid.uuid4().hex[:8]}"
     await save_module_version(api, admin_token=admin_token, module_name=module_name, version="1.0.0")
-    await save_module_version(api, admin_token=admin_token, module_name=module_name, version="1.1.0")
 
     install_v1 = await module_action(
         api,
@@ -993,18 +1067,20 @@ async def scenario_module_lifecycle(
     results.append(
         ScenarioResult(
             name="module_install",
-            ok=echo_v1.get("result", {}).get("version") == "1.0.0",
+            ok=extract_tool_result_version(echo_v1.get("result")) == "1.0.0",
             summary="Installed and activated canary module version 1.0.0, then executed its tool through support API.",
             details={
                 "module_name": module_name,
                 "install_operation_id": install_v1_operation_id,
                 "trace_id": install_v1_trace["trace_id"],
                 "ticket_id": ticket_id,
+                "observed_version": extract_tool_result_version(echo_v1.get("result")),
                 "tool_result": echo_v1.get("result"),
             },
         )
     )
 
+    await save_module_version(api, admin_token=admin_token, module_name=module_name, version="1.1.0")
     install_v2 = await module_action(
         api,
         admin_token=admin_token,
@@ -1038,7 +1114,7 @@ async def scenario_module_lifecycle(
     results.append(
         ScenarioResult(
             name="module_update",
-            ok=echo_v2.get("result", {}).get("version") == "1.1.0",
+            ok=extract_tool_result_version(echo_v2.get("result")) == "1.1.0",
             summary="Installed and activated module version 1.1.0, then verified that support tool execution uses the new version.",
             details={
                 "module_name": module_name,
@@ -1046,6 +1122,7 @@ async def scenario_module_lifecycle(
                 "install_trace_id": install_v2_trace["trace_id"],
                 "activate_operation_id": activate_v2_operation_id,
                 "activate_trace_id": activate_v2_trace["trace_id"],
+                "observed_version": extract_tool_result_version(echo_v2.get("result")),
                 "tool_result": echo_v2.get("result"),
             },
         )
@@ -1180,38 +1257,45 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
         )
 
         duplicate_trace_id = str(uuid.uuid4())
-        duplicate_message = {
-            "type": "outbox_item",
-            "request_id": str(uuid.uuid4()),
-            "device_id": device_id,
-            "protocol_version": "ws_ticket_v3",
-            "trace_id": duplicate_trace_id,
-            "ticket_id": ticket_id,
-            "meta": {"actor_role": "agent"},
-            "payload": {
-                "outbox_id": "observer-duplicate-1",
-                "item_type": "job_event",
-                "agent_seq": 2,
-                "event": {"event": "chat_message", "from": "agent", "text": "duplicate"},
-            },
-        }
+        duplicate_message = build_ws_chat_outbox_item(
+            device_id=device_id,
+            ticket_id=ticket_id,
+            outbox_id="observer-duplicate-1",
+            agent_seq=2,
+            trace_id=duplicate_trace_id,
+            text="duplicate",
+        )
         await ws.send_json(duplicate_message)
-        ack_messages = await ws_expect_messages(ws, expected_types={"outbox_ack"})
-        first_ack = next(item for item in reversed(ack_messages) if item.get("type") == "outbox_ack")
+        ack_messages = await ws_expect_messages(
+            ws,
+            expected_types={"outbox_ack", "outbox_nack"},
+            allow_timeout=True,
+        )
+        first_ack = find_ws_message(ack_messages, "outbox_ack")
+        first_nack = find_ws_message(ack_messages, "outbox_nack")
         await ws.send_json(duplicate_message)
-        duplicate_ack_messages = await ws_expect_messages(ws, expected_types={"outbox_ack"})
-        duplicate_ack = next(item for item in reversed(duplicate_ack_messages) if item.get("type") == "outbox_ack")
+        duplicate_ack_messages = await ws_expect_messages(
+            ws,
+            expected_types={"outbox_ack", "outbox_nack"},
+            allow_timeout=True,
+        )
+        duplicate_ack = find_ws_message(duplicate_ack_messages, "outbox_ack")
+        duplicate_nack = find_ws_message(duplicate_ack_messages, "outbox_nack")
         results.append(
             ScenarioResult(
                 name="ws_duplicate_ack",
                 ok=(
-                    "observer-duplicate-1" in first_ack.get("payload", {}).get("outbox_ids", [])
+                    first_ack is not None
+                    and duplicate_ack is not None
+                    and "observer-duplicate-1" in first_ack.get("payload", {}).get("outbox_ids", [])
                     and "observer-duplicate-1" in duplicate_ack.get("payload", {}).get("outbox_ids", [])
                 ),
                 summary="Duplicate outbox_item received direct ACK on replayed outbox_id.",
                 details={
-                    "first_ack": first_ack.get("payload"),
-                    "duplicate_ack": duplicate_ack.get("payload"),
+                    "first_ack": first_ack.get("payload") if first_ack else None,
+                    "first_nack": first_nack.get("payload") if first_nack else None,
+                    "duplicate_ack": duplicate_ack.get("payload") if duplicate_ack else None,
+                    "duplicate_nack": duplicate_nack.get("payload") if duplicate_nack else None,
                 },
             )
         )
@@ -1219,23 +1303,22 @@ async def scenario_ws_ack_nack_replay(api: ApiClient, *, admin_token: str, suppo
         rate_limited = None
         for index in range(64):
             await ws.send_json(
-                {
-                    "type": "outbox_item",
-                    "request_id": str(uuid.uuid4()),
-                    "device_id": device_id,
-                    "protocol_version": "ws_ticket_v3",
-                    "trace_id": str(uuid.uuid4()),
-                    "ticket_id": ticket_id,
-                    "meta": {"actor_role": "agent"},
-                    "payload": {
-                        "outbox_id": f"observer-rate-{index}",
-                        "item_type": "job_event",
-                        "agent_seq": 10 + index,
-                        "event": {"event": "chat_message", "from": "agent", "text": f"rate {index}"},
-                    },
-                }
+                build_ws_chat_outbox_item(
+                    device_id=device_id,
+                    ticket_id=ticket_id,
+                    outbox_id=f"observer-rate-{index}",
+                    agent_seq=10 + index,
+                    trace_id=str(uuid.uuid4()),
+                    text=f"rate {index}",
+                )
             )
-        burst_messages = await ws_expect_messages(ws, expected_types={"outbox_nack"}, limit=256, timeout_sec=15.0)
+        burst_messages = await ws_expect_messages(
+            ws,
+            expected_types={"outbox_nack"},
+            limit=256,
+            timeout_sec=15.0,
+            allow_timeout=True,
+        )
         for item in reversed(burst_messages):
             if (item.get("payload", {}).get("error", {}) or {}).get("code") == "RATE_LIMITED":
                 rate_limited = item

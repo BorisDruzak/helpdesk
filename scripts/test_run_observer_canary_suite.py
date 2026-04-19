@@ -34,6 +34,33 @@ def test_build_remote_python_command_uses_remote_shell() -> None:
     assert "PYTHONPATH=" in suite.build_remote_python_shell()
 
 
+def test_extract_tool_result_version_reads_nested_observations_and_output() -> None:
+    tool_result = {
+        "observations": {"version": "1.2.3"},
+        "result": {"output": {"version": "9.9.9"}},
+    }
+    assert suite.extract_tool_result_version(tool_result) == "1.2.3"
+
+    nested_only = {"result": {"output": {"version": "2.0.0"}}}
+    assert suite.extract_tool_result_version(nested_only) == "2.0.0"
+
+
+def test_build_ws_chat_outbox_item_embeds_ticket_id_inside_event() -> None:
+    payload = suite.build_ws_chat_outbox_item(
+        device_id="device-1",
+        ticket_id="ticket-1",
+        outbox_id="ob-1",
+        agent_seq=12,
+        trace_id="trace-1",
+        text="hello",
+    )
+
+    assert payload["type"] == "outbox_item"
+    assert payload["payload"]["agent_seq"] == 12
+    assert payload["payload"]["event"]["ticket_id"] == "ticket-1"
+    assert payload["payload"]["event"]["text"] == "hello"
+
+
 def test_run_subprocess_supports_positional_cwd_argument(tmp_path: Path) -> None:
     completed = suite.run_subprocess(
         [sys.executable, "-c", "print('observer-canary-ok')"],
