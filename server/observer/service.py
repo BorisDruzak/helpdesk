@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -7,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Optional
+from weakref import WeakValueDictionary
 
 from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +31,8 @@ TERMINAL_OPERATION_STATUSES = {"succeeded", "success", "failed", "timed_out", "c
 ERROR_OPERATION_STATUSES = {"failed", "timed_out"}
 ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
 ERROR_AUDIT_SEVERITIES = {"error", "critical"}
+_TRACE_PROJECTION_LOCK_GUARD = asyncio.Lock()
+_TRACE_PROJECTION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
 @dataclass(slots=True)
@@ -133,12 +137,21 @@ def _signature_title(*, error_kind: Optional[str], module_name: Optional[str], t
     return " / ".join(parts) if parts else "observer_error"
 
 
+async def _get_trace_projection_lock(trace_id: str) -> asyncio.Lock:
+    async with _TRACE_PROJECTION_LOCK_GUARD:
+        lock = _TRACE_PROJECTION_LOCKS.get(trace_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TRACE_PROJECTION_LOCKS[trace_id] = lock
+        return lock
+
+
 class ObserverOverlayService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def search_traces(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
-        await self._ensure_projected(filters, limit=limit)
+        await self._ensure_projected(filters, limit=limit, force=False)
         stmt = select(ObserverTrace)
         if filters.trace_id:
             stmt = stmt.where(ObserverTrace.trace_id == filters.trace_id)
@@ -184,7 +197,7 @@ class ObserverOverlayService:
         return [self._serialize_trace(row) for row in rows]
 
     async def get_trace_detail(self, trace_id: str) -> Optional[dict[str, Any]]:
-        trace = await self.project_trace(trace_id)
+        trace = await self.project_trace(trace_id, force=False)
         if trace is None:
             return None
         spans = (
@@ -215,7 +228,7 @@ class ObserverOverlayService:
         }
 
     async def search_signatures(self, filters: TraceOverlayFilters, *, limit: int = 50) -> list[dict[str, Any]]:
-        await self._ensure_projected(filters, limit=limit)
+        await self._ensure_projected(filters, limit=limit, force=False)
         stmt = select(ObserverErrorSignature)
         if filters.error_signature:
             stmt = stmt.where(ObserverErrorSignature.error_signature == filters.error_signature)
@@ -270,39 +283,56 @@ class ObserverOverlayService:
         candidate_ids = await self._candidate_trace_ids(filters, limit=limit)
         projected: list[str] = []
         for trace_id in candidate_ids:
-            if await self.project_trace(trace_id):
+            if await self.project_trace(trace_id, force=True):
                 projected.append(trace_id)
         return projected
 
-    async def project_trace(self, trace_id: str) -> Optional[ObserverTrace]:
+    async def project_trace(self, trace_id: str, *, force: bool = False) -> Optional[ObserverTrace]:
+        lock = await _get_trace_projection_lock(trace_id)
+        async with lock:
+            await self._acquire_trace_projection_db_lock(trace_id)
+            return await self._project_trace_locked(trace_id, force=force)
+
+    async def _project_trace_locked(self, trace_id: str, *, force: bool) -> Optional[ObserverTrace]:
         sources = await self._collect_sources(trace_id)
         if sources.empty:
             await self._clear_trace_projection(trace_id)
             return None
 
-        old_signatures = await self._existing_trace_signatures(trace_id)
-        await self._clear_trace_projection(trace_id)
+        existing_trace = await self.session.get(ObserverTrace, trace_id)
+        source_last_seen_at = self._source_last_seen_at(sources)
+        if existing_trace is not None and not force and not self._projection_needs_refresh(existing_trace, source_last_seen_at):
+            return existing_trace
 
-        span_payloads, link_payloads, trace_meta = self._build_span_payloads(trace_id, sources)
+        old_signatures = await self._existing_trace_signatures(trace_id) if existing_trace is not None else set()
+        await self._clear_trace_dependents(trace_id)
+
+        span_payloads, link_payloads, trace_meta = self._build_span_payloads(
+            trace_id,
+            sources,
+            source_last_seen_at=source_last_seen_at,
+        )
         occurrence_payloads = self._build_occurrence_payloads(trace_id, sources, span_payloads)
 
-        trace = ObserverTrace(
-            trace_id=trace_id,
-            root_span_id=trace_meta["root_span_id"],
-            root_kind=trace_meta["root_kind"],
-            ticket_id=trace_meta["ticket_id"],
-            device_id=trace_meta["device_id"],
-            operation_id=trace_meta["operation_id"],
-            job_id=trace_meta["job_id"],
-            status=self._projected_trace_status(trace_meta["status"], occurrence_payloads),
-            started_at=trace_meta["started_at"],
-            finished_at=trace_meta["finished_at"],
-            duration_ms=_duration_ms(trace_meta["started_at"], trace_meta["finished_at"]),
-            span_count=len(span_payloads),
-            error_count=len(occurrence_payloads),
-            attrs_json=trace_meta["attrs_json"],
-        )
-        self.session.add(trace)
+        if existing_trace is None:
+            trace = ObserverTrace(trace_id=trace_id)
+            self.session.add(trace)
+        else:
+            trace = existing_trace
+
+        trace.root_span_id = trace_meta["root_span_id"]
+        trace.root_kind = trace_meta["root_kind"]
+        trace.ticket_id = trace_meta["ticket_id"]
+        trace.device_id = trace_meta["device_id"]
+        trace.operation_id = trace_meta["operation_id"]
+        trace.job_id = trace_meta["job_id"]
+        trace.status = self._projected_trace_status(trace_meta["status"], occurrence_payloads)
+        trace.started_at = trace_meta["started_at"]
+        trace.finished_at = trace_meta["finished_at"]
+        trace.duration_ms = _duration_ms(trace_meta["started_at"], trace_meta["finished_at"])
+        trace.span_count = len(span_payloads)
+        trace.error_count = len(occurrence_payloads)
+        trace.attrs_json = trace_meta["attrs_json"]
         await self.session.flush()
         for payload in span_payloads:
             self.session.add(ObserverSpan(**payload))
@@ -350,10 +380,10 @@ class ObserverOverlayService:
         await self._refresh_signatures(touched_signatures)
         return trace
 
-    async def _ensure_projected(self, filters: TraceOverlayFilters, *, limit: int) -> None:
+    async def _ensure_projected(self, filters: TraceOverlayFilters, *, limit: int, force: bool) -> None:
         candidate_ids = await self._candidate_trace_ids(filters, limit=limit)
         for trace_id in candidate_ids:
-            await self.project_trace(trace_id)
+            await self.project_trace(trace_id, force=force)
 
     async def _candidate_trace_ids(self, filters: TraceOverlayFilters, *, limit: int) -> list[str]:
         if filters.trace_id:
@@ -447,13 +477,53 @@ class ObserverOverlayService:
             runtime_audits=list(runtime_audits),
         )
 
-    async def _clear_trace_projection(self, trace_id: str) -> None:
+    async def _clear_trace_dependents(self, trace_id: str) -> None:
         span_ids_subquery = select(ObserverSpan.span_id).where(ObserverSpan.trace_id == trace_id)
         await self.session.execute(delete(ObserverErrorOccurrence).where(ObserverErrorOccurrence.trace_id == trace_id))
         await self.session.execute(delete(ObserverSpanLink).where(ObserverSpanLink.span_id.in_(span_ids_subquery)))
         await self.session.execute(delete(ObserverSpan).where(ObserverSpan.trace_id == trace_id))
+        await self.session.flush()
+
+    async def _clear_trace_projection(self, trace_id: str) -> None:
+        await self._clear_trace_dependents(trace_id)
         await self.session.execute(delete(ObserverTrace).where(ObserverTrace.trace_id == trace_id))
         await self.session.flush()
+
+    async def _acquire_trace_projection_db_lock(self, trace_id: str) -> None:
+        bind = self.session.get_bind()
+        if bind is None or bind.dialect.name != "postgresql":
+            return
+        advisory_key = int.from_bytes(hashlib.blake2b(trace_id.encode("utf-8"), digest_size=8).digest(), "big", signed=True)
+        await self.session.execute(select(func.pg_advisory_xact_lock(advisory_key)))
+
+    def _projection_needs_refresh(self, trace: ObserverTrace, source_last_seen_at: Optional[datetime]) -> bool:
+        if source_last_seen_at is None:
+            return trace.span_count == 0
+        projected_at = trace.updated_at or trace.created_at
+        if projected_at is None:
+            return True
+        return source_last_seen_at > projected_at
+
+    def _source_last_seen_at(self, sources: TraceProjectionSources) -> Optional[datetime]:
+        candidates = [
+            *[
+                timestamp
+                for operation in sources.operations
+                for timestamp in (
+                    operation.queued_at,
+                    operation.sent_at,
+                    operation.accepted_at,
+                    operation.started_at,
+                    operation.finished_at,
+                    operation.canceled_at,
+                )
+                if timestamp
+            ],
+            *[item.created_at for item in sources.ticket_events if item.created_at],
+            *[item.created_at for item in sources.device_events if item.created_at],
+            *[item.created_at for item in sources.runtime_audits if item.created_at],
+        ]
+        return max(candidates) if candidates else None
 
     async def _existing_trace_signatures(self, trace_id: str) -> set[str]:
         rows = await self.session.execute(
@@ -465,6 +535,8 @@ class ObserverOverlayService:
         self,
         trace_id: str,
         sources: TraceProjectionSources,
+        *,
+        source_last_seen_at: Optional[datetime],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
         payloads: list[dict[str, Any]] = []
         links: list[dict[str, Any]] = []
@@ -646,6 +718,7 @@ class ObserverOverlayService:
                 "device_events": len(sources.device_events),
                 "agent_runtime_audit": len(sources.runtime_audits),
             },
+            "source_last_seen_at": _iso(source_last_seen_at),
             "tool_names": sorted(
                 {
                     value

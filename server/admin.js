@@ -3958,6 +3958,7 @@
             results: [],
             detail: null,
             selectedId: null,
+            busy: false,
         };
 
         function techStatusClass(kind) {
@@ -4562,7 +4563,7 @@
                     el.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') {
                             e.preventDefault();
-                            loadTechObserverSearch('traces').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                            techRunObserverInteraction(() => loadTechObserverSearch('traces')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         }
                     });
                 }
@@ -4649,21 +4650,21 @@
                         e.preventDefault();
                         const action = observerActionBtn.getAttribute('data-tech-observer-action');
                         if (action === 'search-traces') {
-                            loadTechObserverSearch('traces').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                            techRunObserverInteraction(() => loadTechObserverSearch('traces')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         } else if (action === 'search-signatures') {
-                            loadTechObserverSearch('signatures').catch((err) => techSetObserverStatus(err.message || String(err), true));
+                            techRunObserverInteraction(() => loadTechObserverSearch('signatures')).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         } else if (action === 'rebuild') {
-                            rebuildTechObserverTraces().catch((err) => techSetObserverStatus(err.message || String(err), true));
+                            techRunObserverInteraction(() => rebuildTechObserverTraces()).catch((err) => techSetObserverStatus(err.message || String(err), true));
                         }
                         return;
                     }
                     const observerOpenBtn = e.target.closest('button[data-tech-observer-open]');
                     if (observerOpenBtn) {
                         e.preventDefault();
-                        loadTechObserverDetail(
+                        techRunObserverInteraction(() => loadTechObserverDetail(
                             observerOpenBtn.getAttribute('data-tech-observer-open') === 'signature' ? 'signatures' : 'traces',
                             observerOpenBtn.getAttribute('data-tech-observer-id')
-                        ).catch((err) => techSetObserverStatus(err.message || String(err), true));
+                        )).catch((err) => techSetObserverStatus(err.message || String(err), true));
                     }
                 });
             }
@@ -4863,6 +4864,25 @@
             if (!host) return;
             host.textContent = message || '—';
             host.classList.toggle('error-message', !!isError);
+        }
+
+        function techSetObserverBusy(isBusy) {
+            techObserverState.busy = !!isBusy;
+            document.querySelectorAll('#tab-tech [data-tech-observer-action], #tab-tech [data-tech-observer-open]').forEach((button) => {
+                button.disabled = !!isBusy;
+            });
+        }
+
+        async function techRunObserverInteraction(task) {
+            if (techObserverState.busy) {
+                return;
+            }
+            techSetObserverBusy(true);
+            try {
+                await task();
+            } finally {
+                techSetObserverBusy(false);
+            }
         }
 
         function renderTechObserverResults() {
