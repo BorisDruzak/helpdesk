@@ -12,8 +12,14 @@ def test_build_canary_module_payload_contains_expected_tools() -> None:
     assert payload["module_name"] == "observer_canary_demo"
     assert payload["version"] == "1.1.0"
     tool_names = [tool["tool_name"] for tool in payload["tools"]]
-    assert tool_names == ["observer_canary_demo.echo", "observer_canary_demo.sleep"]
+    assert tool_names == [
+        "observer_canary_demo.echo",
+        "observer_canary_demo.sleep",
+        "observer_canary_demo.consent_probe",
+    ]
     assert all(tool["metadata"]["origin"] == "managed" for tool in payload["tools"])
+    consent_tool = next(tool for tool in payload["tools"] if tool["tool_name"].endswith(".consent_probe"))
+    assert consent_tool["metadata"]["requires_consent"] is True
 
 
 def test_build_remote_python_command_uses_remote_shell() -> None:

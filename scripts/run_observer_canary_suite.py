@@ -165,6 +165,41 @@ def build_canary_module_payload(module_name: str, version: str) -> dict[str, Any
                     """
                 ).strip(),
             },
+            {
+                "tool_name": f"{module_name}.consent_probe",
+                "method_name": "consent_probe_tool",
+                "description": "Simple consent-gated tool for approve/deny/timeout canaries.",
+                "params_schema": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ok": {"type": "boolean"},
+                        "version": {"type": "string"},
+                        "label": {"type": "string"},
+                    },
+                },
+                "metadata": {
+                    **dict(shared_metadata),
+                    "risk_level": "sensitive_read",
+                    "requires_consent": True,
+                },
+                "contract_version": "1.0.0",
+                "dependencies": dict(shared_dependencies),
+                "lifecycle": "stable",
+                "error_codes": ["VALIDATION_ERROR"],
+                "artifact_types": [],
+                "redaction": dict(shared_redaction),
+                "resources": {"max_runtime_sec": 30, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                "user_function_body": (
+                    f'return {{"ok": True, "version": "{version}", "label": params.get("label", "consent")}}'
+                ),
+            },
         ],
     }
 
@@ -667,16 +702,17 @@ async def run_remote_python(*, remote: str, code: str) -> str:
     return completed.stdout.strip()
 
 
-async def scenario_consent(api: ApiClient, *, admin_token: str, support_token: str, device_id: str, remote: str) -> list[ScenarioResult]:
+async def scenario_consent(
+    api: ApiClient,
+    *,
+    admin_token: str,
+    support_token: str,
+    device_id: str,
+    remote: str,
+    tool_name: str,
+) -> list[ScenarioResult]:
     results: list[ScenarioResult] = []
-    params = {
-        "mode": "preset",
-        "preset": "system",
-        "tail_lines": 50,
-        "max_files": 3,
-        "max_total_bytes": 250000,
-        "include_journal": False,
-    }
+    params = {"label": "observer-consent"}
 
     ticket = await create_ticket(
         api,
@@ -693,7 +729,7 @@ async def scenario_consent(api: ApiClient, *, admin_token: str, support_token: s
         token=support_token,
         device_id=device_id,
         ticket_id=ticket_id,
-        tool_name="diag.logs.collect",
+        tool_name=tool_name,
         params=params,
     )
     approve_operation_id = str(approve_payload.get("operation_id") or "")
@@ -725,7 +761,7 @@ async def scenario_consent(api: ApiClient, *, admin_token: str, support_token: s
         token=support_token,
         device_id=device_id,
         ticket_id=ticket_id,
-        tool_name="diag.logs.collect",
+        tool_name=tool_name,
         params=params,
     )
     deny_operation_id = str(deny_payload.get("operation_id") or "")
@@ -757,7 +793,7 @@ async def scenario_consent(api: ApiClient, *, admin_token: str, support_token: s
         token=support_token,
         device_id=device_id,
         ticket_id=ticket_id,
-        tool_name="diag.logs.collect",
+        tool_name=tool_name,
         params=params,
     )
     timeout_operation_id = str(timeout_payload.get("operation_id") or "")
@@ -1279,7 +1315,6 @@ async def main_async() -> int:
             await wait_device_online(api, admin_token=admin_token, device_id=device_id, expected_online=True, timeout_sec=90.0)
             _print_step(f"Canary device online: {device_id}")
 
-            results.extend(await scenario_consent(api, admin_token=admin_token, support_token=support_token, device_id=device_id, remote=args.remote))
             module_results, module_name = await scenario_module_lifecycle(
                 api,
                 admin_token=admin_token,
@@ -1287,6 +1322,16 @@ async def main_async() -> int:
                 device_id=device_id,
             )
             results.extend(module_results)
+            results.extend(
+                await scenario_consent(
+                    api,
+                    admin_token=admin_token,
+                    support_token=support_token,
+                    device_id=device_id,
+                    remote=args.remote,
+                    tool_name=f"{module_name}.consent_probe",
+                )
+            )
             results.append(await scenario_retry_exhausted(api, admin_token=admin_token, device_id=device_id, remote=args.remote))
             results.extend(await scenario_ws_ack_nack_replay(api, admin_token=admin_token, support_token=support_token, ws_url=args.ws_url, ui_ws_url=args.ui_ws_url))
             results.append(
