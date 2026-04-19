@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from importlib import import_module
 from pathlib import Path
 from typing import Iterable
 
@@ -203,6 +204,18 @@ def run_docs_drift(workspace: Path) -> list[str]:
     return [line for line in output.splitlines() if line.strip()]
 
 
+def run_module_observer_guard(workspace: Path) -> list[str]:
+    server_root = workspace / "server"
+    if str(server_root) not in sys.path:
+        sys.path.insert(0, str(server_root))
+    scan_workspace_module_observer_failures = getattr(
+        import_module("utils.module_observer_contract"),
+        "scan_workspace_module_observer_failures",
+    )
+
+    return scan_workspace_module_observer_failures(workspace)
+
+
 def main() -> None:
     args = parse_args()
     files = list(iter_files(args.workspace))
@@ -212,6 +225,7 @@ def main() -> None:
     failures.extend(run_py_compile(args.workspace, files))
     node_results = run_node_syntax(args.workspace, files)
     failures.extend([item for item in node_results if "skipped" not in item])
+    failures.extend(run_module_observer_guard(args.workspace))
     if not args.skip_docs_drift:
         failures.extend(run_docs_drift(args.workspace))
 

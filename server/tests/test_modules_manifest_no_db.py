@@ -1,3 +1,7 @@
+import io
+import json
+import zipfile
+
 import pytest
 
 from utils.module_builder import build_module_package
@@ -222,3 +226,71 @@ def test_build_module_package_supports_multi_tool_semantic_names():
     assert "ping.host" in manifest_json["tools"][1]["aliases"]
     assert manifest_summary == summary
     assert validation_json["validation_status"] == "passed"
+
+
+@pytest.mark.no_db
+def test_preflight_module_zip_rejects_missing_observer_breadcrumbs():
+    module_name = "observer_missing"
+    manifest = {
+        "manifest_version": 2,
+        "module_name": module_name,
+        "module_version": "1.0.0",
+        "module_api_version": "1.0.0",
+        "entrypoint": "module:register",
+        "owner_scope": "vendor",
+        "platforms": ["any"],
+        "tools": [
+            {
+                "tool": "vendor_x.echo",
+                "method": "echo_tool",
+                "description": "Echo",
+                "contract_version": "1.0.0",
+                "dependencies": {"min_agent_version": "1.0.0"},
+                "lifecycle": "stable",
+                "error_codes": [],
+                "artifact_types": [],
+                "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                "metadata": {
+                    "risk_level": "safe_read",
+                    "requires_consent": False,
+                    "platforms": ["any"],
+                    "allow_roles": ["admin"],
+                },
+            }
+        ],
+    }
+    module_py = """
+from typing import Dict, Any
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
+
+
+class ExampleCollector(BaseCollector):
+    @property
+    def name(self) -> str:
+        return "observer_missing"
+
+    async def collect(self) -> Dict[str, Any]:
+        return {}
+
+    @exposed_tool(name="vendor_x.echo", description="Echo", risk_level="safe_readonly")
+    async def echo_tool(self, **kwargs) -> Dict[str, Any]:
+        return {"ok": True}
+
+
+def register():
+    return ExampleCollector()
+"""
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr("module.py", module_py)
+
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(buf.getvalue())
+
+    assert ok is False
+    assert manifest_json is None
+    assert manifest_summary is None
+    assert any("tool.entry" in error for error in validation_json["errors"]["tools"])

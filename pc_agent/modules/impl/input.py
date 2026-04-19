@@ -56,6 +56,10 @@ class InputCollector(BaseCollector):
         metadata_requires_consent=False
     )
     async def collect(self) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "input.collect_input_activity"}):
+            return await self._collect_impl()
+
+    async def _collect_impl(self) -> Dict[str, Any]:
         """
         Асинхронный сбор данных об активности ввода.
         

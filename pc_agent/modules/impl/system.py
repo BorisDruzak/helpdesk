@@ -182,6 +182,31 @@ class SystemCollector(BaseCollector):
         include_platform: Optional[bool] = None,
         include_boot_time: Optional[bool] = None,
     ) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "system.collect"}):
+            return await self._collect_impl(
+                preset=preset,
+                include_cpu=include_cpu,
+                include_memory=include_memory,
+                include_disk=include_disk,
+                include_network=include_network,
+                include_hostname=include_hostname,
+                include_ip=include_ip,
+                include_platform=include_platform,
+                include_boot_time=include_boot_time,
+            )
+
+    async def _collect_impl(
+        self,
+        preset: str = "basic",
+        include_cpu: Optional[bool] = None,
+        include_memory: Optional[bool] = None,
+        include_disk: Optional[bool] = None,
+        include_network: Optional[bool] = None,
+        include_hostname: Optional[bool] = None,
+        include_ip: Optional[bool] = None,
+        include_platform: Optional[bool] = None,
+        include_boot_time: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         flags = self._resolve_flags(
             preset=preset,
             include_cpu=include_cpu,

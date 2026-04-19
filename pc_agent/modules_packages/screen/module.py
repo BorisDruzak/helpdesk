@@ -81,6 +81,10 @@ class ScreenCollector(BaseCollector):
         metadata_allow_roles=["user", "agent", "llm", "support", "admin"],
     )
     async def collect(self, monitor: int = 1, include_cursor: bool = False) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "screen.collect"}):
+            return await self._collect_impl(monitor=monitor, include_cursor=include_cursor)
+
+    async def _collect_impl(self, monitor: int = 1, include_cursor: bool = False) -> Dict[str, Any]:
         logger.debug(f"[{self.name}] Снятие скриншота (monitor={monitor})")
         timestamp = int(time.time())
         temp_path = self.temp_dir / f"screenshot_{timestamp}.png"
@@ -126,6 +130,25 @@ class ScreenCollector(BaseCollector):
         metadata_allow_roles=["user", "agent", "llm", "support", "admin"],
     )
     async def record(
+        self,
+        duration_sec: int = 300,
+        fps: int = 15,
+        max_width: int = 1920,
+        quality_crf: int = 28,
+        monitor: int = 1,
+        operation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "screen.record"}):
+            return await self._record_impl(
+                duration_sec=duration_sec,
+                fps=fps,
+                max_width=max_width,
+                quality_crf=quality_crf,
+                monitor=monitor,
+                operation_id=operation_id,
+            )
+
+    async def _record_impl(
         self,
         duration_sec: int = 300,
         fps: int = 15,

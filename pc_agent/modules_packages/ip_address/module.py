@@ -50,8 +50,9 @@ class IpAddressCollector(BaseCollector):
     )
     async def get_ip(self) -> Dict[str, Any]:
         """Возвращает основной IP-адрес текущей машины."""
-        ip = _get_primary_ip()
-        return {"ip": ip, "ok": True}
+        with self.trace_span("tool.entry", details={"tool_name": "ip_address.get_ip"}):
+            ip = _get_primary_ip()
+            return {"ip": ip, "ok": True}
 
 
 def register():

@@ -45,4 +45,9 @@ description: Run the right tests for pc_client changes. Use when running local c
 3. При необходимости: `python scripts/run_ci_suite.py`
 4. При необходимости: deploy → start control/server на Linux → smoke → browser check → stop server
 
+## Observer-specific reminders
+
+- `python scripts/verify_workspace.py` is also the hard CI guard for module observer breadcrumbs. New `BaseCollector` tools without `self.trace_span("tool.entry", ...)` should be treated as broken, even if their unit tests pass.
+- For observer/runtime changes in dangerous flows, prefer a live Linux verification pass with `python scripts/run_observer_canary_suite.py` after the normal local pytest set.
+
 Не пушить в GitHub без успешного минимума (verify + релевантные тесты), а для deploy/release — без green CI artifact.

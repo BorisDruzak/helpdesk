@@ -148,3 +148,8 @@ git status --short
 12. Если менялся веб-интерфейс, обязательно открыть [admin](http://192.168.100.17:8666/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
 13. Для полного verified server-flow предпочитать `python scripts/release_server_to_remote.py`; emergency bypass CI gate допускается только через `--skip-ci-check`.
 14. В GitHub публиковать только изменения, которые уже прошли проверки, получили green CI artifact и были запущены по нужному сценарию.
+
+## Observer guard and live canaries
+
+- `python scripts/verify_workspace.py` is now the hard gate for module observer breadcrumbs: every new `BaseCollector` tool must wrap execution with `self.trace_span("tool.entry", ...)`, otherwise workspace verify and module ZIP preflight fail.
+- For dangerous observer regressions, use `python scripts/run_observer_canary_suite.py` after deploy to Linux. The suite covers consent approve/deny/timeout, module install/update/remove, retry exhaustion, agent disconnect during operation, and WS ACK/NACK/replay gaps.

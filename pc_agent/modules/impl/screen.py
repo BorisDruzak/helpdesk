@@ -174,6 +174,25 @@ class ScreenCollector(BaseCollector):
         width: Optional[int] = None,
         height: Optional[int] = None,
     ) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "screen.collect"}):
+            return await self._collect_impl(
+                monitor=monitor,
+                include_cursor=include_cursor,
+                left=left,
+                top=top,
+                width=width,
+                height=height,
+            )
+
+    async def _collect_impl(
+        self,
+        monitor: int = 1,
+        include_cursor: bool = False,
+        left: Optional[int] = None,
+        top: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+    ) -> Dict[str, Any]:
         logger.debug(
             f"[{self.name}] capture requested "
             f"(monitor={monitor}, include_cursor={include_cursor}, left={left}, top={top}, width={width}, height={height})"
@@ -264,6 +283,25 @@ class ScreenCollector(BaseCollector):
         resources={"max_runtime_sec": 360, "max_artifact_count": 1, "max_artifact_bytes": 209715200},
     )
     async def record(
+        self,
+        duration_sec: int = 300,
+        fps: int = 15,
+        max_width: int = 1920,
+        quality_crf: int = 28,
+        monitor: int = 1,
+        operation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "screen.record"}):
+            return await self._record_impl(
+                duration_sec=duration_sec,
+                fps=fps,
+                max_width=max_width,
+                quality_crf=quality_crf,
+                monitor=monitor,
+                operation_id=operation_id,
+            )
+
+    async def _record_impl(
         self,
         duration_sec: int = 300,
         fps: int = 15,

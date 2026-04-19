@@ -343,6 +343,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/app/services/module_reconcile_scheduler.py",
             "server/utils/module_manifest.py",
             "server/utils/module_preflight.py",
+            "server/utils/module_observer_contract.py",
             "server/utils/module_builder.py",
             "server/docs/MODULE_AUTHORING_RULES.md",
             "pc_agent/core/module_manager.py",
@@ -815,6 +816,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         first_files=(
             "scripts/verify_workspace.py",
+            "scripts/run_observer_canary_suite.py",
             "scripts/deploy_workspace_to_remote.py",
             "scripts/release_server_to_remote.py",
             "scripts/manage_remote_stack.py",
@@ -849,7 +851,7 @@ TOPICS: tuple[Topic, ...] = (
             "docs/LOCAL_WORKFLOW.md",
         ),
         path_prefixes=("scripts/",),
-        exact_paths=(),
+        exact_paths=("scripts/run_observer_canary_suite.py",),
     ),
 )
 
@@ -997,6 +999,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "server/app/services/module_reconcile_scheduler.py",
             "server/utils/module_manifest.py",
             "server/utils/module_preflight.py",
+            "server/utils/module_observer_contract.py",
             "server/utils/module_builder.py",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/loader.py",

@@ -447,6 +447,11 @@ class DeviceOutboxRepo:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, outbox_id: int) -> Optional[DeviceOutbox]:
+        stmt = select(DeviceOutbox).where(DeviceOutbox.id == outbox_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
     
     async def get_command_by_id(
         self,

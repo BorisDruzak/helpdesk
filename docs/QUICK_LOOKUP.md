@@ -3,7 +3,8 @@
 - Local launcher/runtime work now starts from `pc_agent/launcher_portable_main.py`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/main_window.py`, and `pc_agent/ui_gui/automation_controller.py`.
 - Recommended-update diagnostics and local update state are surfaced through `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main_window.py`, and `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`.
 - Agent-side observer correlation for tech drilldown now uses `pc_agent/core/action_trace.py` plus the `search_action_trace` RPC in `pc_agent/ws_agent.py`; admin tech trace detail requests agent actions via `include_agent_actions=1`, and the agent now emits guaranteed module-level execution breakdown (`module.resolve`, `module.execute`) even when a tool module has no custom runtime audit hooks.
-- New module authoring canon: every new `BaseCollector` tool must emit observer breadcrumbs through `trace_span(...)` / `trace_event(...)`; generated workbench modules now scaffold this automatically in `server/utils/module_builder.py`.
+- New module authoring canon: every new `BaseCollector` tool must emit observer breadcrumbs through `trace_span(...)` / `trace_event(...)`; generated workbench modules now scaffold this automatically in `server/utils/module_builder.py`, а `server/utils/module_observer_contract.py` + `python scripts/verify_workspace.py` теперь валят CI, если mandatory `tool.entry` span отсутствует.
+- Live observer canary suite для опасных flow лежит в `python scripts/run_observer_canary_suite.py`: consent approve/deny/timeout, module install/update/remove, retry exhaustion, agent disconnect during operation, ws ack/nack/replay.
 - Local Windows launcher canary flow still goes through `python scripts/manage_local_agent.py start <name> --launcher`, with release artifacts built by `python pc_agent/build_windows_release_v2.py`.
 - Server/control runtime wrappers (`scripts/run_server.py`, `scripts/run_control_plane.py`) now always bootstrap repo-root import visibility for shared packages like `shared.redaction`; when debugging Linux boot failures, treat those wrappers as canonical entrypoints instead of ad-hoc `python server/server.py`.
 
@@ -102,7 +103,7 @@ Windows note:
 | Ticket flows / helpdesk | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md` |
 | Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/launcher_portable_main.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
 | Agent runtime / UI bridge | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/chat_panel.py` | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/CODEMAP.md` |
-| Release / deploy / CI | `scripts/task_intake.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
+| Release / deploy / CI | `scripts/task_intake.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/run_observer_canary_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
 
 ## When to update this file
 

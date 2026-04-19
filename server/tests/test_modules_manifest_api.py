@@ -117,7 +117,8 @@ class _Collector(BaseCollector):
 
     @exposed_tool(name="collect_activity", description="Legacy collect tool", risk_level="safe_readonly")
     async def collect_activity(self) -> Dict[str, Any]:
-        return {{"ok": True}}
+        with self.trace_span("tool.entry", details={{"tool_name": "{module_name}.collect_activity"}}):
+            return {{"ok": True}}
 
 def register():
     return _Collector()

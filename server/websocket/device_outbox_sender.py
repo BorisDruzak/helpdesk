@@ -20,6 +20,7 @@ from loguru import logger
 
 from app.db import get_session
 from app.repos import DeviceOutboxRepo
+from tech.runtime_audit import write_agent_runtime_audit
 from config import (
     DEVICE_DISPATCH_FETCH_LIMIT,
     DEVICE_DISPATCH_LEASE_SECONDS,
@@ -184,11 +185,12 @@ class DeviceDispatchService:
                             f"[DeviceDispatchService] Failed to send command: device_id={device_id} "
                             f"command_id={cmd.command_id} error={exc}"
                         )
-                        await repo.mark_as_failed(
-                            outbox_id=cmd.id,
+                        await _handle_delivery_error(
+                            state_manager=self.state,
+                            repo=repo,
+                            cmd=cmd,
                             error_code="SEND_ERROR",
                             error_message=str(exc),
-                            should_retry=True,
                         )
                         break
                 await session.commit()
@@ -365,11 +367,12 @@ class PollingDeviceOutboxSender:
                     try:
                         await _send_single_command(self.state, ws, agent_device_id, cmd, repo)
                     except Exception as exc:
-                        await repo.mark_as_failed(
-                            outbox_id=cmd.id,
+                        await _handle_delivery_error(
+                            state_manager=self.state,
+                            repo=repo,
+                            cmd=cmd,
                             error_code="SEND_ERROR",
                             error_message=str(exc),
-                            should_retry=True,
                         )
             await session.commit()
 
@@ -500,3 +503,109 @@ async def _send_single_command(state_manager, ws: web.WebSocketResponse, agent_d
         f"[DeviceOutboxSender] TX command: device_id={cmd.device_id} command_id={cmd.command_id} "
         f"command={cmd.command} request_id={request_id} operation_id={cmd.operation_id}"
     )
+
+
+async def _handle_delivery_error(
+    *,
+    state_manager,
+    repo: DeviceOutboxRepo,
+    cmd,
+    error_code: str,
+    error_message: str,
+) -> None:
+    await repo.mark_as_failed(
+        outbox_id=cmd.id,
+        error_code=error_code,
+        error_message=error_message,
+        should_retry=True,
+    )
+    updated_entry = await repo.get_by_id(cmd.id)
+    if updated_entry is None:
+        return
+    await _sync_operation_delivery_state(
+        state_manager=state_manager,
+        repo=repo,
+        outbox_entry=updated_entry,
+        error_code=error_code,
+        error_message=error_message,
+    )
+
+
+async def _sync_operation_delivery_state(
+    *,
+    state_manager,
+    repo: DeviceOutboxRepo,
+    outbox_entry,
+    error_code: str,
+    error_message: str,
+) -> None:
+    operation_id = str(getattr(outbox_entry, "operation_id", "") or "").strip()
+    if not operation_id:
+        return
+
+    from app.repos.operations_repo import OperationsRepo
+    from app.services.operation_service import OperationService
+
+    op_repo = OperationsRepo(repo.session)
+    operation = await op_repo.get_by_operation_id(operation_id)
+    if operation is None:
+        return
+
+    retry_count = int(getattr(outbox_entry, "retry_count", 0) or 0)
+    max_retries = int(getattr(outbox_entry, "max_retries", 0) or 0)
+    ui_publisher = state_manager.ui_publisher if hasattr(state_manager, "ui_publisher") else None
+
+    if retry_count != int(operation.retry_count or 0):
+        await op_repo.update_status(
+            operation_id=operation_id,
+            new_status=operation.status,
+            expected_statuses=[operation.status],
+            retry_count=retry_count,
+        )
+        await write_agent_runtime_audit(
+            device_id=operation.device_id,
+            event_type="command_retry_scheduled",
+            severity="warning",
+            source="device_outbox_sender",
+            operation_id=operation.operation_id,
+            ticket_id=operation.ticket_id,
+            actor_role="system",
+            details_json={
+                "command_name": getattr(outbox_entry, "command", None),
+                "error_code": error_code,
+                "retry_count": retry_count,
+                "max_retries": max_retries,
+            },
+        )
+
+    if str(getattr(outbox_entry, "status", "") or "").strip().lower() != "failed":
+        return
+
+    if str(operation.status or "").strip().lower() not in {"queued", "sent", "accepted"}:
+        return
+
+    delivery_code = "DELIVERY_RETRY_EXHAUSTED" if error_code == "SEND_ERROR" else (error_code or "DELIVERY_FAILED")
+    delivery_message = error_message or "Device command delivery failed"
+    op_service = OperationService(repo.session, publisher=ui_publisher)
+    changed = await op_service.mark_failed(
+        operation_id=operation.operation_id,
+        error_code=delivery_code,
+        error_message=delivery_message,
+        expected_statuses=["queued", "sent", "accepted"],
+    )
+    if changed:
+        await write_agent_runtime_audit(
+            device_id=operation.device_id,
+            event_type="command_delivery_failed",
+            severity="error",
+            source="device_outbox_sender",
+            operation_id=operation.operation_id,
+            ticket_id=operation.ticket_id,
+            actor_role="system",
+            details_json={
+                "command_name": getattr(outbox_entry, "command", None),
+                "error_code": delivery_code,
+                "retry_count": retry_count,
+                "max_retries": max_retries,
+            },
+        )

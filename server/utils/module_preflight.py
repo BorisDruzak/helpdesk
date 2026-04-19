@@ -8,6 +8,7 @@ import zipfile
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.module_manifest import DEFAULT_ENTRYPOINT, attach_smoke_result, normalize_manifest
+from utils.module_observer_contract import validate_observer_contract_zip
 
 MAX_ZIP_ENTRIES = 10_000
 
@@ -128,6 +129,7 @@ def preflight_module_zip(zip_bytes: bytes) -> Tuple[bool, Dict[str, Any], Option
 
     manifest_json, validation_json, manifest_summary = normalize_manifest(manifest)
     if manifest_json:
+        validation_json["errors"]["tools"].extend(validate_observer_contract_zip(zip_bytes))
         validation_json["errors"]["manifest"].extend(
             _validate_entrypoint(zip_bytes, manifest_json.get("entrypoint") or DEFAULT_ENTRYPOINT)
         )

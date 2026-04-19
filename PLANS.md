@@ -1,5 +1,27 @@
 # PLANS.md
 
+## 2026-04-19 Observer live canaries + hard module CI guard
+
+- Scope:
+  - сделать observer breadcrumbs обязательным CI-контрактом для всех новых `BaseCollector` tool methods, а не только правилом из docs;
+  - валить module ZIP preflight и `python scripts/verify_workspace.py`, если в `@exposed_tool` нет mandatory `self.trace_span("tool.entry", ...)`;
+  - добавить живой canary-suite для оставшихся опасных flow: consent approve/deny/timeout, module install/update/remove, retry exhausted, agent disconnect during operation, ws ack/nack/replay;
+  - добить runtime sync между `device_outbox` и `operations`, чтобы retry exhaustion и send failures были видны в observer слое как нормальные operation/runtime-audit события;
+  - задокументировать новый hard guard и canary entrypoint, затем прогнать локальные тесты, Linux deploy и browser E2E.
+- Deliverables:
+  1. `server/utils/module_observer_contract.py` + wiring в `module_preflight.py` и `scripts/verify_workspace.py`;
+  2. обновлённые builtin/managed module sources, удовлетворяющие hard guard;
+  3. regression tests для AST guard, workspace verify и retry/delivery sync;
+  4. `scripts/run_observer_canary_suite.py` + helper tests для его локальной оркестровки;
+  5. docs sync (`MODULES.md`, `CODEMAP.md`, `QUICK_LOOKUP.md`) по hard guard и live canary flow;
+  6. подтверждённый live run на Linux + browser verification техпанели.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` для `server/tests`, `scripts/` и затронутых `pc_agent` модулей
+  - `python scripts/release_server_to_remote.py`
+  - `python scripts/run_observer_canary_suite.py`
+  - browser verification на `http://192.168.100.17:8666/admin`
+
 ## 2026-04-19 Observer v3: spans, propagation, health, module SDK, settings, security
 
 - Scope:

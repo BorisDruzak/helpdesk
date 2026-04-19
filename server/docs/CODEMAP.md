@@ -56,7 +56,7 @@
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: ui_hello, run_tool, подписки |
 | `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id; ticket-bound `send_ws_command` теперь пытается закрепить canonical `observer_root_trace_id` тикета до создания operation/outbox entry |
-| `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, DB lease claim, reconcile) |
+| `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, DB lease claim, reconcile); send failures теперь синхронизируют `operations.retry_count`, пишут runtime audit (`command_retry_scheduled` / `command_delivery_failed`) и завершают operation явным `DELIVERY_RETRY_EXHAUSTED`, когда outbox исчерпал retries |
 | `server/websocket/validator.py` | Валидация событий, device binding |
 | `server/websocket/modules_sync.py` | Синхронизация модулей с UI/агентом |
 | `server/websocket/ui_publisher.py` | Публикация событий в UI |
@@ -131,7 +131,8 @@
 | Файл | Назначение |
 |------|------------|
 | `server/utils/module_manifest.py` | Manifest contract и strict validation для typed tools: canonical semantic ids, aliases, contract/dependencies/redaction/resources blocks, reserved namespace governance |
-| `server/utils/module_preflight.py` | Preflight ZIP, manifest_json, validation_json |
+| `server/utils/module_preflight.py` | Preflight ZIP, manifest_json, validation_json; теперь жестко применяет observer contract guard к module ZIP, чтобы новые tool methods без mandatory breadcrumbs не публиковались |
+| `server/utils/module_observer_contract.py` | AST-валидатор observer contract для `BaseCollector`-модулей: требует `self.trace_span("tool.entry", ...)` в каждом `@exposed_tool`, используется и в upload preflight, и в `scripts/verify_workspace.py` |
 | `server/utils/module_builder.py` | Сборка пакета для POST /api/modules/create: legacy single-tool и multi-tool module packs с canonical semantic tool ids |
 | `server/utils/module_storage.py` | Хранение модулей |
 | `server/utils/tool_metadata_validation.py` | Валидация метаданных инструментов |
@@ -159,12 +160,12 @@
 - **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md` (включая migration rebind legacy install-based token -> canonical `machine_id`)
 - **outbox_ack, outbox_nack** — `websocket/agent_services.py`, `websocket/outbox_ingest_components.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
-- **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`)
+- **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`); retry exhaustion теперь коррелируется обратно в `operations` и `agent_runtime_audit`
 - **command_result** — `websocket/agent_services.py`, `websocket/command_result_components.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`
 - **ticket_events, device_events** — `api/events.py`, соответствующие repos
-- **модули (install, desired, reconcile, preferred version, rollout policy, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_builder.py`
+- **модули (install, desired, reconcile, preferred version, rollout policy, UI workbench)** — `modules/handlers.py`, `modules/service.py`, `modules/reconcile.py`, `modules/workbench_service.py`, `websocket/modules_sync.py`, `websocket/outbox_ingest_components.py`, `app/repos/device_desired_modules_repo.py`, `app/repos/module_rollout_repo.py`, `app/services/module_reconcile_scheduler.py`, `utils/module_manifest.py`, `utils/module_preflight.py`, `utils/module_observer_contract.py`, `utils/module_builder.py`
 - **playbook** — `playbook_handlers.py`, `app/services/playbook_engine.py`, `app/services/playbook_scheduler.py`, `app/repos/playbook_repo.py`
 - **операции (consent, cancel, lifecycle)** — `api/operations.py`, `app/services/operation_service.py`, `app/services/operation_watchdog.py`, `app/repos/operations_repo.py`
 - **observer traces / signatures / degradations** — `observer/service.py`, `observer/runtime.py`, `tech/handlers.py`, `app/db/models.py`, `websocket/agent_services.py`, `pc_agent/core/action_trace.py`

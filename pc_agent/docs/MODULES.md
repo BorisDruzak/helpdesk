@@ -29,6 +29,7 @@ Legacy aliases остаются только для compat resolution в registr
 - Минимальный обязательный каркас:
   - `with self.trace_span("tool.entry", details={"tool_name": "my.tool"}):`
   - дополнительные шаги на опасных местах: subprocess, network, retries, timeouts, artifact write/upload, consent-sensitive branch.
+- Это не рекомендация, а CI-инвариант: `python scripts/verify_workspace.py` и module ZIP preflight теперь валят сборку, если `@exposed_tool` в `BaseCollector`-модуле не обёрнут в `self.trace_span("tool.entry", ...)`.
 - `AgentOrchestrator` автоматически bind-ит `ticket_id`, `operation_id`, `trace_id`, `request_id` и `parent_action_id`, поэтому модулю достаточно вызывать SDK-хелперы из `BaseCollector`.
 - Любые `details` должны быть JSON-совместимыми и безопасными для redaction; сырые секреты в trace/event payload запрещены.
 

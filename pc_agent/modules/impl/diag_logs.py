@@ -62,6 +62,10 @@ class DiagLogsModule(BaseCollector):
         metadata_requires_consent=True
     )
     async def collect(self, **params) -> Dict[str, Any]:
+        with self.trace_span("tool.entry", details={"tool_name": "diag.logs.collect"}):
+            return await self._collect_impl(**params)
+
+    async def _collect_impl(self, **params) -> Dict[str, Any]:
         """
         Асинхронный сбор диагностических логов.
         
