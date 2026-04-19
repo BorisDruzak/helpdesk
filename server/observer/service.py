@@ -191,6 +191,7 @@ class ObserverOverlayService:
         await self._ensure_projected(filters, limit=limit, force=False)
         await self.session.flush()
         stmt = select(ObserverTrace)
+        operation_trace_ids: list[str] = []
         prefer_ticket_root = (
             filters.ticket_id is not None
             and not any(
@@ -210,6 +211,22 @@ class ObserverOverlayService:
             )
         )
         ticket_root_trace_id = await self._load_ticket_root_trace_id(filters.ticket_id) if prefer_ticket_root else None
+        if filters.operation_id:
+            op_row = (
+                await self.session.execute(
+                    select(Operation.trace_id, Operation.ticket_id)
+                    .where(Operation.operation_id == filters.operation_id)
+                    .limit(1)
+                )
+            ).first()
+            if op_row is not None:
+                op_trace_id = _compact_text(op_row[0])
+                op_ticket_id = _compact_text(op_row[1])
+                if op_trace_id:
+                    operation_trace_ids.append(op_trace_id)
+                operation_ticket_root = await self._load_ticket_root_trace_id(op_ticket_id) if op_ticket_id else None
+                if operation_ticket_root and operation_ticket_root not in operation_trace_ids:
+                    operation_trace_ids.append(operation_ticket_root)
         if filters.trace_id:
             stmt = stmt.where(ObserverTrace.trace_id == filters.trace_id)
         elif ticket_root_trace_id:
@@ -219,7 +236,10 @@ class ObserverOverlayService:
         if filters.job_id:
             stmt = stmt.where(ObserverTrace.job_id == filters.job_id)
         if filters.operation_id:
-            stmt = stmt.where(ObserverTrace.operation_id == filters.operation_id)
+            clauses = [ObserverTrace.operation_id == filters.operation_id]
+            if operation_trace_ids:
+                clauses.append(ObserverTrace.trace_id.in_(operation_trace_ids))
+            stmt = stmt.where(or_(*clauses))
         if filters.device_id:
             stmt = stmt.where(ObserverTrace.device_id == filters.device_id)
         if filters.root_kind:
