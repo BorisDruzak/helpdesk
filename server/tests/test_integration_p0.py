@@ -10,6 +10,8 @@ from tests.test_helpers import (
     TEST_FAIL_TOOL,
     create_test_ticket,
     start_tool_operation,
+    wait_for_agent_connected,
+    wait_for_ticket_event,
     wait_for_operation_terminal,
 )
 
@@ -30,6 +32,13 @@ async def test_happy_path_echo(test_client, test_agent, test_engine):
 
     terminal_status = await wait_for_operation_terminal(test_engine, operation_id, timeout=10)
     assert terminal_status == "succeeded"
+    await wait_for_ticket_event(
+        test_engine,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        event_type="tool_call_result",
+        timeout=10,
+    )
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -77,6 +86,13 @@ async def test_error_path_fail(test_client, test_agent, test_engine):
 
     terminal_status = await wait_for_operation_terminal(test_engine, operation_id, timeout=10)
     assert terminal_status == "failed"
+    await wait_for_ticket_event(
+        test_engine,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        event_type="tool_call_result",
+        timeout=10,
+    )
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -126,6 +142,13 @@ async def test_command_ack_before_result(test_client, test_agent, test_engine):
     )
 
     await wait_for_operation_terminal(test_engine, operation_id, timeout=10)
+    await wait_for_ticket_event(
+        test_engine,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        event_type="tool_call_result",
+        timeout=10,
+    )
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -153,6 +176,13 @@ async def test_duplicate_command_result_idempotency(test_client, test_agent, tes
     )
 
     await wait_for_operation_terminal(test_engine, operation_id, timeout=10)
+    await wait_for_ticket_event(
+        test_engine,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        event_type="tool_call_result",
+        timeout=10,
+    )
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -186,6 +216,7 @@ async def test_device_only_operation(test_client, test_agent, test_engine):
     from websocket.protocol import send_ws_command
 
     state = test_client.app["state"]
+    await wait_for_agent_connected(state, device_id, timeout=10)
     result = await send_ws_command(
         state=state,
         device_id=device_id,

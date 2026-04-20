@@ -95,6 +95,7 @@ Windows note:
 
 - On Windows, if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, server DB-backed pytest now defaults to shared `pc_support_test`.
 - In that default mode the harness opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
+- In shared-DB fallback mode the harness now terminates stale `pc_support_test` backends before `TRUNCATE` and uses a short lock timeout, so leaked sessions fail fast instead of hanging the suite.
 - For isolated ephemeral test DBs from Windows, set `TEST_DATABASE_ADMIN_URL` explicitly.
 
 ## Fast map

@@ -8,6 +8,7 @@ from sqlalchemy import BigInteger
 
 from app.db import get_session
 from app.db.models import Device, DeviceEvent, ObserverSpan, ObserverTrace, Operation, Ticket, TicketEvent
+from app.repos.observer_settings_repo import ObserverSettingsRepo
 from observer.service import ObserverOverlayService
 from observer.runtime import ObserverRefreshRuntime
 
@@ -55,6 +56,7 @@ async def test_observer_refresh_runtime_projects_recent_trace_without_rebuild():
                 status="in_progress",
                 created_at=now - timedelta(minutes=5),
                 updated_at=now,
+                observer_root_trace_id=trace_id,
             )
         )
         session.add(
@@ -96,6 +98,8 @@ async def test_observer_refresh_runtime_projects_recent_trace_without_rebuild():
     )
     await runtime.start()
     try:
+        await runtime.run_once()
+
         async def _trace_exists() -> bool:
             async with get_session() as session:
                 projected = await session.get(ObserverTrace, trace_id)
@@ -148,6 +152,7 @@ async def test_observer_refresh_runtime_refreshes_existing_trace_after_new_sourc
                 status="in_progress",
                 created_at=now - timedelta(minutes=5),
                 updated_at=now,
+                observer_root_trace_id=trace_id,
             )
         )
         session.add(
@@ -202,6 +207,8 @@ async def test_observer_refresh_runtime_refreshes_existing_trace_after_new_sourc
     )
     await runtime.start()
     try:
+        await runtime.run_once()
+
         event_created_at = datetime.now(timezone.utc)
         async with get_session() as session:
             session.add(
@@ -312,6 +319,15 @@ async def test_observer_refresh_runtime_backfills_historical_trace_without_manua
         )
         await session.commit()
 
+    async with get_session() as session:
+        await ObserverSettingsRepo(session).set_settings(
+            {
+                "success_trace_sample_rate": 1.0,
+                "ok_trace_retention_hours": 24 * 365 * 200,
+            }
+        )
+        await session.commit()
+
     runtime = ObserverRefreshRuntime(
         scan_interval_sec=0.05,
         scan_overlap_sec=1.0,
@@ -321,6 +337,8 @@ async def test_observer_refresh_runtime_backfills_historical_trace_without_manua
     )
     await runtime.start()
     try:
+        await runtime.run_once()
+
         async def _trace_exists() -> bool:
             async with get_session() as session:
                 projected = await session.get(ObserverTrace, trace_id)

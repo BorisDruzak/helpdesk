@@ -16,7 +16,7 @@
 - Server harness: `server/tests/conftest.py`, `server/tests/README.md`.
 - CI runner: `scripts/run_ci_suite.py`; isolated temp checkout runner: `scripts/run_ci_in_temp_workspace.py`.
 - Канонические test/CI env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`.
-- Windows default: if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test` through a local SSH tunnel; explicit admin DSN is required for isolated ephemeral DBs from Windows.
+- Windows default: if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test` through a local SSH tunnel; the shared fallback now terminates stale test backends before cleanup and applies a short `lock_timeout`, while explicit admin DSN is still required for isolated ephemeral DBs from Windows.
 
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|

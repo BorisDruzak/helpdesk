@@ -65,7 +65,7 @@ def test_ensure_module_installed_reinstalls_when_snapshot_has_tool_but_active_ve
         return {"payload": {"status": "success"}}
 
     with patch("tools.service.DB_AVAILABLE", True), \
-         patch("tools.service.get_session", new=_fake_session_ctx), \
+         patch.object(ToolService, "_session_context", new=staticmethod(_fake_session_ctx)), \
          patch.object(service, "_resolve_preferred_server_module_for_tool", new=fake_resolve), \
          patch("app.repos.ToolsetSnapshotsRepo", FakeToolsetSnapshotsRepo), \
          patch("app.repos.DeviceModulesRepo", FakeDeviceModulesRepo), \
@@ -122,7 +122,7 @@ def test_ensure_module_installed_only_persists_desired_state_when_preferred_vers
         raise AssertionError(f"install_module_package should not be called: {kwargs}")
 
     with patch("tools.service.DB_AVAILABLE", True), \
-         patch("tools.service.get_session", new=_fake_session_ctx), \
+         patch.object(ToolService, "_session_context", new=staticmethod(_fake_session_ctx)), \
          patch.object(service, "_resolve_preferred_server_module_for_tool", new=fake_resolve), \
          patch("app.repos.ToolsetSnapshotsRepo", FakeToolsetSnapshotsRepo), \
          patch("app.repos.DeviceModulesRepo", FakeDeviceModulesRepo), \

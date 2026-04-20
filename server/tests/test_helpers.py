@@ -127,6 +127,55 @@ async def wait_for_operation_terminal(test_engine: AsyncEngine, operation_id: st
     )
 
 
+async def wait_for_ticket_event(
+    test_engine: AsyncEngine,
+    *,
+    ticket_id: str,
+    operation_id: str,
+    event_type: str,
+    timeout: float = 10.0,
+) -> TicketEvent:
+    """Ждёт, пока server-side ticket event материализуется в БД."""
+    session_maker = async_sessionmaker(test_engine)
+    start = time.time()
+    backoff = 0.1
+
+    while time.time() - start < timeout:
+        async with session_maker() as session:
+            stmt = (
+                select(TicketEvent)
+                .where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.operation_id == operation_id,
+                    TicketEvent.event_type == event_type,
+                )
+                .order_by(TicketEvent.created_at.desc(), TicketEvent.id.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            event = result.scalar_one_or_none()
+            if event is not None:
+                return event
+
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 1.5, 0.5)
+
+    raise TimeoutError(
+        f"Ticket event {event_type} for operation {operation_id} in ticket {ticket_id} "
+        f"did not appear in {timeout}s"
+    )
+
+
+async def wait_for_agent_connected(state, device_id: str, timeout: float = 10.0) -> None:
+    """Ждёт, пока серверный state увидит агента в connected_agents."""
+    start = time.time()
+    while time.time() - start < timeout:
+        if state.get_agent(device_id):
+            return
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Agent {device_id} did not appear in connected_agents within {timeout}s")
+
+
 async def start_tool_operation(
     client,
     *,

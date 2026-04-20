@@ -109,6 +109,10 @@ def _resolve_admin_url(test_db_url: str) -> str:
     return _render_url(url.set(database=admin_db_name))
 
 
+def _is_shared_test_database_url(test_database_url: str) -> bool:
+    return (make_url(test_database_url).database or "") == SHARED_TEST_DATABASE_NAME
+
+
 def verify_test_database(test_database_url: str, *, allow_shared: bool | None = None) -> None:
     """Guard destructive test fixtures from touching non-test databases."""
     db_name = make_url(test_database_url).database or ""
@@ -341,6 +345,26 @@ async def _create_test_database(admin_database_url: str, db_name: str) -> None:
     await _run_admin_sql(admin_database_url, f'CREATE DATABASE "{db_name}"')
 
 
+async def _terminate_other_test_database_backends(
+    admin_database_url: str,
+    test_database_url: str,
+) -> None:
+    db_name = make_url(test_database_url).database or ""
+    if db_name != SHARED_TEST_DATABASE_NAME:
+        return
+    _validate_test_database_name(db_name)
+    await _run_admin_sql(
+        admin_database_url,
+        """
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = :db_name
+          AND pid <> pg_backend_pid()
+        """,
+        db_name=db_name,
+    )
+
+
 @pytest.fixture(scope="session")
 def test_database_url() -> str:
     test_db_url, admin_db_url, is_shared = _resolve_test_database_urls()
@@ -421,6 +445,11 @@ def run_migrations(test_database_url: str):
 
 
 @pytest.fixture(scope="session")
+def test_database_admin_url(test_database_url: str) -> str:
+    return _resolve_admin_url(test_database_url)
+
+
+@pytest.fixture(scope="session")
 def test_engine(test_database_url: str, run_migrations):
     """Single async engine shared across the full server pytest session."""
     verify_test_database(test_database_url)
@@ -459,12 +488,16 @@ def ensure_db_ready(request):
     request.getfixturevalue("run_migrations")
 
 
-async def _cleanup_db_async(test_database_url: str, test_engine) -> None:
+async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str, test_engine) -> None:
     verify_test_database(test_database_url)
     clear_log_records()
     clear_dismissed_alerts()
 
+    if _is_shared_test_database_url(test_database_url):
+        await _terminate_other_test_database_backends(test_database_admin_url, test_database_url)
+
     async with test_engine.begin() as conn:
+        await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         await conn.execute(text("""
             TRUNCATE TABLE
                 observer_error_occurrences,
@@ -512,8 +545,9 @@ def cleanup_db(request):
     if request.node.get_closest_marker("no_db"):
         return
     test_database_url = request.getfixturevalue("test_database_url")
+    test_database_admin_url = request.getfixturevalue("test_database_admin_url")
     test_engine = request.getfixturevalue("test_engine")
-    asyncio.run(_cleanup_db_async(test_database_url, test_engine))
+    asyncio.run(_cleanup_db_async(test_database_url, test_database_admin_url, test_engine))
 
 
 @pytest.fixture

@@ -61,6 +61,7 @@
     - `python -m pytest server/tests/test_auth_service_no_db.py server/tests/test_web_session_api.py server/tests/test_web_support_api.py server/tests/test_web_admin_api.py server/tests/test_static_pages_handlers.py -v --tb=short`
     - `python scripts/verify_workspace.py`
   - pending для следующего среза: browser verification на canonical remote URL после shipping текущего `webapp/dist` через release pipeline, и затем admin devices/updates wave.
+  - root cause для Windows CI blocker по `server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload` локализован в shared test DB harness: suite зависал на `TRUNCATE ... CASCADE` из-за stale `pc_support_test` backends; `server/tests/conftest.py` теперь завершает чужие backend-сессии shared DB перед cleanup и включает короткий `lock_timeout`, плюс это покрыто `server/tests/test_shared_test_db_harness.py`.
 - Verification target for implementation waves:
   - `python scripts/bootstrap_web_toolchain.py`
   - `python scripts/verify_workspace.py`

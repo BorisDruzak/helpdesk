@@ -195,10 +195,20 @@ class OperationService:
         resolved_trace_id = str(trace_id or "").strip() or None
         if ticket_id:
             ticket_repo = TicketEventsRepo(self.session)
-            resolved_trace_id = await ticket_repo.ensure_ticket_observer_root_trace_id(
-                ticket_id,
-                preferred_trace_id=resolved_trace_id,
-            )
+            try:
+                resolved_trace_id = await ticket_repo.ensure_ticket_observer_root_trace_id(
+                    ticket_id,
+                    preferred_trace_id=resolved_trace_id,
+                )
+            except ValueError:
+                # Some system/deferred commands are created before a ticket row exists.
+                # Keep the caller-provided correlation id instead of failing enqueue.
+                logger.debug(
+                    "[OperationService] ticket_id={} is not materialized yet; "
+                    "keeping standalone trace for operation_id={}",
+                    ticket_id,
+                    operation_id,
+                )
         if not resolved_trace_id:
             import uuid
 
