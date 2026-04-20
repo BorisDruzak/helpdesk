@@ -36,3 +36,25 @@ async def test_web_admin_bootstrap_exposes_tech_and_observer_features(web_admin_
     assert payload["data"]["workspace"] == "admin"
     assert "tech_panel" in payload["data"]["features"]
     assert payload["data"]["observer"]["quick_endpoint"] == "/api/admin/tech/observer/quick"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_devices_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
+    response = await web_admin_client.get("/api/web/admin/devices")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["query"] == ""
+    assert payload["data"]["status_filter"] == "all"
+    assert payload["data"]["summary"]["visible_count"] == 0
+    assert payload["data"]["summary"]["online_count"] == 0
+    assert payload["data"]["summary"]["rollout_targets"] == 0
+    assert payload["data"]["rollout"] == []
+    assert payload["data"]["devices"] == []
+    assert payload["data"]["filters"]["status_options"][0] == {
+        "value": "all",
+        "label": "Все устройства",
+    }

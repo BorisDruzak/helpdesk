@@ -18,7 +18,7 @@ test("оператор проходит support workflow на русском я�
   await expect(page.getByText("trace-support-root")).toBeVisible();
 
   await page.getByRole("button", { name: /T-200002/i }).click();
-  await expect(page.getByText("Нужно уточнить статус печати")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Нужно уточнить статус печати" })).toBeVisible();
 
   await page.getByRole("button", { name: /T-200001/i }).click();
   await expect(page.getByRole("heading", { name: "Ошибка синхронизации профиля" })).toBeVisible();

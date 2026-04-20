@@ -322,7 +322,16 @@ a {
   gap: 24px;
 }
 
+.admin-workspace {
+  display: grid;
+  gap: 24px;
+}
+
 .support-workspace__hero {
+  margin-bottom: 0;
+}
+
+.admin-workspace__hero {
   margin-bottom: 0;
 }
 
@@ -330,6 +339,12 @@ a {
   display: grid;
   gap: 24px;
   grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.25fr);
+}
+
+.admin-workspace__grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 0.95fr);
 }
 
 .support-workspace__panel {
@@ -406,6 +421,18 @@ a {
 .support-ticket-list {
   display: grid;
   gap: 12px;
+}
+
+.admin-rollout,
+.admin-rollout__list,
+.admin-device-list,
+.admin-device-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-device-card strong {
+  font-size: 1rem;
 }
 
 .support-ticket-card {
@@ -911,6 +938,7 @@ a {
 
   .workspace-boot__hero,
   .workspace-boot__grid,
+  .admin-workspace__grid,
   .support-workspace__grid,
   .support-ticket-detail__hero {
     grid-template-columns: 1fr;

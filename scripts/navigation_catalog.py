@@ -356,7 +356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp and observer capability bootstrap.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and the first typed admin inventory slice.",
         aliases=(
             "webapp",
             "react app",
@@ -374,6 +374,8 @@ TOPICS: tuple[Topic, ...] = (
             "webapp/src/app/layouts/app-shell.tsx",
             "webapp/src/features/auth/session-provider.tsx",
             "webapp/src/features/auth/login-page.tsx",
+            "webapp/src/features/admin/api.ts",
+            "webapp/src/features/admin/admin-workspace.tsx",
             "server/web_api/session_handlers.py",
             "server/web_api/support_handlers.py",
             "server/web_api/admin_handlers.py",
@@ -393,6 +395,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/bootstrap_web_toolchain.py",
             'python scripts/agent_find.py "web_api" --dir server',
             'python scripts/agent_find.py "app/support" --dir server',
+            'python scripts/agent_find.py "app/admin" --dir server',
         ),
         mode="Internal web platform / React",
         skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),

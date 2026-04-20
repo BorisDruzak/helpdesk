@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local fixture server for Playwright checks of the new support workspace."""
+"""Local fixture server for Playwright checks of the new support/admin workspaces."""
 
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ SUPPORT_LOGIN = "support"
 SUPPORT_PASSWORD = "secret"
 SUPPORT_ACTOR_ROLE = "support"
 SUPPORT_ACTOR_LABEL = "Оператор поддержки"
+ADMIN_LOGIN = "admin"
+ADMIN_PASSWORD = "secret"
+ADMIN_ACTOR_ROLE = "admin"
+ADMIN_ACTOR_LABEL = "Администратор"
 FIXTURE_TZ = timezone(timedelta(hours=5))
 STATUS_LABELS = {
     "new": "Новая",
@@ -48,6 +52,57 @@ def build_fixture_state() -> dict:
     return {
         "message_counter": itertools.count(200),
         "operation_counter": itertools.count(1),
+        "session_user": None,
+        "admin": {
+            "rollout": [
+                {
+                    "target": "windows_amd64",
+                    "channel": "stable",
+                    "version": "2.4.1",
+                    "updated_at": now_iso(minutes=20),
+                    "updated_by": ADMIN_LOGIN,
+                },
+                {
+                    "target": "linux_alt_x86_64",
+                    "channel": "stable",
+                    "version": "2.3.9",
+                    "updated_at": now_iso(minutes=18),
+                    "updated_by": ADMIN_LOGIN,
+                },
+            ],
+            "devices": [
+                {
+                    "device_id": "device-1",
+                    "hostname": "WS-01",
+                    "os": "Windows 11",
+                    "agent_version": "2.4.0",
+                    "target": "windows_amd64",
+                    "online": True,
+                    "last_seen_at": now_iso(minutes=25),
+                    "connection_status_label": "Онлайн",
+                    "latest_update": {
+                        "status": "completed",
+                        "label": "Обновление завершено",
+                        "summary": "Устройство на шаг позади rollout",
+                    },
+                },
+                {
+                    "device_id": "device-2",
+                    "hostname": "LT-02",
+                    "os": "ALT Linux",
+                    "agent_version": "2.3.7",
+                    "target": "linux_alt_x86_64",
+                    "online": False,
+                    "last_seen_at": now_iso(minutes=-30),
+                    "connection_status_label": "Оффлайн",
+                    "latest_update": {
+                        "status": "pending",
+                        "label": "Ожидает rollout",
+                        "summary": "Назначен rollout stable/2.3.9",
+                    },
+                },
+            ],
+        },
         "tickets": {
             "ticket-1": {
                 "ticket": {
@@ -289,6 +344,48 @@ def require_session(request: web.Request) -> web.Response | None:
     return json_error("Требуется авторизация.", status=401, error_code="UNAUTHORIZED")
 
 
+def build_admin_devices_payload(state: dict, *, status_filter: str, query: str) -> dict:
+    normalized_query = query.strip().lower()
+    devices = []
+    for item in state["admin"]["devices"]:
+        if status_filter == "online" and not item["online"]:
+            continue
+        if status_filter == "offline" and item["online"]:
+            continue
+        haystack = " ".join(
+            [
+                item["device_id"],
+                item["hostname"] or "",
+                item["os"] or "",
+                item["agent_version"] or "",
+                item["target"] or "",
+                item["latest_update"]["label"],
+                item["latest_update"]["summary"] or "",
+            ]
+        ).lower()
+        if normalized_query and normalized_query not in haystack:
+            continue
+        devices.append(deepcopy(item))
+    return {
+        "query": query,
+        "status_filter": status_filter,
+        "summary": {
+            "visible_count": len(devices),
+            "online_count": sum(1 for item in devices if item["online"]),
+            "rollout_targets": len(state["admin"]["rollout"]),
+        },
+        "filters": {
+            "status_options": [
+                {"value": "all", "label": "Все устройства"},
+                {"value": "online", "label": "Только онлайн"},
+                {"value": "offline", "label": "Только офлайн"},
+            ]
+        },
+        "rollout": deepcopy(state["admin"]["rollout"]),
+        "devices": devices,
+    }
+
+
 def queue_filters() -> dict:
     return {
         "scope_options": [
@@ -370,27 +467,31 @@ def build_ticket_detail(state: dict, ticket_id: str) -> dict:
 async def handle_session_me(request: web.Request) -> web.Response:
     if request.cookies.get(WEB_SESSION_COOKIE_NAME) != SESSION_TOKEN:
         return json_success(None)
-    return json_success(
-        {
-            "user_login": SUPPORT_LOGIN,
-            "actor_role": SUPPORT_ACTOR_ROLE,
-            "auth_type": "ui_token",
-        }
-    )
+    session_user = request.app["fixture_state"].get("session_user")
+    if not session_user:
+        return json_success(None)
+    return json_success(deepcopy(session_user))
 
 
 async def handle_session_login(request: web.Request) -> web.Response:
     payload = await request.json()
-    if payload.get("login") != SUPPORT_LOGIN or payload.get("password") != SUPPORT_PASSWORD:
-        return json_error("Неверный логин или пароль.", status=401, error_code="INVALID_CREDENTIALS")
-
-    response = json_success(
-        {
+    if payload.get("login") == SUPPORT_LOGIN and payload.get("password") == SUPPORT_PASSWORD:
+        session_user = {
             "user_login": SUPPORT_LOGIN,
             "actor_role": SUPPORT_ACTOR_ROLE,
             "auth_type": "ui_token",
         }
-    )
+    elif payload.get("login") == ADMIN_LOGIN and payload.get("password") == ADMIN_PASSWORD:
+        session_user = {
+            "user_login": ADMIN_LOGIN,
+            "actor_role": ADMIN_ACTOR_ROLE,
+            "auth_type": "ui_token",
+        }
+    else:
+        return json_error("Неверный логин или пароль.", status=401, error_code="INVALID_CREDENTIALS")
+
+    request.app["fixture_state"]["session_user"] = deepcopy(session_user)
+    response = json_success(session_user)
     response.set_cookie(
         WEB_SESSION_COOKIE_NAME,
         SESSION_TOKEN,
@@ -403,6 +504,7 @@ async def handle_session_login(request: web.Request) -> web.Response:
 
 
 async def handle_session_logout(request: web.Request) -> web.Response:
+    request.app["fixture_state"]["session_user"] = None
     response = json_success({"cleared": True})
     response.del_cookie(WEB_SESSION_COOKIE_NAME, path="/")
     return response
@@ -621,6 +723,37 @@ async def handle_support_ticket_tool_run(request: web.Request) -> web.Response:
     )
 
 
+async def handle_admin_bootstrap(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return json_success(
+        {
+            "workspace": "admin",
+            "features": [
+                "devices_inventory",
+                "agent_rollout",
+                "modules_workbench",
+                "tech_panel",
+            ],
+            "observer": {
+                "quick_endpoint": "/api/admin/tech/observer/quick",
+                "traces_endpoint": "/api/admin/tech/traces",
+            },
+        }
+    )
+
+
+async def handle_admin_devices(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    status_filter = request.query.get("status", "all")
+    query = request.query.get("query", "")
+    return json_success(build_admin_devices_payload(state, status_filter=status_filter, query=query))
+
+
 def build_app() -> web.Application:
     app = web.Application()
     app["fixture_state"] = build_fixture_state()
@@ -636,6 +769,8 @@ def build_app() -> web.Application:
             web.post("/api/web/support/tickets/{ticket_id}/messages", handle_support_ticket_message),
             web.post("/api/web/support/tickets/{ticket_id}/status", handle_support_ticket_status),
             web.post("/api/web/support/tickets/{ticket_id}/tools/run", handle_support_ticket_tool_run),
+            web.get("/api/web/admin/bootstrap", handle_admin_bootstrap),
+            web.get("/api/web/admin/devices", handle_admin_devices),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
             web.get("/app", handle_webapp_page),

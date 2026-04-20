@@ -51,6 +51,8 @@
   - завершён support wave 1, шаг 3: новый typed tool slice добавил `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, React workspace получил русскоязычную панель запуска инструментов, а ticket timeline теперь показывает `tool_call_started` / `tool_call_result` рядом с observer root trace metadata;
   - локальный no-DB режим дополнительно ужесточен для нового web-layer: `AuthService` включает cooldown на повторные UI DB probe, а support queue fallback остаётся typed и не валит `/app/support` в 500 при отсутствии PostgreSQL;
   - завершён локальный support E2E signoff: `webapp/playwright.config.ts`, `webapp/tests/fixtures/support_fixture_server.py` и `webapp/tests/support-workspace.spec.ts` теперь проверяют русский login flow, queue selection, reply composer, status change, tool run и observer-visible timeline для `/app/support`;
+  - стартовал admin wave 1: `GET /api/web/admin/devices` теперь даёт typed inventory + rollout summary с no-DB fallback, а новый `webapp/src/features/admin/admin-workspace.tsx` переводит `/app/admin` с placeholder на русскоязычный inventory/detail workspace;
+  - подтверждён локальный browser smoke и для `/app/admin`: `webapp/tests/admin-workspace.spec.ts` вместе с общим fixture-server теперь проверяет русский login flow, inventory summary, rollout cards и detail-panel устройства, а support/spec остался зелёным в том же прогоне;
   - подтверждён локальный baseline:
     - `python scripts/bootstrap_web_toolchain.py`
     - `pnpm --dir webapp run test`

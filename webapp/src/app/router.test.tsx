@@ -207,6 +207,73 @@ describe("appRoutes", () => {
         });
       }
 
+      if (url.endsWith("/api/web/admin/bootstrap")) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "admin",
+            features: [
+              "devices_inventory",
+              "agent_rollout",
+              "modules_workbench",
+              "tech_panel"
+            ],
+            observer: {
+              quick_endpoint: "/api/admin/tech/observer/quick",
+              traces_endpoint: "/api/admin/tech/traces"
+            }
+          }
+        });
+      }
+
+      if (url.startsWith("/api/web/admin/devices")) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            query: "",
+            status_filter: "all",
+            summary: {
+              visible_count: 1,
+              online_count: 1,
+              rollout_targets: 1
+            },
+            filters: {
+              status_options: [
+                { value: "all", label: "Все устройства" },
+                { value: "online", label: "Только онлайн" },
+                { value: "offline", label: "Только офлайн" }
+              ]
+            },
+            rollout: [
+              {
+                target: "windows_amd64",
+                channel: "stable",
+                version: "2.4.1",
+                updated_at: "2026-04-20T11:20:00+05:00",
+                updated_by: "admin1"
+              }
+            ],
+            devices: [
+              {
+                device_id: "device-1",
+                hostname: "WS-01",
+                os: "Windows 11",
+                agent_version: "2.4.0",
+                target: "windows_amd64",
+                online: true,
+                last_seen_at: "2026-04-20T11:25:00+05:00",
+                connection_status_label: "Онлайн",
+                latest_update: {
+                  status: "healthy",
+                  label: "Готово к действиям",
+                  summary: "Устройство уже видно в typed inventory."
+                }
+              }
+            ]
+          }
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
