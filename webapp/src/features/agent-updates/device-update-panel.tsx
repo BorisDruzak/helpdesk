@@ -27,7 +27,7 @@ function formatDateTime(value: string | null | undefined): string {
 
 function buildBuildLabel(build: { channel: string; version: string } | null | undefined): string {
   if (!build) {
-    return "Не назначен";
+    return "Не назначена";
   }
   return `${build.channel}/${build.version}`;
 }
@@ -82,7 +82,7 @@ export function DeviceUpdatePanel({ device }: { device: DeviceSummary | null }) 
       <section className="admin-update-panel">
         <div className="support-workspace__panel-head">
           <h3>Обновление агента</h3>
-          <span>Не удалось загрузить update workflow</span>
+          <span>Не удалось загрузить сценарий обновления</span>
         </div>
       </section>
     );
@@ -107,7 +107,7 @@ export function DeviceUpdatePanel({ device }: { device: DeviceSummary | null }) 
           <p>{updates.summary.summary ?? "Сервер ещё не сформировал рекомендацию для устройства."}</p>
         </article>
         <article className="support-snapshot-card">
-          <span>Рекомендованный build</span>
+          <span>Рекомендуемая сборка</span>
           <strong>{buildBuildLabel(recommendedBuild)}</strong>
           <p>{updates.recommendation.comparison_label}</p>
         </article>
@@ -117,14 +117,14 @@ export function DeviceUpdatePanel({ device }: { device: DeviceSummary | null }) 
           <p>
             {assignedRollout?.updated_at
               ? `Обновлено ${formatDateTime(assignedRollout.updated_at)}`
-              : "Rollout policy для target пока не назначена."}
+              : "Политика rollout для платформы пока не назначена."}
           </p>
         </article>
       </div>
 
       <div className="admin-update-panel__meta">
         <span>Источник рекомендации: {updates.recommendation.recommendation_source_label}</span>
-        <span>Target: {updates.target ?? "не определён"}</span>
+        <span>Платформа: {updates.target ?? "не определена"}</span>
         <span>Канал текущей версии: {updates.release_channel}</span>
       </div>
 
@@ -154,7 +154,7 @@ export function DeviceUpdatePanel({ device }: { device: DeviceSummary | null }) 
           <span>Причина запуска</span>
           <textarea
             onChange={(event) => setReason(event.currentTarget.value)}
-            placeholder="Например: canary после smoke, перед bulk rollout."
+            placeholder="Например: canary после smoke, перед массовой раскаткой."
             rows={3}
             value={reason}
           />

@@ -1,3 +1,32 @@
+export type AdminObserverTraceStatusFilter = "all" | "running" | "failed" | "succeeded" | "timed_out";
+export type AdminObserverRootKindFilter =
+  | "all"
+  | "ticket"
+  | "tool_call"
+  | "agent_update"
+  | "module_install"
+  | "module_remove"
+  | "consent";
+
+export type AdminObserverTraceItem = {
+  trace_id: string;
+  root_span_id: string | null;
+  root_kind: string | null;
+  root_kind_label: string;
+  status: string | null;
+  status_label: string;
+  ticket_id: string | null;
+  device_id: string | null;
+  operation_id: string | null;
+  job_id: string | null;
+  duration_ms: number | null;
+  error_count: number;
+  span_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  attrs_json: Record<string, unknown>;
+};
+
 export type AdminObserverQuickPayload = {
   summary: {
     lookback_hours: number;
@@ -16,20 +45,7 @@ export type AdminObserverQuickPayload = {
     last_projected_at: string | null;
     issues: string[];
   };
-  hot_traces: Array<{
-    trace_id: string;
-    root_kind: string | null;
-    root_kind_label: string;
-    status: string | null;
-    status_label: string;
-    ticket_id: string | null;
-    device_id: string | null;
-    duration_ms: number | null;
-    error_count: number;
-    span_count: number;
-    started_at: string | null;
-    finished_at: string | null;
-  }>;
+  hot_traces: AdminObserverTraceItem[];
   top_signatures: Array<{
     error_signature: string;
     title: string;
@@ -67,6 +83,95 @@ export type AdminObserverQuickPayload = {
   };
 };
 
+export type AdminObserverTracesPayload = {
+  query: {
+    device_id: string | null;
+    lookback_hours: number;
+    status_filter: AdminObserverTraceStatusFilter;
+    root_kind_filter: AdminObserverRootKindFilter;
+    limit: number;
+  };
+  summary: {
+    visible_count: number;
+    active_count: number;
+    error_count: number;
+    selected_trace_id: string | null;
+  };
+  filters: {
+    status_options: Array<{
+      value: AdminObserverTraceStatusFilter;
+      label: string;
+    }>;
+    root_kind_options: Array<{
+      value: AdminObserverRootKindFilter;
+      label: string;
+    }>;
+  };
+  traces: AdminObserverTraceItem[];
+  links: {
+    detail_endpoint_template: string;
+    runtime_endpoint: string;
+  };
+};
+
+export type AdminObserverTraceDetailPayload = {
+  trace: AdminObserverTraceItem;
+  summary: {
+    span_count: number;
+    error_count: number;
+    linked_trace_count: number;
+  };
+  spans: Array<{
+    span_id: string;
+    trace_id: string;
+    parent_span_id: string | null;
+    source_type: string | null;
+    source_ref: string | null;
+    name: string;
+    kind: string | null;
+    component: string | null;
+    event_type: string | null;
+    module_name: string | null;
+    tool_name: string | null;
+    status: string | null;
+    status_label: string;
+    started_at: string | null;
+    finished_at: string | null;
+    duration_ms: number | null;
+    attrs_json: Record<string, unknown>;
+  }>;
+  span_links: Array<{
+    id: number;
+    span_id: string;
+    linked_trace_id: string | null;
+    linked_span_id: string | null;
+    reason: string | null;
+    attrs_json: Record<string, unknown>;
+    created_at: string | null;
+  }>;
+  error_occurrences: Array<{
+    occurrence_id: string;
+    trace_id: string;
+    span_id: string | null;
+    error_signature: string;
+    device_id: string | null;
+    ticket_id: string | null;
+    operation_id: string | null;
+    component: string | null;
+    module_name: string | null;
+    tool_name: string | null;
+    error_kind: string | null;
+    exception_type: string | null;
+    failure_stage: string | null;
+    severity: string | null;
+    severity_label: string;
+    message_norm: string | null;
+    stack_hash: string | null;
+    attrs_json: Record<string, unknown>;
+    created_at: string | null;
+  }>;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -78,13 +183,13 @@ type ErrorResponse = {
   error_code?: string;
 };
 
-export class AdminObserverQuickApiError extends Error {
+export class AdminObserverApiError extends Error {
   status: number;
   errorCode?: string;
 
   constructor(message: string, status: number, errorCode?: string) {
     super(message);
-    this.name = "AdminObserverQuickApiError";
+    this.name = "AdminObserverApiError";
     this.status = status;
     this.errorCode = errorCode;
   }
@@ -98,20 +203,86 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return (await response.json()) as T;
 }
 
-export async function fetchAdminObserverQuick(lookbackHours: number): Promise<AdminObserverQuickPayload> {
-  const searchParams = new URLSearchParams();
-  searchParams.set("lookback_hours", String(lookbackHours));
-  const response = await fetch(`/api/web/admin/observer/quick?${searchParams.toString()}`, {
-    credentials: "same-origin"
-  });
-  const payload = await readJson<SuccessResponse<AdminObserverQuickPayload> | ErrorResponse>(response);
+async function readSuccessResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await readJson<SuccessResponse<T> | ErrorResponse>(response);
   if (!response.ok || !payload || payload.status !== "success") {
     const errorPayload = payload && payload.status === "error" ? payload : null;
-    throw new AdminObserverQuickApiError(
-      errorPayload?.error ?? "Не удалось загрузить observer quick.",
+    throw new AdminObserverApiError(
+      errorPayload?.error ?? fallbackMessage,
       response.status,
       errorPayload?.error_code
     );
   }
   return payload.data;
+}
+
+type ObserverQuickParams = {
+  lookbackHours: number;
+  deviceId?: string | null;
+};
+
+type ObserverTracesParams = {
+  deviceId?: string | null;
+  lookbackHours: number;
+  statusFilter: AdminObserverTraceStatusFilter;
+  rootKindFilter: AdminObserverRootKindFilter;
+  limit?: number;
+};
+
+function buildObserverSearchParams(params: {
+  deviceId?: string | null;
+  lookbackHours?: number;
+  statusFilter?: AdminObserverTraceStatusFilter;
+  rootKindFilter?: AdminObserverRootKindFilter;
+  limit?: number;
+}): string {
+  const searchParams = new URLSearchParams();
+  if (params.deviceId) {
+    searchParams.set("device_id", params.deviceId);
+  }
+  if (params.lookbackHours) {
+    searchParams.set("lookback_hours", String(params.lookbackHours));
+  }
+  if (params.statusFilter && params.statusFilter !== "all") {
+    searchParams.set("status", params.statusFilter);
+  }
+  if (params.rootKindFilter && params.rootKindFilter !== "all") {
+    searchParams.set("root_kind", params.rootKindFilter);
+  }
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams.toString();
+}
+
+export async function fetchAdminObserverQuick(params: ObserverQuickParams): Promise<AdminObserverQuickPayload> {
+  const queryString = buildObserverSearchParams({
+    deviceId: params.deviceId,
+    lookbackHours: params.lookbackHours
+  });
+  const response = await fetch(`/api/web/admin/observer/quick?${queryString}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить быстрый срез observer.");
+}
+
+export async function fetchAdminObserverTraces(params: ObserverTracesParams): Promise<AdminObserverTracesPayload> {
+  const queryString = buildObserverSearchParams({
+    deviceId: params.deviceId,
+    lookbackHours: params.lookbackHours,
+    statusFilter: params.statusFilter,
+    rootKindFilter: params.rootKindFilter,
+    limit: params.limit ?? 12
+  });
+  const response = await fetch(`/api/web/admin/observer/traces?${queryString}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить список трасс.");
+}
+
+export async function fetchAdminObserverTraceDetail(traceId: string): Promise<AdminObserverTraceDetailPayload> {
+  const response = await fetch(`/api/web/admin/observer/traces/${traceId}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить детали трассы.");
 }

@@ -110,6 +110,8 @@ Ticket-scoped API:
 - `GET /api/web/support/tickets/{ticket_id}`
 - `GET /api/web/admin/bootstrap`
 - `GET /api/web/admin/observer/quick`
+- `GET /api/web/admin/observer/traces`
+- `GET /api/web/admin/observer/traces/{trace_id}`
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
@@ -139,6 +141,7 @@ New React workspaces:
 - `/app/support` tool surface должен ходить через typed endpoints `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, а рабочая лента должна показывать `tool_call_started` / `tool_call_result` рядом с observer root trace metadata, чтобы оператор видел traced execution без возврата в legacy `/support`/`/ticket`;
 - `/app/admin` должен получать observer capability map через `GET /api/web/admin/bootstrap`.
 - `/app/admin` должен брать overview tech/observer срез через typed endpoint `GET /api/web/admin/observer/quick`, а не рендерить raw payload legacy `/api/admin/tech/observer/quick` прямо из React.
+- `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
 - `/app/*` сначала проходит через `GET /api/web/session/me`; observer surfaces в новом web-layer не должны пытаться ходить в trace API до подтверждённой web session.
 
 Канонический operator UX для ticket-scoped trace живёт в `/support`.
@@ -187,9 +190,10 @@ Observer detail должен оставаться пригодным для ди
 
 1. Открыть `GET /api/admin/tech/observer/quick` или tech-panel quick dashboard.
 2. Если кейс ticket-bound, открыть `GET /api/tickets/{ticket_id}/observer`.
-3. По необходимости провалиться в `trace_id` или `error_signature`.
-4. Для живого agent-side trail включить `include_agent_actions=1`.
-5. Для архивных кейсов использовать rebuild только если background backfill ещё не догнал исторический диапазон.
+3. Для нового `/app/admin` сначала получить device-scoped trace list через `GET /api/web/admin/observer/traces`, а затем открыть `GET /api/web/admin/observer/traces/{trace_id}`.
+4. По необходимости провалиться в legacy `trace_id` или `error_signature` search для tech-panel.
+5. Для живого agent-side trail включить `include_agent_actions=1`.
+6. Для архивных кейсов использовать rebuild только если background backfill ещё не догнал исторический диапазон.
 
 ## 13. Что нужно обновлять вместе с observer
 

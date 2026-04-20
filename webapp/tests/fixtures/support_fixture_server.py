@@ -597,6 +597,351 @@ def build_admin_device_updates_payload(state: dict, device_id: str) -> dict | No
     return deepcopy(payload)
 
 
+def build_admin_observer_quick_payload(state: dict, *, device_id: str | None, lookback_hours: int) -> dict:
+    if device_id == "device-2":
+        if lookback_hours == 72:
+            return {
+                "summary": {
+                    "lookback_hours": 72,
+                    "recent_trace_count": 14,
+                    "hot_trace_count": 3,
+                    "signature_count": 2,
+                    "degradation_group_count": 2,
+                    "dangerous_flow_count": 2,
+                },
+                "runtime": {
+                    "enabled": True,
+                    "running": True,
+                    "health_status": "degraded",
+                    "health_status_label": "Есть отставание",
+                    "pending_trace_count": 6,
+                    "last_projected_at": now_iso(minutes=10),
+                    "issues": ["pending_backlog"],
+                },
+                "hot_traces": [],
+                "top_signatures": [],
+                "top_degradations": [],
+                "dangerous_flows": [],
+                "links": {
+                    "quick_endpoint": "/api/web/admin/observer/quick",
+                    "traces_endpoint": "/api/web/admin/observer/traces",
+                    "runtime_endpoint": "/api/admin/tech/traces/runtime",
+                },
+            }
+        return {
+            "summary": {
+                "lookback_hours": 24,
+                "recent_trace_count": 2,
+                "hot_trace_count": 1,
+                "signature_count": 0,
+                "degradation_group_count": 0,
+                "dangerous_flow_count": 0,
+            },
+            "runtime": {
+                "enabled": True,
+                "running": True,
+                "health_status": "ok",
+                "health_status_label": "Норма",
+                "pending_trace_count": 0,
+                "last_projected_at": now_iso(minutes=-5),
+                "issues": [],
+            },
+            "hot_traces": [
+                {
+                    "trace_id": "trace-linux-1",
+                    "root_kind": "tool_call",
+                    "root_kind_label": "Инструмент",
+                    "status": "succeeded",
+                    "status_label": "Успешно",
+                    "ticket_id": None,
+                    "device_id": "device-2",
+                    "operation_id": "op-linux-1",
+                    "duration_ms": 1200,
+                    "error_count": 0,
+                    "span_count": 2,
+                    "started_at": now_iso(minutes=-15),
+                    "finished_at": now_iso(minutes=-15),
+                    "attrs_json": {},
+                }
+            ],
+            "top_signatures": [],
+            "top_degradations": [],
+            "dangerous_flows": [],
+            "links": {
+                "quick_endpoint": "/api/web/admin/observer/quick",
+                "traces_endpoint": "/api/web/admin/observer/traces",
+                "runtime_endpoint": "/api/admin/tech/traces/runtime",
+            },
+        }
+
+    payload = deepcopy(state["admin"]["observer_quick"].get(lookback_hours) or state["admin"]["observer_quick"][24])
+    payload["links"] = {
+        "quick_endpoint": "/api/web/admin/observer/quick",
+        "traces_endpoint": "/api/web/admin/observer/traces",
+        "runtime_endpoint": "/api/admin/tech/traces/runtime",
+    }
+    for trace in payload.get("hot_traces", []):
+        trace.setdefault("operation_id", f"op-{trace['trace_id']}")
+        trace.setdefault("job_id", None)
+        trace.setdefault("root_span_id", f"span-{trace['trace_id']}")
+        trace.setdefault("attrs_json", {})
+    return payload
+
+
+def _admin_observer_trace_filters() -> dict:
+    return {
+        "status_options": [
+            {"value": "all", "label": "Все статусы"},
+            {"value": "running", "label": "В работе"},
+            {"value": "failed", "label": "С ошибкой"},
+            {"value": "succeeded", "label": "Успешно"},
+        ],
+        "root_kind_options": [
+            {"value": "all", "label": "Все потоки"},
+            {"value": "agent_update", "label": "Обновление агента"},
+            {"value": "tool_call", "label": "Инструмент"},
+        ],
+    }
+
+
+def build_admin_observer_traces_payload(
+    *,
+    device_id: str | None,
+    lookback_hours: int,
+    status_filter: str,
+    root_kind_filter: str,
+    limit: int,
+) -> dict:
+    if device_id == "device-2":
+        traces = []
+        if lookback_hours < 72:
+            traces = [
+                {
+                    "trace_id": "trace-linux-1",
+                    "root_span_id": "span-linux-1",
+                    "root_kind": "tool_call",
+                    "root_kind_label": "Инструмент",
+                    "status": "succeeded",
+                    "status_label": "Успешно",
+                    "ticket_id": None,
+                    "device_id": "device-2",
+                    "operation_id": "op-linux-1",
+                    "job_id": None,
+                    "duration_ms": 1200,
+                    "error_count": 0,
+                    "span_count": 2,
+                    "started_at": now_iso(minutes=-15),
+                    "finished_at": now_iso(minutes=-15),
+                    "attrs_json": {},
+                }
+            ]
+    else:
+        traces = [
+            {
+                "trace_id": "trace-update-1",
+                "root_span_id": "span-root-1",
+                "root_kind": "agent_update",
+                "root_kind_label": "Обновление агента",
+                "status": "failed",
+                "status_label": "Ошибка",
+                "ticket_id": "ticket-1",
+                "device_id": "device-1",
+                "operation_id": "op-update-1",
+                "job_id": None,
+                "duration_ms": 6400,
+                "error_count": 1,
+                "span_count": 3,
+                "started_at": now_iso(minutes=24),
+                "finished_at": now_iso(minutes=24),
+                "attrs_json": {"flow": "agent_update"},
+            },
+            {
+                "trace_id": "trace-tool-1",
+                "root_span_id": "span-root-2",
+                "root_kind": "tool_call",
+                "root_kind_label": "Инструмент",
+                "status": "running",
+                "status_label": "В работе",
+                "ticket_id": "ticket-1",
+                "device_id": "device-1",
+                "operation_id": "op-tool-1",
+                "job_id": None,
+                "duration_ms": 1800,
+                "error_count": 0,
+                "span_count": 4,
+                "started_at": now_iso(minutes=26),
+                "finished_at": None,
+                "attrs_json": {},
+            },
+        ]
+
+    if status_filter != "all":
+        traces = [trace for trace in traces if trace["status"] == status_filter]
+    if root_kind_filter != "all":
+        traces = [trace for trace in traces if trace["root_kind"] == root_kind_filter]
+
+    visible_traces = traces[:limit]
+    active_count = sum(1 for trace in visible_traces if trace["status"] in {"running", "queued", "sent", "accepted"})
+    error_count = sum(1 for trace in visible_traces if trace["error_count"] > 0 or trace["status"] in {"failed", "timed_out"})
+    return {
+        "query": {
+            "device_id": device_id,
+            "lookback_hours": lookback_hours,
+            "status_filter": status_filter,
+            "root_kind_filter": root_kind_filter,
+            "limit": limit,
+        },
+        "summary": {
+            "visible_count": len(visible_traces),
+            "active_count": active_count,
+            "error_count": error_count,
+            "selected_trace_id": visible_traces[0]["trace_id"] if visible_traces else None,
+        },
+        "filters": _admin_observer_trace_filters(),
+        "traces": visible_traces,
+        "links": {
+            "detail_endpoint_template": "/api/web/admin/observer/traces/{trace_id}",
+            "runtime_endpoint": "/api/admin/tech/traces/runtime",
+        },
+    }
+
+
+def build_admin_observer_trace_detail_payload(trace_id: str) -> dict | None:
+    if trace_id == "trace-linux-1":
+        return {
+            "trace": {
+                "trace_id": "trace-linux-1",
+                "root_span_id": "span-linux-1",
+                "root_kind": "tool_call",
+                "root_kind_label": "Инструмент",
+                "status": "succeeded",
+                "status_label": "Успешно",
+                "ticket_id": None,
+                "device_id": "device-2",
+                "operation_id": "op-linux-1",
+                "job_id": None,
+                "duration_ms": 1200,
+                "error_count": 0,
+                "span_count": 2,
+                "started_at": now_iso(minutes=-15),
+                "finished_at": now_iso(minutes=-15),
+                "attrs_json": {},
+            },
+            "summary": {
+                "span_count": 2,
+                "error_count": 0,
+                "linked_trace_count": 0,
+            },
+            "spans": [
+                {
+                    "span_id": "span-linux-1",
+                    "trace_id": "trace-linux-1",
+                    "parent_span_id": None,
+                    "source_type": "operation",
+                    "source_ref": "op-linux-1",
+                    "name": "operation.tool_call",
+                    "kind": "internal",
+                    "component": "operation",
+                    "event_type": "tool_call",
+                    "module_name": "network_ping",
+                    "tool_name": "network_ping.ping",
+                    "status": "succeeded",
+                    "status_label": "Успешно",
+                    "started_at": now_iso(minutes=-15),
+                    "finished_at": now_iso(minutes=-15),
+                    "duration_ms": 1200,
+                    "attrs_json": {},
+                }
+            ],
+            "span_links": [],
+            "error_occurrences": [],
+        }
+
+    if trace_id != "trace-update-1":
+        return None
+
+    return {
+        "trace": {
+            "trace_id": "trace-update-1",
+            "root_span_id": "span-root-1",
+            "root_kind": "agent_update",
+            "root_kind_label": "Обновление агента",
+            "status": "failed",
+            "status_label": "Ошибка",
+            "ticket_id": "ticket-1",
+            "device_id": "device-1",
+            "operation_id": "op-update-1",
+            "job_id": None,
+            "duration_ms": 6400,
+            "error_count": 1,
+            "span_count": 3,
+            "started_at": now_iso(minutes=24),
+            "finished_at": now_iso(minutes=24),
+            "attrs_json": {"flow": "agent_update"},
+        },
+        "summary": {
+            "span_count": 3,
+            "error_count": 1,
+            "linked_trace_count": 1,
+        },
+        "spans": [
+            {
+                "span_id": "span-root-1",
+                "trace_id": "trace-update-1",
+                "parent_span_id": None,
+                "source_type": "operation",
+                "source_ref": "op-update-1",
+                "name": "operation.agent_update",
+                "kind": "internal",
+                "component": "operation",
+                "event_type": "agent_update",
+                "module_name": None,
+                "tool_name": None,
+                "status": "failed",
+                "status_label": "Ошибка",
+                "started_at": now_iso(minutes=24),
+                "finished_at": now_iso(minutes=24),
+                "duration_ms": 6400,
+                "attrs_json": {},
+            }
+        ],
+        "span_links": [
+            {
+                "id": 11,
+                "span_id": "span-root-1",
+                "linked_trace_id": "trace-followup-1",
+                "linked_span_id": "span-followup-1",
+                "reason": "child_trace",
+                "attrs_json": {"edge": "child"},
+                "created_at": now_iso(minutes=24),
+            }
+        ],
+        "error_occurrences": [
+            {
+                "occurrence_id": "occ-1",
+                "trace_id": "trace-update-1",
+                "span_id": "span-root-1",
+                "error_signature": "sig-1",
+                "device_id": "device-1",
+                "ticket_id": "ticket-1",
+                "operation_id": "op-update-1",
+                "component": "agent_update",
+                "module_name": None,
+                "tool_name": None,
+                "error_kind": "runtime_error",
+                "exception_type": "RuntimeError",
+                "failure_stage": "delivery",
+                "severity": "error",
+                "severity_label": "Ошибка",
+                "message_norm": "update delivery failed",
+                "stack_hash": "stack-1",
+                "attrs_json": {"code": "DELIVERY_FAILED"},
+                "created_at": now_iso(minutes=24),
+            }
+        ],
+    }
+
+
 def queue_filters() -> dict:
     return {
         "scope_options": [
@@ -948,8 +1293,8 @@ async def handle_admin_bootstrap(request: web.Request) -> web.Response:
                 "tech_panel",
             ],
             "observer": {
-                "quick_endpoint": "/api/admin/tech/observer/quick",
-                "traces_endpoint": "/api/admin/tech/traces",
+                "quick_endpoint": "/api/web/admin/observer/quick",
+                "traces_endpoint": "/api/web/admin/observer/traces",
             },
         }
     )
@@ -970,12 +1315,47 @@ async def handle_admin_observer_quick(request: web.Request) -> web.Response:
     if unauthorized:
         return unauthorized
     state = request.app["fixture_state"]
+    device_id = request.query.get("device_id")
     try:
         lookback_hours = int(str(request.query.get("lookback_hours", "24")).strip() or "24")
     except ValueError:
         lookback_hours = 24
-    payload = state["admin"]["observer_quick"].get(lookback_hours) or state["admin"]["observer_quick"][24]
-    return json_success(deepcopy(payload))
+    payload = build_admin_observer_quick_payload(state, device_id=device_id, lookback_hours=lookback_hours)
+    return json_success(payload)
+
+
+async def handle_admin_observer_traces(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    device_id = request.query.get("device_id")
+    try:
+        lookback_hours = int(str(request.query.get("lookback_hours", "24")).strip() or "24")
+    except ValueError:
+        lookback_hours = 24
+    try:
+        limit = int(str(request.query.get("limit", "12")).strip() or "12")
+    except ValueError:
+        limit = 12
+    payload = build_admin_observer_traces_payload(
+        device_id=device_id,
+        lookback_hours=lookback_hours,
+        status_filter=request.query.get("status", "all"),
+        root_kind_filter=request.query.get("root_kind", "all"),
+        limit=limit,
+    )
+    return json_success(payload)
+
+
+async def handle_admin_observer_trace_detail(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    trace_id = request.match_info["trace_id"]
+    payload = build_admin_observer_trace_detail_payload(trace_id)
+    if not payload:
+        raise web.HTTPNotFound()
+    return json_success(payload)
 
 
 async def handle_admin_device_updates(request: web.Request) -> web.Response:
@@ -1045,6 +1425,8 @@ def build_app() -> web.Application:
             web.post("/api/web/support/tickets/{ticket_id}/tools/run", handle_support_ticket_tool_run),
             web.get("/api/web/admin/bootstrap", handle_admin_bootstrap),
             web.get("/api/web/admin/observer/quick", handle_admin_observer_quick),
+            web.get("/api/web/admin/observer/traces", handle_admin_observer_traces),
+            web.get("/api/web/admin/observer/traces/{trace_id}", handle_admin_observer_trace_detail),
             web.get("/api/web/admin/devices", handle_admin_devices),
             web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
             web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),

@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -113,6 +115,146 @@ class AdminObserverQuickPayload(BaseModel):
     top_degradations: list[AdminObserverDegradationItem]
     dangerous_flows: list[AdminObserverDangerousFlowItem]
     links: AdminObserverQuickLinks
+
+
+class AdminObserverTraceItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    root_span_id: str | None = None
+    root_kind: str | None = None
+    root_kind_label: str
+    status: str | None = None
+    status_label: str
+    ticket_id: str | None = None
+    device_id: str | None = None
+    operation_id: str | None = None
+    job_id: str | None = None
+    duration_ms: int | None = None
+    error_count: int = 0
+    span_count: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+    attrs_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminObserverTracesQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str | None = None
+    lookback_hours: int
+    status_filter: str
+    root_kind_filter: str
+    limit: int
+
+
+class AdminObserverTracesSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visible_count: int
+    active_count: int
+    error_count: int
+    selected_trace_id: str | None = None
+
+
+class AdminObserverTracesFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status_options: list["AdminFilterOption"]
+    root_kind_options: list["AdminFilterOption"]
+
+
+class AdminObserverTracesLinks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    detail_endpoint_template: str
+    runtime_endpoint: str
+
+
+class AdminObserverTracesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: AdminObserverTracesQuery
+    summary: AdminObserverTracesSummary
+    filters: AdminObserverTracesFilters
+    traces: list[AdminObserverTraceItem]
+    links: AdminObserverTracesLinks
+
+
+class AdminObserverTraceDetailSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    span_count: int
+    error_count: int
+    linked_trace_count: int
+
+
+class AdminObserverTraceSpanItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    span_id: str
+    trace_id: str
+    parent_span_id: str | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
+    name: str
+    kind: str | None = None
+    component: str | None = None
+    event_type: str | None = None
+    module_name: str | None = None
+    tool_name: str | None = None
+    status: str | None = None
+    status_label: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+    attrs_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminObserverTraceSpanLinkItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    span_id: str
+    linked_trace_id: str | None = None
+    linked_span_id: str | None = None
+    reason: str | None = None
+    attrs_json: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class AdminObserverTraceErrorOccurrenceItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    occurrence_id: str
+    trace_id: str
+    span_id: str | None = None
+    error_signature: str
+    device_id: str | None = None
+    ticket_id: str | None = None
+    operation_id: str | None = None
+    component: str | None = None
+    module_name: str | None = None
+    tool_name: str | None = None
+    error_kind: str | None = None
+    exception_type: str | None = None
+    failure_stage: str | None = None
+    severity: str | None = None
+    severity_label: str
+    message_norm: str | None = None
+    stack_hash: str | None = None
+    attrs_json: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class AdminObserverTraceDetailPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace: AdminObserverTraceItem
+    summary: AdminObserverTraceDetailSummary
+    spans: list[AdminObserverTraceSpanItem]
+    span_links: list[AdminObserverTraceSpanLinkItem]
+    error_occurrences: list[AdminObserverTraceErrorOccurrenceItem]
 
 
 class AdminFilterOption(BaseModel):

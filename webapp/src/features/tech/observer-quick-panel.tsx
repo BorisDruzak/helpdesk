@@ -1,7 +1,8 @@
-import { startTransition, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchAdminObserverQuick } from "./api";
+import { ObserverTraceDrilldown } from "./observer-trace-drilldown";
 
 
 const LOOKBACK_OPTIONS = [
@@ -36,11 +37,27 @@ function formatDuration(value: number | null | undefined): string {
   return `${(value / 1000).toFixed(1)} с`;
 }
 
-export function ObserverQuickPanel() {
+type ObserverQuickPanelProps = {
+  deviceId: string | null;
+  deviceLabel: string;
+};
+
+export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanelProps) {
   const [lookbackHours, setLookbackHours] = useState<number>(24);
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedTraceId(null);
+  }, [deviceId]);
+
   const observerQuickQuery = useQuery({
-    queryKey: ["admin-observer-quick", lookbackHours],
-    queryFn: () => fetchAdminObserverQuick(lookbackHours),
+    queryKey: ["admin-observer-quick", deviceId, lookbackHours],
+    queryFn: () =>
+      fetchAdminObserverQuick({
+        lookbackHours,
+        deviceId
+      }),
+    enabled: Boolean(deviceId),
     retry: false
   });
 
@@ -49,8 +66,8 @@ export function ObserverQuickPanel() {
       <div className="support-workspace__panel-head">
         <div className="admin-observer-panel__header">
           <div>
-            <h3>Observer quick</h3>
-            <p>Живой срез по горячим трассам, сигнатурам, деградациям и опасным потокам из нового typed boundary.</p>
+            <h3>Быстрый срез трассировки</h3>
+            <p>Собираем горячие трассы, сигнатуры, деградации и опасные потоки для устройства {deviceLabel} через новый typed boundary.</p>
           </div>
           <span className={`admin-observer-panel__runtime admin-observer-panel__runtime--${observerQuickQuery.data?.runtime.health_status ?? "unknown"}`}>
             {observerQuickQuery.data?.runtime.health_status_label ?? "Собираем статус"}
@@ -76,14 +93,14 @@ export function ObserverQuickPanel() {
       </div>
 
       {observerQuickQuery.isLoading ? (
-        <div className="support-detail-note">Собираем observer quick по последним трассам и runtime-статусу…</div>
+        <div className="support-detail-note">Собираем быстрый срез по последним трассам и runtime-статусу…</div>
       ) : null}
 
       {observerQuickQuery.isError ? (
         <div className="support-detail-error">
           {observerQuickQuery.error instanceof Error
             ? observerQuickQuery.error.message
-            : "Не удалось загрузить observer quick."}
+            : "Не удалось загрузить быстрый срез трассировки."}
         </div>
       ) : null}
 
@@ -127,7 +144,16 @@ export function ObserverQuickPanel() {
               {observerQuickQuery.data.hot_traces.length ? (
                 <div className="admin-observer-list">
                   {observerQuickQuery.data.hot_traces.map((trace) => (
-                    <article key={trace.trace_id} className="admin-observer-item">
+                    <button
+                      key={trace.trace_id}
+                      type="button"
+                      className={`admin-observer-item admin-observer-item--button${selectedTraceId === trace.trace_id ? " active" : ""}`}
+                      onClick={() => {
+                        startTransition(() => {
+                          setSelectedTraceId(trace.trace_id);
+                        });
+                      }}
+                    >
                       <div className="admin-observer-item__head">
                         <strong>{trace.root_kind_label}</strong>
                         <span>{trace.status_label}</span>
@@ -137,7 +163,7 @@ export function ObserverQuickPanel() {
                         Ошибок: {trace.error_count} · span: {trace.span_count} · длительность: {formatDuration(trace.duration_ms)}
                       </p>
                       <p>Завершена: {formatDateTime(trace.finished_at ?? trace.started_at)}</p>
-                    </article>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -221,6 +247,14 @@ export function ObserverQuickPanel() {
               )}
             </article>
           </div>
+
+          <ObserverTraceDrilldown
+            deviceId={deviceId}
+            deviceLabel={deviceLabel}
+            lookbackHours={lookbackHours}
+            selectedTraceId={selectedTraceId}
+            onSelectedTraceChange={setSelectedTraceId}
+          />
         </>
       ) : null}
     </section>

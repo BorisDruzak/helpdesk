@@ -6,7 +6,7 @@ import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import {
   type AdminStatusFilter,
   fetchAdminBootstrap,
-  fetchAdminDevices,
+  fetchAdminDevices
 } from "./api";
 
 
@@ -70,7 +70,7 @@ export function AdminWorkspace() {
     return (
       <section className="workspace-boot workspace-boot--loading">
         <h1>Рабочее место администрирования</h1>
-        <p>Собираем inventory устройств и rollout policy…</p>
+        <p>Собираем инвентарь устройств и политику раскатки…</p>
       </section>
     );
   }
@@ -88,7 +88,7 @@ export function AdminWorkspace() {
     return (
       <section className="workspace-boot workspace-boot--error">
         <h1>Рабочее место администрирования</h1>
-        <p>{devicesQuery.error instanceof Error ? devicesQuery.error.message : "Не удалось загрузить inventory устройств."}</p>
+        <p>{devicesQuery.error instanceof Error ? devicesQuery.error.message : "Не удалось загрузить инвентарь устройств."}</p>
       </section>
     );
   }
@@ -103,13 +103,13 @@ export function AdminWorkspace() {
           <p className="workspace-boot__eyebrow">Контур управления</p>
           <h1>Рабочее место администрирования</h1>
           <p>
-            Typed inventory для устройств и rollout-политик уже живёт здесь. Следующие slices
-            будут расширять эту поверхность обновлениями агентов, модулями и observer drilldown.
+            Новый рабочий стол уже показывает парк устройств и назначения раскатки. Следующие этапы расширят его
+            обновлениями агентов, модулями и глубоким разбором трассировки observer.
           </p>
         </div>
         <dl className="workspace-boot__meta">
           <div>
-            <dt>Всего в inventory</dt>
+            <dt>Всего в инвентаре</dt>
             <dd>{summary.visible_count}</dd>
           </div>
           <div>
@@ -126,13 +126,13 @@ export function AdminWorkspace() {
       <section className="admin-workspace__grid">
         <article className="support-workspace__panel">
           <div className="support-workspace__panel-head">
-            <h2>Inventory устройств</h2>
-            <p>Проверяем состав парка и readiness к rollout без legacy admin.js.</p>
+            <h2>Инвентарь устройств</h2>
+            <p>Проверяем состав парка и готовность к раскатке без legacy admin.js.</p>
           </div>
 
           <div className="support-filters admin-filters">
             <label className="support-filter-search">
-              <span>Поиск по inventory</span>
+              <span>Поиск по инвентарю</span>
               <input
                 type="search"
                 value={queryDraft}
@@ -167,7 +167,7 @@ export function AdminWorkspace() {
 
           <div className="admin-rollout">
             <div className="support-workspace__panel-head">
-              <h3>Rollout policy</h3>
+              <h3>Политика rollout</h3>
               <span>{bootstrap.features.join(" · ")}</span>
             </div>
             {rollout.length ? (
@@ -176,9 +176,7 @@ export function AdminWorkspace() {
                   <article key={`${item.target}:${item.channel}:${item.version}`} className="workspace-card">
                     <p className="workspace-card__code">{item.target}</p>
                     <h3>{item.channel}/{item.version}</h3>
-                    <p>
-                      {item.updated_by ? `Обновил ${item.updated_by}` : "Источник обновления не указан"}
-                    </p>
+                    <p>{item.updated_by ? `Обновил ${item.updated_by}` : "Источник обновления не указан"}</p>
                     <p>Изменено: {formatDateTime(item.updated_at)}</p>
                   </article>
                 ))}
@@ -206,10 +204,10 @@ export function AdminWorkspace() {
                     <span className="support-ticket-card__status">{device.connection_status_label}</span>
                   </div>
                   <div className="support-ticket-card__meta">
-                    <span>{device.target ?? "target не определён"}</span>
-                    <span>{device.agent_version ?? "версия не указана"}</span>
+                    <span>{device.target ?? "Платформа не определена"}</span>
+                    <span>{device.agent_version ?? "Версия не указана"}</span>
                   </div>
-                  <p>{device.latest_update.summary ?? "Нет свежих rollout-данных."}</p>
+                  <p>{device.latest_update.summary ?? "Нет свежих данных по rollout."}</p>
                 </button>
               ))}
             </div>
@@ -223,7 +221,7 @@ export function AdminWorkspace() {
         <article className="support-workspace__panel">
           <div className="support-workspace__panel-head">
             <h2>Карточка устройства</h2>
-            <p>Typed detail-panel уже ведёт update workflow и первый observer quick срез без legacy admin.js.</p>
+            <p>Новая карточка устройства уже ведёт update workflow и быстрый observer-срез без legacy admin.js.</p>
           </div>
 
           {selectedDevice ? (
@@ -240,7 +238,7 @@ export function AdminWorkspace() {
                     <dd>{selectedDevice.connection_status_label}</dd>
                   </div>
                   <div>
-                    <dt>Target</dt>
+                    <dt>Платформа</dt>
                     <dd>{selectedDevice.target ?? "—"}</dd>
                   </div>
                   <div>
@@ -254,17 +252,17 @@ export function AdminWorkspace() {
                 <article className="support-snapshot-card">
                   <span>Версия агента</span>
                   <strong>{selectedDevice.agent_version ?? "Неизвестно"}</strong>
-                  <p>Этот срез нужен для будущих rollout-решений и bulk update flows.</p>
+                  <p>Этот срез нужен для будущих rollout-решений и массовых update flow.</p>
                 </article>
                 <article className="support-snapshot-card">
-                  <span>Update readiness</span>
+                  <span>Готовность к обновлению</span>
                   <strong>{selectedDevice.latest_update.label}</strong>
                   <p>{selectedDevice.latest_update.summary ?? "Нет свежих данных по update workflow."}</p>
                 </article>
                 <article className="support-snapshot-card">
-                  <span>Observer surface</span>
+                  <span>Контур observer</span>
                   <strong>{bootstrap.observer.quick_endpoint}</strong>
-                  <p>Этот же workspace теперь показывает живой quick-срез по трассам и dangerous flows.</p>
+                  <p>Этот же workspace теперь показывает живой quick-срез по трассам и опасным потокам.</p>
                 </article>
               </div>
 
@@ -274,10 +272,13 @@ export function AdminWorkspace() {
                   hostname: selectedDevice.hostname
                 }}
               />
-              <ObserverQuickPanel />
+              <ObserverQuickPanel
+                deviceId={selectedDevice.device_id}
+                deviceLabel={selectedDevice.hostname ?? selectedDevice.device_id}
+              />
             </section>
           ) : (
-            <div className="support-ticket-empty">Выберите устройство слева, чтобы открыть detail-panel.</div>
+            <div className="support-ticket-empty">Выберите устройство слева, чтобы открыть карточку деталей.</div>
           )}
         </article>
       </section>

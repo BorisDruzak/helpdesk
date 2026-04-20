@@ -45,7 +45,7 @@
   - добавлен typed backend namespace `server/web_api/` с `session`, `support`, `admin`, `realtime` handlers и DTO;
   - новый web session flow уже работает end-to-end локально: `POST /api/web/session/login`, `POST /api/web/session/logout`, `GET /api/web/session/me`, `httpOnly` cookie `pc_client_web_session`, frontend `SessionProvider`, `/app/login`, guard на `/app/*`;
   - Python-сервер уже умеет раздавать built React bundle через `server/static_pages/webapp_assets.py`: `/app/*`, `/assets/*`, `/favicon.svg`;
-  - observer-слой уже протянут в новый web boundary: support bootstrap рекламирует ticket observer summary endpoint, admin bootstrap — tech observer quick/traces endpoints;
+  - observer-слой уже протянут в новый web boundary: support bootstrap рекламирует ticket observer summary endpoint, admin bootstrap — typed `/api/web/admin/observer/*` endpoints;
   - завершён support wave 1, шаг 1: `/app/support` уже даёт queue list, filters, selection model и typed detail loading без опоры на legacy `/support`;
   - завершён следующий support slice внутри wave 1: `GET /api/web/support/tickets/{ticket_id}` теперь возвращает timeline + snapshot + быстрые status actions, а `POST /api/web/support/tickets/{ticket_id}/messages` и `POST /api/web/support/tickets/{ticket_id}/status` уже питают новый React workspace;
   - завершён support wave 1, шаг 3: новый typed tool slice добавил `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, React workspace получил русскоязычную панель запуска инструментов, а ticket timeline теперь показывает `tool_call_started` / `tool_call_result` рядом с observer root trace metadata;
@@ -64,7 +64,7 @@
     - `python scripts/verify_workspace.py`
   - pending для следующего среза: browser verification на canonical remote URL после shipping текущего `webapp/dist` через release pipeline, и затем admin devices/updates wave.
   - root cause для Windows CI blocker по `server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload` локализован в shared test DB harness: suite зависал на `TRUNCATE ... CASCADE` из-за stale `pc_support_test` backends; `server/tests/conftest.py` теперь завершает чужие backend-сессии shared DB перед cleanup и включает короткий `lock_timeout`, плюс это покрыто `server/tests/test_shared_test_db_harness.py`.
-- начат `Task 7 / Step 2`: в admin tech wave добавлен typed observer slice `GET /api/web/admin/observer/quick`, который агрегирует runtime health, hot traces, top signatures, degradations и dangerous flows поверх `ObserverOverlayService`, а `/app/admin` теперь показывает русскоязычную `Observer quick` панель из `webapp/src/features/tech/*` без прямой зависимости React от raw legacy tech payload.
+- продолжен `Task 7 / Step 2`: admin tech wave теперь включает device-scoped typed observer stack `GET /api/web/admin/observer/quick`, `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`; `/app/admin` переведён на русскоязычный быстрый observer-срез и trace drilldown с detail-панелью по spans/error occurrences без прямой зависимости React от raw legacy tech payload.
 - Verification target for implementation waves:
   - `python scripts/bootstrap_web_toolchain.py`
   - `python scripts/verify_workspace.py`

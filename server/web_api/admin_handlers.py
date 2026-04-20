@@ -31,6 +31,17 @@ from web_api.dto.admin import (
     AdminObserverQuickTrace,
     AdminObserverRuntimeSummary,
     AdminObserverSignatureItem,
+    AdminObserverTraceDetailPayload,
+    AdminObserverTraceDetailSummary,
+    AdminObserverTraceErrorOccurrenceItem,
+    AdminObserverTraceItem,
+    AdminObserverTraceSpanItem,
+    AdminObserverTraceSpanLinkItem,
+    AdminObserverTracesFilters,
+    AdminObserverTracesLinks,
+    AdminObserverTracesPayload,
+    AdminObserverTracesQuery,
+    AdminObserverTracesSummary,
     AdminDeviceItem,
     AdminDeviceUpdateAction,
     AdminDeviceUpdateRecommendation,
@@ -117,9 +128,28 @@ _OBSERVER_RUNTIME_STATUS_LABELS = {
     "unknown": "Статус неизвестен",
 }
 
-_OBSERVER_QUICK_ENDPOINT = "/api/admin/tech/observer/quick"
-_OBSERVER_TRACES_ENDPOINT = "/api/admin/tech/traces"
+_OBSERVER_QUICK_ENDPOINT = "/api/web/admin/observer/quick"
+_OBSERVER_TRACES_ENDPOINT = "/api/web/admin/observer/traces"
+_OBSERVER_TRACE_DETAIL_TEMPLATE = "/api/web/admin/observer/traces/{trace_id}"
 _OBSERVER_RUNTIME_ENDPOINT = "/api/admin/tech/traces/runtime"
+_OBSERVER_ACTIVE_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
+_OBSERVER_ERROR_STATUSES = {"failed", "timed_out", "error"}
+_OBSERVER_TRACE_STATUS_OPTIONS = [
+    AdminFilterOption(value="all", label="Все статусы"),
+    AdminFilterOption(value="running", label="В работе"),
+    AdminFilterOption(value="failed", label="С ошибкой"),
+    AdminFilterOption(value="succeeded", label="Успешно"),
+    AdminFilterOption(value="timed_out", label="Таймаут"),
+]
+_OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
+    AdminFilterOption(value="all", label="Все потоки"),
+    AdminFilterOption(value="ticket", label="Тикет"),
+    AdminFilterOption(value="tool_call", label="Инструмент"),
+    AdminFilterOption(value="agent_update", label="Обновление агента"),
+    AdminFilterOption(value="module_install", label="Установка модуля"),
+    AdminFilterOption(value="module_remove", label="Удаление модуля"),
+    AdminFilterOption(value="consent", label="Запрос согласия"),
+]
 
 
 def _normalize_status_filter(value: str | None) -> str:
@@ -152,6 +182,34 @@ def _parse_observer_lookback_hours(value: str | None) -> int:
     return max(1, min(parsed, 24 * 7))
 
 
+def _compact_query_value(value: str | None) -> str | None:
+    compacted = str(value or "").strip()
+    return compacted or None
+
+
+def _normalize_observer_status_filter(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"running", "failed", "succeeded", "timed_out"}:
+        return normalized
+    return "all"
+
+
+def _normalize_observer_root_kind_filter(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    allowed = {"ticket", "tool_call", "agent_update", "module_install", "module_remove", "consent"}
+    if normalized in allowed:
+        return normalized
+    return "all"
+
+
+def _parse_observer_trace_limit(value: str | None) -> int:
+    try:
+        parsed = int(str(value or "").strip() or "25")
+    except (TypeError, ValueError):
+        return 25
+    return max(5, min(parsed, 100))
+
+
 def _observer_kind_label(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     if not normalized:
@@ -164,6 +222,17 @@ def _observer_status_label(value: str | None) -> str:
     if not normalized:
         return "Статус неизвестен"
     return _OBSERVER_STATUS_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _observer_severity_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "critical":
+        return "Критично"
+    if normalized == "warning":
+        return "Предупреждение"
+    if normalized == "error":
+        return "Ошибка"
+    return "Инфо"
 
 
 def _observer_runtime_summary_from_app(request: web.Request) -> AdminObserverRuntimeSummary:
@@ -238,6 +307,85 @@ def _map_admin_observer_quick_trace(item: dict) -> AdminObserverQuickTrace:
         span_count=int(item.get("span_count") or 0),
         started_at=item.get("started_at"),
         finished_at=item.get("finished_at"),
+    )
+
+
+def _map_admin_observer_trace_item(item: dict) -> AdminObserverTraceItem:
+    return AdminObserverTraceItem(
+        trace_id=str(item.get("trace_id") or ""),
+        root_span_id=item.get("root_span_id"),
+        root_kind=item.get("root_kind"),
+        root_kind_label=_observer_kind_label(item.get("root_kind")),
+        status=item.get("status"),
+        status_label=_observer_status_label(item.get("status")),
+        ticket_id=item.get("ticket_id"),
+        device_id=item.get("device_id"),
+        operation_id=item.get("operation_id"),
+        job_id=item.get("job_id"),
+        duration_ms=item.get("duration_ms"),
+        error_count=int(item.get("error_count") or 0),
+        span_count=int(item.get("span_count") or 0),
+        started_at=item.get("started_at"),
+        finished_at=item.get("finished_at"),
+        attrs_json=item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {},
+    )
+
+
+def _map_admin_observer_trace_span(item: dict) -> AdminObserverTraceSpanItem:
+    return AdminObserverTraceSpanItem(
+        span_id=str(item.get("span_id") or ""),
+        trace_id=str(item.get("trace_id") or ""),
+        parent_span_id=item.get("parent_span_id"),
+        source_type=item.get("source_type"),
+        source_ref=item.get("source_ref"),
+        name=str(item.get("name") or ""),
+        kind=item.get("kind"),
+        component=item.get("component"),
+        event_type=item.get("event_type"),
+        module_name=item.get("module_name"),
+        tool_name=item.get("tool_name"),
+        status=item.get("status"),
+        status_label=_observer_status_label(item.get("status")),
+        started_at=item.get("started_at"),
+        finished_at=item.get("finished_at"),
+        duration_ms=item.get("duration_ms"),
+        attrs_json=item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {},
+    )
+
+
+def _map_admin_observer_trace_span_link(item: dict) -> AdminObserverTraceSpanLinkItem:
+    return AdminObserverTraceSpanLinkItem(
+        id=int(item.get("id") or 0),
+        span_id=str(item.get("span_id") or ""),
+        linked_trace_id=item.get("linked_trace_id"),
+        linked_span_id=item.get("linked_span_id"),
+        reason=item.get("reason"),
+        attrs_json=item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {},
+        created_at=item.get("created_at"),
+    )
+
+
+def _map_admin_observer_error_occurrence(item: dict) -> AdminObserverTraceErrorOccurrenceItem:
+    return AdminObserverTraceErrorOccurrenceItem(
+        occurrence_id=str(item.get("occurrence_id") or ""),
+        trace_id=str(item.get("trace_id") or ""),
+        span_id=item.get("span_id"),
+        error_signature=str(item.get("error_signature") or ""),
+        device_id=item.get("device_id"),
+        ticket_id=item.get("ticket_id"),
+        operation_id=item.get("operation_id"),
+        component=item.get("component"),
+        module_name=item.get("module_name"),
+        tool_name=item.get("tool_name"),
+        error_kind=item.get("error_kind"),
+        exception_type=item.get("exception_type"),
+        failure_stage=item.get("failure_stage"),
+        severity=item.get("severity"),
+        severity_label=_observer_severity_label(item.get("severity")),
+        message_norm=item.get("message_norm"),
+        stack_hash=item.get("stack_hash"),
+        attrs_json=item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {},
+        created_at=item.get("created_at"),
     )
 
 
@@ -393,6 +541,7 @@ async def _build_admin_observer_quick_payload(
     *,
     request: web.Request,
     lookback_hours: int,
+    device_id: str | None,
 ) -> AdminObserverQuickPayload:
     runtime = _observer_runtime_summary_from_app(request)
 
@@ -400,7 +549,7 @@ async def _build_admin_observer_quick_payload(
         async with get_session() as session:
             service = ObserverOverlayService(session)
             raw_payload = await service.get_quick_diagnosis(
-                TraceOverlayFilters(lookback_hours=lookback_hours),
+                TraceOverlayFilters(lookback_hours=lookback_hours, device_id=device_id),
                 hot_limit=5,
                 signature_limit=4,
                 degradation_limit=4,
@@ -409,7 +558,8 @@ async def _build_admin_observer_quick_payload(
             await session.commit()
     except Exception as exc:
         logger.warning(
-            f"[web_admin_observer_quick] returning empty payload for lookback_hours={lookback_hours}: {exc}"
+            "[web_admin_observer_quick] returning empty payload for "
+            f"lookback_hours={lookback_hours}, device_id={device_id}: {exc}"
         )
         return _empty_admin_observer_quick_payload(lookback_hours=lookback_hours, request=request)
 
@@ -449,6 +599,176 @@ async def _build_admin_observer_quick_payload(
             traces_endpoint=_OBSERVER_TRACES_ENDPOINT,
             runtime_endpoint=_OBSERVER_RUNTIME_ENDPOINT,
         ),
+    )
+
+
+def _build_observer_trace_filters(
+    *,
+    device_id: str | None,
+    lookback_hours: int,
+    status_filter: str,
+    root_kind_filter: str,
+) -> TraceOverlayFilters:
+    return TraceOverlayFilters(
+        device_id=device_id,
+        lookback_hours=lookback_hours,
+        status=None if status_filter == "all" else status_filter,
+        root_kind=None if root_kind_filter == "all" else root_kind_filter,
+    )
+
+
+def _empty_admin_observer_traces_payload(
+    *,
+    device_id: str | None,
+    lookback_hours: int,
+    status_filter: str,
+    root_kind_filter: str,
+    limit: int,
+) -> AdminObserverTracesPayload:
+    return AdminObserverTracesPayload(
+        query=AdminObserverTracesQuery(
+            device_id=device_id,
+            lookback_hours=lookback_hours,
+            status_filter=status_filter,
+            root_kind_filter=root_kind_filter,
+            limit=limit,
+        ),
+        summary=AdminObserverTracesSummary(
+            visible_count=0,
+            active_count=0,
+            error_count=0,
+            selected_trace_id=None,
+        ),
+        filters=AdminObserverTracesFilters(
+            status_options=_OBSERVER_TRACE_STATUS_OPTIONS,
+            root_kind_options=_OBSERVER_TRACE_ROOT_KIND_OPTIONS,
+        ),
+        traces=[],
+        links=AdminObserverTracesLinks(
+            detail_endpoint_template=_OBSERVER_TRACE_DETAIL_TEMPLATE,
+            runtime_endpoint=_OBSERVER_RUNTIME_ENDPOINT,
+        ),
+    )
+
+
+async def _build_admin_observer_traces_payload(
+    *,
+    request: web.Request,
+    device_id: str | None,
+    lookback_hours: int,
+    status_filter: str,
+    root_kind_filter: str,
+    limit: int,
+) -> AdminObserverTracesPayload:
+    filters = _build_observer_trace_filters(
+        device_id=device_id,
+        lookback_hours=lookback_hours,
+        status_filter=status_filter,
+        root_kind_filter=root_kind_filter,
+    )
+    try:
+        async with get_session() as session:
+            service = ObserverOverlayService(session)
+            raw_traces = await service.search_traces(filters, limit=limit)
+            await session.commit()
+    except Exception as exc:
+        logger.warning(
+            "[web_admin_observer_traces] returning empty payload for "
+            f"device_id={device_id}, lookback_hours={lookback_hours}, "
+            f"status_filter={status_filter}, root_kind_filter={root_kind_filter}: {exc}"
+        )
+        return _empty_admin_observer_traces_payload(
+            device_id=device_id,
+            lookback_hours=lookback_hours,
+            status_filter=status_filter,
+            root_kind_filter=root_kind_filter,
+            limit=limit,
+        )
+
+    traces = [
+        _map_admin_observer_trace_item(item)
+        for item in raw_traces
+        if isinstance(item, dict) and item.get("trace_id")
+    ]
+    active_count = sum(1 for item in traces if str(item.status or "").strip().lower() in _OBSERVER_ACTIVE_STATUSES)
+    error_count = sum(
+        1
+        for item in traces
+        if item.error_count > 0 or str(item.status or "").strip().lower() in _OBSERVER_ERROR_STATUSES
+    )
+    return AdminObserverTracesPayload(
+        query=AdminObserverTracesQuery(
+            device_id=device_id,
+            lookback_hours=lookback_hours,
+            status_filter=status_filter,
+            root_kind_filter=root_kind_filter,
+            limit=limit,
+        ),
+        summary=AdminObserverTracesSummary(
+            visible_count=len(traces),
+            active_count=active_count,
+            error_count=error_count,
+            selected_trace_id=traces[0].trace_id if traces else None,
+        ),
+        filters=AdminObserverTracesFilters(
+            status_options=_OBSERVER_TRACE_STATUS_OPTIONS,
+            root_kind_options=_OBSERVER_TRACE_ROOT_KIND_OPTIONS,
+        ),
+        traces=traces,
+        links=AdminObserverTracesLinks(
+            detail_endpoint_template=_OBSERVER_TRACE_DETAIL_TEMPLATE,
+            runtime_endpoint=_OBSERVER_RUNTIME_ENDPOINT,
+        ),
+    )
+
+
+async def _build_admin_observer_trace_detail_payload(
+    *,
+    request: web.Request,
+    trace_id: str,
+) -> AdminObserverTraceDetailPayload:
+    try:
+        async with get_session() as session:
+            service = ObserverOverlayService(session)
+            raw_detail = await service.get_trace_detail(trace_id)
+            if raw_detail is None:
+                await session.rollback()
+                raise LookupError("TRACE_NOT_FOUND")
+            await session.commit()
+    except LookupError:
+        raise
+    except Exception as exc:
+        logger.error(f"[web_admin_observer_trace_detail] Failed to load trace_id={trace_id}: {exc}")
+        logger.exception(exc)
+        raise
+
+    trace_payload = raw_detail.get("trace") if isinstance(raw_detail.get("trace"), dict) else {}
+    spans = [
+        _map_admin_observer_trace_span(item)
+        for item in raw_detail.get("spans") or []
+        if isinstance(item, dict) and item.get("span_id")
+    ]
+    span_links = [
+        _map_admin_observer_trace_span_link(item)
+        for item in raw_detail.get("span_links") or []
+        if isinstance(item, dict) and item.get("id") is not None
+    ]
+    error_occurrences = [
+        _map_admin_observer_error_occurrence(item)
+        for item in raw_detail.get("error_occurrences") or []
+        if isinstance(item, dict) and item.get("occurrence_id")
+    ]
+    linked_trace_count = len({item.linked_trace_id for item in span_links if item.linked_trace_id})
+    return AdminObserverTraceDetailPayload(
+        trace=_map_admin_observer_trace_item(trace_payload),
+        summary=AdminObserverTraceDetailSummary(
+            span_count=len(spans),
+            error_count=len(error_occurrences),
+            linked_trace_count=linked_trace_count,
+        ),
+        spans=spans,
+        span_links=span_links,
+        error_occurrences=error_occurrences,
     )
 
 
@@ -690,8 +1010,59 @@ async def handle_web_admin_bootstrap(_request):
 @require_auth("admin")
 async def handle_web_admin_observer_quick(request: web.Request):
     lookback_hours = _parse_observer_lookback_hours(request.query.get("lookback_hours"))
-    payload = await _build_admin_observer_quick_payload(request=request, lookback_hours=lookback_hours)
+    device_id = _compact_query_value(request.query.get("device_id"))
+    payload = await _build_admin_observer_quick_payload(
+        request=request,
+        lookback_hours=lookback_hours,
+        device_id=device_id,
+    )
     return json_model_response(SuccessResponse[AdminObserverQuickPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_observer_traces(request: web.Request):
+    device_id = _compact_query_value(request.query.get("device_id"))
+    lookback_hours = _parse_observer_lookback_hours(request.query.get("lookback_hours"))
+    status_filter = _normalize_observer_status_filter(request.query.get("status"))
+    root_kind_filter = _normalize_observer_root_kind_filter(request.query.get("root_kind"))
+    limit = _parse_observer_trace_limit(request.query.get("limit"))
+    payload = await _build_admin_observer_traces_payload(
+        request=request,
+        device_id=device_id,
+        lookback_hours=lookback_hours,
+        status_filter=status_filter,
+        root_kind_filter=root_kind_filter,
+        limit=limit,
+    )
+    return json_model_response(SuccessResponse[AdminObserverTracesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_observer_trace_detail(request: web.Request):
+    trace_id = request.match_info["trace_id"]
+    try:
+        payload = await _build_admin_observer_trace_detail_payload(request=request, trace_id=trace_id)
+    except LookupError:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Трасса не найдена",
+                "error_code": "TRACE_NOT_FOUND",
+                "trace_id": trace_id,
+            },
+            status=404,
+        )
+    except Exception:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить детали трассы",
+                "error_code": "ADMIN_OBSERVER_TRACE_DETAIL_FAILED",
+                "trace_id": trace_id,
+            },
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminObserverTraceDetailPayload](data=payload))
 
 
 @require_auth("admin")

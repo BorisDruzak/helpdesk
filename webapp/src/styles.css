@@ -569,6 +569,29 @@ a {
   border: 1px solid rgba(23, 33, 43, 0.08);
 }
 
+.admin-observer-item--button,
+.admin-observer-trace-card {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.admin-observer-item--button {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.admin-observer-item--button:hover,
+.admin-observer-item--button.active,
+.admin-observer-trace-card:hover,
+.admin-observer-trace-card.active {
+  transform: translateY(-1px);
+  border-color: rgba(140, 93, 45, 0.35);
+  box-shadow: 0 14px 28px rgba(40, 65, 90, 0.12);
+}
+
 .admin-observer-item__head {
   display: flex;
   justify-content: space-between;
@@ -579,6 +602,83 @@ a {
 .admin-observer-item__head span {
   color: #4a5968;
   font-size: 0.86rem;
+}
+
+.admin-observer-drilldown {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-observer-drilldown__summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  color: #4a5968;
+  font-size: 0.92rem;
+}
+
+.admin-observer-drilldown__filters {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-observer-drilldown__grid,
+.admin-observer-trace-detail__lists {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.admin-observer-trace-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-observer-trace-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(23, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.admin-observer-trace-card__code,
+.admin-observer-trace-detail__meta code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: #8c5d2d;
+}
+
+.admin-observer-trace-detail {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-observer-trace-detail__meta {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.admin-observer-trace-detail__meta div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(23, 33, 43, 0.08);
+}
+
+.admin-observer-trace-detail__meta span {
+  color: #4a5968;
+  font-size: 0.82rem;
+}
+
+.admin-observer-trace-links {
+  display: grid;
+  gap: 0.75rem;
 }
 
 .support-ticket-card {
