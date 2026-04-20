@@ -14,7 +14,6 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
-
 function renderAdminPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -32,14 +31,12 @@ function renderAdminPage() {
   );
 }
 
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-
 describe("AdminWorkspacePage", () => {
-  it("renders typed devices inventory and rollout summary on русском языке", async () => {
+  it("renders typed devices inventory, update panel and observer quick in Russian", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -130,6 +127,136 @@ describe("AdminWorkspacePage", () => {
                   }
                 }
               ]
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/quick?lookback_hours=24") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                lookback_hours: 24,
+                recent_trace_count: 9,
+                hot_trace_count: 2,
+                signature_count: 1,
+                degradation_group_count: 1,
+                dangerous_flow_count: 1
+              },
+              runtime: {
+                enabled: true,
+                running: true,
+                health_status: "ok",
+                health_status_label: "Норма",
+                pending_trace_count: 1,
+                last_projected_at: "2026-04-20T11:28:00+05:00",
+                issues: []
+              },
+              hot_traces: [
+                {
+                  trace_id: "trace-update-1",
+                  root_kind: "agent_update",
+                  root_kind_label: "Обновление агента",
+                  status: "failed",
+                  status_label: "Ошибка",
+                  ticket_id: "ticket-1",
+                  device_id: "device-1",
+                  duration_ms: 6400,
+                  error_count: 1,
+                  span_count: 6,
+                  started_at: "2026-04-20T11:24:00+05:00",
+                  finished_at: "2026-04-20T11:24:06+05:00"
+                },
+                {
+                  trace_id: "trace-tool-1",
+                  root_kind: "tool_call",
+                  root_kind_label: "Инструмент",
+                  status: "running",
+                  status_label: "В работе",
+                  ticket_id: "ticket-2",
+                  device_id: "device-1",
+                  duration_ms: 1800,
+                  error_count: 0,
+                  span_count: 4,
+                  started_at: "2026-04-20T11:26:00+05:00",
+                  finished_at: null
+                }
+              ],
+              top_signatures: [
+                {
+                  error_signature: "sig-1",
+                  title: "Launcher signature mismatch",
+                  tool_name: "update",
+                  component: "agent_update",
+                  occurrences_count: 4,
+                  affected_devices_count: 2,
+                  last_seen_at: "2026-04-20T11:25:00+05:00"
+                }
+              ],
+              top_degradations: [
+                {
+                  operation_kind: "tool_call",
+                  operation_kind_label: "Инструмент",
+                  tool_name: "network_ping.ping",
+                  operations_count: 7,
+                  timeout_count: 2,
+                  retried_operations_count: 3,
+                  slow_operations_count: 1,
+                  max_duration_ms: 9000,
+                  latest_operation_at: "2026-04-20T11:23:00+05:00"
+                }
+              ],
+              dangerous_flows: [
+                {
+                  root_kind: "agent_update",
+                  root_kind_label: "Обновление агента",
+                  operations_count: 5,
+                  error_count: 2,
+                  timeout_count: 1,
+                  retried_count: 1,
+                  active_count: 0,
+                  latest_operation_at: "2026-04-20T11:24:00+05:00"
+                }
+              ],
+              links: {
+                quick_endpoint: "/api/admin/tech/observer/quick",
+                traces_endpoint: "/api/admin/tech/traces",
+                runtime_endpoint: "/api/admin/tech/traces/runtime"
+              }
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/quick?lookback_hours=72") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                lookback_hours: 72,
+                recent_trace_count: 14,
+                hot_trace_count: 3,
+                signature_count: 2,
+                degradation_group_count: 2,
+                dangerous_flow_count: 2
+              },
+              runtime: {
+                enabled: true,
+                running: true,
+                health_status: "degraded",
+                health_status_label: "Есть отставание",
+                pending_trace_count: 6,
+                last_projected_at: "2026-04-20T10:10:00+05:00",
+                issues: ["pending_backlog"]
+              },
+              hot_traces: [],
+              top_signatures: [],
+              top_degradations: [],
+              dangerous_flows: [],
+              links: {
+                quick_endpoint: "/api/admin/tech/observer/quick",
+                traces_endpoint: "/api/admin/tech/traces",
+                runtime_endpoint: "/api/admin/tech/traces/runtime"
+              }
             }
           });
         }
@@ -263,6 +390,10 @@ describe("AdminWorkspacePage", () => {
     expect((await screen.findAllByText("Устройство на шаг позади rollout")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Доступно обновление")).toBeInTheDocument();
     expect(await screen.findByText("Назначенный rollout новее текущей версии.")).toBeInTheDocument();
+    expect(await screen.findByText("Observer quick")).toBeInTheDocument();
+    expect(await screen.findByText("Launcher signature mismatch")).toBeInTheDocument();
+    expect(await screen.findByText("/api/admin/tech/traces/runtime")).toBeInTheDocument();
+    expect(await screen.findByText("Норма")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Причина запуска"), {
       target: { value: "canary после smoke" }
@@ -277,6 +408,12 @@ describe("AdminWorkspacePage", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText("Назначен rollout stable/2.3.9")).toHaveLength(2);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "72 часа" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Есть отставание")).toBeInTheDocument();
     });
   });
 });

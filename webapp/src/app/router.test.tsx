@@ -274,6 +274,40 @@ describe("appRoutes", () => {
         });
       }
 
+      if (url === "/api/web/admin/observer/quick?lookback_hours=24") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            summary: {
+              lookback_hours: 24,
+              recent_trace_count: 3,
+              hot_trace_count: 1,
+              signature_count: 1,
+              degradation_group_count: 1,
+              dangerous_flow_count: 1
+            },
+            runtime: {
+              enabled: true,
+              running: true,
+              health_status: "ok",
+              health_status_label: "Норма",
+              pending_trace_count: 0,
+              last_projected_at: "2026-04-20T11:20:00+05:00",
+              issues: []
+            },
+            hot_traces: [],
+            top_signatures: [],
+            top_degradations: [],
+            dangerous_flows: [],
+            links: {
+              quick_endpoint: "/api/admin/tech/observer/quick",
+              traces_endpoint: "/api/admin/tech/traces",
+              runtime_endpoint: "/api/admin/tech/traces/runtime"
+            }
+          }
+        });
+      }
+
       if (url === "/api/web/admin/devices/device-1/updates") {
         return jsonResponse({
           status: "success",

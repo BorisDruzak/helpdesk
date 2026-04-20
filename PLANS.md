@@ -64,6 +64,7 @@
     - `python scripts/verify_workspace.py`
   - pending для следующего среза: browser verification на canonical remote URL после shipping текущего `webapp/dist` через release pipeline, и затем admin devices/updates wave.
   - root cause для Windows CI blocker по `server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload` локализован в shared test DB harness: suite зависал на `TRUNCATE ... CASCADE` из-за stale `pc_support_test` backends; `server/tests/conftest.py` теперь завершает чужие backend-сессии shared DB перед cleanup и включает короткий `lock_timeout`, плюс это покрыто `server/tests/test_shared_test_db_harness.py`.
+- начат `Task 7 / Step 2`: в admin tech wave добавлен typed observer slice `GET /api/web/admin/observer/quick`, который агрегирует runtime health, hot traces, top signatures, degradations и dangerous flows поверх `ObserverOverlayService`, а `/app/admin` теперь показывает русскоязычную `Observer quick` панель из `webapp/src/features/tech/*` без прямой зависимости React от raw legacy tech payload.
 - Verification target for implementation waves:
   - `python scripts/bootstrap_web_toolchain.py`
   - `python scripts/verify_workspace.py`

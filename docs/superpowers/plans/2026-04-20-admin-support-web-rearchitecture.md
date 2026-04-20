@@ -398,6 +398,9 @@ Expected:
 Expected:
 - high-value admin operational surfaces are available in the new app
 
+Current progress:
+- typed observer quick slice for `/app/admin` is now part of this step via `GET /api/web/admin/observer/quick` and `webapp/src/features/tech/*`; modules/forms builder still remain for later slices
+
 - [ ] **Step 3: Add forms-builder**
 
 Expected:

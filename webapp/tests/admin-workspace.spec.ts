@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 
 
-test("администратор открывает inventory устройств в /app/admin", async ({ page }) => {
+test("администратор открывает inventory и observer quick в /app/admin", async ({ page }) => {
   await page.goto("/app/admin");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
@@ -19,6 +19,10 @@ test("администратор открывает inventory устройств
   await expect(page.getByText("Устройство на шаг позади rollout").first()).toBeVisible();
   await expect(page.getByText("Доступно обновление")).toBeVisible();
   await expect(page.getByText("Назначенный rollout новее текущей версии.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Observer quick" })).toBeVisible();
+  await expect(page.getByText("Launcher signature mismatch")).toBeVisible();
+  await expect(page.getByText("/api/admin/tech/traces/runtime")).toBeVisible();
+  await expect(page.locator(".admin-observer-panel__runtime")).toHaveText("Норма");
 
   await page.getByLabel("Причина запуска").fill("canary после smoke");
   await page.getByRole("button", { name: "Запустить обновление" }).click();
@@ -29,5 +33,7 @@ test("администратор открывает inventory устройств
 
   await expect(page.getByText("Назначен rollout stable/2.3.9").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Ожидает связи" })).toBeDisabled();
-  await expect(page.getByText("/api/admin/tech/observer/quick")).toBeVisible();
+
+  await page.getByRole("button", { name: "72 часа" }).click();
+  await expect(page.locator(".admin-observer-panel__runtime")).toHaveText("Есть отставание");
 });

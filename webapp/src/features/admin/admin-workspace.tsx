@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
+import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import {
   type AdminStatusFilter,
   fetchAdminBootstrap,
@@ -222,7 +223,7 @@ export function AdminWorkspace() {
         <article className="support-workspace__panel">
           <div className="support-workspace__panel-head">
             <h2>Карточка устройства</h2>
-            <p>Лёгкий typed detail-panel до переноса полного update workflow.</p>
+            <p>Typed detail-panel уже ведёт update workflow и первый observer quick срез без legacy admin.js.</p>
           </div>
 
           {selectedDevice ? (
@@ -261,9 +262,9 @@ export function AdminWorkspace() {
                   <p>{selectedDevice.latest_update.summary ?? "Нет свежих данных по update workflow."}</p>
                 </article>
                 <article className="support-snapshot-card">
-                  <span>Observer quick endpoint</span>
+                  <span>Observer surface</span>
                   <strong>{bootstrap.observer.quick_endpoint}</strong>
-                  <p>Следующий admin slice привяжет этот surface к tech drilldown и realtime feed.</p>
+                  <p>Этот же workspace теперь показывает живой quick-срез по трассам и dangerous flows.</p>
                 </article>
               </div>
 
@@ -273,6 +274,7 @@ export function AdminWorkspace() {
                   hostname: selectedDevice.hostname
                 }}
               />
+              <ObserverQuickPanel />
             </section>
           ) : (
             <div className="support-ticket-empty">Выберите устройство слева, чтобы открыть detail-panel.</div>

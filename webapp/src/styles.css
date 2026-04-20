@@ -494,6 +494,93 @@ a {
   max-width: 20rem;
 }
 
+.admin-observer-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.admin-observer-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.admin-observer-panel__runtime {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(23, 60, 91, 0.08);
+  color: #173c5b;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.admin-observer-panel__runtime--ok {
+  background: rgba(20, 83, 45, 0.12);
+  color: #14532d;
+}
+
+.admin-observer-panel__runtime--degraded {
+  background: rgba(146, 64, 14, 0.14);
+  color: #9a3412;
+}
+
+.admin-observer-panel__runtime--down,
+.admin-observer-panel__runtime--unknown {
+  background: rgba(71, 85, 105, 0.12);
+  color: #334155;
+}
+
+.admin-observer-panel__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-observer-panel__links code {
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.85rem;
+  background: rgba(23, 60, 91, 0.08);
+  color: #173c5b;
+  font-size: 0.85rem;
+}
+
+.admin-observer-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-observer-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-observer-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(23, 33, 43, 0.08);
+}
+
+.admin-observer-item__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.admin-observer-item__head span {
+  color: #4a5968;
+  font-size: 0.86rem;
+}
+
 .support-ticket-card {
   display: grid;
   gap: 10px;

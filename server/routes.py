@@ -223,6 +223,7 @@ from web_api.admin_handlers import (
     handle_web_admin_device_update_run,
     handle_web_admin_device_updates,
     handle_web_admin_devices,
+    handle_web_admin_observer_quick,
 )
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
@@ -381,6 +382,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
+        web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),

@@ -356,7 +356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and typed admin slices for inventory plus device update actions.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and typed admin slices for inventory, device update actions and observer quick tech surfaces.",
         aliases=(
             "webapp",
             "react app",
@@ -369,6 +369,8 @@ TOPICS: tuple[Topic, ...] = (
             "admin workspace",
             "device updates",
             "admin updates",
+            "observer quick",
+            "admin tech panel",
         ),
         first_files=(
             "webapp/src/main.tsx",
@@ -380,6 +382,8 @@ TOPICS: tuple[Topic, ...] = (
             "webapp/src/features/admin/admin-workspace.tsx",
             "webapp/src/features/agent-updates/api.ts",
             "webapp/src/features/agent-updates/device-update-panel.tsx",
+            "webapp/src/features/tech/api.ts",
+            "webapp/src/features/tech/observer-quick-panel.tsx",
             "server/web_api/session_handlers.py",
             "server/web_api/support_handlers.py",
             "server/web_api/admin_handlers.py",

@@ -16,12 +16,21 @@ from agents.agent_builds_handlers import (
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.devices_repo import DevicesRepo
+from observer.service import ObserverOverlayService, TraceOverlayFilters
 from auth.context import AuthContext
 from auth.middleware import require_auth
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
     AdminBuildIdentity,
     AdminBootstrapPayload,
+    AdminObserverDangerousFlowItem,
+    AdminObserverDegradationItem,
+    AdminObserverQuickLinks,
+    AdminObserverQuickPayload,
+    AdminObserverQuickSummary,
+    AdminObserverQuickTrace,
+    AdminObserverRuntimeSummary,
+    AdminObserverSignatureItem,
     AdminDeviceItem,
     AdminDeviceUpdateAction,
     AdminDeviceUpdateRecommendation,
@@ -78,6 +87,41 @@ _UPDATE_REASON_LABELS = {
 }
 
 
+_OBSERVER_ROOT_KIND_LABELS = {
+    "ticket": "Тикет",
+    "tool_call": "Инструмент",
+    "agent_update": "Обновление агента",
+    "module_install": "Установка модуля",
+    "module_remove": "Удаление модуля",
+    "consent": "Запрос согласия",
+}
+
+_OBSERVER_STATUS_LABELS = {
+    "queued": "В очереди",
+    "sent": "Отправлено",
+    "accepted": "Принято агентом",
+    "running": "В работе",
+    "waiting_consent": "Ждёт согласия",
+    "cancel_requested": "Отменяется",
+    "succeeded": "Успешно",
+    "success": "Успешно",
+    "failed": "Ошибка",
+    "timed_out": "Таймаут",
+    "canceled": "Отменено",
+}
+
+_OBSERVER_RUNTIME_STATUS_LABELS = {
+    "ok": "Норма",
+    "degraded": "Есть отставание",
+    "down": "Не запущен",
+    "unknown": "Статус неизвестен",
+}
+
+_OBSERVER_QUICK_ENDPOINT = "/api/admin/tech/observer/quick"
+_OBSERVER_TRACES_ENDPOINT = "/api/admin/tech/traces"
+_OBSERVER_RUNTIME_ENDPOINT = "/api/admin/tech/traces/runtime"
+
+
 def _normalize_status_filter(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"online", "offline"}:
@@ -97,6 +141,143 @@ def _empty_devices_payload(*, query: str, status_filter: str) -> AdminDevicesPay
         filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
         rollout=[],
         devices=[],
+    )
+
+
+def _parse_observer_lookback_hours(value: str | None) -> int:
+    try:
+        parsed = int(str(value or "").strip() or "24")
+    except (TypeError, ValueError):
+        return 24
+    return max(1, min(parsed, 24 * 7))
+
+
+def _observer_kind_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "Неизвестный поток"
+    return _OBSERVER_ROOT_KIND_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _observer_status_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "Статус неизвестен"
+    return _OBSERVER_STATUS_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _observer_runtime_summary_from_app(request: web.Request) -> AdminObserverRuntimeSummary:
+    runtime = request.app._state.get("observer_refresh_runtime")
+    if runtime is None:
+        return AdminObserverRuntimeSummary(
+            enabled=False,
+            running=False,
+            health_status="down",
+            health_status_label=_OBSERVER_RUNTIME_STATUS_LABELS["down"],
+            pending_trace_count=None,
+            last_projected_at=None,
+            issues=[],
+        )
+
+    snapshot = runtime.status_snapshot()
+    health = snapshot.get("health") if isinstance(snapshot.get("health"), dict) else {}
+    stats = snapshot.get("stats") if isinstance(snapshot.get("stats"), dict) else {}
+    health_status = str(health.get("status") or "unknown").strip().lower() or "unknown"
+    return AdminObserverRuntimeSummary(
+        enabled=bool(snapshot.get("enabled")),
+        running=bool(snapshot.get("running")),
+        health_status=health_status,
+        health_status_label=_OBSERVER_RUNTIME_STATUS_LABELS.get(
+            health_status,
+            _OBSERVER_RUNTIME_STATUS_LABELS["unknown"],
+        ),
+        pending_trace_count=health.get("pending_trace_count"),
+        last_projected_at=stats.get("last_projected_at"),
+        issues=[str(item) for item in health.get("issues") or []],
+    )
+
+
+def _empty_admin_observer_quick_payload(
+    *,
+    lookback_hours: int,
+    request: web.Request,
+) -> AdminObserverQuickPayload:
+    return AdminObserverQuickPayload(
+        summary=AdminObserverQuickSummary(
+            lookback_hours=lookback_hours,
+            recent_trace_count=0,
+            hot_trace_count=0,
+            signature_count=0,
+            degradation_group_count=0,
+            dangerous_flow_count=0,
+        ),
+        runtime=_observer_runtime_summary_from_app(request),
+        hot_traces=[],
+        top_signatures=[],
+        top_degradations=[],
+        dangerous_flows=[],
+        links=AdminObserverQuickLinks(
+            quick_endpoint=_OBSERVER_QUICK_ENDPOINT,
+            traces_endpoint=_OBSERVER_TRACES_ENDPOINT,
+            runtime_endpoint=_OBSERVER_RUNTIME_ENDPOINT,
+        ),
+    )
+
+
+def _map_admin_observer_quick_trace(item: dict) -> AdminObserverQuickTrace:
+    return AdminObserverQuickTrace(
+        trace_id=str(item.get("trace_id") or ""),
+        root_kind=item.get("root_kind"),
+        root_kind_label=_observer_kind_label(item.get("root_kind")),
+        status=item.get("status"),
+        status_label=_observer_status_label(item.get("status")),
+        ticket_id=item.get("ticket_id"),
+        device_id=item.get("device_id"),
+        duration_ms=item.get("duration_ms"),
+        error_count=int(item.get("error_count") or 0),
+        span_count=int(item.get("span_count") or 0),
+        started_at=item.get("started_at"),
+        finished_at=item.get("finished_at"),
+    )
+
+
+def _map_admin_observer_signature(item: dict) -> AdminObserverSignatureItem:
+    return AdminObserverSignatureItem(
+        error_signature=str(item.get("error_signature") or ""),
+        title=str(item.get("title") or "Без названия"),
+        tool_name=item.get("tool_name"),
+        component=item.get("component"),
+        occurrences_count=int(item.get("occurrences_count") or 0),
+        affected_devices_count=int(item.get("affected_devices_count") or 0),
+        last_seen_at=item.get("last_seen_at"),
+    )
+
+
+def _map_admin_observer_degradation(item: dict) -> AdminObserverDegradationItem:
+    return AdminObserverDegradationItem(
+        operation_kind=item.get("operation_kind"),
+        operation_kind_label=_observer_kind_label(item.get("operation_kind")),
+        tool_name=item.get("tool_name"),
+        operations_count=int(item.get("operations_count") or 0),
+        timeout_count=int(item.get("timeout_count") or 0),
+        retried_operations_count=int(item.get("retried_operations_count") or 0),
+        slow_operations_count=int(item.get("slow_operations_count") or 0),
+        max_duration_ms=int(item.get("max_duration_ms") or 0),
+        latest_operation_at=item.get("latest_operation_at"),
+    )
+
+
+def _map_admin_observer_dangerous_flow(item: dict) -> AdminObserverDangerousFlowItem:
+    root_kind = str(item.get("root_kind") or "").strip().lower() or "unknown"
+    return AdminObserverDangerousFlowItem(
+        root_kind=root_kind,
+        root_kind_label=_observer_kind_label(root_kind),
+        operations_count=int(item.get("operations_count") or 0),
+        error_count=int(item.get("error_count") or 0),
+        timeout_count=int(item.get("timeout_count") or 0),
+        retried_count=int(item.get("retried_count") or 0),
+        active_count=int(item.get("active_count") or 0),
+        latest_operation_at=item.get("latest_operation_at"),
     )
 
 
@@ -206,6 +387,69 @@ def _build_identity_model(payload: dict | None) -> AdminBuildIdentity | None:
     if not target or not channel or not version:
         return None
     return AdminBuildIdentity(target=target, channel=channel, version=version)
+
+
+async def _build_admin_observer_quick_payload(
+    *,
+    request: web.Request,
+    lookback_hours: int,
+) -> AdminObserverQuickPayload:
+    runtime = _observer_runtime_summary_from_app(request)
+
+    try:
+        async with get_session() as session:
+            service = ObserverOverlayService(session)
+            raw_payload = await service.get_quick_diagnosis(
+                TraceOverlayFilters(lookback_hours=lookback_hours),
+                hot_limit=5,
+                signature_limit=4,
+                degradation_limit=4,
+                flow_limit=4,
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.warning(
+            f"[web_admin_observer_quick] returning empty payload for lookback_hours={lookback_hours}: {exc}"
+        )
+        return _empty_admin_observer_quick_payload(lookback_hours=lookback_hours, request=request)
+
+    summary = raw_payload.get("summary") if isinstance(raw_payload.get("summary"), dict) else {}
+    return AdminObserverQuickPayload(
+        summary=AdminObserverQuickSummary(
+            lookback_hours=lookback_hours,
+            recent_trace_count=int(summary.get("recent_trace_count") or 0),
+            hot_trace_count=int(summary.get("hot_trace_count") or 0),
+            signature_count=int(summary.get("signature_count") or 0),
+            degradation_group_count=int(summary.get("degradation_group_count") or 0),
+            dangerous_flow_count=int(summary.get("dangerous_flow_count") or 0),
+        ),
+        runtime=runtime,
+        hot_traces=[
+            _map_admin_observer_quick_trace(item)
+            for item in raw_payload.get("hot_traces") or []
+            if isinstance(item, dict)
+        ],
+        top_signatures=[
+            _map_admin_observer_signature(item)
+            for item in raw_payload.get("top_signatures") or []
+            if isinstance(item, dict)
+        ],
+        top_degradations=[
+            _map_admin_observer_degradation(item)
+            for item in raw_payload.get("top_degradations") or []
+            if isinstance(item, dict)
+        ],
+        dangerous_flows=[
+            _map_admin_observer_dangerous_flow(item)
+            for item in raw_payload.get("dangerous_flows") or []
+            if isinstance(item, dict)
+        ],
+        links=AdminObserverQuickLinks(
+            quick_endpoint=_OBSERVER_QUICK_ENDPOINT,
+            traces_endpoint=_OBSERVER_TRACES_ENDPOINT,
+            runtime_endpoint=_OBSERVER_RUNTIME_ENDPOINT,
+        ),
+    )
 
 
 def _build_update_recommendation_summary(
@@ -436,11 +680,18 @@ async def handle_web_admin_bootstrap(_request):
             "tech_panel",
         ],
         observer=AdminObserverCapabilities(
-            quick_endpoint="/api/admin/tech/observer/quick",
-            traces_endpoint="/api/admin/tech/traces",
+            quick_endpoint=_OBSERVER_QUICK_ENDPOINT,
+            traces_endpoint=_OBSERVER_TRACES_ENDPOINT,
         ),
     )
     return json_model_response(SuccessResponse[AdminBootstrapPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_observer_quick(request: web.Request):
+    lookback_hours = _parse_observer_lookback_hours(request.query.get("lookback_hours"))
+    payload = await _build_admin_observer_quick_payload(request=request, lookback_hours=lookback_hours)
+    return json_model_response(SuccessResponse[AdminObserverQuickPayload](data=payload))
 
 
 @require_auth("admin")

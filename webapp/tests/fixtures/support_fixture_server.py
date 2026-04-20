@@ -186,6 +186,126 @@ def build_fixture_state() -> dict:
                     },
                 },
             },
+            "observer_quick": {
+                24: {
+                    "summary": {
+                        "lookback_hours": 24,
+                        "recent_trace_count": 9,
+                        "hot_trace_count": 2,
+                        "signature_count": 1,
+                        "degradation_group_count": 1,
+                        "dangerous_flow_count": 1,
+                    },
+                    "runtime": {
+                        "enabled": True,
+                        "running": True,
+                        "health_status": "ok",
+                        "health_status_label": "Норма",
+                        "pending_trace_count": 1,
+                        "last_projected_at": now_iso(minutes=28),
+                        "issues": [],
+                    },
+                    "hot_traces": [
+                        {
+                            "trace_id": "trace-update-1",
+                            "root_kind": "agent_update",
+                            "root_kind_label": "Обновление агента",
+                            "status": "failed",
+                            "status_label": "Ошибка",
+                            "ticket_id": "ticket-1",
+                            "device_id": "device-1",
+                            "duration_ms": 6400,
+                            "error_count": 1,
+                            "span_count": 6,
+                            "started_at": now_iso(minutes=24),
+                            "finished_at": now_iso(minutes=24),
+                        },
+                        {
+                            "trace_id": "trace-tool-1",
+                            "root_kind": "tool_call",
+                            "root_kind_label": "Инструмент",
+                            "status": "running",
+                            "status_label": "В работе",
+                            "ticket_id": "ticket-1",
+                            "device_id": "device-1",
+                            "duration_ms": 1800,
+                            "error_count": 0,
+                            "span_count": 4,
+                            "started_at": now_iso(minutes=26),
+                            "finished_at": None,
+                        },
+                    ],
+                    "top_signatures": [
+                        {
+                            "error_signature": "sig-1",
+                            "title": "Launcher signature mismatch",
+                            "tool_name": "update",
+                            "component": "agent_update",
+                            "occurrences_count": 4,
+                            "affected_devices_count": 2,
+                            "last_seen_at": now_iso(minutes=25),
+                        }
+                    ],
+                    "top_degradations": [
+                        {
+                            "operation_kind": "tool_call",
+                            "operation_kind_label": "Инструмент",
+                            "tool_name": "network_ping.ping",
+                            "operations_count": 7,
+                            "timeout_count": 2,
+                            "retried_operations_count": 3,
+                            "slow_operations_count": 1,
+                            "max_duration_ms": 9000,
+                            "latest_operation_at": now_iso(minutes=23),
+                        }
+                    ],
+                    "dangerous_flows": [
+                        {
+                            "root_kind": "agent_update",
+                            "root_kind_label": "Обновление агента",
+                            "operations_count": 5,
+                            "error_count": 2,
+                            "timeout_count": 1,
+                            "retried_count": 1,
+                            "active_count": 0,
+                            "latest_operation_at": now_iso(minutes=24),
+                        }
+                    ],
+                    "links": {
+                        "quick_endpoint": "/api/admin/tech/observer/quick",
+                        "traces_endpoint": "/api/admin/tech/traces",
+                        "runtime_endpoint": "/api/admin/tech/traces/runtime",
+                    },
+                },
+                72: {
+                    "summary": {
+                        "lookback_hours": 72,
+                        "recent_trace_count": 14,
+                        "hot_trace_count": 3,
+                        "signature_count": 2,
+                        "degradation_group_count": 2,
+                        "dangerous_flow_count": 2,
+                    },
+                    "runtime": {
+                        "enabled": True,
+                        "running": True,
+                        "health_status": "degraded",
+                        "health_status_label": "Есть отставание",
+                        "pending_trace_count": 6,
+                        "last_projected_at": now_iso(minutes=10),
+                        "issues": ["pending_backlog"],
+                    },
+                    "hot_traces": [],
+                    "top_signatures": [],
+                    "top_degradations": [],
+                    "dangerous_flows": [],
+                    "links": {
+                        "quick_endpoint": "/api/admin/tech/observer/quick",
+                        "traces_endpoint": "/api/admin/tech/traces",
+                        "runtime_endpoint": "/api/admin/tech/traces/runtime",
+                    },
+                },
+            },
         },
         "tickets": {
             "ticket-1": {
@@ -845,6 +965,19 @@ async def handle_admin_devices(request: web.Request) -> web.Response:
     return json_success(build_admin_devices_payload(state, status_filter=status_filter, query=query))
 
 
+async def handle_admin_observer_quick(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    try:
+        lookback_hours = int(str(request.query.get("lookback_hours", "24")).strip() or "24")
+    except ValueError:
+        lookback_hours = 24
+    payload = state["admin"]["observer_quick"].get(lookback_hours) or state["admin"]["observer_quick"][24]
+    return json_success(deepcopy(payload))
+
+
 async def handle_admin_device_updates(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -911,6 +1044,7 @@ def build_app() -> web.Application:
             web.post("/api/web/support/tickets/{ticket_id}/status", handle_support_ticket_status),
             web.post("/api/web/support/tickets/{ticket_id}/tools/run", handle_support_ticket_tool_run),
             web.get("/api/web/admin/bootstrap", handle_admin_bootstrap),
+            web.get("/api/web/admin/observer/quick", handle_admin_observer_quick),
             web.get("/api/web/admin/devices", handle_admin_devices),
             web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
             web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),

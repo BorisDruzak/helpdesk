@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminObserverCapabilities(BaseModel):
@@ -14,6 +14,105 @@ class AdminBootstrapPayload(BaseModel):
     workspace: str
     features: list[str]
     observer: AdminObserverCapabilities
+
+
+class AdminObserverQuickLinks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quick_endpoint: str
+    traces_endpoint: str
+    runtime_endpoint: str
+
+
+class AdminObserverQuickSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lookback_hours: int
+    recent_trace_count: int
+    hot_trace_count: int
+    signature_count: int
+    degradation_group_count: int
+    dangerous_flow_count: int
+
+
+class AdminObserverRuntimeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    running: bool
+    health_status: str
+    health_status_label: str
+    pending_trace_count: int | None = None
+    last_projected_at: str | None = None
+    issues: list[str] = Field(default_factory=list)
+
+
+class AdminObserverQuickTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    root_kind: str | None = None
+    root_kind_label: str
+    status: str | None = None
+    status_label: str
+    ticket_id: str | None = None
+    device_id: str | None = None
+    duration_ms: int | None = None
+    error_count: int = 0
+    span_count: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class AdminObserverSignatureItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error_signature: str
+    title: str
+    tool_name: str | None = None
+    component: str | None = None
+    occurrences_count: int
+    affected_devices_count: int
+    last_seen_at: str | None = None
+
+
+class AdminObserverDegradationItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_kind: str | None = None
+    operation_kind_label: str
+    tool_name: str | None = None
+    operations_count: int
+    timeout_count: int
+    retried_operations_count: int
+    slow_operations_count: int
+    max_duration_ms: int
+    latest_operation_at: str | None = None
+
+
+class AdminObserverDangerousFlowItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    root_kind: str
+    root_kind_label: str
+    operations_count: int
+    error_count: int
+    timeout_count: int
+    retried_count: int
+    active_count: int
+    latest_operation_at: str | None = None
+
+
+class AdminObserverQuickPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminObserverQuickSummary
+    runtime: AdminObserverRuntimeSummary
+    hot_traces: list[AdminObserverQuickTrace]
+    top_signatures: list[AdminObserverSignatureItem]
+    top_degradations: list[AdminObserverDegradationItem]
+    dangerous_flows: list[AdminObserverDangerousFlowItem]
+    links: AdminObserverQuickLinks
 
 
 class AdminFilterOption(BaseModel):
