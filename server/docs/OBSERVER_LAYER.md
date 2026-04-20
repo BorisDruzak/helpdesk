@@ -108,6 +108,8 @@ Ticket-scoped API:
 - `GET /api/tickets/{ticket_id}/observer`
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
+Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
+Signature rows в ticket summary обязаны различать глобальный `occurrences_count` и ticket-local `ticket_occurrences_count`, чтобы support UI не путал историю конкретного тикета с общей картиной по signature.
 
 ## 8. UI-поверхности
 

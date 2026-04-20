@@ -707,7 +707,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, single-flight UI polling, and the canonical `/support` ticket-trace drawer.",
+        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, and the canonical `/support` ticket-trace drawer.",
         aliases=(
             "observer",
             "trace overlay",

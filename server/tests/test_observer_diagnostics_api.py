@@ -246,3 +246,128 @@ async def test_ticket_observer_summary_returns_root_trace_related_traces_and_sig
     assert payload["summary"]["trace_count"] >= 2
     assert any(item["error_signature"] for item in payload["signatures"])
 
+
+@pytest.mark.asyncio
+async def test_ticket_observer_summary_counts_all_ticket_traces_and_local_signature_occurrences(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000f401"
+    ticket_id = "00000000-0000-0000-0000-00000000f402"
+    other_ticket_id = "00000000-0000-0000-0000-00000000f403"
+    root_trace_id = "00000000-0000-0000-0000-00000000f404"
+    other_trace_id = "00000000-0000-0000-0000-00000000f405"
+    shared_error_message = "left, top, width and height must be provided together"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.19",
+                hostname="observer-ticket-counts",
+                os="windows",
+                capabilities=[],
+                tools_version="observer-ticket",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(hours=2),
+            )
+        )
+        session.add_all(
+            [
+                Ticket(
+                    ticket_id=ticket_id,
+                    ticket_code="T-OBSTKT2",
+                    device_id=device_id,
+                    title="Ticket observer counts",
+                    description="Counts should include the full ticket trace set",
+                    status="new",
+                    created_at=now - timedelta(hours=1),
+                    updated_at=now,
+                    observer_root_trace_id=root_trace_id,
+                ),
+                Ticket(
+                    ticket_id=other_ticket_id,
+                    ticket_code="T-OBSTKT3",
+                    device_id=device_id,
+                    title="Other ticket observer counts",
+                    description="Shared signature should keep global and ticket-local counts separate",
+                    status="new",
+                    created_at=now - timedelta(hours=1),
+                    updated_at=now,
+                    observer_root_trace_id=other_trace_id,
+                ),
+            ]
+        )
+        session.add(
+            Operation(
+                operation_id="00000000-0000-0000-0000-00000000f411",
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="screen.collect",
+                actor_role="support",
+                trace_id=root_trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=40),
+                started_at=now - timedelta(minutes=40) + timedelta(seconds=1),
+                finished_at=now - timedelta(minutes=40) + timedelta(seconds=4),
+                retry_count=0,
+                error_code="TOOL_EXEC_FAILED",
+                error_message=shared_error_message,
+            )
+        )
+        for index in range(9):
+            trace_id = f"00000000-0000-0000-0000-00000000f42{index}"
+            queued_at = now - timedelta(minutes=18 - index)
+            session.add(
+                Operation(
+                    operation_id=f"00000000-0000-0000-0000-00000000f43{index}",
+                    device_id=device_id,
+                    ticket_id=ticket_id,
+                    kind="tool_call",
+                    tool_name="system.collect",
+                    actor_role="support",
+                    trace_id=trace_id,
+                    status="succeeded",
+                    queued_at=queued_at,
+                    started_at=queued_at + timedelta(seconds=1),
+                    finished_at=queued_at + timedelta(seconds=2),
+                    retry_count=0,
+                    result_summary="ok",
+                )
+            )
+        session.add(
+            Operation(
+                operation_id="00000000-0000-0000-0000-00000000f499",
+                device_id=device_id,
+                ticket_id=other_ticket_id,
+                kind="tool_call",
+                tool_name="screen.collect",
+                actor_role="support",
+                trace_id=other_trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=10),
+                started_at=now - timedelta(minutes=10) + timedelta(seconds=1),
+                finished_at=now - timedelta(minutes=10) + timedelta(seconds=4),
+                retry_count=0,
+                error_code="TOOL_EXEC_FAILED",
+                error_message=shared_error_message,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/tickets/{ticket_id}/observer",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["summary"]["trace_count"] >= 10
+    assert payload["summary"]["error_trace_count"] == 1
+    assert len(payload["error_traces"]) == 1
+    assert payload["error_traces"][0]["trace_id"] == root_trace_id
+    assert payload["signatures"]
+    assert payload["signatures"][0]["ticket_occurrences_count"] == 1
+    assert payload["signatures"][0]["occurrences_count"] >= payload["signatures"][0]["ticket_occurrences_count"]

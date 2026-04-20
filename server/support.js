@@ -1873,6 +1873,18 @@
         return parts.join(' • ');
     }
 
+    function observerSignatureCountLabel(item) {
+        const ticketCount = Number(item?.ticket_occurrences_count || 0);
+        const totalCount = Number(item?.occurrences_count || 0);
+        if (ticketCount > 0 && totalCount > ticketCount) {
+            return `${ticketCount} in ticket • ${totalCount} global`;
+        }
+        if (ticketCount > 0) {
+            return `${ticketCount} in ticket`;
+        }
+        return `${totalCount} occurrences`;
+    }
+
     function renderObserverPanel() {
         const panel = byId('drawerTab-observer');
         if (!panel) {
@@ -1971,7 +1983,7 @@
                     ${signatures.length ? `<div class="observer-list">${signatures.map((item) => `
                         <div class="observer-list-item">
                             <strong>${escapeHtml(item.title || item.error_signature || 'signature')}</strong>
-                            <span>${escapeHtml(String(item.occurrences_count || 0) + ' occurrences')}</span>
+                            <span>${escapeHtml(observerSignatureCountLabel(item))}</span>
                             <div class="observer-list-meta">${escapeHtml(item.error_signature || '—')}</div>
                         </div>
                     `).join('')}</div>` : '<div class="observer-empty-note">Signature-групп пока нет.</div>'}

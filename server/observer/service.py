@@ -457,6 +457,25 @@ class ObserverOverlayService:
         total_traces = await self.session.scalar(
             select(func.count()).select_from(ObserverTrace).where(ObserverTrace.ticket_id == ticket_id)
         )
+        active_trace_count = await self.session.scalar(
+            select(func.count())
+            .select_from(ObserverTrace)
+            .where(
+                ObserverTrace.ticket_id == ticket_id,
+                ObserverTrace.status.in_(tuple(sorted(ACTIVE_OPERATION_STATUSES | {"running"}))),
+            )
+        )
+        error_trace_count = await self.session.scalar(
+            select(func.count())
+            .select_from(ObserverTrace)
+            .where(
+                ObserverTrace.ticket_id == ticket_id,
+                or_(
+                    ObserverTrace.error_count > 0,
+                    ObserverTrace.status.in_(("error", "failed", "timed_out", "canceled")),
+                ),
+            )
+        )
         signatures = await self.search_signatures(TraceOverlayFilters(ticket_id=ticket_id), limit=signature_limit)
         recent_occurrences = (
             await self.session.execute(
@@ -466,6 +485,31 @@ class ObserverOverlayService:
                 .limit(max(occurrence_limit, 1))
             )
         ).scalars().all()
+        active_related_rows = (
+            await self.session.execute(
+                select(ObserverTrace)
+                .where(
+                    ObserverTrace.ticket_id == ticket_id,
+                    ObserverTrace.status.in_(tuple(sorted(ACTIVE_OPERATION_STATUSES | {"running"}))),
+                )
+                .order_by(ObserverTrace.started_at.desc(), ObserverTrace.trace_id.desc())
+                .limit(max(trace_limit, 1))
+            )
+        ).scalars().all()
+        error_related_rows = (
+            await self.session.execute(
+                select(ObserverTrace)
+                .where(
+                    ObserverTrace.ticket_id == ticket_id,
+                    or_(
+                        ObserverTrace.error_count > 0,
+                        ObserverTrace.status.in_(("error", "failed", "timed_out", "canceled")),
+                    ),
+                )
+                .order_by(ObserverTrace.started_at.desc(), ObserverTrace.trace_id.desc())
+                .limit(max(trace_limit, 1))
+            )
+        ).scalars().all()
 
         root_detail = await self.get_trace_detail(root_trace_id) if root_trace_id else None
         root_trace = root_detail["trace"] if root_detail else None
@@ -473,24 +517,17 @@ class ObserverOverlayService:
             "spans": (root_detail or {}).get("spans", [])[:span_limit],
             "error_occurrences": (root_detail or {}).get("error_occurrences", [])[:occurrence_limit],
         }
-        active_related = [
-            self._serialize_trace(row)
-            for row in related_rows
-            if str(row.status or "").strip().lower() in ACTIVE_OPERATION_STATUSES or str(row.status or "").strip().lower() == "running"
-        ]
-        error_related = [
-            self._serialize_trace(row)
-            for row in related_rows
-            if int(row.error_count or 0) > 0 or str(row.status or "").strip().lower() in {"error", "failed", "timed_out", "canceled"}
-        ]
+        active_related = [self._serialize_trace(row) for row in active_related_rows]
+        error_related = [self._serialize_trace(row) for row in error_related_rows]
+        signatures = await self._annotate_ticket_signature_stats(ticket_id, signatures)
 
         return {
             "summary": {
                 "ticket_id": ticket_id,
                 "root_trace_id": root_trace_id,
                 "trace_count": int(total_traces or 0),
-                "active_trace_count": len(active_related),
-                "error_trace_count": len(error_related),
+                "active_trace_count": int(active_trace_count or 0),
+                "error_trace_count": int(error_trace_count or 0),
                 "signature_count": len(signatures),
                 "latest_trace_at": _iso(related_rows[0].started_at) if related_rows else None,
             },
@@ -502,6 +539,53 @@ class ObserverOverlayService:
             "active_traces": active_related[:trace_limit],
             "error_traces": error_related[:trace_limit],
         }
+
+    async def _annotate_ticket_signature_stats(
+        self,
+        ticket_id: str,
+        signatures: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        signature_ids = [str(item.get("error_signature") or "").strip() for item in signatures if str(item.get("error_signature") or "").strip()]
+        if not signature_ids:
+            return signatures
+
+        rows = (
+            await self.session.execute(
+                select(
+                    ObserverErrorOccurrence.error_signature,
+                    func.count().label("ticket_occurrences_count"),
+                    func.min(ObserverErrorOccurrence.created_at).label("ticket_first_seen_at"),
+                    func.max(ObserverErrorOccurrence.created_at).label("ticket_last_seen_at"),
+                )
+                .where(
+                    ObserverErrorOccurrence.ticket_id == ticket_id,
+                    ObserverErrorOccurrence.error_signature.in_(signature_ids),
+                )
+                .group_by(ObserverErrorOccurrence.error_signature)
+            )
+        ).all()
+        stats_by_signature = {
+            str(row[0]): {
+                "ticket_occurrences_count": int(row[1] or 0),
+                "ticket_first_seen_at": _iso(row[2]),
+                "ticket_last_seen_at": _iso(row[3]),
+            }
+            for row in rows
+        }
+
+        annotated: list[dict[str, Any]] = []
+        for item in signatures:
+            signature_id = str(item.get("error_signature") or "").strip()
+            stats = stats_by_signature.get(signature_id, {})
+            annotated.append(
+                {
+                    **item,
+                    "ticket_occurrences_count": int(stats.get("ticket_occurrences_count") or 0),
+                    "ticket_first_seen_at": stats.get("ticket_first_seen_at"),
+                    "ticket_last_seen_at": stats.get("ticket_last_seen_at"),
+                }
+            )
+        return annotated
 
     async def get_trace_detail(self, trace_id: str) -> Optional[dict[str, Any]]:
         trace = await self.project_trace(trace_id, force=False)
