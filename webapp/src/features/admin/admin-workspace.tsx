@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
 import {
   type AdminStatusFilter,
   fetchAdminBootstrap,
@@ -265,6 +266,13 @@ export function AdminWorkspace() {
                   <p>Следующий admin slice привяжет этот surface к tech drilldown и realtime feed.</p>
                 </article>
               </div>
+
+              <DeviceUpdatePanel
+                device={{
+                  device_id: selectedDevice.device_id,
+                  hostname: selectedDevice.hostname
+                }}
+              />
             </section>
           ) : (
             <div className="support-ticket-empty">Выберите устройство слева, чтобы открыть detail-panel.</div>

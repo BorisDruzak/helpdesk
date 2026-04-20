@@ -34,7 +34,7 @@ test("оператор проходит support workflow на русском я�
   await page.getByLabel("Хост").fill("fileserver.local");
   await page.getByRole("button", { name: "Запустить инструмент" }).click();
 
-  await expect(page.getByText("Операция op-support-tool-1 поставлена в очередь выполнения.")).toBeVisible();
+  await expect(page.getByText(/Операция op-support-tool-\d+ поставлена в очередь выполнения\./)).toBeVisible();
   await expect(page.getByText("Сетевой маршрут проверен успешно.").first()).toBeVisible();
   await expect(page.getByText("Инструмент завершён")).toBeVisible();
   await expect(page.locator(".support-operations__list")).toContainText("network.diagnostics");

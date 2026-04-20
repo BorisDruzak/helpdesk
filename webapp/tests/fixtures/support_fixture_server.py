@@ -102,6 +102,90 @@ def build_fixture_state() -> dict:
                     },
                 },
             ],
+            "device_updates": {
+                "device-1": {
+                    "device_id": "device-1",
+                    "device_label": "WS-01",
+                    "online": True,
+                    "target": "windows_amd64",
+                    "current_version": "2.4.0",
+                    "release_channel": "stable",
+                    "is_release": True,
+                    "summary": {
+                        "status": "update_available",
+                        "label": "Доступно обновление",
+                        "summary": "Серверный rollout рекомендует stable/2.4.1.",
+                    },
+                    "recommendation": {
+                        "update_available": True,
+                        "recommendation_source": "assigned_rollout",
+                        "recommendation_source_label": "Серверный rollout",
+                        "comparison": "newer_release_available",
+                        "comparison_label": "Назначена более новая release-версия",
+                        "recommended_reason": "assigned_rollout_newer",
+                        "recommended_reason_label": "Назначенный rollout новее текущей версии.",
+                        "recommended_build": {
+                            "target": "windows_amd64",
+                            "channel": "stable",
+                            "version": "2.4.1",
+                        },
+                        "assigned_rollout": {
+                            "target": "windows_amd64",
+                            "channel": "stable",
+                            "version": "2.4.1",
+                            "updated_at": now_iso(minutes=20),
+                            "updated_by": ADMIN_LOGIN,
+                        },
+                    },
+                    "action": {
+                        "enabled": True,
+                        "label": "Запустить обновление",
+                        "reason_required": True,
+                        "endpoint": "/api/web/admin/devices/device-1/updates/run",
+                    },
+                },
+                "device-2": {
+                    "device_id": "device-2",
+                    "device_label": "LT-02",
+                    "online": False,
+                    "target": "linux_alt_x86_64",
+                    "current_version": "2.3.7",
+                    "release_channel": "stable",
+                    "is_release": True,
+                    "summary": {
+                        "status": "offline",
+                        "label": "Ждёт связи",
+                        "summary": "Запуск обновления доступен только когда агент онлайн и может принять команду.",
+                    },
+                    "recommendation": {
+                        "update_available": True,
+                        "recommendation_source": "assigned_rollout",
+                        "recommendation_source_label": "Серверный rollout",
+                        "comparison": "newer_release_available",
+                        "comparison_label": "Назначена более новая release-версия",
+                        "recommended_reason": "assigned_rollout_newer",
+                        "recommended_reason_label": "Назначенный rollout новее текущей версии.",
+                        "recommended_build": {
+                            "target": "linux_alt_x86_64",
+                            "channel": "stable",
+                            "version": "2.3.9",
+                        },
+                        "assigned_rollout": {
+                            "target": "linux_alt_x86_64",
+                            "channel": "stable",
+                            "version": "2.3.9",
+                            "updated_at": now_iso(minutes=18),
+                            "updated_by": ADMIN_LOGIN,
+                        },
+                    },
+                    "action": {
+                        "enabled": False,
+                        "label": "Ожидает связи",
+                        "reason_required": True,
+                        "endpoint": "/api/web/admin/devices/device-2/updates/run",
+                    },
+                },
+            },
         },
         "tickets": {
             "ticket-1": {
@@ -384,6 +468,13 @@ def build_admin_devices_payload(state: dict, *, status_filter: str, query: str) 
         "rollout": deepcopy(state["admin"]["rollout"]),
         "devices": devices,
     }
+
+
+def build_admin_device_updates_payload(state: dict, device_id: str) -> dict | None:
+    payload = state["admin"]["device_updates"].get(device_id)
+    if not payload:
+        return None
+    return deepcopy(payload)
 
 
 def queue_filters() -> dict:
@@ -754,6 +845,56 @@ async def handle_admin_devices(request: web.Request) -> web.Response:
     return json_success(build_admin_devices_payload(state, status_filter=status_filter, query=query))
 
 
+async def handle_admin_device_updates(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    device_id = request.match_info["device_id"]
+    payload = build_admin_device_updates_payload(state, device_id)
+    if not payload:
+        return json_error("Устройство не найдено", status=404, error_code="DEVICE_NOT_FOUND")
+    return json_success(payload)
+
+
+async def handle_admin_device_update_run(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    device_id = request.match_info["device_id"]
+    payload = build_admin_device_updates_payload(state, device_id)
+    if not payload:
+        return json_error("Устройство не найдено", status=404, error_code="DEVICE_NOT_FOUND")
+
+    body = await request.json()
+    reason = str(body.get("reason") or "").strip()
+    if not reason:
+        return json_error("Укажите причину запуска обновления", status=400, error_code="VALIDATION_ERROR")
+    if not payload["action"]["enabled"]:
+        return json_error("Устройство сейчас недоступно для update action", status=409, error_code="AGENT_OFFLINE")
+
+    operation_id = f"op-admin-update-{next(state['operation_counter']):03d}"
+    build = deepcopy(payload["recommendation"]["recommended_build"])
+    payload["summary"] = {
+        "status": "queued",
+        "label": "Поставлено в очередь",
+        "summary": f"Запрос сохранён с причиной: {reason}",
+    }
+    payload["action"]["label"] = "Повторить rollout"
+    return json_success(
+        {
+            "device_id": device_id,
+            "operation_id": operation_id,
+            "status": "queued",
+            "message": f"Операция {operation_id} поставлена в очередь.",
+            "build_source": "assigned_rollout",
+            "poll_url": f"/api/operations/{operation_id}",
+            "build": build,
+        }
+    )
+
+
 def build_app() -> web.Application:
     app = web.Application()
     app["fixture_state"] = build_fixture_state()
@@ -771,6 +912,8 @@ def build_app() -> web.Application:
             web.post("/api/web/support/tickets/{ticket_id}/tools/run", handle_support_ticket_tool_run),
             web.get("/api/web/admin/bootstrap", handle_admin_bootstrap),
             web.get("/api/web/admin/devices", handle_admin_devices),
+            web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
+            web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
             web.get("/app", handle_webapp_page),

@@ -388,7 +388,7 @@ git commit -m "feat: migrate support workspace to new web platform"
 - Test: `server/tests/test_web_admin_api.py`
 - Test: `webapp/tests/admin-workspace.spec.ts`
 
-- [ ] **Step 1: Build devices and agent-updates first**
+- [x] **Step 1: Build devices and agent-updates first**
 
 Expected:
 - the new admin workspace can list devices, open device detail, and trigger/view update actions

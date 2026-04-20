@@ -218,7 +218,12 @@ from web_api.support_handlers import (
     handle_web_support_ticket_detail,
     handle_web_support_ticket_tools,
 )
-from web_api.admin_handlers import handle_web_admin_bootstrap, handle_web_admin_devices
+from web_api.admin_handlers import (
+    handle_web_admin_bootstrap,
+    handle_web_admin_device_update_run,
+    handle_web_admin_device_updates,
+    handle_web_admin_devices,
+)
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
     handle_chat_start,
@@ -377,6 +382,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
+        web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
+        web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
         web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
         # Connection request flow (no auth: agent requests token)

@@ -356,7 +356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and the first typed admin inventory slice.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and typed admin slices for inventory plus device update actions.",
         aliases=(
             "webapp",
             "react app",
@@ -367,6 +367,8 @@ TOPICS: tuple[Topic, ...] = (
             "app/admin",
             "support workspace",
             "admin workspace",
+            "device updates",
+            "admin updates",
         ),
         first_files=(
             "webapp/src/main.tsx",
@@ -376,6 +378,8 @@ TOPICS: tuple[Topic, ...] = (
             "webapp/src/features/auth/login-page.tsx",
             "webapp/src/features/admin/api.ts",
             "webapp/src/features/admin/admin-workspace.tsx",
+            "webapp/src/features/agent-updates/api.ts",
+            "webapp/src/features/agent-updates/device-update-panel.tsx",
             "server/web_api/session_handlers.py",
             "server/web_api/support_handlers.py",
             "server/web_api/admin_handlers.py",
@@ -396,6 +400,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "web_api" --dir server',
             'python scripts/agent_find.py "app/support" --dir server',
             'python scripts/agent_find.py "app/admin" --dir server',
+            'python scripts/agent_find.py "device update" --dir server',
         ),
         mode="Internal web platform / React",
         skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
@@ -710,7 +715,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, typed admin device-update boundary and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",

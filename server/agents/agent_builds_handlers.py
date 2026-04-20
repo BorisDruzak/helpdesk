@@ -40,6 +40,13 @@ NON_RELEASE_CHANNELS = {"beta", "alpha", "rc", "dev", "nightly", "preview", "can
 VERSION_PRERELEASE_MARKERS = ("alpha", "beta", "rc", "dev", "preview", "nightly", "canary")
 
 
+class AgentUpdateRequestError(Exception):
+    def __init__(self, *, status: int, payload: dict):
+        super().__init__(payload.get("error") or payload.get("error_code") or "Agent update request failed")
+        self.status = status
+        self.payload = payload
+
+
 def _channel_priority(channel: Optional[str]) -> int:
     normalized = str(channel or "").strip().lower()
     if normalized in RELEASE_CHANNELS:
@@ -889,50 +896,34 @@ async def handle_get_device_update_recommendation(request: web.Request) -> web.R
     return web.json_response(payload)
 
 
-async def handle_update_device_agent(request: web.Request) -> web.Response:
-    """
-    POST /api/devices/{device_id}/agent/update
-
-    JSON:
-      - target: string (required)
-      - channel: string (optional, default stable)
-      - version: string (optional; if omitted -> latest for target/channel)
-      - restart_delay_sec: int (optional)
-
-    Returns:
-      202 Accepted: { status, operation_id, build }
-    """
-    auth_context: AuthContext = request.get("auth_context")
-    if not auth_context:
-        return web.json_response(
-            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
-            status=401,
-        )
-
-    state = request.app["state"]
-    device_id = request.match_info["device_id"]
-
+async def enqueue_device_agent_update(
+    *,
+    state,
+    auth_context: AuthContext,
+    device_id: str,
+    target: str,
+    channel: str = "stable",
+    version: Optional[str] = None,
+    restart_delay_sec=None,
+    reason: Optional[str] = None,
+):
     if not state.is_agent_online(device_id):
-        return web.json_response(
-            {
+        raise AgentUpdateRequestError(
+            status=409,
+            payload={
                 "status": "error",
                 "error": "Agent is offline",
                 "error_code": "AGENT_OFFLINE",
                 "device_id": device_id,
                 "operation": None,
             },
-            status=409,
         )
 
-    data = await request.json()
-    target = _safe_str(data.get("target"))
-    channel = _safe_str(data.get("channel")).lower() or "stable"
-    version = _safe_str(data.get("version")) or None
-    restart_delay_sec = data.get("restart_delay_sec")
-    reason = _sanitize_update_reason(data.get("reason"))
-
     if not target:
-        return web.json_response({"status": "error", "error": "Missing target"}, status=400)
+        raise AgentUpdateRequestError(
+            status=400,
+            payload={"status": "error", "error": "Missing target", "error_code": "VALIDATION_ERROR"},
+        )
 
     async with get_session() as session:
         build, build_source = await _resolve_requested_build(
@@ -943,15 +934,16 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
         )
 
         if not build:
-            return web.json_response(
-                {
+            raise AgentUpdateRequestError(
+                status=404,
+                payload={
                     "status": "error",
                     "error": "Build not found",
+                    "error_code": "BUILD_NOT_FOUND",
                     "target": target,
                     "channel": channel,
                     "version": version,
                 },
-                status=404,
             )
 
         agent_self_update_allowed = False
@@ -971,14 +963,14 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
                     error_message = "Agent may request only the current recommended build"
                 elif agent_self_update_error == "AGENT_SELF_UPDATE_RECOMMENDATION_MISSING":
                     error_message = "No recommended build available for self-update"
-                return web.json_response(
-                    {
+                raise AgentUpdateRequestError(
+                    status=403,
+                    payload={
                         "status": "error",
                         "error": error_message,
                         "error_code": agent_self_update_error or "FORBIDDEN",
                         **(agent_self_update_context or {}),
                     },
-                    status=403,
                 )
         else:
             # Server-side policy check: update is system_write (admin/system only)
@@ -989,9 +981,13 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
                 metadata=ToolMetadata(risk_level="system_write", requires_consent=False, allow_roles=None),
             )
             if not decision.allow:
-                return web.json_response(
-                    {"status": "error", "error": "Insufficient permissions", "error_code": "FORBIDDEN"},
+                raise AgentUpdateRequestError(
                     status=403,
+                    payload={
+                        "status": "error",
+                        "error": "Insufficient permissions",
+                        "error_code": "FORBIDDEN",
+                    },
                 )
 
         # Create operation (materialized state)
@@ -1056,22 +1052,66 @@ async def handle_update_device_agent(request: web.Request) -> web.Response:
             "reason": reason,
         },
     )
-    return web.json_response(
-        {
-            "status": "accepted",
-            "device_id": device_id,
+    return {
+        "status": "accepted",
+        "device_id": device_id,
+        "operation_id": op_id,
+        "operation": {
             "operation_id": op_id,
-            "operation": {
-                "operation_id": op_id,
-                "kind": "agent_update",
-                "status": "queued",
-            },
-            "build": {"target": build.target, "channel": build.channel, "version": build.version},
-            "build_source": build_source,
-            "self_update_authorized": agent_self_update_allowed if auth_context.actor_role == "agent" else False,
+            "kind": "agent_update",
+            "status": "queued",
         },
-        status=202,
-    )
+        "build": {"target": build.target, "channel": build.channel, "version": build.version},
+        "build_source": build_source,
+        "self_update_authorized": agent_self_update_allowed if auth_context.actor_role == "agent" else False,
+    }
+
+
+async def handle_update_device_agent(request: web.Request) -> web.Response:
+    """
+    POST /api/devices/{device_id}/agent/update
+
+    JSON:
+      - target: string (required)
+      - channel: string (optional, default stable)
+      - version: string (optional; if omitted -> latest for target/channel)
+      - restart_delay_sec: int (optional)
+
+    Returns:
+      202 Accepted: { status, operation_id, build }
+    """
+    auth_context: AuthContext = request.get("auth_context")
+    if not auth_context:
+        return web.json_response(
+            {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},
+            status=401,
+        )
+
+    state = request.app["state"]
+    device_id = request.match_info["device_id"]
+
+    data = await request.json()
+    target = _safe_str(data.get("target"))
+    channel = _safe_str(data.get("channel")).lower() or "stable"
+    version = _safe_str(data.get("version")) or None
+    restart_delay_sec = data.get("restart_delay_sec")
+    reason = _sanitize_update_reason(data.get("reason"))
+
+    try:
+        payload = await enqueue_device_agent_update(
+            state=state,
+            auth_context=auth_context,
+            device_id=device_id,
+            target=target,
+            channel=channel,
+            version=version,
+            restart_delay_sec=restart_delay_sec,
+            reason=reason,
+        )
+    except AgentUpdateRequestError as exc:
+        return web.json_response(exc.payload, status=exc.status)
+
+    return web.json_response(payload, status=202)
 
 
 async def handle_bulk_update_agents(request: web.Request) -> web.Response:

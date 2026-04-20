@@ -226,7 +226,7 @@ describe("appRoutes", () => {
         });
       }
 
-      if (url.startsWith("/api/web/admin/devices")) {
+      if (url === "/api/web/admin/devices") {
         return jsonResponse({
           status: "success",
           data: {
@@ -270,6 +270,53 @@ describe("appRoutes", () => {
                 }
               }
             ]
+          }
+        });
+      }
+
+      if (url === "/api/web/admin/devices/device-1/updates") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            device_id: "device-1",
+            device_label: "WS-01",
+            online: true,
+            target: "windows_amd64",
+            current_version: "2.4.0",
+            release_channel: "stable",
+            is_release: true,
+            summary: {
+              status: "update_available",
+              label: "Доступно обновление",
+              summary: "Серверный rollout рекомендует stable/2.4.1."
+            },
+            recommendation: {
+              update_available: true,
+              recommendation_source: "assigned_rollout",
+              recommendation_source_label: "Серверный rollout",
+              comparison: "newer_release_available",
+              comparison_label: "Назначена более новая release-версия",
+              recommended_reason: "assigned_rollout_newer",
+              recommended_reason_label: "Назначенный rollout новее текущей версии.",
+              recommended_build: {
+                target: "windows_amd64",
+                channel: "stable",
+                version: "2.4.1"
+              },
+              assigned_rollout: {
+                target: "windows_amd64",
+                channel: "stable",
+                version: "2.4.1",
+                updated_at: "2026-04-20T11:20:00+05:00",
+                updated_by: "admin1"
+              }
+            },
+            action: {
+              enabled: true,
+              label: "Запустить обновление",
+              reason_required: true,
+              endpoint: "/api/web/admin/devices/device-1/updates/run"
+            }
           }
         });
       }

@@ -41,6 +41,71 @@ class AdminDeviceUpdateSummary(BaseModel):
     summary: str | None = None
 
 
+class AdminBuildIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: str
+    channel: str
+    version: str
+
+
+class AdminDeviceUpdateRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    update_available: bool
+    recommendation_source: str
+    recommendation_source_label: str
+    comparison: str
+    comparison_label: str
+    recommended_reason: str | None = None
+    recommended_reason_label: str | None = None
+    recommended_build: AdminBuildIdentity | None = None
+    assigned_rollout: AdminRolloutAssignment | None = None
+
+
+class AdminDeviceUpdateAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    label: str
+    reason_required: bool
+    endpoint: str
+
+
+class AdminDeviceUpdatesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    device_label: str
+    online: bool
+    target: str | None = None
+    current_version: str | None = None
+    release_channel: str
+    is_release: bool
+    summary: AdminDeviceUpdateSummary
+    recommendation: AdminDeviceUpdateRecommendation
+    action: AdminDeviceUpdateAction
+
+
+class AdminDeviceUpdateRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+    restart_delay_sec: int | None = None
+
+
+class AdminDeviceUpdateRunPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    operation_id: str
+    status: str
+    message: str
+    build_source: str
+    poll_url: str
+    build: AdminBuildIdentity
+
+
 class AdminDeviceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -64,7 +64,7 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url.startsWith("/api/web/admin/devices")) {
+        if (url === "/api/web/admin/devices") {
           return jsonResponse({
             status: "success",
             data: {
@@ -134,6 +134,122 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
+        if (url === "/api/web/admin/devices/device-1/updates") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              device_id: "device-1",
+              device_label: "WS-01",
+              online: true,
+              target: "windows_amd64",
+              current_version: "2.4.0",
+              release_channel: "stable",
+              is_release: true,
+              summary: {
+                status: "update_available",
+                label: "Доступно обновление",
+                summary: "Серверный rollout рекомендует stable/2.4.1."
+              },
+              recommendation: {
+                update_available: true,
+                recommendation_source: "assigned_rollout",
+                recommendation_source_label: "Серверный rollout",
+                comparison: "newer_release_available",
+                comparison_label: "Назначена более новая release-версия",
+                recommended_reason: "assigned_rollout_newer",
+                recommended_reason_label: "Назначенный rollout новее текущей версии.",
+                recommended_build: {
+                  target: "windows_amd64",
+                  channel: "stable",
+                  version: "2.4.1"
+                },
+                assigned_rollout: {
+                  target: "windows_amd64",
+                  channel: "stable",
+                  version: "2.4.1",
+                  updated_at: "2026-04-20T11:20:00+05:00",
+                  updated_by: "admin1"
+                }
+              },
+              action: {
+                enabled: true,
+                label: "Запустить обновление",
+                reason_required: true,
+                endpoint: "/api/web/admin/devices/device-1/updates/run"
+              }
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/devices/device-2/updates") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              device_id: "device-2",
+              device_label: "LT-02",
+              online: false,
+              target: "linux_alt_x86_64",
+              current_version: "2.3.7",
+              release_channel: "stable",
+              is_release: true,
+              summary: {
+                status: "offline",
+                label: "Ждёт связи",
+                summary: "Запуск обновления доступен только когда агент онлайн и может принять команду."
+              },
+              recommendation: {
+                update_available: true,
+                recommendation_source: "assigned_rollout",
+                recommendation_source_label: "Серверный rollout",
+                comparison: "newer_release_available",
+                comparison_label: "Назначена более новая release-версия",
+                recommended_reason: "assigned_rollout_newer",
+                recommended_reason_label: "Назначенный rollout новее текущей версии.",
+                recommended_build: {
+                  target: "linux_alt_x86_64",
+                  channel: "stable",
+                  version: "2.3.9"
+                },
+                assigned_rollout: {
+                  target: "linux_alt_x86_64",
+                  channel: "stable",
+                  version: "2.3.9",
+                  updated_at: "2026-04-20T10:55:00+05:00",
+                  updated_by: "admin1"
+                }
+              },
+              action: {
+                enabled: false,
+                label: "Ожидает связи",
+                reason_required: true,
+                endpoint: "/api/web/admin/devices/device-2/updates/run"
+              }
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/devices/device-1/updates/run") {
+          return jsonResponse(
+            {
+              status: "success",
+              data: {
+                device_id: "device-1",
+                operation_id: "op-admin-1",
+                status: "queued",
+                message: "Операция op-admin-1 поставлена в очередь.",
+                build_source: "assigned_rollout",
+                poll_url: "/api/operations/op-admin-1",
+                build: {
+                  target: "windows_amd64",
+                  channel: "stable",
+                  version: "2.4.1"
+                }
+              }
+            },
+            202
+          );
+        }
+
         return jsonResponse({ status: "error", error: `Unhandled URL: ${url}` }, 404);
       })
     );
@@ -145,6 +261,17 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText("Назначения rollout")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /WS-01/i })).toBeInTheDocument();
     expect((await screen.findAllByText("Устройство на шаг позади rollout")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Доступно обновление")).toBeInTheDocument();
+    expect(await screen.findByText("Назначенный rollout новее текущей версии.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Причина запуска"), {
+      target: { value: "canary после smoke" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Запустить обновление" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Операция op-admin-1 поставлена в очередь.")).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /LT-02/i }));
 
