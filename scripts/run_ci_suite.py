@@ -117,7 +117,13 @@ def _write_output(handle, text: str) -> None:
     except UnicodeEncodeError:
         encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
         sys.stdout.write(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
-    sys.stdout.flush()
+    except OSError:
+        # Artifact logs are canonical; terminal mirroring is best-effort only.
+        return
+    try:
+        sys.stdout.flush()
+    except OSError:
+        return
 
 
 def _drain_output_queue(

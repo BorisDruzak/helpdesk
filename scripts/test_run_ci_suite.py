@@ -171,6 +171,24 @@ def test_write_output_falls_back_when_console_cannot_encode_unicode(monkeypatch,
     assert handle_path.read_text(encoding="utf-8") == "vite ✓\n"
 
 
+def test_write_output_ignores_console_oserror(monkeypatch, tmp_path):
+    class BrokenStdout:
+        encoding = "utf-8"
+
+        def write(self, text: str) -> int:
+            raise OSError(22, "Invalid argument")
+
+        def flush(self) -> None:
+            return None
+
+    handle_path = tmp_path / "broken-console.log"
+    with handle_path.open("w", encoding="utf-8") as handle:
+        monkeypatch.setattr(run_ci_suite.sys, "stdout", BrokenStdout())
+        run_ci_suite._write_output(handle, "mirror-safe\n")
+
+    assert handle_path.read_text(encoding="utf-8") == "mirror-safe\n"
+
+
 def test_main_runs_webapp_bundle_step_before_pytests(tmp_path, monkeypatch):
     summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
     steps_seen: list[tuple[str, list[str], Path, float | None]] = []
