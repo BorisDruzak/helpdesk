@@ -384,3 +384,70 @@ class AdminDevicesPayload(BaseModel):
     filters: AdminDevicesFilters
     rollout: list[AdminRolloutAssignment]
     devices: list[AdminDeviceItem]
+
+
+class AdminModulesSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visible_count: int
+    preferred_count: int
+    invalid_count: int
+    missing_files_count: int
+
+
+class AdminModulesRolloutSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferred_version_rollout_mode: str
+    preferred_version_rollout_mode_label: str
+    sync_after_preferred_change: bool
+
+
+class AdminModuleVersionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    created_at: str | None = None
+    uploaded_by: str | None = None
+    manifest_version: int | None = None
+    module_api_version: str | None = None
+    owner_scope: str | None = None
+    validation_status: str
+    validation_status_label: str
+    preflight_status: str
+    preflight_status_label: str
+    is_preferred: bool = False
+    tools_count: int = 0
+    platforms: list[str] = Field(default_factory=list)
+    tool_ids: list[str] = Field(default_factory=list)
+    warnings_count: int = 0
+    file_exists: bool = True
+
+
+class AdminModuleFamilyItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    module_name: str
+    preferred_version: str | None = None
+    preferred_assigned: bool = False
+    latest_version: str | None = None
+    owner_scope: str | None = None
+    module_api_version: str | None = None
+    validation_status: str
+    validation_status_label: str
+    version_count: int = 0
+    tools_count: int = 0
+    platforms: list[str] = Field(default_factory=list)
+    tool_ids: list[str] = Field(default_factory=list)
+    warnings_count: int = 0
+    has_missing_files: bool = False
+    versions: list[AdminModuleVersionItem] = Field(default_factory=list)
+
+
+class AdminModulesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    summary: AdminModulesSummary
+    rollout_settings: AdminModulesRolloutSettings
+    modules: list[AdminModuleFamilyItem]

@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
+import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import {
   type AdminStatusFilter,
@@ -282,6 +283,8 @@ export function AdminWorkspace() {
           )}
         </article>
       </section>
+
+      <ModulesPanel />
     </section>
   );
 }

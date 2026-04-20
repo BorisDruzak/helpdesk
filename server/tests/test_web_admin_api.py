@@ -32,6 +32,11 @@ from web_api.dto.admin import (
     AdminObserverTracesPayload,
     AdminObserverTracesQuery,
     AdminObserverTracesSummary,
+    AdminModuleFamilyItem,
+    AdminModulesPayload,
+    AdminModulesRolloutSettings,
+    AdminModulesSummary,
+    AdminModuleVersionItem,
     AdminRolloutAssignment,
 )
 
@@ -442,6 +447,121 @@ async def test_web_admin_devices_returns_typed_fallback_payload_when_db_is_unava
         "value": "all",
         "label": "Все устройства",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_modules_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
+    response = await web_admin_client.get("/api/web/admin/modules")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["query"] == ""
+    assert payload["data"]["summary"] == {
+        "visible_count": 0,
+        "preferred_count": 0,
+        "invalid_count": 0,
+        "missing_files_count": 0,
+    }
+    assert payload["data"]["rollout_settings"] == {
+        "preferred_version_rollout_mode": "manual",
+        "preferred_version_rollout_mode_label": "Только вручную",
+        "sync_after_preferred_change": True,
+    }
+    assert payload["data"]["modules"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_modules_returns_typed_registry_payload(web_admin_client, monkeypatch):
+    async def fake_build_payload(*, query: str):
+        assert query == "network"
+        return AdminModulesPayload(
+            query=query,
+            summary=AdminModulesSummary(
+                visible_count=1,
+                preferred_count=1,
+                invalid_count=1,
+                missing_files_count=0,
+            ),
+            rollout_settings=AdminModulesRolloutSettings(
+                preferred_version_rollout_mode="installed_devices",
+                preferred_version_rollout_mode_label="Обновлять установленные устройства",
+                sync_after_preferred_change=False,
+            ),
+            modules=[
+                AdminModuleFamilyItem(
+                    module_name="network_ping",
+                    preferred_version="1.2.0",
+                    preferred_assigned=True,
+                    latest_version="1.2.1",
+                    owner_scope="vendor",
+                    module_api_version="2.0.0",
+                    validation_status="warning",
+                    validation_status_label="Есть предупреждения",
+                    version_count=2,
+                    tools_count=2,
+                    platforms=["windows_amd64", "linux_alt_x86_64"],
+                    tool_ids=["network_ping.ping", "network_ping.trace"],
+                    warnings_count=1,
+                    has_missing_files=False,
+                    versions=[
+                        AdminModuleVersionItem(
+                            version="1.2.1",
+                            created_at="2026-04-20T11:10:00+05:00",
+                            uploaded_by="admin",
+                            manifest_version=2,
+                            module_api_version="2.0.0",
+                            owner_scope="vendor",
+                            validation_status="warning",
+                            validation_status_label="Есть предупреждения",
+                            preflight_status="passed",
+                            preflight_status_label="Проверен",
+                            is_preferred=False,
+                            tools_count=2,
+                            platforms=["windows_amd64", "linux_alt_x86_64"],
+                            tool_ids=["network_ping.ping", "network_ping.trace"],
+                            warnings_count=1,
+                            file_exists=True,
+                        ),
+                        AdminModuleVersionItem(
+                            version="1.2.0",
+                            created_at="2026-04-19T10:00:00+05:00",
+                            uploaded_by="admin",
+                            manifest_version=2,
+                            module_api_version="2.0.0",
+                            owner_scope="vendor",
+                            validation_status="passed",
+                            validation_status_label="Проверен",
+                            preflight_status="passed",
+                            preflight_status_label="Проверен",
+                            is_preferred=True,
+                            tools_count=2,
+                            platforms=["windows_amd64", "linux_alt_x86_64"],
+                            tool_ids=["network_ping.ping", "network_ping.trace"],
+                            warnings_count=0,
+                            file_exists=True,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(admin_handlers, "_build_admin_modules_payload", fake_build_payload)
+
+    response = await web_admin_client.get("/api/web/admin/modules?query=network")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["summary"]["visible_count"] == 1
+    assert payload["data"]["rollout_settings"]["preferred_version_rollout_mode"] == "installed_devices"
+    assert payload["data"]["modules"][0]["module_name"] == "network_ping"
+    assert payload["data"]["modules"][0]["versions"][1]["is_preferred"] is True
+    assert payload["data"]["modules"][0]["tool_ids"] == ["network_ping.ping", "network_ping.trace"]
 
 
 @pytest.mark.asyncio

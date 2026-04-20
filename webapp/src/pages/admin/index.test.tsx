@@ -131,6 +131,118 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
+        if (url === "/api/web/admin/modules") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              query: "",
+              summary: {
+                visible_count: 2,
+                preferred_count: 1,
+                invalid_count: 1,
+                missing_files_count: 1
+              },
+              rollout_settings: {
+                preferred_version_rollout_mode: "installed_devices",
+                preferred_version_rollout_mode_label: "Обновлять установленные устройства",
+                sync_after_preferred_change: false
+              },
+              modules: [
+                {
+                  module_name: "network_ping",
+                  preferred_version: "1.2.0",
+                  preferred_assigned: true,
+                  latest_version: "1.2.1",
+                  owner_scope: "vendor",
+                  module_api_version: "2.0.0",
+                  validation_status: "warning",
+                  validation_status_label: "Есть предупреждения",
+                  version_count: 2,
+                  tools_count: 2,
+                  platforms: ["windows_amd64", "linux_alt_x86_64"],
+                  tool_ids: ["network_ping.ping", "network_ping.trace"],
+                  warnings_count: 1,
+                  has_missing_files: false,
+                  versions: [
+                    {
+                      version: "1.2.1",
+                      created_at: "2026-04-20T11:10:00+05:00",
+                      uploaded_by: "admin",
+                      manifest_version: 2,
+                      module_api_version: "2.0.0",
+                      owner_scope: "vendor",
+                      validation_status: "warning",
+                      validation_status_label: "Есть предупреждения",
+                      preflight_status: "passed",
+                      preflight_status_label: "Проверен",
+                      is_preferred: false,
+                      tools_count: 2,
+                      platforms: ["windows_amd64", "linux_alt_x86_64"],
+                      tool_ids: ["network_ping.ping", "network_ping.trace"],
+                      warnings_count: 1,
+                      file_exists: true
+                    },
+                    {
+                      version: "1.2.0",
+                      created_at: "2026-04-19T10:00:00+05:00",
+                      uploaded_by: "admin",
+                      manifest_version: 2,
+                      module_api_version: "2.0.0",
+                      owner_scope: "vendor",
+                      validation_status: "passed",
+                      validation_status_label: "Проверен",
+                      preflight_status: "passed",
+                      preflight_status_label: "Проверен",
+                      is_preferred: true,
+                      tools_count: 2,
+                      platforms: ["windows_amd64", "linux_alt_x86_64"],
+                      tool_ids: ["network_ping.ping", "network_ping.trace"],
+                      warnings_count: 0,
+                      file_exists: true
+                    }
+                  ]
+                },
+                {
+                  module_name: "observer_canary",
+                  preferred_version: null,
+                  preferred_assigned: false,
+                  latest_version: "0.9.0",
+                  owner_scope: "internal",
+                  module_api_version: "1.0.0",
+                  validation_status: "failed",
+                  validation_status_label: "Ошибка валидации",
+                  version_count: 1,
+                  tools_count: 1,
+                  platforms: ["windows_amd64"],
+                  tool_ids: ["observer.canary"],
+                  warnings_count: 2,
+                  has_missing_files: true,
+                  versions: [
+                    {
+                      version: "0.9.0",
+                      created_at: "2026-04-18T09:00:00+05:00",
+                      uploaded_by: "admin",
+                      manifest_version: 2,
+                      module_api_version: "1.0.0",
+                      owner_scope: "internal",
+                      validation_status: "failed",
+                      validation_status_label: "Ошибка валидации",
+                      preflight_status: "failed",
+                      preflight_status_label: "Ошибка валидации",
+                      is_preferred: false,
+                      tools_count: 1,
+                      platforms: ["windows_amd64"],
+                      tool_ids: ["observer.canary"],
+                      warnings_count: 2,
+                      file_exists: false
+                    }
+                  ]
+                }
+              ]
+            }
+          });
+        }
+
         if (url === "/api/web/admin/observer/quick?device_id=device-1&lookback_hours=24") {
           return jsonResponse({
             status: "success",
@@ -773,6 +885,8 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText("Быстрый срез трассировки")).toBeInTheDocument();
     expect(await screen.findByText("Launcher signature mismatch")).toBeInTheDocument();
     expect(await screen.findByText("/api/web/admin/observer/traces")).toBeInTheDocument();
+    expect((await screen.findAllByText("network_ping")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Обновлять установленные устройства")).toBeInTheDocument();
     expect(await screen.findByText("Детальный разбор трасс")).toBeInTheDocument();
     expect(await screen.findByText("Trace ID")).toBeInTheDocument();
     expect((await screen.findAllByText("trace-update-1")).length).toBeGreaterThan(0);

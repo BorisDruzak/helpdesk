@@ -19,6 +19,9 @@ test("администратор открывает inventory, update workflow �
   await expect(page.getByText("Устройство на шаг позади rollout").first()).toBeVisible();
   await expect(page.getByText("Доступно обновление")).toBeVisible();
   await expect(page.getByText("Назначенный rollout новее текущей версии.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Реестр модулей" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /network_ping/i })).toBeVisible();
+  await expect(page.getByText("Обновлять установленные устройства")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Быстрый срез трассировки" })).toBeVisible();
   await expect(page.getByText("Launcher signature mismatch")).toBeVisible();
   await expect(page.getByText("/api/web/admin/observer/traces", { exact: true })).toBeVisible();

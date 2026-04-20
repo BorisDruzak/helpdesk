@@ -16,6 +16,9 @@ from agents.agent_builds_handlers import (
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.devices_repo import DevicesRepo
+from app.repos import ModulesRepo
+from config import MODULES_STORAGE_DIR
+from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from auth.context import AuthContext
 from auth.middleware import require_auth
@@ -48,6 +51,11 @@ from web_api.dto.admin import (
     AdminDeviceUpdateRunPayload,
     AdminDeviceUpdateRunRequest,
     AdminDevicesFilters,
+    AdminModulesPayload,
+    AdminModulesRolloutSettings,
+    AdminModulesSummary,
+    AdminModuleFamilyItem,
+    AdminModuleVersionItem,
     AdminDevicesPayload,
     AdminDevicesSummary,
     AdminDeviceUpdateSummary,
@@ -56,6 +64,8 @@ from web_api.dto.admin import (
     AdminObserverCapabilities,
     AdminRolloutAssignment,
 )
+from utils.module_manifest import get_module_manifest, get_module_validation
+from utils.versioning import version_key
 from utils.versioning import compare_versions
 
 
@@ -64,6 +74,18 @@ STATUS_OPTIONS = [
     AdminFilterOption(value="online", label="Только онлайн"),
     AdminFilterOption(value="offline", label="Только офлайн"),
 ]
+
+_MODULE_VALIDATION_STATUS_LABELS = {
+    "passed": "Проверен",
+    "warning": "Есть предупреждения",
+    "failed": "Ошибка валидации",
+    "unknown": "Статус неизвестен",
+}
+
+_MODULE_ROLLOUT_MODE_LABELS = {
+    "manual": "Только вручную",
+    "installed_devices": "Обновлять установленные устройства",
+}
 
 _OS_TYPE_TO_TARGET = {
     "windows": "windows_amd64",
@@ -171,6 +193,95 @@ def _empty_devices_payload(*, query: str, status_filter: str) -> AdminDevicesPay
         filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
         rollout=[],
         devices=[],
+    )
+
+
+def _module_validation_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower() or "unknown"
+    return _MODULE_VALIDATION_STATUS_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _module_rollout_mode_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower() or "manual"
+    return _MODULE_ROLLOUT_MODE_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _module_tool_ids(manifest_json: dict | None) -> list[str]:
+    if not isinstance(manifest_json, dict):
+        return []
+    tool_ids: list[str] = []
+    for raw_tool in manifest_json.get("tools") or []:
+        if not isinstance(raw_tool, dict):
+            continue
+        tool_id = str(raw_tool.get("tool") or raw_tool.get("name") or "").strip()
+        if tool_id:
+            tool_ids.append(tool_id)
+    return tool_ids
+
+
+def _module_file_exists(module: object) -> bool:
+    storage_path = str(getattr(module, "storage_path", "") or "").strip()
+    if not storage_path:
+        return False
+    return (MODULES_STORAGE_DIR / storage_path).exists()
+
+
+def _pick_primary_module_record(modules: list[object], preferred_version: str | None) -> object | None:
+    if not modules:
+        return None
+    if preferred_version:
+        for module in modules:
+            if str(getattr(module, "version", "") or "").strip() == preferred_version:
+                return module
+    return max(
+        modules,
+        key=lambda module: (
+            version_key(str(getattr(module, "version", "") or "")).key,
+            getattr(module, "created_at", None).isoformat() if getattr(module, "created_at", None) else "",
+        ),
+    )
+
+
+def _map_admin_module_version_item(module: object, *, preferred_version: str | None) -> AdminModuleVersionItem:
+    manifest_json = get_module_manifest(module)
+    validation_json = get_module_validation(module)
+    validation_status = str(validation_json.get("validation_status") or "unknown").strip().lower() or "unknown"
+    preflight_status = str(validation_json.get("preflight_status") or "unknown").strip().lower() or "unknown"
+    return AdminModuleVersionItem(
+        version=str(getattr(module, "version", "") or ""),
+        created_at=getattr(module, "created_at", None).isoformat() if getattr(module, "created_at", None) else None,
+        uploaded_by=getattr(module, "uploaded_by", None),
+        manifest_version=1 if validation_json.get("legacy_manifest") else manifest_json.get("manifest_version"),
+        module_api_version=manifest_json.get("module_api_version"),
+        owner_scope=manifest_json.get("owner_scope"),
+        validation_status=validation_status,
+        validation_status_label=_module_validation_label(validation_status),
+        preflight_status=preflight_status,
+        preflight_status_label=_module_validation_label(preflight_status),
+        is_preferred=preferred_version == str(getattr(module, "version", "") or ""),
+        tools_count=len(manifest_json.get("tools") or []),
+        platforms=[str(item) for item in (manifest_json.get("platforms") or ["any"])],
+        tool_ids=_module_tool_ids(manifest_json),
+        warnings_count=len(validation_json.get("warnings") or []),
+        file_exists=_module_file_exists(module),
+    )
+
+
+def _empty_admin_modules_payload(*, query: str) -> AdminModulesPayload:
+    return AdminModulesPayload(
+        query=query,
+        summary=AdminModulesSummary(
+            visible_count=0,
+            preferred_count=0,
+            invalid_count=0,
+            missing_files_count=0,
+        ),
+        rollout_settings=AdminModulesRolloutSettings(
+            preferred_version_rollout_mode="manual",
+            preferred_version_rollout_mode_label=_module_rollout_mode_label("manual"),
+            sync_after_preferred_change=True,
+        ),
+        modules=[],
     )
 
 
@@ -989,6 +1100,103 @@ async def _run_admin_device_update(
     )
 
 
+async def _build_admin_modules_payload(*, query: str) -> AdminModulesPayload:
+    normalized_query = str(query or "").strip()
+    query_lower = normalized_query.lower()
+
+    async with get_session() as session:
+        modules = await ModulesRepo(session).list_modules(limit=300)
+        preferred_assignments = await _get_module_preferred_assignments(session)
+        rollout_settings = await _get_module_rollout_settings(session)
+
+    grouped: dict[str, list[object]] = {}
+    for module in modules:
+        grouped.setdefault(str(getattr(module, "module_name", "") or ""), []).append(module)
+
+    families: list[AdminModuleFamilyItem] = []
+    missing_files_count = 0
+    invalid_count = 0
+    preferred_count = 0
+    for module_name in sorted(name for name in grouped if name):
+        versions = sorted(
+            grouped[module_name],
+            key=lambda item: (
+                version_key(str(getattr(item, "version", "") or "")).key,
+                getattr(item, "created_at", None).isoformat() if getattr(item, "created_at", None) else "",
+            ),
+            reverse=True,
+        )
+        preferred_version = preferred_assignments.get(module_name, {}).get("version")
+        version_items = [
+            _map_admin_module_version_item(module, preferred_version=preferred_version)
+            for module in versions
+        ]
+        primary_module = _pick_primary_module_record(versions, preferred_version)
+        if primary_module is None:
+            continue
+        primary_manifest = get_module_manifest(primary_module)
+        primary_validation = get_module_validation(primary_module)
+        primary_validation_status = (
+            str(primary_validation.get("validation_status") or "unknown").strip().lower() or "unknown"
+        )
+        tool_ids = _module_tool_ids(primary_manifest)
+        family = AdminModuleFamilyItem(
+            module_name=module_name,
+            preferred_version=preferred_version,
+            preferred_assigned=bool(preferred_version and any(item.is_preferred for item in version_items)),
+            latest_version=version_items[0].version if version_items else None,
+            owner_scope=primary_manifest.get("owner_scope"),
+            module_api_version=primary_manifest.get("module_api_version"),
+            validation_status=primary_validation_status,
+            validation_status_label=_module_validation_label(primary_validation_status),
+            version_count=len(version_items),
+            tools_count=max((item.tools_count for item in version_items), default=0),
+            platforms=[str(item) for item in (primary_manifest.get("platforms") or ["any"])],
+            tool_ids=tool_ids,
+            warnings_count=max((item.warnings_count for item in version_items), default=0),
+            has_missing_files=any(not item.file_exists for item in version_items),
+            versions=version_items,
+        )
+        haystack = " ".join(
+            [
+                family.module_name,
+                family.preferred_version or "",
+                family.latest_version or "",
+                family.owner_scope or "",
+                family.module_api_version or "",
+                *family.platforms,
+                *family.tool_ids,
+                *(item.version for item in version_items),
+            ]
+        ).lower()
+        if query_lower and query_lower not in haystack:
+            continue
+        if family.preferred_assigned:
+            preferred_count += 1
+        if family.validation_status in {"failed", "warning"}:
+            invalid_count += 1
+        if family.has_missing_files:
+            missing_files_count += 1
+        families.append(family)
+
+    rollout_mode = str(rollout_settings.get("preferred_version_rollout_mode") or "manual").strip().lower() or "manual"
+    return AdminModulesPayload(
+        query=normalized_query,
+        summary=AdminModulesSummary(
+            visible_count=len(families),
+            preferred_count=preferred_count,
+            invalid_count=invalid_count,
+            missing_files_count=missing_files_count,
+        ),
+        rollout_settings=AdminModulesRolloutSettings(
+            preferred_version_rollout_mode=rollout_mode,
+            preferred_version_rollout_mode_label=_module_rollout_mode_label(rollout_mode),
+            sync_after_preferred_change=bool(rollout_settings.get("sync_after_preferred_change", True)),
+        ),
+        modules=families,
+    )
+
+
 @require_auth("admin")
 async def handle_web_admin_bootstrap(_request):
     payload = AdminBootstrapPayload(
@@ -1125,6 +1333,22 @@ async def handle_web_admin_devices(request: web.Request):
         payload = _empty_devices_payload(query=query, status_filter=status_filter)
 
     return json_model_response(SuccessResponse[AdminDevicesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_modules(request: web.Request):
+    query = str(request.query.get("query", "") or "").strip()
+
+    try:
+        payload = await _build_admin_modules_payload(query=query)
+    except Exception as exc:
+        logger.warning(
+            f"[web_admin_modules] DB unavailable, returning empty modules payload: "
+            f"query={query!r}, error={exc}"
+        )
+        payload = _empty_admin_modules_payload(query=query)
+
+    return json_model_response(SuccessResponse[AdminModulesPayload](data=payload))
 
 
 @require_auth("admin")
