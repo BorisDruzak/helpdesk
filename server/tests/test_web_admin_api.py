@@ -58,7 +58,12 @@ async def test_web_admin_bootstrap_exposes_tech_and_observer_features(web_admin_
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_web_admin_observer_quick_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
+async def test_web_admin_observer_quick_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client, monkeypatch):
+    async def fake_get_quick_diagnosis(self, filters, **_kwargs):
+        raise RuntimeError(f"observer unavailable for lookback={filters.lookback_hours}")
+
+    monkeypatch.setattr(admin_handlers.ObserverOverlayService, "get_quick_diagnosis", fake_get_quick_diagnosis)
+
     response = await web_admin_client.get("/api/web/admin/observer/quick")
 
     assert response.status == 200
