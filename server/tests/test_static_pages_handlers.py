@@ -10,6 +10,12 @@ from static_pages.handlers import (
     handle_login_page,
     handle_support_page,
 )
+import static_pages.webapp_assets as webapp_assets_module
+from static_pages.webapp_assets import (
+    handle_webapp_asset,
+    handle_webapp_page,
+    handle_webapp_public_asset,
+)
 
 
 @pytest.mark.no_db
@@ -95,3 +101,62 @@ async def test_login_page_serves_role_selector():
     assert "/login.js?v=20260330a" in response.text
     assert "id=\"roleSwitch\"" in response.text
     assert "data-target=\"support\"" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_webapp_page_serves_dist_index(tmp_path, monkeypatch):
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    (dist_dir / "index.html").write_text(
+        "<!doctype html><html lang='ru'><head><title>pc_client</title></head>"
+        "<body><div id='root'></div><script type='module' src='/assets/app.js'></script></body></html>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(webapp_assets_module, "WEBAPP_DIST_DIR", dist_dir)
+
+    request = make_mocked_request("GET", "/app/support")
+    response = await handle_webapp_page(request)
+
+    assert response.status == 200
+    assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
+    assert "lang='ru'" in response.text
+    assert "/assets/app.js" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_webapp_page_returns_503_when_dist_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(webapp_assets_module, "WEBAPP_DIST_DIR", tmp_path / "missing-dist")
+
+    request = make_mocked_request("GET", "/app/admin")
+    response = await handle_webapp_page(request)
+
+    assert response.status == 503
+    assert "webapp" in response.text
+    assert "pnpm --dir webapp run build" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_webapp_asset_and_public_asset_are_served_from_dist(tmp_path, monkeypatch):
+    dist_dir = tmp_path / "dist"
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "app.js").write_text("console.log('app bundle');", encoding="utf-8")
+    (dist_dir / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+    monkeypatch.setattr(webapp_assets_module, "WEBAPP_DIST_DIR", dist_dir)
+
+    asset_request = make_mocked_request("GET", "/assets/app.js", match_info={"asset_path": "app.js"})
+    asset_response = await handle_webapp_asset(asset_request)
+
+    assert asset_response.status == 200
+    assert asset_response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert "app bundle" in asset_response.text
+
+    public_request = make_mocked_request("GET", "/favicon.svg", match_info={"asset_name": "favicon.svg"})
+    public_response = await handle_webapp_public_asset(public_request)
+
+    assert public_response.status == 200
+    assert public_response.content_type == "image/svg+xml"
+    assert "<svg" in public_response.text

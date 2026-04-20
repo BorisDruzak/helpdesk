@@ -2,15 +2,15 @@
 
 Документация по безопасности, аутентификации и авторизации сервера PC Agent.
 
-**Дата обновления:** 2026-04-13
+**Дата обновления:** 2026-04-20
 
 ---
 
 ## Обзор
 
 - **Агенты:** аутентификация по токену (agent token) при WebSocket handshake и при HTTP API.
-- **UI:** аутентификация по логину/паролю с выдачей UI токена; WebSocket UI требует `ui_hello` с токеном.
-- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token).
+- **UI:** legacy shell-страницы используют логин/пароль с выдачей UI токена; новый `webapp` под `/app/*` использует тот же UI token storage на сервере, но выдаёт его клиенту только как httpOnly cookie-session.
+- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а `/api/web/*` дополнительно умеют читать cookie `pc_client_web_session`.
 - **Control-plane:** отдельный сервис на порту `8667` использует те же Bearer UI/agent токены, но имеет собственный middleware, CORS-ограничение по origin и отдельный RBAC для runtime actions.
 - **Роли и контекст:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для роли.
 
@@ -47,6 +47,7 @@
 
 - **Agent token:** максимум **2 активных токена** на один `device_id`. Срок по умолчанию при выдаче: **180 дней** (4320 часов). При превышении лимита — HTTP 429, сообщение «Token limit exceeded».
 - **UI token:** срок по умолчанию при выдаче: **24 часа** (в `handle_ui_login`).
+- **Local no-DB fallback:** если DB-path недоступен, а config-fallback включён, `AuthService.authenticate()` уходит на `state.users`, а `generate_ui_token()` / `verify_ui_token()` / `revoke_ui_token()` используют in-memory fallback store. После первой DB-ошибки web auth включает короткий cooldown на повторные UI token probe, чтобы `/app/*` не подвешивал локальный dev smoke постоянными retry к недоступной PostgreSQL. Это только локальная/degraded схема для dev smoke, не production storage model.
 
 ### 1.3 Отзыв токенов
 
@@ -96,7 +97,7 @@
 ### 4.1 Middleware
 
 - Применяется ко всем запросам с путём, начинающимся с `/api/`.
-- Токен извлекается в порядке: заголовок `Authorization: Bearer <token>` или `Authorization: Token <token>`, затем заголовок `X-Auth-Token`, затем query-параметр `token` (не рекомендуется: логируется предупреждение о небезопасном использовании).
+- Для `/api/web/*` middleware сначала читает httpOnly cookie `pc_client_web_session`, затем стандартные схемы `Authorization: Bearer <token>` / `Authorization: Token <token>`, затем заголовок `X-Auth-Token`, затем query-параметр `token` (не рекомендуется: логируется предупреждение о небезопасном использовании).
 - Токен проверяется как agent token, затем как UI token. При первой успешной проверке создаётся `AuthContext` и кладётся в `request['auth_context']`.
 - Если токен не передан или невалиден — ответ **401** с телом:
   - `{"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"}`.
@@ -108,6 +109,7 @@
 
 - `POST /api/login` — получение токена агента по `device_id` (uuid).
 - `POST /api/ui_login` — логин UI (логин/пароль → выдача UI токена).
+- `POST /api/web/session/login` — логин нового `webapp` и установка httpOnly cookie-session.
 - `GET /api/ui_session` — проверка текущей UI-сессии по Bearer UI token; возвращает `user_login`, `actor_role`, `auth_type`.
 - `GET /api/health` — (зарезервировано для проверки здоровья сервиса; endpoint может быть добавлен отдельно).
 
@@ -194,6 +196,13 @@
 - Возвращает текущий `AuthContext` для UI: `status`, `user_login`, `actor_role`, `auth_type`.
 - Используется shell-страницами `/admin`, `/support` и `/login` для проверки, что пользователь действительно вошёл под нужной ролью до показа рабочего интерфейса.
 
+### 5.4 Web session: `/api/web/session/*`
+
+- `POST /api/web/session/login` принимает `{"login": "...", "password": "..."}` и при успехе выставляет httpOnly cookie `pc_client_web_session` с `SameSite=Lax`.
+- `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type"}}`.
+- `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
+- Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.
+
 ---
 
 ## 6. Конфигурация безопасности
@@ -208,7 +217,8 @@
 ## 7. Интерфейс тикета (Stage 10.4, 10.5)
 
 - Страница тикета (/ticket/{id}) использует тот же UI-токен (admin_auth_token), что и админка; WebSocket /ws_ui — ui_hello с этим токеном, затем subscribe_ticket.
-- Отдельная страница `/login` стала единым входом для shell-страниц: admin логин ведёт в `/admin`, support логин — в `/support`. Сами shell-страницы проверяют `GET /api/ui_session` и при несоответствии роли перенаправляют обратно на `/login`.
+- Отдельная страница `/login` остаётся единым входом для legacy shell-страниц: admin логин ведёт в `/admin`, support логин — в `/support`. Сами shell-страницы проверяют `GET /api/ui_session` и при несоответствии роли перенаправляют обратно на `/login`.
+- Новый React `webapp` живёт на `/app/support` и `/app/admin`, использует `/app/login` и проверяет сессию через `/api/web/session/me`.
 - Support workspace в work-режиме не дублирует composer/timeline вручную, а встраивает `ticket.html?embed=1`. Это сохраняет RBAC, вложения, reply-to, скриншоты и прочие возможности ticket chat без расхождения поведения между страницами.
 - **Видимость сообщений:** в composer переключатель «Внутренняя заметка» (internal); по умолчанию сообщения — public. Только роли support/admin могут отправлять internal; requester не видит внутренние сообщения (фильтрация в snapshot и в API).
 - **Stage 10.5 — Action Dock:** управление тикетом через панель кнопок (Статус, Назначить, Очередь, Приоритет, Инструменты ПК, Трудозатраты, Закрыть, Перемаршрутизация) и inline-панели; slash-команды из UI убраны. **RBAC в UI:** snapshot возвращает `actor_role`; для роли **auditor** кнопки Action Dock отображаются в состоянии disabled (read-only); admin/support — полный доступ к действиям. Серверная проверка прав остаётся источником истины. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-105-action-dock--inline-panels). Подход со slash-командами (Stage 10.4) deprecated, см. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-104-chat-first-deprecated).

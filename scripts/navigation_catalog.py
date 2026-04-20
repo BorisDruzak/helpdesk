@@ -354,6 +354,74 @@ TOPICS: tuple[Topic, ...] = (
         ),
     ),
     Topic(
+        key="web_platform",
+        title="New web workspaces / typed web boundary",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp and observer capability bootstrap.",
+        aliases=(
+            "webapp",
+            "react app",
+            "vite",
+            "typed web boundary",
+            "api/web",
+            "app/support",
+            "app/admin",
+            "support workspace",
+            "admin workspace",
+        ),
+        first_files=(
+            "webapp/src/main.tsx",
+            "webapp/src/app/router.tsx",
+            "webapp/src/app/layouts/app-shell.tsx",
+            "webapp/src/features/auth/session-provider.tsx",
+            "webapp/src/features/auth/login-page.tsx",
+            "server/web_api/session_handlers.py",
+            "server/web_api/support_handlers.py",
+            "server/web_api/admin_handlers.py",
+            "server/static_pages/webapp_assets.py",
+            "server/routes.py",
+        ),
+        related_docs=(
+            "docs/QUICK_LOOKUP.md",
+            "server/docs/CODEMAP.md",
+            "server/docs/SECURITY_AND_AUTH.md",
+            "server/docs/OBSERVER_LAYER.md",
+            "server/docs/OBSERVER_AUTHORING_RULES.md",
+            "docs/superpowers/specs/2026-04-20-admin-support-web-rearchitecture-design.md",
+            "docs/superpowers/plans/2026-04-20-admin-support-web-rearchitecture.md",
+        ),
+        suggested_commands=(
+            "python scripts/bootstrap_web_toolchain.py",
+            'python scripts/agent_find.py "web_api" --dir server',
+            'python scripts/agent_find.py "app/support" --dir server',
+        ),
+        mode="Internal web platform / React",
+        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        checks=(
+            "python scripts/bootstrap_web_toolchain.py",
+            "pnpm --dir webapp run test",
+            "pnpm --dir webapp run build",
+            "python -m pytest server/tests/test_web_session_api.py server/tests/test_web_support_api.py server/tests/test_web_admin_api.py server/tests/test_static_pages_handlers.py -v --tb=short",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            "server/docs/SECURITY_AND_AUTH.md",
+            "server/docs/OBSERVER_LAYER.md",
+            "server/docs/OBSERVER_AUTHORING_RULES.md",
+        ),
+        path_prefixes=("webapp/", "server/web_api/", "server/static_pages/"),
+        exact_paths=(
+            "server/routes.py",
+            "package.json",
+            ".node-version",
+            ".nvmrc",
+            ".npmrc",
+            "scripts/bootstrap_web_toolchain.py",
+            "server/auth/middleware.py",
+        ),
+    ),
+    Topic(
         key="ui_server",
         title="Server UI / admin pages",
         summary="Admin, ticket and public pages plus control-plane backed tech panel, observer runtime/settings, drilldown, degradation search and static route handlers.",
@@ -1336,6 +1404,25 @@ def is_server_ui_path(path: str) -> bool:
 def recommend_checks(paths: Sequence[str]) -> list[str]:
     normalized = [repo_path(path) for path in paths]
     checks: list[str] = ["python scripts/verify_workspace.py"]
+    if any(
+        path.startswith("webapp/")
+        or path.startswith("server/web_api/")
+        or path in {
+            "package.json",
+            ".node-version",
+            ".nvmrc",
+            ".npmrc",
+            "scripts/bootstrap_web_toolchain.py",
+        }
+        for path in normalized
+    ):
+        checks.extend(
+            (
+                "python scripts/bootstrap_web_toolchain.py",
+                "pnpm --dir webapp run test",
+                "pnpm --dir webapp run build",
+            )
+        )
     if any(path.startswith("server/") for path in normalized):
         checks.append("python -m pytest server/tests/ ...")
     if any(path.startswith("pc_agent/") for path in normalized):

@@ -150,6 +150,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 - ответ должен быть компактным и redacted;
 - ticket-bound observer summary должен быть пригоден для support UI;
 - tech API должен поддерживать быстрый drilldown, а не только сырой dump.
+- web bootstrap contracts (`/api/web/support/bootstrap`, `/api/web/admin/bootstrap`) должны отдавать capability links для observer surfaces, а не заставлять frontend разбрасывать raw trace URLs по коду.
 
 ## 7. Специальные правила для UI
 
@@ -158,6 +159,8 @@ Spans нужны не “для галочки”, а чтобы человек 
 - использовать observer API, а не ручную сборку из unrelated endpoints;
 - сохранять “обычный оператор -> quick diagnosis -> drilldown” путь;
 - не прятать trace detail только за raw JSON.
+- новые React workspace-экраны должны читать observer capabilities из typed web boundary, а не хардкодить tech/ticket endpoints в компонентах.
+- новые React workspace-экраны не должны запускать observer fetch до успешного `GET /api/web/session/me` и подтверждённой web session.
 
 ## 8. Минимальный набор проверок
 

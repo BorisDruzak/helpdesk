@@ -77,6 +77,10 @@ Historical docs больше не канон:
 
 - `python scripts/run_ci_suite.py`
 
+Если задача затрагивает `webapp/` или frontend bundle pipeline:
+
+- `python scripts/bootstrap_web_toolchain.py`
+
 Если менялся веб:
 
 - browser verification через MCP на `http://192.168.100.17:8666/admin`
@@ -98,6 +102,7 @@ Windows note:
 | Topic | Open first | Then |
 |------|------------|------|
 | Protocol V3 / handshake | `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
+| New web workspaces / typed web boundary | `webapp/src/main.tsx`, `webapp/src/app/router.tsx`, `webapp/src/app/layouts/app-shell.tsx`, `webapp/src/features/auth/session-provider.tsx`, `webapp/src/features/auth/login-page.tsx`, `webapp/src/features/queues/api.ts`, `webapp/src/features/queues/support-workspace.tsx`, `webapp/playwright.config.ts`, `webapp/tests/support-workspace.spec.ts`, `webapp/tests/fixtures/support_fixture_server.py`, `server/web_api/session_handlers.py`, `server/web_api/support_handlers.py`, `server/web_api/admin_handlers.py`, `server/web_api/realtime_handlers.py`, `server/static_pages/webapp_assets.py`, `server/routes.py` | `docs/superpowers/specs/2026-04-20-admin-support-web-rearchitecture-design.md`, `docs/superpowers/plans/2026-04-20-admin-support-web-rearchitecture.md`, `server/docs/SECURITY_AND_AUTH.md`, `server/docs/OBSERVER_LAYER.md`; support wave now also includes `GET /api/web/support/tickets/{ticket_id}/tools`, `POST /api/web/support/tickets/{ticket_id}/tools/run`, tool events in the typed timeline и локальный Playwright E2E через fixture-server для русского `/app/support` flow |
 | Tool execution / operations | `server/tools/service.py`, `server/tools/handlers.py`, `server/app/services/operation_service.py`, `pc_agent/core/orchestrator.py`, `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py` | `server/docs/TOOL_CALL_STARTED_INVARIANT.md`, `pc_agent/docs/CODEMAP.md` |
 | Observer traces / tech drilldown | `server/observer/service.py`, `server/observer/runtime.py`, `server/tech/handlers.py`, `server/app/db/models.py`, `server/websocket/agent_services.py`, `pc_agent/core/action_trace.py`, `pc_agent/core/orchestrator.py` | `server/docs/OBSERVER_LAYER.md`, `server/docs/OBSERVER_AUTHORING_RULES.md`, `server/docs/CODEMAP.md`, `.cursor/skills/pc-client-observer-diagnostics/SKILL.md` |
 | Agent updates / recommended version / rollout policy | `server/agents/agent_builds_handlers.py`, `server/app/repos/agent_rollout_repo.py`, `server/routes.py`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main_window.py` | `server/docs/AGENT_UPDATES_API.md`, `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` |
@@ -105,7 +110,7 @@ Windows note:
 | Ticket flows / helpdesk | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md` |
 | Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/launcher_portable_main.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
 | Agent runtime / UI bridge | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/chat_panel.py` | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/CODEMAP.md` |
-| Release / deploy / CI | `scripts/task_intake.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/run_observer_canary_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
+| Release / deploy / CI | `scripts/task_intake.py`, `scripts/bootstrap_web_toolchain.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/run_observer_canary_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
 
 ## When to update this file
 

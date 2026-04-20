@@ -158,6 +158,11 @@ from static_pages.handlers import (
     handle_admin_ticket_forms_builder_html,
     handle_admin_ticket_forms_builder_js,
 )
+from static_pages.webapp_assets import (
+    handle_webapp_asset,
+    handle_webapp_page,
+    handle_webapp_public_asset,
+)
 from api.admin import handle_admin_run_tool
 from tickets.admin_config_handlers import (
     handle_admin_queues_list,
@@ -199,6 +204,22 @@ from api.operations import (
     handle_approve_consent,
     handle_deny_consent
 )
+from web_api.session_handlers import (
+    handle_web_session_login,
+    handle_web_session_logout,
+    handle_web_session_me,
+)
+from web_api.support_handlers import (
+    handle_web_support_bootstrap,
+    handle_web_support_change_status,
+    handle_web_support_queue,
+    handle_web_support_run_tool,
+    handle_web_support_send_message,
+    handle_web_support_ticket_detail,
+    handle_web_support_ticket_tools,
+)
+from web_api.admin_handlers import handle_web_admin_bootstrap
+from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
     handle_chat_start,
     handle_chat_raise,
@@ -292,6 +313,10 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.get('/', handle_index),
         web.get('/favicon.ico', handle_favicon),
+        web.get('/favicon.svg', handle_webapp_public_asset),
+        web.get('/assets/{asset_path:.*}', handle_webapp_asset),
+        web.get('/app', handle_webapp_page),
+        web.get('/app/{tail:.*}', handle_webapp_page),
         web.get('/login', handle_login_page),
         web.get('/login.css', handle_login_css),
         web.get('/login.js', handle_login_js),
@@ -340,6 +365,18 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/login', handle_login),
         web.post('/api/ui_login', handle_ui_login),  # UI user login
         web.get('/api/ui_session', handle_ui_session),
+        web.post('/api/web/session/login', handle_web_session_login),
+        web.post('/api/web/session/logout', handle_web_session_logout),
+        web.get('/api/web/session/me', handle_web_session_me),
+        web.get('/api/web/support/bootstrap', handle_web_support_bootstrap),
+        web.get('/api/web/support/queue', handle_web_support_queue),
+        web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail),
+        web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
+        web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
+        web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
+        web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
+        web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
+        web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
         # Connection request flow (no auth: agent requests token)
         web.post('/api/connection_request', handle_connection_request),

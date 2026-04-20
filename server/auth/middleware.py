@@ -11,10 +11,15 @@ from auth.context import AuthContext, AuthType
 from auth.service import AuthService
 
 
+WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
+
+
 # Whitelist of endpoints that don't require authentication
 AUTH_WHITELIST = {
     "/api/login",
     "/api/ui_login",  # UI login endpoint
+    "/api/web/session/login",
+    "/api/web/session/me",
     "/api/health",
     "/api/connection_request",
     "/api/connection_request/status",
@@ -62,6 +67,17 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
     return None
 
 
+def extract_token_from_web_cookie(request: web.Request) -> Optional[str]:
+    if not request.path.startswith("/api/web/"):
+        return None
+
+    token = request.cookies.get(WEB_SESSION_COOKIE_NAME)
+    if token:
+        return token.strip() or None
+
+    return None
+
+
 async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     """
     Extract AuthContext from request.
@@ -74,7 +90,8 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     Returns:
         AuthContext if authentication successful, None otherwise
     """
-    token = extract_token_from_header(request)
+    web_session_token = extract_token_from_web_cookie(request)
+    token = web_session_token or extract_token_from_header(request)
     if not token:
         return None
     
@@ -85,16 +102,17 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     
     auth_service = AuthService(state)
     
-    # Try agent token first
-    token_info = await auth_service.verify_agent_token(token)
-    if token_info:
-        return AuthContext(
-            actor_id=token_info["device_id"],
-            actor_role="agent",
-            auth_type=AuthType.AGENT_TOKEN,
-            token=token
-        )
-    
+    if not web_session_token:
+        # Non-web API paths may still use agent tokens.
+        token_info = await auth_service.verify_agent_token(token)
+        if token_info:
+            return AuthContext(
+                actor_id=token_info["device_id"],
+                actor_role="agent",
+                auth_type=AuthType.AGENT_TOKEN,
+                token=token
+            )
+
     # Try UI token
     token_info = await auth_service.verify_ui_token(token)
     if token_info:

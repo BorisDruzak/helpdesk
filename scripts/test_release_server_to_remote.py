@@ -32,6 +32,16 @@ def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append((label, command))
 
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(
+        release,
+        "upload_webapp_bundle",
+        lambda archive, *, cwd, remote, remote_worktree: calls.append(("upload-webapp", [str(archive), remote, remote_worktree])),
+    )
     monkeypatch.setattr(release, "run_step", fake_run_step)
     monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
 
@@ -41,6 +51,7 @@ def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
         "verify",
         "deploy",
         "migrate",
+        "upload-webapp",
         "start-control",
         "start",
         "smoke",
@@ -50,10 +61,10 @@ def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "deploy_workspace_to_remote.py" in calls[1][1][1]
     assert "run_remote_migrations.py" in calls[2][1][1]
     assert calls[2][1][-4:] == ["--remote", "altserver@192.168.100.17", "upgrade", "head"]
-    assert calls[3][1][-2:] == ["start", "control"]
-    assert calls[4][1][-2:] == ["start", "server"]
-    assert calls[5][1][-2:] == ["smoke", "server"]
-    assert calls[6][1][-2:] == ["stop", "server"]
+    assert calls[4][1][-2:] == ["start", "control"]
+    assert calls[5][1][-2:] == ["start", "server"]
+    assert calls[6][1][-2:] == ["smoke", "server"]
+    assert calls[7][1][-2:] == ["stop", "server"]
 
 
 def test_main_passes_allow_local_dirty_to_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,6 +74,12 @@ def test_main_passes_allow_local_dirty_to_deploy(monkeypatch: pytest.MonkeyPatch
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append((label, command))
 
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: None)
     monkeypatch.setattr(release, "run_step", fake_run_step)
     monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
 
@@ -79,6 +96,12 @@ def test_main_passes_skip_ci_check_to_deploy(monkeypatch: pytest.MonkeyPatch) ->
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append((label, command))
 
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: None)
     monkeypatch.setattr(release, "run_step", fake_run_step)
     monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
 
@@ -105,11 +128,21 @@ def test_main_skips_optional_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append((label, command))
 
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(
+        release,
+        "upload_webapp_bundle",
+        lambda archive, *, cwd, remote, remote_worktree: calls.append(("upload-webapp", [str(archive), remote, remote_worktree])),
+    )
     monkeypatch.setattr(release, "run_step", fake_run_step)
 
     release.main()
 
-    assert [label for label, _command in calls] == ["deploy", "start-control", "start"]
+    assert [label for label, _command in calls] == ["deploy", "upload-webapp", "start-control", "start"]
 
 
 def test_main_stops_server_when_smoke_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,6 +152,12 @@ def test_main_stops_server_when_smoke_fails(monkeypatch: pytest.MonkeyPatch) -> 
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append(label)
 
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: calls.append("upload-webapp"))
     monkeypatch.setattr(release, "run_step", fake_run_step)
     def fake_smoke(command: list[str], *, cwd: Path, attempts: int, delay_seconds: float) -> None:
         calls.append("smoke")
@@ -129,7 +168,7 @@ def test_main_stops_server_when_smoke_fails(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(subprocess.CalledProcessError):
         release.main()
 
-    assert calls == ["verify", "deploy", "migrate", "start-control", "start", "smoke", "stop"]
+    assert calls == ["verify", "deploy", "migrate", "upload-webapp", "start-control", "start", "smoke", "stop"]
 
 
 def test_run_smoke_with_retries_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,9 +217,34 @@ def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> N
         return workspace / "artifacts" / "ci" / commit / "summary.json"
 
     monkeypatch.setattr(release, "require_green_ci_artifact", fake_require_green)
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: calls.append(("upload-webapp", [str(archive), remote, remote_worktree])))
     monkeypatch.setattr(release, "run_step", fake_run_step)
     monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
 
     release.main()
 
+    assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]
+
+
+def test_prepare_webapp_bundle_archive_uses_existing_ci_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[tuple[Path, str]] = []
+
+    def fake_require(workspace: Path, commit: str) -> Path:
+        recorded.append((workspace, commit))
+        return workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz"
+
+    monkeypatch.setattr(release, "require_webapp_bundle_artifact", fake_require)
+
+    result = release.prepare_webapp_bundle_archive(
+        Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+        "abc123",
+        skip_ci_check=False,
+    )
+
+    assert result == Path(r"C:\Users\admin-2\CodexProjects\pc_client") / "artifacts" / "ci" / "abc123" / "webapp-dist.tar.gz"
     assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]

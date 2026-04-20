@@ -32,6 +32,14 @@ python scripts/bootstrap_local_workspace.py
 .\scripts\bootstrap_shell_utf8.ps1
 ```
 
+Если задача затрагивает новый `webapp/` или frontend build/release pipeline, сначала зафиксировать каноничный web toolchain:
+
+```powershell
+python scripts/bootstrap_web_toolchain.py
+```
+
+Каноничный frontend toolchain: локально и в CI использовать `Node.js 24.15.0 + corepack + pnpm 10.33.0`. Linux-хост остаётся runtime host и не считается canonical frontend build host.
+
 4. Если задача длинная или многосоставная, обновить `PLANS.md`.
 
 5. Перед синхронизацией прогнать быстрые проверки:
@@ -138,6 +146,7 @@ git status --short
 2. Перед изменениями при необходимости обновить локальную копию через `python scripts/bootstrap_local_workspace.py`.
 3. Вносить правки локально.
 4. Прогнать локальные проверки через `python scripts/verify_workspace.py` и дополнительные тесты по задаче.
+   Для задач по `webapp/` и frontend release pipeline перед этим сначала выполнить `python scripts/bootstrap_web_toolchain.py`.
 5. Для длинных задач вести `PLANS.md`.
 6. Если задача затрагивает локальный агент, использовать `python scripts/manage_local_agent.py ...` и проверять нужный сценарий на отдельном инстансе.
 7. Только после проверок делать локальный commit.

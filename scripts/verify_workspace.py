@@ -30,12 +30,17 @@ TEXT_SUFFIXES = {
 PY_COMPILE_BATCH_SIZE = 120
 SKIP_DIRS = {
     ".git",
+    ".pnpm-store",
     ".run",
     ".vscode",
     ".venvs",
+    ".yarn",
     ".local-agent",
     ".pytest_cache",
     "__pycache__",
+    "artifacts",
+    "coverage",
+    "node_modules",
     "venv",
     "data",
     "build",

@@ -22,9 +22,41 @@ class ArchivedDeviceError(Exception):
 class AuthService:
     """Сервис для работы с аутентификацией."""
     _LEGACY_TOKEN_STORE: dict[str, dict] = {}
+    _UI_DB_FAILURE_COOLDOWN_SECONDS: float = 15.0
+    _UI_DB_COOLDOWN_UNTIL: float = 0.0
     
     def __init__(self, state_manager):
         self.state = state_manager
+
+    @classmethod
+    def _ui_db_cooldown_active(cls) -> bool:
+        return time.monotonic() < cls._UI_DB_COOLDOWN_UNTIL
+
+    @classmethod
+    def _mark_ui_db_unavailable(cls) -> None:
+        cls._UI_DB_COOLDOWN_UNTIL = time.monotonic() + max(float(cls._UI_DB_FAILURE_COOLDOWN_SECONDS), 0.0)
+
+    @classmethod
+    def _clear_ui_db_cooldown(cls) -> None:
+        cls._UI_DB_COOLDOWN_UNTIL = 0.0
+
+    @classmethod
+    def _store_legacy_ui_token(
+        cls,
+        token: str,
+        *,
+        user_login: str,
+        actor_role: str,
+        expires_at: Optional[datetime],
+    ) -> str:
+        cls._LEGACY_TOKEN_STORE[token] = {
+            "user_login": user_login,
+            "actor_role": actor_role,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "type": "ui",
+        }
+        return token
     
     async def authenticate(self, login: str, password: str) -> Tuple[bool, str]:
         """
@@ -46,25 +78,34 @@ class AuthService:
             AUTH_UI_LOCK_MINUTES,
             UI_USER_ROLES,
         )
-        if AUTH_UI_DB_USERS_ENABLED:
-            async with get_session() as session:
-                repo = UiUsersRepo(session)
-                user = await repo.get_by_login(login)
-                if user:
-                    if not user.is_active:
+        if AUTH_UI_DB_USERS_ENABLED and not self._ui_db_cooldown_active():
+            try:
+                async with get_session() as session:
+                    repo = UiUsersRepo(session)
+                    user = await repo.get_by_login(login)
+                    self._clear_ui_db_cooldown()
+                    if user:
+                        if not user.is_active:
+                            return False, "admin"
+                        if repo.is_locked(user):
+                            return False, "admin"
+                        if verify_password(password, user.password_hash):
+                            await repo.record_login_success(login)
+                            return True, user.actor_role
+                        await repo.increment_failed_attempts(
+                            login, AUTH_UI_MAX_FAILED_ATTEMPTS, AUTH_UI_LOCK_MINUTES
+                        )
                         return False, "admin"
-                    if repo.is_locked(user):
+                    # Пользователь не в БД — fallback на config
+                    if not AUTH_UI_CONFIG_FALLBACK_ENABLED:
                         return False, "admin"
-                    if verify_password(password, user.password_hash):
-                        await repo.record_login_success(login)
-                        return True, user.actor_role
-                    await repo.increment_failed_attempts(
-                        login, AUTH_UI_MAX_FAILED_ATTEMPTS, AUTH_UI_LOCK_MINUTES
-                    )
-                    return False, "admin"
-                # Пользователь не в БД — fallback на config
+            except Exception as exc:
+                self._mark_ui_db_unavailable()
                 if not AUTH_UI_CONFIG_FALLBACK_ENABLED:
-                    return False, "admin"
+                    raise
+                logger.warning(
+                    f"[AuthService] DB auth unavailable, falling back to config users: login={login}, error={exc}"
+                )
         # Config-based auth (legacy или fallback)
         if login in self.state.users and self.state.users[login] == password:
             from config import UI_USER_ROLES
@@ -158,16 +199,38 @@ class AuthService:
         if expires_hours:
             expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
         
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            token, _ = await repo.create_ui_token(
-                token=raw_token,
+        if self._ui_db_cooldown_active():
+            return self._store_legacy_ui_token(
+                raw_token,
                 user_login=user_login,
                 actor_role=actor_role,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
-            logger.info(f"[AuthService] Generated UI token: user_login={user_login}, role={actor_role}")
-            return token
+
+        try:
+            async with get_session() as session:
+                repo = AuthTokensRepo(session)
+                token, _ = await repo.create_ui_token(
+                    token=raw_token,
+                    user_login=user_login,
+                    actor_role=actor_role,
+                    expires_at=expires_at
+                )
+                self._clear_ui_db_cooldown()
+                logger.info(f"[AuthService] Generated UI token: user_login={user_login}, role={actor_role}")
+                return token
+        except Exception as exc:
+            self._mark_ui_db_unavailable()
+            logger.warning(
+                f"[AuthService] DB unavailable during UI token issue, using in-memory fallback: "
+                f"user_login={user_login}, role={actor_role}, error={exc}"
+            )
+            return self._store_legacy_ui_token(
+                raw_token,
+                user_login=user_login,
+                actor_role=actor_role,
+                expires_at=expires_at,
+            )
 
     async def generate_ticket_public_session_token(
         self,
@@ -255,18 +318,58 @@ class AuthService:
         Returns:
             Dict с информацией о токене (user_login, actor_role, created_at) или None
         """
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            token_record = await repo.verify_ui_token(token)
-            
-            if token_record:
+        if self._ui_db_cooldown_active():
+            legacy_data = self._LEGACY_TOKEN_STORE.get(token)
+            if legacy_data and legacy_data.get("type") == "ui":
+                expires_at_raw = legacy_data.get("expires_at")
+                if expires_at_raw:
+                    expires_at = datetime.fromisoformat(expires_at_raw)
+                    if expires_at <= datetime.now(timezone.utc):
+                        self._LEGACY_TOKEN_STORE.pop(token, None)
+                        return None
                 return {
-                    "user_login": token_record.user_login,
-                    "actor_role": token_record.actor_role,
-                    "created_at": token_record.created_at.isoformat(),
-                    "type": "ui"
+                    "user_login": legacy_data["user_login"],
+                    "actor_role": legacy_data["actor_role"],
+                    "created_at": legacy_data["created_at"],
+                    "type": "ui",
                 }
             return None
+
+        try:
+            async with get_session() as session:
+                repo = AuthTokensRepo(session)
+                token_record = await repo.verify_ui_token(token)
+                 
+                if token_record:
+                    self._clear_ui_db_cooldown()
+                    return {
+                        "user_login": token_record.user_login,
+                        "actor_role": token_record.actor_role,
+                        "created_at": token_record.created_at.isoformat(),
+                        "type": "ui"
+                    }
+        except Exception as exc:
+            self._mark_ui_db_unavailable()
+            logger.warning(
+                f"[AuthService] DB unavailable during UI token verify, checking in-memory fallback: "
+                f"token={token[:8]}..., error={exc}"
+            )
+
+        legacy_data = self._LEGACY_TOKEN_STORE.get(token)
+        if legacy_data and legacy_data.get("type") == "ui":
+            expires_at_raw = legacy_data.get("expires_at")
+            if expires_at_raw:
+                expires_at = datetime.fromisoformat(expires_at_raw)
+                if expires_at <= datetime.now(timezone.utc):
+                    self._LEGACY_TOKEN_STORE.pop(token, None)
+                    return None
+            return {
+                "user_login": legacy_data["user_login"],
+                "actor_role": legacy_data["actor_role"],
+                "created_at": legacy_data["created_at"],
+                "type": "ui",
+            }
+        return None
 
     async def verify_ticket_public_session_token(self, token: str) -> Optional[dict]:
         async with get_session() as session:
@@ -332,9 +435,22 @@ class AuthService:
         Returns:
             True если токен был отозван, False если не найден
         """
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            return await repo.revoke_ui_token(token)
+        if self._ui_db_cooldown_active():
+            return self._LEGACY_TOKEN_STORE.pop(token, None) is not None
+
+        try:
+            async with get_session() as session:
+                repo = AuthTokensRepo(session)
+                revoked = await repo.revoke_ui_token(token)
+                self._clear_ui_db_cooldown()
+                return revoked
+        except Exception as exc:
+            self._mark_ui_db_unavailable()
+            logger.warning(
+                f"[AuthService] DB unavailable during UI token revoke, using in-memory fallback: "
+                f"token={token[:8]}..., error={exc}"
+            )
+            return self._LEGACY_TOKEN_STORE.pop(token, None) is not None
     
     def revoke_token(self, token: str) -> None:
         """

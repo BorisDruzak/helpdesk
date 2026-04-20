@@ -1,5 +1,75 @@
 # PLANS.md
 
+## 2026-04-20 Admin/Support web-layer + API boundary rearchitecture
+
+- Scope:
+  - перевести внутренние `/support` и `/admin` на новый `web-layer` на `React + TypeScript + Vite`;
+  - ввести новый `server-side web boundary` под `/api/web/*` c typed DTO, session-auth и realtime adapter;
+  - не трогать в первой волне `/ticket`, публичную очередь и public browser ticket flows;
+  - встроить frontend build artifacts в canonical CI/release/deploy pipeline для Linux-хоста;
+  - сохранить coexistence old/new routes до подтверждённого cutover.
+- Deliverables:
+  1. design spec: `docs/superpowers/specs/2026-04-20-admin-support-web-rearchitecture-design.md`;
+  2. implementation plan: `docs/superpowers/plans/2026-04-20-admin-support-web-rearchitecture.md`;
+  3. новый `webapp/` foundation;
+  4. новый backend namespace `/api/web/session|support|admin|realtime/*`;
+  5. session-based auth для нового UI;
+  6. build/release flow для web bundle;
+  7. новые `/app/support` и `/app/admin`;
+  8. documented legacy cleanup path.
+- Remote validation snapshot:
+  - host: `altserver@192.168.100.17:/var/chat_bot/pc_client`
+  - branch/commit: `master` @ `c27e59e6e4e876c82da361b58c49606c90a42628`
+  - Python: `3.12.7`
+  - Node: `22.13.1`
+  - npm: `10.9.2`
+  - `pnpm`: not installed
+  - `corepack`: not installed
+  - canonical checks on 2026-04-20:
+    - `python scripts/manage_remote_stack.py start server` -> passed
+    - `python scripts/manage_remote_stack.py smoke server` -> passed
+    - `python scripts/manage_remote_stack.py stop server` -> passed
+- Local web toolchain snapshot:
+  - canonical Node.js for local/CI: `24.15.0` (`.node-version`, `.nvmrc`)
+  - local npm: `11.12.1`
+  - local corepack: `0.34.6`
+  - local `pnpm`: `10.33.0` activated via `corepack`
+- Decisions:
+  - один frontend project, не две отдельные app;
+  - `Node.js 24 LTS + corepack + pnpm` — canonical frontend toolchain локально и в CI;
+  - Linux-host не должен становиться canonical frontend build host;
+  - built web assets должны входить в release artifact и подаваться Python-сервером;
+  - migration order: foundation -> `/support` -> `/admin` -> cutover -> cleanup.
+- Progress snapshot:
+  - завершён foundation-срез `webapp/`: Vite/React/TypeScript app shell, router, query provider, русские страницы `/app/support` и `/app/admin`, базовые shared UI primitives;
+  - добавлен typed backend namespace `server/web_api/` с `session`, `support`, `admin`, `realtime` handlers и DTO;
+  - новый web session flow уже работает end-to-end локально: `POST /api/web/session/login`, `POST /api/web/session/logout`, `GET /api/web/session/me`, `httpOnly` cookie `pc_client_web_session`, frontend `SessionProvider`, `/app/login`, guard на `/app/*`;
+  - Python-сервер уже умеет раздавать built React bundle через `server/static_pages/webapp_assets.py`: `/app/*`, `/assets/*`, `/favicon.svg`;
+  - observer-слой уже протянут в новый web boundary: support bootstrap рекламирует ticket observer summary endpoint, admin bootstrap — tech observer quick/traces endpoints;
+  - завершён support wave 1, шаг 1: `/app/support` уже даёт queue list, filters, selection model и typed detail loading без опоры на legacy `/support`;
+  - завершён следующий support slice внутри wave 1: `GET /api/web/support/tickets/{ticket_id}` теперь возвращает timeline + snapshot + быстрые status actions, а `POST /api/web/support/tickets/{ticket_id}/messages` и `POST /api/web/support/tickets/{ticket_id}/status` уже питают новый React workspace;
+  - завершён support wave 1, шаг 3: новый typed tool slice добавил `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, React workspace получил русскоязычную панель запуска инструментов, а ticket timeline теперь показывает `tool_call_started` / `tool_call_result` рядом с observer root trace metadata;
+  - локальный no-DB режим дополнительно ужесточен для нового web-layer: `AuthService` включает cooldown на повторные UI DB probe, а support queue fallback остаётся typed и не валит `/app/support` в 500 при отсутствии PostgreSQL;
+  - завершён локальный support E2E signoff: `webapp/playwright.config.ts`, `webapp/tests/fixtures/support_fixture_server.py` и `webapp/tests/support-workspace.spec.ts` теперь проверяют русский login flow, queue selection, reply composer, status change, tool run и observer-visible timeline для `/app/support`;
+  - подтверждён локальный baseline:
+    - `python scripts/bootstrap_web_toolchain.py`
+    - `pnpm --dir webapp run test`
+    - `pnpm --dir webapp run test:e2e -- tests/support-workspace.spec.ts`
+    - `pnpm --dir webapp run build`
+    - `python -m pytest server/tests/test_auth_service_no_db.py server/tests/test_web_session_api.py server/tests/test_web_support_api.py server/tests/test_web_admin_api.py server/tests/test_static_pages_handlers.py -v --tb=short`
+    - `python scripts/verify_workspace.py`
+  - pending для следующего среза: browser verification на canonical remote URL после shipping текущего `webapp/dist` через release pipeline, и затем admin devices/updates wave.
+- Verification target for implementation waves:
+  - `python scripts/bootstrap_web_toolchain.py`
+  - `python scripts/verify_workspace.py`
+  - `python scripts/run_ci_suite.py`
+  - `pnpm --dir webapp build`
+  - relevant `pytest`
+  - relevant `Vitest`
+  - relevant `Playwright`
+  - remote release via `python scripts/release_server_to_remote.py`
+  - browser verification for `/app/support` and `/app/admin`
+
 ## 2026-04-19 Observer live canaries + hard module CI guard
 
 - Scope:

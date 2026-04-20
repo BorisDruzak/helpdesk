@@ -38,3 +38,8 @@ src/venv/
 .env
 *.env
 db_config.json
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+webapp/test-results/
+playwright-report/

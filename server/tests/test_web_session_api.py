@@ -1,0 +1,186 @@
+from types import SimpleNamespace
+
+import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
+
+from auth.context import AuthContext, AuthType
+from auth.middleware import WEB_SESSION_COOKIE_NAME, auth_middleware
+from routes import setup_routes
+import auth.middleware as auth_middleware_module
+import web_api.session_handlers as session_handlers_module
+
+
+@pytest.fixture
+async def web_api_client():
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="support1",
+            actor_role="support",
+            auth_type=AuthType.UI_TOKEN,
+            token="test-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    setup_routes(app)
+    async with TestClient(TestServer(app)) as client:
+        yield client
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_me_returns_typed_actor_payload(web_api_client):
+    response = await web_api_client.get("/api/web/session/me")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload == {
+        "status": "success",
+        "data": {
+            "user_login": "support1",
+            "actor_role": "support",
+            "auth_type": "ui_token",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_me_returns_anonymous_bootstrap_without_cookie():
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/api/web/session/me")
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "success",
+        "data": None,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_login_sets_http_only_cookie(monkeypatch):
+    async def fake_authenticate(_self, login: str, password: str):
+        assert login == "support"
+        assert password == "secret"
+        return True, "support"
+
+    async def fake_generate_ui_token(_self, user_login: str, actor_role: str, expires_hours: int = 24):
+        assert user_login == "support"
+        assert actor_role == "support"
+        assert expires_hours == 24
+        return "issued-ui-token"
+
+    monkeypatch.setattr(session_handlers_module.AuthService, "authenticate", fake_authenticate)
+    monkeypatch.setattr(session_handlers_module.AuthService, "generate_ui_token", fake_generate_ui_token)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/login",
+            json={"login": "support", "password": "secret"},
+        )
+        payload = await response.json()
+        set_cookie = response.headers["Set-Cookie"]
+
+    assert response.status == 200
+
+    assert payload == {
+        "status": "success",
+        "data": {
+            "user_login": "support",
+            "actor_role": "support",
+            "auth_type": "ui_token",
+        },
+    }
+    assert response.cookies[WEB_SESSION_COOKIE_NAME].value == "issued-ui-token"
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=Lax" in set_cookie
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_logout_revokes_token_and_clears_cookie(monkeypatch):
+    revoked_tokens: list[str] = []
+
+    async def fake_revoke_ui_token(_self, token: str):
+        revoked_tokens.append(token)
+        return True
+
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="support1",
+            actor_role="support",
+            auth_type=AuthType.UI_TOKEN,
+            token="issued-ui-token",
+        )
+        return await handler(request)
+
+    monkeypatch.setattr(session_handlers_module.AuthService, "revoke_ui_token", fake_revoke_ui_token)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/logout",
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=issued-ui-token"},
+        )
+        payload = await response.json()
+        set_cookie = response.headers["Set-Cookie"]
+
+    assert response.status == 200
+    assert payload == {"status": "success", "data": {"cleared": True}}
+    assert revoked_tokens == ["issued-ui-token"]
+    assert f"{WEB_SESSION_COOKIE_NAME}=" in set_cookie
+    assert "Max-Age=0" in set_cookie
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "support-cookie",
+            "actor_role": "support",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get(
+            "/api/web/session/me",
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "success",
+        "data": {
+            "user_login": "support-cookie",
+            "actor_role": "support",
+            "auth_type": "ui_token",
+        },
+    }

@@ -4,20 +4,33 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 try:
-    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+    from scripts.ci_artifacts import (
+        detect_commit,
+        require_green_ci_artifact,
+        require_webapp_bundle_artifact,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.ci_artifacts import detect_commit, require_green_ci_artifact
+    from scripts.ci_artifacts import (
+        detect_commit,
+        require_green_ci_artifact,
+        require_webapp_bundle_artifact,
+    )
 
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_SMOKE_ATTEMPTS = 10
 DEFAULT_SMOKE_DELAY_SECONDS = 2.0
+DEFAULT_KEY = Path(r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519")
+DEFAULT_SCP = Path(r"C:\Windows\System32\OpenSSH\scp.exe")
+DEFAULT_REMOTE_WORKTREE = "/var/chat_bot/pc_client"
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,6 +91,79 @@ def run_step(command: list[str], *, cwd: Path, label: str) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
+def prepare_webapp_bundle_archive(
+    workspace: Path,
+    commit: str,
+    *,
+    skip_ci_check: bool,
+) -> Path:
+    if not skip_ci_check:
+        return require_webapp_bundle_artifact(workspace, commit)
+
+    with tempfile.TemporaryDirectory(prefix="pc_client_release_webapp_") as _temp_root:
+        temp_root = Path(_temp_root)
+        archive_path = temp_root / "webapp-dist.tar.gz"
+        output_dir = temp_root / "webapp-dist"
+        run_step(
+            [
+                sys.executable,
+                str(workspace / "scripts" / "build_webapp_bundle.py"),
+                "--workspace",
+                str(workspace),
+                "--output-dir",
+                str(output_dir),
+                "--archive",
+                str(archive_path),
+            ],
+            cwd=workspace,
+            label="build-webapp",
+        )
+        persistent_archive = workspace / "artifacts" / "release_temp" / commit / "webapp-dist.tar.gz"
+        persistent_archive.parent.mkdir(parents=True, exist_ok=True)
+        persistent_archive.write_bytes(archive_path.read_bytes())
+        return persistent_archive
+
+
+def _scp_binary() -> str:
+    return str(DEFAULT_SCP if DEFAULT_SCP.exists() else "scp")
+
+
+def _ssh_binary() -> str:
+    return "ssh"
+
+
+def _remote_command(remote_worktree: str, remote_archive: str) -> str:
+    safe_worktree = shlex.quote(remote_worktree)
+    safe_archive = shlex.quote(remote_archive)
+    return (
+        f"mkdir -p {safe_worktree}/webapp && "
+        f"rm -rf {safe_worktree}/webapp/dist && "
+        f"tar -xzf {safe_archive} -C {safe_worktree}/webapp && "
+        f"rm -f {safe_archive}"
+    )
+
+
+def upload_webapp_bundle(
+    archive_path: Path,
+    *,
+    cwd: Path,
+    remote: str,
+    remote_worktree: str,
+) -> None:
+    remote_archive = f"/tmp/{archive_path.name}"
+    scp_command = [_scp_binary()]
+    ssh_command = [_ssh_binary()]
+    if DEFAULT_KEY.exists():
+        scp_command.extend(["-i", str(DEFAULT_KEY)])
+        ssh_command.extend(["-i", str(DEFAULT_KEY)])
+
+    scp_command.extend([str(archive_path), f"{remote}:{remote_archive}"])
+    run_step(scp_command, cwd=cwd, label="upload-webapp-copy")
+
+    ssh_command.extend([remote, _remote_command(remote_worktree, remote_archive)])
+    run_step(ssh_command, cwd=cwd, label="upload-webapp-unpack")
+
+
 def run_smoke_with_retries(
     command: list[str],
     *,
@@ -127,6 +213,7 @@ def main() -> None:
     args = parse_args()
     workspace = args.workspace
     started_server = False
+    bundle_archive: Path | None = None
 
     try:
         commit = detect_commit(workspace)
@@ -140,6 +227,12 @@ def main() -> None:
                 cwd=workspace,
                 label="verify",
             )
+
+        bundle_archive = prepare_webapp_bundle_archive(
+            workspace,
+            commit,
+            skip_ci_check=args.skip_ci_check,
+        )
 
         deploy_command = [sys.executable, str(workspace / "scripts" / "deploy_workspace_to_remote.py")]
         if args.branch:
@@ -162,6 +255,13 @@ def main() -> None:
                 cwd=workspace,
                 label="migrate",
             )
+        assert bundle_archive is not None
+        upload_webapp_bundle(
+            bundle_archive,
+            cwd=workspace,
+            remote=args.remote,
+            remote_worktree=DEFAULT_REMOTE_WORKTREE,
+        )
 
         remote_command_base = [
             sys.executable,

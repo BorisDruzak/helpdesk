@@ -1,4 +1,5 @@
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -29,6 +30,74 @@ def test_run_and_capture_times_out_and_writes_partial_log(tmp_path):
     log_text = log_path.read_text(encoding="utf-8")
     assert "before-timeout" in log_text
     assert "timed out" in log_text.lower()
+
+
+def test_run_and_capture_streams_output_before_process_exits(tmp_path):
+    log_path = tmp_path / "streaming.log"
+    script_path = tmp_path / "streaming_child.py"
+    script_path.write_text(
+        "import time\n"
+        "print('stream-start', flush=True)\n"
+        "time.sleep(1.5)\n"
+        "print('stream-end', flush=True)\n",
+        encoding="utf-8",
+    )
+    result_holder: dict[str, object] = {}
+
+    def _runner() -> None:
+        result_holder["result"] = run_ci_suite.run_and_capture(
+            [sys.executable, str(script_path)],
+            cwd=tmp_path,
+            log_path=log_path,
+            step_name="stream_step",
+            timeout_seconds=5,
+        )
+
+    worker = threading.Thread(target=_runner)
+    worker.start()
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        if log_path.exists() and "\nstream-start\n" in log_path.read_text(encoding="utf-8"):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("expected child output to be written to the log before the process exits")
+
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert result_holder["result"]["returncode"] == 0
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "stream-end" in log_text
+
+
+def test_run_and_capture_idle_timeout_stops_silent_process(tmp_path):
+    log_path = tmp_path / "idle-timeout.log"
+    script_path = tmp_path / "idle_child.py"
+    script_path.write_text(
+        "import time\n"
+        "print('idle-start', flush=True)\n"
+        "time.sleep(5)\n",
+        encoding="utf-8",
+    )
+    started = time.monotonic()
+
+    result = run_ci_suite.run_and_capture(
+        [sys.executable, str(script_path)],
+        cwd=tmp_path,
+        log_path=log_path,
+        step_name="idle_step",
+        timeout_seconds=10,
+        idle_timeout_seconds=0.5,
+    )
+
+    elapsed = time.monotonic() - started
+    assert elapsed < 4, "idle timeout should stop silent steps promptly"
+    assert result["timed_out"] is True
+    assert result["timeout_reason"] == "idle_timeout"
+    assert result["returncode"] == 124
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "idle-start" in log_text
+    assert "idle timeout" in log_text.lower()
 
 
 def test_main_writes_red_summary_when_interrupted(tmp_path, monkeypatch):
@@ -75,3 +144,87 @@ def test_run_and_capture_replaces_invalid_utf8_output(tmp_path):
     assert result["returncode"] == 0
     log_text = log_path.read_text(encoding="utf-8")
     assert "bad:" in log_text
+
+
+def test_write_output_falls_back_when_console_cannot_encode_unicode(monkeypatch, tmp_path):
+    class FakeStdout:
+        encoding = "cp1251"
+
+        def __init__(self) -> None:
+            self.parts: list[str] = []
+
+        def write(self, text: str) -> int:
+            text.encode(self.encoding)
+            self.parts.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+    fake_stdout = FakeStdout()
+    handle_path = tmp_path / "unicode.log"
+    with handle_path.open("w", encoding="utf-8") as handle:
+        monkeypatch.setattr(run_ci_suite.sys, "stdout", fake_stdout)
+        run_ci_suite._write_output(handle, "vite ✓\n")
+
+    assert fake_stdout.parts == ["vite ?\n"]
+    assert handle_path.read_text(encoding="utf-8") == "vite ✓\n"
+
+
+def test_main_runs_webapp_bundle_step_before_pytests(tmp_path, monkeypatch):
+    summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
+    steps_seen: list[tuple[str, list[str], Path, float | None]] = []
+
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_ci_suite.py", "--workspace", str(tmp_path), "--commit", "deadbeef"],
+    )
+
+    def fake_run_and_capture(
+        command: list[str],
+        *,
+        cwd: Path,
+        log_path: Path,
+        step_name: str,
+        timeout_seconds: float,
+        idle_timeout_seconds: float | None,
+    ) -> dict[str, object]:
+        steps_seen.append((step_name, command, log_path, idle_timeout_seconds))
+        return {
+            "name": step_name,
+            "command": command,
+            "started_at": "2026-04-20T00:00:00+00:00",
+            "finished_at": "2026-04-20T00:00:01+00:00",
+            "duration_seconds": 1.0,
+            "timeout_seconds": timeout_seconds,
+            "timed_out": False,
+            "timeout_reason": None,
+            "returncode": 0,
+            "log": str(log_path),
+        }
+
+    monkeypatch.setattr(run_ci_suite, "run_and_capture", fake_run_and_capture)
+
+    run_ci_suite.main()
+
+    assert [step_name for step_name, _command, _log_path, _idle_timeout in steps_seen] == [
+        "verify_workspace",
+        "build_webapp_bundle",
+        "server_pytest",
+        "pc_agent_pytest",
+    ]
+    build_step = next(command for step_name, command, _log_path, _idle_timeout in steps_seen if step_name == "build_webapp_bundle")
+    assert "build_webapp_bundle.py" in build_step[1]
+    assert "--output-dir" in build_step
+    assert "--archive" in build_step
+    idle_by_step = {
+        step_name: idle_timeout
+        for step_name, _command, _log_path, idle_timeout in steps_seen
+    }
+    assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["build_webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["server_pytest"] is None
+    assert idle_by_step["pc_agent_pytest"] is None

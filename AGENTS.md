@@ -15,6 +15,7 @@
    - для нетривиальной задачи сначала `python scripts/task_intake.py`;
    - затем `docs/QUICK_LOOKUP.md`;
    - затем соответствующий `CODEMAP` и точечный `python scripts/agent_find.py "<паттерн>" --dir server|pc_agent`.
+   - если задача затрагивает новый `webapp/`, frontend bundle pipeline или release flow для web-ассетов, перед любыми frontend-командами обязательно выполнить `python scripts/bootstrap_web_toolchain.py`.
 4. При изменении структуры, маршрутов, контрактов или ключевых потоков синхронно обновлять код, docs и канонический `CODEMAP`.
 5. Перед коммитом прогонять минимум `python scripts/verify_workspace.py`, затем релевантные `pytest` и нужные smoke/browser-проверки.
 6. После локальной проверки делать локальный commit.
@@ -61,13 +62,14 @@ Observer docs поддерживаются в актуальном состоя�
   - `build-web-apps:react-best-practices` — использовать при работе с React/Next.js кодом, если соответствующий стек есть в затронутой части проекта.
 - Skills `circleci:*` использовать только когда задача действительно про CircleCI pipeline, `.circleci/config.yml`, Chunk или диагностику CI; они не являются частью обязательного потока локальной разработки и deploy на Linux.
 - Для задач по веб-интерфейсу сервера сочетать MCP browser-check из проектного канона с `build-web-apps:web-design-guidelines`: сначала привести интерфейс к рабочему состоянию, затем отдельно оценить качество UI/UX и читаемость.
+- Для задач по новому `webapp/`, React-коду и frontend build/release pipeline первым шагом считать `python scripts/bootstrap_web_toolchain.py`; каноничный frontend toolchain проекта — `Node.js 24.15.0 + corepack + pnpm 10.33.0` локально и в CI.
 - Авто-маршрутизатор для Codex в `pc_client`:
   - bugfix / падение тестов / unexpected behavior -> `superpowers:systematic-debugging`, затем при уместности `superpowers:test-driven-development`
   - длинная задача / несколько подсистем / несколько заходов -> `superpowers:writing-plans` и ведение `PLANS.md`
   - исполнение уже согласованного плана -> `superpowers:executing-plans`
   - UI review / UX review / accessibility / audit интерфейса -> `build-web-apps:web-design-guidelines`
   - заметная визуальная переделка страницы или admin UI -> `build-web-apps:frontend-skill`, затем `build-web-apps:web-design-guidelines`
-  - React / Next.js правки -> `build-web-apps:react-best-practices`
+  - React / Next.js правки -> сначала `python scripts/bootstrap_web_toolchain.py`, затем `build-web-apps:react-best-practices`
   - завершение работы / claim "готово" / commit / push / deploy -> `superpowers:verification-before-completion`; для рискованных или широких изменений дополнительно `superpowers:requesting-code-review`
 - Отдельного внешнего skill-а именно для TODO в этом наборе нет; его роль в проекте выполняют `superpowers:writing-plans`, `superpowers:executing-plans`, локальный `PLANS.md` и явная фиксация шагов по ходу задачи.
 - Для agent update / launcher / rollout начинать с:

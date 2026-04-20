@@ -106,10 +106,14 @@ Admin / tech API:
 Ticket-scoped API:
 
 - `GET /api/tickets/{ticket_id}/observer`
+- `GET /api/web/support/bootstrap`
+- `GET /api/web/support/tickets/{ticket_id}`
+- `GET /api/web/admin/bootstrap`
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
 Signature rows в ticket summary обязаны различать глобальный `occurrences_count` и ticket-local `ticket_occurrences_count`, чтобы support UI не путал историю конкретного тикета с общей картиной по signature.
+Новый typed web boundary должен рекламировать observer capability endpoints через bootstrap payloads, чтобы React workspace не зашивал raw tech/ticket URLs прямо в feature-код.
 
 ## 8. UI-поверхности
 
@@ -126,6 +130,14 @@ Support workspace:
 - root trace excerpt;
 - related traces;
 - signatures и recent occurrences.
+
+New React workspaces:
+
+- `/app/support` должен получать observer capability map через `GET /api/web/support/bootstrap`;
+- `/app/support` должен получать ticket-scoped observer summary внутри typed detail payload `GET /api/web/support/tickets/{ticket_id}`, а не собирать trace drawer из raw legacy ticket endpoints;
+- `/app/support` tool surface должен ходить через typed endpoints `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, а рабочая лента должна показывать `tool_call_started` / `tool_call_result` рядом с observer root trace metadata, чтобы оператор видел traced execution без возврата в legacy `/support`/`/ticket`;
+- `/app/admin` должен получать observer capability map через `GET /api/web/admin/bootstrap`.
+- `/app/*` сначала проходит через `GET /api/web/session/me`; observer surfaces в новом web-layer не должны пытаться ходить в trace API до подтверждённой web session.
 
 Канонический operator UX для ticket-scoped trace живёт в `/support`.
 Legacy `/ticket` shell остаётся отдельной рабочей страницей тикета и не считается основной observer-поверхностью для support workflow.
