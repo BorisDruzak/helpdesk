@@ -229,6 +229,84 @@ afterEach(() => {
 describe("AdminWorkspacePage", () => {
   it("renders typed inventory, observer drilldown and modules actions in Russian", async () => {
     const modulesState = createModulesState();
+    const formsState: {
+      summary: {
+        pack_key: string;
+        version: string;
+        title: string;
+        description: string;
+        forms_count: number;
+        fields_count: number;
+        required_fields_count: number;
+        last_published_at: string;
+        last_published_by: string;
+      };
+      forms: Array<{
+        key: string;
+        request_kind: string;
+        title: string;
+        description: string;
+        fields: Array<{
+          key: string;
+          label: string;
+          type: string;
+          type_label: string;
+          required: boolean;
+          placeholder: string;
+          help_text: string;
+          options: Array<{ value: string; label: string }>;
+          visible_when: {
+            field: string;
+            equals: string | null;
+            values: string[];
+          } | null;
+        }>;
+      }>;
+    } = {
+      summary: {
+        pack_key: "request_forms",
+        version: "1.0.3",
+        title: "Каталог заявок",
+        description: "Рабочий каталог",
+        forms_count: 1,
+        fields_count: 2,
+        required_fields_count: 1,
+        last_published_at: "2026-04-21T10:00:00+05:00",
+        last_published_by: "admin1"
+      },
+      forms: [
+        {
+          key: "printer",
+          request_kind: "printer",
+          title: "Печать / принтер",
+          description: "Проблемы печати",
+          fields: [
+            {
+              key: "room",
+              label: "Кабинет",
+              type: "text",
+              type_label: "Текст",
+              required: true,
+              placeholder: "",
+              help_text: "",
+              options: [],
+              visible_when: null
+            },
+            {
+              key: "printer_model",
+              label: "Модель",
+              type: "text",
+              type_label: "Текст",
+              required: false,
+              placeholder: "",
+              help_text: "",
+              options: [],
+              visible_when: null
+            }
+          ]
+        }
+      ]
+    };
 
     vi.stubGlobal(
       "fetch",
@@ -241,7 +319,7 @@ describe("AdminWorkspacePage", () => {
             status: "success",
             data: {
               workspace: "admin",
-              features: ["devices_inventory", "agent_rollout", "modules_workbench", "tech_panel"],
+              features: ["devices_inventory", "agent_rollout", "modules_workbench", "forms_builder", "tech_panel"],
               observer: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces"
@@ -370,6 +448,110 @@ describe("AdminWorkspacePage", () => {
                 refresh_enqueued:
                   payload.version !== null && modulesState.rollout_settings.sync_after_preferred_change ? 2 : 0
               }
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/forms/current" && method === "GET") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: { ...formsState.summary },
+              capabilities: {
+                current_endpoint: "/api/web/admin/forms/current",
+                save_endpoint: "/api/web/admin/forms/save",
+                field_type_options: [
+                  { value: "text", label: "Текст" },
+                  { value: "textarea", label: "Большой текст" },
+                  { value: "select", label: "Список" },
+                  { value: "radio", label: "Переключатель" },
+                  { value: "checkbox", label: "Флажок" }
+                ]
+              },
+              forms: formsState.forms.map((form) => ({
+                ...form,
+                fields: form.fields.map((field) => ({ ...field }))
+              }))
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          const payload = JSON.parse(String(init?.body ?? "{}")) as {
+            title: string;
+            description: string;
+            forms: Array<{
+              key: string;
+              request_kind: string;
+              title: string;
+              description?: string;
+              fields: Array<{
+                key: string;
+                label: string;
+                type: string;
+                required: boolean;
+                placeholder?: string;
+                help_text?: string;
+                options?: Array<{ value: string; label: string }>;
+                visible_when?: { field: string; equals?: string; values?: string[] };
+              }>;
+            }>;
+          };
+
+          formsState.summary = {
+            ...formsState.summary,
+            version: "1.0.4",
+            title: payload.title,
+            description: payload.description,
+            forms_count: payload.forms.length,
+            fields_count: payload.forms.reduce((total, form) => total + form.fields.length, 0),
+            required_fields_count: payload.forms.reduce(
+              (total, form) => total + form.fields.filter((field) => field.required).length,
+              0
+            )
+          };
+          formsState.forms = payload.forms.map((form) => ({
+            key: form.key,
+            request_kind: form.request_kind,
+            title: form.title,
+            description: form.description ?? "",
+            fields: form.fields.map((field) => ({
+              key: field.key,
+              label: field.label,
+              type: field.type,
+              type_label:
+                field.type === "textarea"
+                  ? "Большой текст"
+                  : field.type === "select"
+                    ? "Список"
+                    : field.type === "radio"
+                      ? "Переключатель"
+                      : field.type === "checkbox"
+                        ? "Флажок"
+                        : "Текст",
+              required: field.required,
+              placeholder: field.placeholder ?? "",
+              help_text: field.help_text ?? "",
+              options: field.options ?? [],
+              visible_when: field.visible_when
+                ? {
+                    field: field.visible_when.field,
+                    equals: field.visible_when.equals ?? null,
+                    values: field.visible_when.values ?? []
+                  }
+                : null
+            }))
+          }));
+
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: { ...formsState.summary },
+              forms: formsState.forms.map((form) => ({
+                ...form,
+                fields: form.fields.map((field) => ({ ...field }))
+              })),
+              message: "Каталог опубликован как версия 1.0.4. Изменения уже активны в /help и в интерфейсе агента."
             }
           });
         }
@@ -799,6 +981,7 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText("/api/web/admin/observer/traces", { exact: true })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Детальный разбор трасс" })).toBeInTheDocument();
     expect((await screen.findAllByText("trace-update-1")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Конструктор форм заявок" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Режим preferred-rollout" }), {
       target: { value: "manual" }
@@ -813,6 +996,26 @@ describe("AdminWorkspacePage", () => {
     await waitFor(() => {
       expect(screen.getByText(/Preferred:\s*1\.2\.1/i)).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Новая форма" }));
+    fireEvent.change(screen.getByLabelText("Название формы"), {
+      target: { value: "Ремонт принтера" }
+    });
+    fireEvent.change(screen.getByLabelText("Ключ формы"), {
+      target: { value: "printer_repair" }
+    });
+    fireEvent.change(screen.getByLabelText("Request kind"), {
+      target: { value: "printer_repair" }
+    });
+    fireEvent.change(screen.getByLabelText("Название поля"), {
+      target: { value: "Код поломки" }
+    });
+    fireEvent.change(screen.getByLabelText("Ключ поля"), {
+      target: { value: "issue_code" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    expect(await screen.findByText(/Каталог опубликован как версия 1.0.4/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Причина запуска"), {
       target: { value: "canary после smoke" }

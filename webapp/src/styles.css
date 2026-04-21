@@ -401,13 +401,19 @@ a {
 }
 
 .support-filter-select select,
-.support-filter-search input {
+.support-filter-search input,
+.support-filter-search textarea {
   width: 100%;
   border: 1px solid rgba(23, 33, 43, 0.14);
   border-radius: 14px;
   padding: 13px 15px;
   font: inherit;
   background: rgba(255, 255, 255, 0.92);
+}
+
+.support-filter-search textarea {
+  min-height: 7rem;
+  resize: vertical;
 }
 
 .support-queue-summary {
@@ -549,6 +555,96 @@ a {
 .admin-modules-detail__hint {
   color: #4a5968;
   font-size: 0.92rem;
+}
+
+.admin-forms-panel,
+.admin-forms-list,
+.admin-forms-editor,
+.admin-forms-field-list,
+.admin-forms-field-editor {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-forms-toolbar {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) auto;
+  align-items: start;
+}
+
+.admin-forms-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(240px, 0.88fr) minmax(360px, 1.12fr);
+}
+
+.admin-forms-editor__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-forms-inline-action {
+  inline-size: fit-content;
+}
+
+.admin-forms-advanced {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(23, 33, 43, 0.08);
+}
+
+.admin-forms-advanced summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.admin-forms-advanced__grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 0.75rem;
+}
+
+.admin-forms-advanced__hint {
+  margin: 0;
+  color: #4a5968;
+  font-size: 0.92rem;
+}
+
+.admin-forms-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-forms-fields__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.admin-forms-fields__grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.1fr);
+}
+
+.admin-forms-field-editor {
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(23, 33, 43, 0.08);
+}
+
+.admin-forms-options-field {
+  grid-column: 1 / -1;
 }
 
 .admin-update-panel {
@@ -1302,6 +1398,8 @@ a {
   .workspace-boot__grid,
   .admin-workspace__grid,
   .admin-modules-grid,
+  .admin-forms-grid,
+  .admin-forms-fields__grid,
   .support-workspace__grid,
   .support-ticket-detail__hero {
     grid-template-columns: 1fr;
@@ -1310,6 +1408,10 @@ a {
   .admin-modules-controls {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .admin-forms-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .support-ticket-detail__observer-grid {

@@ -2,6 +2,13 @@
 
 Документ описывает рабочий сценарий администратора для каталога входящих заявок `request_forms`.
 
+## Канонические поверхности
+
+- Legacy shell: вкладка `Конструктор форм` в `/admin`, файлы `server/admin_ticket_forms_builder.html` и `server/admin_ticket_forms_builder.js`.
+- Новый typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
+- Новый typed boundary для React-панели: `GET /api/web/admin/forms/current` и `POST /api/web/admin/forms/save`.
+- Доменный pack-registry остаётся общим: `GET /api/ticket_forms/current`, `GET /public_api/ticket_forms/current`, `POST /api/ticket_forms/packs/save`, `PATCH /api/ticket_forms/packs/{pack_key}/{version}/preferred`.
+
 ## Зачем нужен конструктор
 
 Конструктор управляет типовыми формами, которые используют:
@@ -109,8 +116,8 @@
 
 ## Где используется этот контракт
 
-- UI администратора: `server/admin_ticket_forms_builder.html`, `server/admin_ticket_forms_builder.js`, `server/admin.html`
+- UI администратора: `server/admin_ticket_forms_builder.html`, `server/admin_ticket_forms_builder.js`, `server/admin.html`, `webapp/src/features/forms-builder/forms-builder-panel.tsx`
 - Серверная валидация и default pack: `server/tickets/form_catalog.py`
-- HTTP API pack registry: `server/tickets/form_pack_handlers.py`
+- HTTP API pack registry: `server/tickets/form_pack_handlers.py`, typed web boundary `server/web_api/admin_handlers.py`
 - Публичная форма: `server/help.html`, `server/help.js`
 - Агентский диалог создания тикета: `pc_agent/ui_gui/chat_panel.py`

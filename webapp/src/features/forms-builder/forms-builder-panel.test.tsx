@@ -1,0 +1,214 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { FormsBuilderPanel } from "./forms-builder-panel";
+
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+}
+
+
+function createFormsPayload() {
+  return {
+    summary: {
+      pack_key: "request_forms",
+      version: "1.0.3",
+      title: "Каталог заявок",
+      description: "Рабочий каталог",
+      forms_count: 1,
+      fields_count: 2,
+      required_fields_count: 1,
+      last_published_at: "2026-04-21T10:00:00+05:00",
+      last_published_by: "admin1"
+    },
+    capabilities: {
+      current_endpoint: "/api/web/admin/forms/current",
+      save_endpoint: "/api/web/admin/forms/save",
+      field_type_options: [
+        { value: "text", label: "Текст" },
+        { value: "textarea", label: "Большой текст" },
+        { value: "select", label: "Список" },
+        { value: "radio", label: "Переключатель" },
+        { value: "checkbox", label: "Флажок" }
+      ]
+    },
+    forms: [
+      {
+        key: "printer",
+        request_kind: "printer",
+        title: "Печать / принтер",
+        description: "Проблемы печати",
+        fields: [
+          {
+            key: "room",
+            label: "Кабинет",
+            type: "text",
+            type_label: "Текст",
+            required: true,
+            placeholder: "",
+            help_text: "",
+            options: [],
+            visible_when: null
+          },
+          {
+            key: "printer_model",
+            label: "Модель",
+            type: "text",
+            type_label: "Текст",
+            required: false,
+            placeholder: "",
+            help_text: "",
+            options: [],
+            visible_when: null
+          }
+        ]
+      }
+    ]
+  };
+}
+
+
+function renderFormsBuilder() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        refetchOnWindowFocus: false
+      }
+    }
+  });
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <FormsBuilderPanel />
+    </QueryClientProvider>
+  );
+}
+
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+
+describe("FormsBuilderPanel", () => {
+  it("показывает каталог форм и публикует новую версию", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4",
+                forms_count: 2,
+                fields_count: 3
+              },
+              forms: [
+                ...createFormsPayload().forms,
+                {
+                  key: "new_form_2",
+                  request_kind: "printer_repair",
+                  title: "Ремонт принтера",
+                  description: "",
+                  fields: [
+                    {
+                      key: "issue_code",
+                      label: "Код поломки",
+                      type: "text",
+                      type_label: "Текст",
+                      required: false,
+                      placeholder: "",
+                      help_text: "",
+                      options: [],
+                      visible_when: null
+                    }
+                  ]
+                }
+              ],
+              message: "Каталог опубликован как версия 1.0.4. Изменения уже активны в /help и в интерфейсе агента."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    expect(await screen.findByText("Активная версия")).toBeInTheDocument();
+    expect(await screen.findByText("1.0.3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Новая форма" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Ключ формы")).toHaveValue("new_form_2");
+    });
+    fireEvent.change(screen.getByLabelText("Название формы"), {
+      target: { value: "Ремонт принтера" }
+    });
+    fireEvent.change(screen.getByLabelText("Ключ формы"), {
+      target: { value: "printer_repair" }
+    });
+    fireEvent.change(screen.getByLabelText("Request kind"), {
+      target: { value: "printer_repair" }
+    });
+    fireEvent.change(screen.getByLabelText("Название поля"), {
+      target: { value: "Код поломки" }
+    });
+    fireEvent.change(screen.getByLabelText("Ключ поля"), {
+      target: { value: "issue_code" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Каталог опубликован как версия 1.0.4/)).toBeInTheDocument();
+    });
+
+    expect(saveCalls).toHaveLength(1);
+    expect(saveCalls[0]).toMatchObject({
+      title: "Каталог заявок",
+      forms: [
+        expect.objectContaining({
+          key: "printer",
+          title: "Печать / принтер"
+        }),
+        expect.objectContaining({
+          key: "printer_repair",
+          request_kind: "printer_repair",
+          title: "Ремонт принтера",
+          fields: [
+            expect.objectContaining({
+              key: "issue_code",
+              label: "Код поломки"
+            })
+          ]
+        })
+      ]
+    });
+  });
+});

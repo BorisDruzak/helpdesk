@@ -401,7 +401,7 @@ Expected:
 Current progress:
 - typed observer quick slice for `/app/admin` is now part of this step via `GET /api/web/admin/observer/quick` and `webapp/src/features/tech/*`; modules/forms builder still remain for later slices
 
-- [ ] **Step 3: Add forms-builder**
+- [x] **Step 3: Add forms-builder**
 
 Expected:
 - the new admin workspace covers the agreed internal authoring surfaces

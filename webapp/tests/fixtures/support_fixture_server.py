@@ -291,6 +291,102 @@ def build_fixture_state() -> dict:
                     },
                 ],
             },
+            "forms_builder": {
+                "summary": {
+                    "pack_key": "request_forms",
+                    "version": "1.0.3",
+                    "title": "Каталог заявок",
+                    "description": "Рабочий каталог входящих форм для helpdesk.",
+                    "forms_count": 2,
+                    "fields_count": 5,
+                    "required_fields_count": 2,
+                    "last_published_at": now_iso(minutes=8),
+                    "last_published_by": ADMIN_LOGIN,
+                },
+                "forms": [
+                    {
+                        "key": "printer",
+                        "request_kind": "printer",
+                        "title": "Печать / принтер",
+                        "description": "Проблемы печати и очереди.",
+                        "fields": [
+                            {
+                                "key": "room",
+                                "label": "Кабинет",
+                                "type": "text",
+                                "type_label": "Текст",
+                                "required": True,
+                                "placeholder": "214",
+                                "help_text": "Укажите кабинет, где стоит принтер.",
+                                "options": [],
+                                "visible_when": None,
+                            },
+                            {
+                                "key": "printer_model",
+                                "label": "Модель",
+                                "type": "text",
+                                "type_label": "Текст",
+                                "required": False,
+                                "placeholder": "HP LaserJet",
+                                "help_text": "",
+                                "options": [],
+                                "visible_when": None,
+                            },
+                        ],
+                    },
+                    {
+                        "key": "site_system",
+                        "request_kind": "site_system",
+                        "title": "Сайт / система",
+                        "description": "Проблемы с внутренней системой.",
+                        "fields": [
+                            {
+                                "key": "issue_kind",
+                                "label": "Тип проблемы",
+                                "type": "select",
+                                "type_label": "Список",
+                                "required": True,
+                                "placeholder": "",
+                                "help_text": "",
+                                "options": [
+                                    {"value": "site_down", "label": "Сайт не открывается"},
+                                    {"value": "auth", "label": "Не удаётся войти"},
+                                ],
+                                "visible_when": None,
+                            },
+                            {
+                                "key": "system_name",
+                                "label": "Система",
+                                "type": "text",
+                                "type_label": "Текст",
+                                "required": True,
+                                "placeholder": "CRM",
+                                "help_text": "",
+                                "options": [],
+                                "visible_when": None,
+                            },
+                            {
+                                "key": "affected_scope",
+                                "label": "У кого проблема",
+                                "type": "radio",
+                                "type_label": "Переключатель",
+                                "required": False,
+                                "placeholder": "",
+                                "help_text": "",
+                                "options": [
+                                    {"value": "single", "label": "У одного"},
+                                    {"value": "all", "label": "У всех"},
+                                ],
+                                "visible_when": {
+                                    "field": "issue_kind",
+                                    "equals": "site_down",
+                                    "values": [],
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
             "observer_quick": {
                 24: {
                     "summary": {
@@ -808,6 +904,95 @@ def build_admin_modules_payload(state: dict, query: str) -> dict:
         "summary": payload["summary"],
         "rollout_settings": payload["rollout_settings"],
         "modules": modules,
+    }
+
+
+def build_admin_forms_payload(state: dict) -> dict:
+    payload = deepcopy(state["admin"]["forms_builder"])
+    return {
+        "summary": payload["summary"],
+        "capabilities": {
+            "current_endpoint": "/api/web/admin/forms/current",
+            "save_endpoint": "/api/web/admin/forms/save",
+            "field_type_options": [
+                {"value": "text", "label": "Текст"},
+                {"value": "textarea", "label": "Большой текст"},
+                {"value": "select", "label": "Список"},
+                {"value": "radio", "label": "Переключатель"},
+                {"value": "checkbox", "label": "Флажок"},
+            ],
+        },
+        "forms": payload["forms"],
+    }
+
+
+def save_admin_forms_payload(state: dict, payload: dict) -> dict:
+    forms = deepcopy(payload.get("forms") or [])
+    fields_count = sum(len(form.get("fields") or []) for form in forms)
+    required_fields_count = sum(
+        1
+        for form in forms
+        for field in (form.get("fields") or [])
+        if field.get("required")
+    )
+    current_version = str(state["admin"]["forms_builder"]["summary"]["version"])
+    version_parts = [int(part) for part in current_version.split(".")]
+    version_parts[-1] += 1
+    next_version = ".".join(str(part) for part in version_parts)
+    normalized_forms = []
+    for form in forms:
+        normalized_fields = []
+        for field in form.get("fields") or []:
+            normalized_fields.append(
+                {
+                    "key": str(field.get("key") or ""),
+                    "label": str(field.get("label") or ""),
+                    "type": str(field.get("type") or "text"),
+                    "type_label": {
+                        "text": "Текст",
+                        "textarea": "Большой текст",
+                        "select": "Список",
+                        "radio": "Переключатель",
+                        "checkbox": "Флажок",
+                    }.get(str(field.get("type") or "text"), "Текст"),
+                    "required": bool(field.get("required", False)),
+                    "placeholder": str(field.get("placeholder") or ""),
+                    "help_text": str(field.get("help_text") or ""),
+                    "options": deepcopy(field.get("options") or []),
+                    "visible_when": deepcopy(field.get("visible_when")) if field.get("visible_when") else None,
+                }
+            )
+        normalized_forms.append(
+            {
+                "key": str(form.get("key") or ""),
+                "request_kind": str(form.get("request_kind") or form.get("key") or ""),
+                "title": str(form.get("title") or ""),
+                "description": str(form.get("description") or ""),
+                "fields": normalized_fields,
+            }
+        )
+
+    state["admin"]["forms_builder"] = {
+        "summary": {
+            "pack_key": "request_forms",
+            "version": next_version,
+            "title": str(payload.get("title") or "Каталог заявок"),
+            "description": str(payload.get("description") or ""),
+            "forms_count": len(normalized_forms),
+            "fields_count": fields_count,
+            "required_fields_count": required_fields_count,
+            "last_published_at": now_iso(minutes=30 + len(normalized_forms)),
+            "last_published_by": ADMIN_LOGIN,
+        },
+        "forms": normalized_forms,
+    }
+    return {
+        "summary": deepcopy(state["admin"]["forms_builder"]["summary"]),
+        "forms": deepcopy(state["admin"]["forms_builder"]["forms"]),
+        "message": (
+            f"Каталог опубликован как версия {next_version}. "
+            "Изменения уже активны в /help и в интерфейсе агента."
+        ),
     }
 
 
@@ -1504,6 +1689,7 @@ async def handle_admin_bootstrap(request: web.Request) -> web.Response:
                 "devices_inventory",
                 "agent_rollout",
                 "modules_workbench",
+                "forms_builder",
                 "tech_panel",
             ],
             "observer": {
@@ -1579,6 +1765,23 @@ async def handle_admin_modules(request: web.Request) -> web.Response:
     state = request.app["fixture_state"]
     query = str(request.query.get("query", "") or "").strip()
     return json_success(build_admin_modules_payload(state, query))
+
+
+async def handle_admin_forms_current(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    return json_success(build_admin_forms_payload(state))
+
+
+async def handle_admin_forms_save(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    payload = await request.json()
+    return json_success(save_admin_forms_payload(state, payload))
 
 
 async def handle_admin_modules_rollout_settings_patch(request: web.Request) -> web.Response:
@@ -1694,6 +1897,8 @@ def build_app() -> web.Application:
             web.get("/api/web/admin/observer/quick", handle_admin_observer_quick),
             web.get("/api/web/admin/observer/traces", handle_admin_observer_traces),
             web.get("/api/web/admin/observer/traces/{trace_id}", handle_admin_observer_trace_detail),
+            web.get("/api/web/admin/forms/current", handle_admin_forms_current),
+            web.post("/api/web/admin/forms/save", handle_admin_forms_save),
             web.get("/api/web/admin/modules", handle_admin_modules),
             web.patch("/api/web/admin/modules/rollout_settings", handle_admin_modules_rollout_settings_patch),
             web.patch("/api/web/admin/modules/{module_name}/preferred", handle_admin_module_preferred_patch),

@@ -13,6 +13,14 @@ from web_api.dto.admin import (
     AdminDeviceUpdateSummary,
     AdminDeviceUpdatesPayload,
     AdminFilterOption,
+    AdminFormsBuilderCapabilities,
+    AdminFormsFieldItem,
+    AdminFormsFieldOption,
+    AdminFormsFormItem,
+    AdminFormsPayload,
+    AdminFormsSaveResult,
+    AdminFormsSummary,
+    AdminFormsVisibleWhen,
     AdminObserverDangerousFlowItem,
     AdminObserverDegradationItem,
     AdminObserverQuickLinks,
@@ -73,6 +81,7 @@ async def test_web_admin_bootstrap_exposes_tech_and_observer_features(web_admin_
 
     assert payload["status"] == "success"
     assert payload["data"]["workspace"] == "admin"
+    assert "forms_builder" in payload["data"]["features"]
     assert "tech_panel" in payload["data"]["features"]
     assert payload["data"]["observer"]["quick_endpoint"] == "/api/web/admin/observer/quick"
     assert payload["data"]["observer"]["traces_endpoint"] == "/api/web/admin/observer/traces"
@@ -566,6 +575,197 @@ async def test_web_admin_modules_returns_typed_registry_payload(web_admin_client
     assert payload["data"]["modules"][0]["module_name"] == "network_ping"
     assert payload["data"]["modules"][0]["versions"][1]["is_preferred"] is True
     assert payload["data"]["modules"][0]["tool_ids"] == ["network_ping.ping", "network_ping.trace"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_current_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
+    response = await web_admin_client.get("/api/web/admin/forms/current")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["summary"]["pack_key"] == "request_forms"
+    assert payload["data"]["summary"]["forms_count"] >= 1
+    assert payload["data"]["summary"]["last_published_by"] == "builtin_default"
+    assert payload["data"]["capabilities"]["current_endpoint"] == "/api/web/admin/forms/current"
+    assert payload["data"]["capabilities"]["save_endpoint"] == "/api/web/admin/forms/save"
+    assert payload["data"]["forms"][0]["fields"][0]["type_label"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_current_returns_typed_payload(web_admin_client, monkeypatch):
+    async def fake_build_payload():
+        return AdminFormsPayload(
+            summary=AdminFormsSummary(
+                pack_key="request_forms",
+                version="1.0.3",
+                title="Каталог заявок",
+                description="Каталог для операторов",
+                forms_count=1,
+                fields_count=2,
+                required_fields_count=1,
+                last_published_at="2026-04-21T10:00:00+05:00",
+                last_published_by="admin1",
+            ),
+            capabilities=AdminFormsBuilderCapabilities(
+                current_endpoint="/api/web/admin/forms/current",
+                save_endpoint="/api/web/admin/forms/save",
+                field_type_options=[
+                    AdminFilterOption(value="text", label="Текст"),
+                    AdminFilterOption(value="select", label="Список"),
+                ],
+            ),
+            forms=[
+                AdminFormsFormItem(
+                    key="printer",
+                    request_kind="printer",
+                    title="Печать / принтер",
+                    description="Описывает проблемы печати",
+                    fields=[
+                        AdminFormsFieldItem(
+                            key="room",
+                            label="Кабинет",
+                            type="text",
+                            type_label="Текст",
+                            required=True,
+                        ),
+                        AdminFormsFieldItem(
+                            key="printer_model",
+                            label="Модель",
+                            type="select",
+                            type_label="Список",
+                            required=False,
+                            options=[
+                                AdminFormsFieldOption(value="hp", label="HP"),
+                                AdminFormsFieldOption(value="canon", label="Canon"),
+                            ],
+                            visible_when=AdminFormsVisibleWhen(field="room", equals="214"),
+                        ),
+                    ],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(admin_handlers, "_build_admin_forms_payload", fake_build_payload)
+
+    response = await web_admin_client.get("/api/web/admin/forms/current")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["summary"]["version"] == "1.0.3"
+    assert payload["data"]["forms"][0]["key"] == "printer"
+    assert payload["data"]["forms"][0]["fields"][1]["options"][0]["label"] == "HP"
+    assert payload["data"]["forms"][0]["fields"][1]["visible_when"]["field"] == "room"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_save_returns_typed_payload(web_admin_client, monkeypatch):
+    async def fake_save_pack(*, auth_context, payload):
+        assert auth_context.actor_role == "admin"
+        assert payload.forms[0].key == "printer"
+        assert payload.forms[0].fields[0].key == "room"
+        return AdminFormsSaveResult(
+            summary=AdminFormsSummary(
+                pack_key="request_forms",
+                version="1.0.4",
+                title="Каталог заявок",
+                description="Публикация после правки",
+                forms_count=1,
+                fields_count=2,
+                required_fields_count=1,
+                last_published_at="2026-04-21T10:15:00+05:00",
+                last_published_by="admin1",
+            ),
+            forms=[
+                AdminFormsFormItem(
+                    key="printer",
+                    request_kind="printer",
+                    title="Печать / принтер",
+                    description="Проверка публикации",
+                    fields=[
+                        AdminFormsFieldItem(
+                            key="room",
+                            label="Кабинет",
+                            type="text",
+                            type_label="Текст",
+                            required=True,
+                        ),
+                        AdminFormsFieldItem(
+                            key="printer_model",
+                            label="Модель",
+                            type="text",
+                            type_label="Текст",
+                            required=False,
+                        ),
+                    ],
+                )
+            ],
+            message="Каталог опубликован как версия 1.0.4. Изменения уже активны в /help и в интерфейсе агента.",
+        )
+
+    monkeypatch.setattr(admin_handlers, "_save_admin_forms_pack", fake_save_pack)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/save",
+        json={
+            "title": "Каталог заявок",
+            "description": "Публикация после правки",
+            "forms": [
+                {
+                    "key": "printer",
+                    "request_kind": "printer",
+                    "title": "Печать / принтер",
+                    "description": "Проверка публикации",
+                    "fields": [
+                        {
+                            "key": "room",
+                            "label": "Кабинет",
+                            "type": "text",
+                            "required": True,
+                            "options": [],
+                        },
+                        {
+                            "key": "printer_model",
+                            "label": "Модель",
+                            "type": "text",
+                            "required": False,
+                            "options": [],
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["summary"]["version"] == "1.0.4"
+    assert payload["data"]["summary"]["last_published_by"] == "admin1"
+    assert payload["data"]["forms"][0]["fields"][0]["required"] is True
+    assert "Каталог опубликован как версия 1.0.4" in payload["data"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_save_rejects_invalid_payload(web_admin_client):
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/save",
+        json={"title": "Каталог заявок", "forms": []},
+    )
+
+    assert response.status == 400
+    payload = await response.json()
+
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

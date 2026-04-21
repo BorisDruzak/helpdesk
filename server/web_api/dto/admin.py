@@ -264,6 +264,129 @@ class AdminFilterOption(BaseModel):
     label: str
 
 
+class AdminFormsFieldOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+    label: str
+
+
+class AdminFormsVisibleWhen(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    equals: str | None = None
+    values: list[str] = Field(default_factory=list)
+
+
+class AdminFormsFieldItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    type: str
+    type_label: str
+    required: bool = False
+    placeholder: str | None = None
+    help_text: str | None = None
+    options: list[AdminFormsFieldOption] = Field(default_factory=list)
+    visible_when: AdminFormsVisibleWhen | None = None
+
+
+class AdminFormsFormItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    request_kind: str
+    title: str
+    description: str | None = None
+    fields: list[AdminFormsFieldItem] = Field(default_factory=list)
+
+
+class AdminFormsSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pack_key: str
+    version: str
+    title: str
+    description: str | None = None
+    forms_count: int
+    fields_count: int
+    required_fields_count: int
+    last_published_at: str | None = None
+    last_published_by: str | None = None
+
+
+class AdminFormsBuilderCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_endpoint: str
+    save_endpoint: str
+    field_type_options: list[AdminFilterOption]
+
+
+class AdminFormsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminFormsSummary
+    capabilities: AdminFormsBuilderCapabilities
+    forms: list[AdminFormsFormItem] = Field(default_factory=list)
+
+
+class AdminFormsSaveFieldOptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+    label: str
+
+
+class AdminFormsSaveVisibleWhenRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    equals: str | None = None
+    values: list[str] = Field(default_factory=list)
+
+
+class AdminFormsSaveFieldRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    type: str
+    required: bool = False
+    placeholder: str | None = None
+    help_text: str | None = None
+    options: list[AdminFormsSaveFieldOptionRequest] = Field(default_factory=list)
+    visible_when: AdminFormsSaveVisibleWhenRequest | None = None
+
+
+class AdminFormsSaveFormRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    request_kind: str
+    title: str
+    description: str | None = None
+    fields: list[AdminFormsSaveFieldRequest] = Field(default_factory=list)
+
+
+class AdminFormsSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    description: str | None = None
+    forms: list[AdminFormsSaveFormRequest] = Field(default_factory=list)
+
+
+class AdminFormsSaveResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminFormsSummary
+    forms: list[AdminFormsFormItem] = Field(default_factory=list)
+    message: str
+
+
 class AdminRolloutAssignment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -16,12 +16,20 @@ from agents.agent_builds_handlers import (
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.devices_repo import DevicesRepo
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
 from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from auth.context import AuthContext
 from auth.middleware import require_auth
+from tickets.form_catalog import (
+    DEFAULT_TICKET_FORM_PACK_KEY,
+    build_default_ticket_form_pack,
+    next_form_pack_version,
+    resolve_ticket_form_pack,
+    validate_form_pack_schema,
+)
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
     AdminBuildIdentity,
@@ -65,6 +73,16 @@ from web_api.dto.admin import (
     AdminDeviceUpdateSummary,
     AdminDeviceUpdatesPayload,
     AdminFilterOption,
+    AdminFormsBuilderCapabilities,
+    AdminFormsFieldItem,
+    AdminFormsFieldOption,
+    AdminFormsFormItem,
+    AdminFormsPayload,
+    AdminFormsSaveFieldRequest,
+    AdminFormsSaveRequest,
+    AdminFormsSaveResult,
+    AdminFormsSummary,
+    AdminFormsVisibleWhen,
     AdminObserverCapabilities,
     AdminRolloutAssignment,
 )
@@ -177,6 +195,16 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
     AdminFilterOption(value="consent", label="Запрос согласия"),
 ]
 
+_FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
+_FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
+_FORM_FIELD_TYPE_LABELS = {
+    "text": "Текст",
+    "textarea": "Большой текст",
+    "select": "Список",
+    "radio": "Переключатель",
+    "checkbox": "Флажок",
+}
+
 
 def _normalize_status_filter(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
@@ -287,6 +315,195 @@ def _empty_admin_modules_payload(*, query: str) -> AdminModulesPayload:
         ),
         modules=[],
     )
+
+
+def _form_field_type_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower() or "text"
+    return _FORM_FIELD_TYPE_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _form_field_type_options() -> list[AdminFilterOption]:
+    return [
+        AdminFilterOption(value=field_type, label=label)
+        for field_type, label in _FORM_FIELD_TYPE_LABELS.items()
+    ]
+
+
+def _map_admin_form_visible_when(raw_rule: dict | None) -> AdminFormsVisibleWhen | None:
+    if not isinstance(raw_rule, dict):
+        return None
+    values = raw_rule.get("in")
+    normalized_values = [str(item) for item in values] if isinstance(values, list) else []
+    return AdminFormsVisibleWhen(
+        field=str(raw_rule.get("field") or ""),
+        equals=str(raw_rule.get("equals") or "").strip() or None,
+        values=normalized_values,
+    )
+
+
+def _map_admin_form_field(raw_field: dict | None) -> AdminFormsFieldItem:
+    field = raw_field or {}
+    return AdminFormsFieldItem(
+        key=str(field.get("key") or ""),
+        label=str(field.get("label") or ""),
+        type=str(field.get("type") or "text"),
+        type_label=_form_field_type_label(field.get("type")),
+        required=bool(field.get("required", False)),
+        placeholder=str(field.get("placeholder") or "").strip() or None,
+        help_text=str(field.get("help_text") or "").strip() or None,
+        options=[
+            AdminFormsFieldOption(
+                value=str(option.get("value") or ""),
+                label=str(option.get("label") or ""),
+            )
+            for option in (field.get("options") or [])
+            if isinstance(option, dict)
+        ],
+        visible_when=_map_admin_form_visible_when(field.get("visible_when")),
+    )
+
+
+def _map_admin_form_item(raw_form: dict | None) -> AdminFormsFormItem:
+    form = raw_form or {}
+    return AdminFormsFormItem(
+        key=str(form.get("key") or ""),
+        request_kind=str(form.get("request_kind") or form.get("key") or ""),
+        title=str(form.get("title") or ""),
+        description=str(form.get("description") or "").strip() or None,
+        fields=[
+            _map_admin_form_field(field)
+            for field in (form.get("fields") or [])
+            if isinstance(field, dict)
+        ],
+    )
+
+
+def _build_admin_forms_summary(
+    pack: dict | None,
+    *,
+    last_published_at: str | None = None,
+    last_published_by: str | None = None,
+) -> AdminFormsSummary:
+    resolved_pack = pack or validate_form_pack_schema(build_default_ticket_form_pack())
+    forms = [form for form in (resolved_pack.get("forms") or []) if isinstance(form, dict)]
+    fields = [
+        field
+        for form in forms
+        for field in (form.get("fields") or [])
+        if isinstance(field, dict)
+    ]
+    required_fields_count = sum(1 for field in fields if bool(field.get("required", False)))
+    return AdminFormsSummary(
+        pack_key=str(resolved_pack.get("pack_key") or DEFAULT_TICKET_FORM_PACK_KEY),
+        version=str(resolved_pack.get("version") or ""),
+        title=str(resolved_pack.get("title") or "Каталог заявок"),
+        description=str(resolved_pack.get("description") or "").strip() or None,
+        forms_count=len(forms),
+        fields_count=len(fields),
+        required_fields_count=required_fields_count,
+        last_published_at=last_published_at,
+        last_published_by=last_published_by,
+    )
+
+
+def _build_admin_forms_payload_from_pack(
+    pack: dict | None,
+    *,
+    last_published_at: str | None = None,
+    last_published_by: str | None = None,
+) -> AdminFormsPayload:
+    resolved_pack = pack or validate_form_pack_schema(build_default_ticket_form_pack())
+    return AdminFormsPayload(
+        summary=_build_admin_forms_summary(
+            resolved_pack,
+            last_published_at=last_published_at,
+            last_published_by=last_published_by,
+        ),
+        capabilities=AdminFormsBuilderCapabilities(
+            current_endpoint=_FORMS_CURRENT_ENDPOINT,
+            save_endpoint=_FORMS_SAVE_ENDPOINT,
+            field_type_options=_form_field_type_options(),
+        ),
+        forms=[
+            _map_admin_form_item(form)
+            for form in (resolved_pack.get("forms") or [])
+            if isinstance(form, dict)
+        ],
+    )
+
+
+def _fallback_admin_forms_payload() -> AdminFormsPayload:
+    builtin = validate_form_pack_schema(build_default_ticket_form_pack())
+    return _build_admin_forms_payload_from_pack(
+        builtin,
+        last_published_by="builtin_default",
+    )
+
+
+def _serialize_admin_form_visible_when(
+    payload: object | None,
+) -> dict | None:
+    if payload is None:
+        return None
+    field = str(getattr(payload, "field", "") or "").strip()
+    if not field:
+        return None
+    equals = str(getattr(payload, "equals", "") or "").strip()
+    values = [
+        str(item or "").strip()
+        for item in (getattr(payload, "values", None) or [])
+        if str(item or "").strip()
+    ]
+    if values:
+        return {"field": field, "in": values}
+    if equals:
+        return {"field": field, "equals": equals}
+    return None
+
+
+def _serialize_admin_form_field_request(payload: AdminFormsSaveFieldRequest) -> dict[str, object]:
+    field_payload: dict[str, object] = {
+        "key": str(payload.key or "").strip(),
+        "label": str(payload.label or "").strip(),
+        "type": str(payload.type or "").strip().lower() or "text",
+        "required": bool(payload.required),
+    }
+    placeholder = str(payload.placeholder or "").strip()
+    if placeholder:
+        field_payload["placeholder"] = placeholder
+    help_text = str(payload.help_text or "").strip()
+    if help_text:
+        field_payload["help_text"] = help_text
+    if field_payload["type"] in {"select", "radio"}:
+        field_payload["options"] = [
+            {
+                "value": str(option.value or "").strip(),
+                "label": str(option.label or "").strip(),
+            }
+            for option in payload.options
+        ]
+    visible_when = _serialize_admin_form_visible_when(payload.visible_when)
+    if visible_when:
+        field_payload["visible_when"] = visible_when
+    return field_payload
+
+
+def _serialize_admin_forms_save_request(payload: AdminFormsSaveRequest) -> dict[str, object]:
+    return {
+        "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
+        "title": str(payload.title or "").strip() or "Каталог заявок",
+        "description": str(payload.description or "").strip(),
+        "forms": [
+            {
+                "key": str(form.key or "").strip(),
+                "request_kind": str(form.request_kind or form.key or "").strip(),
+                "title": str(form.title or "").strip(),
+                "description": str(form.description or "").strip(),
+                "fields": [_serialize_admin_form_field_request(field) for field in form.fields],
+            }
+            for form in payload.forms
+        ],
+    }
 
 
 def _map_admin_module_preferred_rollout_summary(
@@ -1306,6 +1523,74 @@ async def _build_admin_modules_payload(*, query: str) -> AdminModulesPayload:
     )
 
 
+async def _build_admin_forms_payload() -> AdminFormsPayload:
+    builtin = validate_form_pack_schema(build_default_ticket_form_pack())
+
+    async with get_session() as session:
+        repo = TicketFormPacksRepo(session)
+        pack = await resolve_ticket_form_pack(repo, pack_key=DEFAULT_TICKET_FORM_PACK_KEY)
+        current_version = str(pack.get("version") or "")
+        pack_record = await repo.get_pack(DEFAULT_TICKET_FORM_PACK_KEY, current_version) if current_version else None
+
+    return _build_admin_forms_payload_from_pack(
+        pack,
+        last_published_at=pack_record.created_at.isoformat() if pack_record and pack_record.created_at else None,
+        last_published_by=(
+            pack_record.created_by
+            if pack_record is not None
+            else ("builtin_default" if current_version == str(builtin.get("version") or "") else None)
+        ),
+    )
+
+
+async def _save_admin_forms_pack(
+    *,
+    auth_context: AuthContext,
+    payload: AdminFormsSaveRequest,
+) -> AdminFormsSaveResult:
+    raw_pack = _serialize_admin_forms_save_request(payload)
+    normalized_pack = validate_form_pack_schema(raw_pack, require_version=False)
+    updated_by = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+
+    async with get_session() as session:
+        repo = TicketFormPacksRepo(session)
+        current = await resolve_ticket_form_pack(repo, pack_key=DEFAULT_TICKET_FORM_PACK_KEY)
+        next_version = next_form_pack_version(current.get("version") if isinstance(current, dict) else None)
+        while await repo.get_pack(DEFAULT_TICKET_FORM_PACK_KEY, next_version) is not None:
+            next_version = next_form_pack_version(next_version)
+        normalized_pack["version"] = next_version
+        stored_pack = await repo.upsert_pack(
+            pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+            version=next_version,
+            schema_json=normalized_pack,
+            created_by=updated_by,
+            notes=str(normalized_pack.get("description") or ""),
+        )
+        await repo.set_preferred(
+            pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+            version=next_version,
+            updated_by=updated_by,
+        )
+        await session.commit()
+
+    return AdminFormsSaveResult(
+        summary=_build_admin_forms_summary(
+            normalized_pack,
+            last_published_at=stored_pack.created_at.isoformat() if stored_pack.created_at else None,
+            last_published_by=stored_pack.created_by or updated_by,
+        ),
+        forms=[
+            _map_admin_form_item(form)
+            for form in (normalized_pack.get("forms") or [])
+            if isinstance(form, dict)
+        ],
+        message=(
+            f"Каталог опубликован как версия {next_version}. "
+            "Изменения уже активны в /help и в интерфейсе агента."
+        ),
+    )
+
+
 @require_auth("admin")
 async def handle_web_admin_bootstrap(_request):
     payload = AdminBootstrapPayload(
@@ -1314,6 +1599,7 @@ async def handle_web_admin_bootstrap(_request):
             "devices_inventory",
             "agent_rollout",
             "modules_workbench",
+            "forms_builder",
             "tech_panel",
         ],
         observer=AdminObserverCapabilities(
@@ -1458,6 +1744,60 @@ async def handle_web_admin_modules(request: web.Request):
         payload = _empty_admin_modules_payload(query=query)
 
     return json_model_response(SuccessResponse[AdminModulesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_current(_request: web.Request):
+    try:
+        payload = await _build_admin_forms_payload()
+    except Exception as exc:
+        logger.warning(f"[web_admin_forms_current] Falling back to builtin form pack: {exc}")
+        payload = _fallback_admin_forms_payload()
+
+    return json_model_response(SuccessResponse[AdminFormsPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_save(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsSaveRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _save_admin_forms_pack(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_save] Failed to publish typed forms catalog: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать каталог форм",
+                "error_code": "ADMIN_FORMS_SAVE_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminFormsSaveResult](data=result))
 
 
 @require_auth("admin")

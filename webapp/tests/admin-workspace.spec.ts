@@ -43,6 +43,18 @@ test("администратор открывает inventory, modules actions �
   await expect(page.getByText("trace-update-1").first()).toBeVisible();
   await expect(page.locator(".admin-observer-panel__runtime")).toHaveText("Норма");
 
+  await expect(page.getByRole("heading", { name: "Конструктор форм заявок" })).toBeVisible();
+  await expect(page.getByText("Активная версия")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Новая форма" })).toBeVisible();
+  await page.getByRole("button", { name: "Новая форма" }).click();
+  await page.getByLabel("Название формы").fill("Ремонт принтера");
+  await page.getByLabel("Ключ формы").fill("printer_repair");
+  await page.getByLabel("Request kind").fill("printer_repair");
+  await page.getByLabel("Название поля").fill("Код поломки");
+  await page.getByLabel("Ключ поля").fill("issue_code");
+  await page.getByRole("button", { name: "Сохранить изменения" }).click();
+  await expect(page.getByText(/Каталог опубликован как версия 1.0.4/)).toBeVisible();
+
   await page.getByLabel("Причина запуска").fill("canary после smoke");
   await page.getByRole("button", { name: "Запустить обновление" }).click();
   await expect(page.getByText(/Операция op-admin-update-\d+ поставлена в очередь\./)).toBeVisible();

@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
+import { FormsBuilderPanel } from "../forms-builder/forms-builder-panel";
 import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import {
@@ -104,8 +105,8 @@ export function AdminWorkspace() {
           <p className="workspace-boot__eyebrow">Контур управления</p>
           <h1>Рабочее место администрирования</h1>
           <p>
-            Новый рабочий стол уже показывает парк устройств и назначения раскатки. Следующие этапы расширят его
-            обновлениями агентов, модулями и глубоким разбором трассировки observer.
+            Новый рабочий стол уже показывает парк устройств, назначения раскатки, typed registry модулей и
+            конструктор форм заявок. Следующие этапы углубят admin workflows без возврата к legacy admin.js.
           </p>
         </div>
         <dl className="workspace-boot__meta">
@@ -285,6 +286,7 @@ export function AdminWorkspace() {
       </section>
 
       <ModulesPanel />
+      <FormsBuilderPanel />
     </section>
   );
 }
