@@ -49,6 +49,15 @@ def _ensure_relative_path(path_value: str) -> Path | None:
     return candidate
 
 
+def _resolve_public_asset_relative_path(request: web.Request) -> Path | None:
+    asset_name = request.match_info.get("asset_name")
+    if not asset_name:
+        asset_name = Path(request.path).name
+    if not asset_name:
+        return None
+    return _ensure_relative_path(asset_name)
+
+
 def _missing_bundle_response() -> web.Response:
     response = web.Response(
         text=(
@@ -83,7 +92,7 @@ async def handle_webapp_asset(request: web.Request) -> web.Response:
 
 
 async def handle_webapp_public_asset(request: web.Request) -> web.Response:
-    relative_path = _ensure_relative_path(request.match_info["asset_name"])
+    relative_path = _resolve_public_asset_relative_path(request)
     if relative_path is None:
         raise web.HTTPNotFound()
 

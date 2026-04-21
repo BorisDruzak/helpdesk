@@ -300,3 +300,19 @@ async def test_webapp_asset_and_public_asset_are_served_from_dist(tmp_path, monk
     assert public_response.status == 200
     assert public_response.content_type == "image/svg+xml"
     assert "<svg" in public_response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_webapp_public_asset_supports_direct_favicon_route_without_match_info(tmp_path, monkeypatch):
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+    monkeypatch.setattr(webapp_assets_module, "WEBAPP_DIST_DIR", dist_dir)
+
+    request = make_mocked_request("GET", "/favicon.svg")
+    response = await handle_webapp_public_asset(request)
+
+    assert response.status == 200
+    assert response.content_type == "image/svg+xml"
+    assert "<svg" in response.text

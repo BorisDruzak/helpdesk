@@ -95,6 +95,7 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
   private reconnectTimer: TimerHandle | null = null;
   private helloRetryTimer: TimerHandle | null = null;
   private flushRetryTimer: TimerHandle | null = null;
+  private idleCloseTimer: TimerHandle | null = null;
 
   private readonly ticketSubscriptions = new Map<string, TicketSubscriptionState>();
   private readonly deviceSubscriptions = new Map<string, DeviceSubscriptionState>();
@@ -254,6 +255,7 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
       return () => {};
     }
 
+    this.cancelIdleClose();
     const subscription = this.ticketSubscriptions.get(ticketId) ?? {
       listeners: new Set<TicketListener>(),
       active: false,
@@ -288,6 +290,7 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
       return () => {};
     }
 
+    this.cancelIdleClose();
     const subscription = this.deviceSubscriptions.get(deviceId) ?? {
       listeners: new Set<DeviceListener>(),
       active: false,
@@ -328,6 +331,7 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
       return;
     }
 
+    this.cancelIdleClose();
     if (this.socket && this.helloComplete) {
       this.flushSubscriptions();
       return;
@@ -517,10 +521,30 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
     if (this.hasSubscriptions()) {
       return;
     }
-    this.closeSocket(true);
+    if (this.idleCloseTimer) {
+      return;
+    }
+
+    this.idleCloseTimer = setTimeout(() => {
+      this.idleCloseTimer = null;
+      if (this.hasSubscriptions()) {
+        return;
+      }
+      this.closeSocket(true);
+    }, 0);
+  }
+
+  private cancelIdleClose() {
+    if (!this.idleCloseTimer) {
+      return;
+    }
+    clearTimeout(this.idleCloseTimer);
+    this.idleCloseTimer = null;
   }
 
   private closeSocket(manualClose: boolean) {
+    this.cancelIdleClose();
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

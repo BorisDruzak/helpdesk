@@ -233,24 +233,31 @@ describe("createWebRealtimeClient", () => {
       },
     });
 
-    unsubscribeTicket();
-    unsubscribeDevice();
+    vi.useFakeTimers();
+    try {
+      unsubscribeTicket();
+      unsubscribeDevice();
 
-    expect(socket.sent).toContain(
-      JSON.stringify({
-        type: "unsubscribe_ticket",
-        ticket_id: "ticket-1",
-      })
-    );
-    expect(socket.sent).toContain(
-      JSON.stringify({
-        type: "unsubscribe_device",
-        device_id: "device-1",
-      })
-    );
-    expect(socket.closed).toBe(true);
+      expect(socket.sent).toContain(
+        JSON.stringify({
+          type: "unsubscribe_ticket",
+          ticket_id: "ticket-1",
+        })
+      );
+      expect(socket.sent).toContain(
+        JSON.stringify({
+          type: "unsubscribe_device",
+          device_id: "device-1",
+        })
+      );
 
-    client.dispose();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(socket.closed).toBe(true);
+
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("retries ui_hello when the browser websocket is still connecting during open callback", async () => {
@@ -301,6 +308,80 @@ describe("createWebRealtimeClient", () => {
       await vi.advanceTimersByTimeAsync(60);
 
       expect(socket.sent).toContain(JSON.stringify({ type: "ui_hello" }));
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not close a connecting websocket during immediate unsubscribe-resubscribe churn", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: "success",
+          data: {
+            transport: "ws_ui_bridge",
+            auth_mode: "session_cookie",
+            hello_message_type: "ui_hello",
+            socket_url: "/ws_ui",
+            ping_interval_ms: 20000,
+            channels: [],
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      )
+    );
+
+    const client = createWebRealtimeClient({
+      fetchImpl: fetchMock as typeof fetch,
+      webSocketFactory: (url) => new FakeWebSocket(url),
+      locationOverride: {
+        protocol: "http:",
+        host: "127.0.0.1:8666",
+      },
+    });
+
+    const firstUnsubscribe = client.subscribeTicket("ticket-1", vi.fn());
+
+    await waitFor(() => {
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = FakeWebSocket.instances[0]!;
+    socket.readyState = 0;
+
+    vi.useFakeTimers();
+    try {
+      firstUnsubscribe();
+      const secondUnsubscribe = client.subscribeTicket("ticket-2", vi.fn());
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(socket.closed).toBe(false);
+
+      socket.readyState = 1;
+      socket.emitOpen();
+      socket.emitMessage({
+        type: "ui_hello_ack",
+        connection_id: "conn-2",
+        role: "support",
+      });
+
+      expect(socket.sent).toContain(JSON.stringify({ type: "ui_hello" }));
+      expect(socket.sent).toContain(
+        JSON.stringify({
+          type: "subscribe_ticket",
+          ticket_id: "ticket-2",
+          since_event_id: 0,
+          skip_catchup: true,
+        })
+      );
+
+      secondUnsubscribe();
       client.dispose();
     } finally {
       vi.useRealTimers();
