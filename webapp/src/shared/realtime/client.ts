@@ -45,6 +45,7 @@ export type DeviceRealtimeMessage =
 type TicketListener = (message: TicketRealtimeMessage) => void;
 type DeviceListener = (message: DeviceRealtimeMessage) => void;
 type TimerHandle = ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>;
+const SOCKET_OPEN_READY_STATE = 1;
 
 type TicketSubscriptionState = {
   listeners: Set<TicketListener>;
@@ -92,6 +93,8 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
   private manualClose = false;
   private pingTimer: TimerHandle | null = null;
   private reconnectTimer: TimerHandle | null = null;
+  private helloRetryTimer: TimerHandle | null = null;
+  private flushRetryTimer: TimerHandle | null = null;
 
   private readonly ticketSubscriptions = new Map<string, TicketSubscriptionState>();
   private readonly deviceSubscriptions = new Map<string, DeviceSubscriptionState>();
@@ -100,12 +103,13 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
     if (!this.socket || !this.bootstrap) {
       return;
     }
-
-    this.socket.send(
-      JSON.stringify({
+    if (
+      !this.sendSocketPayload(this.socket, {
         type: this.bootstrap.hello_message_type,
       })
-    );
+    ) {
+      this.scheduleHelloRetry();
+    }
   };
 
   private readonly handleSocketMessage = (event: { data: string }) => {
@@ -384,32 +388,55 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
       if (subscription.listeners.size === 0 || subscription.active) {
         continue;
       }
-      this.sendMessage({
-        type: "subscribe_ticket",
-        ticket_id: ticketId,
-        since_event_id: 0,
-        skip_catchup: true,
-      });
+      if (
+        !this.sendMessage({
+          type: "subscribe_ticket",
+          ticket_id: ticketId,
+          since_event_id: 0,
+          skip_catchup: true,
+        })
+      ) {
+        this.scheduleFlushRetry();
+        return;
+      }
     }
 
     for (const [deviceId, subscription] of this.deviceSubscriptions.entries()) {
       if (subscription.listeners.size === 0 || subscription.active) {
         continue;
       }
-      this.sendMessage({
-        type: "subscribe_device",
-        device_id: deviceId,
-        since_event_id: 0,
-        skip_catchup: true,
-      });
+      if (
+        !this.sendMessage({
+          type: "subscribe_device",
+          device_id: deviceId,
+          since_event_id: 0,
+          skip_catchup: true,
+        })
+      ) {
+        this.scheduleFlushRetry();
+        return;
+      }
     }
   }
 
-  private sendMessage(payload: Record<string, unknown>) {
+  private sendMessage(payload: Record<string, unknown>): boolean {
     if (!this.socket || !this.helloComplete) {
-      return;
+      return false;
     }
-    this.socket.send(JSON.stringify(payload));
+    return this.sendSocketPayload(this.socket, payload);
+  }
+
+  private sendSocketPayload(socket: WebSocketLike, payload: Record<string, unknown>): boolean {
+    if (socket.readyState !== SOCKET_OPEN_READY_STATE) {
+      return false;
+    }
+
+    try {
+      socket.send(JSON.stringify(payload));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private dispatchTicketMessage(ticketId: string, message: TicketRealtimeMessage) {
@@ -464,6 +491,28 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
     }, this.reconnectDelayMs);
   }
 
+  private scheduleHelloRetry() {
+    if (this.helloRetryTimer || !this.socket || !this.bootstrap || this.helloComplete) {
+      return;
+    }
+
+    this.helloRetryTimer = setTimeout(() => {
+      this.helloRetryTimer = null;
+      this.handleSocketOpen();
+    }, 50);
+  }
+
+  private scheduleFlushRetry() {
+    if (this.flushRetryTimer || !this.helloComplete) {
+      return;
+    }
+
+    this.flushRetryTimer = setTimeout(() => {
+      this.flushRetryTimer = null;
+      this.flushSubscriptions();
+    }, 50);
+  }
+
   private closeIfIdle() {
     if (this.hasSubscriptions()) {
       return;
@@ -475,6 +524,16 @@ class WebRealtimeClientImpl implements WebRealtimeClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    if (this.helloRetryTimer) {
+      clearTimeout(this.helloRetryTimer);
+      this.helloRetryTimer = null;
+    }
+
+    if (this.flushRetryTimer) {
+      clearTimeout(this.flushRetryTimer);
+      this.flushRetryTimer = null;
     }
 
     this.manualClose = manualClose;
