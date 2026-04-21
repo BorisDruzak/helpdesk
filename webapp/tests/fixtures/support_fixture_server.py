@@ -7,6 +7,7 @@ import argparse
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import itertools
+import json
 from pathlib import Path
 import sys
 
@@ -53,6 +54,8 @@ def build_fixture_state() -> dict:
         "message_counter": itertools.count(200),
         "operation_counter": itertools.count(1),
         "session_user": None,
+        "ws_ticket_subscribers": {},
+        "ws_device_subscribers": {},
         "admin": {
             "rollout": [
                 {
@@ -747,6 +750,35 @@ def require_session(request: web.Request) -> web.Response | None:
     if token == SESSION_TOKEN:
         return None
     return json_error("Требуется авторизация.", status=401, error_code="UNAUTHORIZED")
+
+
+async def broadcast_fixture_message(subscribers: set[web.WebSocketResponse], payload: dict) -> None:
+    stale: list[web.WebSocketResponse] = []
+    for ws in list(subscribers):
+        if ws.closed:
+            stale.append(ws)
+            continue
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            stale.append(ws)
+
+    for ws in stale:
+        subscribers.discard(ws)
+
+
+async def broadcast_fixture_ticket_event(state: dict, ticket_id: str, payload: dict) -> None:
+    subscribers = state["ws_ticket_subscribers"].get(ticket_id)
+    if not subscribers:
+        return
+    await broadcast_fixture_message(subscribers, payload)
+
+
+async def broadcast_fixture_device_event(state: dict, device_id: str, payload: dict) -> None:
+    subscribers = state["ws_device_subscribers"].get(device_id)
+    if not subscribers:
+        return
+    await broadcast_fixture_message(subscribers, payload)
 
 
 def build_admin_devices_payload(state: dict, *, status_filter: str, query: str) -> dict:
@@ -1465,6 +1497,184 @@ async def handle_session_logout(request: web.Request) -> web.Response:
     return response
 
 
+async def handle_realtime_bootstrap(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return json_success(
+        {
+            "transport": "ws_ui_bridge",
+            "auth_mode": "session_cookie",
+            "hello_message_type": "ui_hello",
+            "socket_url": "/ws_ui",
+            "ping_interval_ms": 20000,
+            "channels": [
+                {
+                    "channel": "support.queue",
+                    "scope": "ticket",
+                    "subscribe_message_type": "subscribe_ticket",
+                    "unsubscribe_message_type": "unsubscribe_ticket",
+                    "supports_catchup": True,
+                    "supports_live_only": True,
+                },
+                {
+                    "channel": "ticket.stream",
+                    "scope": "ticket",
+                    "subscribe_message_type": "subscribe_ticket",
+                    "unsubscribe_message_type": "unsubscribe_ticket",
+                    "supports_catchup": True,
+                    "supports_live_only": True,
+                },
+                {
+                    "channel": "admin.devices",
+                    "scope": "device",
+                    "subscribe_message_type": "subscribe_device",
+                    "unsubscribe_message_type": "unsubscribe_device",
+                    "supports_catchup": True,
+                    "supports_live_only": True,
+                },
+                {
+                    "channel": "tech.feed",
+                    "scope": "device",
+                    "subscribe_message_type": "subscribe_device",
+                    "unsubscribe_message_type": "unsubscribe_device",
+                    "supports_catchup": True,
+                    "supports_live_only": True,
+                },
+            ],
+        }
+    )
+
+
+async def handle_ws_ui(request: web.Request) -> web.StreamResponse:
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    state = request.app["fixture_state"]
+    authenticated = False
+    ticket_subscriptions: set[str] = set()
+    device_subscriptions: set[str] = set()
+
+    try:
+        async for msg in ws:
+            if msg.type != web.WSMsgType.TEXT:
+                continue
+
+            data = json.loads(msg.data)
+            message_type = data.get("type")
+
+            if message_type == "ui_hello":
+                unauthorized = require_session(request)
+                if unauthorized:
+                    await ws.send_json({"type": "error", "error": "Authentication required"})
+                    await ws.close()
+                    return ws
+
+                authenticated = True
+                session_user = state.get("session_user") or {
+                    "user_login": SUPPORT_LOGIN,
+                    "actor_role": SUPPORT_ACTOR_ROLE,
+                }
+                await ws.send_json(
+                    {
+                        "type": "ui_hello_ack",
+                        "connection_id": "fixture-connection",
+                        "role": session_user["actor_role"],
+                    }
+                )
+                continue
+
+            if not authenticated:
+                await ws.send_json(
+                    {
+                        "type": "error",
+                        "error": "Authentication required. Send ui_hello first.",
+                    }
+                )
+                continue
+
+            if message_type == "subscribe_ticket":
+                ticket_id = str(data.get("ticket_id") or "").strip()
+                since_event_id = int(data.get("since_event_id", 0) or 0)
+                if not ticket_id:
+                    await ws.send_json({"type": "error", "error": "Missing ticket_id"})
+                    continue
+
+                ticket_subscriptions.add(ticket_id)
+                state["ws_ticket_subscribers"].setdefault(ticket_id, set()).add(ws)
+                await ws.send_json(
+                    {
+                        "type": "catchup_done",
+                        "scope": "ticket",
+                        "id": ticket_id,
+                        "last_event_id": since_event_id,
+                        "truncated": False,
+                    }
+                )
+                await ws.send_json(
+                    {
+                        "type": "subscribe_ack",
+                        "ticket_id": ticket_id,
+                        "since_event_id": since_event_id,
+                    }
+                )
+                continue
+
+            if message_type == "unsubscribe_ticket":
+                ticket_id = str(data.get("ticket_id") or "").strip()
+                ticket_subscriptions.discard(ticket_id)
+                state["ws_ticket_subscribers"].get(ticket_id, set()).discard(ws)
+                await ws.send_json({"type": "unsubscribe_ack", "ticket_id": ticket_id})
+                continue
+
+            if message_type == "subscribe_device":
+                device_id = str(data.get("device_id") or "").strip()
+                since_event_id = int(data.get("since_event_id", 0) or 0)
+                if not device_id:
+                    await ws.send_json({"type": "error", "error": "Missing device_id"})
+                    continue
+
+                device_subscriptions.add(device_id)
+                state["ws_device_subscribers"].setdefault(device_id, set()).add(ws)
+                await ws.send_json(
+                    {
+                        "type": "catchup_done",
+                        "scope": "device",
+                        "id": device_id,
+                        "last_event_id": since_event_id,
+                        "truncated": False,
+                    }
+                )
+                await ws.send_json(
+                    {
+                        "type": "subscribe_ack",
+                        "device_id": device_id,
+                        "since_event_id": since_event_id,
+                    }
+                )
+                continue
+
+            if message_type == "unsubscribe_device":
+                device_id = str(data.get("device_id") or "").strip()
+                device_subscriptions.discard(device_id)
+                state["ws_device_subscribers"].get(device_id, set()).discard(ws)
+                await ws.send_json({"type": "unsubscribe_ack", "device_id": device_id})
+                continue
+
+            if message_type == "ping":
+                await ws.send_json({"type": "pong", "ts": now_iso(minutes=30)})
+                continue
+
+            await ws.send_json({"type": "error", "error": f"Unknown message type: {message_type}"})
+    finally:
+        for ticket_id in ticket_subscriptions:
+            state["ws_ticket_subscribers"].get(ticket_id, set()).discard(ws)
+        for device_id in device_subscriptions:
+            state["ws_device_subscribers"].get(device_id, set()).discard(ws)
+
+    return ws
+
+
 async def handle_support_bootstrap(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -1565,6 +1775,23 @@ async def handle_support_ticket_message(request: web.Request) -> web.Response:
     ticket_state["timeline"].insert(0, message)
     ticket_state["ticket"]["updated_at"] = timestamp
     ticket_state["snapshot"]["last_event_id"] = message["event_id"]
+    await broadcast_fixture_ticket_event(
+        state,
+        ticket_id,
+        {
+            "type": "ticket_event_committed",
+            "ticket_id": ticket_id,
+            "event_id": message["event_id"],
+            "event_type": "chat_message",
+            "operation_id": None,
+            "agent_seq": None,
+            "ts": timestamp,
+            "payload": {
+                "message_id": message_id,
+                "text": message["text"],
+            },
+        },
+    )
     return json_success({"ticket_id": ticket_id, "message": deepcopy(message)})
 
 
@@ -1583,6 +1810,23 @@ async def handle_support_ticket_status(request: web.Request) -> web.Response:
     ticket_state["ticket"]["status"] = to_status
     ticket_state["ticket"]["status_label"] = STATUS_LABELS.get(to_status, to_status)
     ticket_state["ticket"]["updated_at"] = now_iso(minutes=16)
+    await broadcast_fixture_ticket_event(
+        state,
+        ticket_id,
+        {
+            "type": "ticket_event_committed",
+            "ticket_id": ticket_id,
+            "event_id": next(state["message_counter"]),
+            "event_type": "status_changed",
+            "operation_id": None,
+            "agent_seq": None,
+            "ts": ticket_state["ticket"]["updated_at"],
+            "payload": {
+                "status": to_status,
+                "status_label": ticket_state["ticket"]["status_label"],
+            },
+        },
+    )
     return json_success(
         {
             "ticket_id": ticket_id,
@@ -1664,6 +1908,23 @@ async def handle_support_ticket_tool_run(request: web.Request) -> web.Response:
     )
     ticket_state["ticket"]["updated_at"] = finished_at
     ticket_state["observer"]["summary"]["latest_trace_at"] = finished_at
+    await broadcast_fixture_ticket_event(
+        state,
+        ticket_id,
+        {
+            "type": "ticket_event_committed",
+            "ticket_id": ticket_id,
+            "event_id": result_event["event_id"],
+            "event_type": "tool_call_result",
+            "operation_id": operation_id,
+            "agent_seq": None,
+            "ts": finished_at,
+            "payload": {
+                "tool_name": tool_name,
+                "status": "success",
+            },
+        },
+    )
     return json_success(
         {
             "ticket_id": ticket_id,
@@ -1865,6 +2126,20 @@ async def handle_admin_device_update_run(request: web.Request) -> web.Response:
         "summary": f"Запрос сохранён с причиной: {reason}",
     }
     payload["action"]["label"] = "Повторить rollout"
+    state["admin"]["device_updates"][device_id] = deepcopy(payload)
+    await broadcast_fixture_device_event(
+        state,
+        device_id,
+        {
+            "type": "operation_updated",
+            "operation_id": operation_id,
+            "ticket_id": None,
+            "device_id": device_id,
+            "status": "queued",
+            "updated_at": now_iso(minutes=19),
+            "error": None,
+        },
+    )
     return json_success(
         {
             "device_id": device_id,
@@ -1886,6 +2161,7 @@ def build_app() -> web.Application:
             web.get("/api/web/session/me", handle_session_me),
             web.post("/api/web/session/login", handle_session_login),
             web.post("/api/web/session/logout", handle_session_logout),
+            web.get("/api/web/realtime/bootstrap", handle_realtime_bootstrap),
             web.get("/api/web/support/bootstrap", handle_support_bootstrap),
             web.get("/api/web/support/queue", handle_support_queue),
             web.get("/api/web/support/tickets/{ticket_id}", handle_support_ticket_detail),
@@ -1907,6 +2183,7 @@ def build_app() -> web.Application:
             web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
+            web.get("/ws_ui", handle_ws_ui),
             web.get("/app", handle_webapp_page),
             web.get("/app/{tail:.*}", handle_webapp_page),
         ]

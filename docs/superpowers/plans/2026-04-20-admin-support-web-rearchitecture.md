@@ -434,17 +434,17 @@ git commit -m "feat: migrate admin workspace to new web platform"
 - Test: `server/tests/test_web_realtime_api.py`
 - Test: `webapp/src/shared/realtime/*.test.ts`
 
-- [ ] **Step 1: Define realtime contract for the new app**
+- [x] **Step 1: Define realtime contract for the new app**
 
 Expected:
 - React features consume a stable transport abstraction rather than raw ws details
 
-- [ ] **Step 2: Bridge queue/ticket/device/tech feeds**
+- [x] **Step 2: Bridge queue/ticket/device/tech feeds**
 
 Expected:
 - support/admin pages update live without embedding legacy transport logic
 
-- [ ] **Step 3: Verify realtime contract**
+- [x] **Step 3: Verify realtime contract**
 
 Run:
 

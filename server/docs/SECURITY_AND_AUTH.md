@@ -84,11 +84,14 @@
 
 ### 3.1 ui_hello
 
-1. Клиент должен первым делом отправить сообщение с `type: "ui_hello"` и полем `token` (сырой UI токен).
-2. Без токена или с невалидным токеном сервер отправляет `type: "error"` и закрывает соединение с кодом 4003.
-3. **Критично:** `actor_role` и `user_login` берутся **только из записи токена в БД**, не из payload. Если в payload указана другая роль — используется роль из токена, в лог пишется предупреждение.
-4. После успешной проверки создаётся `AuthContext` и сохраняется в данных соединения; клиенту отправляется `ui_hello_ack` с `connection_id` и `role` (из токена).
-5. Все последующие сообщения (subscribe_ticket, subscribe_device, ping и т.д.) обрабатываются только если уже выполнён успешный `ui_hello`; иначе возвращается ошибка «Authentication required. Send ui_hello first.»
+1. Клиент должен первым делом отправить сообщение с `type: "ui_hello"`.
+2. Legacy shell и внешние UI-клиенты могут передавать в `ui_hello` поле `token` (сырой UI токен).
+3. Новый `webapp` под `/app/*` использует httpOnly cookie-session: websocket `/ws_ui` читает UI token из cookie `pc_client_web_session`, поэтому JS-код не должен вытаскивать сырой токен в browser runtime.
+4. Без валидного token/session cookie сервер отправляет `type: "error"` и закрывает соединение с кодом 4003.
+5. **Критично:** `actor_role` и `user_login` берутся **только из записи токена в БД**, не из payload. Если в payload указана другая роль — используется роль из токена, в лог пишется предупреждение.
+6. После успешной проверки создаётся `AuthContext` и сохраняется в данных соединения; клиенту отправляется `ui_hello_ack` с `connection_id` и `role` (из токена).
+7. Все последующие сообщения (subscribe_ticket, subscribe_device, ping и т.д.) обрабатываются только если уже выполнён успешный `ui_hello`; иначе возвращается ошибка «Authentication required. Send ui_hello first.»
+8. Новый realtime bridge для `webapp` сначала получает typed bootstrap через `GET /api/web/realtime/bootstrap`, а затем подключается к `/ws_ui` уже с cookie-session; bridge-рекламируемые `support.queue`, `ticket.stream`, `admin.devices` и `tech.feed` подписки остаются transport-detail слоем и не должны протекать в feature-код React.
 
 ---
 
@@ -202,6 +205,7 @@
 - `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type"}}`.
 - `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
 - Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.
+- `GET /api/web/realtime/bootstrap` возвращает typed transport contract для нового `webapp` (`transport`, `auth_mode`, `socket_url`, `hello_message_type`, channel contracts). Реальное websocket-подключение идёт в `/ws_ui` и использует ту же cookie-session без раскрытия raw token в JS.
 
 ---
 

@@ -18,6 +18,7 @@ from typing import Optional
 from aiohttp import web, WSMsgType
 from loguru import logger
 from state_manager import StateManager
+from auth.middleware import WEB_SESSION_COOKIE_NAME
 from auth.service import AuthService
 from auth.context import AuthContext, AuthType
 
@@ -37,6 +38,13 @@ def _is_closing_transport_error(error: Exception) -> bool:
         or "connection reset by peer" in message
         or "websocket connection is closing" in message
     )
+
+
+def _extract_session_cookie_token(request: web.Request) -> Optional[str]:
+    token = request.cookies.get(WEB_SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    return token.strip() or None
 
 
 async def send_ticket_catchup(
@@ -383,15 +391,15 @@ async def websocket_ui_handler(request):
                     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     if msg_type == "ui_hello":
                         # Phase 3: Проверяем токен для аутентификации через БД
-                        token = data.get("token")
+                        token = data.get("token") or _extract_session_cookie_token(request)
                         
                         if not token:
                             logger.warning(f"🔴 UI попытка подключения без токена: connection_id={connection_id}")
                             await ws.send_json({
                                 "type": "error",
-                                "error": "Token required"
+                                "error": "Token or session cookie required"
                             })
-                            await ws.close(code=4003, message=b"Token required")
+                            await ws.close(code=4003, message=b"Token or session cookie required")
                             return ws
                         
                         # Проверяем токен через AuthService (БД)
@@ -461,6 +469,7 @@ async def websocket_ui_handler(request):
                     elif msg_type == "subscribe_ticket":
                         ticket_id = data.get("ticket_id")
                         since_event_id = data.get("since_event_id", 0)  # Default to 0 for full history
+                        skip_catchup = bool(data.get("skip_catchup", False))
                         
                         if not ticket_id:
                             await ws.send_json({
@@ -501,7 +510,16 @@ async def websocket_ui_handler(request):
                         
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up (replay) from DB FIRST
-                        await send_ticket_catchup(ws, ticket_id, since_event_id)
+                        if skip_catchup:
+                            await ws.send_json({
+                                "type": "catchup_done",
+                                "scope": "ticket",
+                                "id": ticket_id,
+                                "last_event_id": since_event_id,
+                                "truncated": False
+                            })
+                        else:
+                            await send_ticket_catchup(ws, ticket_id, since_event_id)
                         
                         # 2. THEN register subscription (after catch-up complete)
                         if state.subscription_registry:
@@ -550,6 +568,8 @@ async def websocket_ui_handler(request):
                     elif msg_type == "subscribe_device":
                         device_id = data.get("device_id")
                         since_event_id = data.get("since_event_id", 0)
+                        skip_catchup = bool(data.get("skip_catchup", False))
+                        skip_catchup = bool(data.get("skip_catchup", False))
                         
                         if not device_id:
                             await ws.send_json({
@@ -566,7 +586,16 @@ async def websocket_ui_handler(request):
                         
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up FIRST
-                        await send_device_catchup(ws, device_id, since_event_id)
+                        if skip_catchup:
+                            await ws.send_json({
+                                "type": "catchup_done",
+                                "scope": "device",
+                                "id": device_id,
+                                "last_event_id": since_event_id,
+                                "truncated": False
+                            })
+                        else:
+                            await send_device_catchup(ws, device_id, since_event_id)
                         
                         # 2. THEN register subscription
                         if state.subscription_registry:
@@ -606,7 +635,16 @@ async def websocket_ui_handler(request):
                         
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up FIRST
-                        await send_chat_catchup(ws, job_id, since_event_id)
+                        if skip_catchup:
+                            await ws.send_json({
+                                "type": "catchup_done",
+                                "scope": "chat",
+                                "id": job_id,
+                                "last_event_id": since_event_id,
+                                "truncated": False
+                            })
+                        else:
+                            await send_chat_catchup(ws, job_id, since_event_id)
                         
                         # 2. THEN register subscription
                         if state.subscription_registry:

@@ -5,6 +5,28 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupportTicketDetailPayload } from "./api";
 import { SupportWorkspace } from "./support-workspace";
 
+const ticketRealtimeListeners = new Map<string, Set<(message: { ticketId: string }) => void>>();
+
+const realtimeClientMock = {
+  subscribeTicket: vi.fn((ticketId: string, listener: (message: { ticketId: string }) => void) => {
+    const listeners = ticketRealtimeListeners.get(ticketId) ?? new Set<(message: { ticketId: string }) => void>();
+    listeners.add(listener);
+    ticketRealtimeListeners.set(ticketId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        ticketRealtimeListeners.delete(ticketId);
+      }
+    };
+  }),
+  subscribeDevice: vi.fn(() => () => {}),
+  dispose: vi.fn(),
+};
+
+vi.mock("../../shared/realtime/client", () => ({
+  getSharedWebRealtimeClient: () => realtimeClientMock,
+}));
+
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -17,8 +39,22 @@ function jsonResponse(payload: unknown, status = 200) {
 
 
 afterEach(() => {
+  ticketRealtimeListeners.clear();
   vi.unstubAllGlobals();
 });
+
+
+function emitTicketRealtime(ticketId: string) {
+  const listeners = ticketRealtimeListeners.get(ticketId);
+  if (!listeners) {
+    return;
+  }
+  for (const listener of listeners) {
+    listener({
+      ticketId,
+    });
+  }
+}
 
 
 function renderSupportWorkspace() {
@@ -40,6 +76,173 @@ function renderSupportWorkspace() {
 
 
 describe("SupportWorkspace", () => {
+  it("refetches queue and ticket detail when realtime bridge reports a ticket event", async () => {
+    let detailRevision = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/support/bootstrap") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              workspace: "support",
+              features: ["queue_overview", "ticket_workspace", "observer_trace", "tool_actions"],
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/{ticket_id}/observer",
+                drawer_tab: "trace",
+              },
+            },
+          });
+        }
+
+        if (url.startsWith("/api/web/support/queue")) {
+          return jsonResponse({
+            status: "success",
+            data: {
+              scope: "all",
+              query: "",
+              status_filter: "all",
+              summary: {
+                visible_count: 1,
+                selected_ticket_id: "ticket-1",
+              },
+              filters: {
+                scope_options: [
+                  { value: "all", label: "Все доступные" },
+                  { value: "mine", label: "Только мои" },
+                ],
+                status_options: [{ value: "all", label: "Все статусы" }],
+              },
+              tickets: [
+                {
+                  ticket_id: "ticket-1",
+                  ticket_code: "T-100001",
+                  title: "Сбой синхронизации",
+                  status: "new",
+                  status_label: "Новая",
+                  queue_code: "servicedesk_l1",
+                  assignee_id: null,
+                  requester_display_name: "Алексей",
+                  device_id: "device-1",
+                  updated_at: "2026-04-20T08:10:00+05:00",
+                  created_at: "2026-04-20T07:55:00+05:00",
+                  requires_operator_action: true,
+                  unread_user_messages: 1,
+                },
+              ],
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1") {
+          detailRevision += 1;
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket: {
+                ticket_id: "ticket-1",
+                ticket_code: "T-100001",
+                title: "Сбой синхронизации",
+                description: "Нужно переподключить агента и проверить канал.",
+                status: "new",
+                status_label: "Новая",
+                requester_display_name: "Алексей",
+                device_id: "device-1",
+                queue: {
+                  id: 11,
+                  code: "servicedesk_l1",
+                  name: "ServiceDesk L1",
+                },
+                assignee_id: null,
+                updated_at: "2026-04-20T08:10:00+05:00",
+                created_at: "2026-04-20T07:55:00+05:00",
+                queue_members: [],
+              },
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
+                summary: {
+                  ticket_id: "ticket-1",
+                  root_trace_id: "trace-support-root",
+                  trace_count: 3,
+                  active_trace_count: 1,
+                  error_trace_count: 1,
+                  signature_count: 1,
+                  latest_trace_at: "2026-04-20T08:09:00+05:00",
+                },
+              },
+              timeline: [
+                {
+                  message_id: `msg-${detailRevision}`,
+                  event_id: detailRevision,
+                  event_type: "chat_message",
+                  from_role: "support",
+                  sender_display_name: "Оператор",
+                  text:
+                    detailRevision === 1
+                      ? "Первичный ответ в ленте."
+                      : "В ленту пришло новое сообщение по realtime.",
+                  ts: "2026-04-20T08:11:00+05:00",
+                  visibility: "public",
+                  direction: "from_support",
+                  attachments: [],
+                  reply_to: null,
+                },
+              ],
+              snapshot: {
+                last_event_id: detailRevision,
+                notification_unread: 0,
+                presence: {
+                  requester_online: true,
+                  support_online: true,
+                  agent_online: true,
+                },
+                device: {
+                  device_id: "device-1",
+                  hostname: "WS-01",
+                  os: "Windows 11",
+                  agent_version: "2.4.0",
+                  last_seen_at: "2026-04-20T08:10:00+05:00",
+                  online: true,
+                },
+                latest_operations: [],
+              },
+              actions: {
+                status_options: [],
+                can_send_internal_note: true,
+              },
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1/tools") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_id: "ticket-1",
+              device_id: "device-1",
+              tools: [],
+            },
+          });
+        }
+
+        return jsonResponse({ status: "error", error: `Unhandled URL: ${url}` }, 404);
+      })
+    );
+
+    renderSupportWorkspace();
+
+    expect(await screen.findByText("Первичный ответ в ленте.")).toBeInTheDocument();
+
+    emitTicketRealtime("ticket-1");
+
+    await waitFor(() => {
+      expect(screen.getByText("В ленту пришло новое сообщение по realtime.")).toBeInTheDocument();
+    });
+  });
+
   it("renders queue data and lets the operator switch selected ticket", async () => {
     vi.stubGlobal(
       "fetch",

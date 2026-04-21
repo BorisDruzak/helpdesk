@@ -4,6 +4,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdminWorkspacePage } from "./index";
 
+const realtimeClientMock = {
+  subscribeTicket: vi.fn(() => () => {}),
+  subscribeDevice: vi.fn(() => () => {}),
+  dispose: vi.fn(),
+};
+
+vi.mock("../../shared/realtime/client", () => ({
+  getSharedWebRealtimeClient: () => realtimeClientMock,
+}));
+
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {

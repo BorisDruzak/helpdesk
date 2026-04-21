@@ -18,6 +18,7 @@ import {
   type SupportTicketDetailPayload,
   type SupportTicketToolsPayload
 } from "./api";
+import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
@@ -785,6 +786,38 @@ export function SupportWorkspace() {
   useEffect(() => {
     setToolActionMessage(null);
   }, [selectedTicketId]);
+
+  const visibleTicketIds = supportQueueQuery.data?.tickets.map((ticket) => ticket.ticket_id) ?? [];
+  const visibleTicketIdsKey = visibleTicketIds.join("|");
+
+  useEffect(() => {
+    const ticketIds = Array.from(
+      new Set(
+        [...visibleTicketIds, selectedTicketId].filter((value): value is string => Boolean(value))
+      )
+    );
+    if (ticketIds.length === 0) {
+      return;
+    }
+
+    const realtimeClient = getSharedWebRealtimeClient();
+    const unsubscribers = ticketIds.map((ticketId) =>
+      realtimeClient.subscribeTicket(ticketId, (message) => {
+        void queryClient.invalidateQueries({ queryKey: ["support", "queue"] });
+        if (message.ticketId !== selectedTicketId) {
+          return;
+        }
+        void queryClient.invalidateQueries({ queryKey: ["support", "ticket", selectedTicketId] });
+        void queryClient.invalidateQueries({ queryKey: ["support", "tools", selectedTicketId] });
+      })
+    );
+
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+  }, [queryClient, selectedTicketId, visibleTicketIdsKey]);
 
   const sendMessageMutation = useMutation({
     mutationFn: ({ ticketId, text }: { ticketId: string; text: string }) => postSupportTicketMessage(ticketId, text),

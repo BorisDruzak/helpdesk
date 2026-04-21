@@ -1,10 +1,11 @@
 import { useDeferredValue, useEffect, useState, startTransition } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
 import { FormsBuilderPanel } from "../forms-builder/forms-builder-panel";
 import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
+import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import {
   type AdminStatusFilter,
   fetchAdminBootstrap,
@@ -30,6 +31,7 @@ function formatDateTime(value: string | null | undefined): string {
 
 
 export function AdminWorkspace() {
+  const queryClient = useQueryClient();
   const [queryDraft, setQueryDraft] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>("all");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -67,6 +69,35 @@ export function AdminWorkspace() {
       setSelectedDeviceId(devices[0].device_id);
     }
   }, [devices, selectedDeviceId]);
+
+  const visibleDeviceIds = devices.map((device) => device.device_id);
+  const visibleDeviceIdsKey = visibleDeviceIds.join("|");
+
+  useEffect(() => {
+    if (!visibleDeviceIds.length) {
+      return;
+    }
+
+    const realtimeClient = getSharedWebRealtimeClient();
+    const unsubscribers = visibleDeviceIds.map((deviceId) =>
+      realtimeClient.subscribeDevice(deviceId, (message) => {
+        void queryClient.invalidateQueries({ queryKey: ["admin-devices"] });
+        if (message.deviceId !== selectedDevice?.device_id) {
+          return;
+        }
+        void queryClient.invalidateQueries({ queryKey: ["admin-device-updates", selectedDevice.device_id] });
+        void queryClient.invalidateQueries({ queryKey: ["admin-observer-quick", selectedDevice.device_id] });
+        void queryClient.invalidateQueries({ queryKey: ["admin-observer-traces", selectedDevice.device_id] });
+        void queryClient.invalidateQueries({ queryKey: ["admin-observer-trace-detail"] });
+      })
+    );
+
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+  }, [queryClient, selectedDevice?.device_id, visibleDeviceIdsKey]);
 
   if (bootstrapQuery.isLoading || devicesQuery.isLoading) {
     return (

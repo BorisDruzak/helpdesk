@@ -1,9 +1,33 @@
-import { expect, test } from "playwright/test";
+import { expect, test, type Page } from "playwright/test";
+
+
+function waitForRealtimeSubscribeAck(page: Page, scope: "ticket" | "device", id: string): Promise<void> {
+  return new Promise((resolve) => {
+    page.on("websocket", (socket) => {
+      if (!socket.url().endsWith("/ws_ui")) {
+        return;
+      }
+      socket.on("framereceived", (event) => {
+        try {
+          const payload = JSON.parse(event.payload);
+          const payloadId = scope === "ticket" ? payload.ticket_id : payload.device_id;
+          if (payload.type === "subscribe_ack" && payloadId === id) {
+            resolve();
+          }
+        } catch {
+          // Ignore non-JSON frames from the test bridge.
+        }
+      });
+    });
+  });
+}
 
 
 test("администратор открывает inventory, modules actions и observer drilldown в /app/admin", async ({
-  page
+  page,
 }) => {
+  const deviceRealtimeReady = waitForRealtimeSubscribeAck(page, "device", "device-1");
+
   await page.goto("/app/admin");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
@@ -25,7 +49,10 @@ test("администратор открывает inventory, modules actions �
   await expect(page.getByRole("heading", { name: "Реестр модулей" })).toBeVisible();
   await expect(page.getByRole("button", { name: /network_ping/i })).toBeVisible();
   await expect(
-    page.locator(".support-snapshot-card").filter({ hasText: "Rollout policy" }).getByText("Обновлять установленные устройства")
+    page
+      .locator(".support-snapshot-card")
+      .filter({ hasText: "Rollout policy" })
+      .getByText("Обновлять установленные устройства")
   ).toBeVisible();
 
   await page.getByRole("combobox", { name: "Режим preferred-rollout" }).selectOption("manual");
@@ -54,9 +81,25 @@ test("администратор открывает inventory, modules actions �
   await page.getByLabel("Ключ поля").fill("issue_code");
   await page.getByRole("button", { name: "Сохранить изменения" }).click();
   await expect(page.getByText(/Каталог опубликован как версия 1.0.4/)).toBeVisible();
+  await deviceRealtimeReady;
+
+  const realtimeReason = "realtime smoke с внешнего запроса";
+  await page.evaluate(async (reason) => {
+    await fetch("/api/web/admin/devices/device-1/updates/run", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason }),
+    });
+  }, realtimeReason);
+  await expect(page.getByText("Поставлено в очередь")).toBeVisible();
+  await expect(page.getByText(`Запрос сохранён с причиной: ${realtimeReason}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Повторить rollout" })).toBeVisible();
 
   await page.getByLabel("Причина запуска").fill("canary после smoke");
-  await page.getByRole("button", { name: "Запустить обновление" }).click();
+  await page.getByRole("button", { name: "Повторить rollout" }).click();
   await expect(page.getByText(/Операция op-admin-update-\d+ поставлена в очередь\./)).toBeVisible();
 
   await page.getByRole("button", { name: /LT-02/i }).click();
@@ -66,5 +109,7 @@ test("администратор открывает inventory, modules actions �
 
   await page.getByRole("button", { name: "72 часа" }).click();
   await expect(page.locator(".admin-observer-panel__runtime")).toHaveText("Есть отставание");
-  await expect(page.getByText("Для выбранного устройства по текущим фильтрам трасс пока нет.")).toBeVisible();
+  await expect(
+    page.getByText("Для выбранного устройства по текущим фильтрам трасс пока нет.")
+  ).toBeVisible();
 });

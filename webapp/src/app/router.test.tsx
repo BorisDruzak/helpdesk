@@ -6,6 +6,16 @@ import { SessionProvider } from "../features/auth/session-provider";
 import { appRoutes } from "./router";
 import { QueryProvider } from "./providers/query-provider";
 
+const realtimeClientMock = {
+  subscribeTicket: vi.fn(() => () => {}),
+  subscribeDevice: vi.fn(() => () => {}),
+  dispose: vi.fn(),
+};
+
+vi.mock("../shared/realtime/client", () => ({
+  getSharedWebRealtimeClient: () => realtimeClientMock,
+}));
+
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
