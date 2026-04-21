@@ -51,18 +51,19 @@
 ### 2.1 WebSocket
 | Файл | Назначение |
 |------|------------|
-| `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter` |
-| `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command |
-| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata, controlled reprovision токена на уже известный `device_id` и migration rebind legacy install-based token binding -> canonical `machine_id` |
+| `server/websocket/agent_handler.py` | WS агентов `/ws`: transport-loop + wiring `AgentMessageRouter`; compare-safe disconnect cleanup и `outbox_items_batch` routing |
+| `server/websocket/agent_services.py` | `AgentMessageRouter` + сервисы handshake/ack/result/outbox/agent-command; batched outbox ingest reuses the per-item pipeline and flushes ACK/NACK once per WS batch |
+| `server/websocket/agent_handshake.py` | Полная логика `handle_handshake` (Protocol V3 auth/register/capabilities), canonical `machine_id`/`install_id` metadata, controlled reprovision токена на уже известный `device_id`, runtime `connection_id` per successful handshake и supersede-close старого websocket того же `device_id` |
 | `server/websocket/agent_command_result.py` | Thin compatibility wrapper (deprecated-internal) |
-| `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher + side effects для `list_installed_modules` и `list_tools` (inventory/toolset snapshots) |
+| `server/websocket/command_result_components.py` | Компоненты command_result pipeline: normalizer/future/artifact/event publisher + side effects для `list_installed_modules` и `list_tools` (inventory/toolset snapshots); future resolver сначала смотрит state-level waiter registry, а не только metadata текущего websocket |
 | `server/websocket/agent_outbox_ingest.py` | Thin compatibility wrapper (deprecated-internal) |
 | `server/websocket/outbox_ingest_components.py` | Компоненты outbox pipeline: envelope validator, persistence c requester-name enrichment для `chat_message`, ACK/NACK decision, post-commit publish; `module_state_changed` здесь синхронизирует `device_modules` из snapshot и затем запускает reconcile |
 | `server/websocket/job_event_persistence.py` | Best-effort `persist_job_event` в `job_events` |
 | `server/websocket/contexts.py` | Контексты `AgentConnectionContext`, `EnvelopeContext` |
 | `server/websocket/ui_handler.py` | WS UI `/ws_ui`: `ui_hello`, `run_tool`, ticket/device/chat subscriptions; новый web-layer теперь допускает auth не только по raw `token` в `ui_hello`, но и по httpOnly cookie `pc_client_web_session`, а live-only подписки умеют `skip_catchup` для React realtime bridge |
-| `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id; ticket-bound `send_ws_command` теперь пытается закрепить canonical `observer_root_trace_id` тикета до создания operation/outbox entry |
+| `server/websocket/protocol.py` | Отправка ACK/NACK/command, trace_id; ticket-bound `send_ws_command` теперь пытается закрепить canonical `observer_root_trace_id` тикета до создания operation/outbox entry, а sync `wait_for_result=True` регистрирует waiter в `StateManager.pending_command_futures` для reconnect-safe ожидания `command_result` |
 | `server/websocket/device_outbox_sender.py` | Dispatch runtime: `poll` и `sharded` (`DeviceReadyQueue`, shard workers, DB lease claim, reconcile); send failures теперь синхронизируют `operations.retry_count`, пишут runtime audit (`command_retry_scheduled` / `command_delivery_failed`) и завершают operation явным `DELIVERY_RETRY_EXHAUSTED`, когда outbox исчерпал retries |
+| `server/app/repos/device_outbox_repo.py` | Репозиторий server-side command outbox; pending drain order теперь lane-aware (`cancel_operation` -> update -> control/health -> FIFO по `created_at`) |
 | `server/websocket/validator.py` | Валидация событий, device binding |
 | `server/websocket/modules_sync.py` | Синхронизация модулей с UI/агентом |
 | `server/websocket/ui_publisher.py` | Публикация событий в UI |

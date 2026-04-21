@@ -1,5 +1,35 @@
 # PLANS.md
 
+## 2026-04-21 Agent/server contract hardening
+
+- Scope:
+  - закрыть reconnect race для двух одновременных соединений одного `device_id`;
+  - отвязать synchronous `command_result` waiters от metadata текущего сокета;
+  - ввести явный agent-side execution scheduler / queue для `run_tool` с отдельной control lane;
+  - добавить server-side priority ordering в `device_outbox` для `cancel_operation`, `agent_update`, health/control-команд;
+  - отдельно оценить и при необходимости внедрить negotiated wire batching для agent outbox.
+- Main plan document:
+  - `docs/superpowers/plans/2026-04-21-agent-server-contract-hardening.md`
+- Planned delivery order:
+  1. reconnect-safe runtime registry и safe unregister на сервере;
+  2. state-level registry для pending command waiters;
+  3. agent-side scheduler с сериализацией tool execution и приоритетом control-команд;
+  4. priority-aware `device_outbox` без schema change: lane вычисляется из `command`;
+  5. optional batching phase только после green correctness phases и live soak.
+- Progress snapshot:
+  - phases 1-4 реализованы;
+  - phase 5 реализована capability-gated через `outbox_batch_v1` / `outbox_items_batch`;
+  - остались final verification, live checks, при необходимости remote release/smoke.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - focused pytest по reconnect/waiter/priority/scheduler slices
+  - `python -m pytest pc_agent/tests -m "not manual"`
+  - локальный live check через `python scripts/manage_local_agent.py ...`
+  - remote release/smoke через `python scripts/release_server_to_remote.py` и `python scripts/manage_remote_stack.py ...`
+  - browser verification через MCP на `http://192.168.100.17:8666/admin`
+- Key rollout rule:
+  - correctness changes (phases 1-4) не смешивать с wire-batching в одном rollout; batching считать отдельной фазой с capability-gated backward compatibility.
+
 ## 2026-04-20 Admin/Support web-layer + API boundary rearchitecture
 
 - Scope:

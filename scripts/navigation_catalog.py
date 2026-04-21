@@ -80,7 +80,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="protocol_v3",
         title="Protocol V3 / handshake",
-        summary="WS handshake, capabilities, envelope V3, ACK/NACK, command_result and graceful websocket sender/teardown behavior in server and agent runtimes.",
+        summary="WS handshake, reconnect-safe runtime ownership, state-level command waiters, envelope V3, ACK/NACK, optional outbox batching and graceful sender/teardown behavior in server and agent runtimes.",
         aliases=(
             "protocol",
             "protocol v3",
@@ -96,6 +96,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/websocket/agent_handshake.py",
             "server/websocket/agent_services.py",
+            "server/app/repos/device_outbox_repo.py",
             "pc_agent/ws_agent.py",
             "pc_agent/core/sender.py",
         ),
@@ -117,6 +118,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
             "python -m pytest pc_agent/tests/ ...",
+            "python scripts/manage_local_agent.py verify <name>",
         ),
         plan_required=True,
         docs_to_update=(
@@ -138,7 +140,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="run_tool",
         title="run_tool / consent",
-        summary="Single path for tool execution, consent approval, operation queueing and agent-side module execution tracing.",
+        summary="Single path for tool execution, consent approval, operation queueing, agent-side execution lanes and module execution tracing.",
         aliases=(
             "run_tool",
             "tool_call_started",
@@ -169,6 +171,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
             "python -m pytest pc_agent/tests/ ...",
+            "python scripts/manage_local_agent.py start <name> --ws-url ws://127.0.0.1:8666/ws --api-url http://127.0.0.1:8666/api",
         ),
         docs_to_update=(
             repo_path(QUICK_LOOKUP_PATH),
