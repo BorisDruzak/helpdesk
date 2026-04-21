@@ -1,7 +1,15 @@
+from pathlib import Path
+
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
+from static_pages.cutover import (
+    CUTOVER_REASON_BUNDLE_MISSING,
+    CUTOVER_REASON_FLAG_DISABLED,
+    CUTOVER_REASON_LOGIN_REQUIRED,
+    build_webapp_cutover_state,
+)
 from static_pages.handlers import (
     ADMIN_SHELL_VERSION,
     LOGIN_SHELL_VERSION,
@@ -17,6 +25,19 @@ from static_pages.webapp_assets import (
     handle_webapp_page,
     handle_webapp_public_asset,
 )
+
+
+def _install_built_webapp_bundle(tmp_path, monkeypatch) -> None:
+    dist_dir = tmp_path / "dist"
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text(
+        "<!doctype html><html lang='ru'><body><div id='root'></div></body></html>",
+        encoding="utf-8",
+    )
+    (assets_dir / "app.js").write_text("console.log('bundle ready');", encoding="utf-8")
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_DIST_DIR", dist_dir)
+    monkeypatch.setattr(webapp_assets_module, "WEBAPP_DIST_DIR", dist_dir)
 
 
 @pytest.mark.no_db
@@ -81,7 +102,9 @@ async def test_support_page_serves_workspace_shell():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_support_page_redirects_to_new_app_when_cutover_enabled(monkeypatch):
+async def test_support_page_redirects_to_new_app_when_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", True)
     request = make_mocked_request("GET", "/support")
 
@@ -93,7 +116,9 @@ async def test_support_page_redirects_to_new_app_when_cutover_enabled(monkeypatc
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_support_page_keeps_legacy_escape_when_cutover_enabled(monkeypatch):
+async def test_support_page_keeps_legacy_escape_when_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", True)
     request = make_mocked_request("GET", "/support?legacy=1")
 
@@ -130,7 +155,8 @@ async def test_login_page_serves_role_selector():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_login_page_redirects_to_new_app_when_cutover_enabled(monkeypatch):
+async def test_login_page_redirects_to_new_app_when_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
     request = make_mocked_request("GET", "/login?next=%2Fsupport")
 
@@ -138,6 +164,78 @@ async def test_login_page_redirects_to_new_app_when_cutover_enabled(monkeypatch)
         await handle_login_page(request)
 
     assert exc_info.value.location == "/app/login?next=/support"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_admin_page_redirects_to_new_app_when_cutover_is_ready(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_ADMIN_ENABLED", True)
+    request = make_mocked_request("GET", "/admin")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_admin_page(request)
+
+    assert exc_info.value.location == "/app/admin"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_support_page_stays_on_legacy_when_login_cutover_is_disabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", True)
+    request = make_mocked_request("GET", "/support")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_support_page(request)
+
+    assert exc_info.value.location == f"/support?_shell={SUPPORT_SHELL_VERSION}"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_login_page_stays_on_legacy_when_bundle_is_missing(tmp_path, monkeypatch):
+    missing_dist = tmp_path / "missing-dist"
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_DIST_DIR", missing_dist)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
+    request = make_mocked_request("GET", "/login")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_login_page(request)
+
+    assert exc_info.value.location == f"/login?_shell={LOGIN_SHELL_VERSION}"
+
+
+@pytest.mark.no_db
+def test_cutover_state_requires_bundle_and_login(tmp_path):
+    missing_dist = Path("C:/missing-webapp-dist")
+    state = build_webapp_cutover_state(
+        dist_dir=missing_dist,
+        login_enabled=False,
+        support_enabled=True,
+        admin_enabled=True,
+    )
+
+    assert state.bundle_ready is False
+    assert state.login.reason == CUTOVER_REASON_FLAG_DISABLED
+    assert state.support.reason == CUTOVER_REASON_BUNDLE_MISSING
+    assert state.admin.reason == CUTOVER_REASON_BUNDLE_MISSING
+
+    ready_dist = tmp_path / "ready-dist"
+    assets_dir = ready_dist / "assets"
+    assets_dir.mkdir(parents=True)
+    (ready_dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    (assets_dir / "app.js").write_text("console.log('ok');", encoding="utf-8")
+    ready_state = build_webapp_cutover_state(
+        dist_dir=ready_dist,
+        login_enabled=False,
+        support_enabled=True,
+        admin_enabled=True,
+    )
+    assert ready_state.support.reason == CUTOVER_REASON_LOGIN_REQUIRED
+    assert ready_state.admin.reason == CUTOVER_REASON_LOGIN_REQUIRED
 
 
 @pytest.mark.no_db

@@ -32,6 +32,18 @@ const SUPPORT_REQUIRED_TEXT = [
   "Вкладка трассы"
 ];
 
+const CUTOVER_REDIRECTS = [
+  { path: "/login", expectedLocation: "/app/login" },
+  { path: "/admin", expectedLocation: "/app/admin" },
+  { path: "/support", expectedLocation: "/app/support" },
+];
+
+const LEGACY_ESCAPE_REDIRECTS = [
+  { path: "/login?legacy=1", expectedPrefix: "/login?legacy=1&_shell=" },
+  { path: "/admin?legacy=1", expectedPrefix: "/admin?legacy=1&_shell=" },
+  { path: "/support?legacy=1", expectedPrefix: "/support?legacy=1&_shell=" },
+];
+
 
 function parseArgs(argv) {
   const options = {
@@ -134,6 +146,36 @@ async function captureScreenshot(page, targetPath) {
 }
 
 
+async function inspectRedirect(baseUrl, pathName) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    redirect: "manual",
+  });
+  return {
+    path: pathName,
+    status: response.status,
+    location: response.headers.get("location"),
+  };
+}
+
+
+async function collectCutoverChecks(baseUrl) {
+  const defaultRedirects = [];
+  for (const entry of CUTOVER_REDIRECTS) {
+    defaultRedirects.push(await inspectRedirect(baseUrl, entry.path));
+  }
+
+  const legacyEscapes = [];
+  for (const entry of LEGACY_ESCAPE_REDIRECTS) {
+    legacyEscapes.push(await inspectRedirect(baseUrl, entry.path));
+  }
+
+  return {
+    defaultRedirects,
+    legacyEscapes,
+  };
+}
+
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   await fs.mkdir(options.outDir, { recursive: true });
@@ -162,6 +204,7 @@ async function main() {
 
   await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
   await ensureLoggedIn(page, options.login, options.password);
+  const cutoverChecks = await collectCutoverChecks(options.baseUrl);
 
   await page.goto("/app", { waitUntil: "networkidle" });
   await page.waitForTimeout(1000);
@@ -189,6 +232,7 @@ async function main() {
   const summary = {
     baseUrl: options.baseUrl,
     defaultRouteUrl,
+    cutoverChecks,
     sessionPayload,
     sessionData,
     admin: adminState,
@@ -206,6 +250,12 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
 
   const hasFailures =
+    cutoverChecks.defaultRedirects.some((entry, index) =>
+      entry.status !== 302 || entry.location !== CUTOVER_REDIRECTS[index].expectedLocation
+    ) ||
+    cutoverChecks.legacyEscapes.some((entry, index) =>
+      entry.status !== 302 || !entry.location?.startsWith(LEGACY_ESCAPE_REDIRECTS[index].expectedPrefix)
+    ) ||
     sessionPayload.status !== 200 ||
     sessionData?.default_workspace !== "admin" ||
     !Array.isArray(sessionData?.available_workspaces) ||

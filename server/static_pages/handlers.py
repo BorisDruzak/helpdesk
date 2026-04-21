@@ -6,6 +6,8 @@ from config import (
     WEBAPP_CUTOVER_LOGIN_ENABLED,
     WEBAPP_CUTOVER_SUPPORT_ENABLED,
 )
+from static_pages.cutover import build_webapp_cutover_state
+from static_pages.webapp_assets import WEBAPP_DIST_DIR
 
 
 BASE_DIR = Path(__file__).parent.parent
@@ -66,10 +68,16 @@ async def handle_index(request):
 
 
 async def handle_admin_page(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+    )
     redirect = _webapp_cutover_redirect(
         request,
-        enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
-        target_path="/app/admin",
+        enabled=cutover_state.admin.active,
+        target_path=cutover_state.admin.target_path,
     )
     if redirect is not None:
         raise redirect
@@ -80,10 +88,16 @@ async def handle_admin_page(request):
 
 
 async def handle_support_page(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+    )
     redirect = _webapp_cutover_redirect(
         request,
-        enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
-        target_path="/app/support",
+        enabled=cutover_state.support.active,
+        target_path=cutover_state.support.target_path,
     )
     if redirect is not None:
         raise redirect
@@ -94,10 +108,16 @@ async def handle_support_page(request):
 
 
 async def handle_login_page(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+    )
     redirect = _webapp_cutover_redirect(
         request,
-        enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
-        target_path="/app/login",
+        enabled=cutover_state.login.active,
+        target_path=cutover_state.login.target_path,
     )
     if redirect is not None:
         raise redirect

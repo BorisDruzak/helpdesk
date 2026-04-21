@@ -345,6 +345,8 @@ PUBLIC_TICKET_SESSION_MINUTES = int(os.getenv("PUBLIC_TICKET_SESSION_MINUTES", "
 WEBAPP_CUTOVER_LOGIN_ENABLED = os.getenv("WEBAPP_CUTOVER_LOGIN_ENABLED", "false").lower() == "true"
 WEBAPP_CUTOVER_SUPPORT_ENABLED = os.getenv("WEBAPP_CUTOVER_SUPPORT_ENABLED", "false").lower() == "true"
 WEBAPP_CUTOVER_ADMIN_ENABLED = os.getenv("WEBAPP_CUTOVER_ADMIN_ENABLED", "false").lower() == "true"
+# Operational rule: support/admin cutover becomes active only when the web bundle is built
+# and login cutover is also enabled. The route handlers enforce those prerequisites at runtime.
 
 # Stage 11: SLA Calendar + OLA
 TICKET_SLA_CALENDAR_ENABLED = os.getenv("TICKET_SLA_CALENDAR_ENABLED", "false").lower() == "true"

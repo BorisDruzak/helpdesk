@@ -82,6 +82,8 @@ Historical docs больше не канон:
 
 - `python scripts/bootstrap_web_toolchain.py`
 - после release живой signoff нового `/app/*`: `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666`
+- preflight перед включением default-route switch: `python scripts/check_webapp_cutover.py --json`
+- operational checklist для полного переключения: `docs/WEBAPP_CUTOVER_CHECKLIST.md`
 
 Если менялся веб:
 
@@ -114,7 +116,7 @@ Windows note:
 | Ticket flows / helpdesk | `server/tickets/handlers.py`, `server/tickets/create_flow.py`, `server/tickets/workflow_service.py` | `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md` |
 | Auth / token bootstrap | `server/auth/`, `server/websocket/agent_handshake.py`, `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/launcher_portable_main.py` | `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md` |
 | Agent runtime / UI bridge | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/chat_panel.py` | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/CODEMAP.md` |
-| Release / deploy / CI | `scripts/task_intake.py`, `scripts/bootstrap_web_toolchain.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/run_observer_canary_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py`, `webapp/scripts/remote-browser-signoff.mjs` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md` |
+| Release / deploy / CI | `scripts/task_intake.py`, `scripts/bootstrap_web_toolchain.py`, `scripts/check_webapp_cutover.py`, `scripts/verify_workspace.py`, `scripts/run_ci_suite.py`, `scripts/run_observer_canary_suite.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/release_server_to_remote.py`, `webapp/scripts/remote-browser-signoff.mjs` | `AGENTS.md`, `PLANS.md`, `docs/LOCAL_WORKFLOW.md`, `docs/WEBAPP_CUTOVER_CHECKLIST.md` |
 
 ## When to update this file
 

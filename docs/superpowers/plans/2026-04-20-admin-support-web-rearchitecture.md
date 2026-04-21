@@ -526,6 +526,10 @@ git commit -m "chore: validate new web stack on linux release flow"
 
 ### Task 10: Cutover and Legacy Cleanup
 
+Operational note:
+- runtime flip самих флагов остаётся deployment-time решением;
+- кодовая база уже должна содержать cutover guardrails, preflight helper и live signoff/checklist до момента фактического включения default-route switch.
+
 **Files:**
 - Modify: `server/static_pages/handlers.py`
 - Modify: `server/routes.py`

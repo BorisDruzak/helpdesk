@@ -40,6 +40,12 @@ python scripts/bootstrap_web_toolchain.py
 
 Каноничный frontend toolchain: локально и в CI использовать `Node.js 24.15.0 + corepack + pnpm 10.33.0`. Linux-хост остаётся runtime host и не считается canonical frontend build host.
 
+Если задача включает фактический cutover legacy `/login`, `/support`, `/admin` на новый shell, перед release дополнительно прогнать:
+
+```powershell
+python scripts/check_webapp_cutover.py --json
+```
+
 4. Если задача длинная или многосоставная, обновить `PLANS.md`.
 
 5. Перед синхронизацией прогнать быстрые проверки:
@@ -107,6 +113,7 @@ python scripts/manage_remote_stack.py smoke server
 
 - [admin](http://192.168.100.17:8666/admin)
 - [help](http://192.168.100.17:8666/help)
+- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666` — helper теперь проверяет `/app`, raw redirects `/login|/admin|/support` и `?legacy=1`
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:
