@@ -64,10 +64,18 @@ pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666
   - `/app -> /app/admin`;
   - `GET /api/web/session/me`;
   - рабочие `/app/admin` и `/app/support`;
-  - raw redirects `/login`, `/admin`, `/support` в `/app/*`;
+  - raw redirects `/login`, `/admin`, `/support` находятся в согласованном режиме:
+    - либо ещё legacy shell до полного cutover;
+    - либо уже `/app/*` после полного cutover;
   - raw escape `/login?legacy=1`, `/admin?legacy=1`, `/support?legacy=1`;
   - русский `lang/title`;
   - отсутствие `console/page errors`.
+4. В день полного переключения дополнительно зафиксировать именно webapp-mode:
+
+```powershell
+pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666 --expect-route-mode webapp
+```
+
 4. Поверх helper сделать browser MCP-check, если менялся UI.
 5. После проверки остановить remote server, если не нужен живой стенд.
 

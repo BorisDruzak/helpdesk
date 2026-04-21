@@ -81,7 +81,7 @@ Historical docs больше не канон:
 Если задача затрагивает `webapp/` или frontend bundle pipeline:
 
 - `python scripts/bootstrap_web_toolchain.py`
-- после release живой signoff нового `/app/*`: `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666`
+- после release живой signoff нового `/app/*`: `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666` (`--expect-route-mode webapp`, если уже включаем default-route switch)
 - preflight перед включением default-route switch: `python scripts/check_webapp_cutover.py --json`
 - operational checklist для полного переключения: `docs/WEBAPP_CUTOVER_CHECKLIST.md`
 

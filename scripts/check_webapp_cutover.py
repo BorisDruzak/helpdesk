@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
+DEFAULT_WORKSPACE = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:

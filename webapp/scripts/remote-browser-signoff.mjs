@@ -10,6 +10,7 @@ const DEFAULT_BASE_URL = "http://192.168.100.17:8666";
 const DEFAULT_LOGIN = process.env.PC_CLIENT_UI_LOGIN ?? "admin";
 const DEFAULT_PASSWORD = process.env.PC_CLIENT_UI_PASSWORD ?? "admin123";
 const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_checks", "live-webapp-signoff");
+const DEFAULT_EXPECT_ROUTE_MODE = "auto";
 
 const LOGIN_HEADING = "Вход в рабочие места";
 const ADMIN_HEADING = "Рабочее место администрирования";
@@ -38,6 +39,12 @@ const CUTOVER_REDIRECTS = [
   { path: "/support", expectedLocation: "/app/support" },
 ];
 
+const LEGACY_DEFAULT_REDIRECTS = [
+  { path: "/login", expectedPrefix: "/login?_shell=" },
+  { path: "/admin", expectedPrefix: "/admin?_shell=" },
+  { path: "/support", expectedPrefix: "/support?_shell=" },
+];
+
 const LEGACY_ESCAPE_REDIRECTS = [
   { path: "/login?legacy=1", expectedPrefix: "/login?legacy=1&_shell=" },
   { path: "/admin?legacy=1", expectedPrefix: "/admin?legacy=1&_shell=" },
@@ -51,6 +58,7 @@ function parseArgs(argv) {
     login: DEFAULT_LOGIN,
     password: DEFAULT_PASSWORD,
     outDir: DEFAULT_OUT_DIR,
+    expectRouteMode: DEFAULT_EXPECT_ROUTE_MODE,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -76,9 +84,42 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (current === "--expect-route-mode" && next) {
+      options.expectRouteMode = next;
+      index += 1;
+    }
   }
 
   return options;
+}
+
+
+function matchesExpectedLocation(entry, expectedLocation) {
+  return entry.status === 302 && entry.location === expectedLocation;
+}
+
+
+function matchesExpectedPrefix(entry, expectedPrefix) {
+  return entry.status === 302 && entry.location?.startsWith(expectedPrefix);
+}
+
+
+function resolveRouteMode(defaultRedirects) {
+  const isWebappMode = defaultRedirects.every((entry, index) =>
+    matchesExpectedLocation(entry, CUTOVER_REDIRECTS[index].expectedLocation)
+  );
+  if (isWebappMode) {
+    return "webapp";
+  }
+
+  const isLegacyMode = defaultRedirects.every((entry, index) =>
+    matchesExpectedPrefix(entry, LEGACY_DEFAULT_REDIRECTS[index].expectedPrefix)
+  );
+  if (isLegacyMode) {
+    return "legacy";
+  }
+
+  return "mixed";
 }
 
 
@@ -178,6 +219,9 @@ async function collectCutoverChecks(baseUrl) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (!["auto", "legacy", "webapp"].includes(options.expectRouteMode)) {
+    throw new Error(`Unsupported --expect-route-mode: ${options.expectRouteMode}`);
+  }
   await fs.mkdir(options.outDir, { recursive: true });
 
   const browser = await chromium.launch({ headless: true });
@@ -205,6 +249,7 @@ async function main() {
   await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
   await ensureLoggedIn(page, options.login, options.password);
   const cutoverChecks = await collectCutoverChecks(options.baseUrl);
+  const routeMode = resolveRouteMode(cutoverChecks.defaultRedirects);
 
   await page.goto("/app", { waitUntil: "networkidle" });
   await page.waitForTimeout(1000);
@@ -231,6 +276,8 @@ async function main() {
 
   const summary = {
     baseUrl: options.baseUrl,
+    expectedRouteMode: options.expectRouteMode,
+    routeMode,
     defaultRouteUrl,
     cutoverChecks,
     sessionPayload,
@@ -250,11 +297,10 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
 
   const hasFailures =
-    cutoverChecks.defaultRedirects.some((entry, index) =>
-      entry.status !== 302 || entry.location !== CUTOVER_REDIRECTS[index].expectedLocation
-    ) ||
+    routeMode === "mixed" ||
+    (options.expectRouteMode !== "auto" && routeMode !== options.expectRouteMode) ||
     cutoverChecks.legacyEscapes.some((entry, index) =>
-      entry.status !== 302 || !entry.location?.startsWith(LEGACY_ESCAPE_REDIRECTS[index].expectedPrefix)
+      !matchesExpectedPrefix(entry, LEGACY_ESCAPE_REDIRECTS[index].expectedPrefix)
     ) ||
     sessionPayload.status !== 200 ||
     sessionData?.default_workspace !== "admin" ||

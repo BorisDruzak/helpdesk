@@ -113,7 +113,7 @@ python scripts/manage_remote_stack.py smoke server
 
 - [admin](http://192.168.100.17:8666/admin)
 - [help](http://192.168.100.17:8666/help)
-- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666` — helper теперь проверяет `/app`, raw redirects `/login|/admin|/support` и `?legacy=1`
+- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666` — helper теперь проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и отличает pre-cutover legacy mode от полного webapp-mode; для дня переключения можно ужесточить проверку `--expect-route-mode webapp`
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:
