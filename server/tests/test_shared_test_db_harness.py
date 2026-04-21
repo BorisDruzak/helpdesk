@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from asyncpg import exceptions as asyncpg_exceptions
 
 from tests import conftest as harness
 
@@ -45,3 +46,17 @@ async def test_terminate_other_test_database_backends_terminates_shared_db_sessi
     assert args[0] == "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
     assert "pg_terminate_backend" in args[1]
     assert kwargs == {"db_name": "pc_support_test"}
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_terminate_other_test_database_backends_tolerates_missing_admin_privilege(monkeypatch):
+    run_admin_sql = AsyncMock(side_effect=asyncpg_exceptions.InsufficientPrivilegeError("no privilege"))
+    monkeypatch.setattr(harness, "_run_admin_sql", run_admin_sql)
+
+    await harness._terminate_other_test_database_backends(
+        "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres",
+        "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/pc_support_test",
+    )
+
+    run_admin_sql.assert_awaited_once()

@@ -369,16 +369,27 @@ async def _terminate_other_test_database_backends(
     if db_name != SHARED_TEST_DATABASE_NAME:
         return
     _validate_test_database_name(db_name)
-    await _run_admin_sql(
-        admin_database_url,
-        """
-        SELECT pg_terminate_backend(pid)
-        FROM pg_stat_activity
-        WHERE datname = :db_name
-          AND pid <> pg_backend_pid()
-        """,
-        db_name=db_name,
-    )
+    try:
+        await _run_admin_sql(
+            admin_database_url,
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = :db_name
+              AND pid <> pg_backend_pid()
+            """,
+            db_name=db_name,
+        )
+    except Exception as exc:
+        if _is_admin_database_unavailable(exc):
+            warnings.warn(
+                "Shared test DB cleanup could not terminate other backends; continuing without "
+                "pg_terminate_backend because admin privileges are unavailable.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return
+        raise
 
 
 @pytest.fixture(scope="session")
