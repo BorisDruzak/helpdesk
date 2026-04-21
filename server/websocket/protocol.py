@@ -572,10 +572,19 @@ async def send_ws_command(
     # Create Future for waiting on response
     future = asyncio.get_event_loop().create_future()
 
-    # Store future in agent metadata (keyed by command_id for Phase C)
-    if "pending_command_futures" not in agent_info["metadata"]:
-        agent_info["metadata"]["pending_command_futures"] = {}
-    agent_info["metadata"]["pending_command_futures"][command_id] = future
+    # Store future in state-level runtime registry so reconnect does not lose the waiter.
+    if hasattr(state, "register_pending_command_future"):
+        connection_id = (agent_info.get("metadata", {}) or {}).get("connection_id")
+        state.register_pending_command_future(
+            command_id,
+            future,
+            device_id=device_id,
+            connection_id=connection_id,
+        )
+    else:
+        if "pending_command_futures" not in agent_info["metadata"]:
+            agent_info["metadata"]["pending_command_futures"] = {}
+        agent_info["metadata"]["pending_command_futures"][command_id] = future
 
     logger.info(
         f"[send_ws_command] Waiting for command_result: command_id={command_id} "
@@ -595,13 +604,15 @@ async def send_ws_command(
             f"[send_ws_command] Timeout waiting for command_result: "
             f"command_id={command_id} device_id={device_id} command={command}"
         )
-        # Remove future from pending
-        if command_id in agent_info["metadata"].get("pending_command_futures", {}):
+        if hasattr(state, "discard_pending_command_future"):
+            state.discard_pending_command_future(command_id)
+        elif command_id in agent_info["metadata"].get("pending_command_futures", {}):
             del agent_info["metadata"]["pending_command_futures"][command_id]
         raise
     except Exception:
-        # Remove future from pending on any error
-        if command_id in agent_info["metadata"].get("pending_command_futures", {}):
+        if hasattr(state, "discard_pending_command_future"):
+            state.discard_pending_command_future(command_id)
+        elif command_id in agent_info["metadata"].get("pending_command_futures", {}):
             del agent_info["metadata"]["pending_command_futures"][command_id]
         raise
     finally:

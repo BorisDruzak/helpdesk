@@ -423,6 +423,7 @@ async def handle_handshake(
         )
     
     # Регистрируем агента
+    connection_id = uuid.uuid4().hex
     metadata = {
         "device_id": device_id,
         "agent_version": data.get("agent_version", "unknown"),
@@ -432,6 +433,7 @@ async def handle_handshake(
         "connected_at": time.time(),
         "last_seen": time.time(),
         "status": "online",
+        "connection_id": connection_id,
         "pending_futures": {},  # Dict[str, asyncio.Future] для параллельных запросов
         "auth_context": auth_context,  # Phase 3: сохраняем AuthContext
         "token": token,  # Для обратной совместимости (deprecated)
@@ -458,7 +460,23 @@ async def handle_handshake(
         metadata["last_failed_update_at"] = payload_pre["failed_update_at"]
     if payload_pre.get("failed_update_message") is not None:
         metadata["last_failed_update_message"] = payload_pre["failed_update_message"]
-    state.register_agent(agent_id, ws, metadata)
+    previous_agent_info = state.register_agent(agent_id, ws, metadata)
+    if previous_agent_info and previous_agent_info.get("ws") is not ws:
+        previous_connection_id = (previous_agent_info.get("metadata", {}) or {}).get("connection_id")
+        logger.warning(
+            "[handshake] Superseding existing agent websocket: "
+            f"device_id={device_id} old_connection_id={previous_connection_id} "
+            f"new_connection_id={connection_id}"
+        )
+        previous_ws = previous_agent_info.get("ws")
+        if previous_ws is not None and not getattr(previous_ws, "closed", False):
+            try:
+                await previous_ws.close(code=4002, message=b"Superseded by newer connection")
+            except Exception as exc:
+                logger.warning(
+                    "[handshake] Failed to close superseded websocket: "
+                    f"device_id={device_id} old_connection_id={previous_connection_id} error={exc}"
+                )
     
     logger.success(f"✅ Агент зарегистрирован: {device_id}")
     await write_agent_runtime_audit(

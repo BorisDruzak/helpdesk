@@ -8,6 +8,7 @@ import pytest
 
 from websocket.agent_services import (
     AgentCommandService,
+    OutboxBatchIngestService,
     CommandResultService,
     OutboxAckDecisionService,
     OutboxIngestService,
@@ -66,6 +67,45 @@ async def test_command_result_service_resolves_pending_future():
 
 
 @pytest.mark.asyncio
+async def test_command_result_service_resolves_state_level_pending_future_without_runtime_agent():
+    service = CommandResultService(legacy_handler=None)
+    fut = asyncio.get_event_loop().create_future()
+
+    class _StateStub:
+        def __init__(self):
+            self.pending = {"req-2": fut}
+
+        def resolve_pending_command_future(self, command_id, result_data):
+            future = self.pending.pop(command_id, None)
+            if future is None or future.done():
+                return False
+            future.set_result(result_data)
+            return True
+
+        def get_agent(self, _agent_id):
+            return None
+
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=_StateStub(),
+        agent_id="dev-1",
+    )
+
+    await service.handle(
+        {
+            "type": "command_result",
+            "request_id": "req-2",
+            "payload": {"status": "success", "data": {}, "error": {}, "meta": {}},
+        },
+        ctx,
+    )
+
+    assert fut.done()
+    assert fut.result()["request_id"] == "req-2"
+
+
+@pytest.mark.asyncio
 async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
     batch = _BatchAckManagerStub()
     service = OutboxIngestService(
@@ -93,6 +133,61 @@ async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
     assert await service.handle(msg, ctx) is True
 
     assert ("dev-1", "ob-1", "tr-1") in batch.acks
+
+
+@pytest.mark.asyncio
+async def test_outbox_batch_ingest_processes_items_and_flushes_once():
+    batch = _BatchAckManagerStub()
+
+    class _ItemServiceStub:
+        async def handle(self, message, ctx, *, flush_immediately=True):
+            batch.add_ack(
+                device_id=ctx.agent_id,
+                outbox_id=message["payload"]["outbox_id"],
+                trace_id=message["trace_id"],
+            )
+            if flush_immediately:
+                await batch.flush(ctx.ws, ctx.agent_id)
+            return True
+
+    batch_service = OutboxBatchIngestService(_ItemServiceStub(), batch)
+    state = SimpleNamespace()
+    ctx = AgentConnectionContext(ws=SimpleNamespace(), request=SimpleNamespace(), state=state, agent_id="dev-1")
+    msg = {
+        "type": "outbox_items_batch",
+        "payload": {
+            "items": [
+                {
+                    "type": "outbox_item",
+                    "trace_id": "tr-batch-1",
+                    "payload": {
+                        "outbox_id": "ob-batch-1",
+                        "item_type": "job_event",
+                        "device_seq": 201,
+                        "event": {"event": "tools_changed"},
+                    },
+                    "meta": {"actor_role": "agent"},
+                },
+                {
+                    "type": "outbox_item",
+                    "trace_id": "tr-batch-2",
+                    "payload": {
+                        "outbox_id": "ob-batch-2",
+                        "item_type": "job_event",
+                        "device_seq": 202,
+                        "event": {"event": "tools_changed"},
+                    },
+                    "meta": {"actor_role": "agent"},
+                },
+            ]
+        },
+    }
+
+    assert await batch_service.handle(msg, ctx) is True
+
+    assert ("dev-1", "ob-batch-1", "tr-batch-1") in batch.acks
+    assert ("dev-1", "ob-batch-2", "tr-batch-2") in batch.acks
+    assert batch.flushed == 1
 
 
 @pytest.mark.asyncio

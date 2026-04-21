@@ -66,6 +66,12 @@ class HandshakeService:
         capabilities = meta.get("capabilities", [])
         if isinstance(capabilities, list):
             ctx.capabilities = capabilities
+        if ctx.agent_id and hasattr(ctx.state, "get_agent"):
+            agent_info = ctx.state.get_agent(ctx.agent_id)
+            if agent_info:
+                metadata = agent_info.get("metadata", {}) or {}
+                ctx.connection_id = metadata.get("connection_id")
+                ctx.session_metadata = metadata
 
         if ctx.device_id and self._dispatch_service is not None:
             try:
@@ -360,7 +366,13 @@ class OutboxIngestService:
         self._ack_decision = OutboxAckDecisionService()
         self._event_publish = OutboxEventPublishService()
 
-    async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> bool:
+    async def handle(
+        self,
+        message: dict[str, Any],
+        ctx: AgentConnectionContext,
+        *,
+        flush_immediately: bool = True,
+    ) -> bool:
         # 1) envelope validate
         envelope_check = self._validator.validate(message)
         if not envelope_check.ok:
@@ -368,9 +380,14 @@ class OutboxIngestService:
                 batch_ack_manager=self._batch_ack_manager,
                 ctx=ctx,
                 envelope_check=envelope_check,
+                flush_immediately=flush_immediately,
             )
         # 2) post-handshake guards
-        if await self._apply_post_handshake_guards(message, ctx):
+        if await self._apply_post_handshake_guards(
+            message,
+            ctx,
+            flush_immediately=flush_immediately,
+        ):
             return True
         # 3) dedupe check
         if self._dedupe.is_duplicate(ctx, envelope_check.outbox_id):
@@ -379,7 +396,7 @@ class OutboxIngestService:
                 ctx=ctx,
                 envelope_check=envelope_check,
             )
-            if ctx.agent_id and self._batch_ack_manager.has_pending(ctx.agent_id):
+            if flush_immediately and ctx.agent_id and self._batch_ack_manager.has_pending(ctx.agent_id):
                 await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
             return True
         # 4) persistence
@@ -394,6 +411,7 @@ class OutboxIngestService:
             batch_ack_manager=self._batch_ack_manager,
             ctx=ctx,
             outcome=persistence_outcome,
+            flush_immediately=flush_immediately,
         )
         # 6) publish side effects
         await self._event_publish.publish_after_commit(ctx=ctx, outcome=persistence_outcome)
@@ -403,6 +421,8 @@ class OutboxIngestService:
         self,
         message: dict[str, Any],
         ctx: AgentConnectionContext,
+        *,
+        flush_immediately: bool = True,
     ) -> bool:
         """
         Apply post-handshake message-level guards that return typed outbox_nack.
@@ -425,6 +445,7 @@ class OutboxIngestService:
                 outbox_id=str(outbox_id),
                 trace_id=trace_id,
                 actor_role=actor_role,
+                flush_immediately=flush_immediately,
             )
             return True
 
@@ -444,6 +465,7 @@ class OutboxIngestService:
                 ctx=ctx,
                 outbox_id=str(outbox_id),
                 trace_id=trace_id,
+                flush_immediately=flush_immediately,
             )
             return True
         return False
@@ -453,7 +475,15 @@ class OutboxGuardService:
     def __init__(self, batch_ack_manager: Any) -> None:
         self._batch_ack_manager = batch_ack_manager
 
-    async def reject_unauthorized(self, *, ctx: AgentConnectionContext, outbox_id: str, trace_id: str, actor_role: str) -> None:
+    async def reject_unauthorized(
+        self,
+        *,
+        ctx: AgentConnectionContext,
+        outbox_id: str,
+        trace_id: str,
+        actor_role: str,
+        flush_immediately: bool = True,
+    ) -> None:
         self._batch_ack_manager.add_nack(
             device_id=ctx.agent_id,
             outbox_id=outbox_id,
@@ -465,9 +495,17 @@ class OutboxGuardService:
                 retry_after_sec=None,
             ),
         )
-        await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        if flush_immediately:
+            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
 
-    async def reject_rate_limited(self, *, ctx: AgentConnectionContext, outbox_id: str, trace_id: str) -> None:
+    async def reject_rate_limited(
+        self,
+        *,
+        ctx: AgentConnectionContext,
+        outbox_id: str,
+        trace_id: str,
+        flush_immediately: bool = True,
+    ) -> None:
         self._batch_ack_manager.add_nack(
             device_id=ctx.agent_id,
             outbox_id=outbox_id,
@@ -479,7 +517,8 @@ class OutboxGuardService:
                 retry_after_sec=1,
             ),
         )
-        await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        if flush_immediately:
+            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
 
 
 class OutboxDedupService:
@@ -509,7 +548,14 @@ class OutboxAckDecisionService:
     def __init__(self) -> None:
         self._component = OutboxAckDecisionComponent()
 
-    async def reject_invalid_envelope(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, envelope_check: Any) -> bool:
+    async def reject_invalid_envelope(
+        self,
+        *,
+        batch_ack_manager: Any,
+        ctx: AgentConnectionContext,
+        envelope_check: Any,
+        flush_immediately: bool = True,
+    ) -> bool:
         if not ctx.agent_id or not envelope_check.trace_id:
             return True
         self._component.add_validation_nack(
@@ -519,7 +565,8 @@ class OutboxAckDecisionService:
             trace_id=envelope_check.trace_id,
             error=envelope_check.error_message or "Invalid outbox envelope",
         )
-        await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        if flush_immediately:
+            await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
         return True
 
     def ack_duplicate(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, envelope_check: Any) -> None:
@@ -532,7 +579,14 @@ class OutboxAckDecisionService:
             trace_id=envelope_check.trace_id,
         )
 
-    async def apply_final_decision(self, *, batch_ack_manager: Any, ctx: AgentConnectionContext, outcome: Any) -> None:
+    async def apply_final_decision(
+        self,
+        *,
+        batch_ack_manager: Any,
+        ctx: AgentConnectionContext,
+        outcome: Any,
+        flush_immediately: bool = True,
+    ) -> None:
         if not ctx.agent_id or not outcome.outbox_id or not outcome.trace_id:
             return
         if outcome.decision == "nack":
@@ -553,11 +607,68 @@ class OutboxAckDecisionService:
                 outbox_id=outcome.outbox_id,
                 trace_id=outcome.trace_id,
             )
-        await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        if flush_immediately:
+            await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
 
 
 class OutboxEventPublishService(OutboxEventPublishComponent):
     """Adapter over post-commit side-effect publisher."""
+
+
+class OutboxBatchIngestService:
+    """Processes batched outbox_item envelopes in one WS frame."""
+
+    def __init__(self, item_service: OutboxIngestService, batch_ack_manager: Any) -> None:
+        self._item_service = item_service
+        self._batch_ack_manager = batch_ack_manager
+
+    async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> bool:
+        payload = message.get("payload") if isinstance(message, dict) else None
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not items:
+            invalid_trace_id = (message.get("trace_id") if isinstance(message, dict) else None) or str(uuid.uuid4())
+            invalid_message = {
+                "type": "outbox_item",
+                "trace_id": invalid_trace_id,
+                "payload": {"outbox_id": "batch-envelope"},
+                "meta": {"actor_role": "agent"},
+            }
+            return await self._item_service.handle(invalid_message, ctx, flush_immediately=True)
+
+        should_continue = True
+        batch_trace_id = message.get("trace_id") if isinstance(message, dict) else None
+
+        for index, raw_item in enumerate(items):
+            if not isinstance(raw_item, dict):
+                if ctx.agent_id:
+                    self._batch_ack_manager.add_nack(
+                        device_id=ctx.agent_id,
+                        outbox_id=f"batch-item-{index}",
+                        trace_id=batch_trace_id or str(uuid.uuid4()),
+                        nack_info=NackInfo(
+                            retryable=False,
+                            error_code="VALIDATION_ERROR",
+                            error_message="outbox_items_batch payload.items must contain objects",
+                            retry_after_sec=None,
+                        ),
+                    )
+                continue
+
+            item_message = dict(raw_item)
+            item_message["type"] = "outbox_item"
+            if not item_message.get("trace_id") and batch_trace_id:
+                item_message["trace_id"] = batch_trace_id
+
+            item_result = await self._item_service.handle(
+                item_message,
+                ctx,
+                flush_immediately=False,
+            )
+            should_continue = should_continue and item_result
+
+        if ctx.agent_id and self._batch_ack_manager.has_pending(ctx.agent_id):
+            await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
+        return should_continue
 
 
 class AgentCommandService:
@@ -733,12 +844,14 @@ class AgentMessageRouter:
         rpc_response_service: RpcResponseService,
         outbox_ingest_service: OutboxIngestService,
         agent_command_service: AgentCommandService,
+        outbox_batch_ingest_service: Optional[OutboxBatchIngestService] = None,
     ) -> None:
         self._handshake_service = handshake_service
         self._command_ack_service = command_ack_service
         self._command_result_service = command_result_service
         self._rpc_response_service = rpc_response_service
         self._outbox_ingest_service = outbox_ingest_service
+        self._outbox_batch_ingest_service = outbox_batch_ingest_service
         self._agent_command_service = agent_command_service
 
     async def route(
@@ -772,6 +885,9 @@ class AgentMessageRouter:
             return None
         if msg_type == "outbox_item":
             should_continue = await self._outbox_ingest_service.handle(message, ctx)
+            return "__continue__" if should_continue else None
+        if msg_type == "outbox_items_batch" and self._outbox_batch_ingest_service is not None:
+            should_continue = await self._outbox_batch_ingest_service.handle(message, ctx)
             return "__continue__" if should_continue else None
         return None
 

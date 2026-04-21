@@ -5,11 +5,25 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import List, Optional
 
-from sqlalchemy import select, and_, update, delete, or_
+from sqlalchemy import select, and_, update, delete, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.db.models import DeviceOutbox, DispatchReadyDevice, Operation
+
+
+DEVICE_OUTBOX_UPDATE_COMMANDS = frozenset({"update", "agent_update"})
+DEVICE_OUTBOX_CONTROL_COMMANDS = frozenset(
+    {
+        "get_status",
+        "get_history",
+        "get_manifest",
+        "list_tools",
+        "list_modules",
+        "list_installed_modules",
+        "ui_notify",
+    }
+)
 
 
 class DeviceOutboxRepo:
@@ -31,6 +45,25 @@ class DeviceOutboxRepo:
             session: Async SQLAlchemy session
         """
         self.session = session
+
+    @staticmethod
+    def dispatch_priority_for_command(command: Optional[str]) -> int:
+        if command == "cancel_operation":
+            return 0
+        if command in DEVICE_OUTBOX_UPDATE_COMMANDS:
+            return 1
+        if command in DEVICE_OUTBOX_CONTROL_COMMANDS:
+            return 2
+        return 10
+
+    @classmethod
+    def _dispatch_priority_order_expr(cls):
+        return case(
+            (DeviceOutbox.command == "cancel_operation", 0),
+            (DeviceOutbox.command.in_(tuple(DEVICE_OUTBOX_UPDATE_COMMANDS)), 1),
+            (DeviceOutbox.command.in_(tuple(DEVICE_OUTBOX_CONTROL_COMMANDS)), 2),
+            else_=10,
+        )
     
     async def enqueue_command(
         self,
@@ -99,6 +132,7 @@ class DeviceOutboxRepo:
         Get pending commands for a device.
         
         Phase 5: Пропускает команды для операций со статусом waiting_consent или denied.
+        Delivery order is lane-aware: cancel > update > health/control > default FIFO.
         
         Args:
             device_id: Device identifier
@@ -126,7 +160,11 @@ class DeviceOutboxRepo:
                     )
                 )
             )
-            .order_by(DeviceOutbox.created_at.asc())
+            .order_by(
+                self._dispatch_priority_order_expr().asc(),
+                DeviceOutbox.created_at.asc(),
+                DeviceOutbox.id.asc(),
+            )
             .limit(limit)
         )
         

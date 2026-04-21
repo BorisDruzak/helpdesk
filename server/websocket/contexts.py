@@ -19,6 +19,7 @@ class AgentConnectionContext:
     authenticated: bool = False
     capabilities: list[str] = field(default_factory=list)
     session_metadata: dict[str, Any] = field(default_factory=dict)
+    connection_id: Optional[str] = None
 
 
 @dataclass

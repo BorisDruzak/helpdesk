@@ -73,7 +73,13 @@ class CommandResultFutureResolver:
             return False
         agent_id = getattr(ctx, "agent_id", None)
         state = getattr(ctx, "state", None)
-        if not agent_id or state is None:
+        if state is None:
+            return False
+        if hasattr(state, "resolve_pending_command_future"):
+            if state.resolve_pending_command_future(command_id, result_data):
+                logger.info(f"[command_result] Future resolved via state registry: command_id={command_id}")
+                return True
+        if not agent_id or not hasattr(state, "get_agent"):
             return False
         agent_info = state.get_agent(agent_id)
         if not agent_info:

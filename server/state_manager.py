@@ -17,6 +17,7 @@ Runtime данные (эпемерные, существуют только в �
 from datetime import datetime, timezone
 import time
 from typing import Dict, Set, List, Optional, Any
+from uuid import uuid4
 from models import Session
 from config import USERS
 from loguru import logger
@@ -43,6 +44,7 @@ class StateManager:
         # Реестр подключённых агентов (device_id -> {ws, metadata})
         # RUNTIME: Эпемерные данные, очищаются при отключении агента
         self.connected_agents: Dict[str, dict] = {}
+        self.pending_command_futures: Dict[str, dict] = {}
         # Реестр административных клиентов
         self.admin_clients: Set[Any] = set()
         
@@ -130,22 +132,120 @@ class StateManager:
     # Agent Management Methods (Runtime)
     # ============================================================================
     
-    def register_agent(self, device_id: str, ws: Any, metadata: dict) -> None:
+    @staticmethod
+    def _agent_entry_matches(
+        agent_info: Optional[dict],
+        *,
+        expected_ws: Optional[Any] = None,
+        expected_connection_id: Optional[str] = None,
+    ) -> bool:
+        if not agent_info:
+            return False
+        if expected_ws is not None and agent_info.get("ws") is not expected_ws:
+            return False
+        if expected_connection_id is not None:
+            metadata = agent_info.get("metadata", {}) or {}
+            if metadata.get("connection_id") != expected_connection_id:
+                return False
+        return True
+
+    def register_agent(self, device_id: str, ws: Any, metadata: dict) -> Optional[dict]:
         """Регистрирует подключённого агента (RUNTIME)."""
+        metadata.setdefault("connection_id", uuid4().hex)
+        previous = self.connected_agents.get(device_id)
         self.connected_agents[device_id] = {
             "ws": ws,
             "metadata": metadata,
             "connected_at": metadata.get("connected_at")
         }
+        return previous
     
-    def unregister_agent(self, device_id: str) -> None:
+    def unregister_agent(
+        self,
+        device_id: str,
+        *,
+        expected_ws: Optional[Any] = None,
+        expected_connection_id: Optional[str] = None,
+    ) -> bool:
         """Удаляет агента из реестра (RUNTIME)."""
-        if device_id in self.connected_agents:
-            del self.connected_agents[device_id]
+        agent_info = self.connected_agents.get(device_id)
+        if not self._agent_entry_matches(
+            agent_info,
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        ):
+            return False
+        del self.connected_agents[device_id]
+        return True
     
     def get_agent(self, device_id: str) -> Optional[dict]:
         """Возвращает информацию об агенте (RUNTIME)."""
         return self.connected_agents.get(device_id)
+
+    def is_current_agent_connection(
+        self,
+        device_id: str,
+        *,
+        expected_ws: Optional[Any] = None,
+        expected_connection_id: Optional[str] = None,
+    ) -> bool:
+        """Проверяет, что runtime-entry по device_id совпадает с ожидаемым WS."""
+        return self._agent_entry_matches(
+            self.connected_agents.get(device_id),
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        )
+
+    def set_agent_status(
+        self,
+        device_id: str,
+        status: str,
+        *,
+        expected_ws: Optional[Any] = None,
+        expected_connection_id: Optional[str] = None,
+    ) -> bool:
+        """Обновляет status только для текущего runtime-entry."""
+        agent_info = self.connected_agents.get(device_id)
+        if not self._agent_entry_matches(
+            agent_info,
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        ):
+            return False
+        metadata = agent_info.setdefault("metadata", {})
+        metadata["status"] = status
+        return True
+
+    def register_pending_command_future(
+        self,
+        command_id: str,
+        future: Any,
+        *,
+        device_id: Optional[str] = None,
+        connection_id: Optional[str] = None,
+    ) -> None:
+        """Регистрирует sync waiter независимо от текущего WS runtime-entry."""
+        self.pending_command_futures[command_id] = {
+            "future": future,
+            "device_id": device_id,
+            "connection_id": connection_id,
+            "registered_at": time.time(),
+        }
+
+    def resolve_pending_command_future(self, command_id: str, result_data: dict[str, Any]) -> bool:
+        """Резолвит waiter по command_id, даже если agent runtime-entry уже заменён."""
+        entry = self.pending_command_futures.pop(command_id, None)
+        if not entry:
+            return False
+        future = entry.get("future")
+        if future is None or future.done():
+            return False
+        future.set_result(result_data)
+        return True
+
+    def discard_pending_command_future(self, command_id: str) -> bool:
+        """Удаляет waiter без привязки к текущему connected_agents runtime-entry."""
+        return self.pending_command_futures.pop(command_id, None) is not None
     
     def get_agent_ws(self, device_id: str) -> Optional[Any]:
         """Возвращает WebSocket подключение агента (RUNTIME)."""
@@ -207,7 +307,12 @@ class StateManager:
                         f"[is_agent_online] Device {device_id} WebSocket is closed, "
                         f"removing from connected_agents (caller will see agent as offline)"
                     )
-                    self.unregister_agent(device_id)
+                    connection_id = (agent_info.get("metadata", {}) or {}).get("connection_id")
+                    self.unregister_agent(
+                        device_id,
+                        expected_ws=ws,
+                        expected_connection_id=connection_id,
+                    )
                     return False
         except Exception as e:
             # Если проверка closed вызывает исключение, считаем соединение закрытым

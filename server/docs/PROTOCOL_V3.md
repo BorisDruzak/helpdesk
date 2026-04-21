@@ -2,7 +2,7 @@
 
 Краткое описание поведения сервера в рамках Protocol V3 и ссылка на полную спецификацию.
 
-**Дата обновления:** 2026-03-25
+**Дата обновления:** 2026-04-21
 
 ---
 
@@ -59,6 +59,12 @@
 
 Эти поля используются только как post-update confirmation. Для `agent_update` операция считается завершённой именно после такого handshake-report, а не в момент `command_result` со стадией `scheduled`.
 
+### 3.2 Runtime session ownership for one `device_id`
+
+- Каждый успешный `/ws` handshake получает server-side runtime `connection_id`.
+- Для одного `device_id` source of truth для live session — последний успешный handshake; предыдущий websocket помечается как superseded и закрывается сервером кодом **4002** (`Superseded by newer connection`).
+- Offline/unregister path compare-safe: disconnect старого websocket не должен переводить в offline и не должен снимать более новое runtime-подключение того же `device_id`.
+
 ### 4. Device binding
 
 - Каждый тикет привязан к одному `device_id`. События от другого устройства для этого тикета отклоняются с **outbox_nack** и кодом `DEVICE_MISMATCH` (non-retryable).
@@ -73,6 +79,9 @@
 - Команды к агенту доставляются через таблицу **device_outbox** (pending → sent → delivered/failed).
 - `request_id` в команде используется как **command_id** (единый идентификатор команды).
 - DeviceOutboxSender периодически опрашивает pending команды и отправляет их подключённым агентам; при получении `command_result` команда помечается как delivered (или failed при ошибке).
+- Drain order is no longer pure FIFO: `cancel_operation` идёт первым, затем agent update / control-health команды, затем обычный FIFO по `created_at`.
+- Для sync transport-path `send_ws_command(..., wait_for_result=True)` waiter теперь хранится в state-level runtime registry по `command_id`, а не в metadata текущего websocket, поэтому reconnect не должен терять ожидание `command_result`.
+- Если агент и сервер оба объявили capability `outbox_batch_v1`, агент может присылать несколько `outbox_item` в одном WS frame как `outbox_items_batch`; сервер при этом всё равно ACK/NACK-ит каждую запись отдельно.
 
 ### 7. Deduplication
 
@@ -96,7 +105,7 @@
 SERVER_CAPABILITIES = [
     "protocol_v3", "envelope_v3", "outbox_ack_v3", "outbox_nack",
     "trace_correlation", "ticket_context", "job_context",
-    "device_outbox", "event_replay", "batch_ack", "device_binding_validation",
+    "device_outbox", "event_replay", "batch_ack", "outbox_batch_v1", "device_binding_validation",
     "device_registry", "toolset_snapshots", "config_management"
 ]
 ```

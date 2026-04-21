@@ -16,6 +16,7 @@ from websocket.agent_services import (
     CommandAckService,
     CommandResultService,
     HandshakeService,
+    OutboxBatchIngestService,
     OutboxIngestService,
     RpcResponseService,
 )
@@ -27,10 +28,48 @@ async def _handle_agent_disconnect(state, connection_ctx: AgentConnectionContext
         return
 
     device_id = connection_ctx.agent_id
-    agent_info = state.get_agent(device_id)
-    if agent_info:
-        agent_info["metadata"]["status"] = "offline"
-    state.unregister_agent(device_id)
+    expected_ws = getattr(connection_ctx, "ws", None)
+    expected_connection_id = getattr(connection_ctx, "connection_id", None)
+
+    is_current = True
+    if hasattr(state, "is_current_agent_connection"):
+        is_current = state.is_current_agent_connection(
+            device_id,
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        )
+
+    if not is_current:
+        logger.info(
+            "[WS handler] Ignoring disconnect from superseded connection: "
+            f"device_id={device_id} connection_id={expected_connection_id}"
+        )
+        return
+
+    if hasattr(state, "set_agent_status"):
+        state.set_agent_status(
+            device_id,
+            "offline",
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        )
+    else:
+        agent_info = state.get_agent(device_id)
+        if agent_info:
+            agent_info["metadata"]["status"] = "offline"
+
+    removed = state.unregister_agent(
+        device_id,
+        expected_ws=expected_ws,
+        expected_connection_id=expected_connection_id,
+    )
+    if not removed:
+        logger.info(
+            "[WS handler] Disconnect raced with newer connection; runtime entry preserved: "
+            f"device_id={device_id} connection_id={expected_connection_id}"
+        )
+        return
+
     await write_agent_runtime_audit(
         device_id=device_id,
         event_type="agent_offline",
@@ -58,16 +97,21 @@ async def websocket_handler(request):
 
     connection_ctx = AgentConnectionContext(ws=ws, request=request, state=state)
     dispatch_service = getattr(state, "device_dispatch_service", None)
+    outbox_ingest_service = OutboxIngestService(
+        None,
+        batch_ack_manager=batch_ack_manager,
+        event_validator=event_validator,
+    )
 
     router = AgentMessageRouter(
         handshake_service=HandshakeService(handle_handshake, dispatch_service=dispatch_service),
         command_ack_service=CommandAckService(),
         command_result_service=CommandResultService(),
         rpc_response_service=RpcResponseService(),
-        outbox_ingest_service=OutboxIngestService(
-            None,
-            batch_ack_manager=batch_ack_manager,
-            event_validator=event_validator,
+        outbox_ingest_service=outbox_ingest_service,
+        outbox_batch_ingest_service=OutboxBatchIngestService(
+            outbox_ingest_service,
+            batch_ack_manager,
         ),
         agent_command_service=AgentCommandService(),
     )
@@ -84,6 +128,23 @@ async def websocket_handler(request):
                     envelope = EnvelopeContext.from_message(data)
                     msg_type = envelope.message_type
 
+                    if (
+                        msg_type != "handshake"
+                        and connection_ctx.agent_id
+                        and hasattr(state, "is_current_agent_connection")
+                        and not state.is_current_agent_connection(
+                            connection_ctx.agent_id,
+                            expected_ws=ws,
+                            expected_connection_id=connection_ctx.connection_id,
+                        )
+                    ):
+                        logger.warning(
+                            "[WS handler] Closing superseded connection before message processing: "
+                            f"device_id={connection_ctx.agent_id} connection_id={connection_ctx.connection_id}"
+                        )
+                        await ws.close(code=4002, message=b"Superseded by newer connection")
+                        break
+
                     route_result = await router.route(data, connection_ctx, envelope)
                     if route_result is ws:
                         return ws
@@ -95,6 +156,7 @@ async def websocket_handler(request):
                         "rpc_response",
                         "command",
                         "outbox_item",
+                        "outbox_items_batch",
                     }:
                         await loop_safety_service.handle_unknown_message_type(msg_type, connection_ctx)
                     if route_result == "__continue__":

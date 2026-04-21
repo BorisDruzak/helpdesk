@@ -389,6 +389,7 @@ SERVER_CAPABILITIES = [
     "device_outbox",
     "event_replay",
     "batch_ack",
+    "outbox_batch_v1",
     "device_binding_validation",
     "device_registry",
     "toolset_snapshots",

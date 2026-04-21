@@ -49,6 +49,7 @@ async def test_router_returns_continue_for_outbox_true():
         command_result_service=_StubService(),
         rpc_response_service=_StubService(),
         outbox_ingest_service=_StubService(result=True),
+        outbox_batch_ingest_service=_StubService(result=True),
         agent_command_service=_StubService(),
     )
     ctx = AgentConnectionContext(
@@ -59,3 +60,28 @@ async def test_router_returns_continue_for_outbox_true():
     envelope = EnvelopeContext.from_message({"type": "outbox_item"})
     result = await router.route({"type": "outbox_item"}, ctx, envelope)
     assert result == "__continue__"
+
+
+@pytest.mark.asyncio
+async def test_router_routes_outbox_batch_to_batch_service():
+    batch = _StubService(result=True)
+    router = AgentMessageRouter(
+        handshake_service=_StubService(),
+        command_ack_service=_StubService(),
+        command_result_service=_StubService(),
+        rpc_response_service=_StubService(),
+        outbox_ingest_service=_StubService(result=True),
+        outbox_batch_ingest_service=batch,
+        agent_command_service=_StubService(),
+    )
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _id: None),
+    )
+    envelope = EnvelopeContext.from_message({"type": "outbox_items_batch"})
+
+    result = await router.route({"type": "outbox_items_batch"}, ctx, envelope)
+
+    assert result == "__continue__"
+    assert batch.calls == 1
