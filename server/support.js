@@ -558,7 +558,7 @@
         if (!node) {
             return;
         }
-        node.href = '/login?_shell=' + LOGIN_SHELL_VERSION + '&target=admin';
+        node.href = '/login?legacy=1&target=admin';
     }
 
     function applyLayoutClasses() {

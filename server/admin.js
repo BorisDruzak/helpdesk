@@ -8899,7 +8899,7 @@
             }
             const switchBtn = document.getElementById('adminSwitchRoleBtn');
             if (switchBtn) {
-                switchBtn.href = '/login?_shell=' + LOGIN_SHELL_VERSION + '&target=support';
+                switchBtn.href = '/login?legacy=1&target=support';
             }
             const logoutBtn = document.getElementById('adminLogoutBtn');
             if (logoutBtn && !logoutBtn.dataset.bound) {

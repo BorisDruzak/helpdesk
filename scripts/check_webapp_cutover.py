@@ -65,7 +65,7 @@ def main() -> None:
         "recommended_checks": [
             "python scripts/bootstrap_web_toolchain.py",
             "pnpm --dir webapp run build",
-            "pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666",
+            "pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666",
         ],
     }
 

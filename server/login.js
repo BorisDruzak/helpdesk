@@ -2,20 +2,17 @@
     const AUTH_TOKEN_KEY = 'admin_auth_token';
     const USER_LOGIN_KEY = 'admin_user_login';
     const ROLE_KEY = 'admin_actor_role';
-    const LOGIN_SHELL_VERSION = '20260330a';
-    const ADMIN_SHELL_VERSION = '20260419a';
-    const SUPPORT_SHELL_VERSION = '20260419a';
     const ROLE_META = {
         admin: {
             title: 'Вход в админку',
             description: 'Управление системой, пользователями, очередями, правилами маршрутизации и техпанелью.',
-            destination: '/admin?_shell=' + ADMIN_SHELL_VERSION,
+            destination: '/admin?legacy=1',
             linkLabel: 'Открыть админку',
         },
         support: {
             title: 'Вход в support workspace',
             description: 'Операторская очередь, чат по тикету, наблюдение за чужими тикетами и рабочие инструменты.',
-            destination: '/support?_shell=' + SUPPORT_SHELL_VERSION,
+            destination: '/support?legacy=1',
             linkLabel: 'Открыть support',
         },
     };
@@ -93,7 +90,8 @@
             button.setAttribute('aria-selected', active ? 'true' : 'false');
         });
         const params = new URLSearchParams(window.location.search);
-        params.set('_shell', LOGIN_SHELL_VERSION);
+        params.delete('_shell');
+        params.set('legacy', '1');
         params.set('target', targetRole);
         history.replaceState({}, '', '/login?' + params.toString());
     }

@@ -17,6 +17,7 @@
   - собранный bundle реально присутствует в `webapp/dist`.
 - `?legacy=1` всегда имеет приоритет над cutover и должен оставлять доступ к legacy shell.
 - Если prerequisites не выполнены, сервер не делает half-switch и оставляет legacy route рабочим.
+- Начиная с финального cutover `WEBAPP_CUTOVER_*` включены по умолчанию в `server/config.py`; для rollback используйте явный `WEBAPP_CUTOVER_LOGIN_ENABLED=false`, `WEBAPP_CUTOVER_SUPPORT_ENABLED=false`, `WEBAPP_CUTOVER_ADMIN_ENABLED=false` в `server/.env`.
 
 Каноничный preflight:
 
@@ -57,7 +58,7 @@ python scripts/check_webapp_cutover.py --json
 2. Прогнать live signoff helper:
 
 ```powershell
-pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666
+pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
 ```
 
 3. Убедиться, что helper подтвердил:
@@ -70,12 +71,6 @@ pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666
   - raw escape `/login?legacy=1`, `/admin?legacy=1`, `/support?legacy=1`;
   - русский `lang/title`;
   - отсутствие `console/page errors`.
-4. В день полного переключения дополнительно зафиксировать именно webapp-mode:
-
-```powershell
-pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666 --expect-route-mode webapp
-```
-
 4. Поверх helper сделать browser MCP-check, если менялся UI.
 5. После проверки остановить remote server, если не нужен живой стенд.
 
@@ -84,4 +79,5 @@ pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666 --ex
 - Пока `/ticket`, публичная очередь и публичный browser ticket не перенесены, legacy shell полностью не удаляется.
 - Новые внутренние entrypoints не должны жёстко прибивать пользователя к `_shell=...`; они должны идти через логические `/admin` или `/support`, чтобы default-route switch уважал текущую cutover policy.
 - Уже нормализованный пример: `server/ticket.html` теперь ведёт в `/admin`, а не в pinned legacy shell.
+- Сами legacy shell-ссылки теперь должны использовать `?legacy=1`, а не version-pinned `_shell=...`, чтобы fallback оставался стабильным даже после следующего deploy.
 - Удаление `server/login.js`, `server/support.js`, `server/admin.js` и связанных HTML/CSS допустимо только после стабильного remote signoff и явного решения о завершении migration window.

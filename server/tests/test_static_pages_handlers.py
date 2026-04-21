@@ -42,7 +42,9 @@ def _install_built_webapp_bundle(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_admin_page_redirects_to_versioned_shell():
+async def test_admin_page_redirects_to_versioned_shell(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_ADMIN_ENABLED", False)
     request = make_mocked_request("GET", "/admin")
 
     with pytest.raises(web.HTTPFound) as exc_info:
@@ -69,7 +71,9 @@ async def test_admin_page_serves_html_for_current_shell_version():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_support_page_redirects_to_versioned_shell():
+async def test_support_page_redirects_to_versioned_shell(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", False)
     request = make_mocked_request("GET", "/support")
 
     with pytest.raises(web.HTTPFound) as exc_info:
@@ -130,7 +134,8 @@ async def test_support_page_keeps_legacy_escape_when_cutover_enabled(tmp_path, m
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
-async def test_login_page_redirects_to_versioned_shell():
+async def test_login_page_redirects_to_versioned_shell(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)
     request = make_mocked_request("GET", "/login")
 
     with pytest.raises(web.HTTPFound) as exc_info:
