@@ -85,6 +85,7 @@ class WSOutboxFlusher:
         self.max_inflight = max_inflight
         self.ack_timeout_sec = ack_timeout_sec
         self.resend_limit = resend_limit
+        self.supports_outbox_batch = False
         
         # Трекинг inflight: outbox_id -> deadline_ts
         self.inflight_deadlines: Dict[int, float] = {}
@@ -106,12 +107,12 @@ class WSOutboxFlusher:
         # Lock для сериализации ACK и claim: избегаем гонки между ack_and_delete и claim_outbox_batch
         self._ack_lock = asyncio.Lock()
     
-    async def run(self, send_func: Callable[[str, str, Dict[str, Any], Optional[str], Optional[str]], None]) -> None:
+    async def run(self, send_func: Callable[..., None]) -> None:
         """
         Основной цикл отправки outbox.
         
         Args:
-            send_func: Функция для отправки envelope (msg_type, request_id, payload_dict, ticket_id, job_id)
+            send_func: Функция для отправки envelope
         """
         self.log.info("🚀 WSOutboxFlusher V3 запущен")
         
@@ -211,6 +212,26 @@ class WSOutboxFlusher:
                 self.log.error(f"❌ Ошибка при пометке failed: {e}")
         
         # Для retry - lease уже истек в БД, они будут выбраны при следующем claim
+
+    async def _handle_send_failure(self, outbox_id: int, attempts: int, error: Exception) -> None:
+        try:
+            if attempts >= self.resend_limit:
+                await self.db_manager.mark_outbox_failed(
+                    [outbox_id],
+                    reason=f"send_error_exhausted({attempts}/{self.resend_limit}): {str(error)}"
+                )
+                self.stats['failed'] += 1
+            else:
+                backoff = calculate_backoff(attempts)
+                new_lease = time.time() + backoff
+                await self.db_manager.update_outbox_lease([outbox_id], new_lease)
+                self.stats['resends'] += 1
+                self.log.warning(
+                    f"⚠️  send_error для outbox_id={outbox_id}, attempts={attempts}/{self.resend_limit}; "
+                    f"будет retry через {backoff}s"
+                )
+        except Exception as e2:
+            self.log.error(f"❌ Ошибка при пометке failed: {e2}")
     
     async def _send_pending_batch(
         self, 
@@ -240,7 +261,8 @@ class WSOutboxFlusher:
                 return False
             
             self.log.info(f"📤 Отправляю пакет из {len(batch)} записей")
-            
+            prepared_messages = []
+
             for item in batch:
                 outbox_id = item['id']
                 
@@ -324,48 +346,93 @@ class WSOutboxFlusher:
                         envelope_payload["event_id"] = item.get('event_id')
                     
                     request_id = str(uuid.uuid4())
-                    
-                    # Отправляем через send_func с ticket_id и job_id
-                    await send_func(
-                        "outbox_item",
-                        request_id,
-                        envelope_payload,
-                        ticket_id,  # может быть None для device events
-                        item.get('job_id')
-                    )
-                    
-                    # Добавляем в трекинг
-                    deadline = time.time() + self.ack_timeout_sec
-                    self.inflight_deadlines[outbox_id] = deadline
-                    self.stats['sent'] += 1
-                    
-                    self.log.debug(
-                        f"📤 Отправлен outbox_item: outbox_id={outbox_id}, "
-                        f"event_id={item.get('event_id')}, attempts={item.get('attempts', 0)}"
+                    trace_id = str(uuid.uuid4())
+                    envelope = {
+                        "type": "outbox_item",
+                        "request_id": request_id,
+                        "device_id": self.device_id,
+                        "protocol_version": "ws_ticket_v3",
+                        "payload": envelope_payload,
+                        "meta": {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "actor_role": "agent",
+                        },
+                        "trace_id": trace_id,
+                    }
+                    if ticket_id:
+                        envelope["ticket_id"] = ticket_id
+                    if item.get('job_id'):
+                        envelope["job_id"] = item.get('job_id')
+
+                    prepared_messages.append(
+                        {
+                            "outbox_id": outbox_id,
+                            "request_id": request_id,
+                            "trace_id": trace_id,
+                            "payload": envelope_payload,
+                            "ticket_id": ticket_id,
+                            "job_id": item.get('job_id'),
+                            "attempts": int(item.get('attempts', 0) or 0),
+                            "event_id": item.get('event_id'),
+                            "envelope": envelope,
+                        }
                     )
                     
                 except Exception as e:
                     self.log.error(f"❌ Ошибка отправки outbox_id={outbox_id}: {e}")
-                    try:
-                        attempts = int(item.get('attempts', 0) or 0)
-                        if attempts >= self.resend_limit:
-                            await self.db_manager.mark_outbox_failed(
-                                [outbox_id],
-                                reason=f"send_error_exhausted({attempts}/{self.resend_limit}): {str(e)}"
-                            )
-                            self.stats['failed'] += 1
-                        else:
-                            backoff = calculate_backoff(attempts)
-                            new_lease = time.time() + backoff
-                            await self.db_manager.update_outbox_lease([outbox_id], new_lease)
-                            self.stats['resends'] += 1
-                            self.log.warning(
-                                f"⚠️  send_error для outbox_id={outbox_id}, attempts={attempts}/{self.resend_limit}; "
-                                f"будет retry через {backoff}s"
-                            )
-                    except Exception as e2:
-                        self.log.error(f"❌ Ошибка при пометке failed: {e2}")
-            
+                    attempts = int(item.get('attempts', 0) or 0)
+                    await self._handle_send_failure(outbox_id, attempts, e)
+
+            if not prepared_messages:
+                return False
+
+            if self.supports_outbox_batch and len(prepared_messages) > 1:
+                try:
+                    await send_func(
+                        "outbox_items_batch",
+                        str(uuid.uuid4()),
+                        {"items": [msg["envelope"] for msg in prepared_messages]},
+                        None,
+                        None,
+                    )
+                    deadline = time.time() + self.ack_timeout_sec
+                    for msg in prepared_messages:
+                        self.inflight_deadlines[msg["outbox_id"]] = deadline
+                        self.stats['sent'] += 1
+                    self.log.debug(
+                        f"📤 Отправлен outbox_items_batch: size={len(prepared_messages)}, "
+                        f"outbox_ids={[msg['outbox_id'] for msg in prepared_messages]}"
+                    )
+                    return True
+                except Exception as e:
+                    self.log.error(f"❌ Ошибка отправки outbox_items_batch: {e}")
+                    for msg in prepared_messages:
+                        await self._handle_send_failure(msg["outbox_id"], msg["attempts"], e)
+                    return False
+
+            for msg in prepared_messages:
+                try:
+                    await send_func(
+                        "outbox_item",
+                        msg["request_id"],
+                        msg["payload"],
+                        msg["ticket_id"],
+                        msg["job_id"],
+                        trace_id=msg["trace_id"],
+                    )
+
+                    deadline = time.time() + self.ack_timeout_sec
+                    self.inflight_deadlines[msg["outbox_id"]] = deadline
+                    self.stats['sent'] += 1
+
+                    self.log.debug(
+                        f"📤 Отправлен outbox_item: outbox_id={msg['outbox_id']}, "
+                        f"event_id={msg['event_id']}, attempts={msg['attempts']}"
+                    )
+                except Exception as e:
+                    self.log.error(f"❌ Ошибка отправки outbox_id={msg['outbox_id']}: {e}")
+                    await self._handle_send_failure(msg["outbox_id"], msg["attempts"], e)
+
             return True
             
         except Exception as e:

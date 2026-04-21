@@ -74,6 +74,9 @@ except ImportError:
 
 
 BUILTIN_PACKAGE_INSTALL_MODULES = {name.lower() for name in CORE_ENABLED_MODULES}
+TOOL_EXECUTION_LANE_SAFE_READ = "safe_read"
+TOOL_EXECUTION_LANE_SERIAL = "serial"
+SAFE_READ_TOOL_CONCURRENCY = 2
 
 
 class AgentOrchestrator:
@@ -153,9 +156,17 @@ class AgentOrchestrator:
                 temp_dir = str(pathlib.Path(data_dir) / "temp")
         self.module_manager = ModuleManager(data_dir=data_dir, temp_dir=temp_dir)
         
-        # КРИТИЧНО: Registry для отслеживания выполняющихся операций (для cancel)
-        # Ключ: operation_id (из meta.request_id), значение: asyncio.Task
+        # КРИТИЧНО: Registry для отслеживания queued/running операций (для cancel).
+        # Ключ: operation_id (из meta.request_id), значение: outer asyncio.Task команды.
         self.running_tasks: Dict[str, asyncio.Task] = {}
+        self._tool_execution_lane_limits = {
+            TOOL_EXECUTION_LANE_SAFE_READ: SAFE_READ_TOOL_CONCURRENCY,
+            TOOL_EXECUTION_LANE_SERIAL: 1,
+        }
+        self._tool_execution_lane_semaphores = {
+            lane: asyncio.Semaphore(limit)
+            for lane, limit in self._tool_execution_lane_limits.items()
+        }
         
         logger.info("AgentOrchestrator инициализирован")
         logger.debug(f"Активные модули: {self.enabled_modules}")
@@ -176,6 +187,17 @@ class AgentOrchestrator:
             "extra_paths": extra_paths,
             "source": "builtin_or_extra_path",
         }
+
+    def _select_tool_execution_lane(self, metadata: ToolMetadata) -> str:
+        """
+        Selects execution lane for tool runtime.
+
+        `safe_read` tools without side effects may run with limited parallelism.
+        All other tools use the serialized lane.
+        """
+        if metadata.risk_level == "safe_read" and not metadata.side_effects:
+            return TOOL_EXECUTION_LANE_SAFE_READ
+        return TOOL_EXECUTION_LANE_SERIAL
 
     def _load_builtin_modules(self) -> List[BaseCollector]:
         """
@@ -3203,7 +3225,43 @@ class AgentOrchestrator:
                 params_to_use = dict(params_to_use)
                 params_to_use["operation_id"] = operation_id
             
-            # Создаем task для выполнения tool и регистрируем в running_tasks
+            lane_name = self._select_tool_execution_lane(metadata)
+            lane_sem = self._tool_execution_lane_semaphores[lane_name]
+            current_operation_task = asyncio.current_task()
+            lane_acquired = False
+            queue_wait_started = time.perf_counter()
+            if operation_id and current_operation_task is not None:
+                self.running_tasks[operation_id] = current_operation_task
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="queue",
+                status="waiting",
+                summary="waiting for execution lane",
+                details={
+                    "lane": lane_name,
+                    "operation_id": operation_id,
+                },
+            )
+            await lane_sem.acquire()
+            lane_acquired = True
+            queue_wait_ms = int((time.perf_counter() - queue_wait_started) * 1000)
+            logger.info(
+                f"[AGENT] execution lane acquired tool={tool} operation_id={operation_id} "
+                f"lane={lane_name} queue_wait_ms={queue_wait_ms}"
+            )
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="queue",
+                status="ok",
+                summary="execution lane acquired",
+                details={
+                    "lane": lane_name,
+                    "queue_wait_ms": queue_wait_ms,
+                    "operation_id": operation_id,
+                },
+            )
+
+            # Создаем task для выполнения tool
             module_action_trace = get_action_trace_recorder().context(
                 source="module",
                 action="module.execute",
@@ -3229,35 +3287,29 @@ class AgentOrchestrator:
 
             async def _execute_tool():
                 """Внутренняя функция для выполнения tool в task."""
-                try:
-                    is_async = inspect.iscoroutinefunction(method)
-                    method_owner = getattr(method, "__self__", None)
-                    trace_binding = (
-                        method_owner.bind_trace(
-                            tool_name=tool,
-                            ticket_id=ticket_id,
-                            operation_id=operation_id,
-                            trace_id=getattr(meta, "trace_id", None),
-                            request_id=getattr(meta, "request_id", None),
-                            parent_action_id=module_action_trace.action_id,
-                        )
-                        if hasattr(method_owner, "bind_trace")
-                        else nullcontext()
+                is_async = inspect.iscoroutinefunction(method)
+                method_owner = getattr(method, "__self__", None)
+                trace_binding = (
+                    method_owner.bind_trace(
+                        tool_name=tool,
+                        ticket_id=ticket_id,
+                        operation_id=operation_id,
+                        trace_id=getattr(meta, "trace_id", None),
+                        request_id=getattr(meta, "request_id", None),
+                        parent_action_id=module_action_trace.action_id,
                     )
+                    if hasattr(method_owner, "bind_trace")
+                    else nullcontext()
+                )
 
-                    with trace_binding:
-                        if is_async:
-                            return await method(**params_to_use)
-                        else:
-                            # Выполняем sync метод в threadpool
-                            return await asyncio.to_thread(method, **params_to_use)
-                finally:
-                    # Удаляем из running_tasks после завершения
-                    self.running_tasks.pop(operation_id, None)
+                with trace_binding:
+                    if is_async:
+                        return await method(**params_to_use)
+                    else:
+                        # Выполняем sync метод в threadpool
+                        return await asyncio.to_thread(method, **params_to_use)
             
-            # Регистрируем task в running_tasks
             task = asyncio.create_task(_execute_tool())
-            self.running_tasks[operation_id] = task
             effective_timeout = metadata.timeout_sec or resources_policy.get("max_runtime_sec")
             
             try:
@@ -3583,6 +3635,21 @@ class AgentOrchestrator:
                 )
                 return ok(data=data, meta=meta)
             
+        except asyncio.CancelledError:
+            logger.info(
+                f"[AGENT] run_tool canceled tool={tool} operation_id={getattr(meta, 'request_id', None)}"
+            )
+            get_action_trace_recorder().record(
+                action_trace,
+                stage="response",
+                status="canceled",
+                summary="tool execution canceled",
+                details={
+                    "tool": tool,
+                    "operation_id": getattr(meta, "request_id", None),
+                },
+            )
+            raise
         except Exception as e:
             duration_ms = int((time.time() - start_ts) * 1000)
             error_msg = f"Ошибка в _handle_run_tool: {str(e)}"
@@ -3611,6 +3678,19 @@ class AgentOrchestrator:
                 meta=meta,
                 details={"exception_type": type(e).__name__}
             )
+        finally:
+            try:
+                if 'lane_acquired' in locals() and lane_acquired:
+                    lane_sem.release()
+            finally:
+                operation_id = getattr(meta, "request_id", None)
+                current_task = asyncio.current_task()
+                if (
+                    operation_id
+                    and current_task is not None
+                    and self.running_tasks.get(operation_id) is current_task
+                ):
+                    self.running_tasks.pop(operation_id, None)
     
     async def _handle_consent_decision(
         self,

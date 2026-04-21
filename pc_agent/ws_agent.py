@@ -180,6 +180,7 @@ class WSAgent:
         self.identity_manager: Optional[IdentityManager] = None
         self.flusher: Optional[WSOutboxFlusher] = None
         self.flusher_task: Optional[asyncio.Task] = None
+        self.server_capabilities: set[str] = set()
         self.device_id: Optional[str] = None  # Будет установлен из identity при initialize()
         self.start_time = time.time()
         self._http_session: Optional[ClientSession] = None
@@ -1645,6 +1646,13 @@ class WSAgent:
             
             # Handshake ACK
             if msg_type == "handshake_ack":
+                server_capabilities = payload.get("server_capabilities", [])
+                if isinstance(server_capabilities, list):
+                    self.server_capabilities = set(str(item) for item in server_capabilities)
+                else:
+                    self.server_capabilities = set()
+                if self.flusher:
+                    self.flusher.supports_outbox_batch = "outbox_batch_v1" in self.server_capabilities
                 logger.info("✅ Получен handshake_ack от сервера")
                 await self._publish_connection_state("connected", "WS подключён")
                 return
@@ -2656,6 +2664,7 @@ class WSAgent:
                                         "nack_support",
                                         "outbox_ack_v3",  # Critical: новый формат ACK
                                         "retry_policy",
+                                        "outbox_batch_v1",
                                         
                                         # Advanced features
                                         "reconcile_tickets",
@@ -2767,13 +2776,19 @@ class WSAgent:
                             )
                             
                             # Создаем функцию-обертку для отправки через ws (Protocol V3)
-                            # Фикс: sender.py передает 5 аргументов (msg_type, request_id, payload, ticket_id, job_id)
-                            async def send_wrapper(msg_type: str, request_id: Optional[str], payload_dict: Dict[str, Any], ticket_id: Optional[str] = None, job_id: Optional[str] = None):
+                            # sender.py может передавать trace_id для batched outbox envelopes
+                            async def send_wrapper(
+                                msg_type: str,
+                                request_id: Optional[str],
+                                payload_dict: Dict[str, Any],
+                                ticket_id: Optional[str] = None,
+                                job_id: Optional[str] = None,
+                                trace_id: Optional[str] = None,
+                            ):
                                 # Protocol V3: передаем ticket_id и job_id в send_envelope
-                                trace_id = str(uuid.uuid4())  # Генерируем trace_id для outbox
                                 await self.send_envelope(
                                     ws, msg_type, request_id, payload_dict,
-                                    trace_id=trace_id,
+                                    trace_id=trace_id or str(uuid.uuid4()),
                                     ticket_id=ticket_id,
                                     job_id=job_id,
                                     actor_role="agent"

@@ -144,7 +144,7 @@ Protocol V3 (`ws_ticket_v3`) — это современный протокол 
   "meta": {
     "timestamp": "2026-01-08T21:10:57.027006+00:00",
     "actor_role": "agent",
-    "capabilities": ["protocol_v3", "envelope_v3"]
+    "capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3", "outbox_batch_v1"]
   }
 }
 ```
@@ -155,6 +155,12 @@ Identity v1 invariants for handshake:
 - `payload.machine_id` must match `device_id`;
 - `payload.install_id` identifies the current installation only and may change after reinstall or after deleting `identity.json`;
 - top-level `token` remains the authentication token source of truth for the handshake.
+
+Reconnect/runtime note:
+
+- The server treats the latest successful handshake for one `device_id` as the current live session.
+- If overlapping reconnects create two `/ws` sessions for the same `device_id`, the older websocket may be closed by the server with code **4002** and message `Superseded by newer connection`.
+- This is a transport/runtime ownership rule, not a wire-format change.
 
 Если launcher успешно применил self-update, агент добавляет в следующий `handshake`:
 - `payload.applied_update_version` — версия, которую launcher реально активировал;
@@ -188,6 +194,7 @@ Identity v1 invariants for handshake:
       "envelope_v3",
       "outbox_ack_v3",
       "outbox_nack",
+      "outbox_batch_v1",
       "device_registry",
       "device_config",
       "toolset_snapshots"
@@ -227,6 +234,28 @@ Identity v1 invariants for handshake:
   }
 }
 ```
+
+### Outbox Batch (`outbox_items_batch`)
+
+Опциональный throughput-path для агента: несколько обычных `outbox_item` могут быть отправлены одним WS frame, если `handshake_ack.payload.server_capabilities` содержит `outbox_batch_v1`.
+
+```json
+{
+  "type": "outbox_items_batch",
+  "payload": {
+    "items": [
+      {"type": "outbox_item", "...": "..."},
+      {"type": "outbox_item", "...": "..."}
+    ]
+  }
+}
+```
+
+Инварианты:
+
+- batched transport не меняет per-item формат `outbox_item`;
+- ACK/NACK остаются per-item по `outbox_id`, даже если отправка была batched;
+- при отсутствии `outbox_batch_v1` в `server_capabilities` агент обязан откатиться к одиночным `outbox_item`.
 
 **Для device events:**
 ```json
@@ -463,7 +492,7 @@ RPC-вызовы для выполнения методов (альтернат�
 Агент использует **outbox pattern** для надежной доставки событий:
 
 1. Событие записывается в SQLite `outbox` таблицу
-2. WSOutboxFlusher периодически отправляет pending события
+2. WSOutboxFlusher периодически отправляет pending события; для mutating/error-sensitive control flow batching включается только после capability negotiation
 3. События помечаются как `claimed` с lease временем
 4. При получении `outbox_ack` события удаляются из outbox
 5. При получении `outbox_nack` события обрабатываются согласно политике retry
