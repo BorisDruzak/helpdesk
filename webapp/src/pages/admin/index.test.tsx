@@ -14,6 +14,197 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
+type ModulesState = {
+  rollout_settings: {
+    preferred_version_rollout_mode: string;
+    preferred_version_rollout_mode_label: string;
+    sync_after_preferred_change: boolean;
+  };
+  modules: Array<{
+    module_name: string;
+    preferred_version: string | null;
+    preferred_assigned: boolean;
+    latest_version: string | null;
+    owner_scope: string | null;
+    module_api_version: string | null;
+    validation_status: string;
+    validation_status_label: string;
+    version_count: number;
+    tools_count: number;
+    platforms: string[];
+    tool_ids: string[];
+    warnings_count: number;
+    has_missing_files: boolean;
+    versions: Array<{
+      version: string;
+      created_at: string | null;
+      uploaded_by: string | null;
+      manifest_version: number | null;
+      module_api_version: string | null;
+      owner_scope: string | null;
+      validation_status: string;
+      validation_status_label: string;
+      preflight_status: string;
+      preflight_status_label: string;
+      is_preferred: boolean;
+      tools_count: number;
+      platforms: string[];
+      tool_ids: string[];
+      warnings_count: number;
+      file_exists: boolean;
+    }>;
+  }>;
+};
+
+function getRolloutModeLabel(mode: string) {
+  return mode === "installed_devices" ? "Обновлять установленные устройства" : "Только вручную";
+}
+
+function createModulesState(): ModulesState {
+  return {
+    rollout_settings: {
+      preferred_version_rollout_mode: "installed_devices",
+      preferred_version_rollout_mode_label: "Обновлять установленные устройства",
+      sync_after_preferred_change: false
+    },
+    modules: [
+      {
+        module_name: "network_ping",
+        preferred_version: "1.2.0",
+        preferred_assigned: true,
+        latest_version: "1.2.1",
+        owner_scope: "vendor",
+        module_api_version: "2.0.0",
+        validation_status: "warning",
+        validation_status_label: "Есть предупреждения",
+        version_count: 2,
+        tools_count: 2,
+        platforms: ["windows_amd64", "linux_alt_x86_64"],
+        tool_ids: ["network_ping.ping", "network_ping.trace"],
+        warnings_count: 1,
+        has_missing_files: false,
+        versions: [
+          {
+            version: "1.2.1",
+            created_at: "2026-04-20T11:10:00+05:00",
+            uploaded_by: "admin",
+            manifest_version: 2,
+            module_api_version: "2.0.0",
+            owner_scope: "vendor",
+            validation_status: "warning",
+            validation_status_label: "Есть предупреждения",
+            preflight_status: "passed",
+            preflight_status_label: "Проверен",
+            is_preferred: false,
+            tools_count: 2,
+            platforms: ["windows_amd64", "linux_alt_x86_64"],
+            tool_ids: ["network_ping.ping", "network_ping.trace"],
+            warnings_count: 1,
+            file_exists: true
+          },
+          {
+            version: "1.2.0",
+            created_at: "2026-04-19T10:00:00+05:00",
+            uploaded_by: "admin",
+            manifest_version: 2,
+            module_api_version: "2.0.0",
+            owner_scope: "vendor",
+            validation_status: "passed",
+            validation_status_label: "Проверен",
+            preflight_status: "passed",
+            preflight_status_label: "Проверен",
+            is_preferred: true,
+            tools_count: 2,
+            platforms: ["windows_amd64", "linux_alt_x86_64"],
+            tool_ids: ["network_ping.ping", "network_ping.trace"],
+            warnings_count: 0,
+            file_exists: true
+          }
+        ]
+      },
+      {
+        module_name: "observer_canary",
+        preferred_version: null,
+        preferred_assigned: false,
+        latest_version: "0.9.0",
+        owner_scope: "internal",
+        module_api_version: "1.0.0",
+        validation_status: "failed",
+        validation_status_label: "Ошибка валидации",
+        version_count: 1,
+        tools_count: 1,
+        platforms: ["windows_amd64"],
+        tool_ids: ["observer.canary"],
+        warnings_count: 2,
+        has_missing_files: true,
+        versions: [
+          {
+            version: "0.9.0",
+            created_at: "2026-04-18T09:00:00+05:00",
+            uploaded_by: "admin",
+            manifest_version: 2,
+            module_api_version: "1.0.0",
+            owner_scope: "internal",
+            validation_status: "failed",
+            validation_status_label: "Ошибка валидации",
+            preflight_status: "failed",
+            preflight_status_label: "Ошибка валидации",
+            is_preferred: false,
+            tools_count: 1,
+            platforms: ["windows_amd64"],
+            tool_ids: ["observer.canary"],
+            warnings_count: 2,
+            file_exists: false
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function cloneModulesPayload(state: ModulesState) {
+  const modules = state.modules.map((moduleFamily) => ({
+    ...moduleFamily,
+    platforms: [...moduleFamily.platforms],
+    tool_ids: [...moduleFamily.tool_ids],
+    versions: moduleFamily.versions.map((version) => ({
+      ...version,
+      platforms: [...version.platforms],
+      tool_ids: [...version.tool_ids]
+    }))
+  }));
+
+  return {
+    query: "",
+    summary: {
+      visible_count: modules.length,
+      preferred_count: modules.filter((item) => item.preferred_assigned).length,
+      invalid_count: modules.filter((item) =>
+        ["warning", "failed"].includes(item.validation_status)
+      ).length,
+      missing_files_count: modules.filter((item) => item.has_missing_files).length
+    },
+    rollout_settings: {
+      ...state.rollout_settings
+    },
+    modules
+  };
+}
+
+function applyPreferredVersion(state: ModulesState, moduleName: string, version: string | null) {
+  const family = state.modules.find((item) => item.module_name === moduleName);
+  if (!family) {
+    throw new Error(`Unexpected module ${moduleName}`);
+  }
+
+  family.preferred_version = version;
+  family.preferred_assigned = version !== null;
+  family.versions = family.versions.map((item) => ({
+    ...item,
+    is_preferred: version !== null && item.version === version
+  }));
+}
+
 function renderAdminPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -36,23 +227,21 @@ afterEach(() => {
 });
 
 describe("AdminWorkspacePage", () => {
-  it("renders typed inventory, update workflow and observer drilldown in Russian", async () => {
+  it("renders typed inventory, observer drilldown and modules actions in Russian", async () => {
+    const modulesState = createModulesState();
+
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        const method = init?.method ?? "GET";
 
         if (url === "/api/web/admin/bootstrap") {
           return jsonResponse({
             status: "success",
             data: {
               workspace: "admin",
-              features: [
-                "devices_inventory",
-                "agent_rollout",
-                "modules_workbench",
-                "tech_panel"
-              ],
+              features: ["devices_inventory", "agent_rollout", "modules_workbench", "tech_panel"],
               observer: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces"
@@ -76,7 +265,7 @@ describe("AdminWorkspacePage", () => {
                 status_options: [
                   { value: "all", label: "Все устройства" },
                   { value: "online", label: "Только онлайн" },
-                  { value: "offline", label: "Только офлайн" }
+                  { value: "offline", label: "Только оффлайн" }
                 ]
               },
               rollout: [
@@ -131,114 +320,56 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/web/admin/modules") {
+        if (url === "/api/web/admin/modules" && method === "GET") {
+          return jsonResponse({
+            status: "success",
+            data: cloneModulesPayload(modulesState)
+          });
+        }
+
+        if (url === "/api/web/admin/modules/rollout_settings" && method === "PATCH") {
+          const payload = JSON.parse(String(init?.body ?? "{}")) as {
+            preferred_version_rollout_mode?: string;
+            sync_after_preferred_change?: boolean;
+          };
+          modulesState.rollout_settings.preferred_version_rollout_mode =
+            payload.preferred_version_rollout_mode ?? modulesState.rollout_settings.preferred_version_rollout_mode;
+          modulesState.rollout_settings.preferred_version_rollout_mode_label = getRolloutModeLabel(
+            modulesState.rollout_settings.preferred_version_rollout_mode
+          );
+          modulesState.rollout_settings.sync_after_preferred_change =
+            payload.sync_after_preferred_change ?? modulesState.rollout_settings.sync_after_preferred_change;
           return jsonResponse({
             status: "success",
             data: {
-              query: "",
-              summary: {
-                visible_count: 2,
-                preferred_count: 1,
-                invalid_count: 1,
-                missing_files_count: 1
-              },
-              rollout_settings: {
-                preferred_version_rollout_mode: "installed_devices",
-                preferred_version_rollout_mode_label: "Обновлять установленные устройства",
-                sync_after_preferred_change: false
-              },
-              modules: [
-                {
-                  module_name: "network_ping",
-                  preferred_version: "1.2.0",
-                  preferred_assigned: true,
-                  latest_version: "1.2.1",
-                  owner_scope: "vendor",
-                  module_api_version: "2.0.0",
-                  validation_status: "warning",
-                  validation_status_label: "Есть предупреждения",
-                  version_count: 2,
-                  tools_count: 2,
-                  platforms: ["windows_amd64", "linux_alt_x86_64"],
-                  tool_ids: ["network_ping.ping", "network_ping.trace"],
-                  warnings_count: 1,
-                  has_missing_files: false,
-                  versions: [
-                    {
-                      version: "1.2.1",
-                      created_at: "2026-04-20T11:10:00+05:00",
-                      uploaded_by: "admin",
-                      manifest_version: 2,
-                      module_api_version: "2.0.0",
-                      owner_scope: "vendor",
-                      validation_status: "warning",
-                      validation_status_label: "Есть предупреждения",
-                      preflight_status: "passed",
-                      preflight_status_label: "Проверен",
-                      is_preferred: false,
-                      tools_count: 2,
-                      platforms: ["windows_amd64", "linux_alt_x86_64"],
-                      tool_ids: ["network_ping.ping", "network_ping.trace"],
-                      warnings_count: 1,
-                      file_exists: true
-                    },
-                    {
-                      version: "1.2.0",
-                      created_at: "2026-04-19T10:00:00+05:00",
-                      uploaded_by: "admin",
-                      manifest_version: 2,
-                      module_api_version: "2.0.0",
-                      owner_scope: "vendor",
-                      validation_status: "passed",
-                      validation_status_label: "Проверен",
-                      preflight_status: "passed",
-                      preflight_status_label: "Проверен",
-                      is_preferred: true,
-                      tools_count: 2,
-                      platforms: ["windows_amd64", "linux_alt_x86_64"],
-                      tool_ids: ["network_ping.ping", "network_ping.trace"],
-                      warnings_count: 0,
-                      file_exists: true
-                    }
-                  ]
-                },
-                {
-                  module_name: "observer_canary",
-                  preferred_version: null,
-                  preferred_assigned: false,
-                  latest_version: "0.9.0",
-                  owner_scope: "internal",
-                  module_api_version: "1.0.0",
-                  validation_status: "failed",
-                  validation_status_label: "Ошибка валидации",
-                  version_count: 1,
-                  tools_count: 1,
-                  platforms: ["windows_amd64"],
-                  tool_ids: ["observer.canary"],
-                  warnings_count: 2,
-                  has_missing_files: true,
-                  versions: [
-                    {
-                      version: "0.9.0",
-                      created_at: "2026-04-18T09:00:00+05:00",
-                      uploaded_by: "admin",
-                      manifest_version: 2,
-                      module_api_version: "1.0.0",
-                      owner_scope: "internal",
-                      validation_status: "failed",
-                      validation_status_label: "Ошибка валидации",
-                      preflight_status: "failed",
-                      preflight_status_label: "Ошибка валидации",
-                      is_preferred: false,
-                      tools_count: 1,
-                      platforms: ["windows_amd64"],
-                      tool_ids: ["observer.canary"],
-                      warnings_count: 2,
-                      file_exists: false
-                    }
-                  ]
-                }
-              ]
+              ...modulesState.rollout_settings
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/modules/network_ping/preferred" && method === "PATCH") {
+          const payload = JSON.parse(String(init?.body ?? "{}")) as { version?: string | null };
+          applyPreferredVersion(modulesState, "network_ping", payload.version ?? null);
+          return jsonResponse({
+            status: "success",
+            data: {
+              module_name: "network_ping",
+              preferred_version: payload.version ?? null,
+              updated_at: "2026-04-21T10:15:00+05:00",
+              updated_by: "admin",
+              message:
+                payload.version === null
+                  ? "Preferred-версия для network_ping снята."
+                  : `Preferred-версия для network_ping обновлена на ${payload.version}.`,
+              rollout_summary: {
+                mode: modulesState.rollout_settings.preferred_version_rollout_mode,
+                should_sync: modulesState.rollout_settings.sync_after_preferred_change,
+                desired_updates: payload.version === null ? 0 : 2,
+                sync_enqueued:
+                  payload.version !== null && modulesState.rollout_settings.sync_after_preferred_change ? 2 : 0,
+                refresh_enqueued:
+                  payload.version !== null && modulesState.rollout_settings.sync_after_preferred_change ? 2 : 0
+              }
             }
           });
         }
@@ -284,24 +415,6 @@ describe("AdminWorkspacePage", () => {
                   attrs_json: {
                     flow: "agent_update"
                   }
-                },
-                {
-                  trace_id: "trace-tool-1",
-                  root_span_id: "span-root-2",
-                  root_kind: "tool_call",
-                  root_kind_label: "Инструмент",
-                  status: "running",
-                  status_label: "В работе",
-                  ticket_id: "ticket-2",
-                  device_id: "device-1",
-                  operation_id: "op-tool-1",
-                  job_id: null,
-                  duration_ms: 1800,
-                  error_count: 0,
-                  span_count: 4,
-                  started_at: "2026-04-20T11:26:00+05:00",
-                  finished_at: null,
-                  attrs_json: {}
                 }
               ],
               top_signatures: [
@@ -315,205 +428,13 @@ describe("AdminWorkspacePage", () => {
                   last_seen_at: "2026-04-20T11:25:00+05:00"
                 }
               ],
-              top_degradations: [
-                {
-                  operation_kind: "tool_call",
-                  operation_kind_label: "Инструмент",
-                  tool_name: "network_ping.ping",
-                  operations_count: 7,
-                  timeout_count: 2,
-                  retried_operations_count: 3,
-                  slow_operations_count: 1,
-                  max_duration_ms: 9000,
-                  latest_operation_at: "2026-04-20T11:23:00+05:00"
-                }
-              ],
-              dangerous_flows: [
-                {
-                  root_kind: "agent_update",
-                  root_kind_label: "Обновление агента",
-                  operations_count: 5,
-                  error_count: 2,
-                  timeout_count: 1,
-                  retried_count: 1,
-                  active_count: 0,
-                  latest_operation_at: "2026-04-20T11:24:00+05:00"
-                }
-              ],
+              top_degradations: [],
+              dangerous_flows: [],
               links: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces",
                 runtime_endpoint: "/api/admin/tech/traces/runtime"
               }
-            }
-          });
-        }
-
-        if (url === "/api/web/admin/observer/traces?device_id=device-1&lookback_hours=24&limit=12") {
-          return jsonResponse({
-            status: "success",
-            data: {
-              query: {
-                device_id: "device-1",
-                lookback_hours: 24,
-                status_filter: "all",
-                root_kind_filter: "all",
-                limit: 12
-              },
-              summary: {
-                visible_count: 2,
-                active_count: 1,
-                error_count: 1,
-                selected_trace_id: "trace-update-1"
-              },
-              filters: {
-                status_options: [
-                  { value: "all", label: "Все статусы" },
-                  { value: "running", label: "В работе" },
-                  { value: "failed", label: "С ошибкой" }
-                ],
-                root_kind_options: [
-                  { value: "all", label: "Все потоки" },
-                  { value: "agent_update", label: "Обновление агента" },
-                  { value: "tool_call", label: "Инструмент" }
-                ]
-              },
-              traces: [
-                {
-                  trace_id: "trace-update-1",
-                  root_span_id: "span-root-1",
-                  root_kind: "agent_update",
-                  root_kind_label: "Обновление агента",
-                  status: "failed",
-                  status_label: "Ошибка",
-                  ticket_id: "ticket-1",
-                  device_id: "device-1",
-                  operation_id: "op-update-1",
-                  job_id: null,
-                  duration_ms: 6400,
-                  error_count: 1,
-                  span_count: 6,
-                  started_at: "2026-04-20T11:24:00+05:00",
-                  finished_at: "2026-04-20T11:24:06+05:00",
-                  attrs_json: {
-                    flow: "agent_update"
-                  }
-                },
-                {
-                  trace_id: "trace-tool-1",
-                  root_span_id: "span-root-2",
-                  root_kind: "tool_call",
-                  root_kind_label: "Инструмент",
-                  status: "running",
-                  status_label: "В работе",
-                  ticket_id: "ticket-2",
-                  device_id: "device-1",
-                  operation_id: "op-tool-1",
-                  job_id: null,
-                  duration_ms: 1800,
-                  error_count: 0,
-                  span_count: 4,
-                  started_at: "2026-04-20T11:26:00+05:00",
-                  finished_at: null,
-                  attrs_json: {}
-                }
-              ],
-              links: {
-                detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime"
-              }
-            }
-          });
-        }
-
-        if (url === "/api/web/admin/observer/traces/trace-update-1") {
-          return jsonResponse({
-            status: "success",
-            data: {
-              trace: {
-                trace_id: "trace-update-1",
-                root_span_id: "span-root-1",
-                root_kind: "agent_update",
-                root_kind_label: "Обновление агента",
-                status: "failed",
-                status_label: "Ошибка",
-                ticket_id: "ticket-1",
-                device_id: "device-1",
-                operation_id: "op-update-1",
-                job_id: null,
-                duration_ms: 6400,
-                error_count: 1,
-                span_count: 3,
-                started_at: "2026-04-20T11:24:00+05:00",
-                finished_at: "2026-04-20T11:24:06+05:00",
-                attrs_json: {
-                  flow: "agent_update"
-                }
-              },
-              summary: {
-                span_count: 3,
-                error_count: 1,
-                linked_trace_count: 1
-              },
-              spans: [
-                {
-                  span_id: "span-root-1",
-                  trace_id: "trace-update-1",
-                  parent_span_id: null,
-                  source_type: "operation",
-                  source_ref: "op-update-1",
-                  name: "operation.agent_update",
-                  kind: "internal",
-                  component: "operation",
-                  event_type: "agent_update",
-                  module_name: null,
-                  tool_name: null,
-                  status: "failed",
-                  status_label: "Ошибка",
-                  started_at: "2026-04-20T11:24:00+05:00",
-                  finished_at: "2026-04-20T11:24:06+05:00",
-                  duration_ms: 6400,
-                  attrs_json: {}
-                }
-              ],
-              span_links: [
-                {
-                  id: 11,
-                  span_id: "span-root-1",
-                  linked_trace_id: "trace-followup-1",
-                  linked_span_id: "span-followup-1",
-                  reason: "child_trace",
-                  attrs_json: {
-                    edge: "child"
-                  },
-                  created_at: "2026-04-20T11:24:07+05:00"
-                }
-              ],
-              error_occurrences: [
-                {
-                  occurrence_id: "occ-1",
-                  trace_id: "trace-update-1",
-                  span_id: "span-root-1",
-                  error_signature: "sig-1",
-                  device_id: "device-1",
-                  ticket_id: "ticket-1",
-                  operation_id: "op-update-1",
-                  component: "agent_update",
-                  module_name: null,
-                  tool_name: null,
-                  error_kind: "runtime_error",
-                  exception_type: "RuntimeError",
-                  failure_stage: "delivery",
-                  severity: "error",
-                  severity_label: "Ошибка",
-                  message_norm: "update delivery failed",
-                  stack_hash: "stack-1",
-                  attrs_json: {
-                    code: "DELIVERY_FAILED"
-                  },
-                  created_at: "2026-04-20T11:24:06+05:00"
-                }
-              ]
             }
           });
         }
@@ -536,13 +457,13 @@ describe("AdminWorkspacePage", () => {
                 health_status: "ok",
                 health_status_label: "Норма",
                 pending_trace_count: 0,
-                last_projected_at: "2026-04-20T09:10:00+05:00",
+                last_projected_at: "2026-04-20T11:20:00+05:00",
                 issues: []
               },
               hot_traces: [
                 {
                   trace_id: "trace-linux-1",
-                  root_span_id: "span-linux-1",
+                  root_span_id: "span-root-2",
                   root_kind: "tool_call",
                   root_kind_label: "Инструмент",
                   status: "succeeded",
@@ -554,8 +475,8 @@ describe("AdminWorkspacePage", () => {
                   duration_ms: 1200,
                   error_count: 0,
                   span_count: 2,
-                  started_at: "2026-04-20T08:55:00+05:00",
-                  finished_at: "2026-04-20T08:55:01+05:00",
+                  started_at: "2026-04-20T11:00:00+05:00",
+                  finished_at: "2026-04-20T11:00:01+05:00",
                   attrs_json: {}
                 }
               ],
@@ -567,117 +488,6 @@ describe("AdminWorkspacePage", () => {
                 traces_endpoint: "/api/web/admin/observer/traces",
                 runtime_endpoint: "/api/admin/tech/traces/runtime"
               }
-            }
-          });
-        }
-
-        if (url === "/api/web/admin/observer/traces?device_id=device-2&lookback_hours=24&limit=12") {
-          return jsonResponse({
-            status: "success",
-            data: {
-              query: {
-                device_id: "device-2",
-                lookback_hours: 24,
-                status_filter: "all",
-                root_kind_filter: "all",
-                limit: 12
-              },
-              summary: {
-                visible_count: 1,
-                active_count: 0,
-                error_count: 0,
-                selected_trace_id: "trace-linux-1"
-              },
-              filters: {
-                status_options: [
-                  { value: "all", label: "Все статусы" },
-                  { value: "running", label: "В работе" },
-                  { value: "failed", label: "С ошибкой" }
-                ],
-                root_kind_options: [
-                  { value: "all", label: "Все потоки" },
-                  { value: "agent_update", label: "Обновление агента" },
-                  { value: "tool_call", label: "Инструмент" }
-                ]
-              },
-              traces: [
-                {
-                  trace_id: "trace-linux-1",
-                  root_span_id: "span-linux-1",
-                  root_kind: "tool_call",
-                  root_kind_label: "Инструмент",
-                  status: "succeeded",
-                  status_label: "Успешно",
-                  ticket_id: null,
-                  device_id: "device-2",
-                  operation_id: "op-linux-1",
-                  job_id: null,
-                  duration_ms: 1200,
-                  error_count: 0,
-                  span_count: 2,
-                  started_at: "2026-04-20T08:55:00+05:00",
-                  finished_at: "2026-04-20T08:55:01+05:00",
-                  attrs_json: {}
-                }
-              ],
-              links: {
-                detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime"
-              }
-            }
-          });
-        }
-
-        if (url === "/api/web/admin/observer/traces/trace-linux-1") {
-          return jsonResponse({
-            status: "success",
-            data: {
-              trace: {
-                trace_id: "trace-linux-1",
-                root_span_id: "span-linux-1",
-                root_kind: "tool_call",
-                root_kind_label: "Инструмент",
-                status: "succeeded",
-                status_label: "Успешно",
-                ticket_id: null,
-                device_id: "device-2",
-                operation_id: "op-linux-1",
-                job_id: null,
-                duration_ms: 1200,
-                error_count: 0,
-                span_count: 2,
-                started_at: "2026-04-20T08:55:00+05:00",
-                finished_at: "2026-04-20T08:55:01+05:00",
-                attrs_json: {}
-              },
-              summary: {
-                span_count: 2,
-                error_count: 0,
-                linked_trace_count: 0
-              },
-              spans: [
-                {
-                  span_id: "span-linux-1",
-                  trace_id: "trace-linux-1",
-                  parent_span_id: null,
-                  source_type: "operation",
-                  source_ref: "op-linux-1",
-                  name: "operation.tool_call",
-                  kind: "internal",
-                  component: "operation",
-                  event_type: "tool_call",
-                  module_name: "network_ping",
-                  tool_name: "network_ping.ping",
-                  status: "succeeded",
-                  status_label: "Успешно",
-                  started_at: "2026-04-20T08:55:00+05:00",
-                  finished_at: "2026-04-20T08:55:01+05:00",
-                  duration_ms: 1200,
-                  attrs_json: {}
-                }
-              ],
-              span_links: [],
-              error_occurrences: []
             }
           });
         }
@@ -700,7 +510,7 @@ describe("AdminWorkspacePage", () => {
                 health_status: "degraded",
                 health_status_label: "Есть отставание",
                 pending_trace_count: 6,
-                last_projected_at: "2026-04-20T10:10:00+05:00",
+                last_projected_at: "2026-04-20T10:45:00+05:00",
                 issues: ["pending_backlog"]
               },
               hot_traces: [],
@@ -716,40 +526,141 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/web/admin/observer/traces?device_id=device-2&lookback_hours=72&limit=12") {
+        if (url === "/api/web/admin/observer/traces?device_id=device-1&lookback_hours=24&status=all&root_kind=all&limit=12") {
           return jsonResponse({
             status: "success",
             data: {
-              query: {
-                device_id: "device-2",
-                lookback_hours: 72,
-                status_filter: "all",
-                root_kind_filter: "all",
+              filters: {
+                device_id: "device-1",
+                lookback_hours: 24,
+                status: "all",
+                root_kind: "all",
                 limit: 12
               },
               summary: {
-                visible_count: 0,
+                total_count: 1,
                 active_count: 0,
-                error_count: 0,
-                selected_trace_id: null
+                failed_count: 1
               },
+              traces: [
+                {
+                  trace_id: "trace-update-1",
+                  root_kind: "agent_update",
+                  root_kind_label: "Обновление агента",
+                  status: "failed",
+                  status_label: "Ошибка",
+                  ticket_id: "ticket-1",
+                  device_id: "device-1",
+                  operation_id: "op-update-1",
+                  duration_ms: 6400,
+                  error_count: 1,
+                  span_count: 6,
+                  started_at: "2026-04-20T11:24:00+05:00",
+                  finished_at: "2026-04-20T11:24:06+05:00"
+                }
+              ]
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/traces?device_id=device-2&lookback_hours=24&status=all&root_kind=all&limit=12") {
+          return jsonResponse({
+            status: "success",
+            data: {
               filters: {
-                status_options: [
-                  { value: "all", label: "Все статусы" },
-                  { value: "running", label: "В работе" },
-                  { value: "failed", label: "С ошибкой" }
-                ],
-                root_kind_options: [
-                  { value: "all", label: "Все потоки" },
-                  { value: "agent_update", label: "Обновление агента" },
-                  { value: "tool_call", label: "Инструмент" }
-                ]
+                device_id: "device-2",
+                lookback_hours: 24,
+                status: "all",
+                root_kind: "all",
+                limit: 12
               },
-              traces: [],
-              links: {
-                detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime"
-              }
+              summary: {
+                total_count: 1,
+                active_count: 0,
+                failed_count: 0
+              },
+              traces: [
+                {
+                  trace_id: "trace-linux-1",
+                  root_kind: "tool_call",
+                  root_kind_label: "Инструмент",
+                  status: "succeeded",
+                  status_label: "Успешно",
+                  ticket_id: null,
+                  device_id: "device-2",
+                  operation_id: "op-linux-1",
+                  duration_ms: 1200,
+                  error_count: 0,
+                  span_count: 2,
+                  started_at: "2026-04-20T11:00:00+05:00",
+                  finished_at: "2026-04-20T11:00:01+05:00"
+                }
+              ]
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/traces?device_id=device-2&lookback_hours=72&status=all&root_kind=all&limit=12") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              filters: {
+                device_id: "device-2",
+                lookback_hours: 72,
+                status: "all",
+                root_kind: "all",
+                limit: 12
+              },
+              summary: {
+                total_count: 0,
+                active_count: 0,
+                failed_count: 0
+              },
+              traces: []
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/traces/trace-update-1") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              trace_id: "trace-update-1",
+              root_kind: "agent_update",
+              root_kind_label: "Обновление агента",
+              status: "failed",
+              status_label: "Ошибка",
+              started_at: "2026-04-20T11:24:00+05:00",
+              finished_at: "2026-04-20T11:24:06+05:00",
+              duration_ms: 6400,
+              operation_id: "op-update-1",
+              ticket_id: "ticket-1",
+              device_id: "device-1",
+              spans: [],
+              events: [],
+              dangerous_flow: null
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/observer/traces/trace-linux-1") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              trace_id: "trace-linux-1",
+              root_kind: "tool_call",
+              root_kind_label: "Инструмент",
+              status: "succeeded",
+              status_label: "Успешно",
+              started_at: "2026-04-20T11:00:00+05:00",
+              finished_at: "2026-04-20T11:00:01+05:00",
+              duration_ms: 1200,
+              operation_id: "op-linux-1",
+              ticket_id: null,
+              device_id: "device-2",
+              spans: [],
+              events: [],
+              dangerous_flow: null
             }
           });
         }
@@ -848,29 +759,26 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/web/admin/devices/device-1/updates/run") {
-          return jsonResponse(
-            {
-              status: "success",
-              data: {
-                device_id: "device-1",
-                operation_id: "op-admin-1",
-                status: "queued",
-                message: "Операция op-admin-1 поставлена в очередь.",
-                build_source: "assigned_rollout",
-                poll_url: "/api/operations/op-admin-1",
-                build: {
-                  target: "windows_amd64",
-                  channel: "stable",
-                  version: "2.4.1"
-                }
+        if (url === "/api/web/admin/devices/device-1/updates/run" && method === "POST") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              device_id: "device-1",
+              operation_id: "op-admin-update-001",
+              status: "queued",
+              message: "Операция op-admin-update-001 поставлена в очередь.",
+              build_source: "assigned_rollout",
+              poll_url: "/api/operations/op-admin-update-001",
+              build: {
+                target: "windows_amd64",
+                channel: "stable",
+                version: "2.4.1"
               }
-            },
-            202
-          );
+            }
+          });
         }
 
-        return jsonResponse({ status: "error", error: `Unhandled URL: ${url}` }, 404);
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
       })
     );
 
@@ -880,43 +788,49 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText("Всего в инвентаре")).toBeInTheDocument();
     expect(await screen.findByText("Назначения rollout")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /WS-01/i })).toBeInTheDocument();
+    expect((await screen.findAllByText("Устройство на шаг позади rollout")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Доступно обновление")).toBeInTheDocument();
     expect(await screen.findByText("Назначенный rollout новее текущей версии.")).toBeInTheDocument();
-    expect(await screen.findByText("Быстрый срез трассировки")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Реестр модулей" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /network_ping/i })).toBeInTheDocument();
+    expect((await screen.findAllByText("Обновлять установленные устройства")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Быстрый срез трассировки" })).toBeInTheDocument();
     expect(await screen.findByText("Launcher signature mismatch")).toBeInTheDocument();
-    expect(await screen.findByText("/api/web/admin/observer/traces")).toBeInTheDocument();
-    expect((await screen.findAllByText("network_ping")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Обновлять установленные устройства")).toBeInTheDocument();
-    expect(await screen.findByText("Детальный разбор трасс")).toBeInTheDocument();
-    expect(await screen.findByText("Trace ID")).toBeInTheDocument();
+    expect(await screen.findByText("/api/web/admin/observer/traces", { exact: true })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Детальный разбор трасс" })).toBeInTheDocument();
     expect((await screen.findAllByText("trace-update-1")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Норма")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Режим preferred-rollout" }), {
+      target: { value: "manual" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить политику" }));
+
+    expect(await screen.findByText("Политика раскатки сохранена: Только вручную.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Сделать preferred для 1.2.1" }));
+
+    expect(await screen.findByText("Preferred-версия для network_ping обновлена на 1.2.1.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Preferred:\s*1\.2\.1/i)).toBeInTheDocument();
+    });
 
     fireEvent.change(screen.getByLabelText("Причина запуска"), {
       target: { value: "canary после smoke" }
     });
     fireEvent.click(screen.getByRole("button", { name: "Запустить обновление" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Операция op-admin-1 поставлена в очередь.")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("Операция op-admin-update-001 поставлена в очередь.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /LT-02/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Платформа: linux_alt_x86_64")).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText("trace-linux-1")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("Платформа")).toBeInTheDocument();
+    expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("trace-linux-1")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "Ожидает связи" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "72 часа" }));
-
     await waitFor(() => {
       expect(screen.getByText("Есть отставание")).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText("Для выбранного устройства по текущим фильтрам трасс пока нет.")).toBeInTheDocument();
     });
   });
 });

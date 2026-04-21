@@ -142,6 +142,7 @@ New React workspaces:
 - `/app/admin` должен получать observer capability map через `GET /api/web/admin/bootstrap`.
 - `/app/admin` должен брать overview tech/observer срез через typed endpoint `GET /api/web/admin/observer/quick`, а не рендерить raw payload legacy `/api/admin/tech/observer/quick` прямо из React.
 - `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
+- `/app/admin` может рядом показывать typed modules/actions panel (`GET /api/web/admin/modules`, `PATCH /api/web/admin/modules/rollout_settings`, `PATCH /api/web/admin/modules/{module_name}/preferred`), но observer quick/drilldown при этом остаётся изолированным typed tech slice и не должен деградировать до вызовов legacy `/api/admin/tech/*` из module UI.
 - `/app/*` сначала проходит через `GET /api/web/session/me`; observer surfaces в новом web-layer не должны пытаться ходить в trace API до подтверждённой web session.
 
 Канонический operator UX для ticket-scoped trace живёт в `/support`.

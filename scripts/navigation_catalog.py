@@ -356,7 +356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and typed admin slices for inventory, device update actions, modules registry, observer quick summary and trace drilldown surfaces.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, support Playwright signoff and typed admin slices for inventory, device update actions, modules registry/actions, observer quick summary and trace drilldown surfaces.",
         aliases=(
             "webapp",
             "react app",
@@ -371,6 +371,9 @@ TOPICS: tuple[Topic, ...] = (
             "admin updates",
             "admin modules",
             "modules registry",
+            "preferred version",
+            "preferred rollout",
+            "module preferred",
             "modules workbench",
             "observer quick",
             "observer traces",
@@ -414,6 +417,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "app/admin" --dir server',
             'python scripts/agent_find.py "device update" --dir server',
             'python scripts/agent_find.py "web/admin/modules" --dir server',
+            'python scripts/agent_find.py "rollout_settings" --dir server',
             'python scripts/agent_find.py "observer/traces" --dir server',
         ),
         mode="Internal web platform / React",

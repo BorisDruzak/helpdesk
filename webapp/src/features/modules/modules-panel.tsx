@@ -1,7 +1,20 @@
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchAdminModules } from "./api";
+import {
+  type AdminModulesRolloutSettings,
+  fetchAdminModules,
+  patchAdminModulesRolloutSettings,
+  setAdminModulePreferredVersion
+} from "./api";
+
+
+type ActionFeedback =
+  | {
+      tone: "success" | "error";
+      text: string;
+    }
+  | null;
 
 
 function formatDateTime(value: string | null | undefined): string {
@@ -26,9 +39,21 @@ function formatRolloutSyncLabel(value: boolean): string {
 }
 
 
+function getRolloutModeLabel(value: string): string {
+  if (value === "installed_devices") {
+    return "Обновлять установленные устройства";
+  }
+  return "Только вручную";
+}
+
+
 export function ModulesPanel() {
+  const queryClient = useQueryClient();
   const [queryDraft, setQueryDraft] = useState("");
   const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
+  const [rolloutModeDraft, setRolloutModeDraft] = useState("manual");
+  const [syncAfterPreferredDraft, setSyncAfterPreferredDraft] = useState(true);
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const deferredQuery = useDeferredValue(queryDraft);
 
   const modulesQuery = useQuery({
@@ -56,6 +81,57 @@ export function ModulesPanel() {
       setSelectedModuleName(modules[0].module_name);
     }
   }, [modules, selectedModuleName]);
+
+  useEffect(() => {
+    const settings = modulesQuery.data?.rollout_settings;
+    if (!settings) {
+      return;
+    }
+    setRolloutModeDraft(settings.preferred_version_rollout_mode);
+    setSyncAfterPreferredDraft(settings.sync_after_preferred_change);
+  }, [modulesQuery.data?.rollout_settings]);
+
+  const rolloutMutation = useMutation({
+    mutationFn: patchAdminModulesRolloutSettings,
+    onSuccess: async (settings: AdminModulesRolloutSettings) => {
+      setActionFeedback({
+        tone: "success",
+        text: `Политика раскатки сохранена: ${settings.preferred_version_rollout_mode_label}.`
+      });
+      setRolloutModeDraft(settings.preferred_version_rollout_mode);
+      setSyncAfterPreferredDraft(settings.sync_after_preferred_change);
+      await queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось сохранить rollout policy модулей."
+      });
+    }
+  });
+
+  const preferredMutation = useMutation({
+    mutationFn: setAdminModulePreferredVersion,
+    onSuccess: async (payload) => {
+      setActionFeedback({
+        tone: "success",
+        text: payload.message
+      });
+      await queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось обновить preferred-версию модуля."
+      });
+    }
+  });
+
+  const rolloutSettings = modulesQuery.data?.rollout_settings ?? null;
+  const rolloutDraftChanged =
+    rolloutSettings !== null &&
+    (rolloutSettings.preferred_version_rollout_mode !== rolloutModeDraft ||
+      rolloutSettings.sync_after_preferred_change !== syncAfterPreferredDraft);
 
   return (
     <section className="support-workspace__panel admin-modules-panel">
@@ -100,6 +176,12 @@ export function ModulesPanel() {
         </div>
       ) : null}
 
+      {actionFeedback ? (
+        <div className={actionFeedback.tone === "success" ? "support-detail-note" : "support-detail-error"}>
+          {actionFeedback.text}
+        </div>
+      ) : null}
+
       {modulesQuery.data ? (
         <>
           <div className="support-snapshot-grid">
@@ -120,6 +202,52 @@ export function ModulesPanel() {
             </article>
           </div>
 
+          <section className="admin-modules-controls">
+            <label className="support-filter-select">
+              <span>Режим preferred-rollout</span>
+              <select
+                aria-label="Режим preferred-rollout"
+                value={rolloutModeDraft}
+                onChange={(event) => {
+                  setActionFeedback(null);
+                  setRolloutModeDraft(event.currentTarget.value);
+                }}
+                disabled={rolloutMutation.isPending}
+              >
+                <option value="manual">Только вручную</option>
+                <option value="installed_devices">Обновлять установленные устройства</option>
+              </select>
+            </label>
+
+            <label className="admin-modules-toggle">
+              <input
+                type="checkbox"
+                checked={syncAfterPreferredDraft}
+                onChange={(event) => {
+                  setActionFeedback(null);
+                  setSyncAfterPreferredDraft(event.currentTarget.checked);
+                }}
+                disabled={rolloutMutation.isPending}
+              />
+              <span>После смены preferred запускать sync и refresh</span>
+            </label>
+
+            <button
+              type="button"
+              className="admin-modules-action"
+              disabled={!rolloutDraftChanged || rolloutMutation.isPending}
+              onClick={() => {
+                setActionFeedback(null);
+                rolloutMutation.mutate({
+                  preferred_version_rollout_mode: rolloutModeDraft,
+                  sync_after_preferred_change: syncAfterPreferredDraft
+                });
+              }}
+            >
+              {rolloutMutation.isPending ? "Сохраняем…" : "Сохранить политику"}
+            </button>
+          </section>
+
           <div className="admin-modules-grid">
             <article className="support-operation-card">
               <div className="support-operations__head">
@@ -134,6 +262,7 @@ export function ModulesPanel() {
                       type="button"
                       className={`admin-module-card${selectedModule?.module_name === moduleFamily.module_name ? " active" : ""}`}
                       onClick={() => {
+                        setActionFeedback(null);
                         startTransition(() => {
                           setSelectedModuleName(moduleFamily.module_name);
                         });
@@ -206,30 +335,72 @@ export function ModulesPanel() {
                     </div>
                   </div>
 
+                  <div className="admin-modules-detail__actions">
+                    <button
+                      type="button"
+                      className="admin-modules-action"
+                      disabled={!selectedModule.preferred_assigned || preferredMutation.isPending}
+                      onClick={() => {
+                        setActionFeedback(null);
+                        preferredMutation.mutate({
+                          moduleName: selectedModule.module_name,
+                          version: null
+                        });
+                      }}
+                    >
+                      {preferredMutation.isPending && selectedModule.preferred_assigned
+                        ? "Обновляем preferred…"
+                        : "Снять preferred"}
+                    </button>
+                    <span className="admin-modules-detail__hint">
+                      Текущий режим: {getRolloutModeLabel(rolloutModeDraft)}
+                    </span>
+                  </div>
+
                   <section className="admin-modules-versions">
                     <div className="support-operations__head">
                       <strong>Версии в registry</strong>
                       <span>{selectedModule.versions.length}</span>
                     </div>
                     <div className="admin-modules-version-list">
-                      {selectedModule.versions.map((version) => (
-                        <article key={`${selectedModule.module_name}:${version.version}`} className="admin-modules-version-card">
-                          <div className="admin-observer-item__head">
-                            <strong>{version.version}</strong>
-                            <span>{version.is_preferred ? "preferred" : version.validation_status_label}</span>
-                          </div>
-                          <p>
-                            Preflight: {version.preflight_status_label} · tools: {version.tools_count}
-                          </p>
-                          <p>{version.platforms.join(", ") || "any"}</p>
-                          <p>
-                            {version.file_exists
-                              ? "Архив доступен на сервере"
-                              : "Архив отсутствует, нужен повторный upload"}
-                          </p>
-                          <p>Опубликован: {formatDateTime(version.created_at)}</p>
-                        </article>
-                      ))}
+                      {selectedModule.versions.map((version) => {
+                        const actionLabel = version.is_preferred
+                          ? "Снять preferred"
+                          : `Сделать preferred для ${version.version}`;
+                        const actionDisabled = preferredMutation.isPending || (!version.is_preferred && !version.file_exists);
+                        return (
+                          <article key={`${selectedModule.module_name}:${version.version}`} className="admin-modules-version-card">
+                            <div className="admin-observer-item__head">
+                              <strong>{version.version}</strong>
+                              <span>{version.is_preferred ? "preferred" : version.validation_status_label}</span>
+                            </div>
+                            <p>
+                              Preflight: {version.preflight_status_label} · tools: {version.tools_count}
+                            </p>
+                            <p>{version.platforms.join(", ") || "any"}</p>
+                            <p>
+                              {version.file_exists
+                                ? "Архив доступен на сервере"
+                                : "Архив отсутствует, нужен повторный upload"}
+                            </p>
+                            <p>Опубликован: {formatDateTime(version.created_at)}</p>
+                            <button
+                              type="button"
+                              className="admin-modules-action"
+                              disabled={actionDisabled}
+                              onClick={() => {
+                                setActionFeedback(null);
+                                preferredMutation.mutate({
+                                  moduleName: selectedModule.module_name,
+                                  version: version.is_preferred ? null : version.version
+                                });
+                              }}
+                            >
+                              {preferredMutation.isPending ? "Обновляем preferred…" : actionLabel}
+                            </button>
+                          </article>
+                        );
+                      })}
                     </div>
                   </section>
                 </div>

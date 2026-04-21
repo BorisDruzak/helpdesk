@@ -702,6 +702,89 @@ def build_admin_device_updates_payload(state: dict, device_id: str) -> dict | No
     return deepcopy(payload)
 
 
+def admin_module_rollout_mode_label(mode: str) -> str:
+    if mode == "installed_devices":
+        return "Обновлять установленные устройства"
+    return "Только вручную"
+
+
+def find_admin_module_family(state: dict, module_name: str) -> dict | None:
+    for family in state["admin"]["modules"]["families"]:
+        if family["module_name"] == module_name:
+            return family
+    return None
+
+
+def update_admin_modules_rollout_settings(
+    state: dict,
+    *,
+    preferred_version_rollout_mode: str | None = None,
+    sync_after_preferred_change: bool | None = None,
+) -> dict:
+    settings = state["admin"]["modules"]["rollout_settings"]
+    if preferred_version_rollout_mode is not None:
+        settings["preferred_version_rollout_mode"] = preferred_version_rollout_mode
+        settings["preferred_version_rollout_mode_label"] = admin_module_rollout_mode_label(
+            preferred_version_rollout_mode
+        )
+    if sync_after_preferred_change is not None:
+        settings["sync_after_preferred_change"] = sync_after_preferred_change
+    return deepcopy(settings)
+
+
+def set_admin_module_preferred_version(state: dict, *, module_name: str, version: str | None) -> tuple[dict | None, str | None]:
+    family = find_admin_module_family(state, module_name)
+    if not family:
+        return None, "MODULE_NOT_FOUND"
+
+    target_version = None
+    if version is not None:
+        for item in family["versions"]:
+            if item["version"] == version:
+                target_version = item
+                break
+        if target_version is None:
+            return None, "VERSION_NOT_FOUND"
+        if not target_version.get("file_exists", False):
+            return None, "MODULE_ARCHIVE_MISSING"
+
+    for item in family["versions"]:
+        item["is_preferred"] = version is not None and item["version"] == version
+
+    family["preferred_version"] = version
+    family["preferred_assigned"] = version is not None
+
+    settings = state["admin"]["modules"]["rollout_settings"]
+    desired_updates = 0
+    sync_enqueued = 0
+    refresh_enqueued = 0
+    if version is not None and settings["preferred_version_rollout_mode"] == "installed_devices":
+        desired_updates = 2
+        if settings["sync_after_preferred_change"]:
+            sync_enqueued = desired_updates
+            refresh_enqueued = desired_updates
+
+    payload = {
+        "module_name": module_name,
+        "preferred_version": version,
+        "updated_at": now_iso(minutes=32),
+        "updated_by": ADMIN_LOGIN,
+        "message": (
+            f"Preferred-версия для {module_name} снята."
+            if version is None
+            else f"Preferred-версия для {module_name} обновлена на {version}."
+        ),
+        "rollout_summary": {
+            "mode": settings["preferred_version_rollout_mode"],
+            "should_sync": settings["sync_after_preferred_change"],
+            "desired_updates": desired_updates,
+            "sync_enqueued": sync_enqueued,
+            "refresh_enqueued": refresh_enqueued,
+        },
+    }
+    return payload, None
+
+
 def build_admin_modules_payload(state: dict, query: str) -> dict:
     payload = deepcopy(state["admin"]["modules"])
     modules = payload["families"]
@@ -1498,6 +1581,50 @@ async def handle_admin_modules(request: web.Request) -> web.Response:
     return json_success(build_admin_modules_payload(state, query))
 
 
+async def handle_admin_modules_rollout_settings_patch(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    payload = await request.json()
+    rollout_mode = payload.get("preferred_version_rollout_mode")
+    if rollout_mode is not None and rollout_mode not in {"manual", "installed_devices"}:
+        return json_error("Некорректный режим preferred-rollout", status=400, error_code="VALIDATION_ERROR")
+    sync_after = payload.get("sync_after_preferred_change")
+    if sync_after is not None:
+        sync_after = bool(sync_after)
+    settings = update_admin_modules_rollout_settings(
+        state,
+        preferred_version_rollout_mode=rollout_mode,
+        sync_after_preferred_change=sync_after,
+    )
+    return json_success(settings)
+
+
+async def handle_admin_module_preferred_patch(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    module_name = request.match_info["module_name"]
+    payload = await request.json()
+    version = payload.get("version")
+    if version is not None:
+        version = str(version).strip() or None
+    action_payload, error_code = set_admin_module_preferred_version(state, module_name=module_name, version=version)
+    if error_code == "MODULE_NOT_FOUND":
+        return json_error("Семейство модулей не найдено", status=404, error_code=error_code)
+    if error_code == "VERSION_NOT_FOUND":
+        return json_error("Версия модуля не найдена в реестре", status=404, error_code=error_code)
+    if error_code == "MODULE_ARCHIVE_MISSING":
+        return json_error(
+            "Архив для этой версии отсутствует, нужен повторный upload",
+            status=409,
+            error_code=error_code,
+        )
+    return json_success(action_payload)
+
+
 async def handle_admin_device_updates(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -1568,6 +1695,8 @@ def build_app() -> web.Application:
             web.get("/api/web/admin/observer/traces", handle_admin_observer_traces),
             web.get("/api/web/admin/observer/traces/{trace_id}", handle_admin_observer_trace_detail),
             web.get("/api/web/admin/modules", handle_admin_modules),
+            web.patch("/api/web/admin/modules/rollout_settings", handle_admin_modules_rollout_settings_patch),
+            web.patch("/api/web/admin/modules/{module_name}/preferred", handle_admin_module_preferred_patch),
             web.get("/api/web/admin/devices", handle_admin_devices),
             web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
             web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),

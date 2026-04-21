@@ -224,9 +224,11 @@ from web_api.admin_handlers import (
     handle_web_admin_device_updates,
     handle_web_admin_devices,
     handle_web_admin_modules,
+    handle_web_admin_patch_modules_rollout_settings,
     handle_web_admin_observer_quick,
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
+    handle_web_admin_set_module_preferred_version,
 )
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
@@ -390,6 +392,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/observer/traces/{trace_id}', handle_web_admin_observer_trace_detail),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.get('/api/web/admin/modules', handle_web_admin_modules),
+        web.patch('/api/web/admin/modules/rollout_settings', handle_web_admin_patch_modules_rollout_settings),
+        web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
         web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
         web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),

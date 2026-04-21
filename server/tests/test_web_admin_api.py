@@ -33,8 +33,12 @@ from web_api.dto.admin import (
     AdminObserverTracesQuery,
     AdminObserverTracesSummary,
     AdminModuleFamilyItem,
+    AdminModulePreferredRolloutSummary,
+    AdminModulePreferredVersionActionPayload,
+    AdminModulePreferredVersionRequest,
     AdminModulesPayload,
     AdminModulesRolloutSettings,
+    AdminModulesRolloutSettingsUpdateRequest,
     AdminModulesSummary,
     AdminModuleVersionItem,
     AdminRolloutAssignment,
@@ -562,6 +566,75 @@ async def test_web_admin_modules_returns_typed_registry_payload(web_admin_client
     assert payload["data"]["modules"][0]["module_name"] == "network_ping"
     assert payload["data"]["modules"][0]["versions"][1]["is_preferred"] is True
     assert payload["data"]["modules"][0]["tool_ids"] == ["network_ping.ping", "network_ping.trace"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_patch_modules_rollout_settings_returns_typed_payload(web_admin_client, monkeypatch):
+    async def fake_patch_settings(*, preferred_version_rollout_mode: str | None, sync_after_preferred_change: bool | None):
+        assert preferred_version_rollout_mode == "manual"
+        assert sync_after_preferred_change is True
+        return AdminModulesRolloutSettings(
+            preferred_version_rollout_mode="manual",
+            preferred_version_rollout_mode_label="Только вручную",
+            sync_after_preferred_change=True,
+        )
+
+    monkeypatch.setattr(admin_handlers, "_patch_admin_modules_rollout_settings", fake_patch_settings)
+
+    response = await web_admin_client.patch(
+        "/api/web/admin/modules/rollout_settings",
+        json={"preferred_version_rollout_mode": "manual", "sync_after_preferred_change": True},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["preferred_version_rollout_mode"] == "manual"
+    assert payload["data"]["preferred_version_rollout_mode_label"] == "Только вручную"
+    assert payload["data"]["sync_after_preferred_change"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_set_module_preferred_version_returns_typed_payload(web_admin_client, monkeypatch):
+    async def fake_set_preferred(*, request, auth_context, module_name: str, version: str | None):
+        assert request.path == "/api/web/admin/modules/network_ping/preferred"
+        assert auth_context.actor_role == "admin"
+        assert module_name == "network_ping"
+        assert version == "1.2.1"
+        return AdminModulePreferredVersionActionPayload(
+            module_name=module_name,
+            preferred_version=version,
+            updated_at="2026-04-21T10:15:00+05:00",
+            updated_by="admin1",
+            message="Preferred-версия для network_ping обновлена на 1.2.1.",
+            rollout_summary=AdminModulePreferredRolloutSummary(
+                mode="installed_devices",
+                should_sync=True,
+                desired_updates=3,
+                sync_enqueued=3,
+                refresh_enqueued=3,
+            ),
+        )
+
+    monkeypatch.setattr(admin_handlers, "_set_admin_module_preferred_version", fake_set_preferred)
+
+    response = await web_admin_client.patch(
+        "/api/web/admin/modules/network_ping/preferred",
+        json={"version": "1.2.1"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["module_name"] == "network_ping"
+    assert payload["data"]["preferred_version"] == "1.2.1"
+    assert payload["data"]["updated_by"] == "admin1"
+    assert payload["data"]["rollout_summary"]["desired_updates"] == 3
+    assert payload["data"]["message"] == "Preferred-версия для network_ping обновлена на 1.2.1."
 
 
 @pytest.mark.asyncio

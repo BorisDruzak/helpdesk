@@ -403,6 +403,13 @@ class AdminModulesRolloutSettings(BaseModel):
     sync_after_preferred_change: bool
 
 
+class AdminModulesRolloutSettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferred_version_rollout_mode: str | None = None
+    sync_after_preferred_change: bool | None = None
+
+
 class AdminModuleVersionItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -451,3 +458,30 @@ class AdminModulesPayload(BaseModel):
     summary: AdminModulesSummary
     rollout_settings: AdminModulesRolloutSettings
     modules: list[AdminModuleFamilyItem]
+
+
+class AdminModulePreferredVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str | None = None
+
+
+class AdminModulePreferredRolloutSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str
+    should_sync: bool
+    desired_updates: int
+    sync_enqueued: int
+    refresh_enqueued: int = 0
+
+
+class AdminModulePreferredVersionActionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    module_name: str
+    preferred_version: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+    message: str
+    rollout_summary: AdminModulePreferredRolloutSummary | None = None

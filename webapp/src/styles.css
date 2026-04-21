@@ -494,6 +494,63 @@ a {
   gap: 0.75rem;
 }
 
+.admin-modules-controls {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: minmax(220px, 280px) minmax(240px, 1fr) auto;
+  align-items: end;
+}
+
+.admin-modules-toggle {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 0.95rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(23, 33, 43, 0.08);
+}
+
+.admin-modules-toggle input {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.admin-modules-action {
+  border: 0;
+  border-radius: 0.95rem;
+  padding: 0.8rem 1rem;
+  background: #173c5b;
+  color: #f7fbff;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.admin-modules-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(23, 60, 91, 0.2);
+}
+
+.admin-modules-action:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.admin-modules-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.admin-modules-detail__hint {
+  color: #4a5968;
+  font-size: 0.92rem;
+}
+
 .admin-update-panel {
   margin-top: 1.25rem;
   padding: 1rem;
@@ -1248,6 +1305,11 @@ a {
   .support-workspace__grid,
   .support-ticket-detail__hero {
     grid-template-columns: 1fr;
+  }
+
+  .admin-modules-controls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .support-ticket-detail__observer-grid {

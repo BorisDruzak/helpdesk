@@ -16,7 +16,7 @@ from agents.agent_builds_handlers import (
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.devices_repo import DevicesRepo
-from app.repos import ModulesRepo
+from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
 from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
 from observer.service import ObserverOverlayService, TraceOverlayFilters
@@ -52,9 +52,13 @@ from web_api.dto.admin import (
     AdminDeviceUpdateRunRequest,
     AdminDevicesFilters,
     AdminModulesPayload,
+    AdminModulesRolloutSettingsUpdateRequest,
     AdminModulesRolloutSettings,
     AdminModulesSummary,
     AdminModuleFamilyItem,
+    AdminModulePreferredRolloutSummary,
+    AdminModulePreferredVersionActionPayload,
+    AdminModulePreferredVersionRequest,
     AdminModuleVersionItem,
     AdminDevicesPayload,
     AdminDevicesSummary,
@@ -282,6 +286,111 @@ def _empty_admin_modules_payload(*, query: str) -> AdminModulesPayload:
             sync_after_preferred_change=True,
         ),
         modules=[],
+    )
+
+
+def _map_admin_module_preferred_rollout_summary(
+    summary: dict | None,
+) -> AdminModulePreferredRolloutSummary | None:
+    if not isinstance(summary, dict):
+        return None
+    return AdminModulePreferredRolloutSummary(
+        mode=str(summary.get("mode") or "manual"),
+        should_sync=bool(summary.get("should_sync", False)),
+        desired_updates=int(summary.get("desired_updates") or 0),
+        sync_enqueued=int(summary.get("sync_enqueued") or 0),
+        refresh_enqueued=int(summary.get("refresh_enqueued") or 0),
+    )
+
+
+async def _patch_admin_modules_rollout_settings(
+    *,
+    preferred_version_rollout_mode: str | None,
+    sync_after_preferred_change: bool | None,
+) -> AdminModulesRolloutSettings:
+    if preferred_version_rollout_mode is not None:
+        preferred_version_rollout_mode = str(preferred_version_rollout_mode or "").strip().lower() or None
+    if preferred_version_rollout_mode is not None and preferred_version_rollout_mode not in _MODULE_ROLLOUT_MODE_LABELS:
+        raise ValueError("INVALID_ROLLOUT_MODE")
+
+    async with get_session() as session:
+        rollout_repo = ModuleRolloutRepo(session)
+        settings = await rollout_repo.set_settings(
+            preferred_version_rollout_mode=preferred_version_rollout_mode,
+            sync_after_preferred_change=sync_after_preferred_change,
+        )
+        await session.commit()
+
+    rollout_mode = str(settings.get("preferred_version_rollout_mode") or "manual").strip().lower() or "manual"
+    return AdminModulesRolloutSettings(
+        preferred_version_rollout_mode=rollout_mode,
+        preferred_version_rollout_mode_label=_module_rollout_mode_label(rollout_mode),
+        sync_after_preferred_change=bool(settings.get("sync_after_preferred_change", True)),
+    )
+
+
+async def _set_admin_module_preferred_version(
+    *,
+    request: web.Request,
+    auth_context: AuthContext,
+    module_name: str,
+    version: str | None,
+) -> AdminModulePreferredVersionActionPayload:
+    normalized_module_name = str(module_name or "").strip()
+    normalized_version = str(version or "").strip() or None
+    updated_by = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+
+    async with get_session() as session:
+        rollout_repo = ModuleRolloutRepo(session)
+        modules_repo = ModulesRepo(session)
+        if normalized_version is None:
+            await rollout_repo.clear_assignment(normalized_module_name)
+            await session.commit()
+            return AdminModulePreferredVersionActionPayload(
+                module_name=normalized_module_name,
+                preferred_version=None,
+                updated_at=None,
+                updated_by=updated_by,
+                message=f"Preferred-версия для {normalized_module_name} снята.",
+                rollout_summary=None,
+            )
+
+        module = await modules_repo.get_module(normalized_module_name, normalized_version)
+        if module is None:
+            raise LookupError("MODULE_NOT_FOUND")
+
+        assignment = await rollout_repo.set_assignment(
+            module_name=normalized_module_name,
+            version=normalized_version,
+            updated_by=updated_by,
+        )
+        rollout_settings = await _get_module_rollout_settings(session)
+        rollout_summary = await _apply_module_preferred_rollout(
+            session=session,
+            state=request.app.get("state"),
+            module_name=normalized_module_name,
+            version=normalized_version,
+            updated_by=updated_by,
+            settings=rollout_settings,
+        )
+        await session.commit()
+
+    rollout_summary = await _finalize_module_preferred_rollout(
+        state=request.app.get("state"),
+        updated_by=updated_by,
+        rollout_summary=rollout_summary,
+    )
+    typed_rollout_summary = _map_admin_module_preferred_rollout_summary(rollout_summary)
+    message = f"Preferred-версия для {normalized_module_name} обновлена на {normalized_version}."
+    if typed_rollout_summary and typed_rollout_summary.desired_updates > 0:
+        message += f" Desired state обновлён для {typed_rollout_summary.desired_updates} устройств."
+    return AdminModulePreferredVersionActionPayload(
+        module_name=normalized_module_name,
+        preferred_version=assignment["version"],
+        updated_at=assignment.get("updated_at"),
+        updated_by=assignment.get("updated_by"),
+        message=message,
+        rollout_summary=typed_rollout_summary,
     )
 
 
@@ -1349,6 +1458,102 @@ async def handle_web_admin_modules(request: web.Request):
         payload = _empty_admin_modules_payload(query=query)
 
     return json_model_response(SuccessResponse[AdminModulesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_patch_modules_rollout_settings(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminModulesRolloutSettingsUpdateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте параметры rollout policy",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        settings = await _patch_admin_modules_rollout_settings(
+            preferred_version_rollout_mode=payload.preferred_version_rollout_mode,
+            sync_after_preferred_change=payload.sync_after_preferred_change,
+        )
+    except ValueError:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Неизвестный режим preferred-version rollout",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_modules_rollout_settings] Failed to update settings: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось сохранить rollout policy модулей",
+                "error_code": "ADMIN_MODULES_ROLLOUT_SETTINGS_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminModulesRolloutSettings](data=settings))
+
+
+@require_auth("admin")
+async def handle_web_admin_set_module_preferred_version(request: web.Request):
+    module_name = request.match_info["module_name"]
+    auth_context: AuthContext = request["auth_context"]
+
+    try:
+        raw_payload = await request.json()
+        payload = AdminModulePreferredVersionRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Укажите версию модуля или null для снятия preferred",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _set_admin_module_preferred_version(
+            request=request,
+            auth_context=auth_context,
+            module_name=module_name,
+            version=payload.version,
+        )
+    except LookupError:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Версия модуля не найдена",
+                "error_code": "MODULE_NOT_FOUND",
+                "module_name": module_name,
+                "version": payload.version,
+            },
+            status=404,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_module_preferred] Failed to update preferred version for {module_name}: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось обновить preferred-версию модуля",
+                "error_code": "ADMIN_MODULE_PREFERRED_FAILED",
+                "module_name": module_name,
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminModulePreferredVersionActionPayload](data=result))
 
 
 @require_auth("admin")
