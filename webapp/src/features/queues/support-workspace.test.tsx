@@ -40,6 +40,7 @@ function jsonResponse(payload: unknown, status = 200) {
 
 afterEach(() => {
   ticketRealtimeListeners.clear();
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -76,6 +77,229 @@ function renderSupportWorkspace() {
 
 
 describe("SupportWorkspace", () => {
+  it("не пересоздаёт realtime-подписки на всю очередь при refetch с теми же тикетами", async () => {
+    let queueRevision = 0;
+    let detailRevision = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/support/bootstrap") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              workspace: "support",
+              features: ["queue_overview", "ticket_workspace", "observer_trace", "tool_actions"],
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/{ticket_id}/observer",
+                drawer_tab: "trace",
+              },
+            },
+          });
+        }
+
+        if (url.startsWith("/api/web/support/queue")) {
+          queueRevision += 1;
+          const tickets =
+            queueRevision === 1
+              ? [
+                  {
+                    ticket_id: "ticket-1",
+                    ticket_code: "T-100001",
+                    title: "Первый тикет",
+                    status: "new",
+                    status_label: "Новая",
+                    queue_code: "servicedesk_l1",
+                    assignee_id: null,
+                    requester_display_name: "Алексей",
+                    device_id: "device-1",
+                    updated_at: "2026-04-20T08:10:00+05:00",
+                    created_at: "2026-04-20T07:55:00+05:00",
+                    requires_operator_action: true,
+                    unread_user_messages: 1,
+                  },
+                  {
+                    ticket_id: "ticket-2",
+                    ticket_code: "T-100002",
+                    title: "Второй тикет",
+                    status: "new",
+                    status_label: "Новая",
+                    queue_code: "servicedesk_l1",
+                    assignee_id: "support-2",
+                    requester_display_name: "Марина",
+                    device_id: "device-2",
+                    updated_at: "2026-04-20T08:09:00+05:00",
+                    created_at: "2026-04-20T07:40:00+05:00",
+                    requires_operator_action: true,
+                    unread_user_messages: 1,
+                  },
+                ]
+              : [
+                  {
+                    ticket_id: "ticket-2",
+                    ticket_code: "T-100002",
+                    title: "Второй тикет",
+                    status: "new",
+                    status_label: "Новая",
+                    queue_code: "servicedesk_l1",
+                    assignee_id: "support-2",
+                    requester_display_name: "Марина",
+                    device_id: "device-2",
+                    updated_at: "2026-04-20T08:11:00+05:00",
+                    created_at: "2026-04-20T07:40:00+05:00",
+                    requires_operator_action: true,
+                    unread_user_messages: 2,
+                  },
+                  {
+                    ticket_id: "ticket-1",
+                    ticket_code: "T-100001",
+                    title: "Первый тикет",
+                    status: "new",
+                    status_label: "Новая",
+                    queue_code: "servicedesk_l1",
+                    assignee_id: null,
+                    requester_display_name: "Алексей",
+                    device_id: "device-1",
+                    updated_at: "2026-04-20T08:12:00+05:00",
+                    created_at: "2026-04-20T07:55:00+05:00",
+                    requires_operator_action: true,
+                    unread_user_messages: 2,
+                  },
+                ];
+
+          return jsonResponse({
+            status: "success",
+            data: {
+              scope: "all",
+              query: "",
+              status_filter: "all",
+              summary: {
+                visible_count: 2,
+                selected_ticket_id: "ticket-1",
+              },
+              filters: {
+                scope_options: [
+                  { value: "all", label: "Все доступные" },
+                  { value: "mine", label: "Только мои" },
+                ],
+                status_options: [{ value: "all", label: "Все статусы" }],
+              },
+              tickets,
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1") {
+          detailRevision += 1;
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket: {
+                ticket_id: "ticket-1",
+                ticket_code: "T-100001",
+                title: "Первый тикет",
+                description: "Проверяем стабильность подписок.",
+                status: "new",
+                status_label: "Новая",
+                requester_display_name: "Алексей",
+                device_id: "device-1",
+                queue: {
+                  id: 11,
+                  code: "servicedesk_l1",
+                  name: "ServiceDesk L1",
+                },
+                assignee_id: null,
+                updated_at: "2026-04-20T08:10:00+05:00",
+                created_at: "2026-04-20T07:55:00+05:00",
+                queue_members: [],
+              },
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
+                summary: {
+                  ticket_id: "ticket-1",
+                  root_trace_id: "trace-support-root",
+                  trace_count: 1,
+                  active_trace_count: 1,
+                  error_trace_count: 0,
+                  signature_count: 0,
+                  latest_trace_at: "2026-04-20T08:09:00+05:00",
+                },
+              },
+              timeline: [
+                {
+                  message_id: `msg-${detailRevision}`,
+                  event_id: detailRevision,
+                  event_type: "chat_message",
+                  from_role: "support",
+                  sender_display_name: "Оператор",
+                  text:
+                    detailRevision === 1
+                      ? "Первое сообщение в ленте."
+                      : "После refetch лента обновилась без лишних подписок.",
+                  ts: "2026-04-20T08:11:00+05:00",
+                  visibility: "public",
+                  direction: "from_support",
+                  attachments: [],
+                  reply_to: null,
+                },
+              ],
+              snapshot: {
+                last_event_id: detailRevision,
+                notification_unread: 0,
+                presence: {
+                  requester_online: true,
+                  support_online: true,
+                  agent_online: true,
+                },
+                device: {
+                  device_id: "device-1",
+                  hostname: "WS-01",
+                  os: "Windows 11",
+                  agent_version: "2.4.0",
+                  last_seen_at: "2026-04-20T08:10:00+05:00",
+                  online: true,
+                },
+                latest_operations: [],
+              },
+              actions: {
+                status_options: [],
+                can_send_internal_note: true,
+              },
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1/tools") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_id: "ticket-1",
+              device_id: "device-1",
+              tools: [],
+            },
+          });
+        }
+
+        return jsonResponse({ status: "error", error: `Unhandled URL: ${url}` }, 404);
+      })
+    );
+
+    renderSupportWorkspace();
+
+    expect(await screen.findByText("Первое сообщение в ленте.")).toBeInTheDocument();
+    const initialSubscribeCalls = realtimeClientMock.subscribeTicket.mock.calls.length;
+
+    emitTicketRealtime("ticket-1");
+
+    await waitFor(() => {
+      expect(screen.getByText("После refetch лента обновилась без лишних подписок.")).toBeInTheDocument();
+    });
+
+    expect(realtimeClientMock.subscribeTicket.mock.calls.length).toBe(initialSubscribeCalls);
+  });
+
   it("refetches queue and ticket detail when realtime bridge reports a ticket event", async () => {
     let detailRevision = 0;
 

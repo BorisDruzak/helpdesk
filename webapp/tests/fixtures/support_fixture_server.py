@@ -1467,12 +1467,16 @@ async def handle_session_login(request: web.Request) -> web.Response:
             "user_login": SUPPORT_LOGIN,
             "actor_role": SUPPORT_ACTOR_ROLE,
             "auth_type": "ui_token",
+            "default_workspace": "support",
+            "available_workspaces": ["support"],
         }
     elif payload.get("login") == ADMIN_LOGIN and payload.get("password") == ADMIN_PASSWORD:
         session_user = {
             "user_login": ADMIN_LOGIN,
             "actor_role": ADMIN_ACTOR_ROLE,
             "auth_type": "ui_token",
+            "default_workspace": "admin",
+            "available_workspaces": ["admin", "support"],
         }
     else:
         return json_error("Неверный логин или пароль.", status=401, error_code="INVALID_CREDENTIALS")
@@ -1574,6 +1578,8 @@ async def handle_ws_ui(request: web.Request) -> web.StreamResponse:
                 session_user = state.get("session_user") or {
                     "user_login": SUPPORT_LOGIN,
                     "actor_role": SUPPORT_ACTOR_ROLE,
+                    "default_workspace": "support",
+                    "available_workspaces": ["support"],
                 }
                 await ws.send_json(
                     {

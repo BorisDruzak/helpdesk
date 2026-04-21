@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient
 } from "@tanstack/react-query";
-import { startTransition, useDeferredValue, useEffect, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 
 import {
   fetchSupportBootstrap,
@@ -746,6 +746,8 @@ export function SupportWorkspace() {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [toolActionMessage, setToolActionMessage] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
+  const selectedTicketIdRef = useRef<string | null>(null);
+  const realtimeTicketSubscriptionsRef = useRef(new Map<string, () => void>());
 
   const supportBootstrapQuery = useQuery({
     queryKey: ["support", "bootstrap"],
@@ -787,37 +789,60 @@ export function SupportWorkspace() {
     setToolActionMessage(null);
   }, [selectedTicketId]);
 
+  useEffect(() => {
+    selectedTicketIdRef.current = selectedTicketId;
+  }, [selectedTicketId]);
+
   const visibleTicketIds = supportQueueQuery.data?.tickets.map((ticket) => ticket.ticket_id) ?? [];
-  const visibleTicketIdsKey = visibleTicketIds.join("|");
+  const realtimeTicketIds = Array.from(
+    new Set(
+      [...visibleTicketIds, selectedTicketId].filter((value): value is string => Boolean(value))
+    )
+  );
+  const realtimeTicketIdsKey = [...realtimeTicketIds].sort().join("|");
 
   useEffect(() => {
-    const ticketIds = Array.from(
-      new Set(
-        [...visibleTicketIds, selectedTicketId].filter((value): value is string => Boolean(value))
-      )
-    );
-    if (ticketIds.length === 0) {
-      return;
+    const realtimeClient = getSharedWebRealtimeClient();
+    const activeSubscriptions = realtimeTicketSubscriptionsRef.current;
+    const targetTicketIds = new Set(realtimeTicketIds);
+
+    for (const [ticketId, unsubscribe] of activeSubscriptions.entries()) {
+      if (targetTicketIds.has(ticketId)) {
+        continue;
+      }
+      unsubscribe();
+      activeSubscriptions.delete(ticketId);
     }
 
-    const realtimeClient = getSharedWebRealtimeClient();
-    const unsubscribers = ticketIds.map((ticketId) =>
-      realtimeClient.subscribeTicket(ticketId, (message) => {
+    for (const ticketId of realtimeTicketIds) {
+      if (activeSubscriptions.has(ticketId)) {
+        continue;
+      }
+
+      const unsubscribe = realtimeClient.subscribeTicket(ticketId, (message) => {
         void queryClient.invalidateQueries({ queryKey: ["support", "queue"] });
-        if (message.ticketId !== selectedTicketId) {
+
+        const currentSelectedTicketId = selectedTicketIdRef.current;
+        if (!currentSelectedTicketId || message.ticketId !== currentSelectedTicketId) {
           return;
         }
-        void queryClient.invalidateQueries({ queryKey: ["support", "ticket", selectedTicketId] });
-        void queryClient.invalidateQueries({ queryKey: ["support", "tools", selectedTicketId] });
-      })
-    );
 
+        void queryClient.invalidateQueries({ queryKey: ["support", "ticket", currentSelectedTicketId] });
+        void queryClient.invalidateQueries({ queryKey: ["support", "tools", currentSelectedTicketId] });
+      });
+
+      activeSubscriptions.set(ticketId, unsubscribe);
+    }
+  }, [queryClient, realtimeTicketIdsKey]);
+
+  useEffect(() => {
     return () => {
-      for (const unsubscribe of unsubscribers) {
+      for (const unsubscribe of realtimeTicketSubscriptionsRef.current.values()) {
         unsubscribe();
       }
+      realtimeTicketSubscriptionsRef.current.clear();
     };
-  }, [queryClient, selectedTicketId, visibleTicketIdsKey]);
+  }, []);
 
   const sendMessageMutation = useMutation({
     mutationFn: ({ ticketId, text }: { ticketId: string; text: string }) => postSupportTicketMessage(ticketId, text),

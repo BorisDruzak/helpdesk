@@ -24,7 +24,10 @@ export function resolveDefaultWorkspace(session: WebSession | null): AppWorkspac
     return session.default_workspace;
   }
 
-  const fallbackWorkspace = session?.available_workspaces.find((workspace) => isWorkspace(workspace));
+  const availableWorkspaces = Array.isArray(session?.available_workspaces)
+    ? session.available_workspaces
+    : [];
+  const fallbackWorkspace = availableWorkspaces.find((workspace) => isWorkspace(workspace));
   return fallbackWorkspace ?? null;
 }
 
@@ -39,7 +42,10 @@ export function hasWorkspaceAccess(
   session: WebSession | null,
   workspace: AppWorkspace,
 ): boolean {
-  return session?.available_workspaces.includes(workspace) ?? false;
+  const availableWorkspaces = Array.isArray(session?.available_workspaces)
+    ? session.available_workspaces
+    : [];
+  return availableWorkspaces.includes(workspace);
 }
 
 
