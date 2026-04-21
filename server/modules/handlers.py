@@ -9,6 +9,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -625,39 +626,76 @@ async def _run_module_smoke(zip_bytes: bytes, smoke_prefix: str) -> tuple[bool, 
     project_root = Path(__file__).resolve().parent.parent.parent
     smoke_script = project_root / "pc_agent" / "scripts" / "smoke_check_module.py"
     temp_extract = Path(tempfile.mkdtemp(prefix=smoke_prefix))
+    smoke_args = (
+        sys.executable,
+        str(smoke_script),
+        "--dir",
+        str(temp_extract),
+    )
+    smoke_env = {**os.environ, "PYTHONPATH": str(project_root)}
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
             zf.extractall(temp_extract)
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(smoke_script),
-            "--dir",
-            str(temp_extract),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(project_root),
-            env={**os.environ, "PYTHONPATH": str(project_root)},
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *smoke_args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(project_root),
+                env=smoke_env,
+            )
+        except NotImplementedError:
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                smoke_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(project_root),
+                env=smoke_env,
+                timeout=60.0,
+                check=False,
+            )
+            return _finish_module_smoke_result(
+                returncode=completed.returncode,
+                stdout_bytes=completed.stdout or b"",
+                stderr_bytes=completed.stderr or b"",
+            )
+
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=60.0)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
             return False, None, ["smoke: Smoke check timed out (60s)"]
-        if proc.returncode != 0:
-            err_msg = (stderr_bytes.decode("utf-8", errors="replace") or "Smoke check failed").strip()
-            if len(err_msg) > 500:
-                err_msg = err_msg[:497] + "..."
-            return False, None, [f"smoke: Smoke check failed: {err_msg}"]
-        smoke_result = {}
-        if stdout_bytes:
-            smoke_result = json.loads(stdout_bytes.decode("utf-8", errors="replace").strip() or "{}")
-        return True, smoke_result, []
+        return _finish_module_smoke_result(
+            returncode=proc.returncode,
+            stdout_bytes=stdout_bytes,
+            stderr_bytes=stderr_bytes,
+        )
+    except subprocess.TimeoutExpired:
+        return False, None, ["smoke: Smoke check timed out (60s)"]
     except Exception as exc:
         logger.exception(exc)
         return False, None, [f"smoke: Smoke check error: {exc}"]
     finally:
         shutil.rmtree(temp_extract, ignore_errors=True)
+
+
+def _finish_module_smoke_result(
+    *,
+    returncode: int,
+    stdout_bytes: bytes,
+    stderr_bytes: bytes,
+) -> tuple[bool, Optional[dict], list[str]]:
+    if returncode != 0:
+        err_msg = (stderr_bytes.decode("utf-8", errors="replace") or "Smoke check failed").strip()
+        if len(err_msg) > 500:
+            err_msg = err_msg[:497] + "..."
+        return False, None, [f"smoke: Smoke check failed: {err_msg}"]
+    smoke_result = {}
+    if stdout_bytes:
+        smoke_result = json.loads(stdout_bytes.decode("utf-8", errors="replace").strip() or "{}")
+    return True, smoke_result, []
 
 
 async def handle_install_module_package(request):

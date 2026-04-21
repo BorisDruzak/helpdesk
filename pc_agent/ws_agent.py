@@ -573,6 +573,7 @@ class WSAgent:
             for endpoint_name, endpoint in endpoints:
                 try:
                     async with session.get(endpoint) as response:
+                        await response.read()
                         logger.info(f"[connectivity] {endpoint} -> HTTP {response.status}")
                 except Exception as exc:
                     if endpoint_name == "modules_ping":
@@ -1167,6 +1168,8 @@ class WSAgent:
         Очистка ресурсов.
         """
         try:
+            await self._close_agent_ws(reason="agent_cleanup")
+
             # Останавливаем задачу публикации логов
             if self._log_publisher_task:
                 logger.info("🛑 Останавливаю задачу публикации логов...")
@@ -1261,6 +1264,31 @@ class WSAgent:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка при очистке: {e}")
+
+    async def _close_agent_ws(
+        self,
+        *,
+        reason: str,
+        code: int = aiohttp.WSCloseCode.GOING_AWAY,
+        message: bytes = b"agent_shutdown",
+        timeout: float = 1.5,
+    ) -> None:
+        ws = self._agent_ws
+        if ws is None:
+            return
+
+        response = getattr(ws, "_response", None)
+        wait_for_close = getattr(response, "wait_for_close", None)
+
+        try:
+            if not ws.closed:
+                await asyncio.wait_for(ws.close(code=code, message=message), timeout=timeout)
+            if callable(wait_for_close):
+                await asyncio.wait_for(wait_for_close(), timeout=timeout)
+        except Exception as e:
+            logger.debug(f"Ошибка закрытия WebSocket ({reason}): {e}")
+        finally:
+            self._agent_ws = None
 
     async def schedule_restart(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return await helper_schedule_restart(self, payload)
@@ -2995,19 +3023,7 @@ class WSAgent:
             else:
                 logger.info("🛑 Получен сигнал отмены, выполняю clean shutdown...")
             # Закрываем WebSocket соединение явно, иначе выход из ws_connect может зависать на closing handshake.
-            if self._agent_ws and not self._agent_ws.closed:
-                try:
-                    await asyncio.wait_for(
-                        self._agent_ws.close(
-                            code=aiohttp.WSCloseCode.GOING_AWAY,
-                            message=b"agent_shutdown",
-                        ),
-                        timeout=1.5,
-                    )
-                except Exception as e:
-                    logger.debug(f"Ошибка быстрого закрытия WebSocket: {e}")
-                finally:
-                    self._agent_ws = None
+            await self._close_agent_ws(reason="run_cancelled")
             # Закрываем HTTP сессию
             if self._http_session:
                 try:

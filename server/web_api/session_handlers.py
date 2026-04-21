@@ -11,11 +11,23 @@ from web_api.dto.session import (
 )
 
 
+def _resolve_workspace_access(actor_role: str) -> tuple[str | None, list[str]]:
+    normalized_role = str(actor_role or "").strip().lower()
+    if normalized_role == "admin":
+        return "admin", ["admin", "support"]
+    if normalized_role == "support":
+        return "support", ["support"]
+    return None, []
+
+
 def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
+    default_workspace, available_workspaces = _resolve_workspace_access(actor_role)
     return WebSessionPayload(
         user_login=user_login,
         actor_role=actor_role,
         auth_type=auth_type,
+        default_workspace=default_workspace,
+        available_workspaces=available_workspaces,
     )
 
 

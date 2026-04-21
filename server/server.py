@@ -205,7 +205,7 @@ async def on_startup(app: web.Application):
             # Phase C: Start device outbox sender loop
             logger.info("🚀 Starting device outbox sender...")
             sender = DeviceOutboxSender(app['state'], poll_interval=1.0)
-            sender.start()
+            await sender.start_async()
             bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
             logger.success("✅ Device outbox sender started")
             
@@ -344,7 +344,7 @@ async def on_cleanup(app: web.Application):
     # Phase C: Stop device outbox sender
     if 'outbox_sender' in app:
         logger.info("⏹️ Stopping device outbox sender...")
-        app['outbox_sender'].stop()
+        await app['outbox_sender'].stop_async()
         logger.success("✅ Device outbox sender stopped")
     
     if ENABLE_DB_PERSISTENCE:

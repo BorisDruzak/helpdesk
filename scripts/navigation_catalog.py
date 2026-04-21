@@ -80,7 +80,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="protocol_v3",
         title="Protocol V3 / handshake",
-        summary="WS handshake, capabilities, envelope V3, ACK/NACK and command_result.",
+        summary="WS handshake, capabilities, envelope V3, ACK/NACK, command_result and graceful websocket sender/teardown behavior in server and agent runtimes.",
         aliases=(
             "protocol",
             "protocol v3",
@@ -356,13 +356,18 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, session-gated `/app/*` routes, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, support Playwright signoff and typed admin slices for inventory, device update actions, modules registry/actions, request-form builder, observer quick summary and trace drilldown surfaces.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, role-aware `/app/*` routes, server-driven `default_workspace`/`available_workspaces`, legacy-shell cutover flags, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, support Playwright signoff and typed admin slices for inventory, device update actions, modules registry/actions, request-form builder, observer quick summary and trace drilldown surfaces.",
         aliases=(
             "webapp",
             "react app",
             "vite",
             "typed web boundary",
             "api/web",
+            "default workspace",
+            "available workspaces",
+            "cutover",
+            "legacy shell",
+            "legacy=1",
             "app/support",
             "app/admin",
             "support workspace",
@@ -393,6 +398,7 @@ TOPICS: tuple[Topic, ...] = (
             "webapp/src/app/layouts/app-shell.tsx",
             "webapp/src/features/auth/session-provider.tsx",
             "webapp/src/features/auth/login-page.tsx",
+            "webapp/src/features/auth/workspace-access.ts",
             "webapp/src/shared/realtime/client.ts",
             "webapp/src/shared/realtime/adapters/ws-ui-bridge.ts",
             "webapp/src/features/admin/api.ts",
@@ -412,6 +418,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/realtime_handlers.py",
             "server/websocket/ui_handler.py",
             "server/static_pages/webapp_assets.py",
+            "server/static_pages/handlers.py",
+            "server/config.py",
             "server/routes.py",
         ),
         related_docs=(
@@ -455,6 +463,9 @@ TOPICS: tuple[Topic, ...] = (
         path_prefixes=("webapp/", "server/web_api/", "server/static_pages/"),
         exact_paths=(
             "server/routes.py",
+            "server/config.py",
+            "server/static_pages/handlers.py",
+            "server/server.py",
             "package.json",
             ".node-version",
             ".nvmrc",

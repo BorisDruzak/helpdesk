@@ -332,12 +332,27 @@ class PollingDeviceOutboxSender:
         self._task = asyncio.create_task(self._sender_loop())
         logger.success("[PollingDeviceOutboxSender] Started")
 
+    async def start_async(self) -> None:
+        self.start()
+
     def stop(self):
         if not self._running:
             return
         self._running = False
         if self._task:
             self._task.cancel()
+
+    async def stop_async(self) -> None:
+        if not self._running:
+            return
+        self.stop()
+        if self._task:
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._task = None
 
     async def _sender_loop(self):
         try:
@@ -390,6 +405,7 @@ class DeviceOutboxSender:
         self.mode = (DEVICE_DISPATCH_MODE or "poll").lower()
         self._polling_impl: Optional[PollingDeviceOutboxSender] = None
         self._sharded_impl: Optional[ShardDispatcher] = None
+        self._sharded_start_task: Optional[asyncio.Task] = None
 
         if self.mode == "sharded":
             existing_dispatch = getattr(state_manager, "device_dispatch_service", None)
@@ -409,11 +425,23 @@ class DeviceOutboxSender:
 
     def start(self):
         if self.mode == "sharded" and self._sharded_impl is not None:
-            asyncio.create_task(self._sharded_impl.start())
+            if self._sharded_start_task and not self._sharded_start_task.done():
+                return
+            self._sharded_start_task = asyncio.create_task(self._sharded_impl.start())
             logger.success("[DeviceOutboxSender] Started in sharded mode")
             return
         if self._polling_impl is not None:
             self._polling_impl.start()
+            logger.success("[DeviceOutboxSender] Started in poll mode")
+
+    async def start_async(self) -> None:
+        if self.mode == "sharded" and self._sharded_impl is not None:
+            await self._sharded_impl.start()
+            self._sharded_start_task = None
+            logger.success("[DeviceOutboxSender] Started in sharded mode")
+            return
+        if self._polling_impl is not None:
+            await self._polling_impl.start_async()
             logger.success("[DeviceOutboxSender] Started in poll mode")
 
     def stop(self):
@@ -423,6 +451,22 @@ class DeviceOutboxSender:
             return
         if self._polling_impl is not None:
             self._polling_impl.stop()
+            logger.warning("[DeviceOutboxSender] Stopping poll sender")
+
+    async def stop_async(self) -> None:
+        if self.mode == "sharded" and self._sharded_impl is not None:
+            if self._sharded_start_task is not None:
+                try:
+                    await self._sharded_start_task
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    self._sharded_start_task = None
+            await self._sharded_impl.stop()
+            logger.warning("[DeviceOutboxSender] Stopping sharded dispatcher")
+            return
+        if self._polling_impl is not None:
+            await self._polling_impl.stop_async()
             logger.warning("[DeviceOutboxSender] Stopping poll sender")
 
 

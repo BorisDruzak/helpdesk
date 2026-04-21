@@ -202,7 +202,8 @@
 ### 5.4 Web session: `/api/web/session/*`
 
 - `POST /api/web/session/login` принимает `{"login": "...", "password": "..."}` и при успехе выставляет httpOnly cookie `pc_client_web_session` с `SameSite=Lax`.
-- `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type"}}`.
+- `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type", "default_workspace", "available_workspaces"}}`.
+- `default_workspace` и `available_workspaces` формируются сервером по `actor_role` и считаются каноничным источником истины для redirect/access-gate логики нового `/app/*`; React-клиент не должен заново вычислять эти права из произвольных role-switch веток.
 - `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
 - Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.
 - `GET /api/web/realtime/bootstrap` возвращает typed transport contract для нового `webapp` (`transport`, `auth_mode`, `socket_url`, `hello_message_type`, channel contracts). Реальное websocket-подключение идёт в `/ws_ui` и использует ту же cookie-session без раскрытия raw token в JS.
@@ -223,6 +224,9 @@
 - Страница тикета (/ticket/{id}) использует тот же UI-токен (admin_auth_token), что и админка; WebSocket /ws_ui — ui_hello с этим токеном, затем subscribe_ticket.
 - Отдельная страница `/login` остаётся единым входом для legacy shell-страниц: admin логин ведёт в `/admin`, support логин — в `/support`. Сами shell-страницы проверяют `GET /api/ui_session` и при несоответствии роли перенаправляют обратно на `/login`.
 - Новый React `webapp` живёт на `/app/support` и `/app/admin`, использует `/app/login` и проверяет сессию через `/api/web/session/me`.
+- `/app` теперь считается role-aware точкой входа: после логина или прямого захода индекс выбирает `default_workspace` из session payload и уводит пользователя в допустимую рабочую область.
+- Если пользователь без доступа к `/app/admin` идёт туда напрямую, access gate обязан вернуть его в допустимую workspace-зону, а не оставлять на частично загруженном экране.
+- Cutover legacy shell управляется флагами `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, `WEBAPP_CUTOVER_ADMIN_ENABLED` в `server/config.py`; при включённом cutover старые `/login`, `/support`, `/admin` редиректят в `/app/*`, но явный escape на legacy shell сохраняется через `?legacy=1`.
 - Support workspace в work-режиме не дублирует composer/timeline вручную, а встраивает `ticket.html?embed=1`. Это сохраняет RBAC, вложения, reply-to, скриншоты и прочие возможности ticket chat без расхождения поведения между страницами.
 - **Видимость сообщений:** в composer переключатель «Внутренняя заметка» (internal); по умолчанию сообщения — public. Только роли support/admin могут отправлять internal; requester не видит внутренние сообщения (фильтрация в snapshot и в API).
 - **Stage 10.5 — Action Dock:** управление тикетом через панель кнопок (Статус, Назначить, Очередь, Приоритет, Инструменты ПК, Трудозатраты, Закрыть, Перемаршрутизация) и inline-панели; slash-команды из UI убраны. **RBAC в UI:** snapshot возвращает `actor_role`; для роли **auditor** кнопки Action Dock отображаются в состоянии disabled (read-only); admin/support — полный доступ к действиям. Серверная проверка прав остаётся источником истины. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-105-action-dock--inline-panels). Подход со slash-командами (Stage 10.4) deprecated, см. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-104-chat-first-deprecated).

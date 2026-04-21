@@ -10,6 +10,7 @@ from static_pages.handlers import (
     handle_login_page,
     handle_support_page,
 )
+import static_pages.handlers as static_handlers_module
 import static_pages.webapp_assets as webapp_assets_module
 from static_pages.webapp_assets import (
     handle_webapp_asset,
@@ -80,6 +81,30 @@ async def test_support_page_serves_workspace_shell():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
+async def test_support_page_redirects_to_new_app_when_cutover_enabled(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", True)
+    request = make_mocked_request("GET", "/support")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_support_page(request)
+
+    assert exc_info.value.location == "/app/support"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_support_page_keeps_legacy_escape_when_cutover_enabled(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", True)
+    request = make_mocked_request("GET", "/support?legacy=1")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_support_page(request)
+
+    assert exc_info.value.location == f"/support?legacy=1&_shell={SUPPORT_SHELL_VERSION}"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
 async def test_login_page_redirects_to_versioned_shell():
     request = make_mocked_request("GET", "/login")
 
@@ -101,6 +126,18 @@ async def test_login_page_serves_role_selector():
     assert "/login.js?v=20260330a" in response.text
     assert "id=\"roleSwitch\"" in response.text
     assert "data-target=\"support\"" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_login_page_redirects_to_new_app_when_cutover_enabled(monkeypatch):
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", True)
+    request = make_mocked_request("GET", "/login?next=%2Fsupport")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_login_page(request)
+
+    assert exc_info.value.location == "/app/login?next=/support"
 
 
 @pytest.mark.no_db

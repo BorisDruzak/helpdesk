@@ -3,27 +3,24 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
+import { resolveNextWorkspacePath } from "./workspace-access";
 
 
-function resolveNextPath(nextParam: string | null) {
-  if (!nextParam || !nextParam.startsWith("/app")) {
-    return "/app/support";
-  }
-
-  return nextParam;
+function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
+  return resolveNextWorkspacePath(nextParam, session) ?? "/app";
 }
 
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, status } = useSession();
+  const { login, session, status } = useSession();
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const nextPath = resolveNextPath(searchParams.get("next"));
+  const nextPath = resolveNextPath(searchParams.get("next"), session);
 
   if (status === "authenticated") {
     return <Navigate replace to={nextPath} />;
@@ -35,12 +32,12 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login({
+      const nextSession = await login({
         login: loginValue,
         password: passwordValue
       });
       startTransition(() => {
-        navigate(nextPath, { replace: true });
+        navigate(resolveNextPath(searchParams.get("next"), nextSession), { replace: true });
       });
     } catch (error) {
       if (error instanceof WebSessionApiError) {

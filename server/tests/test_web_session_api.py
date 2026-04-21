@@ -43,6 +43,8 @@ async def test_web_session_me_returns_typed_actor_payload(web_api_client):
             "user_login": "support1",
             "actor_role": "support",
             "auth_type": "ui_token",
+            "default_workspace": "support",
+            "available_workspaces": ["support"],
         },
     }
 
@@ -102,6 +104,8 @@ async def test_web_session_login_sets_http_only_cookie(monkeypatch):
             "user_login": "support",
             "actor_role": "support",
             "auth_type": "ui_token",
+            "default_workspace": "support",
+            "available_workspaces": ["support"],
         },
     }
     assert response.cookies[WEB_SESSION_COOKIE_NAME].value == "issued-ui-token"
@@ -182,5 +186,41 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
             "user_login": "support-cookie",
             "actor_role": "support",
             "auth_type": "ui_token",
+            "default_workspace": "support",
+            "available_workspaces": ["support"],
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_me_exposes_admin_default_workspace():
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="admin1",
+            actor_role="admin",
+            auth_type=AuthType.UI_TOKEN,
+            token="admin-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/api/web/session/me")
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "success",
+        "data": {
+            "user_login": "admin1",
+            "actor_role": "admin",
+            "auth_type": "ui_token",
+            "default_workspace": "admin",
+            "available_workspaces": ["admin", "support"],
         },
     }

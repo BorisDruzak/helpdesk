@@ -2,6 +2,7 @@ import { startTransition, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { useSession } from "../../features/auth/session-provider";
+import { hasWorkspaceAccess } from "../../features/auth/workspace-access";
 
 
 type AppShellProps = {
@@ -35,12 +36,16 @@ export function AppShell({ children }: AppShellProps) {
           </button>
         </div>
         <nav className="app-shell__nav" aria-label="Навигация по рабочим местам">
-          <NavLink className="app-shell__link" to="/app/support">
-            Поддержка
-          </NavLink>
-          <NavLink className="app-shell__link" to="/app/admin">
-            Администрирование
-          </NavLink>
+          {hasWorkspaceAccess(session, "support") ? (
+            <NavLink className="app-shell__link" to="/app/support">
+              Поддержка
+            </NavLink>
+          ) : null}
+          {hasWorkspaceAccess(session, "admin") ? (
+            <NavLink className="app-shell__link" to="/app/admin">
+              Администрирование
+            </NavLink>
+          ) : null}
         </nav>
       </aside>
       <main className="app-shell__main">{children}</main>

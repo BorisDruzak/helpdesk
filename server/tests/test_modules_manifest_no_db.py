@@ -1,9 +1,12 @@
 import io
 import json
+import subprocess
 import zipfile
+from unittest.mock import patch
 
 import pytest
 
+from modules.handlers import _run_module_smoke
 from utils.module_builder import build_module_package
 from utils.module_manifest import normalize_manifest
 from utils.module_preflight import preflight_module_zip
@@ -294,3 +297,29 @@ def register():
     assert manifest_json is None
     assert manifest_summary is None
     assert any("tool.entry" in error for error in validation_json["errors"]["tools"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_run_module_smoke_falls_back_to_blocking_subprocess_when_asyncio_subprocess_is_unavailable():
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps({"module_name": "fallback_demo"}))
+
+    completed = subprocess.CompletedProcess(
+        args=["python", "smoke_check_module.py"],
+        returncode=0,
+        stdout=b'{"status":"ok","tools_checked":1}',
+        stderr=b"",
+    )
+
+    with (
+        patch("modules.handlers.asyncio.create_subprocess_exec", side_effect=NotImplementedError),
+        patch("modules.handlers.subprocess.run", return_value=completed) as subprocess_run,
+    ):
+        ok, smoke_result, smoke_errors = await _run_module_smoke(zip_buffer.getvalue(), "pc_smoke_fallback_")
+
+    assert ok is True
+    assert smoke_errors == []
+    assert smoke_result == {"status": "ok", "tools_checked": 1}
+    subprocess_run.assert_called_once()

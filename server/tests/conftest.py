@@ -54,6 +54,22 @@ _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
 
 
+@pytest.fixture(scope="session")
+def event_loop_policy():
+    """Use selector policy on Windows to avoid Proactor-only websocket teardown noise in pytest."""
+    if os.name == "nt":
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                message=r".*WindowsSelectorEventLoopPolicy.*",
+            )
+            selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+            if selector_policy is not None:
+                return selector_policy()
+    return asyncio.get_event_loop_policy()
+
+
 def _default_runtime_database_url() -> str:
     runtime_url = os.getenv("DATABASE_URL")
     if runtime_url:
@@ -661,7 +677,7 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
         await recover_pending_commands(state)
 
         sender = DeviceOutboxSender(state, poll_interval=0.5)
-        sender.start()
+        await sender.start_async()
         bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
 
         app.on_startup.clear()
@@ -669,7 +685,7 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
 
         async def test_cleanup(app):
             if "outbox_sender" in app:
-                app["outbox_sender"].stop()
+                await app["outbox_sender"].stop_async()
 
         app.on_cleanup.append(test_cleanup)
         yield app
@@ -678,8 +694,25 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
 @pytest_asyncio.fixture
 async def test_client(test_app):
     """aiohttp test client для HTTP запросов."""
-    async with TestClient(TestServer(test_app)) as client:
+    client = TestClient(TestServer(test_app))
+    await client.start_server()
+    try:
         yield client
+    finally:
+        if not getattr(client, "_closed", False):
+            for ws in list(getattr(client, "_websockets", ())):
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+                response = getattr(ws, "_response", None)
+                wait_for_close = getattr(response, "wait_for_close", None)
+                if callable(wait_for_close):
+                    try:
+                        await wait_for_close()
+                    except Exception:
+                        pass
+            await client.close()
 
 
 @pytest_asyncio.fixture
@@ -828,6 +861,14 @@ async def test_agent(tmp_path, test_client):
                 logger.warning(f"Agent did not connect within {max_wait}s, continuing test")
 
             yield agent
+
+            close_agent_ws = getattr(agent, "_close_agent_ws", None)
+            if callable(close_agent_ws):
+                try:
+                    await close_agent_ws(reason="test_fixture_shutdown", message=b"test_shutdown")
+                    await asyncio.sleep(0)
+                except Exception:
+                    pass
 
             agent_task.cancel()
             try:

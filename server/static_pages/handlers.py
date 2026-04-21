@@ -1,6 +1,11 @@
 from pathlib import Path
 
 from aiohttp import web
+from config import (
+    WEBAPP_CUTOVER_ADMIN_ENABLED,
+    WEBAPP_CUTOVER_LOGIN_ENABLED,
+    WEBAPP_CUTOVER_SUPPORT_ENABLED,
+)
 
 
 BASE_DIR = Path(__file__).parent.parent
@@ -36,11 +41,38 @@ def _versioned_self_redirect(request: web.Request, version: str) -> web.HTTPFoun
     return web.HTTPFound(location=str(request.rel_url.with_query(query)))
 
 
+def _legacy_shell_requested(request: web.Request) -> bool:
+    return request.query.get("legacy") == "1" or "_shell" in request.query
+
+
+def _webapp_cutover_redirect(
+    request: web.Request,
+    *,
+    enabled: bool,
+    target_path: str,
+) -> web.HTTPFound | None:
+    if not enabled or _legacy_shell_requested(request):
+        return None
+    query = {
+        key: value
+        for key, value in request.query.items()
+        if key not in {"_shell", "legacy"}
+    }
+    return web.HTTPFound(location=str(request.rel_url.with_path(target_path).with_query(query)))
+
+
 async def handle_index(request):
     return _text_file_response(BASE_DIR / "web_interface.html", "text/html")
 
 
 async def handle_admin_page(request):
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+        target_path="/app/admin",
+    )
+    if redirect is not None:
+        raise redirect
     redirect = _versioned_self_redirect(request, ADMIN_SHELL_VERSION)
     if redirect is not None:
         raise redirect
@@ -48,6 +80,13 @@ async def handle_admin_page(request):
 
 
 async def handle_support_page(request):
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        target_path="/app/support",
+    )
+    if redirect is not None:
+        raise redirect
     redirect = _versioned_self_redirect(request, SUPPORT_SHELL_VERSION)
     if redirect is not None:
         raise redirect
@@ -55,6 +94,13 @@ async def handle_support_page(request):
 
 
 async def handle_login_page(request):
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        target_path="/app/login",
+    )
+    if redirect is not None:
+        raise redirect
     redirect = _versioned_self_redirect(request, LOGIN_SHELL_VERSION)
     if redirect is not None:
         raise redirect

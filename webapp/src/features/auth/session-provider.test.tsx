@@ -41,7 +41,9 @@ describe("SessionProvider", () => {
           data: {
             user_login: "admin1",
             actor_role: "admin",
-            auth_type: "ui_token"
+            auth_type: "ui_token",
+            default_workspace: "admin",
+            available_workspaces: ["admin", "support"]
           }
         })
       )

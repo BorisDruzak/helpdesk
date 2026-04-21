@@ -2,6 +2,8 @@ export type WebSession = {
   user_login: string;
   actor_role: string;
   auth_type: string;
+  default_workspace: string | null;
+  available_workspaces: string[];
 };
 
 type SuccessResponse<T> = {

@@ -17,6 +17,7 @@
 - CI runner: `scripts/run_ci_suite.py`; isolated temp checkout runner: `scripts/run_ci_in_temp_workspace.py`.
 - Канонические test/CI env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`.
 - Windows default: if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test` through a local SSH tunnel; the shared fallback now terminates stale test backends before cleanup and applies a short `lock_timeout`, while explicit admin DSN is still required for isolated ephemeral DBs from Windows.
+- For websocket-heavy pytest on Windows, `server/tests/conftest.py` also switches the harness to `WindowsSelectorEventLoopPolicy`, which removes the old Proactor-only `unexpected connection_lost() call` noise during teardown.
 
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|
@@ -295,3 +296,10 @@
 - Everyday authoring should happen through the direct form -> field -> parameter flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
 - The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.
+
+## 2026-04-21 Web cutover and pytest harness cleanup
+
+- `server/web_api/session_handlers.py` now returns `default_workspace` and `available_workspaces` in `GET /api/web/session/me`, and that payload is the source of truth for role-aware redirect logic in the new `/app/*` shell.
+- `webapp/src/features/auth/workspace-access.ts` plus `webapp/src/app/router.tsx` own the new role-aware `/app` entrypoint, access gate for `/app/admin`, and safe fallback redirect for sessions that only have `/app/support`.
+- `server/static_pages/handlers.py` and `server/config.py` now prepare legacy-shell cutover through `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, and `WEBAPP_CUTOVER_ADMIN_ENABLED`; explicit legacy escape remains `?legacy=1`.
+- `server/tests/conftest.py`, `server/websocket/device_outbox_sender.py`, `server/server.py`, and `pc_agent/ws_agent.py` now close websocket-heavy test/runtime paths more gracefully; on Windows pytest also switches to `WindowsSelectorEventLoopPolicy`, which removes the non-fatal `unexpected connection_lost() call` tail noise from websocket suites.

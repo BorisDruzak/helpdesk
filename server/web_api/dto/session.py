@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WebSessionPayload(BaseModel):
@@ -7,6 +7,8 @@ class WebSessionPayload(BaseModel):
     user_login: str
     actor_role: str
     auth_type: str
+    default_workspace: str | None = None
+    available_workspaces: list[str] = Field(default_factory=list)
 
 
 class WebSessionLoginRequest(BaseModel):
