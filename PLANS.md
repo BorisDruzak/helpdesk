@@ -1,5 +1,29 @@
 # PLANS.md
 
+## 2026-04-22 Webapp real-data cutover for tickets, admin, reports, settings
+
+- Scope:
+  - убрать mock data из новых `/app/*` страниц, сохранив новый SaaS shell;
+  - перевести `tickets` и `admin` page wrappers на реальные typed `/api/web/*` данные и существующие React feature-panels;
+  - добавить новый typed web boundary для `reports` и `settings` поверх реальных server-side источников;
+  - оставить `Knowledge Base` в меню, но заменить страницу на честный статус "в разработке";
+  - использовать legacy `server/admin.js` и старые helpdesk/settings surfaces только как функциональный reference.
+- Main plan document:
+  - `docs/superpowers/plans/2026-04-22-webapp-real-data-cutover.md`
+- Delivery order:
+  1. support pages: real queue/detail flow через existing typed support API;
+  2. admin pages: inventory/device/modules/forms/observer через existing typed admin API и feature panels;
+  3. reports: новый typed aggregate endpoint на реальных ticket metrics;
+  4. settings: новый typed admin settings boundary на основе legacy admin config API;
+  5. knowledge placeholder, docs sync, verification, deploy and browser signoff.
+- Verification target:
+  - `python scripts/bootstrap_web_toolchain.py`
+  - `pnpm --dir webapp run test`
+  - `pnpm --dir webapp run build`
+  - focused `pytest` for new `server/web_api` reports/settings/support/admin slices
+  - `python scripts/verify_workspace.py`
+  - browser verification for `/app/tickets`, `/app/reports`, `/app/settings`, `/app/admin/*`
+
 ## 2026-04-22 Admin/support unified workspace redesign
 
 - Scope:

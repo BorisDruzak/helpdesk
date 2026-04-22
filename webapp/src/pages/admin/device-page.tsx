@@ -1,133 +1,282 @@
-import { ArrowUpRight, Cpu, RefreshCcw } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ArrowUpRight, RefreshCcw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { startTransition, useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
 import { Select } from "../../components/ui/select";
-import { devices, getDeviceById } from "../../mocks/helpdesk-data";
+import { DeviceUpdatePanel } from "../../features/agent-updates/device-update-panel";
+import { fetchAdminDevices } from "../../features/admin/api";
+import { ObserverQuickPanel } from "../../features/tech/observer-quick-panel";
+
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return "Нет данных";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+
+function getUpdateTone(value: string | null | undefined): "danger" | "info" | "neutral" | "success" | "warning" {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "neutral";
+  }
+  if (["succeeded", "ok", "completed", "up_to_date"].includes(normalized)) {
+    return "success";
+  }
+  if (["queued", "running", "in_progress"].includes(normalized)) {
+    return "info";
+  }
+  if (["failed", "timed_out", "error"].includes(normalized)) {
+    return "danger";
+  }
+  return "warning";
+}
+
 
 export function AdminDevicePage() {
-  const [selectedDeviceId, setSelectedDeviceId] = useState(devices[0].id);
-  const device = getDeviceById(selectedDeviceId);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQuery] = useState("");
+
+  const devicesQuery = useQuery({
+    queryKey: ["admin-device-page", query],
+    queryFn: () =>
+      fetchAdminDevices({
+        query,
+        statusFilter: "all",
+      }),
+    retry: false,
+    refetchInterval: 15_000,
+  });
+
+  const devices = devicesQuery.data?.devices ?? [];
+  const selectedDeviceId = searchParams.get("device");
+  const selectedDevice = devices.find((item) => item.device_id === selectedDeviceId) ?? devices[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedDevice?.device_id) {
+      return;
+    }
+    if (searchParams.get("device") === selectedDevice.device_id) {
+      return;
+    }
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set("device", selectedDevice.device_id);
+    startTransition(() => {
+      setSearchParams(nextSearchParams, { replace: true });
+    });
+  }, [searchParams, selectedDevice?.device_id, setSearchParams]);
 
   return (
     <section className="space-y-6">
       <PageHeading
         actions={
-          <Select className="min-w-[260px]" onChange={(event) => setSelectedDeviceId(event.target.value)} value={device.id}>
-            {devices.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.hostname}
-              </option>
-            ))}
-          </Select>
+          <>
+            <Button
+              leadingIcon={<ArrowLeft className="h-4 w-4" />}
+              onClick={() => {
+                startTransition(() => {
+                  navigate(selectedDevice ? `/app/admin/inventory?device=${encodeURIComponent(selectedDevice.device_id)}` : "/app/admin/inventory");
+                });
+              }}
+              size="sm"
+              variant="outline"
+            >
+              К инвентарю
+            </Button>
+            <Select
+              className="min-w-[280px]"
+              onChange={(event) => {
+                const nextSearchParams = new URLSearchParams(searchParams);
+                nextSearchParams.set("device", event.target.value);
+                startTransition(() => {
+                  setSearchParams(nextSearchParams);
+                });
+              }}
+              value={selectedDevice?.device_id ?? ""}
+            >
+              {devices.map((item) => (
+                <option key={item.device_id} value={item.device_id}>
+                  {item.hostname ?? item.device_id}
+                </option>
+              ))}
+            </Select>
+            <Button
+              leadingIcon={<RefreshCcw className="h-4 w-4" />}
+              onClick={() => void devicesQuery.refetch()}
+              size="sm"
+              variant="outline"
+            >
+              Обновить
+            </Button>
+          </>
         }
-        description="Выделенная device card собрана отдельно в меню и больше не прячется внутри карточек. Здесь главный фокус на состоянии устройства, обновлении и истории действий."
+        description="Выделенная карточка устройства с живым update workflow и observer quick panel. Здесь остаётся новый SaaS-слой, но действия и состояние уже идут из реального backend."
         eyebrow="Admin detail"
         title="Карточка устройства"
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_340px]">
+      {devicesQuery.isLoading ? <p className="text-sm text-slate-500">Собираем реальную карточку устройства…</p> : null}
+      {devicesQuery.isError ? (
+        <p className="text-sm text-rose-600">
+          {devicesQuery.error instanceof Error ? devicesQuery.error.message : "Не удалось загрузить список устройств."}
+        </p>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
         <div className="space-y-6">
           <Card>
-            <CardHeader>
-              <CardTitle>{device.hostname}</CardTitle>
-              <CardDescription>
-                {device.platform} • {device.target} • Последний контакт: {device.lastSeen}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              {[
-                { label: "Версия агента", value: device.version },
-                { label: "Rollout status", value: device.rolloutStatus },
-                { label: "Observer health", value: device.observerHealth },
-                { label: "Владелец", value: device.owner }
-              ].map((item) => (
-                <div key={item.label} className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
-                  <p className="text-sm text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-xl font-semibold text-slate-950">{item.value}</p>
+            <CardHeader className="gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>{selectedDevice?.hostname ?? "Устройство"}</CardTitle>
+                  <CardDescription>
+                    {selectedDevice
+                      ? `${selectedDevice.os ?? "ОС не определена"} • ${selectedDevice.target ?? "target не определён"}`
+                      : "Выберите устройство, чтобы открыть реальный update flow."}
+                  </CardDescription>
                 </div>
-              ))}
+                {selectedDevice ? (
+                  <Badge tone={getUpdateTone(selectedDevice.latest_update.status)} withDot>
+                    {selectedDevice.latest_update.label}
+                  </Badge>
+                ) : null}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {selectedDevice ? (
+                <>
+                  <div className="rounded-[1.3rem] bg-surface-subtle px-5 py-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-brand-700">{selectedDevice.device_id}</p>
+                    <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                      {selectedDevice.hostname ?? selectedDevice.device_id}
+                    </p>
+                    <p className="mt-3 text-sm text-slate-500">
+                      Агент {selectedDevice.agent_version ?? "не сообщил версию"} • {selectedDevice.connection_status_label}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">Последний контакт: {formatDateTime(selectedDevice.last_seen_at)}</p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                      <p className="text-sm text-slate-500">Последний update status</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.latest_update.label}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {selectedDevice.latest_update.summary ?? "Подробности появятся после следующего server-side обновления."}
+                      </p>
+                    </div>
+                    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                      <p className="text-sm text-slate-500">Целевой target</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.target ?? "Не назначен"}</p>
+                      <p className="mt-2 text-sm text-slate-500">Для rollout и observer drilldown используем этот же идентификатор устройства.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                      <p className="text-sm text-slate-500">Статус связи</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.connection_status_label}</p>
+                    </div>
+                    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                      <p className="text-sm text-slate-500">Операционная система</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.os ?? "Не определена"}</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
+                  Нет устройства для отображения.
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Таймлайн изменений</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                "22 апр. 2026, 09:54 — агент вышел на связь",
-                "22 апр. 2026, 09:24 — observer сохранил предупреждение по rollout",
-                "21 апр. 2026, 23:12 — назначена целевая версия stable/3.1.20"
-              ].map((item) => (
-                <div key={item} className="rounded-[1.1rem] border border-border bg-white px-4 py-4 text-sm text-slate-600">
-                  {item}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <ObserverQuickPanel
+            deviceId={selectedDevice?.device_id ?? null}
+            deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "выбранного устройства"}
+          />
         </div>
 
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Обновление агента</CardTitle>
+              <CardTitle>Контекст устройства</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
-                <p className="text-sm text-slate-500">Текущая версия</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-950">{device.version}</p>
-                <p className="mt-2 text-sm text-slate-500">Рекомендуемая версия: stable/3.1.21</p>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Device ID</span>
+                <span className="font-medium text-slate-900">{selectedDevice?.device_id ?? "—"}</span>
               </div>
-              <label className="space-y-2 text-sm font-medium text-slate-800">
-                <span>Причина запуска</span>
-                <textarea className="field-base min-h-[120px] w-full resize-none px-4 py-4 text-sm" defaultValue="Плановый canary после smoke." />
-              </label>
-              <Button className="w-full" leadingIcon={<RefreshCcw className="h-4 w-4" />}>
-                Запустить rollout
-              </Button>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Hostname</span>
+                <span className="font-medium text-slate-900">{selectedDevice?.hostname ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Версия агента</span>
+                <span className="font-medium text-slate-900">{selectedDevice?.agent_version ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Target</span>
+                <span className="font-medium text-slate-900">{selectedDevice?.target ?? "—"}</span>
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Быстрые действия</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { label: "Открыть observer drilldown", tone: "info" as const },
-                { label: "Проверить модульный состав", tone: "brand" as const },
-                { label: "Экспортировать карточку", tone: "success" as const }
-              ].map((item) => (
-                <button key={item.label} className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left" type="button">
-                  <span className="font-medium text-slate-900">{item.label}</span>
-                  <Badge tone={item.tone}>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Badge>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
+          <DeviceUpdatePanel
+            device={
+              selectedDevice
+                ? {
+                    device_id: selectedDevice.device_id,
+                    hostname: selectedDevice.hostname,
+                  }
+                : null
+            }
+          />
 
           <Card>
             <CardHeader>
-              <CardTitle>Hardware summary</CardTitle>
+              <CardTitle>Быстрые переходы</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {[
-                "CPU: Intel Core i7 / 8 cores",
-                "RAM: 32 GB",
-                "Storage: NVMe 512 GB",
-                "Network: корпоративный VLAN"
-              ].map((item) => (
-                <div key={item} className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm text-slate-600">
-                  <Cpu className="h-4 w-4 text-brand-700" />
-                  <span>{item}</span>
-                </div>
-              ))}
+              <button
+                className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
+                onClick={() => {
+                  startTransition(() => {
+                    navigate("/app/admin/modules");
+                  });
+                }}
+                type="button"
+              >
+                <span className="font-medium text-slate-900">Модули и preferred versions</span>
+                <ArrowUpRight className="h-4 w-4 text-brand-700" />
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
+                onClick={() => {
+                  startTransition(() => {
+                    navigate("/app/admin/forms");
+                  });
+                }}
+                type="button"
+              >
+                <span className="font-medium text-slate-900">Конструктор форм</span>
+                <ArrowUpRight className="h-4 w-4 text-brand-700" />
+              </button>
             </CardContent>
           </Card>
         </div>

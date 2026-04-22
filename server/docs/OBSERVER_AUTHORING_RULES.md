@@ -161,6 +161,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 - не прятать trace detail только за raw JSON.
 - новые React workspace-экраны должны читать observer capabilities из typed web boundary, а не хардкодить tech/ticket endpoints в компонентах.
 - новые React workspace-экраны не должны запускать observer fetch до успешного `GET /api/web/session/me` и подтверждённой web session.
+- admin observer surfaces должны поддерживать оба режима одного typed boundary: global обзор без выбранного `device_id` и device-scoped quick/drilldown после выбора устройства; отсутствие выбранного устройства не должно тихо отключать observer query целиком.
 
 ## 8. Минимальный набор проверок
 

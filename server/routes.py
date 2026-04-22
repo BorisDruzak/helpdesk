@@ -232,6 +232,8 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_traces,
     handle_web_admin_set_module_preferred_version,
 )
+from web_api.reports_handlers import handle_web_reports_summary
+from web_api.settings_handlers import handle_web_settings_payload
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
     handle_chat_start,
@@ -400,6 +402,36 @@ def setup_routes(app: web.Application) -> None:
         web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
         web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
+        web.get('/api/web/reports/summary', handle_web_reports_summary),
+        web.get('/api/web/settings', handle_web_settings_payload),
+        web.get('/api/web/settings/queues', handle_admin_queues_list),
+        web.post('/api/web/settings/queues', handle_admin_queues_post),
+        web.get('/api/web/settings/queues/{queue_id}', handle_admin_queues_get),
+        web.patch('/api/web/settings/queues/{queue_id}', handle_admin_queues_patch),
+        web.get('/api/web/settings/queues/{queue_id}/members', handle_admin_queue_members_list),
+        web.put('/api/web/settings/queues/{queue_id}/members/{actor_id}', handle_admin_queue_members_put),
+        web.delete('/api/web/settings/queues/{queue_id}/members/{actor_id}', handle_admin_queue_members_delete),
+        web.get('/api/web/settings/queues/{queue_id}/ola_targets', handle_admin_ola_targets_get),
+        web.put('/api/web/settings/queues/{queue_id}/ola_targets', handle_admin_ola_targets_put),
+        web.get('/api/web/settings/routing_rules', handle_admin_routing_rules_list),
+        web.post('/api/web/settings/routing_rules', handle_admin_routing_rules_post),
+        web.patch('/api/web/settings/routing_rules/{rule_id}', handle_admin_routing_rules_patch),
+        web.get('/api/web/settings/sla_policies', handle_admin_sla_policies_list),
+        web.post('/api/web/settings/sla_policies', handle_admin_sla_policies_post),
+        web.patch('/api/web/settings/sla_policies/{policy_id}', handle_admin_sla_policies_patch),
+        web.post('/api/web/settings/sla_policies/{policy_id}/set_default', handle_admin_sla_policies_set_default),
+        web.get('/api/web/settings/sla_policies/{policy_id}/targets', handle_admin_sla_targets_get),
+        web.put('/api/web/settings/sla_policies/{policy_id}/targets', handle_admin_sla_targets_put),
+        web.get('/api/web/settings/sla_policies/{policy_id}/priority_matrix', handle_admin_priority_matrix_get),
+        web.put('/api/web/settings/sla_policies/{policy_id}/priority_matrix', handle_admin_priority_matrix_put),
+        web.get('/api/web/settings/calendars', handle_admin_calendars_list),
+        web.post('/api/web/settings/calendars', handle_admin_calendars_post),
+        web.patch('/api/web/settings/calendars/{calendar_id}', handle_admin_calendars_patch),
+        web.get('/api/web/settings/resolution_codes', handle_admin_resolution_codes_list),
+        web.post('/api/web/settings/resolution_codes', handle_admin_resolution_codes_post),
+        web.patch('/api/web/settings/resolution_codes/{code}', handle_admin_resolution_codes_patch),
+        web.delete('/api/web/settings/resolution_codes/{code}', handle_admin_resolution_codes_delete),
+        web.get('/api/web/settings/audit', handle_admin_audit_list),
         web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
         # Connection request flow (no auth: agent requests token)

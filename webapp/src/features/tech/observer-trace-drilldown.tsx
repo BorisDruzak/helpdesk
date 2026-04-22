@@ -70,7 +70,6 @@ export function ObserverTraceDrilldown({
         rootKindFilter,
         limit: DEFAULT_LIMIT
       }),
-    enabled: Boolean(deviceId),
     retry: false
   });
 

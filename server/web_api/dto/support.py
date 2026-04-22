@@ -32,11 +32,21 @@ class SupportQueueFilters(BaseModel):
     status_options: list[SupportFilterOption]
 
 
+class SupportCountItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+    label: str
+    count: int
+
+
 class SupportQueueSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     visible_count: int
     selected_ticket_id: str | None
+    scope_counts: list[SupportCountItem] = Field(default_factory=list)
+    status_counts: list[SupportCountItem] = Field(default_factory=list)
 
 
 class SupportQueueTicketItem(BaseModel):

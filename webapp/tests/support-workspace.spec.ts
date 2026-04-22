@@ -16,10 +16,10 @@ test("оператор открывает tickets workspace через новы�
   await expect(page.getByRole("link", { name: /Тикеты/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выйти" })).toBeVisible();
 
-  await page.getByText("TK-2024-0421").click();
+  await page.getByText("T-200001").click();
 
-  await expect(page).toHaveURL(/\/app\/tickets\/tk-2024-0421$/);
-  await expect(page.getByRole("heading", { name: "Тикет #TK-2024-0421" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
+  await expect(page.getByRole("heading", { name: "Тикет #T-200001" })).toBeVisible();
   await expect(page.getByText("Информация о тикете")).toBeVisible();
   await expect(page.getByRole("button", { name: "Отправить" })).toBeVisible();
 });

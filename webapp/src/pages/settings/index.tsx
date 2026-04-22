@@ -1,121 +1,1434 @@
-import { ImagePlus } from "lucide-react";
-import { useState } from "react";
+import { Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { startTransition, useEffect, useState } from "react";
 
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { PageHeading } from "../../components/ui/page-heading";
 import { Select } from "../../components/ui/select";
-import { settingsTabs } from "../../mocks/helpdesk-data";
+import { Tabs } from "../../components/ui/tabs";
+import {
+  createWebSettingsCalendar,
+  createWebSettingsQueue,
+  createWebSettingsResolutionCode,
+  createWebSettingsRoutingRule,
+  createWebSettingsSlaPolicy,
+  deleteWebSettingsQueueMember,
+  deleteWebSettingsResolutionCode,
+  fetchWebSettingsPayload,
+  saveWebSettingsOlaTargets,
+  saveWebSettingsPriorityMatrix,
+  saveWebSettingsSlaTargets,
+  setWebSettingsDefaultSlaPolicy,
+  updateWebSettingsCalendar,
+  updateWebSettingsQueue,
+  updateWebSettingsResolutionCode,
+  updateWebSettingsRoutingRule,
+  updateWebSettingsSlaPolicy,
+  upsertWebSettingsQueueMember,
+  type WebSettingsPayload,
+} from "../../features/settings/api";
+
+
+type SettingsTab = "overview" | "queues" | "routing" | "sla" | "calendars" | "resolution" | "audit";
+type QueueItem = WebSettingsPayload["queues"][number];
+type RoutingRuleItem = WebSettingsPayload["routing_rules"][number];
+type SlaPolicyItem = WebSettingsPayload["sla_policies"][number];
+type CalendarItem = WebSettingsPayload["calendars"][number];
+type ResolutionCodeItem = WebSettingsPayload["resolution_codes"][number];
+
+type ActionFeedback =
+  | {
+      tone: "error" | "success";
+      text: string;
+    }
+  | null;
+
+type QueueDraft = {
+  code: string;
+  name: string;
+  is_triage: boolean;
+  is_active: boolean;
+  auto_assign_enabled: boolean;
+};
+
+type RoutingDraft = {
+  enabled: boolean;
+  priority_order: number;
+  target_queue_id: number;
+  condition_json_text: string;
+};
+
+type PolicyDraft = {
+  name: string;
+  timezone: string;
+  calendar_id: string;
+  is_default: boolean;
+  is_active: boolean;
+  business_hours_json_text: string;
+};
+
+type CalendarDraft = {
+  code: string;
+  name: string;
+  timezone: string;
+  is_active: boolean;
+  weekly_hours_json_text: string;
+  holidays_json_text: string;
+};
+
+type ResolutionDraft = {
+  code: string;
+  name: string;
+  is_active: boolean;
+  sort_order: number;
+};
+
+type OlaDraftRow = {
+  priority: string;
+  ack_min: number;
+  processing_min: number;
+};
+
+type SlaTargetDraftRow = {
+  priority: string;
+  first_response_min: number;
+  resolution_min: number;
+};
+
+type PriorityMatrixDraftRow = {
+  impact: number;
+  urgency: number;
+  priority: string;
+};
+
+const TAB_ITEMS = [
+  { value: "overview", label: "Обзор" },
+  { value: "queues", label: "Очереди" },
+  { value: "routing", label: "Маршрутизация" },
+  { value: "sla", label: "SLA" },
+  { value: "calendars", label: "Календари" },
+  { value: "resolution", label: "Коды решения" },
+  { value: "audit", label: "Аудит" },
+] as const;
+
+const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
+const PRIORITY_OPTIONS = ["P1", "P2", "P3", "P4"] as const;
+const IMPACT_VALUES = [1, 2, 3] as const;
+
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return "Нет данных";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+
+function prettyJson(value: unknown): string {
+  if (!value) {
+    return "";
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+
+function parseJsonInput(text: string, fieldLabel: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    throw new Error(`${fieldLabel}: некорректный JSON.`);
+  }
+}
+
+
+function buildQueueDraft(queue: QueueItem | null): QueueDraft {
+  return {
+    code: queue?.code ?? "",
+    name: queue?.name ?? "",
+    is_triage: queue?.is_triage ?? false,
+    is_active: queue?.is_active ?? true,
+    auto_assign_enabled: queue?.auto_assign_enabled ?? true,
+  };
+}
+
+
+function buildRoutingDraft(rule: RoutingRuleItem | null, fallbackQueueId: number | null): RoutingDraft {
+  return {
+    enabled: rule?.enabled ?? true,
+    priority_order: rule?.priority_order ?? 100,
+    target_queue_id: rule?.target_queue_id ?? fallbackQueueId ?? 0,
+    condition_json_text: prettyJson(rule?.condition_json ?? { request_kind: "access" }),
+  };
+}
+
+
+function buildPolicyDraft(policy: SlaPolicyItem | null): PolicyDraft {
+  return {
+    name: policy?.name ?? "",
+    timezone: policy?.timezone ?? "UTC",
+    calendar_id: policy?.calendar_id ? String(policy.calendar_id) : "",
+    is_default: policy?.is_default ?? false,
+    is_active: policy?.is_active ?? true,
+    business_hours_json_text: prettyJson(policy?.business_hours_json),
+  };
+}
+
+
+function buildCalendarDraft(calendar: CalendarItem | null): CalendarDraft {
+  return {
+    code: calendar?.code ?? "",
+    name: calendar?.name ?? "",
+    timezone: calendar?.timezone ?? "UTC",
+    is_active: calendar?.is_active ?? true,
+    weekly_hours_json_text: prettyJson(calendar?.weekly_hours_json),
+    holidays_json_text: prettyJson(calendar?.holidays_json),
+  };
+}
+
+
+function buildResolutionDraft(code: ResolutionCodeItem | null): ResolutionDraft {
+  return {
+    code: code?.code ?? "",
+    name: code?.name ?? "",
+    is_active: code?.is_active ?? true,
+    sort_order: code?.sort_order ?? 0,
+  };
+}
+
+
+function buildOlaDraft(queue: QueueItem | null): OlaDraftRow[] {
+  return PRIORITIES.map((priority) => {
+    const existing = queue?.ola_targets.find((item) => item.priority === priority);
+    return {
+      priority,
+      ack_min: existing?.ack_min ?? 0,
+      processing_min: existing?.processing_min ?? 0,
+    };
+  });
+}
+
+
+function buildSlaTargetsDraft(policy: SlaPolicyItem | null): SlaTargetDraftRow[] {
+  return PRIORITIES.map((priority) => {
+    const existing = policy?.targets.find((item) => item.priority === priority);
+    return {
+      priority,
+      first_response_min: existing?.first_response_min ?? 0,
+      resolution_min: existing?.resolution_min ?? 0,
+    };
+  });
+}
+
+
+function buildPriorityMatrixDraft(policy: SlaPolicyItem | null): PriorityMatrixDraftRow[] {
+  return IMPACT_VALUES.flatMap((impact) =>
+    IMPACT_VALUES.map((urgency) => {
+      const existing = policy?.priority_matrix.find((item) => item.impact === impact && item.urgency === urgency);
+      return {
+        impact,
+        urgency,
+        priority: existing?.priority ?? "P3",
+      };
+    })
+  );
+}
+
+
+function SettingsField({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="space-y-2 text-sm font-medium text-slate-800">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState(settingsTabs[0]);
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("overview");
+  const [feedback, setFeedback] = useState<ActionFeedback>(null);
+
+  const settingsQuery = useQuery({
+    queryKey: ["web-settings"],
+    queryFn: fetchWebSettingsPayload,
+    retry: false,
+    refetchInterval: 60_000,
+  });
+
+  const payload = settingsQuery.data;
+  const canWrite = payload?.capabilities.can_write ?? false;
+
+  const [selectedQueueId, setSelectedQueueId] = useState<number | null>(null);
+  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<number | null>(null);
+  const [selectedCalendarId, setSelectedCalendarId] = useState<number | null>(null);
+  const [selectedResolutionCode, setSelectedResolutionCode] = useState<string | null>(null);
+
+  const selectedQueue = payload?.queues.find((item) => item.id === selectedQueueId) ?? payload?.queues[0] ?? null;
+  const selectedRule = payload?.routing_rules.find((item) => item.id === selectedRuleId) ?? payload?.routing_rules[0] ?? null;
+  const selectedPolicy = payload?.sla_policies.find((item) => item.id === selectedPolicyId) ?? payload?.sla_policies[0] ?? null;
+  const selectedCalendar = payload?.calendars.find((item) => item.id === selectedCalendarId) ?? payload?.calendars[0] ?? null;
+  const selectedResolution = payload?.resolution_codes.find((item) => item.code === selectedResolutionCode) ?? payload?.resolution_codes[0] ?? null;
+
+  const [queueDraft, setQueueDraft] = useState<QueueDraft>(buildQueueDraft(null));
+  const [routingDraft, setRoutingDraft] = useState<RoutingDraft>(buildRoutingDraft(null, null));
+  const [policyDraft, setPolicyDraft] = useState<PolicyDraft>(buildPolicyDraft(null));
+  const [calendarDraft, setCalendarDraft] = useState<CalendarDraft>(buildCalendarDraft(null));
+  const [resolutionDraft, setResolutionDraft] = useState<ResolutionDraft>(buildResolutionDraft(null));
+  const [olaDraft, setOlaDraft] = useState<OlaDraftRow[]>(buildOlaDraft(null));
+  const [slaTargetsDraft, setSlaTargetsDraft] = useState<SlaTargetDraftRow[]>(buildSlaTargetsDraft(null));
+  const [priorityMatrixDraft, setPriorityMatrixDraft] = useState<PriorityMatrixDraftRow[]>(buildPriorityMatrixDraft(null));
+  const [newMemberActorId, setNewMemberActorId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("");
+
+  useEffect(() => {
+    if (!payload?.queues.length) {
+      setSelectedQueueId(null);
+      return;
+    }
+    if (!selectedQueueId || !payload.queues.some((item) => item.id === selectedQueueId)) {
+      setSelectedQueueId(payload.queues[0].id);
+    }
+  }, [payload?.queues, selectedQueueId]);
+
+  useEffect(() => {
+    if (!payload?.routing_rules.length) {
+      setSelectedRuleId(null);
+      return;
+    }
+    if (!selectedRuleId || !payload.routing_rules.some((item) => item.id === selectedRuleId)) {
+      setSelectedRuleId(payload.routing_rules[0].id);
+    }
+  }, [payload?.routing_rules, selectedRuleId]);
+
+  useEffect(() => {
+    if (!payload?.sla_policies.length) {
+      setSelectedPolicyId(null);
+      return;
+    }
+    if (!selectedPolicyId || !payload.sla_policies.some((item) => item.id === selectedPolicyId)) {
+      setSelectedPolicyId(payload.sla_policies[0].id);
+    }
+  }, [payload?.sla_policies, selectedPolicyId]);
+
+  useEffect(() => {
+    if (!payload?.calendars.length) {
+      setSelectedCalendarId(null);
+      return;
+    }
+    if (!selectedCalendarId || !payload.calendars.some((item) => item.id === selectedCalendarId)) {
+      setSelectedCalendarId(payload.calendars[0].id);
+    }
+  }, [payload?.calendars, selectedCalendarId]);
+
+  useEffect(() => {
+    if (!payload?.resolution_codes.length) {
+      setSelectedResolutionCode(null);
+      return;
+    }
+    if (!selectedResolutionCode || !payload.resolution_codes.some((item) => item.code === selectedResolutionCode)) {
+      setSelectedResolutionCode(payload.resolution_codes[0].code);
+    }
+  }, [payload?.resolution_codes, selectedResolutionCode]);
+
+  useEffect(() => {
+    setQueueDraft(buildQueueDraft(selectedQueue));
+    setOlaDraft(buildOlaDraft(selectedQueue));
+  }, [selectedQueue]);
+
+  useEffect(() => {
+    setRoutingDraft(buildRoutingDraft(selectedRule, payload?.queues[0]?.id ?? null));
+  }, [payload?.queues, selectedRule]);
+
+  useEffect(() => {
+    setPolicyDraft(buildPolicyDraft(selectedPolicy));
+    setSlaTargetsDraft(buildSlaTargetsDraft(selectedPolicy));
+    setPriorityMatrixDraft(buildPriorityMatrixDraft(selectedPolicy));
+  }, [selectedPolicy]);
+
+  useEffect(() => {
+    setCalendarDraft(buildCalendarDraft(selectedCalendar));
+  }, [selectedCalendar]);
+
+  useEffect(() => {
+    setResolutionDraft(buildResolutionDraft(selectedResolution));
+  }, [selectedResolution]);
+
+  function reportError(error: unknown, fallback: string) {
+    setFeedback({
+      tone: "error",
+      text: error instanceof Error ? error.message : fallback,
+    });
+  }
+
+  function reportSuccess(text: string) {
+    setFeedback({
+      tone: "success",
+      text,
+    });
+  }
+
+  async function refreshSettings(text?: string) {
+    await queryClient.invalidateQueries({ queryKey: ["web-settings"] });
+    if (text) {
+      reportSuccess(text);
+    }
+  }
+
+  const queueMutation = useMutation({
+    mutationFn: async () => {
+      if (!queueDraft.code.trim() || !queueDraft.name.trim()) {
+        throw new Error("Для очереди нужны code и name.");
+      }
+      if (selectedQueue) {
+        await updateWebSettingsQueue(selectedQueue.id, queueDraft);
+        return { created: false, id: selectedQueue.id };
+      }
+      const result = await createWebSettingsQueue({
+        code: queueDraft.code.trim(),
+        name: queueDraft.name.trim(),
+        is_triage: queueDraft.is_triage,
+        auto_assign_enabled: queueDraft.auto_assign_enabled,
+      });
+      return { created: true, id: result.queue.id };
+    },
+    onSuccess: async (result) => {
+      if (result.created) {
+        setSelectedQueueId(result.id);
+      }
+      await refreshSettings("Настройки очереди сохранены.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить очередь."),
+  });
+
+  const memberMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedQueue) {
+        throw new Error("Сначала выберите очередь.");
+      }
+      if (!newMemberActorId.trim()) {
+        throw new Error("Укажите actor_id участника очереди.");
+      }
+      await upsertWebSettingsQueueMember(selectedQueue.id, newMemberActorId.trim(), {
+        role_in_queue: newMemberRole.trim() || null,
+      });
+    },
+    onSuccess: async () => {
+      setNewMemberActorId("");
+      setNewMemberRole("");
+      await refreshSettings("Участник очереди обновлён.");
+    },
+    onError: (error) => reportError(error, "Не удалось обновить участника очереди."),
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async (actorId: string) => {
+      if (!selectedQueue) {
+        throw new Error("Сначала выберите очередь.");
+      }
+      await deleteWebSettingsQueueMember(selectedQueue.id, actorId);
+    },
+    onSuccess: async () => {
+      await refreshSettings("Участник очереди удалён.");
+    },
+    onError: (error) => reportError(error, "Не удалось удалить участника очереди."),
+  });
+
+  const olaMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedQueue) {
+        throw new Error("Сначала выберите очередь.");
+      }
+      await saveWebSettingsOlaTargets(selectedQueue.id, olaDraft);
+    },
+    onSuccess: async () => {
+      await refreshSettings("OLA-цели сохранены.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить OLA-цели."),
+  });
+
+  const routingMutation = useMutation({
+    mutationFn: async () => {
+      if (!routingDraft.target_queue_id) {
+        throw new Error("Для правила нужно выбрать целевую очередь.");
+      }
+      const conditionJson = parseJsonInput(routingDraft.condition_json_text, "Условие маршрутизации");
+      const payloadToSave = {
+        enabled: routingDraft.enabled,
+        priority_order: Number(routingDraft.priority_order),
+        target_queue_id: Number(routingDraft.target_queue_id),
+        condition_json: conditionJson ?? {},
+      };
+      if (selectedRule) {
+        await updateWebSettingsRoutingRule(selectedRule.id, payloadToSave);
+        return { created: false, id: selectedRule.id };
+      }
+      const result = await createWebSettingsRoutingRule(payloadToSave);
+      return { created: true, id: result.routing_rule.id };
+    },
+    onSuccess: async (result) => {
+      if (result.created) {
+        setSelectedRuleId(result.id);
+      }
+      await refreshSettings("Правило маршрутизации сохранено.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить правило маршрутизации."),
+  });
+
+  const policyMutation = useMutation({
+    mutationFn: async () => {
+      if (!policyDraft.name.trim()) {
+        throw new Error("У SLA-политики должно быть имя.");
+      }
+      const businessHoursJson = parseJsonInput(policyDraft.business_hours_json_text, "Business hours");
+      const payloadToSave = {
+        name: policyDraft.name.trim(),
+        timezone: policyDraft.timezone.trim() || "UTC",
+        business_hours_json: businessHoursJson,
+        calendar_id: policyDraft.calendar_id ? Number(policyDraft.calendar_id) : null,
+        is_default: policyDraft.is_default,
+        ...(selectedPolicy ? { is_active: policyDraft.is_active } : {}),
+      };
+      if (selectedPolicy) {
+        await updateWebSettingsSlaPolicy(selectedPolicy.id, payloadToSave);
+        if (policyDraft.is_default && !selectedPolicy.is_default) {
+          await setWebSettingsDefaultSlaPolicy(selectedPolicy.id);
+        }
+        return { created: false, id: selectedPolicy.id };
+      }
+      const result = await createWebSettingsSlaPolicy(payloadToSave);
+      return { created: true, id: result.sla_policy.id };
+    },
+    onSuccess: async (result) => {
+      if (result.created) {
+        setSelectedPolicyId(result.id);
+      }
+      await refreshSettings("SLA-политика сохранена.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить SLA-политику."),
+  });
+
+  const slaTargetsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPolicy) {
+        throw new Error("Сначала выберите SLA-политику.");
+      }
+      await saveWebSettingsSlaTargets(selectedPolicy.id, slaTargetsDraft);
+    },
+    onSuccess: async () => {
+      await refreshSettings("SLA-цели сохранены.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить SLA-цели."),
+  });
+
+  const priorityMatrixMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPolicy) {
+        throw new Error("Сначала выберите SLA-политику.");
+      }
+      await saveWebSettingsPriorityMatrix(selectedPolicy.id, priorityMatrixDraft);
+    },
+    onSuccess: async () => {
+      await refreshSettings("Матрица приоритетов сохранена.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить матрицу приоритетов."),
+  });
+
+  const calendarMutation = useMutation({
+    mutationFn: async () => {
+      if (!calendarDraft.code.trim() || !calendarDraft.name.trim()) {
+        throw new Error("Для календаря нужны code и name.");
+      }
+      const weeklyHoursJson = parseJsonInput(calendarDraft.weekly_hours_json_text, "Weekly hours");
+      const holidaysJson = parseJsonInput(calendarDraft.holidays_json_text, "Holidays");
+      const payloadToSave = {
+        code: calendarDraft.code.trim(),
+        name: calendarDraft.name.trim(),
+        timezone: calendarDraft.timezone.trim() || "UTC",
+        weekly_hours_json: weeklyHoursJson,
+        holidays_json: holidaysJson,
+        ...(selectedCalendar ? { is_active: calendarDraft.is_active } : {}),
+      };
+      if (selectedCalendar) {
+        await updateWebSettingsCalendar(selectedCalendar.id, payloadToSave);
+        return { created: false, id: selectedCalendar.id };
+      }
+      const result = await createWebSettingsCalendar(payloadToSave);
+      return { created: true, id: result.calendar.id };
+    },
+    onSuccess: async (result) => {
+      if (result.created) {
+        setSelectedCalendarId(result.id);
+      }
+      await refreshSettings("Календарь сохранён.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить календарь."),
+  });
+
+  const resolutionMutation = useMutation({
+    mutationFn: async () => {
+      if (!resolutionDraft.code.trim() || !resolutionDraft.name.trim()) {
+        throw new Error("Для кода решения нужны code и name.");
+      }
+      const payloadToSave = {
+        name: resolutionDraft.name.trim(),
+        is_active: resolutionDraft.is_active,
+        sort_order: Number(resolutionDraft.sort_order),
+      };
+      if (selectedResolution) {
+        await updateWebSettingsResolutionCode(selectedResolution.code, payloadToSave);
+        return { created: false, code: selectedResolution.code };
+      }
+      const result = await createWebSettingsResolutionCode({
+        code: resolutionDraft.code.trim(),
+        ...payloadToSave,
+      });
+      return { created: true, code: result.resolution_code.code };
+    },
+    onSuccess: async (result) => {
+      if (result.created) {
+        setSelectedResolutionCode(result.code);
+      }
+      await refreshSettings("Код решения сохранён.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить код решения."),
+  });
+
+  const deleteResolutionMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedResolution) {
+        throw new Error("Сначала выберите код решения.");
+      }
+      await deleteWebSettingsResolutionCode(selectedResolution.code);
+    },
+    onSuccess: async () => {
+      await refreshSettings("Код решения удалён.");
+    },
+    onError: (error) => reportError(error, "Не удалось удалить код решения."),
+  });
 
   return (
     <section className="space-y-6">
       <PageHeading
-        description="Страница настроек перенесена в тот же визуальный язык: спокойные формы, плотные поля и чистая иерархия без тяжелых карточных сеток."
+        actions={
+          <Button
+            leadingIcon={<RefreshCcw className="h-4 w-4" />}
+            onClick={() => void settingsQuery.refetch()}
+            size="sm"
+            variant="outline"
+          >
+            Обновить
+          </Button>
+        }
+        description="Живые настройки ticket-системы поверх старого admin-config контура: очереди, маршрутизация, SLA, календари, OLA, коды решения и аудит."
         eyebrow="Configuration"
         title="Настройки"
       />
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-2 border-b border-border pb-4">
-            {settingsTabs.map((tab) => (
-              <button
-                key={tab}
-                className={`rounded-pill px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === tab
-                    ? "bg-brand-50 text-brand-800"
-                    : "text-slate-500 hover:bg-surface-subtle hover:text-slate-900"
-                }`}
-                onClick={() => setActiveTab(tab)}
-                type="button"
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+      {feedback ? (
+        <div
+          className={`rounded-[1.1rem] px-4 py-3 text-sm ${
+            feedback.tone === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+          }`}
+        >
+          {feedback.text}
+        </div>
+      ) : null}
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_320px]">
-            <Card className="border-dashed shadow-none">
-              <CardHeader>
-                <CardTitle>Общие настройки</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <label className="space-y-2 text-sm font-medium text-slate-800">
-                  <span>Название компании</span>
-                  <Input defaultValue="Сосновский округ" />
-                </label>
-                <label className="space-y-2 text-sm font-medium text-slate-800">
-                  <span>Часовой пояс</span>
-                  <Select defaultValue="UTC+5 Екатеринбург">
-                    <option>UTC+5 Екатеринбург</option>
-                    <option>UTC+3 Москва</option>
-                  </Select>
-                </label>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-2 text-sm font-medium text-slate-800">
-                    <span>Язык интерфейса</span>
-                    <Select defaultValue="Русский">
-                      <option>Русский</option>
-                      <option>English</option>
-                    </Select>
-                  </label>
-                  <label className="space-y-2 text-sm font-medium text-slate-800">
-                    <span>Формат даты</span>
-                    <Select defaultValue="DD.MM.YYYY">
-                      <option>DD.MM.YYYY</option>
-                      <option>YYYY-MM-DD</option>
-                    </Select>
-                  </label>
-                </div>
-                <label className="space-y-2 text-sm font-medium text-slate-800">
-                  <span>Первый день недели</span>
-                  <Select defaultValue="Понедельник">
-                    <option>Понедельник</option>
-                    <option>Воскресенье</option>
-                  </Select>
-                </label>
-                <label className="space-y-2 text-sm font-medium text-slate-800">
-                  <span>Логотип</span>
-                  <div className="flex items-center gap-4 rounded-[1.1rem] border border-border bg-white px-4 py-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-700 text-xl font-black tracking-[0.18em] text-white">
-                      PC
+      {settingsQuery.isLoading ? <p className="text-sm text-slate-500">Собираем реальные настройки ticket-системы…</p> : null}
+      {settingsQuery.isError ? (
+        <p className="text-sm text-rose-600">
+          {settingsQuery.error instanceof Error ? settingsQuery.error.message : "Не удалось загрузить настройки."}
+        </p>
+      ) : null}
+
+      <Tabs
+        items={TAB_ITEMS.map((item) => ({
+          value: item.value,
+          label: item.label,
+        }))}
+        onValueChange={(value) => setActiveTab(value as SettingsTab)}
+        value={activeTab}
+      />
+
+      {payload ? (
+        <>
+          {activeTab === "overview" ? (
+            <div className="space-y-6">
+              <div className="grid gap-4 xl:grid-cols-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-slate-500">Очереди</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">{payload.overview.queues_count}</p>
+                    <p className="mt-2 text-sm text-slate-500">Активных: {payload.overview.active_queues_count}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-slate-500">Маршрутизация</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">{payload.overview.routing_rules_count}</p>
+                    <p className="mt-2 text-sm text-slate-500">Активных правил: {payload.overview.active_routing_rules_count}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-slate-500">SLA и календари</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">{payload.overview.sla_policies_count}</p>
+                    <p className="mt-2 text-sm text-slate-500">Календарей: {payload.overview.calendars_count}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-slate-500">Коды и аудит</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">{payload.overview.resolution_codes_count}</p>
+                    <p className="mt-2 text-sm text-slate-500">Аудит-записей: {payload.overview.audit_records_count}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Текущий operational snapshot</CardTitle>
+                    <CardDescription>Быстрая сводка по живым настройкам без возврата в старую admin-страницу.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    {payload.queues.slice(0, 4).map((queue) => (
+                      <div key={queue.id} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-950">{queue.name}</p>
+                          <Badge tone={queue.is_active ? "success" : "neutral"}>{queue.code}</Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Открыто тикетов: {queue.open_tickets_count} • участников: {queue.members.length}
+                        </p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Права на запись</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <p className="text-sm text-slate-500">Роль текущего сеанса</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-950">{payload.capabilities.actor_role}</p>
                     </div>
-                    <Button leadingIcon={<ImagePlus className="h-4 w-4" />} size="sm" variant="outline">
-                      Изменить
+                    <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <p className="text-sm text-slate-500">Доступ на изменение</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-950">
+                        {payload.capabilities.can_write ? "Разрешён" : "Только чтение"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === "queues" ? (
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>Очереди</CardTitle>
+                  <CardDescription>Выбор очереди, участники и OLA-цели.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button
+                    disabled={!canWrite}
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedQueueId(null);
+                      setQueueDraft(buildQueueDraft(null));
+                      setOlaDraft(buildOlaDraft(null));
+                    }}
+                    variant="secondary"
+                  >
+                    Новая очередь
+                  </Button>
+                  {payload.queues.map((queue) => (
+                    <button
+                      key={queue.id}
+                      className={`w-full rounded-[1.1rem] px-4 py-4 text-left ${
+                        selectedQueue?.id === queue.id ? "bg-brand-50 text-brand-800" : "bg-surface-subtle text-slate-700"
+                      }`}
+                      onClick={() => setSelectedQueueId(queue.id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{queue.name}</p>
+                        <Badge tone={queue.is_active ? "success" : "neutral"}>{queue.code}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-current/70">
+                        Открыто: {queue.open_tickets_count} • участников: {queue.members.length}
+                      </p>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{selectedQueue ? "Настройки очереди" : "Новая очередь"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <SettingsField label="Code">
+                        <Input
+                          onChange={(event) => setQueueDraft((current) => ({ ...current, code: event.target.value }))}
+                          value={queueDraft.code}
+                        />
+                      </SettingsField>
+                      <SettingsField label="Name">
+                        <Input
+                          onChange={(event) => setQueueDraft((current) => ({ ...current, name: event.target.value }))}
+                          value={queueDraft.name}
+                        />
+                      </SettingsField>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                        <input
+                          checked={queueDraft.is_triage}
+                          onChange={(event) => setQueueDraft((current) => ({ ...current, is_triage: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        <span>Triage queue</span>
+                      </label>
+                      <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                        <input
+                          checked={queueDraft.is_active}
+                          onChange={(event) => setQueueDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        <span>Активна</span>
+                      </label>
+                      <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                        <input
+                          checked={queueDraft.auto_assign_enabled}
+                          onChange={(event) =>
+                            setQueueDraft((current) => ({ ...current, auto_assign_enabled: event.target.checked }))
+                          }
+                          type="checkbox"
+                        />
+                        <span>Auto-assign</span>
+                      </label>
+                    </div>
+                    <Button disabled={!canWrite || queueMutation.isPending} onClick={() => queueMutation.mutate()} className="w-full">
+                      {queueMutation.isPending ? "Сохраняем…" : "Сохранить очередь"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Участники очереди</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {selectedQueue?.members.length ? (
+                        selectedQueue.members.map((member) => (
+                          <div key={member.actor_id} className="flex items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                            <div>
+                              <p className="font-medium text-slate-900">{member.actor_id}</p>
+                              <p className="text-slate-500">{member.role_in_queue ?? "role_in_queue не задан"}</p>
+                            </div>
+                            <Button
+                              disabled={!canWrite || removeMemberMutation.isPending}
+                              onClick={() => removeMemberMutation.mutate(member.actor_id)}
+                              size="sm"
+                              variant="ghost"
+                            >
+                              Удалить
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500">У выбранной очереди участников пока нет.</p>
+                      )}
+
+                      <div className="grid gap-3">
+                        <Input
+                          onChange={(event) => setNewMemberActorId(event.target.value)}
+                          placeholder="actor_id"
+                          value={newMemberActorId}
+                        />
+                        <Input
+                          onChange={(event) => setNewMemberRole(event.target.value)}
+                          placeholder="role_in_queue"
+                          value={newMemberRole}
+                        />
+                        <Button disabled={!canWrite || memberMutation.isPending} onClick={() => memberMutation.mutate()}>
+                          Добавить / обновить участника
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>OLA-цели</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {olaDraft.map((row) => (
+                        <div key={row.priority} className="grid gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 md:grid-cols-3">
+                          <div className="font-semibold text-slate-950">{row.priority}</div>
+                          <Input
+                            min={0}
+                            onChange={(event) =>
+                              setOlaDraft((current) =>
+                                current.map((item) =>
+                                  item.priority === row.priority ? { ...item, ack_min: Number(event.target.value) } : item
+                                )
+                              )
+                            }
+                            type="number"
+                            value={String(row.ack_min)}
+                          />
+                          <Input
+                            min={0}
+                            onChange={(event) =>
+                              setOlaDraft((current) =>
+                                current.map((item) =>
+                                  item.priority === row.priority ? { ...item, processing_min: Number(event.target.value) } : item
+                                )
+                              )
+                            }
+                            type="number"
+                            value={String(row.processing_min)}
+                          />
+                        </div>
+                      ))}
+                      <Button disabled={!canWrite || olaMutation.isPending || !selectedQueue} onClick={() => olaMutation.mutate()} className="w-full">
+                        Сохранить OLA
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === "routing" ? (
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>Правила маршрутизации</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button
+                    disabled={!canWrite}
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedRuleId(null);
+                      setRoutingDraft(buildRoutingDraft(null, payload.queues[0]?.id ?? null));
+                    }}
+                    variant="secondary"
+                  >
+                    Новое правило
+                  </Button>
+                  {payload.routing_rules.map((rule) => (
+                    <button
+                      key={rule.id}
+                      className={`w-full rounded-[1.1rem] px-4 py-4 text-left ${
+                        selectedRule?.id === rule.id ? "bg-brand-50 text-brand-800" : "bg-surface-subtle text-slate-700"
+                      }`}
+                      onClick={() => setSelectedRuleId(rule.id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">Rule #{rule.id}</p>
+                        <Badge tone={rule.enabled ? "success" : "neutral"}>{rule.target_queue_name ?? rule.target_queue_id}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-current/70">Priority: {rule.priority_order}</p>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{selectedRule ? `Rule #${selectedRule.id}` : "Новое правило"}</CardTitle>
+                  <CardDescription>Функционально повторяем старый routing builder, но редактируем JSON-condition прямо в новом интерфейсе.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <SettingsField label="Priority order">
+                      <Input
+                        onChange={(event) => setRoutingDraft((current) => ({ ...current, priority_order: Number(event.target.value) }))}
+                        type="number"
+                        value={String(routingDraft.priority_order)}
+                      />
+                    </SettingsField>
+                    <SettingsField label="Target queue">
+                      <Select
+                        onChange={(event) => setRoutingDraft((current) => ({ ...current, target_queue_id: Number(event.target.value) }))}
+                        value={String(routingDraft.target_queue_id)}
+                      >
+                        {payload.queues.map((queue) => (
+                          <option key={queue.id} value={queue.id}>
+                            {queue.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </SettingsField>
+                    <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                      <input
+                        checked={routingDraft.enabled}
+                        onChange={(event) => setRoutingDraft((current) => ({ ...current, enabled: event.target.checked }))}
+                        type="checkbox"
+                      />
+                      <span>Правило активно</span>
+                    </label>
+                  </div>
+
+                  <SettingsField label="Condition JSON">
+                    <textarea
+                      className="field-base min-h-[220px] w-full resize-y px-4 py-4 text-sm"
+                      onChange={(event) => setRoutingDraft((current) => ({ ...current, condition_json_text: event.target.value }))}
+                      value={routingDraft.condition_json_text}
+                    />
+                  </SettingsField>
+
+                  <Button disabled={!canWrite || routingMutation.isPending} onClick={() => routingMutation.mutate()} className="w-full">
+                    {routingMutation.isPending ? "Сохраняем…" : "Сохранить правило"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          {activeTab === "sla" ? (
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>SLA-политики</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button
+                    disabled={!canWrite}
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedPolicyId(null);
+                      setPolicyDraft(buildPolicyDraft(null));
+                      setSlaTargetsDraft(buildSlaTargetsDraft(null));
+                      setPriorityMatrixDraft(buildPriorityMatrixDraft(null));
+                    }}
+                    variant="secondary"
+                  >
+                    Новая политика
+                  </Button>
+                  {payload.sla_policies.map((policy) => (
+                    <button
+                      key={policy.id}
+                      className={`w-full rounded-[1.1rem] px-4 py-4 text-left ${
+                        selectedPolicy?.id === policy.id ? "bg-brand-50 text-brand-800" : "bg-surface-subtle text-slate-700"
+                      }`}
+                      onClick={() => setSelectedPolicyId(policy.id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{policy.name}</p>
+                        {policy.is_default ? <Badge tone="success">Default</Badge> : null}
+                      </div>
+                      <p className="mt-2 text-xs text-current/70">
+                        {policy.timezone} • открытых тикетов: {policy.open_tickets_count}
+                      </p>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{selectedPolicy ? selectedPolicy.name : "Новая SLA-политика"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <SettingsField label="Название">
+                        <Input
+                          onChange={(event) => setPolicyDraft((current) => ({ ...current, name: event.target.value }))}
+                          value={policyDraft.name}
+                        />
+                      </SettingsField>
+                      <SettingsField label="Timezone">
+                        <Input
+                          onChange={(event) => setPolicyDraft((current) => ({ ...current, timezone: event.target.value }))}
+                          value={policyDraft.timezone}
+                        />
+                      </SettingsField>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <SettingsField label="Календарь">
+                        <Select
+                          onChange={(event) => setPolicyDraft((current) => ({ ...current, calendar_id: event.target.value }))}
+                          value={policyDraft.calendar_id}
+                        >
+                          <option value="">Без календаря</option>
+                          {payload.calendars.map((calendar) => (
+                            <option key={calendar.id} value={calendar.id}>
+                              {calendar.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </SettingsField>
+                      <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                        <input
+                          checked={policyDraft.is_default}
+                          onChange={(event) => setPolicyDraft((current) => ({ ...current, is_default: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        <span>Политика по умолчанию</span>
+                      </label>
+                      <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                        <input
+                          checked={policyDraft.is_active}
+                          onChange={(event) => setPolicyDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        <span>Политика активна</span>
+                      </label>
+                    </div>
+                    <SettingsField label="Business hours JSON">
+                      <textarea
+                        className="field-base min-h-[160px] w-full resize-y px-4 py-4 text-sm"
+                        onChange={(event) => setPolicyDraft((current) => ({ ...current, business_hours_json_text: event.target.value }))}
+                        value={policyDraft.business_hours_json_text}
+                      />
+                    </SettingsField>
+                    <Button disabled={!canWrite || policyMutation.isPending} onClick={() => policyMutation.mutate()} className="w-full">
+                      Сохранить SLA-политику
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>SLA targets</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {slaTargetsDraft.map((row) => (
+                        <div key={row.priority} className="grid gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 md:grid-cols-3">
+                          <div className="font-semibold text-slate-950">{row.priority}</div>
+                          <Input
+                            min={0}
+                            onChange={(event) =>
+                              setSlaTargetsDraft((current) =>
+                                current.map((item) =>
+                                  item.priority === row.priority
+                                    ? { ...item, first_response_min: Number(event.target.value) }
+                                    : item
+                                )
+                              )
+                            }
+                            type="number"
+                            value={String(row.first_response_min)}
+                          />
+                          <Input
+                            min={0}
+                            onChange={(event) =>
+                              setSlaTargetsDraft((current) =>
+                                current.map((item) =>
+                                  item.priority === row.priority
+                                    ? { ...item, resolution_min: Number(event.target.value) }
+                                    : item
+                                )
+                              )
+                            }
+                            type="number"
+                            value={String(row.resolution_min)}
+                          />
+                        </div>
+                      ))}
+                      <Button disabled={!canWrite || slaTargetsMutation.isPending || !selectedPolicy} onClick={() => slaTargetsMutation.mutate()} className="w-full">
+                        Сохранить SLA targets
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Матрица impact × urgency</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {priorityMatrixDraft.map((row) => (
+                        <div key={`${row.impact}:${row.urgency}`} className="grid gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 md:grid-cols-[1fr_1fr_1fr]">
+                          <div className="text-sm font-medium text-slate-900">
+                            Impact {row.impact} / Urgency {row.urgency}
+                          </div>
+                          <Select
+                            onChange={(event) =>
+                              setPriorityMatrixDraft((current) =>
+                                current.map((item) =>
+                                  item.impact === row.impact && item.urgency === row.urgency
+                                    ? { ...item, priority: event.target.value }
+                                    : item
+                                )
+                              )
+                            }
+                            value={row.priority}
+                          >
+                            {PRIORITY_OPTIONS.map((priority) => (
+                              <option key={priority} value={priority}>
+                                {priority}
+                              </option>
+                            ))}
+                          </Select>
+                          <span className="text-sm text-slate-500">Приоритет для этого сочетания</span>
+                        </div>
+                      ))}
+                      <Button disabled={!canWrite || priorityMatrixMutation.isPending || !selectedPolicy} onClick={() => priorityMatrixMutation.mutate()} className="w-full">
+                        Сохранить матрицу
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === "calendars" ? (
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>Календари</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button
+                    disabled={!canWrite}
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedCalendarId(null);
+                      setCalendarDraft(buildCalendarDraft(null));
+                    }}
+                    variant="secondary"
+                  >
+                    Новый календарь
+                  </Button>
+                  {payload.calendars.map((calendar) => (
+                    <button
+                      key={calendar.id}
+                      className={`w-full rounded-[1.1rem] px-4 py-4 text-left ${
+                        selectedCalendar?.id === calendar.id ? "bg-brand-50 text-brand-800" : "bg-surface-subtle text-slate-700"
+                      }`}
+                      onClick={() => setSelectedCalendarId(calendar.id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{calendar.name}</p>
+                        <Badge tone={calendar.is_active ? "success" : "neutral"}>{calendar.code}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-current/70">Обновлён: {formatDateTime(calendar.updated_at)}</p>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{selectedCalendar ? selectedCalendar.name : "Новый календарь"}</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SettingsField label="Code">
+                      <Input
+                        onChange={(event) => setCalendarDraft((current) => ({ ...current, code: event.target.value }))}
+                        value={calendarDraft.code}
+                      />
+                    </SettingsField>
+                    <SettingsField label="Name">
+                      <Input
+                        onChange={(event) => setCalendarDraft((current) => ({ ...current, name: event.target.value }))}
+                        value={calendarDraft.name}
+                      />
+                    </SettingsField>
+                  </div>
+                  <SettingsField label="Timezone">
+                    <Input
+                      onChange={(event) => setCalendarDraft((current) => ({ ...current, timezone: event.target.value }))}
+                      value={calendarDraft.timezone}
+                    />
+                  </SettingsField>
+                  <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                    <input
+                      checked={calendarDraft.is_active}
+                      onChange={(event) => setCalendarDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                      type="checkbox"
+                    />
+                    <span>Календарь активен</span>
+                  </label>
+                  <SettingsField label="Weekly hours JSON">
+                    <textarea
+                      className="field-base min-h-[160px] w-full resize-y px-4 py-4 text-sm"
+                      onChange={(event) => setCalendarDraft((current) => ({ ...current, weekly_hours_json_text: event.target.value }))}
+                      value={calendarDraft.weekly_hours_json_text}
+                    />
+                  </SettingsField>
+                  <SettingsField label="Holidays JSON">
+                    <textarea
+                      className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                      onChange={(event) => setCalendarDraft((current) => ({ ...current, holidays_json_text: event.target.value }))}
+                      value={calendarDraft.holidays_json_text}
+                    />
+                  </SettingsField>
+                  <Button disabled={!canWrite || calendarMutation.isPending} onClick={() => calendarMutation.mutate()} className="w-full">
+                    Сохранить календарь
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          {activeTab === "resolution" ? (
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>Коды решения</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button
+                    disabled={!canWrite}
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedResolutionCode(null);
+                      setResolutionDraft(buildResolutionDraft(null));
+                    }}
+                    variant="secondary"
+                  >
+                    Новый код
+                  </Button>
+                  {payload.resolution_codes.map((item) => (
+                    <button
+                      key={item.code}
+                      className={`w-full rounded-[1.1rem] px-4 py-4 text-left ${
+                        selectedResolution?.code === item.code ? "bg-brand-50 text-brand-800" : "bg-surface-subtle text-slate-700"
+                      }`}
+                      onClick={() => setSelectedResolutionCode(item.code)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{item.name}</p>
+                        <Badge tone={item.is_active ? "success" : "neutral"}>{item.code}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-current/70">Использований: {item.usage_count}</p>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{selectedResolution ? selectedResolution.name : "Новый код решения"}</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SettingsField label="Code">
+                      <Input
+                        disabled={Boolean(selectedResolution)}
+                        onChange={(event) => setResolutionDraft((current) => ({ ...current, code: event.target.value }))}
+                        value={resolutionDraft.code}
+                      />
+                    </SettingsField>
+                    <SettingsField label="Name">
+                      <Input
+                        onChange={(event) => setResolutionDraft((current) => ({ ...current, name: event.target.value }))}
+                        value={resolutionDraft.name}
+                      />
+                    </SettingsField>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SettingsField label="Sort order">
+                      <Input
+                        onChange={(event) => setResolutionDraft((current) => ({ ...current, sort_order: Number(event.target.value) }))}
+                        type="number"
+                        value={String(resolutionDraft.sort_order)}
+                      />
+                    </SettingsField>
+                    <label className="flex items-center gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
+                      <input
+                        checked={resolutionDraft.is_active}
+                        onChange={(event) => setResolutionDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                        type="checkbox"
+                      />
+                      <span>Код активен</span>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button disabled={!canWrite || resolutionMutation.isPending} onClick={() => resolutionMutation.mutate()}>
+                      Сохранить код
+                    </Button>
+                    <Button
+                      disabled={!canWrite || deleteResolutionMutation.isPending || !selectedResolution || selectedResolution.usage_count > 0}
+                      leadingIcon={<Trash2 className="h-4 w-4" />}
+                      onClick={() => deleteResolutionMutation.mutate()}
+                      variant="outline"
+                    >
+                      Удалить код
                     </Button>
                   </div>
-                </label>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
 
+          {activeTab === "audit" ? (
             <Card>
               <CardHeader>
-                <CardTitle>Цветовая тема</CardTitle>
+                <CardTitle>Журнал аудита</CardTitle>
+                <CardDescription>Последние real-data изменения admin-config в новом интерфейсе.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: "Основной цвет", value: "#1E5C66", swatch: "bg-[#1E5C66]" },
-                  { label: "Вторичный цвет", value: "#0A7C5E", swatch: "bg-[#0A7C5E]" },
-                  { label: "Акцентный цвет", value: "#F2C94C", swatch: "bg-[#F2C94C]" }
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4">
-                    <div>
-                      <p className="text-sm text-slate-500">{item.label}</p>
-                      <p className="mt-1 font-semibold text-slate-900">{item.value}</p>
+              <CardContent className="space-y-3">
+                {payload.audit.length ? (
+                  payload.audit.map((item) => (
+                    <div key={item.id} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">
+                            {item.entity_type} / {item.entity_id}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {item.action} • {item.actor_id} ({item.actor_role})
+                          </p>
+                        </div>
+                        <Badge tone="info">{formatDateTime(item.created_at)}</Badge>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-400">{item.trace_id ?? "trace_id не передан"}</p>
                     </div>
-                    <span className={`h-10 w-10 rounded-2xl ${item.swatch}`} />
-                  </div>
-                ))}
-                <Button className="w-full">Сохранить изменения</Button>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500">Записей аудита пока нет.</p>
+                )}
               </CardContent>
             </Card>
-          </div>
-        </CardContent>
-      </Card>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }

@@ -37,6 +37,7 @@ from tools.service import ToolExecutionService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
     SupportBootstrapPayload,
+    SupportCountItem,
     SupportFilterOption,
     SupportMessageActionResult,
     SupportObserverCapabilities,
@@ -108,6 +109,11 @@ def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str) ->
         summary=SupportQueueSummary(
             visible_count=0,
             selected_ticket_id=None,
+            scope_counts=[
+                SupportCountItem(value="all", label="Все доступные", count=0),
+                SupportCountItem(value="mine", label="Только мои", count=0),
+            ],
+            status_counts=[SupportCountItem(value="all", label="Все статусы", count=0)],
         ),
         filters=SupportQueueFilters(
             scope_options=SCOPE_OPTIONS,
@@ -154,6 +160,40 @@ def _matches_ticket_query(ticket: SupportQueueTicketItem, query: str) -> bool:
         ticket.device_id,
     )
     return any(normalized in str(value or "").lower() for value in haystack)
+
+
+def _build_scope_counts(items: list[SupportQueueTicketItem], actor_id: str) -> list[SupportCountItem]:
+    mine_count = sum(1 for item in items if str(item.assignee_id or "").strip() == actor_id)
+    return [
+        SupportCountItem(value="all", label="Все доступные", count=len(items)),
+        SupportCountItem(value="mine", label="Только мои", count=mine_count),
+    ]
+
+
+def _build_status_counts(items: list[SupportQueueTicketItem]) -> list[SupportCountItem]:
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item.status] = counts.get(item.status, 0) + 1
+
+    result = [SupportCountItem(value="all", label="Все статусы", count=len(items))]
+    for status in CANONICAL_STATUSES:
+        if status in counts:
+            result.append(
+                SupportCountItem(
+                    value=status,
+                    label=status_label_ru(status),
+                    count=counts[status],
+                )
+            )
+    for status in sorted(status for status in counts if status not in CANONICAL_STATUSES):
+        result.append(
+            SupportCountItem(
+                value=status,
+                label=status_label_ru(status),
+                count=counts[status],
+            )
+        )
+    return result
 
 
 def _build_support_status_actions(ticket_status: str | None, *, is_staff: bool) -> SupportTicketActions:
@@ -554,15 +594,7 @@ async def handle_web_support_queue(request: web.Request):
 
     filters: dict[str, object] = {"exclude_archived": True}
     if auth_context.actor_role == "support":
-        if scope == "mine":
-            filters["assignee_id"] = auth_context.actor_id
-        else:
-            filters["support_actor_id"] = auth_context.actor_id
-    elif scope == "mine":
-        filters["assignee_id"] = auth_context.actor_id
-
-    if status_filter != "all":
-        filters["status"] = status_filter
+        filters["support_actor_id"] = auth_context.actor_id
 
     try:
         async with get_session() as session:
@@ -582,16 +614,31 @@ async def handle_web_support_queue(request: web.Request):
                 [getattr(ticket, "ticket_id", None) for ticket in tickets],
             )
 
-            typed_items: list[SupportQueueTicketItem] = []
-            status_values: set[str] = set()
+            accessible_items: list[SupportQueueTicketItem] = []
             for ticket in tickets:
                 ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
                 ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
-                if ticket_data.get("status"):
-                    status_values.add(str(ticket_data["status"]))
-                typed_item = _build_ticket_item(ticket_data)
-                if _matches_ticket_query(typed_item, query):
-                    typed_items.append(typed_item)
+                accessible_items.append(_build_ticket_item(ticket_data))
+
+        scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
+        status_counts = _build_status_counts(accessible_items)
+        status_values = {item.status for item in accessible_items if item.status}
+
+        scoped_items = (
+            [
+                item
+                for item in accessible_items
+                if str(item.assignee_id or "").strip() == auth_context.actor_id
+            ]
+            if scope == "mine"
+            else accessible_items
+        )
+        status_filtered_items = (
+            [item for item in scoped_items if item.status == status_filter]
+            if status_filter != "all"
+            else scoped_items
+        )
+        typed_items = [item for item in status_filtered_items if _matches_ticket_query(item, query)]
 
         payload = SupportQueuePayload(
             scope=scope,
@@ -600,6 +647,8 @@ async def handle_web_support_queue(request: web.Request):
             summary=SupportQueueSummary(
                 visible_count=len(typed_items),
                 selected_ticket_id=typed_items[0].ticket_id if typed_items else None,
+                scope_counts=scope_counts,
+                status_counts=status_counts,
             ),
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,

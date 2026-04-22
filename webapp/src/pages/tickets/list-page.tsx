@@ -1,4 +1,5 @@
-import { Funnel, Plus, Rows3, SlidersHorizontal } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCcw } from "lucide-react";
 import { startTransition, useDeferredValue, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -7,223 +8,262 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
-import { Select } from "../../components/ui/select";
 import { StatTile } from "../../components/ui/stat-tile";
-import {
-  getTicketQueueCounts,
-  ticketPriorityMeta,
-  ticketStatusMeta,
-  tickets,
-  type TicketStatus
-} from "../../mocks/helpdesk-data";
+import { fetchSupportQueue, type SupportCountItem, type SupportQueueScope } from "../../features/queues/api";
 
-type QueueFilter = "all" | "mine" | TicketStatus;
+const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 
-const queueFilterOptions: Array<{ description: string; key: QueueFilter; label: string }> = [
-  { key: "all", label: "Все тикеты", description: "Полный рабочий список" },
-  { key: "mine", label: "Мои тикеты", description: "Личный рабочий поток" },
-  { key: "new", label: "Новые", description: "Нужны первые ответы" },
-  { key: "in_progress", label: "В работе", description: "Активные обработки" },
-  { key: "waiting_on_user", label: "Ожидают ответа", description: "Ждем пользователя" },
-  { key: "resolved", label: "Решенные", description: "Закрытые за текущую смену" }
-];
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "Нет данных";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function getCount(items: SupportCountItem[] | undefined, value: string) {
+  return items?.find((item) => item.value === value)?.count ?? 0;
+}
+
+function getStatusTone(status: string) {
+  switch (status) {
+    case "in_progress":
+      return "success" as const;
+    case "waiting_on_user":
+      return "warning" as const;
+    case "resolved":
+    case "closed":
+      return "info" as const;
+    case "new":
+      return "brand" as const;
+    default:
+      return "neutral" as const;
+  }
+}
 
 export function TicketListPage() {
   const navigate = useNavigate();
-  const [activeFilter, setActiveFilter] = useState<QueueFilter>("all");
+  const [scope, setScope] = useState<SupportQueueScope>("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("all");
   const deferredQuery = useDeferredValue(query);
-  const queueCounts = getTicketQueueCounts();
 
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesFilter =
-      activeFilter === "all"
-        ? true
-        : activeFilter === "mine"
-          ? ticket.mine
-          : ticket.status === activeFilter;
-
-    const matchesPriority =
-      priorityFilter === "all" ? true : ticket.priority === priorityFilter;
-
-    const normalizedQuery = deferredQuery.trim().toLowerCase();
-    const matchesQuery =
-      normalizedQuery.length === 0
-        ? true
-        : [ticket.code, ticket.title, ticket.requesterName, ticket.assigneeName, ticket.category]
-            .join(" ")
-            .toLowerCase()
-            .includes(normalizedQuery);
-
-    return matchesFilter && matchesPriority && matchesQuery;
+  const queueQuery = useQuery({
+    queryKey: ["tickets-page-queue", scope, statusFilter, deferredQuery],
+    queryFn: () =>
+      fetchSupportQueue({
+        scope,
+        statusFilter,
+        query: deferredQuery
+      }),
+    retry: false,
+    refetchInterval: SUPPORT_QUEUE_REFRESH_MS
   });
+
+  const queue = queueQuery.data;
+  const scopeCounts = queue?.summary.scope_counts ?? [];
+  const statusCounts = queue?.summary.status_counts ?? [];
 
   return (
     <section className="space-y-6">
       <PageHeading
         actions={
-          <>
-            <Button leadingIcon={<Funnel className="h-4 w-4" />} variant="outline">
-              Фильтры
-            </Button>
-            <Button leadingIcon={<Plus className="h-4 w-4" />}>Новый тикет</Button>
-          </>
+          <Button
+            disabled={queueQuery.isFetching}
+            leadingIcon={<RefreshCcw className="h-4 w-4" />}
+            onClick={() => {
+              void queueQuery.refetch();
+            }}
+            variant="outline"
+          >
+            {queueQuery.isFetching ? "Обновляем..." : "Обновить"}
+          </Button>
         }
-        description="Собранный список заявок со статусами, поиском и быстрым переходом в карточку тикета. Пространство поддерживает плотную SaaS-композицию без лишних блоков."
+        description="Рабочий список тикетов идёт из реального typed support boundary: живая очередь, поиск, статусы и быстрый переход в карточку без вымышленных данных."
         eyebrow="Support workspace"
         title="Тикеты"
       />
 
       <div className="grid gap-4 xl:grid-cols-4">
-        <StatTile helper="За период" label="Всего тикетов" value="128" />
-        <StatTile helper="Активный пул" label="В работе" value="45" />
-        <StatTile helper="Ждут пользователя" label="Ожидают ответа" value="12" />
-        <StatTile helper="Среднее время ответа" label="SLA" value="12м 24с" />
+        <StatTile helper="Текущий срез" label="Всего доступно" value={String(getCount(scopeCounts, "all"))} />
+        <StatTile helper="Назначено на меня" label="Мои тикеты" value={String(getCount(scopeCounts, "mine"))} />
+        <StatTile helper="Активная обработка" label="В работе" value={String(getCount(statusCounts, "in_progress"))} />
+        <StatTile
+          helper="Нужен ответ пользователя"
+          label="Ожидают ответа"
+          value={String(getCount(statusCounts, "waiting_on_user"))}
+        />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[290px_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle>Рабочая панель</CardTitle>
             <CardDescription>
-              Здесь вынесены мои тикеты, статусы и быстрые фильтры, как в вашем референсе.
+              Здесь собраны реальные области видимости, статусы и поиск по очереди, как вы просили по структуре рабочего пространства.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {queueFilterOptions.map((option) => {
-              const count =
-                option.key === "all"
-                  ? queueCounts.all
-                  : option.key === "mine"
-                    ? queueCounts.mine
-                    : queueCounts[option.key];
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Область</p>
+              {scopeCounts.map((item) => {
+                const active = item.value === scope;
 
-              const active = option.key === activeFilter;
-
-              return (
-                <button
-                  key={option.key}
-                  className={`flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors ${
-                    active
-                      ? "border-brand-200 bg-brand-50 text-brand-900"
-                      : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white"
-                  }`}
-                  onClick={() =>
-                    startTransition(() => {
-                      setActiveFilter(option.key);
-                    })
-                  }
-                  type="button"
-                >
-                  <span>
-                    <span className="block text-sm font-semibold">{option.label}</span>
-                    <span className="mt-1 block text-xs text-slate-500">{option.description}</span>
-                  </span>
-                  <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-soft">
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-
-            <div className="space-y-3 border-t border-border pt-4">
-              <label className="space-y-2 text-sm font-medium text-slate-800">
-                <span>Поиск</span>
-                <SearchField
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Код, тема, инициатор"
-                  value={query}
-                />
-              </label>
-
-              <label className="space-y-2 text-sm font-medium text-slate-800">
-                <span>Приоритет</span>
-                <Select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-                  <option value="all">Все приоритеты</option>
-                  <option value="high">Высокий</option>
-                  <option value="medium">Средний</option>
-                  <option value="low">Низкий</option>
-                </Select>
-              </label>
+                return (
+                  <button
+                    key={item.value}
+                    className={`flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors ${
+                      active
+                        ? "border-brand-200 bg-brand-50 text-brand-900"
+                        : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white"
+                    }`}
+                    onClick={() => {
+                      startTransition(() => {
+                        setScope(item.value as SupportQueueScope);
+                      });
+                    }}
+                    type="button"
+                  >
+                    <span className="font-semibold">{item.label}</span>
+                    <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-soft">
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+
+            <div className="space-y-3 border-t border-border pt-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Статусы</p>
+              {statusCounts.map((item) => {
+                const active = item.value === statusFilter;
+
+                return (
+                  <button
+                    key={item.value}
+                    className={`flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors ${
+                      active
+                        ? "border-brand-200 bg-brand-50 text-brand-900"
+                        : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white"
+                    }`}
+                    onClick={() => {
+                      startTransition(() => {
+                        setStatusFilter(item.value);
+                      });
+                    }}
+                    type="button"
+                  >
+                    <span className="font-medium">{item.label}</span>
+                    <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-soft">
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Поиск</span>
+              <SearchField
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Код, тема, инициатор, устройство"
+                value={query}
+              />
+            </label>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="gap-4">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <CardTitle>Список тикетов</CardTitle>
                 <CardDescription>
-                  Ровная таблица без лишнего шума, с чистыми линиями и выделением активного статуса.
+                  Ровная таблица очереди с реальными статусами, живым обновлением и плотной SaaS-подачей.
                 </CardDescription>
               </div>
-
-              <div className="flex items-center gap-3">
-                <Button leadingIcon={<Rows3 className="h-4 w-4" />} size="sm" variant="secondary">
-                  Компактный вид
-                </Button>
-                <Button leadingIcon={<SlidersHorizontal className="h-4 w-4" />} size="sm" variant="outline">
-                  Сначала новые
-                </Button>
-              </div>
+              <p className="text-sm text-slate-500">
+                Видимых тикетов: <span className="font-semibold text-slate-950">{queue?.summary.visible_count ?? 0}</span>
+              </p>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="overflow-hidden rounded-[1.1rem] border border-border">
-              <table className="min-w-full divide-y divide-border text-left text-sm">
-                <thead className="bg-surface-subtle text-slate-500">
-                  <tr>
-                    <th className="px-5 py-3.5 font-medium">ID</th>
-                    <th className="px-5 py-3.5 font-medium">Тема</th>
-                    <th className="px-5 py-3.5 font-medium">Клиент</th>
-                    <th className="px-5 py-3.5 font-medium">Статус</th>
-                    <th className="px-5 py-3.5 font-medium">Приоритет</th>
-                    <th className="px-5 py-3.5 font-medium">Обновлен</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border bg-white [content-visibility:auto]">
-                  {filteredTickets.map((ticket) => (
-                    <tr
-                      key={ticket.id}
-                      className="cursor-pointer transition-colors hover:bg-brand-50/60"
-                      onClick={() => navigate(`/app/tickets/${ticket.id}`)}
-                    >
-                      <td className="px-5 py-4 font-semibold text-slate-900">{ticket.code}</td>
-                      <td className="px-5 py-4">
-                        <div>
-                          <p className="font-semibold text-slate-900">{ticket.title}</p>
-                          <p className="mt-1 text-xs text-slate-500">{ticket.category}</p>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-slate-600">{ticket.requesterName}</td>
-                      <td className="px-5 py-4">
-                        <Badge tone={ticketStatusMeta[ticket.status].tone}>{ticketStatusMeta[ticket.status].label}</Badge>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Badge tone={ticketPriorityMeta[ticket.priority].tone}>
-                          {ticketPriorityMeta[ticket.priority].label}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-4 text-slate-500">{ticket.updatedAt}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-col gap-3 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
-              <p>
-                Показано {filteredTickets.length} из {tickets.length}
-              </p>
-              <div className="flex items-center gap-2">
-                <span className="rounded-pill border border-border bg-surface-subtle px-3 py-1.5">1</span>
-                <span className="rounded-pill border border-border px-3 py-1.5 text-slate-400">2</span>
-                <span className="rounded-pill border border-border px-3 py-1.5 text-slate-400">3</span>
-                <span className="rounded-pill border border-border px-3 py-1.5 text-slate-400">16</span>
+            {queueQuery.isLoading ? (
+              <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                Загружаем реальную очередь поддержки...
               </div>
-            </div>
+            ) : null}
+
+            {queueQuery.isError ? (
+              <div className="rounded-[1.1rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+                {queueQuery.error instanceof Error
+                  ? queueQuery.error.message
+                  : "Не удалось загрузить очередь поддержки."}
+              </div>
+            ) : null}
+
+            {queue && queue.tickets.length === 0 ? (
+              <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                По текущим фильтрам тикеты не найдены.
+              </div>
+            ) : null}
+
+            {queue && queue.tickets.length > 0 ? (
+              <div className="overflow-hidden rounded-[1.1rem] border border-border">
+                <table className="min-w-full divide-y divide-border text-left text-sm">
+                  <thead className="bg-surface-subtle text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3.5 font-medium">ID</th>
+                      <th className="px-5 py-3.5 font-medium">Тема</th>
+                      <th className="px-5 py-3.5 font-medium">Инициатор</th>
+                      <th className="px-5 py-3.5 font-medium">Статус</th>
+                      <th className="px-5 py-3.5 font-medium">Очередь</th>
+                      <th className="px-5 py-3.5 font-medium">Обновлён</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-white [content-visibility:auto]">
+                    {queue.tickets.map((ticket) => (
+                      <tr
+                        key={ticket.ticket_id}
+                        className="cursor-pointer transition-colors hover:bg-brand-50/60"
+                        onClick={() => navigate(`/app/tickets/${ticket.ticket_id}`)}
+                      >
+                        <td className="px-5 py-4 font-semibold text-slate-900">
+                          {ticket.ticket_code ?? ticket.ticket_id}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div>
+                            <p className="font-semibold text-slate-900">{ticket.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {ticket.device_id ?? "Без привязки к устройству"}
+                              {ticket.unread_user_messages > 0 ? ` • ${ticket.unread_user_messages} непрочит.` : ""}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {ticket.requester_display_name ?? "Инициатор не указан"}
+                        </td>
+                        <td className="px-5 py-4">
+                          <Badge tone={getStatusTone(ticket.status)}>{ticket.status_label}</Badge>
+                        </td>
+                        <td className="px-5 py-4 text-slate-500">{ticket.queue_code ?? "Без очереди"}</td>
+                        <td className="px-5 py-4 text-slate-500">{formatDateTime(ticket.updated_at ?? ticket.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>

@@ -57,7 +57,6 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
         lookbackHours,
         deviceId
       }),
-    enabled: Boolean(deviceId),
     retry: false
   });
 

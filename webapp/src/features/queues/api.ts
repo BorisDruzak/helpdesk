@@ -14,6 +14,12 @@ export type SupportFilterOption = {
   label: string;
 };
 
+export type SupportCountItem = {
+  value: string;
+  label: string;
+  count: number;
+};
+
 export type SupportQueuePayload = {
   scope: SupportQueueScope;
   query: string;
@@ -21,6 +27,8 @@ export type SupportQueuePayload = {
   summary: {
     visible_count: number;
     selected_ticket_id: string | null;
+    scope_counts: SupportCountItem[];
+    status_counts: SupportCountItem[];
   };
   filters: {
     scope_options: SupportFilterOption[];
@@ -290,7 +298,11 @@ export async function fetchSupportTicketDetail(ticketId: string): Promise<Suppor
   return payload.data;
 }
 
-export async function postSupportTicketMessage(ticketId: string, text: string): Promise<SupportMessageActionResult> {
+export async function postSupportTicketMessage(
+  ticketId: string,
+  text: string,
+  visibility: "internal" | "public" = "public"
+): Promise<SupportMessageActionResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/messages`, {
     method: "POST",
     credentials: "same-origin",
@@ -299,7 +311,7 @@ export async function postSupportTicketMessage(ticketId: string, text: string): 
     },
     body: JSON.stringify({
       text,
-      visibility: "public"
+      visibility
     })
   });
   const payload = await readJson<SuccessResponse<SupportMessageActionResult> | ErrorResponse>(response);
