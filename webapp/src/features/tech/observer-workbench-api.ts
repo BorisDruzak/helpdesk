@@ -142,6 +142,10 @@ export type ObserverTraceDetailPayload = {
   };
 };
 
+type RawObserverTraceDetailPayload = Omit<ObserverTraceDetailPayload, "summary"> & {
+  summary?: Partial<ObserverTraceDetailPayload["summary"]> | null;
+};
+
 export class ObserverWorkbenchApiError extends Error {
   status: number;
 
@@ -167,6 +171,29 @@ async function readLegacyOk<T>(response: Response, fallbackMessage: string): Pro
     throw new ObserverWorkbenchApiError(errorPayload?.error ?? fallbackMessage, response.status);
   }
   return payload as T;
+}
+
+function normalizeObserverTraceDetailPayload(
+  payload: RawObserverTraceDetailPayload
+): ObserverTraceDetailPayload {
+  const spans = Array.isArray(payload.spans) ? payload.spans : [];
+  const spanLinks = Array.isArray(payload.span_links) ? payload.span_links : [];
+  const errorOccurrences = Array.isArray(payload.error_occurrences) ? payload.error_occurrences : [];
+  const linkedTraceCount =
+    payload.summary?.linked_trace_count ??
+    new Set(spanLinks.map((item) => item.linked_trace_id).filter(Boolean)).size;
+
+  return {
+    ...payload,
+    spans,
+    span_links: spanLinks,
+    error_occurrences: errorOccurrences,
+    summary: {
+      span_count: payload.summary?.span_count ?? payload.trace.span_count ?? spans.length,
+      error_count: payload.summary?.error_count ?? payload.trace.error_count ?? errorOccurrences.length,
+      linked_trace_count: linkedTraceCount,
+    },
+  };
 }
 
 function buildTraceSearchParams(params: {
@@ -235,7 +262,11 @@ export async function fetchObserverWorkbenchTraceDetail(
       credentials: "same-origin",
     }
   );
-  return readLegacyOk(response, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґРµС‚Р°Р»Рё С‚СЂР°СЃСЃС‹.");
+  const payload = await readLegacyOk<RawObserverTraceDetailPayload>(
+    response,
+    "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґРµС‚Р°Р»Рё С‚СЂР°СЃСЃС‹."
+  );
+  return normalizeObserverTraceDetailPayload(payload);
 }
 
 export async function fetchObserverRuntime(): Promise<ObserverRuntimePayload> {
