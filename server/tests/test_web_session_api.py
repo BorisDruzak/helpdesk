@@ -194,6 +194,63 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/modules/workbench",
+        "/api/admin/tech/traces/runtime",
+        "/api/admin/settings/observer",
+        "/api/ticket_forms/packs",
+    ],
+)
+async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch, path: str):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "admin-cookie",
+            "actor_role": "admin",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    async def protected_handler(request: web.Request):
+        auth_context = request["auth_context"]
+        return web.json_response(
+            {
+                "status": "ok",
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "path": request.path,
+            }
+        )
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_get(path, protected_handler)
+    if path == "/api/admin/settings/observer":
+        app.router.add_patch(path, protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get(
+            path,
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "ok",
+        "actor_id": "admin-cookie",
+        "actor_role": "admin",
+        "path": path,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_session_me_exposes_admin_default_workspace():
     @web.middleware
     async def auth_context_middleware(request, handler):

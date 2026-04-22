@@ -10,7 +10,7 @@
 
 - **Агенты:** аутентификация по токену (agent token) при WebSocket handshake и при HTTP API.
 - **UI:** legacy shell-страницы используют логин/пароль с выдачей UI токена; новый `webapp` под `/app/*` использует тот же UI token storage на сервере, но выдаёт его клиенту только как httpOnly cookie-session.
-- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а `/api/web/*` дополнительно умеют читать cookie `pc_client_web_session`.
+- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а cookie `pc_client_web_session` используется не только на `/api/web/*`, но и на canonical React bridges для нового webapp: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer` и `/api/ticket_forms/*`.
 - **Control-plane:** отдельный сервис на порту `8667` использует те же Bearer UI/agent токены, но имеет собственный middleware, CORS-ограничение по origin и отдельный RBAC для runtime actions.
 - **Роли и контекст:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для роли.
 
@@ -101,6 +101,7 @@
 
 - Применяется ко всем запросам с путём, начинающимся с `/api/`.
 - Для `/api/web/*` middleware сначала читает httpOnly cookie `pc_client_web_session`, затем стандартные схемы `Authorization: Bearer <token>` / `Authorization: Token <token>`, затем заголовок `X-Auth-Token`, затем query-параметр `token` (не рекомендуется: логируется предупреждение о небезопасном использовании).
+- Тот же httpOnly cookie bridge разрешён и для canonical React-admin endpoints вне `/api/web/*`: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer` и `/api/ticket_forms/*`. Это нужно, чтобы новый `/app/admin/*` работал с реальными backend surfaces без дублирующих proxy-handler'ов, но при этом всё равно оставался под server-authoritative UI session.
 - Токен проверяется как agent token, затем как UI token. При первой успешной проверке создаётся `AuthContext` и кладётся в `request['auth_context']`.
 - Если токен не передан или невалиден — ответ **401** с телом:
   - `{"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"}`.

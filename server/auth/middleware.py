@@ -12,6 +12,13 @@ from auth.service import AuthService
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
+WEB_SESSION_AUTH_PATH_PREFIXES = (
+    "/api/web/",
+    "/api/modules/",
+    "/api/admin/tech/",
+    "/api/admin/settings/observer",
+    "/api/ticket_forms/",
+)
 
 
 # Whitelist of endpoints that don't require authentication
@@ -68,7 +75,7 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
 
 
 def extract_token_from_web_cookie(request: web.Request) -> Optional[str]:
-    if not request.path.startswith("/api/web/"):
+    if not any(request.path.startswith(prefix) for prefix in WEB_SESSION_AUTH_PATH_PREFIXES):
         return None
 
     token = request.cookies.get(WEB_SESSION_COOKIE_NAME)

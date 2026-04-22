@@ -192,7 +192,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, connection request flow and security invariants.",
+        summary="Token sources, AuthContext, connection request flow, httpOnly web session bridging for React admin surfaces, and security invariants.",
         aliases=(
             "auth",
             "token",
