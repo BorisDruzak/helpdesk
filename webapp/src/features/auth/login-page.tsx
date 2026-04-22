@@ -1,10 +1,12 @@
+import { LockKeyhole, ShieldCheck, Ticket } from "lucide-react";
 import { startTransition, useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
-
 
 function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
@@ -33,8 +35,9 @@ export function LoginPage() {
     try {
       const nextSession = await login({
         login: loginValue,
-        password: passwordValue,
+        password: passwordValue
       });
+
       startTransition(() => {
         navigate(resolveNextPath(searchParams.get("next"), nextSession), { replace: true });
       });
@@ -50,52 +53,113 @@ export function LoginPage() {
   }
 
   return (
-    <section className="auth-page">
-      <div className="auth-card">
-        <div className="auth-card__brand">
-          <div aria-hidden="true" className="auth-card__logo">
-            <span>PC</span>
-          </div>
+    <section className="min-h-screen bg-app px-4 py-6 md:px-6 md:py-8">
+      <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl overflow-hidden rounded-[2rem] border border-border bg-white shadow-soft lg:grid-cols-[minmax(340px,0.9fr)_minmax(0,1fr)]">
+        <div className="flex flex-col justify-between bg-brand-700 px-6 py-8 text-white md:px-8 md:py-10">
           <div>
-            <p className="app-shell__eyebrow">pc_client</p>
-            <h1>Вход в рабочие места</h1>
-            <p className="auth-card__description">
-              Один вход для поддержки и администрирования. Новый shell работает через серверную cookie-сессию и типизированный
-              `/api/web/*` boundary.
+            <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-white text-lg font-black tracking-[0.2em] text-brand-700 shadow-soft">
+              PC
+            </div>
+            <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-100/70">
+              Единый workspace
             </p>
+            <h1 className="mt-3 font-display text-3xl font-semibold leading-tight md:text-4xl">
+              Вход в рабочие места
+            </h1>
+            <p className="mt-4 max-w-md text-sm leading-7 text-brand-50/80">
+              Новый SaaS-shell объединяет поддержку и администрирование в одном продукте. Сессия открывается через серверный cookie-boundary и новые маршруты `/app/*`.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {[
+              {
+                icon: Ticket,
+                title: "Support workspace",
+                description: "Список тикетов, карточка и быстрые SLA-инспекторы."
+              },
+              {
+                icon: ShieldCheck,
+                title: "Admin workspace",
+                description: "Инвентарь, observer, модули и forms builder."
+              },
+              {
+                icon: LockKeyhole,
+                title: "Безопасный доступ",
+                description: "Одна cookie-сессия без ручного переключения legacy shell."
+              }
+            ].map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <div key={item.title} className="rounded-[1.4rem] border border-white/10 bg-white/10 px-4 py-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/12">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{item.title}</p>
+                      <p className="mt-1 text-sm leading-6 text-brand-50/75">{item.description}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="auth-field">
-            <span>Логин</span>
-            <input
-              autoComplete="username"
-              name="login"
-              onChange={(event) => setLoginValue(event.target.value)}
-              type="text"
-              value={loginValue}
-            />
-          </label>
-          <label className="auth-field">
-            <span>Пароль</span>
-            <input
-              autoComplete="current-password"
-              name="password"
-              onChange={(event) => setPasswordValue(event.target.value)}
-              type="password"
-              value={passwordValue}
-            />
-          </label>
-          {errorMessage ? (
-            <p aria-live="polite" className="auth-form__error">
-              {errorMessage}
-            </p>
-          ) : null}
-          <button className="auth-form__submit" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Входим..." : "Войти"}
-          </button>
-        </form>
+        <div className="flex items-center justify-center px-6 py-8 md:px-10">
+          <div className="w-full max-w-md space-y-8">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-700">
+                Авторизация
+              </p>
+              <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-slate-950">
+                Добро пожаловать
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-slate-500">
+                Используйте служебный логин, чтобы открыть нужную рабочую зону.
+              </p>
+            </div>
+
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-800">Логин</span>
+                <Input
+                  autoComplete="username"
+                  name="login"
+                  onChange={(event) => setLoginValue(event.target.value)}
+                  value={loginValue}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-800">Пароль</span>
+                <Input
+                  autoComplete="current-password"
+                  name="password"
+                  onChange={(event) => setPasswordValue(event.target.value)}
+                  type="password"
+                  value={passwordValue}
+                />
+              </label>
+
+              {errorMessage ? (
+                <p aria-live="polite" className="rounded-[1rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {errorMessage}
+                </p>
+              ) : null}
+
+              <Button className="w-full" disabled={isSubmitting} size="lg" type="submit">
+                {isSubmitting ? "Входим..." : "Войти"}
+              </Button>
+            </form>
+
+            <div className="rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+              Для локальной проверки фикстур используйте `support / secret` или `admin / secret`.
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );

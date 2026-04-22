@@ -1,73 +1,20 @@
-import { startTransition, type ReactNode } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { startTransition, type ChangeEvent, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
+import {
+  ADMIN_HOME_PATH,
+  SUPPORT_HOME_PATH,
+  getSearchPlaceholder,
+  isAdminRoute
+} from "../navigation";
+import { AppSidebar } from "../../components/shell/app-sidebar";
+import { AppTopbar } from "../../components/shell/app-topbar";
 import { useSession } from "../../features/auth/session-provider";
 import { hasWorkspaceAccess } from "../../features/auth/workspace-access";
-
 
 type AppShellProps = {
   children: ReactNode;
 };
-
-type RailIconKind = "support" | "admin";
-
-function RailIcon({ kind }: { kind: RailIconKind }) {
-  if (kind === "support") {
-    return (
-      <svg aria-hidden="true" className="app-shell__link-icon-svg" viewBox="0 0 24 24">
-        <path
-          d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v6A2.5 2.5 0 0 1 16.5 16h-6.2L6 19.8V16.3A2.5 2.5 0 0 1 5 14.2z"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.8"
-        />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden="true" className="app-shell__link-icon-svg" viewBox="0 0 24 24">
-      <path
-        d="M5 5h6v6H5zm8 0h6v6h-6zM5 13h6v6H5zm8 3h6"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M16 11v8m-4-4h8"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function deriveUserInitials(value: string | null | undefined) {
-  if (!value) {
-    return "PC";
-  }
-
-  const parts = value
-    .split(/[\s._-]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return value.slice(0, 2).toUpperCase();
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((item) => item[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 function deriveRoleLabel(value: string | null | undefined) {
   if (value === "admin") {
@@ -82,8 +29,18 @@ function deriveRoleLabel(value: string | null | undefined) {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const location = useLocation();
   const navigate = useNavigate();
   const { logout, session } = useSession();
+  const hasSupport = hasWorkspaceAccess(session, "support");
+  const hasAdmin = hasWorkspaceAccess(session, "admin");
+
+  const workspaceOptions = [
+    hasSupport ? { label: "Поддержка", value: SUPPORT_HOME_PATH } : null,
+    hasAdmin ? { label: "Администрирование", value: ADMIN_HOME_PATH } : null
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+  const workspaceValue = isAdminRoute(location.pathname) ? ADMIN_HOME_PATH : SUPPORT_HOME_PATH;
 
   async function handleLogout() {
     await logout();
@@ -92,63 +49,31 @@ export function AppShell({ children }: AppShellProps) {
     });
   }
 
+  function handleWorkspaceChange(event: ChangeEvent<HTMLSelectElement>) {
+    startTransition(() => {
+      navigate(event.target.value);
+    });
+  }
+
   return (
-    <div className="app-shell">
-      <aside className="app-shell__rail">
-        <div className="app-shell__brand-card">
-          <div aria-hidden="true" className="app-shell__logo">
-            <span>PC</span>
-          </div>
-          <div className="app-shell__brand-copy">
-            <span className="app-shell__eyebrow">pc_client</span>
-            <strong>Единое рабочее пространство</strong>
-            <p>Поддержка и администрирование в одном операционном контуре.</p>
-          </div>
+    <div className="min-h-screen bg-app text-slate-950">
+      <div className="flex min-h-screen">
+        <AppSidebar hasAdminAccess={hasAdmin} hasSupportAccess={hasSupport} />
+
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+          <AppTopbar
+            onLogout={() => void handleLogout()}
+            onWorkspaceChange={handleWorkspaceChange}
+            searchPlaceholder={getSearchPlaceholder(location.pathname)}
+            userLogin={session?.user_login ?? "operator"}
+            userRoleLabel={deriveRoleLabel(session?.actor_role)}
+            workspaceOptions={workspaceOptions}
+            workspaceValue={workspaceValue}
+          />
+
+          <main className="flex-1 px-4 py-4 md:px-6 md:py-6 xl:px-8 xl:py-8">{children}</main>
         </div>
-
-        <nav className="app-shell__nav" aria-label="Навигация по рабочим местам">
-          <span className="app-shell__section-label">Рабочие зоны</span>
-          {hasWorkspaceAccess(session, "support") ? (
-            <NavLink aria-label="Поддержка" className="app-shell__link" to="/app/support">
-              <span className="app-shell__link-icon" aria-hidden="true">
-                <RailIcon kind="support" />
-              </span>
-              <span className="app-shell__link-copy">
-                <strong>Поддержка</strong>
-                <small>Очередь, тикеты, инструменты</small>
-              </span>
-            </NavLink>
-          ) : null}
-          {hasWorkspaceAccess(session, "admin") ? (
-            <NavLink aria-label="Администрирование" className="app-shell__link" to="/app/admin">
-              <span className="app-shell__link-icon" aria-hidden="true">
-                <RailIcon kind="admin" />
-              </span>
-              <span className="app-shell__link-copy">
-                <strong>Администрирование</strong>
-                <small>Инвентарь, раскатка, реестр</small>
-              </span>
-            </NavLink>
-          ) : null}
-        </nav>
-
-        <div className="app-shell__session-card">
-          <div className="app-shell__session-user">
-            <div aria-hidden="true" className="app-shell__session-avatar">
-              {deriveUserInitials(session?.user_login)}
-            </div>
-            <div className="app-shell__session-copy">
-              <span className="app-shell__session-login">{session?.user_login}</span>
-              <span className="app-shell__session-role">{deriveRoleLabel(session?.actor_role)}</span>
-            </div>
-          </div>
-          <button className="app-shell__session-action" onClick={() => void handleLogout()} type="button">
-            Выйти
-          </button>
-        </div>
-      </aside>
-
-      <main className="app-shell__main">{children}</main>
+      </div>
     </div>
   );
 }

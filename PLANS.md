@@ -1,5 +1,36 @@
 # PLANS.md
 
+## 2026-04-22 Admin/support unified workspace redesign
+
+- Scope:
+  - establish one visual system for `/app/support` and `/app/admin`;
+  - use attached image references for visual direction only;
+  - use current `webapp` routes, typed `/api/web/*` contracts, and legacy pages only as functional parity references;
+  - fully redesign the support workspace layout while preserving current React functionality;
+  - align admin, modules, forms, observer, and update panels to the same shell language.
+- Design references:
+  - `docs/superpowers/specs/2026-04-22-admin-support-unified-workspace-style-design.md`
+  - `docs/superpowers/specs/2026-04-20-admin-support-web-rearchitecture-design.md`
+- Planned delivery order:
+  1. capture the approved visual thesis and shell rules in repo docs;
+  2. refactor shared `webapp` shell and theme tokens;
+  3. redesign support around `/app/tickets` + `/app/tickets/:ticketId` with `/app/support` kept as a compatibility alias;
+  4. align admin around explicit menu routes `/app/admin/inventory|device|modules|forms|observer` with `/app/admin` kept as the inventory alias;
+  5. run local frontend/server verification and browser signoff.
+- Implementation snapshot:
+  - `webapp` now uses Tailwind v4 through `@tailwindcss/vite` plus shared UI primitives (`Button`, `Badge`, `Card`, `Tabs`, `SearchField`, `StatTile`);
+  - the old large workspace cards were removed from the left rail; workspace switching and logout moved into the topbar "curtain";
+  - support now ships as a SaaS-style tickets list page plus a 3-column ticket detail workspace with separate queue panel, emphasized chat, and right inspector;
+  - admin now ships as explicit menu pages instead of card jumps: inventory, device card, modules, forms builder, observer;
+  - reports, knowledge base, and settings now exist as mock-driven pages in the same design system.
+- Verification target:
+  - `python scripts/bootstrap_web_toolchain.py`
+  - `pnpm --dir webapp run test`
+  - `pnpm --dir webapp run build`
+  - `python -m pytest server/tests/test_web_session_api.py server/tests/test_web_support_api.py server/tests/test_web_admin_api.py server/tests/test_static_pages_handlers.py -v --tb=short`
+  - `python scripts/verify_workspace.py`
+  - browser verification for `/app/support` and `/app/admin`
+
 ## 2026-04-21 Agent/server contract hardening
 
 - Scope:

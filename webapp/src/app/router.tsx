@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
+import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
-import { AdminWorkspacePage } from "../pages/admin";
-import { SupportWorkspacePage } from "../pages/support";
 import { LoginPage } from "../features/auth/login-page";
 import { useSession } from "../features/auth/session-provider";
 import {
@@ -11,26 +10,45 @@ import {
   resolveDefaultWorkspacePath,
   type AppWorkspace
 } from "../features/auth/workspace-access";
+import { AdminDevicePage } from "../pages/admin/device-page";
+import { AdminFormsPage } from "../pages/admin/forms-page";
+import { AdminInventoryPage } from "../pages/admin/inventory-page";
+import { AdminModulesPage } from "../pages/admin/modules-page";
+import { AdminObserverPage } from "../pages/admin/observer-page";
+import { KnowledgeBasePage } from "../pages/knowledge";
+import { ReportsPage } from "../pages/reports";
+import { SettingsPage } from "../pages/settings";
+import { TicketDetailPage } from "../pages/tickets/detail-page";
+import { TicketListPage } from "../pages/tickets/list-page";
 
-
-function NoWorkspacePage() {
-  const { session } = useSession();
-
+function SessionState({
+  description,
+  title
+}: {
+  description: string;
+  title: string;
+}) {
   return (
-    <section className="session-state" aria-live="polite">
-      <div className="session-state__panel">
-        <p className="app-shell__eyebrow">pc_client</p>
-        <h1>Для этой роли новое рабочее место пока не назначено</h1>
-        <p>
-          Сеанс под ролью <strong>{session?.actor_role ?? "unknown"}</strong> успешно открыт, но для неё
-          ещё не включён новый интерфейс `/app/*`. Используйте legacy shell или дождитесь следующего
-          среза cutover.
-        </p>
+    <section className="flex min-h-screen items-center justify-center bg-app px-4 py-6">
+      <div className="surface-panel max-w-xl px-8 py-10 text-center">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-700">pc_client</p>
+        <h1 className="mt-4 font-display text-3xl font-semibold tracking-tight text-slate-950">{title}</h1>
+        <p className="mt-4 text-sm leading-7 text-slate-500">{description}</p>
       </div>
     </section>
   );
 }
 
+function NoWorkspacePage() {
+  const { session } = useSession();
+
+  return (
+    <SessionState
+      description={`Сеанс под ролью ${session?.actor_role ?? "unknown"} открыт, но для него пока не назначены новые рабочие зоны /app/*. Используйте корректную роль или дождитесь следующего среза доступа.`}
+      title="Для этой роли рабочая зона пока не назначена"
+    />
+  );
+}
 
 function ProtectedWorkspaceLayout() {
   const location = useLocation();
@@ -38,13 +56,10 @@ function ProtectedWorkspaceLayout() {
 
   if (status === "loading") {
     return (
-      <section className="session-state" aria-live="polite">
-        <div className="session-state__panel">
-          <p className="app-shell__eyebrow">pc_client</p>
-          <h1>Проверяем сессию</h1>
-          <p>Поднимаем новый web boundary и проверяем доступ к рабочему месту.</p>
-        </div>
-      </section>
+      <SessionState
+        description="Поднимаем web boundary и проверяем доступ к нужной рабочей зоне."
+        title="Проверяем сессию"
+      />
     );
   }
 
@@ -68,7 +83,6 @@ function ProtectedWorkspaceLayout() {
   );
 }
 
-
 function WorkspaceIndexRedirect() {
   const { session } = useSession();
   const defaultPath = resolveDefaultWorkspacePath(session);
@@ -80,12 +94,10 @@ function WorkspaceIndexRedirect() {
   return <Navigate replace to={defaultPath} />;
 }
 
-
 type WorkspaceAccessGateProps = {
   workspace: AppWorkspace;
   children: ReactNode;
 };
-
 
 function WorkspaceAccessGate({ workspace, children }: WorkspaceAccessGateProps) {
   const { session } = useSession();
@@ -101,7 +113,6 @@ function WorkspaceAccessGate({ workspace, children }: WorkspaceAccessGateProps) 
 
   return <Navigate replace to={defaultPath} />;
 }
-
 
 export const appRoutes: RouteObject[] = [
   {
@@ -122,7 +133,47 @@ export const appRoutes: RouteObject[] = [
             path: "support",
             element: (
               <WorkspaceAccessGate workspace="support">
-                <SupportWorkspacePage />
+                <Navigate replace to={SUPPORT_HOME_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "tickets",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <TicketListPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "tickets/:ticketId",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <TicketDetailPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "reports",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <ReportsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "knowledge",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <KnowledgeBasePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "settings",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <SettingsPage />
               </WorkspaceAccessGate>
             )
           },
@@ -130,7 +181,47 @@ export const appRoutes: RouteObject[] = [
             path: "admin",
             element: (
               <WorkspaceAccessGate workspace="admin">
-                <AdminWorkspacePage />
+                <Navigate replace to={ADMIN_HOME_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/inventory",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminInventoryPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/device",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminDevicePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/modules",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminModulesPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/forms",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminFormsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/observer",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminObserverPage />
               </WorkspaceAccessGate>
             )
           }
