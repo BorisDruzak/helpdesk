@@ -2104,17 +2104,10 @@
 
         function queueWsUpdateSubscriptions() {
             if (!queueWs || queueWs.readyState !== WebSocket.OPEN) return;
-            const visible = new Set(Array.from(document.querySelectorAll('#queueTableBody tr[data-ticket-id]')).map(r => r.dataset.ticketId));
             const prev = queueState.subscribedTicketIds;
-            const toAdd = [...visible].filter(id => !prev.has(id));
-            const toRemove = [...prev].filter(id => !visible.has(id));
-            const token = localStorage.getItem('admin_auth_token');
-            if (!token) return;
-            toAdd.forEach(ticketId => {
-                queueWs.send(JSON.stringify({ type: 'subscribe_ticket', ticket_id: ticketId, since_event_id: 0 }));
-                queueState.subscribedTicketIds.add(ticketId);
-            });
-            toRemove.forEach(ticketId => {
+            // Legacy admin queue stays on polling so fallback tabs do not spam hundreds of subscribe_ticket calls.
+            if (!prev.size) return;
+            [...prev].forEach(ticketId => {
                 queueWs.send(JSON.stringify({ type: 'unsubscribe_ticket', ticket_id: ticketId }));
                 queueState.subscribedTicketIds.delete(ticketId);
             });

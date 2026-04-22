@@ -67,17 +67,21 @@ test("оператор проходит support workflow на русском я�
   await page
     .getByLabel("Ответ оператору")
     .fill("Проверка начата, остаёмся на связи и собираем сетевой снимок.");
-  await page.getByRole("button", { name: "Отправить ответ" }).click();
+  const sendReplyButton = page.getByRole("button", { name: "Отправить ответ" });
+  await sendReplyButton.focus();
+  await page.keyboard.press("Enter");
   await expect(
     page.getByText("Проверка начата, остаёмся на связи и собираем сетевой снимок.")
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Взять в работу" }).click();
-  await expect(page.locator(".support-ticket-detail__stats")).toContainText("В работе");
+  await expect(page.locator(".support-ticket-layout__status-pill")).toContainText("В работе");
 
   await page.getByRole("button", { name: /network\.diagnostics/i }).click();
   await page.getByLabel("Хост").fill("fileserver.local");
-  await page.getByRole("button", { name: "Запустить инструмент" }).click();
+  const runToolButton = page.getByRole("button", { name: "Запустить инструмент" });
+  await runToolButton.focus();
+  await page.keyboard.press("Enter");
 
   await expect(
     page.getByText(/Операция op-support-tool-\d+ поставлена в очередь выполнения\./)

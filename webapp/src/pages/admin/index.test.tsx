@@ -978,7 +978,7 @@ describe("AdminWorkspacePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Рабочее место администрирования" })).toBeInTheDocument();
     expect(await screen.findByText("Всего в инвентаре")).toBeInTheDocument();
-    expect(await screen.findByText("Назначения rollout")).toBeInTheDocument();
+    expect((await screen.findAllByText("Назначения rollout")).length).toBeGreaterThan(0);
     expect(await screen.findByRole("button", { name: /WS-01/i })).toBeInTheDocument();
     expect((await screen.findAllByText("Устройство на шаг позади rollout")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Доступно обновление")).toBeInTheDocument();
@@ -1036,7 +1036,7 @@ describe("AdminWorkspacePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /LT-02/i }));
 
-    expect(await screen.findByText("Платформа")).toBeInTheDocument();
+    expect(await screen.findByText(/Платформа:/)).toBeInTheDocument();
     expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("trace-linux-1")).length).toBeGreaterThan(0);
     expect(await screen.findByRole("button", { name: "Ожидает связи" })).toBeDisabled();

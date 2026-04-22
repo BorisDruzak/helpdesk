@@ -495,7 +495,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_server",
         title="Server UI / admin pages",
-        summary="Admin, ticket and public pages plus control-plane backed tech panel, observer runtime/settings, drilldown, degradation search and static route handlers.",
+        summary="Admin, ticket and public pages plus control-plane backed tech panel, observer runtime/settings, drilldown, degradation search and static route handlers; legacy admin queue fallback now stays polling-only instead of subscribing `/ws_ui` to every visible ticket row.",
         aliases=(
             "admin ui",
             "admin page",
@@ -846,7 +846,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, and the canonical `/support` ticket-trace drawer.",
+        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and guardrails against legacy queue subscribe bursts.",
         aliases=(
             "observer",
             "trace overlay",

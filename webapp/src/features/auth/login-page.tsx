@@ -10,7 +10,6 @@ function resolveNextPath(nextParam: string | null, session: ReturnType<typeof us
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
 }
 
-
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -34,7 +33,7 @@ export function LoginPage() {
     try {
       const nextSession = await login({
         login: loginValue,
-        password: passwordValue
+        password: passwordValue,
       });
       startTransition(() => {
         navigate(resolveNextPath(searchParams.get("next"), nextSession), { replace: true });
@@ -53,12 +52,20 @@ export function LoginPage() {
   return (
     <section className="auth-page">
       <div className="auth-card">
-        <p className="app-shell__eyebrow">pc_client</p>
-        <h1>Вход в рабочие места</h1>
-        <p className="auth-card__description">
-          Новый интерфейс `/app/*` использует серверную cookie-сессию. Войдите под своей ролью,
-          чтобы открыть поддержку или администрирование без токена в `localStorage`.
-        </p>
+        <div className="auth-card__brand">
+          <div aria-hidden="true" className="auth-card__logo">
+            <span>PC</span>
+          </div>
+          <div>
+            <p className="app-shell__eyebrow">pc_client</p>
+            <h1>Вход в рабочие места</h1>
+            <p className="auth-card__description">
+              Один вход для поддержки и администрирования. Новый shell работает через серверную cookie-сессию и типизированный
+              `/api/web/*` boundary.
+            </p>
+          </div>
+        </div>
+
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="auth-field">
             <span>Логин</span>

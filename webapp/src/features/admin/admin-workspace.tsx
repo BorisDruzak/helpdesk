@@ -9,7 +9,7 @@ import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import {
   type AdminStatusFilter,
   fetchAdminBootstrap,
-  fetchAdminDevices
+  fetchAdminDevices,
 } from "./api";
 
 
@@ -25,10 +25,9 @@ function formatDateTime(value: string | null | undefined): string {
 
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
   }).format(date);
 }
-
 
 export function AdminWorkspace() {
   const queryClient = useQueryClient();
@@ -40,7 +39,7 @@ export function AdminWorkspace() {
   const bootstrapQuery = useQuery({
     queryKey: ["admin-bootstrap"],
     queryFn: fetchAdminBootstrap,
-    retry: false
+    retry: false,
   });
 
   const devicesQuery = useQuery({
@@ -48,14 +47,13 @@ export function AdminWorkspace() {
     queryFn: () =>
       fetchAdminDevices({
         statusFilter,
-        query: deferredQuery
+        query: deferredQuery,
       }),
-    retry: false
+    retry: false,
   });
 
   const devices = devicesQuery.data?.devices ?? [];
-  const selectedDevice =
-    devices.find((item) => item.device_id === selectedDeviceId) ?? devices[0] ?? null;
+  const selectedDevice = devices.find((item) => item.device_id === selectedDeviceId) ?? devices[0] ?? null;
 
   useEffect(() => {
     if (!devices.length) {
@@ -89,7 +87,7 @@ export function AdminWorkspace() {
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-quick", selectedDevice.device_id] });
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-traces", selectedDevice.device_id] });
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-trace-detail"] });
-      })
+      }),
     );
 
     return () => {
@@ -102,8 +100,13 @@ export function AdminWorkspace() {
   if (bootstrapQuery.isLoading || devicesQuery.isLoading) {
     return (
       <section className="workspace-boot workspace-boot--loading">
-        <h1>Рабочее место администрирования</h1>
-        <p>Собираем инвентарь устройств и политику раскатки…</p>
+        <div className="workspace-boot__hero">
+          <div className="workspace-boot__hero-copy">
+            <p className="workspace-boot__eyebrow">Контур управления</p>
+            <h1>Рабочее место администрирования</h1>
+            <p>Собираем инвентарь устройств, политику rollout и быстрый observer-срез…</p>
+          </div>
+        </div>
       </section>
     );
   }
@@ -111,8 +114,17 @@ export function AdminWorkspace() {
   if (bootstrapQuery.isError) {
     return (
       <section className="workspace-boot workspace-boot--error">
-        <h1>Рабочее место администрирования</h1>
-        <p>{bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : "Не удалось загрузить bootstrap admin workspace."}</p>
+        <div className="workspace-boot__hero">
+          <div className="workspace-boot__hero-copy">
+            <p className="workspace-boot__eyebrow">Контур управления</p>
+            <h1>Рабочее место администрирования</h1>
+            <p>
+              {bootstrapQuery.error instanceof Error
+                ? bootstrapQuery.error.message
+                : "Не удалось загрузить стартовую конфигурацию рабочего места администрирования."}
+            </p>
+          </div>
+        </div>
       </section>
     );
   }
@@ -120,8 +132,17 @@ export function AdminWorkspace() {
   if (devicesQuery.isError || !devicesQuery.data) {
     return (
       <section className="workspace-boot workspace-boot--error">
-        <h1>Рабочее место администрирования</h1>
-        <p>{devicesQuery.error instanceof Error ? devicesQuery.error.message : "Не удалось загрузить инвентарь устройств."}</p>
+        <div className="workspace-boot__hero">
+          <div className="workspace-boot__hero-copy">
+            <p className="workspace-boot__eyebrow">Контур управления</p>
+            <h1>Рабочее место администрирования</h1>
+            <p>
+              {devicesQuery.error instanceof Error
+                ? devicesQuery.error.message
+                : "Не удалось загрузить инвентарь устройств."}
+            </p>
+          </div>
+        </div>
       </section>
     );
   }
@@ -130,17 +151,18 @@ export function AdminWorkspace() {
   const bootstrap = bootstrapQuery.data!;
 
   return (
-    <section className="admin-workspace">
-      <header className="workspace-boot__hero admin-workspace__hero">
-        <div className="workspace-boot__hero-copy">
+    <section className="admin-workspace workspace-page">
+      <header className="workspace-page__header">
+        <div className="workspace-page__copy">
           <p className="workspace-boot__eyebrow">Контур управления</p>
           <h1>Рабочее место администрирования</h1>
           <p>
-            Новый рабочий стол уже показывает парк устройств, назначения раскатки, typed registry модулей и
-            конструктор форм заявок. Следующие этапы углубят admin workflows без возврата к legacy admin.js.
+            Тот же единый shell, что и в поддержке: инвентарь слева, активное устройство в центре,
+            раскатка, observer, реестр модулей и конструктор форм в едином операционном интерфейсе.
           </p>
         </div>
-        <dl className="workspace-boot__meta">
+
+        <dl className="workspace-page__stats">
           <div>
             <dt>Всего в инвентаре</dt>
             <dd>{summary.visible_count}</dd>
@@ -150,7 +172,7 @@ export function AdminWorkspace() {
             <dd>{summary.online_count}</dd>
           </div>
           <div>
-            <dt>Назначения rollout</dt>
+            <dt>Rollout targets</dt>
             <dd>{summary.rollout_targets}</dd>
           </div>
         </dl>
@@ -159,16 +181,16 @@ export function AdminWorkspace() {
       <section className="admin-workspace__grid">
         <article className="support-workspace__panel">
           <div className="support-workspace__panel-head">
-            <h2>Инвентарь устройств</h2>
-            <p>Проверяем состав парка и готовность к раскатке без legacy admin.js.</p>
+            <div>
+              <h2>Инвентарь устройств</h2>
+              <p>Проверяем состав парка, связь агентов и готовность к rollout без возврата в legacy admin shell.</p>
+            </div>
           </div>
 
-          <div className="support-filters admin-filters">
+          <div className="support-queue-toolbar">
             <label className="support-filter-search">
               <span>Поиск по инвентарю</span>
               <input
-                type="search"
-                value={queryDraft}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
                   startTransition(() => {
@@ -176,18 +198,21 @@ export function AdminWorkspace() {
                   });
                 }}
                 placeholder="device_id, hostname, ОС или версия"
+                type="search"
+                value={queryDraft}
               />
             </label>
+
             <label className="support-filter-select">
               <span>Срез по связи</span>
               <select
-                value={statusFilter}
                 onChange={(event) => {
                   const value = event.currentTarget.value as AdminStatusFilter;
                   startTransition(() => {
                     setStatusFilter(value);
                   });
                 }}
+                value={statusFilter}
               >
                 {filters.status_options.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -198,17 +223,24 @@ export function AdminWorkspace() {
             </label>
           </div>
 
-          <div className="admin-rollout">
-            <div className="support-workspace__panel-head">
-              <h3>Политика rollout</h3>
-              <span>{bootstrap.features.join(" · ")}</span>
+          <div className="support-queue-summary">
+            <span>Устройств в текущем срезе: {devices.length}</span>
+            <span>Активные возможности: {bootstrap.features.join(" · ")}</span>
+          </div>
+
+          <section className="admin-rollout">
+            <div className="support-ticket-detail__section-head">
+              <h3>Назначения rollout</h3>
+              <span>{rollout.length}</span>
             </div>
             {rollout.length ? (
               <div className="admin-rollout__list">
                 {rollout.map((item) => (
                   <article key={`${item.target}:${item.channel}:${item.version}`} className="workspace-card">
                     <p className="workspace-card__code">{item.target}</p>
-                    <h3>{item.channel}/{item.version}</h3>
+                    <h3>
+                      {item.channel}/{item.version}
+                    </h3>
                     <p>{item.updated_by ? `Обновил ${item.updated_by}` : "Источник обновления не указан"}</p>
                     <p>Изменено: {formatDateTime(item.updated_at)}</p>
                   </article>
@@ -217,28 +249,30 @@ export function AdminWorkspace() {
             ) : (
               <div className="support-queue-empty">Назначений rollout пока нет. Новый boundary уже готов их показывать.</div>
             )}
-          </div>
+          </section>
 
           {devices.length ? (
             <div className="admin-device-list">
               {devices.map((device) => (
                 <button
-                  key={device.device_id}
-                  type="button"
                   className={`support-ticket-card admin-device-card${selectedDevice?.device_id === device.device_id ? " active" : ""}`}
+                  key={device.device_id}
                   onClick={() => {
                     startTransition(() => {
                       setSelectedDeviceId(device.device_id);
                     });
                   }}
+                  type="button"
                 >
                   <div className="support-ticket-card__head">
                     <strong>{device.hostname ?? device.device_id}</strong>
                     <span className="support-ticket-card__status">{device.connection_status_label}</span>
                   </div>
+                  <p>{device.os ?? "ОС не определена"}</p>
                   <div className="support-ticket-card__meta">
                     <span>{device.target ?? "Платформа не определена"}</span>
                     <span>{device.agent_version ?? "Версия не указана"}</span>
+                    <span>{formatDateTime(device.last_seen_at)}</span>
                   </div>
                   <p>{device.latest_update.summary ?? "Нет свежих данных по rollout."}</p>
                 </button>
@@ -253,39 +287,34 @@ export function AdminWorkspace() {
 
         <article className="support-workspace__panel">
           <div className="support-workspace__panel-head">
-            <h2>Карточка устройства</h2>
-            <p>Новая карточка устройства уже ведёт update workflow и быстрый observer-срез без legacy admin.js.</p>
+            <div>
+              <h2>Карточка устройства</h2>
+              <p>Операционный обзор устройства, update flow и observer quick panel в том же стиле, что и support.</p>
+            </div>
           </div>
 
           {selectedDevice ? (
             <section className="admin-device-detail">
-              <div className="support-ticket-detail__hero">
-                <div className="support-ticket-detail__block">
+              <header className="support-ticket-layout__header support-ticket-layout__header--compact">
+                <div className="support-ticket-layout__title">
                   <p className="support-ticket-detail__code">{selectedDevice.device_id}</p>
-                  <h3>{selectedDevice.hostname ?? "Имя узла не указано"}</h3>
-                  <p>{selectedDevice.os ?? "ОС не определена"}</p>
+                  <h2>{selectedDevice.hostname ?? "Имя узла не указано"}</h2>
+                  <div className="support-ticket-layout__meta">
+                    <span>{selectedDevice.os ?? "ОС не определена"}</span>
+                    <span>Target: {selectedDevice.target ?? "—"}</span>
+                    <span>Последний контакт: {formatDateTime(selectedDevice.last_seen_at)}</span>
+                  </div>
                 </div>
-                <dl className="support-ticket-detail__stats">
-                  <div>
-                    <dt>Состояние</dt>
-                    <dd>{selectedDevice.connection_status_label}</dd>
-                  </div>
-                  <div>
-                    <dt>Платформа</dt>
-                    <dd>{selectedDevice.target ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Последний контакт</dt>
-                    <dd>{formatDateTime(selectedDevice.last_seen_at)}</dd>
-                  </div>
-                </dl>
-              </div>
+                <div className="support-ticket-layout__actions">
+                  <div className="support-ticket-layout__status-pill">{selectedDevice.connection_status_label}</div>
+                </div>
+              </header>
 
-              <div className="support-ticket-detail__grid">
+              <div className="support-snapshot-grid">
                 <article className="support-snapshot-card">
                   <span>Версия агента</span>
                   <strong>{selectedDevice.agent_version ?? "Неизвестно"}</strong>
-                  <p>Этот срез нужен для будущих rollout-решений и массовых update flow.</p>
+                  <p>Срез нужен для rollout-решений и контроля расхождений по парку устройств.</p>
                 </article>
                 <article className="support-snapshot-card">
                   <span>Готовность к обновлению</span>
@@ -293,18 +322,19 @@ export function AdminWorkspace() {
                   <p>{selectedDevice.latest_update.summary ?? "Нет свежих данных по update workflow."}</p>
                 </article>
                 <article className="support-snapshot-card">
-                  <span>Контур observer</span>
+                  <span>Эндпоинт observer</span>
                   <strong>{bootstrap.observer.quick_endpoint}</strong>
-                  <p>Этот же workspace теперь показывает живой quick-срез по трассам и опасным потокам.</p>
+                  <p>Тот же shell показывает быстрый trace-срез и drilldown без legacy tech panel.</p>
                 </article>
               </div>
 
               <DeviceUpdatePanel
                 device={{
                   device_id: selectedDevice.device_id,
-                  hostname: selectedDevice.hostname
+                  hostname: selectedDevice.hostname,
                 }}
               />
+
               <ObserverQuickPanel
                 deviceId={selectedDevice.device_id}
                 deviceLabel={selectedDevice.hostname ?? selectedDevice.device_id}

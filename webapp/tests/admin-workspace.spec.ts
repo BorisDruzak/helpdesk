@@ -40,7 +40,7 @@ test("администратор открывает inventory, modules actions �
   await expect(page).toHaveURL(/\/app\/admin$/);
   await expect(page.getByRole("heading", { name: "Рабочее место администрирования" })).toBeVisible();
   await expect(page.getByText("Всего в инвентаре")).toBeVisible();
-  await expect(page.getByText("Назначения rollout")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Назначения rollout" })).toBeVisible();
   await expect(page.getByRole("button", { name: /WS-01/i })).toBeVisible();
   await expect(page.getByText("Устройство на шаг позади rollout").first()).toBeVisible();
   await expect(page.getByText("Доступно обновление")).toBeVisible();
@@ -103,7 +103,7 @@ test("администратор открывает inventory, modules actions �
   await expect(page.getByText(/Операция op-admin-update-\d+ поставлена в очередь\./)).toBeVisible();
 
   await page.getByRole("button", { name: /LT-02/i }).click();
-  await expect(page.getByText("Платформа: linux_alt_x86_64")).toBeVisible();
+  await expect(page.getByText("Платформа: linux_alt_x86_64").first()).toBeVisible();
   await expect(page.getByText("trace-linux-1").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Ожидает связи" })).toBeDisabled();
 
