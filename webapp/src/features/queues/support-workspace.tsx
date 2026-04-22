@@ -27,6 +27,7 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
   hour: "2-digit",
   minute: "2-digit"
 });
+const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 
 
 function formatDateTime(value: string | null | undefined) {
@@ -756,7 +757,8 @@ export function SupportWorkspace() {
   const supportQueueQuery = useQuery({
     queryKey: ["support", "queue", scope, statusFilter, deferredQuery],
     queryFn: () => fetchSupportQueue({ scope, statusFilter, query: deferredQuery }),
-    enabled: supportBootstrapQuery.isSuccess
+    enabled: supportBootstrapQuery.isSuccess,
+    refetchInterval: SUPPORT_QUEUE_REFRESH_MS
   });
   const supportTicketQuery = useQuery({
     queryKey: ["support", "ticket", selectedTicketId],
@@ -793,18 +795,10 @@ export function SupportWorkspace() {
     selectedTicketIdRef.current = selectedTicketId;
   }, [selectedTicketId]);
 
-  const visibleTicketIds = supportQueueQuery.data?.tickets.map((ticket) => ticket.ticket_id) ?? [];
-  const realtimeTicketIds = Array.from(
-    new Set(
-      [...visibleTicketIds, selectedTicketId].filter((value): value is string => Boolean(value))
-    )
-  );
-  const realtimeTicketIdsKey = [...realtimeTicketIds].sort().join("|");
-
   useEffect(() => {
     const realtimeClient = getSharedWebRealtimeClient();
     const activeSubscriptions = realtimeTicketSubscriptionsRef.current;
-    const targetTicketIds = new Set(realtimeTicketIds);
+    const targetTicketIds = new Set(selectedTicketId ? [selectedTicketId] : []);
 
     for (const [ticketId, unsubscribe] of activeSubscriptions.entries()) {
       if (targetTicketIds.has(ticketId)) {
@@ -814,7 +808,8 @@ export function SupportWorkspace() {
       activeSubscriptions.delete(ticketId);
     }
 
-    for (const ticketId of realtimeTicketIds) {
+    // Queue stays fresh via polling; keep websocket focus on the active ticket only.
+    for (const ticketId of targetTicketIds) {
       if (activeSubscriptions.has(ticketId)) {
         continue;
       }
@@ -833,7 +828,7 @@ export function SupportWorkspace() {
 
       activeSubscriptions.set(ticketId, unsubscribe);
     }
-  }, [queryClient, realtimeTicketIdsKey]);
+  }, [queryClient, selectedTicketId]);
 
   useEffect(() => {
     return () => {

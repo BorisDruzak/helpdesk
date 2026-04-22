@@ -467,6 +467,165 @@ describe("SupportWorkspace", () => {
     });
   });
 
+  it("подписывается по realtime только на выбранный тикет, а не на всю видимую очередь", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/support/bootstrap") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              workspace: "support",
+              features: ["queue_overview", "ticket_workspace", "observer_trace", "tool_actions"],
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/{ticket_id}/observer",
+                drawer_tab: "trace",
+              },
+            },
+          });
+        }
+
+        if (url.startsWith("/api/web/support/queue")) {
+          return jsonResponse({
+            status: "success",
+            data: {
+              scope: "all",
+              query: "",
+              status_filter: "all",
+              summary: {
+                visible_count: 2,
+                selected_ticket_id: "ticket-1",
+              },
+              filters: {
+                scope_options: [
+                  { value: "all", label: "Все доступные" },
+                  { value: "mine", label: "Только мои" },
+                ],
+                status_options: [{ value: "all", label: "Все статусы" }],
+              },
+              tickets: [
+                {
+                  ticket_id: "ticket-1",
+                  ticket_code: "T-100001",
+                  title: "Первый тикет",
+                  status: "new",
+                  status_label: "Новая",
+                  queue_code: "servicedesk_l1",
+                  assignee_id: null,
+                  requester_display_name: "Алексей",
+                  device_id: "device-1",
+                  updated_at: "2026-04-20T08:10:00+05:00",
+                  created_at: "2026-04-20T07:55:00+05:00",
+                  requires_operator_action: true,
+                  unread_user_messages: 2,
+                },
+                {
+                  ticket_id: "ticket-2",
+                  ticket_code: "T-100002",
+                  title: "Второй тикет",
+                  status: "new",
+                  status_label: "Новая",
+                  queue_code: "servicedesk_l1",
+                  assignee_id: null,
+                  requester_display_name: "Марина",
+                  device_id: "device-2",
+                  updated_at: "2026-04-20T08:08:00+05:00",
+                  created_at: "2026-04-20T07:50:00+05:00",
+                  requires_operator_action: true,
+                  unread_user_messages: 1,
+                },
+              ],
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket: {
+                ticket_id: "ticket-1",
+                ticket_code: "T-100001",
+                title: "Первый тикет",
+                description: "Описание первого тикета",
+                status: "new",
+                status_label: "Новая",
+                requester_display_name: "Алексей",
+                device_id: "device-1",
+                queue: {
+                  id: 11,
+                  code: "servicedesk_l1",
+                  name: "ServiceDesk L1",
+                },
+                assignee_id: null,
+                updated_at: "2026-04-20T08:10:00+05:00",
+                created_at: "2026-04-20T07:55:00+05:00",
+                queue_members: [],
+              },
+              observer: {
+                ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
+                summary: {
+                  ticket_id: "ticket-1",
+                  trace_count: 1,
+                  active_trace_count: 1,
+                  error_trace_count: 0,
+                  signature_count: 0,
+                  latest_trace_at: "2026-04-20T08:09:00+05:00",
+                },
+              },
+              timeline: [],
+              snapshot: {
+                presence: {
+                  agent_online: true,
+                  user_online: false,
+                  support_online: true,
+                  presence_summary: "Агент онлайн",
+                },
+                device: {
+                  device_id: "device-1",
+                  display_name: "device-1",
+                  os_name: "Linux",
+                  agent_version: "3.0.0",
+                  last_seen_at: "2026-04-20T08:10:00+05:00",
+                },
+                latest_operations: [],
+              },
+              actions: {
+                status_options: [],
+                can_send_internal_note: true,
+              },
+            },
+          });
+        }
+
+        if (url === "/api/web/support/tickets/ticket-1/tools") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_id: "ticket-1",
+              device_id: "device-1",
+              tools: [],
+            },
+          });
+        }
+
+        return jsonResponse({ status: "error", error: `Unhandled URL: ${url}` }, 404);
+      })
+    );
+
+    renderSupportWorkspace();
+
+    expect(await screen.findByText("Первый тикет")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledTimes(1);
+    });
+    expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
+    expect(Array.from(ticketRealtimeListeners.keys())).toEqual(["ticket-1"]);
+  });
+
   it("renders queue data and lets the operator switch selected ticket", async () => {
     vi.stubGlobal(
       "fetch",
