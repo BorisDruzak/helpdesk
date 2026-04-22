@@ -1,12 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Clock3,
   Copy,
+  FileImage,
+  FileText,
+  Film,
+  History,
+  ListFilter,
   Paperclip,
   RefreshCcw,
-  Wrench
+  Wrench,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 
 import { Avatar } from "../../components/ui/avatar";
@@ -23,14 +29,27 @@ import {
   postSupportTicketMessage,
   postSupportTicketStatus,
   postSupportTicketToolRun,
-  type SupportCountItem,
   type SupportQueueScope,
   type SupportTicketDetailPayload,
-  type SupportTicketToolsPayload
+  type SupportTicketToolsPayload,
 } from "../../features/queues/api";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
+import { cn } from "../../shared/ui/cn";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
+
+type NormalizedAttachment = {
+  id: string;
+  artifactId: string | null;
+  label: string;
+  summary: string;
+  kind: string | null;
+  mimeType: string | null;
+  mediaType: "image" | "video" | "file";
+  downloadUrl: string | null;
+  sourceLabel: string;
+  sourceTimestamp: string | null;
+};
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
@@ -46,28 +65,36 @@ function formatDateTime(value: string | null | undefined) {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   }).format(date);
 }
 
 function getStatusTone(status: string) {
   switch (status) {
+    case "accepted":
+    case "queued":
+    case "sent":
+    case "running":
+    case "new":
+    case "triaged":
+      return "brand" as const;
     case "in_progress":
       return "success" as const;
     case "waiting_on_user":
+    case "waiting_on_vendor":
       return "warning" as const;
+    case "success":
+    case "succeeded":
     case "resolved":
     case "closed":
-      return "info" as const;
-    case "new":
-      return "brand" as const;
+      return "success" as const;
+    case "failed":
+    case "timed_out":
+    case "canceled":
+      return "danger" as const;
     default:
       return "neutral" as const;
   }
-}
-
-function getCount(items: SupportCountItem[] | undefined, value: string) {
-  return items?.find((item) => item.value === value)?.count ?? 0;
 }
 
 function getRoleTone(entry: SupportTicketDetailPayload["timeline"][number]) {
@@ -126,28 +153,212 @@ function describeToolRiskLevel(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function flattenAttachments(timeline: SupportTicketDetailPayload["timeline"]) {
+function buildArtifactUrl(ticketId: string, attachment: Record<string, unknown>): string | null {
+  const artifactId = String(attachment.artifact_id ?? attachment.id ?? "").trim();
+  const rawUrl = String(attachment.url ?? "").trim();
+
+  if (artifactId) {
+    return `/api/artifacts/${encodeURIComponent(artifactId)}/download?ticket_id=${encodeURIComponent(ticketId)}`;
+  }
+
+  if (!rawUrl) {
+    return null;
+  }
+
+  if (rawUrl.includes("ticket_id=")) {
+    return rawUrl;
+  }
+
+  const separator = rawUrl.includes("?") ? "&" : "?";
+  return `${rawUrl}${separator}ticket_id=${encodeURIComponent(ticketId)}`;
+}
+
+function getAttachmentMediaType(attachment: Record<string, unknown>): "image" | "video" | "file" {
+  const mimeType = String(attachment.mime_type ?? attachment.mime ?? "").toLowerCase();
+  const kind = String(attachment.kind ?? "").toLowerCase();
+
+  if (mimeType.startsWith("video/") || kind === "screen_recording") {
+    return "video";
+  }
+  if (mimeType.startsWith("image/") || kind === "screenshot") {
+    return "image";
+  }
+  return "file";
+}
+
+function normalizeAttachment(
+  attachment: Record<string, unknown>,
+  ticketId: string,
+  fallbackId: string,
+  sourceLabel: string,
+  sourceTimestamp: string | null,
+): NormalizedAttachment {
+  const summaryParts = [attachment.description, attachment.mime_type, attachment.kind]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  return {
+    id: fallbackId,
+    artifactId: String(attachment.artifact_id ?? attachment.id ?? "").trim() || null,
+    label:
+      String(
+        attachment.name ??
+          attachment.filename ??
+          attachment.original_name ??
+          attachment.label ??
+          attachment.artifact_id ??
+          "Вложение",
+      ).trim() || "Вложение",
+    summary: summaryParts.join(" • ") || "Артефакт из ленты тикета",
+    kind: String(attachment.kind ?? "").trim() || null,
+    mimeType: String(attachment.mime_type ?? attachment.mime ?? "").trim() || null,
+    mediaType: getAttachmentMediaType(attachment),
+    downloadUrl: buildArtifactUrl(ticketId, attachment),
+    sourceLabel,
+    sourceTimestamp,
+  };
+}
+
+function flattenAttachments(ticketId: string, timeline: SupportTicketDetailPayload["timeline"]) {
   return timeline.flatMap((entry, entryIndex) =>
-    entry.attachments.map((attachment, attachmentIndex) => ({
-      id: `${entry.event_id ?? entryIndex}-${attachmentIndex}`,
-      label:
-        String(
-          attachment.name ??
-            attachment.filename ??
-            attachment.label ??
-            attachment.artifact_id ??
-            attachment.type ??
-            "Вложение"
-        ) || "Вложение",
-      summary: JSON.stringify(attachment)
-    }))
+    entry.attachments.map((attachment, attachmentIndex) =>
+      normalizeAttachment(
+        attachment,
+        ticketId,
+        `${entry.event_id ?? entry.message_id ?? entryIndex}-${attachmentIndex}`,
+        entry.sender_display_name ?? getRoleLabel(entry),
+        entry.ts,
+      ),
+    ),
+  );
+}
+
+function getOperationTitle(operation: SupportTicketDetailPayload["snapshot"]["latest_operations"][number]) {
+  return operation.tool_name ?? operation.command_name ?? operation.kind;
+}
+
+function ArtifactPreview({ attachment }: { attachment: NormalizedAttachment }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(attachment.mediaType !== "file");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!attachment.downloadUrl || attachment.mediaType === "file") {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    let localUrl: string | null = null;
+
+    setLoading(true);
+    setError(null);
+
+    void fetch(attachment.downloadUrl, { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Не удалось загрузить артефакт");
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        if (!active) {
+          return;
+        }
+        localUrl = URL.createObjectURL(blob);
+        setObjectUrl(localUrl);
+      })
+      .catch((loadError) => {
+        if (!active) {
+          return;
+        }
+        setError(loadError instanceof Error ? loadError.message : "Ошибка загрузки");
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (localUrl) {
+        URL.revokeObjectURL(localUrl);
+      }
+    };
+  }, [attachment.downloadUrl, attachment.mediaType]);
+
+  return (
+    <div className="space-y-3 rounded-[1rem] border border-border bg-white px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-slate-950">{attachment.label}</p>
+          <p className="mt-1 text-xs text-slate-500">{attachment.summary}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+          {attachment.mediaType === "image" ? (
+            <FileImage className="h-4 w-4" />
+          ) : attachment.mediaType === "video" ? (
+            <Film className="h-4 w-4" />
+          ) : (
+            <FileText className="h-4 w-4" />
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-panel border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-sm text-slate-500">
+          Загружаем предпросмотр...
+        </div>
+      ) : null}
+
+      {!loading && error ? (
+        <div className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      {!loading && !error && attachment.mediaType === "image" && objectUrl ? (
+        <img
+          alt={attachment.label}
+          className="max-h-[22rem] w-full rounded-panel border border-border object-contain"
+          loading="lazy"
+          src={objectUrl}
+        />
+      ) : null}
+
+      {!loading && !error && attachment.mediaType === "video" && objectUrl ? (
+        <video
+          className="max-h-[22rem] w-full rounded-panel border border-border"
+          controls
+          preload="metadata"
+          src={objectUrl}
+        />
+      ) : null}
+
+      {attachment.mediaType === "file" && attachment.downloadUrl ? (
+        <a
+          className="inline-flex items-center gap-2 rounded-pill border border-border px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+          href={attachment.downloadUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <Paperclip className="h-4 w-4" />
+          Скачать файл
+        </a>
+      ) : null}
+
+      <p className="text-xs text-slate-400">
+        {attachment.sourceLabel} • {formatDateTime(attachment.sourceTimestamp)}
+      </p>
+    </div>
   );
 }
 
 function parseToolParams(
   selectedTool: SupportTicketToolsPayload["tools"][number] | null,
   selectedPresetId: string,
-  toolParams: Record<string, string>
+  toolParams: Record<string, string>,
 ) {
   if (!selectedTool) {
     throw new Error("Выберите инструмент.");
@@ -156,7 +367,7 @@ function parseToolParams(
   if (selectedPresetId.trim()) {
     return {
       presetId: selectedPresetId.trim(),
-      params: {}
+      params: {},
     };
   }
 
@@ -203,7 +414,7 @@ function parseToolParams(
 
   return {
     presetId: null,
-    params
+    params,
   };
 }
 
@@ -221,7 +432,9 @@ export function TicketDetailPage() {
   const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [toolParams, setToolParams] = useState<Record<string, string>>({});
+  const [toolSearch, setToolSearch] = useState("");
   const deferredQueueSearch = useDeferredValue(queueSearch);
+  const deferredToolSearch = useDeferredValue(toolSearch);
 
   const queueQuery = useQuery({
     queryKey: ["ticket-detail-queue", scope, statusFilter, deferredQueueSearch],
@@ -229,24 +442,24 @@ export function TicketDetailPage() {
       fetchSupportQueue({
         scope,
         statusFilter,
-        query: deferredQueueSearch
+        query: deferredQueueSearch,
       }),
     retry: false,
-    refetchInterval: SUPPORT_QUEUE_REFRESH_MS
+    refetchInterval: SUPPORT_QUEUE_REFRESH_MS,
   });
 
   const detailQuery = useQuery({
     queryKey: ["ticket-detail", ticketId],
     queryFn: () => fetchSupportTicketDetail(ticketId!),
     enabled: Boolean(ticketId),
-    retry: false
+    retry: false,
   });
 
   const toolsQuery = useQuery({
     queryKey: ["ticket-tools", ticketId],
     queryFn: () => fetchSupportTicketTools(ticketId!),
     enabled: Boolean(ticketId),
-    retry: false
+    retry: false,
   });
 
   useEffect(() => {
@@ -254,21 +467,37 @@ export function TicketDetailPage() {
     setMessageDraft("");
   }, [ticketId]);
 
+  const toolList = toolsQuery.data?.tools ?? [];
+  const visibleTools = useMemo(() => {
+    const normalized = deferredToolSearch.trim().toLowerCase();
+    if (!normalized) {
+      return toolList;
+    }
+    return toolList.filter((tool) =>
+      [
+        tool.tool_name,
+        tool.module_name ?? "",
+        tool.description ?? "",
+        tool.source,
+        tool.risk_level,
+      ].some((value) => value.toLowerCase().includes(normalized)),
+    );
+  }, [deferredToolSearch, toolList]);
+
   useEffect(() => {
-    const tools = toolsQuery.data?.tools ?? [];
-    if (!tools.length) {
+    if (!visibleTools.length) {
       setSelectedToolName(null);
       setSelectedPresetId("");
       setToolParams({});
       return;
     }
 
-    if (!selectedToolName || !tools.some((tool) => tool.tool_name === selectedToolName)) {
-      setSelectedToolName(tools[0].tool_name);
+    if (!selectedToolName || !visibleTools.some((tool) => tool.tool_name === selectedToolName)) {
+      setSelectedToolName(visibleTools[0].tool_name);
       setSelectedPresetId("");
       setToolParams({});
     }
-  }, [selectedToolName, toolsQuery.data?.tools]);
+  }, [selectedToolName, visibleTools]);
 
   useEffect(() => {
     if (!ticketId) {
@@ -294,9 +523,9 @@ export function TicketDetailPage() {
       setMessageDraft("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
-        queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] })
+        queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] }),
       ]);
-    }
+    },
   });
 
   const statusMutation = useMutation({
@@ -310,9 +539,9 @@ export function TicketDetailPage() {
       setStatusAction("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
-        queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] })
+        queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] }),
       ]);
-    }
+    },
   });
 
   const toolMutation = useMutation({
@@ -320,21 +549,20 @@ export function TicketDetailPage() {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
       }
-      const selectedTool =
-        toolsQuery.data?.tools.find((tool) => tool.tool_name === selectedToolName) ?? null;
+      const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
       const parsed = parseToolParams(selectedTool, selectedPresetId, toolParams);
       return postSupportTicketToolRun(ticketId, {
         toolName: selectedTool!.tool_name,
         presetId: parsed.presetId,
-        params: parsed.params
+        params: parsed.params,
       });
     },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
-        queryClient.invalidateQueries({ queryKey: ["ticket-tools", ticketId] })
+        queryClient.invalidateQueries({ queryKey: ["ticket-tools", ticketId] }),
       ]);
-    }
+    },
   });
 
   if (!ticketId) {
@@ -343,18 +571,17 @@ export function TicketDetailPage() {
 
   const queue = queueQuery.data;
   const detail = detailQuery.data;
-  const attachments = detail ? flattenAttachments(detail.timeline) : [];
+  const attachments = detail ? flattenAttachments(ticketId, detail.timeline) : [];
   const historyItems = detail?.timeline.filter((entry) => entry.event_type !== "chat_message") ?? [];
-  const selectedTool = toolsQuery.data?.tools.find((tool) => tool.tool_name === selectedToolName) ?? null;
-  const statusCounts = queue?.summary.status_counts ?? [];
-  const scopeCounts = queue?.summary.scope_counts ?? [];
+  const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
   const canSendInternal = detail?.actions.can_send_internal_note ?? false;
+  const latestOperations = detail?.snapshot.latest_operations ?? [];
 
   const tabItems = [
     { value: "dialog", label: "Диалог", count: detail?.timeline.length ?? 0 },
     { value: "info", label: "Информация" },
     { value: "files", label: "Файлы", count: attachments.length },
-    { value: "history", label: "История", count: historyItems.length }
+    { value: "history", label: "История", count: historyItems.length + latestOperations.length },
   ];
 
   return (
@@ -438,28 +665,31 @@ export function TicketDetailPage() {
 
       {detailQuery.isError ? (
         <div className="rounded-[1.1rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          {detailQuery.error instanceof Error ? detailQuery.error.message : "Не удалось открыть карточку тикета."}
+          {detailQuery.error instanceof Error
+            ? detailQuery.error.message
+            : "Не удалось открыть карточку тикета."}
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
-        <Card className="h-fit">
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+        <Card className="overflow-hidden xl:sticky xl:top-[8.5rem] xl:self-start">
           <CardHeader>
             <CardTitle>Очередь</CardTitle>
             <CardDescription>
-              Отдельное рабочее окно со статусами, моими тикетами и быстрым поиском по реальной очереди.
+              Фиксированное рабочее окно со статусами, поиском и реальной очередью тикетов.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
+          <CardContent className="flex h-[min(68vh,58rem)] min-h-[30rem] flex-col gap-5 overflow-hidden">
             <div className="grid grid-cols-2 gap-2">
-              {scopeCounts.map((item) => (
+              {(queue?.summary.scope_counts ?? []).map((item) => (
                 <button
                   key={item.value}
-                  className={`rounded-pill px-3 py-2 text-sm font-medium transition-colors ${
+                  className={cn(
+                    "rounded-pill px-3 py-2 text-sm font-medium transition-colors",
                     scope === item.value
                       ? "bg-brand-600 text-white"
-                      : "bg-surface-subtle text-slate-600 hover:bg-brand-50 hover:text-brand-800"
-                  }`}
+                      : "bg-surface-subtle text-slate-600 hover:bg-brand-50 hover:text-brand-800",
+                  )}
                   onClick={() => {
                     startTransition(() => {
                       setScope(item.value as SupportQueueScope);
@@ -479,14 +709,15 @@ export function TicketDetailPage() {
             />
 
             <div className="space-y-2">
-              {statusCounts.map((item) => (
+              {(queue?.summary.status_counts ?? []).map((item) => (
                 <button
                   key={item.value}
-                  className={`flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors ${
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors",
                     statusFilter === item.value
                       ? "border-brand-200 bg-brand-50 text-brand-900"
-                      : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white"
-                  }`}
+                      : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white",
+                  )}
                   onClick={() => {
                     startTransition(() => {
                       setStatusFilter(item.value);
@@ -502,85 +733,99 @@ export function TicketDetailPage() {
               ))}
             </div>
 
-            {queueQuery.isLoading ? (
-              <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-sm text-slate-500">
-                Загружаем очередь...
-              </div>
-            ) : null}
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+              {queueQuery.isLoading ? (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-sm text-slate-500">
+                  Загружаем очередь...
+                </div>
+              ) : null}
 
-            {queue && queue.tickets.length === 0 ? (
-              <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-sm text-slate-500">
-                По текущим фильтрам тикеты не найдены.
-              </div>
-            ) : null}
+              {queue && queue.tickets.length === 0 ? (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-sm text-slate-500">
+                  По текущим фильтрам тикеты не найдены.
+                </div>
+              ) : null}
 
-            {queue?.tickets.map((queueTicket) => {
-              const active = queueTicket.ticket_id === ticketId;
+              {queue?.tickets.map((queueTicket) => {
+                const active = queueTicket.ticket_id === ticketId;
 
-              return (
-                <button
-                  key={queueTicket.ticket_id}
-                  className={`w-full rounded-[1.1rem] border px-4 py-4 text-left transition-colors ${
-                    active
-                      ? "border-brand-200 bg-brand-50"
-                      : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
-                  }`}
-                  onClick={() => navigate(`/app/tickets/${queueTicket.ticket_id}`)}
-                  type="button"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">
-                        {queueTicket.ticket_code ?? queueTicket.ticket_id}
-                      </p>
-                      <p className="mt-2 text-base font-semibold text-slate-950">{queueTicket.title}</p>
+                return (
+                  <button
+                    key={queueTicket.ticket_id}
+                    className={cn(
+                      "w-full rounded-[1.1rem] border px-4 py-4 text-left transition-colors",
+                      active
+                        ? "border-brand-200 bg-brand-50"
+                        : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle",
+                    )}
+                    onClick={() => navigate(`/app/tickets/${queueTicket.ticket_id}`)}
+                    type="button"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">
+                          {queueTicket.ticket_code ?? queueTicket.ticket_id}
+                        </p>
+                        <p className="mt-2 text-base font-semibold text-slate-950">{queueTicket.title}</p>
+                      </div>
+                      <Badge tone={getStatusTone(queueTicket.status)}>{queueTicket.status_label}</Badge>
                     </div>
-                    <Badge tone={getStatusTone(queueTicket.status)}>{queueTicket.status_label}</Badge>
-                  </div>
-                  <p className="mt-3 text-sm text-slate-500">
-                    {queueTicket.requester_display_name ?? "Инициатор не указан"}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    {formatDateTime(queueTicket.updated_at ?? queueTicket.created_at)}
-                    {queueTicket.unread_user_messages > 0 ? ` • ${queueTicket.unread_user_messages} непрочит.` : ""}
-                  </p>
-                </button>
-              );
-            })}
+                    <p className="mt-3 text-sm text-slate-500">
+                      {queueTicket.requester_display_name ?? "Инициатор не указан"}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-400">
+                      {formatDateTime(queueTicket.updated_at ?? queueTicket.created_at)}
+                      {queueTicket.unread_user_messages > 0
+                        ? ` • ${queueTicket.unread_user_messages} непрочит.`
+                        : ""}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
-          <Card className="overflow-hidden">
-            <CardContent className="px-0 pb-0 pt-0">
-              <div className="border-b border-border px-6 py-5">
-                <Tabs items={tabItems} onValueChange={setActiveTab} value={activeTab} />
-              </div>
+        <Card className="overflow-hidden">
+          <CardContent className="flex h-[min(72vh,62rem)] min-h-[34rem] flex-col px-0 pb-0 pt-0">
+            <div className="border-b border-border px-6 py-5">
+              <Tabs items={tabItems} onValueChange={setActiveTab} value={activeTab} />
+            </div>
 
-              <div className="space-y-4 px-6 py-6">
-                {detailQuery.isLoading ? (
-                  <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
-                    Загружаем карточку тикета...
-                  </div>
-                ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              {detailQuery.isLoading ? (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                  Загружаем карточку тикета...
+                </div>
+              ) : null}
 
-                {detail && activeTab === "dialog"
-                  ? detail.timeline.map((entry, entryIndex) => (
+              {detail && activeTab === "dialog" ? (
+                <div className="space-y-4">
+                  {detail.timeline.map((entry, entryIndex) => {
+                    const entryAttachments = entry.attachments.map((attachment, attachmentIndex) =>
+                      normalizeAttachment(
+                        attachment,
+                        ticketId,
+                        `${entry.event_id ?? entry.message_id ?? entryIndex}-${attachmentIndex}`,
+                        entry.sender_display_name ?? getRoleLabel(entry),
+                        entry.ts,
+                      ),
+                    );
+
+                    return (
                       <div
                         key={`${entry.event_id ?? entry.message_id ?? entry.ts ?? entryIndex}`}
-                        className={`rounded-[1.3rem] border px-5 py-5 shadow-soft ${
+                        className={cn(
+                          "rounded-[1.3rem] border px-5 py-5 shadow-soft",
                           entry.from_role === "support" || entry.from_role === "agent"
                             ? "border-blue-100 bg-blue-50/60"
                             : entry.visibility === "internal"
                               ? "border-amber-100 bg-amber-50/70"
-                              : "border-border bg-white"
-                        }`}
+                              : "border-border bg-white",
+                        )}
                       >
                         <div className="flex items-start gap-4">
-                          <Avatar
-                            name={entry.sender_display_name ?? getRoleLabel(entry)}
-                            tone={getRoleTone(entry)}
-                          />
+                          <Avatar name={entry.sender_display_name ?? getRoleLabel(entry)} tone={getRoleTone(entry)} />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="font-semibold text-slate-950">
@@ -616,105 +861,176 @@ export function TicketDetailPage() {
                                 ) : null}
                               </div>
                             ) : null}
+
+                            {entryAttachments.length ? (
+                              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                {entryAttachments.map((attachment) => (
+                                  <ArtifactPreview key={attachment.id} attachment={attachment} />
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
-                    ))
-                  : null}
+                    );
+                  })}
+                </div>
+              ) : null}
 
-                {detail && activeTab === "info" ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Card className="border-dashed shadow-none">
-                      <CardHeader>
-                        <CardTitle>Контекст обращения</CardTitle>
-                        <CardDescription>
-                          Реальные поля тикета и текущего observer-среза из typed detail boundary.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4 text-sm">
-                        <div>
-                          <p className="text-slate-500">Описание</p>
-                          <p className="mt-1 whitespace-pre-line text-slate-800">
-                            {detail.ticket.description ?? "Описание не заполнено."}
-                          </p>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="rounded-panel bg-white px-4 py-4">
-                            <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Очередь</p>
-                            <p className="mt-2 font-semibold text-slate-950">
-                              {detail.ticket.queue.name ?? detail.ticket.queue.code ?? "Не указана"}
-                            </p>
-                          </div>
-                          <div className="rounded-panel bg-white px-4 py-4">
-                            <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Устройство</p>
-                            <p className="mt-2 font-semibold text-slate-950">
-                              {detail.snapshot.device.hostname ?? detail.snapshot.device.device_id ?? "Нет привязки"}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-dashed shadow-none">
-                      <CardHeader>
-                        <CardTitle>Observer</CardTitle>
-                        <CardDescription>Тот же ticket observer summary, который уже отдаёт backend.</CardDescription>
-                      </CardHeader>
-                      <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+              {detail && activeTab === "info" ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card className="border-dashed shadow-none">
+                    <CardHeader>
+                      <CardTitle>Контекст обращения</CardTitle>
+                      <CardDescription>
+                        Реальные поля тикета, очередь, устройство и состав участников.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4 text-sm">
+                      <div>
+                        <p className="text-slate-500">Описание</p>
+                        <p className="mt-1 whitespace-pre-line text-slate-800">
+                          {detail.ticket.description ?? "Описание не заполнено."}
+                        </p>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
                         <div className="rounded-panel bg-white px-4 py-4">
-                          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Root trace</p>
-                          <p className="mt-2 break-all font-semibold text-slate-950">
-                            {detail.observer.summary.root_trace_id ?? "Нет trace"}
-                          </p>
-                        </div>
-                        <div className="rounded-panel bg-white px-4 py-4">
-                          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Трасс / ошибок</p>
+                          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Очередь</p>
                           <p className="mt-2 font-semibold text-slate-950">
-                            {detail.observer.summary.trace_count} / {detail.observer.summary.error_trace_count}
+                            {detail.ticket.queue.name ?? detail.ticket.queue.code ?? "Не указана"}
                           </p>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                ) : null}
+                        <div className="rounded-panel bg-white px-4 py-4">
+                          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Устройство</p>
+                          <p className="mt-2 font-semibold text-slate-950">
+                            {detail.snapshot.device.hostname ?? detail.snapshot.device.device_id ?? "Нет привязки"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="rounded-panel bg-white px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Участники очереди</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {detail.ticket.queue_members.length ? (
+                            detail.ticket.queue_members.map((member) => (
+                              <Badge key={member.actor_id} tone="neutral">
+                                {member.actor_id}
+                                {member.role_in_queue ? ` • ${member.role_in_queue}` : ""}
+                              </Badge>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">Состав очереди не передан.</p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                {detail && activeTab === "files" ? (
+                  <Card className="border-dashed shadow-none">
+                    <CardHeader>
+                      <CardTitle>Observer</CardTitle>
+                      <CardDescription>
+                        Тот же observer summary, который backend уже отдаёт для тикета.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+                      <div className="rounded-panel bg-white px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Root trace</p>
+                        <p className="mt-2 break-all font-semibold text-slate-950">
+                          {detail.observer.summary.root_trace_id ?? "Нет trace"}
+                        </p>
+                      </div>
+                      <div className="rounded-panel bg-white px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Трассы / ошибки</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {detail.observer.summary.trace_count} / {detail.observer.summary.error_trace_count}
+                        </p>
+                      </div>
+                      <div className="rounded-panel bg-white px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Signatures</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {detail.observer.summary.signature_count}
+                        </p>
+                      </div>
+                      <div className="rounded-panel bg-white px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Последняя trace</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {formatDateTime(detail.observer.summary.latest_trace_at)}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : null}
+
+              {detail && activeTab === "files" ? (
+                <div className="space-y-3">
+                  {attachments.length ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {attachments.map((attachment) => (
+                        <ArtifactPreview key={attachment.id} attachment={attachment} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                      В реальной ленте пока нет вложений или артефактов.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {detail && activeTab === "history" ? (
+                <div className="space-y-6">
                   <div className="space-y-3">
-                    {attachments.length ? (
-                      attachments.map((attachment) => (
+                    <div className="flex items-center gap-2">
+                      <History className="h-4 w-4 text-brand-700" />
+                      <p className="text-sm font-semibold text-slate-900">Последние операции</p>
+                    </div>
+                    {latestOperations.length ? (
+                      latestOperations.map((operation) => (
                         <div
-                          key={attachment.id}
-                          className="flex items-center justify-between rounded-[1.1rem] border border-border bg-white px-4 py-4"
+                          key={operation.operation_id}
+                          className="rounded-[1.1rem] border border-border bg-white px-4 py-4"
                         >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
-                              <Paperclip className="h-4 w-4" />
-                            </div>
+                          <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate font-semibold text-slate-900">{attachment.label}</p>
-                              <p className="truncate text-sm text-slate-500">{attachment.summary}</p>
+                              <p className="font-semibold text-slate-950">{getOperationTitle(operation)}</p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                {operation.result_summary ?? operation.error_message ?? "Без краткого результата"}
+                              </p>
                             </div>
+                            <Badge tone={getStatusTone(operation.status)}>{operation.status}</Badge>
                           </div>
+                          <p className="mt-3 text-xs text-slate-400">
+                            queued {formatDateTime(operation.queued_at)} • finished {formatDateTime(operation.finished_at)}
+                          </p>
                         </div>
                       ))
                     ) : (
                       <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
-                        В реальной ленте пока нет вложений или артефактов.
+                        Свежих операций по тикету пока нет.
                       </div>
                     )}
                   </div>
-                ) : null}
 
-                {detail && activeTab === "history" ? (
                   <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Clock3 className="h-4 w-4 text-brand-700" />
+                      <p className="text-sm font-semibold text-slate-900">Системные события</p>
+                    </div>
                     {historyItems.length ? (
                       historyItems.map((entry) => (
-                        <div key={`${entry.event_id ?? entry.ts ?? entry.text}`} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div
+                          key={`${entry.event_id ?? entry.ts ?? entry.text}`}
+                          className="rounded-[1.1rem] border border-border bg-white px-4 py-4"
+                        >
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-semibold text-slate-950">{getRoleLabel(entry)}</p>
                             <span className="text-sm text-slate-400">{formatDateTime(entry.ts)}</span>
                           </div>
                           <p className="mt-2 text-sm text-slate-600">{entry.text}</p>
+                          {entry.result_summary ? (
+                            <p className="mt-2 text-sm text-slate-500">{entry.result_summary}</p>
+                          ) : null}
                         </div>
                       ))
                     ) : (
@@ -723,72 +1039,78 @@ export function TicketDetailPage() {
                       </div>
                     )}
                   </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              ) : null}
+            </div>
 
-          {activeTab === "dialog" ? (
-            <Card>
-              <CardContent className="space-y-4 pt-6">
-                <div className="flex gap-6 border-b border-border pb-3">
-                  <button
-                    className={`text-sm font-semibold ${messageMode === "public" ? "text-brand-700" : "text-slate-500"}`}
-                    onClick={() => setMessageMode("public")}
-                    type="button"
-                  >
-                    Ответить
-                  </button>
-                  {canSendInternal ? (
+            {activeTab === "dialog" ? (
+              <div className="border-t border-border bg-white px-6 py-5">
+                <div className="space-y-4">
+                  <div className="flex gap-6 border-b border-border pb-3">
                     <button
-                      className={`text-sm font-semibold ${messageMode === "internal" ? "text-brand-700" : "text-slate-500"}`}
-                      onClick={() => setMessageMode("internal")}
+                      className={cn(
+                        "text-sm font-semibold",
+                        messageMode === "public" ? "text-brand-700" : "text-slate-500",
+                      )}
+                      onClick={() => setMessageMode("public")}
                       type="button"
                     >
-                      Внутренний комментарий
+                      Ответить
                     </button>
+                    {canSendInternal ? (
+                      <button
+                        className={cn(
+                          "text-sm font-semibold",
+                          messageMode === "internal" ? "text-brand-700" : "text-slate-500",
+                        )}
+                        onClick={() => setMessageMode("internal")}
+                        type="button"
+                      >
+                        Внутренний комментарий
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <textarea
+                    aria-label="Ответ оператору"
+                    className="field-base min-h-[140px] w-full resize-none px-4 py-4 text-sm text-slate-800"
+                    onChange={(event) => setMessageDraft(event.target.value)}
+                    placeholder={
+                      messageMode === "public"
+                        ? "Напишите сообщение пользователю..."
+                        : "Добавьте внутренний комментарий для команды..."
+                    }
+                    value={messageDraft}
+                  />
+
+                  {sendMessageMutation.isError ? (
+                    <p className="text-sm text-rose-700">
+                      {sendMessageMutation.error instanceof Error
+                        ? sendMessageMutation.error.message
+                        : "Не удалось отправить сообщение."}
+                    </p>
                   ) : null}
+
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-500">
+                      Последнее событие: {formatDateTime(detail?.timeline[0]?.ts)}
+                    </p>
+                    <Button
+                      disabled={!messageDraft.trim() || sendMessageMutation.isPending}
+                      onClick={() => {
+                        void sendMessageMutation.mutateAsync();
+                      }}
+                    >
+                      {sendMessageMutation.isPending ? "Отправляем..." : "Отправить"}
+                    </Button>
+                  </div>
                 </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
-                <textarea
-                  aria-label="Ответ оператору"
-                  className="field-base min-h-[140px] w-full resize-none px-4 py-4 text-sm text-slate-800"
-                  onChange={(event) => setMessageDraft(event.target.value)}
-                  placeholder={
-                    messageMode === "public"
-                      ? "Напишите сообщение пользователю..."
-                      : "Добавьте внутренний комментарий для команды..."
-                  }
-                  value={messageDraft}
-                />
-
-                {sendMessageMutation.isError ? (
-                  <p className="text-sm text-rose-700">
-                    {sendMessageMutation.error instanceof Error
-                      ? sendMessageMutation.error.message
-                      : "Не удалось отправить сообщение."}
-                  </p>
-                ) : null}
-
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-slate-500">
-                    Последнее событие: {formatDateTime(detail?.snapshot.last_event_id ? detail.timeline[0]?.ts : null)}
-                  </p>
-                  <Button
-                    disabled={!messageDraft.trim() || sendMessageMutation.isPending}
-                    onClick={() => {
-                      void sendMessageMutation.mutateAsync();
-                    }}
-                  >
-                    {sendMessageMutation.isPending ? "Отправляем..." : "Отправить"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
+        <div className="space-y-4 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           <Card>
             <CardHeader>
               <CardTitle>Информация о тикете</CardTitle>
@@ -860,10 +1182,12 @@ export function TicketDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>Инструменты</CardTitle>
-              <CardDescription>Функционал остаётся реальным: список инструментов и запуск идут через typed API.</CardDescription>
+              <CardDescription>
+                Живой launcher по реальным typed API: поиск, выбор инструмента, presets и параметры.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {toolsQuery.isLoading ? (
@@ -878,159 +1202,194 @@ export function TicketDetailPage() {
                 </p>
               ) : null}
 
-              {selectedTool ? (
+              {toolList.length ? (
                 <>
-                  <label className="space-y-2 text-sm font-medium text-slate-800">
-                    <span>Инструмент</span>
-                    <Select
-                      onChange={(event) => {
-                        setSelectedToolName(event.target.value);
-                        setSelectedPresetId("");
-                        setToolParams({});
-                      }}
-                      value={selectedToolName ?? ""}
-                    >
-                      {(toolsQuery.data?.tools ?? []).map((tool) => (
-                        <option key={tool.tool_name} value={tool.tool_name}>
-                          {tool.tool_name}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
+                  <SearchField
+                    onChange={(event) => setToolSearch(event.target.value)}
+                    placeholder="Поиск по tool, module или описанию"
+                    value={toolSearch}
+                  />
 
-                  <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm text-slate-600">
-                    <p className="font-semibold text-slate-900">{selectedTool.description ?? selectedTool.tool_name}</p>
-                    <p className="mt-2">
-                      Риск: {describeToolRiskLevel(selectedTool.risk_level)}
-                      {selectedTool.requires_consent ? " • нужно подтверждение" : ""}
-                      {selectedTool.install_required ? " • требуется установка" : ""}
-                    </p>
+                  <div className="space-y-2 rounded-[1.1rem] border border-border bg-surface-subtle p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <ListFilter className="h-4 w-4 text-brand-700" />
+                      Выбор инструмента
+                    </div>
+                    <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {visibleTools.length ? (
+                        visibleTools.map((tool) => {
+                          const active = tool.tool_name === selectedToolName;
+                          return (
+                            <button
+                              key={tool.tool_name}
+                              className={cn(
+                                "w-full rounded-[1rem] border px-4 py-4 text-left transition-colors",
+                                active
+                                  ? "border-brand-200 bg-brand-50"
+                                  : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle",
+                              )}
+                              onClick={() => {
+                                setSelectedToolName(tool.tool_name);
+                                setSelectedPresetId("");
+                                setToolParams({});
+                              }}
+                              type="button"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate font-semibold text-slate-950">{tool.tool_name}</p>
+                                  <p className="mt-1 truncate text-xs text-slate-500">
+                                    {tool.module_name ?? "module не указан"}
+                                  </p>
+                                </div>
+                                <Badge tone={tool.source === "server" ? "brand" : "info"}>
+                                  {tool.source}
+                                </Badge>
+                              </div>
+                              <p className="mt-3 text-sm text-slate-600">
+                                {tool.description ?? "Описание инструмента не заполнено."}
+                              </p>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-[1rem] border border-dashed border-border bg-white px-4 py-6 text-sm text-slate-500">
+                          Под текущий поиск инструменты не найдены.
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {selectedTool.presets.length ? (
-                    <label className="space-y-2 text-sm font-medium text-slate-800">
-                      <span>Preset</span>
-                      <Select onChange={(event) => setSelectedPresetId(event.target.value)} value={selectedPresetId}>
-                        <option value="">Без preset</option>
-                        {selectedTool.presets.map((preset) => (
-                          <option key={preset.preset_id} value={preset.preset_id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </label>
-                  ) : null}
+                  {selectedTool ? (
+                    <>
+                      <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm text-slate-600">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-900">{selectedTool.tool_name}</p>
+                          <Badge tone={selectedTool.source === "server" ? "brand" : "info"}>
+                            {selectedTool.source}
+                          </Badge>
+                          <Badge tone={getStatusTone(selectedTool.risk_level)}>
+                            {describeToolRiskLevel(selectedTool.risk_level)}
+                          </Badge>
+                        </div>
+                        <p className="mt-3">
+                          {selectedTool.description ?? "Описание инструмента не заполнено."}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {selectedTool.requires_consent ? "Требуется подтверждение • " : ""}
+                          {selectedTool.install_required ? "Нужна установка на устройстве" : "Готов к запуску"}
+                        </p>
+                      </div>
 
-                  {selectedPresetId ? null : selectedTool.params_schema.map((field) => {
-                    const defaultValue =
-                      field.default == null
-                        ? ""
-                        : typeof field.default === "object"
-                          ? JSON.stringify(field.default, null, 2)
-                          : String(field.default);
-                    const value = toolParams[field.name] ?? defaultValue;
-                    const multiline = field.type === "object" || field.type === "array" || field.type === "textarea";
-
-                    return (
-                      <label key={field.name} className="space-y-2 text-sm font-medium text-slate-800">
-                        <span>
-                          {field.label ?? field.name}
-                          {field.required ? " *" : ""}
-                        </span>
-                        {multiline ? (
-                          <textarea
-                            className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
-                            onChange={(event) =>
-                              setToolParams((current) => ({
-                                ...current,
-                                [field.name]: event.target.value
-                              }))
-                            }
-                            value={value}
-                          />
-                        ) : field.type === "boolean" ? (
-                          <Select
-                            onChange={(event) =>
-                              setToolParams((current) => ({
-                                ...current,
-                                [field.name]: event.target.value
-                              }))
-                            }
-                            value={value || "false"}
-                          >
-                            <option value="false">false</option>
-                            <option value="true">true</option>
+                      {selectedTool.presets.length ? (
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Preset</span>
+                          <Select onChange={(event) => setSelectedPresetId(event.target.value)} value={selectedPresetId}>
+                            <option value="">Без preset</option>
+                            {selectedTool.presets.map((preset) => (
+                              <option key={preset.preset_id} value={preset.preset_id}>
+                                {preset.label}
+                              </option>
+                            ))}
                           </Select>
-                        ) : (
-                          <input
-                            className="field-base h-11 w-full px-4 text-sm text-slate-900"
-                            onChange={(event) =>
-                              setToolParams((current) => ({
-                                ...current,
-                                [field.name]: event.target.value
-                              }))
-                            }
-                            value={value}
-                          />
-                        )}
-                        {field.description ? <p className="text-xs text-slate-500">{field.description}</p> : null}
-                      </label>
-                    );
-                  })}
+                        </label>
+                      ) : null}
 
-                  {toolMutation.isSuccess ? (
-                    <p className="text-sm text-emerald-700">{toolMutation.data.message}</p>
-                  ) : null}
+                      {selectedPresetId ? null : (
+                        <div className="space-y-3">
+                          {selectedTool.params_schema.map((field) => {
+                            const defaultValue =
+                              field.default == null
+                                ? ""
+                                : typeof field.default === "object"
+                                  ? JSON.stringify(field.default, null, 2)
+                                  : String(field.default);
+                            const value = toolParams[field.name] ?? defaultValue;
+                            const multiline =
+                              field.type === "object" || field.type === "array" || field.type === "textarea";
 
-                  {toolMutation.isError ? (
-                    <p className="text-sm text-rose-700">
-                      {toolMutation.error instanceof Error
-                        ? toolMutation.error.message
-                        : "Не удалось запустить инструмент."}
+                            return (
+                              <label key={field.name} className="space-y-2 text-sm font-medium text-slate-800">
+                                <span>
+                                  {field.label ?? field.name}
+                                  {field.required ? " *" : ""}
+                                </span>
+                                {multiline ? (
+                                  <textarea
+                                    className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) =>
+                                      setToolParams((current) => ({
+                                        ...current,
+                                        [field.name]: event.target.value,
+                                      }))
+                                    }
+                                    value={value}
+                                  />
+                                ) : field.type === "boolean" ? (
+                                  <Select
+                                    onChange={(event) =>
+                                      setToolParams((current) => ({
+                                        ...current,
+                                        [field.name]: event.target.value,
+                                      }))
+                                    }
+                                    value={value || "false"}
+                                  >
+                                    <option value="false">false</option>
+                                    <option value="true">true</option>
+                                  </Select>
+                                ) : (
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm text-slate-900"
+                                    onChange={(event) =>
+                                      setToolParams((current) => ({
+                                        ...current,
+                                        [field.name]: event.target.value,
+                                      }))
+                                    }
+                                    value={value}
+                                  />
+                                )}
+                                {field.description ? (
+                                  <p className="text-xs text-slate-500">{field.description}</p>
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {toolMutation.isSuccess ? (
+                        <p className="text-sm text-emerald-700">{toolMutation.data.message}</p>
+                      ) : null}
+
+                      {toolMutation.isError ? (
+                        <p className="text-sm text-rose-700">
+                          {toolMutation.error instanceof Error
+                            ? toolMutation.error.message
+                            : "Не удалось запустить инструмент."}
+                        </p>
+                      ) : null}
+
+                      <Button
+                        className="w-full"
+                        disabled={toolMutation.isPending}
+                        leadingIcon={<Wrench className="h-4 w-4" />}
+                        onClick={() => {
+                          void toolMutation.mutateAsync();
+                        }}
+                      >
+                        {toolMutation.isPending ? "Запускаем..." : "Запустить инструмент"}
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      Выберите инструмент слева, чтобы открыть presets и параметры.
                     </p>
-                  ) : null}
-
-                  <Button
-                    className="w-full"
-                    disabled={toolMutation.isPending}
-                    leadingIcon={<Wrench className="h-4 w-4" />}
-                    onClick={() => {
-                      void toolMutation.mutateAsync();
-                    }}
-                  >
-                    {toolMutation.isPending ? "Запускаем..." : "Запустить инструмент"}
-                  </Button>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-slate-500">Для этого тикета пока нет доступных инструментов.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Последние операции</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {detail?.snapshot.latest_operations.length ? (
-                detail.snapshot.latest_operations.map((operation) => (
-                  <div key={operation.operation_id} className="rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-950">
-                          {operation.tool_name ?? operation.command_name ?? operation.kind}
-                        </p>
-                        <p className="mt-1 text-slate-500">{operation.status}</p>
-                      </div>
-                      <Badge tone={getStatusTone(operation.status)}>{operation.status}</Badge>
-                    </div>
-                    <p className="mt-2 text-slate-500">
-                      {operation.result_summary ?? operation.error_message ?? "Без краткого результата"}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">Свежих операций по тикету пока нет.</p>
               )}
             </CardContent>
           </Card>

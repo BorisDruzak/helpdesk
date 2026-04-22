@@ -115,6 +115,45 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              title: "Каталог заявок",
+              description: "Рабочий каталог",
+              forms_count: 1,
+              fields_count: 2,
+              required_fields_count: 1,
+              created_at: "2026-04-21T10:00:00+05:00",
+              created_by: "admin1",
+              is_preferred: true
+            },
+            preferred: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              updated_at: "2026-04-21T10:00:00+05:00",
+              updated_by: "admin1"
+            },
+            packs: [
+              {
+                pack_key: "request_forms",
+                version: "1.0.3",
+                title: "Каталог заявок",
+                description: "Рабочий каталог",
+                forms_count: 1,
+                fields_count: 2,
+                required_fields_count: 1,
+                created_at: "2026-04-21T10:00:00+05:00",
+                created_by: "admin1",
+                is_preferred: true
+              }
+            ]
+          });
+        }
+
         if (url === "/api/web/admin/forms/save" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
@@ -161,7 +200,7 @@ describe("FormsBuilderPanel", () => {
 
     await screen.findByRole("heading", { name: "Конструктор форм заявок" });
     expect(await screen.findByText("Активная версия")).toBeInTheDocument();
-    expect(await screen.findByText("1.0.3")).toBeInTheDocument();
+    expect((await screen.findAllByText("1.0.3")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Новая форма" }));
     await waitFor(() => {
@@ -173,7 +212,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(screen.getByLabelText("Ключ формы"), {
       target: { value: "printer_repair" }
     });
-    fireEvent.change(screen.getByLabelText("Request kind"), {
+    fireEvent.change(screen.getByLabelText("request_kind"), {
       target: { value: "printer_repair" }
     });
     fireEvent.change(screen.getByLabelText("Название поля"), {

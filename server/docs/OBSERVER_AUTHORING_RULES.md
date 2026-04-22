@@ -163,6 +163,9 @@ Spans нужны не “для галочки”, а чтобы человек 
 - новые React workspace-экраны не должны запускать observer fetch до успешного `GET /api/web/session/me` и подтверждённой web session.
 - admin observer surfaces должны поддерживать оба режима одного typed boundary: global обзор без выбранного `device_id` и device-scoped quick/drilldown после выбора устройства; отсутствие выбранного устройства не должно тихо отключать observer query целиком.
 
+- `/app/admin/observer` считается полноценным workbench: вкладки `quick`, `traces`, `signatures`, `degradations`, `runtime` должны оставаться согласованными между собой, а trace detail обязан показывать spans, error occurrences, span links и agent actions в одном экране вместо деградации до "open raw payload".
+- если React observer surface использует mix typed `/api/web/admin/observer/*` и canonical `/api/admin/tech/*` / `/api/admin/settings/observer`, это допустимо только при явной фиксации в docs и при сохранении единого operator flow без legacy iframe/tech-panel jump.
+
 ## 8. Минимальный набор проверок
 
 Перед завершением observer-правок нужны:

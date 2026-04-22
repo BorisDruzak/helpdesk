@@ -144,6 +144,8 @@ New React workspaces:
 - `/app/admin` должен брать overview tech/observer срез через typed endpoint `GET /api/web/admin/observer/quick`, а не рендерить raw payload legacy `/api/admin/tech/observer/quick` прямо из React.
 - `/app/admin/observer` должен уметь работать и без выбранного `device_id`: global quick summary и trace list обязаны грузиться в общем режиме, а device-scoped drilldown включается только после выбора устройства или конкретной трассы.
 - `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
+- `/app/admin/observer` теперь считается полноценным observer workbench, а не просто quick-summary экраном: канонический набор вкладок для React surface — `quick`, `traces`, `signatures`, `degradations`, `runtime`; trace detail обязан показывать spans, error occurrences, span links и agent actions через `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
+- `/app/admin/observer` допускает гибрид transport model: быстрый список и фильтры идут через typed `/api/web/admin/observer/*`, а signature/degradation/runtime/settings/detail surfaces могут читать прямые tech/settings endpoints (`/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/admin/tech/traces/runtime`, `/api/admin/settings/observer`) пока они остаются canonical source of truth для observer backend.
 - `/app/admin/device` может поверх карточки устройства встраивать тот же typed observer quick slice, но без отдельного transport-контракта: глобальная `/app/admin/observer` и device-centric `/app/admin/device` обязаны читать один и тот же `/api/web/admin/observer/*` boundary.
 - `/app/admin` может рядом показывать typed modules/actions panel (`GET /api/web/admin/modules`, `PATCH /api/web/admin/modules/rollout_settings`, `PATCH /api/web/admin/modules/{module_name}/preferred`), но observer quick/drilldown при этом остаётся изолированным typed tech slice и не должен деградировать до вызовов legacy `/api/admin/tech/*` из module UI.
 - `/app/*` сначала проходит через `GET /api/web/session/me`; observer surfaces в новом web-layer не должны пытаться ходить в trace API до подтверждённой web session.
@@ -195,9 +197,9 @@ Observer detail должен оставаться пригодным для ди
 
 1. Открыть `GET /api/admin/tech/observer/quick` или tech-panel quick dashboard.
 2. Если кейс ticket-bound, открыть `GET /api/tickets/{ticket_id}/observer`.
-3. Для нового `/app/admin` сначала получить device-scoped trace list через `GET /api/web/admin/observer/traces`, а затем открыть `GET /api/web/admin/observer/traces/{trace_id}`.
-4. По необходимости провалиться в legacy `trace_id` или `error_signature` search для tech-panel.
-5. Для живого agent-side trail включить `include_agent_actions=1`.
+3. Для нового `/app/admin/observer` сначала получить global или device-scoped trace list через `GET /api/web/admin/observer/traces`, затем при необходимости открыть `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
+4. Для массовых отказов пройти вкладки `signatures` и `degradations` через canonical endpoints `/api/admin/tech/signatures*` и `/api/admin/tech/degradations`, не сводя React workbench к raw JSON dump.
+5. Runtime health, rebuild и sampling/retention settings проверять в той же рабочей области через `/api/admin/tech/traces/runtime`, `POST /api/admin/tech/traces/rebuild` и `GET/PATCH /api/admin/settings/observer`.
 6. Для архивных кейсов использовать rebuild только если background backfill ещё не догнал исторический диапазон.
 
 ## 13. Что нужно обновлять вместе с observer

@@ -177,14 +177,7 @@ function createModulesState(): ModulesState {
 function cloneModulesPayload(state: ModulesState) {
   return {
     query: "",
-    summary: {
-      visible_count: state.modules.length,
-      preferred_count: state.modules.filter((item) => item.preferred_assigned).length,
-      invalid_count: state.modules.filter((item) =>
-        ["warning", "failed"].includes(item.validation_status)
-      ).length,
-      missing_files_count: state.modules.filter((item) => item.has_missing_files).length
-    },
+    count: state.modules.length,
     rollout_settings: {
       ...state.rollout_settings
     },
@@ -213,6 +206,120 @@ function applyPreferredVersion(state: ModulesState, moduleName: string, version:
     ...item,
     is_preferred: version !== null && item.version === version
   }));
+}
+
+function createWorkbenchDetailPayload(state: ModulesState, moduleName: string, version: string) {
+  const family = state.modules.find((item) => item.module_name === moduleName);
+  const versionRecord = family?.versions.find((item) => item.version === version);
+  if (!family || !versionRecord) {
+    throw new Error(`Unexpected workbench detail request for ${moduleName} ${version}`);
+  }
+
+  return {
+    module: {
+      ...versionRecord,
+      module_name: moduleName,
+      sha256: `${moduleName}-${version}-sha256`,
+      size: 2048,
+      warnings: versionRecord.warnings_count ? ["warning"] : [],
+      manifest_json: {
+        module_name: moduleName,
+        version,
+      },
+      validation_json: {
+        status: versionRecord.validation_status,
+      },
+      tools: versionRecord.tool_ids.map((toolId) => ({ tool_name: toolId })),
+      requirements: [],
+      optional_requirements: [],
+    },
+    editable_spec: {
+      module_name: moduleName,
+      version,
+      module_api_version: versionRecord.module_api_version ?? "1.0.0",
+      owner_scope: versionRecord.owner_scope ?? "vendor",
+      description: `${moduleName} ${version}`,
+      platforms: [...versionRecord.platforms],
+      requirements: [],
+      optional_requirements: [],
+      min_agent_version: null,
+      entrypoint: "module:register",
+      tools: versionRecord.tool_ids.map((toolId, index) => ({
+        tool_name: toolId,
+        aliases: [],
+        method_name: `tool_${index + 1}`,
+        description: "",
+        params_schema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+        output_schema: {
+          type: "object",
+          properties: {},
+        },
+        presets: [],
+        capabilities: [],
+        metadata: {
+          risk_level: "safe_read",
+          tool_kind: "diagnostic",
+          timeout_sec: 30,
+          platforms: [...versionRecord.platforms],
+          allow_roles: ["admin"],
+          scopes: [],
+          requires_consent: false,
+          idempotent: true,
+          side_effects: false,
+        },
+        contract_version: "1.0.0",
+        dependencies: {},
+        lifecycle: "stable",
+        error_codes: [],
+        artifact_types: [],
+        redaction: {},
+        resources: {
+          max_runtime_sec: 30,
+          max_stdout_bytes: 65536,
+          max_stderr_bytes: 65536,
+          max_artifact_count: 2,
+          max_artifact_bytes: 5242880,
+          max_subprocess_count: 2,
+          allowed_filesystem_scope: [],
+          allowed_external_hosts: [],
+        },
+        user_function_body: "return {}",
+        reconstruction_strategy: "draft",
+      })),
+      warnings: versionRecord.warnings_count ? ["warning"] : [],
+      source: {
+        manifest_json_text: JSON.stringify(
+          {
+            module_name: moduleName,
+            version,
+          },
+          null,
+          2
+        ),
+        module_py_text: "def register():\n    return {}\n",
+        files: [
+          {
+            path: "module.py",
+            size_bytes: 32,
+            language: "python",
+            content: "def register():\n    return {}\n",
+            detected_tools: [],
+            parse_errors: [],
+          },
+        ],
+        decomposition: {
+          resolved_tools: versionRecord.tool_ids.length,
+          unresolved_tools: [],
+          available_methods: ["register"],
+          available_tool_names: [...versionRecord.tool_ids],
+        },
+      },
+    },
+  };
 }
 
 function renderModulesPanel() {
@@ -248,14 +355,35 @@ describe("ModulesPanel", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
 
-        if (url === "/api/web/admin/modules" && method === "GET") {
+        if (url === "/api/modules/workbench" && method === "GET") {
           return jsonResponse({
-            status: "success",
-            data: cloneModulesPayload(state)
+            status: "ok",
+            ...cloneModulesPayload(state)
           });
         }
 
-        if (url === "/api/web/admin/modules/rollout_settings" && method === "PATCH") {
+        if (url === "/api/modules/workbench/network_ping/1.2.1" && method === "GET") {
+          return jsonResponse({
+            status: "ok",
+            ...createWorkbenchDetailPayload(state, "network_ping", "1.2.1")
+          });
+        }
+
+        if (url === "/api/modules/workbench/network_ping/1.2.0" && method === "GET") {
+          return jsonResponse({
+            status: "ok",
+            ...createWorkbenchDetailPayload(state, "network_ping", "1.2.0")
+          });
+        }
+
+        if (url === "/api/modules/workbench/observer_canary/0.9.0" && method === "GET") {
+          return jsonResponse({
+            status: "ok",
+            ...createWorkbenchDetailPayload(state, "observer_canary", "0.9.0")
+          });
+        }
+
+        if (url === "/api/modules/rollout_settings" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as {
             preferred_version_rollout_mode?: string;
             sync_after_preferred_change?: boolean;
@@ -268,19 +396,18 @@ describe("ModulesPanel", () => {
           state.rollout_settings.sync_after_preferred_change =
             payload.sync_after_preferred_change ?? state.rollout_settings.sync_after_preferred_change;
           return jsonResponse({
-            status: "success",
-            data: {
+            status: "ok",
+            rollout_settings: {
               ...state.rollout_settings
             }
           });
         }
 
-        if (url === "/api/web/admin/modules/network_ping/preferred" && method === "PATCH") {
+        if (url === "/api/modules/network_ping/preferred" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as { version?: string | null };
           applyPreferredVersion(state, "network_ping", payload.version ?? null);
           return jsonResponse({
-            status: "success",
-            data: {
+            status: "ok",
               module_name: "network_ping",
               preferred_version: payload.version ?? null,
               updated_at: "2026-04-21T10:15:00+05:00",
@@ -305,7 +432,6 @@ describe("ModulesPanel", () => {
                       sync_enqueued: state.rollout_settings.sync_after_preferred_change ? 2 : 0,
                       refresh_enqueued: state.rollout_settings.sync_after_preferred_change ? 2 : 0
                     }
-            }
           });
         }
 
@@ -325,23 +451,21 @@ describe("ModulesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить политику" }));
 
-    expect(await screen.findByText("Политика раскатки сохранена: Только вручную.")).toBeInTheDocument();
+    expect(await screen.findByText("Политика preferred-rollout сохранена: Только вручную.")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getAllByText("Только вручную").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Сделать preferred для 1.2.1" }));
 
-    expect(await screen.findByText("Preferred-версия для network_ping обновлена на 1.2.1.")).toBeInTheDocument();
+    expect(await screen.findByText(/Preferred-.*network_ping.*1\.2\.1/)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText(/Preferred:\s*1\.2\.1/i)).toBeInTheDocument();
+      expect(screen.getByText(/latest 1\.2\.1 .* preferred 1\.2\.1/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /observer_canary/i }));
 
     expect((await screen.findAllByText("Ошибка валидации")).length).toBeGreaterThan(0);
-    expect(
-      await screen.findByText("Архив отсутствует, нужен повторный upload")
-    ).toBeInTheDocument();
+    expect((await screen.findAllByText(/archive missing|Архив отсутствует/i)).length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CheckCircle2,
+  ClipboardList,
+  FileClock,
+  FilePenLine,
+  FolderClock,
+  Plus,
+  RefreshCcw,
+  Save,
+  Star,
+  Trash2,
+} from "lucide-react";
 
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { SearchField } from "../../components/ui/search-field";
+import { Select } from "../../components/ui/select";
+import { cn } from "../../shared/ui/cn";
 import {
   type AdminFormsFieldItem,
   type AdminFormsFieldOption,
@@ -8,9 +26,14 @@ import {
   type AdminFormsPayload,
   type AdminFormsSaveRequest,
   fetchAdminFormsCatalog,
-  saveAdminFormsCatalog
+  saveAdminFormsCatalog,
 } from "./api";
-
+import {
+  fetchTicketFormsPackList,
+  fetchTicketFormsPackVersion,
+  setTicketFormsPackPreferred,
+  type TicketFormsPackSummary,
+} from "./catalog-api";
 
 type ActionFeedback =
   | {
@@ -48,7 +71,6 @@ type DraftCatalog = {
   forms: DraftForm[];
 };
 
-
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
     return "Нет данных";
@@ -61,12 +83,11 @@ function formatDateTime(value: string | null | undefined): string {
 
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
   }).format(date);
 }
 
-
-function hydrateDraft(payload: AdminFormsPayload): DraftCatalog {
+function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): DraftCatalog {
   return {
     title: payload.summary.title,
     description: payload.summary.description ?? "",
@@ -84,18 +105,79 @@ function hydrateDraft(payload: AdminFormsPayload): DraftCatalog {
         help_text: field.help_text ?? "",
         options: field.options.map((option) => ({
           value: option.value,
-          label: option.label
+          label: option.label,
         })),
         visible_when: {
           field: field.visible_when?.field ?? "",
           equals: field.visible_when?.equals ?? "",
-          values: [...(field.visible_when?.values ?? [])]
-        }
-      }))
-    }))
+          values: [...(field.visible_when?.values ?? [])],
+        },
+      })),
+    })),
   };
 }
 
+function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
+  const formsRaw = Array.isArray(pack.forms) ? pack.forms : [];
+  return {
+    title: String(pack.title ?? "Каталог заявок"),
+    description: String(pack.description ?? ""),
+    forms: formsRaw.map((formRaw, formIndex) => {
+      const form = typeof formRaw === "object" && formRaw !== null ? formRaw : {};
+      const fieldsRaw = Array.isArray((form as { fields?: unknown[] }).fields)
+        ? ((form as { fields: unknown[] }).fields ?? [])
+        : [];
+
+      return {
+        key: String((form as { key?: unknown }).key ?? `form_${formIndex + 1}`),
+        request_kind: String(
+          (form as { request_kind?: unknown }).request_kind ??
+            (form as { key?: unknown }).key ??
+            `form_${formIndex + 1}`
+        ),
+        title: String((form as { title?: unknown }).title ?? "Новая форма"),
+        description: String((form as { description?: unknown }).description ?? ""),
+        fields: fieldsRaw.map((fieldRaw, fieldIndex) => {
+          const field = typeof fieldRaw === "object" && fieldRaw !== null ? fieldRaw : {};
+          const optionsRaw = Array.isArray((field as { options?: unknown[] }).options)
+            ? ((field as { options: unknown[] }).options ?? [])
+            : [];
+          const visibleWhen =
+            typeof (field as { visible_when?: unknown }).visible_when === "object" &&
+            (field as { visible_when?: unknown }).visible_when !== null
+              ? ((field as { visible_when: Record<string, unknown> }).visible_when ?? {})
+              : {};
+          return {
+            key: String((field as { key?: unknown }).key ?? `field_${fieldIndex + 1}`),
+            label: String((field as { label?: unknown }).label ?? "Поле"),
+            type: String((field as { type?: unknown }).type ?? "text") as AdminFormsFieldType,
+            required: Boolean((field as { required?: unknown }).required),
+            placeholder: String((field as { placeholder?: unknown }).placeholder ?? ""),
+            help_text: String((field as { help_text?: unknown }).help_text ?? ""),
+            options: optionsRaw
+              .map((optionRaw) => {
+                const option = typeof optionRaw === "object" && optionRaw !== null ? optionRaw : {};
+                return {
+                  value: String((option as { value?: unknown }).value ?? ""),
+                  label: String((option as { label?: unknown }).label ?? ""),
+                };
+              })
+              .filter((option) => option.value.trim() && option.label.trim()),
+            visible_when: {
+              field: String(visibleWhen.field ?? ""),
+              equals: String(visibleWhen.equals ?? ""),
+              values: Array.isArray(visibleWhen.values)
+                ? visibleWhen.values.map((item) => String(item ?? ""))
+                : Array.isArray(visibleWhen.in)
+                  ? visibleWhen.in.map((item) => String(item ?? ""))
+                  : [],
+            },
+          };
+        }),
+      };
+    }),
+  };
+}
 
 function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
   return {
@@ -115,14 +197,14 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
                 field: field.visible_when.field.trim(),
                 ...(field.visible_when.equals.trim()
                   ? {
-                      equals: field.visible_when.equals.trim()
+                      equals: field.visible_when.equals.trim(),
                     }
                   : {}),
                 ...(values.length
                   ? {
-                      values
+                      values,
                     }
-                  : {})
+                  : {}),
               }
             : undefined;
 
@@ -133,31 +215,29 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
           required: field.required,
           ...(field.placeholder.trim()
             ? {
-                placeholder: field.placeholder.trim()
+                placeholder: field.placeholder.trim(),
               }
             : {}),
           ...(field.help_text.trim()
             ? {
-                help_text: field.help_text.trim()
+                help_text: field.help_text.trim(),
               }
             : {}),
           options,
           ...(visibleWhen
             ? {
-                visible_when: visibleWhen
+                visible_when: visibleWhen,
               }
-            : {})
+            : {}),
         };
-      })
-    }))
+      }),
+    })),
   };
 }
 
-
-function buildDraftFingerprint(catalog: DraftCatalog): string {
-  return JSON.stringify(serializeDraft(catalog));
+function buildDraftFingerprint(catalog: DraftCatalog | null): string {
+  return JSON.stringify(catalog ? serializeDraft(catalog) : null);
 }
-
 
 function createEmptyField(type: AdminFormsFieldType, index: number): DraftField {
   const baseKey = type === "checkbox" ? "confirmed" : "field";
@@ -172,17 +252,16 @@ function createEmptyField(type: AdminFormsFieldType, index: number): DraftField 
       type === "select" || type === "radio"
         ? [
             { value: "option_1", label: "Вариант 1" },
-            { value: "option_2", label: "Вариант 2" }
+            { value: "option_2", label: "Вариант 2" },
           ]
         : [],
     visible_when: {
       field: "",
       equals: "",
-      values: []
-    }
+      values: [],
+    },
   };
 }
-
 
 function createEmptyForm(index: number): DraftForm {
   const key = `new_form_${index}`;
@@ -191,25 +270,21 @@ function createEmptyForm(index: number): DraftForm {
     request_kind: key,
     title: "Новая форма",
     description: "",
-    fields: [createEmptyField("text", 1)]
+    fields: [createEmptyField("text", 1)],
   };
 }
-
 
 function nextFormIndex(forms: DraftForm[]): number {
   return forms.length + 1;
 }
 
-
 function nextFieldIndex(fields: DraftField[]): number {
   return fields.length + 1;
 }
 
-
 function fieldOptionsToText(field: DraftField): string {
   return field.options.map((option) => `${option.value}|${option.label}`).join("\n");
 }
-
 
 function parseFieldOptions(text: string): AdminFormsFieldOption[] {
   return text
@@ -222,16 +297,14 @@ function parseFieldOptions(text: string): AdminFormsFieldOption[] {
       const label = labelParts.join("|").trim() || value;
       return {
         value,
-        label
+        label,
       };
     });
 }
 
-
 function valuesToText(values: string[]): string {
   return values.join("\n");
 }
-
 
 function parseValueLines(text: string): string[] {
   return text
@@ -240,7 +313,6 @@ function parseValueLines(text: string): string[] {
     .filter(Boolean);
 }
 
-
 function updateFormInCatalog(
   catalog: DraftCatalog,
   formKey: string,
@@ -248,10 +320,9 @@ function updateFormInCatalog(
 ): DraftCatalog {
   return {
     ...catalog,
-    forms: catalog.forms.map((form) => (form.key === formKey ? updater(form) : form))
+    forms: catalog.forms.map((form) => (form.key === formKey ? updater(form) : form)),
   };
 }
-
 
 function updateFieldInCatalog(
   catalog: DraftCatalog,
@@ -261,69 +332,136 @@ function updateFieldInCatalog(
 ): DraftCatalog {
   return updateFormInCatalog(catalog, formKey, (form) => ({
     ...form,
-    fields: form.fields.map((field) => (field.key === fieldKey ? updater(field) : field))
+    fields: form.fields.map((field) => (field.key === fieldKey ? updater(field) : field)),
   }));
 }
-
 
 function fieldTypeRequiresOptions(field: AdminFormsFieldItem | DraftField | null): boolean {
   return field?.type === "select" || field?.type === "radio";
 }
 
+function fieldTypeLabel(type: AdminFormsFieldType): string {
+  switch (type) {
+    case "textarea":
+      return "Многострочное";
+    case "select":
+      return "Список";
+    case "radio":
+      return "Переключатель";
+    case "checkbox":
+      return "Флажок";
+    default:
+      return "Текст";
+  }
+}
+
+function versionMatchesSearch(item: TicketFormsPackSummary, query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  return [
+    item.version,
+    item.title,
+    item.description ?? "",
+    item.created_by ?? "",
+    item.notes ?? "",
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalized);
+}
 
 export function FormsBuilderPanel() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftCatalog | null>(null);
+  const [baselineFingerprint, setBaselineFingerprint] = useState<string>("null");
+  const [loadedVersion, setLoadedVersion] = useState<string | null>(null);
+  const [loadedSourceLabel, setLoadedSourceLabel] = useState("Текущий рабочий каталог");
   const [selectedFormKey, setSelectedFormKey] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [newFieldType, setNewFieldType] = useState<AdminFormsFieldType>("text");
+  const [versionSearch, setVersionSearch] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
 
   const formsQuery = useQuery({
-    queryKey: ["admin-forms-builder"],
+    queryKey: ["admin-forms-builder-current"],
     queryFn: fetchAdminFormsCatalog,
-    retry: false
+    retry: false,
+  });
+
+  const versionsQuery = useQuery({
+    queryKey: ["admin-forms-builder-versions"],
+    queryFn: fetchTicketFormsPackList,
+    retry: false,
   });
 
   const saveMutation = useMutation({
     mutationFn: saveAdminFormsCatalog,
     onSuccess: async (result) => {
+      const nextDraft = hydrateDraft({
+        summary: result.summary,
+        forms: result.forms,
+      });
+      setDraft(nextDraft);
+      setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+      setLoadedVersion(result.summary.version);
+      setLoadedSourceLabel(`Опубликованная версия ${result.summary.version}`);
+      setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
+      setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
       setActionFeedback({
         tone: "success",
-        text: result.message
+        text: result.message,
       });
-      queryClient.setQueryData<AdminFormsPayload | undefined>(["admin-forms-builder"], (current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          summary: result.summary,
-          forms: result.forms
-        };
-      });
-      await queryClient.invalidateQueries({ queryKey: ["admin-forms-builder"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-forms-builder-current"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-forms-builder-versions"] }),
+      ]);
     },
     onError: (error) => {
       setActionFeedback({
         tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось опубликовать каталог форм."
+        text: error instanceof Error ? error.message : "Не удалось опубликовать каталог форм.",
       });
-    }
+    },
+  });
+
+  const preferredMutation = useMutation({
+    mutationFn: setTicketFormsPackPreferred,
+    onSuccess: async (result) => {
+      setActionFeedback({
+        tone: "success",
+        text: `Активная версия каталога обновлена: ${result.preferred.version}.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-forms-builder-current"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-forms-builder-versions"] }),
+      ]);
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось обновить preferred-версию каталога.",
+      });
+    },
   });
 
   useEffect(() => {
-    if (!formsQuery.data) {
+    if (!formsQuery.data || draft) {
       return;
     }
-    setDraft(hydrateDraft(formsQuery.data));
-  }, [formsQuery.data]);
+    const nextDraft = hydrateDraft(formsQuery.data);
+    setDraft(nextDraft);
+    setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+    setLoadedVersion(formsQuery.data.summary.version);
+    setLoadedSourceLabel(`Текущая активная версия ${formsQuery.data.summary.version}`);
+    setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
+    setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
+  }, [draft, formsQuery.data]);
 
   useEffect(() => {
     if (!draft?.forms.length) {
-      if (selectedFormKey !== null) {
-        setSelectedFormKey(null);
-      }
+      setSelectedFormKey(null);
       return;
     }
 
@@ -332,13 +470,12 @@ export function FormsBuilderPanel() {
     }
   }, [draft, selectedFormKey]);
 
-  const selectedForm = draft?.forms.find((form) => form.key === selectedFormKey) ?? draft?.forms[0] ?? null;
+  const selectedForm =
+    draft?.forms.find((form) => form.key === selectedFormKey) ?? draft?.forms[0] ?? null;
 
   useEffect(() => {
     if (!selectedForm?.fields.length) {
-      if (selectedFieldKey !== null) {
-        setSelectedFieldKey(null);
-      }
+      setSelectedFieldKey(null);
       return;
     }
 
@@ -348,646 +485,1000 @@ export function FormsBuilderPanel() {
   }, [selectedFieldKey, selectedForm]);
 
   const selectedField =
-    selectedForm?.fields.find((field) => field.key === selectedFieldKey) ?? selectedForm?.fields[0] ?? null;
+    selectedForm?.fields.find((field) => field.key === selectedFieldKey) ??
+    selectedForm?.fields[0] ??
+    null;
 
-  const hasUnsavedChanges =
-    Boolean(draft) &&
-    Boolean(formsQuery.data) &&
-    buildDraftFingerprint(draft!) !== buildDraftFingerprint(hydrateDraft(formsQuery.data!));
+  const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
+
+  const visibleVersions = useMemo(
+    () => (versionsQuery.data?.packs ?? []).filter((item) => versionMatchesSearch(item, versionSearch)),
+    [versionSearch, versionsQuery.data?.packs]
+  );
+
+  function ensureCanSwitch(): boolean {
+    if (!hasUnsavedChanges) {
+      return true;
+    }
+    return window.confirm(
+      "В редакторе есть несохранённые изменения. Переключить версию и потерять локальный черновик?"
+    );
+  }
+
+  async function loadCurrentCatalog() {
+    if (!formsQuery.data || !ensureCanSwitch()) {
+      return;
+    }
+    const nextDraft = hydrateDraft(formsQuery.data);
+    setDraft(nextDraft);
+    setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+    setLoadedVersion(formsQuery.data.summary.version);
+    setLoadedSourceLabel(`Текущая активная версия ${formsQuery.data.summary.version}`);
+    setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
+    setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
+    setActionFeedback(null);
+  }
+
+  async function loadVersion(version: string) {
+    if (!ensureCanSwitch()) {
+      return;
+    }
+    try {
+      const payload = await queryClient.fetchQuery({
+        queryKey: ["admin-forms-builder-version", version],
+        queryFn: () => fetchTicketFormsPackVersion(version),
+      });
+      const nextDraft = hydrateDraftFromPack(payload.pack);
+      setDraft(nextDraft);
+      setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+      setLoadedVersion(version);
+      setLoadedSourceLabel(`Черновик из версии ${version}`);
+      setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
+      setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
+      setActionFeedback({
+        tone: "success",
+        text: `Версия ${version} загружена в редактор.`,
+      });
+    } catch (error) {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось загрузить выбранную версию каталога.",
+      });
+    }
+  }
 
   return (
-    <section className="support-workspace__panel admin-forms-panel">
-      <div className="support-workspace__panel-head">
-        <div>
-          <h2>Конструктор форм заявок</h2>
-          <p>
-            Новый typed slice управляет рабочим каталогом `request_forms` без legacy iframe: формы,
-            поля и публикация новой версии теперь живут прямо в `/app/admin`.
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-700">
+            Forms Builder
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-slate-950">
+            Конструктор форм заявок
+          </h2>
+          <p className="mt-3 text-sm leading-7 text-slate-500 md:text-base">
+            Рабочий каталог intake-форм, version registry и публикация preferred-версии теперь
+            живут в одном интерфейсе без legacy iframe.
           </p>
         </div>
       </div>
 
-      {formsQuery.isLoading ? (
-        <div className="support-detail-note">Загружаем текущий каталог форм и активную версию…</div>
-      ) : null}
-
-      {formsQuery.isError ? (
-        <div className="support-detail-error">
-          {formsQuery.error instanceof Error ? formsQuery.error.message : "Не удалось загрузить каталог форм."}
+      <div className="grid gap-4 xl:grid-cols-4">
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Активная версия</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {formsQuery.data?.summary.version ?? "—"}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Предпочтительная версия каталога, которая сейчас идёт в `/help`.
+          </p>
         </div>
-      ) : null}
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Версий в реестре</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {versionsQuery.data?.packs.length ?? 0}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Можно открыть старую версию в редакторе или сделать её preferred.
+          </p>
+        </div>
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Форм в каталоге</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {draft?.forms.length ?? formsQuery.data?.summary.forms_count ?? 0}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Полей: {draft?.forms.reduce((sum, form) => sum + form.fields.length, 0) ?? formsQuery.data?.summary.fields_count ?? 0}
+          </p>
+        </div>
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Черновик</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {hasUnsavedChanges ? "Есть" : "Синхронен"}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">{loadedSourceLabel}</p>
+        </div>
+      </div>
 
       {actionFeedback ? (
-        <div className={actionFeedback.tone === "success" ? "support-detail-note" : "support-detail-error"}>
+        <div
+          className={cn(
+            "rounded-[1.1rem] border px-4 py-3 text-sm shadow-soft",
+            actionFeedback.tone === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-rose-200 bg-rose-50 text-rose-700"
+          )}
+        >
           {actionFeedback.text}
         </div>
       ) : null}
 
-      {formsQuery.data && draft ? (
-        <>
-          <div className="support-snapshot-grid">
-            <article className="support-snapshot-card">
-              <span>Активная версия</span>
-              <strong>{formsQuery.data.summary.version}</strong>
-              <p>Форм в каталоге: {formsQuery.data.summary.forms_count}</p>
-            </article>
-            <article className="support-snapshot-card">
-              <span>Всего полей</span>
-              <strong>{formsQuery.data.summary.fields_count}</strong>
-              <p>Обязательных: {formsQuery.data.summary.required_fields_count}</p>
-            </article>
-            <article className="support-snapshot-card">
-              <span>Последняя публикация</span>
-              <strong>{formsQuery.data.summary.last_published_by ?? "builtin_default"}</strong>
-              <p>{formatDateTime(formsQuery.data.summary.last_published_at)}</p>
-            </article>
-          </div>
-
-          <section className="admin-forms-toolbar">
-            <label className="support-filter-search">
-              <span>Название каталога</span>
-              <input
-                aria-label="Название каталога"
-                value={draft.title}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  setActionFeedback(null);
-                  setDraft((current) => (current ? { ...current, title: value } : current));
-                }}
-                placeholder="Каталог заявок"
-              />
-            </label>
-
-            <details className="admin-forms-advanced">
-              <summary>Расширенные настройки каталога</summary>
-              <label className="support-filter-search">
-                <span>Описание каталога</span>
-                <textarea
-                  aria-label="Описание каталога"
-                  value={draft.description}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setActionFeedback(null);
-                    setDraft((current) => (current ? { ...current, description: value } : current));
-                  }}
-                  placeholder="Краткое описание каталога для операторов"
-                />
-              </label>
-              <p className="admin-forms-advanced__hint">
-                После сохранения сервер сам выпустит новую активную версию каталога и сразу сделает её рабочей.
-              </p>
-            </details>
-
-            <button
-              type="button"
-              className="admin-modules-action"
-              disabled={!hasUnsavedChanges || saveMutation.isPending}
-              onClick={() => {
-                if (!draft) {
-                  return;
-                }
-                setActionFeedback(null);
-                saveMutation.mutate(serializeDraft(draft));
-              }}
-            >
-              {saveMutation.isPending ? "Публикуем…" : "Сохранить изменения"}
-            </button>
-          </section>
-
-          <div className="admin-forms-grid">
-            <article className="support-operation-card admin-forms-list">
-              <div className="support-operations__head">
-                <strong>Формы каталога</strong>
-                <span>{draft.forms.length}</span>
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <Card className="xl:sticky xl:top-[9.5rem] xl:self-start">
+          <CardHeader className="gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Версии и публикация</CardTitle>
+                <CardDescription>
+                  Реальный реестр form-pack версий, preferred-переключение и быстрый возврат к текущей конфигурации.
+                </CardDescription>
               </div>
-
-              <button
-                type="button"
-                className="admin-modules-action admin-forms-inline-action"
+              <Button
+                leadingIcon={<RefreshCcw className="h-4 w-4" />}
                 onClick={() => {
+                  void Promise.all([formsQuery.refetch(), versionsQuery.refetch()]);
+                }}
+                size="sm"
+                variant="outline"
+              >
+                Обновить
+              </Button>
+            </div>
+
+            <div className="grid gap-2">
+              <Button
+                leadingIcon={<ClipboardList className="h-4 w-4" />}
+                onClick={() => {
+                  void loadCurrentCatalog();
+                }}
+                size="sm"
+                variant="outline"
+              >
+                Загрузить текущую
+              </Button>
+              <Button
+                disabled={!draft || saveMutation.isPending}
+                leadingIcon={<Save className="h-4 w-4" />}
+                onClick={() => {
+                  if (!draft) {
+                    return;
+                  }
                   setActionFeedback(null);
-                  setDraft((current) => {
-                    if (!current) {
-                      return current;
-                    }
-                    const nextIndex = nextFormIndex(current.forms);
-                    const nextForm = createEmptyForm(nextIndex);
-                    setSelectedFormKey(nextForm.key);
-                    setSelectedFieldKey(nextForm.fields[0]?.key ?? null);
-                    return {
-                      ...current,
-                      forms: [...current.forms, nextForm]
-                    };
-                  });
+                  saveMutation.mutate(serializeDraft(draft));
                 }}
               >
-                Новая форма
-              </button>
+                {saveMutation.isPending ? "Публикуем..." : "Опубликовать новую версию"}
+              </Button>
+            </div>
 
-              {draft.forms.length ? (
-                draft.forms.map((form) => (
-                  <button
-                    key={form.key}
-                    type="button"
-                    className={`admin-module-card${selectedForm?.key === form.key ? " active" : ""}`}
-                    onClick={() => {
-                      setActionFeedback(null);
-                      setSelectedFormKey(form.key);
-                      setSelectedFieldKey(form.fields[0]?.key ?? null);
-                    }}
+            <SearchField
+              onChange={(event) => setVersionSearch(event.target.value)}
+              placeholder="Версия, автор, заметка"
+              value={versionSearch}
+            />
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-brand-700">Preferred</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {versionsQuery.data?.preferred?.version ?? formsQuery.data?.summary.version ?? "—"}
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Последняя публикация: {formatDateTime(formsQuery.data?.summary.last_published_at)}
+              </p>
+            </div>
+
+            <div className="max-h-[calc(100vh-24rem)] space-y-3 overflow-y-auto pr-1">
+              {versionsQuery.isLoading ? (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                  Загружаем версии каталога...
+                </div>
+              ) : null}
+
+              {versionsQuery.isError ? (
+                <div className="rounded-[1.1rem] border border-dashed border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700">
+                  {versionsQuery.error instanceof Error
+                    ? versionsQuery.error.message
+                    : "Не удалось загрузить версии каталога."}
+                </div>
+              ) : null}
+
+              {visibleVersions.map((item) => {
+                const isLoaded = loadedVersion === item.version;
+                const isPreferred = versionsQuery.data?.preferred?.version === item.version;
+
+                return (
+                  <div
+                    key={item.version}
+                    className={cn(
+                      "rounded-[1.15rem] border px-4 py-4",
+                      isLoaded ? "border-brand-200 bg-brand-50" : "border-border bg-white"
+                    )}
                   >
-                    <div className="admin-observer-item__head">
-                      <strong>{form.title || form.key}</strong>
-                      <span>{form.fields.length} полей</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-950">{item.version}</p>
+                          {isPreferred ? <Badge tone="success">preferred</Badge> : null}
+                          {item.is_preferred ? <Badge tone="brand">current</Badge> : null}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600">{item.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.created_by ?? "builtin_default"} • {formatDateTime(item.created_at)}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          Форм: {item.forms_count} • Полей: {item.fields_count} • Обязательных: {item.required_fields_count}
+                        </p>
+                      </div>
+                      <FileClock className="h-4 w-4 shrink-0 text-slate-300" />
                     </div>
-                    <p>Ключ: {form.key}</p>
-                    <p>request_kind: {form.request_kind || form.key}</p>
-                  </button>
-                ))
-              ) : (
-                <div className="support-queue-empty">В каталоге пока нет форм. Добавьте первую форму слева.</div>
-              )}
-            </article>
 
-            <article className="support-operation-card admin-forms-editor">
-              <div className="support-operations__head">
-                <strong>Редактор формы</strong>
-                <span>{selectedForm?.key ?? "Нет выбора"}</span>
-              </div>
-
-              {selectedForm ? (
-                <>
-                  <div className="admin-forms-editor__header">
-                    <label className="support-filter-search">
-                      <span>Название формы</span>
-                      <input
-                        aria-label="Название формы"
-                        value={selectedForm.title}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
-                          setActionFeedback(null);
-                          setDraft((current) =>
-                            current
-                              ? updateFormInCatalog(current, selectedForm.key, (form) => ({ ...form, title: value }))
-                              : current
-                          );
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        leadingIcon={<FilePenLine className="h-4 w-4" />}
+                        onClick={() => {
+                          void loadVersion(item.version);
                         }}
-                        placeholder="Печать / принтер"
-                      />
-                    </label>
-
-                    <label className="support-filter-search">
-                      <span>Ключ формы</span>
-                      <input
-                        aria-label="Ключ формы"
-                        value={selectedForm.key}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
-                          setActionFeedback(null);
-                          setDraft((current) => {
-                            if (!current) {
-                              return current;
-                            }
-                            return {
-                              ...current,
-                              forms: current.forms.map((form) =>
-                                form.key === selectedForm.key
-                                  ? {
-                                      ...form,
-                                      key: value,
-                                      request_kind: form.request_kind === selectedForm.key ? value : form.request_kind
-                                    }
-                                  : form
-                              )
-                            };
-                          });
-                          setSelectedFormKey(value);
-                        }}
-                        placeholder="printer"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      className="admin-modules-action admin-forms-inline-action"
-                      disabled={draft.forms.length <= 1}
-                      onClick={() => {
-                        setActionFeedback(null);
-                        setDraft((current) => {
-                          if (!current) {
-                            return current;
-                          }
-                          const nextForms = current.forms.filter((form) => form.key !== selectedForm.key);
-                          setSelectedFormKey(nextForms[0]?.key ?? null);
-                          setSelectedFieldKey(nextForms[0]?.fields[0]?.key ?? null);
-                          return {
-                            ...current,
-                            forms: nextForms
-                          };
-                        });
-                      }}
-                    >
-                      Удалить форму
-                    </button>
+                        size="sm"
+                        variant="outline"
+                      >
+                        В редактор
+                      </Button>
+                      <Button
+                        disabled={isPreferred || preferredMutation.isPending}
+                        leadingIcon={<Star className="h-4 w-4" />}
+                        onClick={() => preferredMutation.mutate(item.version)}
+                        size="sm"
+                      >
+                        {`Сделать preferred для ${item.version}`}
+                      </Button>
+                    </div>
                   </div>
+                );
+              })}
 
-                  <details className="admin-forms-advanced" open>
-                    <summary>Расширенные настройки формы</summary>
-                    <div className="admin-forms-advanced__grid">
-                      <label className="support-filter-search">
-                        <span>request_kind</span>
-                        <input
-                          aria-label="Request kind"
-                          value={selectedForm.request_kind}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            setActionFeedback(null);
-                            setDraft((current) =>
-                              current
-                                ? updateFormInCatalog(current, selectedForm.key, (form) => ({ ...form, request_kind: value }))
-                                : current
-                            );
-                          }}
-                          placeholder="printer"
-                        />
-                      </label>
-                      <label className="support-filter-search">
-                        <span>Описание формы</span>
-                        <textarea
-                          aria-label="Описание формы"
-                          value={selectedForm.description}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            setActionFeedback(null);
-                            setDraft((current) =>
-                              current
-                                ? updateFormInCatalog(current, selectedForm.key, (form) => ({ ...form, description: value }))
-                                : current
-                            );
-                          }}
-                          placeholder="Краткое описание, которое увидит пользователь"
-                        />
-                      </label>
-                    </div>
-                  </details>
+              {!versionsQuery.isLoading && !versionsQuery.isError && visibleVersions.length === 0 ? (
+                <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                  Под текущий фильтр версии каталога не найдены.
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
 
-                  <section className="admin-forms-fields">
-                    <div className="support-operations__head">
-                      <strong>Поля формы</strong>
-                      <span>{selectedForm.fields.length}</span>
-                    </div>
+        <Card>
+          <CardHeader className="gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Редактор каталога</CardTitle>
+                <CardDescription>
+                  Все формы, поля и публикация работают на реальном pack-registry без legacy iframe.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge tone={hasUnsavedChanges ? "warning" : "success"}>
+                  {hasUnsavedChanges ? "Есть несохранённые изменения" : "Черновик синхронизирован"}
+                </Badge>
+                <Button
+                  disabled={!draft || saveMutation.isPending}
+                  leadingIcon={<CheckCircle2 className="h-4 w-4" />}
+                  onClick={() => {
+                    if (!draft) {
+                      return;
+                    }
+                    setActionFeedback(null);
+                    saveMutation.mutate(serializeDraft(draft));
+                  }}
+                  size="sm"
+                >
+                  {saveMutation.isPending ? "Публикуем..." : "Сохранить изменения"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
 
-                    <div className="admin-forms-fields__toolbar">
-                      <label className="support-filter-select">
-                        <span>Тип нового поля</span>
-                        <select
-                          aria-label="Тип нового поля"
-                          value={newFieldType}
-                          onChange={(event) => {
-                            setNewFieldType(event.currentTarget.value as AdminFormsFieldType);
-                          }}
-                        >
-                          {formsQuery.data.capabilities.field_type_options.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+          <CardContent className="space-y-6">
+            {!draft ? (
+              <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-10 text-center text-sm text-slate-500">
+                Загружаем рабочий каталог форм...
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-2 text-sm font-medium text-slate-800">
+                    <span>Название каталога</span>
+                    <input
+                      className="field-base h-11 w-full px-4 text-sm"
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        setActionFeedback(null);
+                        setDraft((current) => (current ? { ...current, title: value } : current));
+                      }}
+                      value={draft.title}
+                    />
+                  </label>
 
-                      <button
-                        type="button"
-                        className="admin-modules-action admin-forms-inline-action"
+                  <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Источник черновика</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{loadedSourceLabel}</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      После публикации сервер выпустит новую версию и сделает её активной.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="space-y-2 text-sm font-medium text-slate-800">
+                  <span>Описание каталога</span>
+                  <textarea
+                    className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      setActionFeedback(null);
+                      setDraft((current) => (current ? { ...current, description: value } : current));
+                    }}
+                    value={draft.description}
+                  />
+                </label>
+
+                <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Формы каталога</p>
+                        <p className="text-xs text-slate-500">Выберите форму или добавьте новую.</p>
+                      </div>
+                      <Button
+                        leadingIcon={<Plus className="h-4 w-4" />}
                         onClick={() => {
                           setActionFeedback(null);
                           setDraft((current) => {
                             if (!current) {
                               return current;
                             }
-                            const form = current.forms.find((item) => item.key === selectedForm.key);
-                            const field = createEmptyField(newFieldType, nextFieldIndex(form?.fields ?? []));
-                            setSelectedFieldKey(field.key);
-                            return updateFormInCatalog(current, selectedForm.key, (item) => ({
-                              ...item,
-                              fields: [...item.fields, field]
-                            }));
+                            const nextForm = createEmptyForm(nextFormIndex(current.forms));
+                            setSelectedFormKey(nextForm.key);
+                            setSelectedFieldKey(nextForm.fields[0]?.key ?? null);
+                            return {
+                              ...current,
+                              forms: [...current.forms, nextForm],
+                            };
                           });
                         }}
+                        size="sm"
                       >
-                        Добавить поле
-                      </button>
+                        Новая форма
+                      </Button>
                     </div>
 
-                    <div className="admin-forms-fields__grid">
-                      <div className="admin-forms-field-list">
-                        {selectedForm.fields.length ? (
-                          selectedForm.fields.map((field) => (
-                            <button
-                              key={field.key}
-                              type="button"
-                              className={`admin-module-card${selectedField?.key === field.key ? " active" : ""}`}
-                              onClick={() => {
-                                setActionFeedback(null);
-                                setSelectedFieldKey(field.key);
-                              }}
-                            >
-                              <div className="admin-observer-item__head">
-                                <strong>{field.label || field.key}</strong>
-                                <span>{field.type}</span>
-                              </div>
-                              <p>Ключ: {field.key}</p>
-                              <p>{field.required ? "Обязательное поле" : "Необязательное поле"}</p>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="support-queue-empty">В форме пока нет полей. Добавьте первое поле.</div>
-                        )}
-                      </div>
+                    <div className="max-h-[calc(100vh-27rem)] space-y-3 overflow-y-auto pr-1">
+                      {draft.forms.map((form) => (
+                        <button
+                          key={form.key}
+                          className={cn(
+                            "w-full rounded-[1.1rem] border px-4 py-4 text-left transition-colors",
+                            selectedForm?.key === form.key
+                              ? "border-brand-200 bg-brand-50"
+                              : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                          )}
+                          onClick={() => {
+                            setSelectedFormKey(form.key);
+                            setSelectedFieldKey(form.fields[0]?.key ?? null);
+                            setActionFeedback(null);
+                          }}
+                          type="button"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-950">{form.title || form.key}</p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                                {form.request_kind}
+                              </p>
+                            </div>
+                            <Badge tone="neutral">{form.fields.length} полей</Badge>
+                          </div>
+                          <p className="mt-3 text-sm text-slate-500 line-clamp-2">
+                            {form.description || "Описание формы пока не заполнено."}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-                      <div className="admin-forms-field-editor">
-                        {selectedField ? (
-                          <>
-                            <div className="admin-forms-editor__header">
-                              <strong>Параметры поля</strong>
-                              <button
-                                type="button"
-                                className="admin-modules-action admin-forms-inline-action"
-                                disabled={selectedForm.fields.length <= 1}
+                  <div className="space-y-5">
+                    {selectedForm ? (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">Параметры формы</p>
+                            <p className="text-xs text-slate-500">
+                              Ключ, request_kind и состав полей сохраняются в следующую версию каталога.
+                            </p>
+                          </div>
+                          <Button
+                            disabled={draft.forms.length <= 1}
+                            leadingIcon={<Trash2 className="h-4 w-4" />}
+                            onClick={() => {
+                              setActionFeedback(null);
+                              setDraft((current) => {
+                                if (!current) {
+                                  return current;
+                                }
+                                const nextForms = current.forms.filter((form) => form.key !== selectedForm.key);
+                                setSelectedFormKey(nextForms[0]?.key ?? null);
+                                setSelectedFieldKey(nextForms[0]?.fields[0]?.key ?? null);
+                                return {
+                                  ...current,
+                                  forms: nextForms,
+                                };
+                              });
+                            }}
+                            size="sm"
+                            variant="outline"
+                          >
+                            Удалить форму
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Название формы</span>
+                            <input
+                              className="field-base h-11 w-full px-4 text-sm"
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setDraft((current) =>
+                                  current
+                                    ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                        ...form,
+                                        title: value,
+                                      }))
+                                    : current
+                                );
+                              }}
+                              value={selectedForm.title}
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Ключ формы</span>
+                            <input
+                              className="field-base h-11 w-full px-4 text-sm"
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setDraft((current) => {
+                                  if (!current) {
+                                    return current;
+                                  }
+                                  return {
+                                    ...current,
+                                    forms: current.forms.map((form) =>
+                                      form.key === selectedForm.key
+                                        ? {
+                                            ...form,
+                                            key: value,
+                                            request_kind:
+                                              form.request_kind === selectedForm.key ? value : form.request_kind,
+                                          }
+                                        : form
+                                    ),
+                                  };
+                                });
+                                setSelectedFormKey(value);
+                              }}
+                              value={selectedForm.key}
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>request_kind</span>
+                            <input
+                              className="field-base h-11 w-full px-4 text-sm"
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setDraft((current) =>
+                                  current
+                                    ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                        ...form,
+                                        request_kind: value,
+                                      }))
+                                    : current
+                                );
+                              }}
+                              value={selectedForm.request_kind}
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Описание формы</span>
+                            <textarea
+                              className="field-base min-h-[88px] w-full resize-y px-4 py-4 text-sm"
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setDraft((current) =>
+                                  current
+                                    ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                        ...form,
+                                        description: value,
+                                      }))
+                                    : current
+                                );
+                              }}
+                              value={selectedForm.description}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Поля формы</p>
+                              <p className="text-xs text-slate-500">
+                                Редактор полей полностью живой: типы, options и visible_when уйдут в новую версию.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Select
+                                className="min-w-[160px]"
+                                onChange={(event) => setNewFieldType(event.target.value as AdminFormsFieldType)}
+                                value={newFieldType}
+                              >
+                                {formsQuery.data?.capabilities.field_type_options.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Button
+                                leadingIcon={<Plus className="h-4 w-4" />}
                                 onClick={() => {
-                                  setActionFeedback(null);
                                   setDraft((current) => {
                                     if (!current) {
                                       return current;
                                     }
-                                    const remainingFields = selectedForm.fields.filter((field) => field.key !== selectedField.key);
-                                    setSelectedFieldKey(remainingFields[0]?.key ?? null);
+                                    const field = createEmptyField(
+                                      newFieldType,
+                                      nextFieldIndex(selectedForm.fields)
+                                    );
+                                    setSelectedFieldKey(field.key);
                                     return updateFormInCatalog(current, selectedForm.key, (form) => ({
                                       ...form,
-                                      fields: form.fields.filter((field) => field.key !== selectedField.key)
+                                      fields: [...form.fields, field],
                                     }));
                                   });
                                 }}
+                                size="sm"
                               >
-                                Удалить поле
-                              </button>
+                                Поле
+                              </Button>
                             </div>
+                          </div>
 
-                            <div className="admin-forms-advanced__grid">
-                              <label className="support-filter-search">
-                                <span>Название поля</span>
-                                <input
-                                  aria-label="Название поля"
-                                  value={selectedField.label}
-                                  onChange={(event) => {
-                                    const value = event.currentTarget.value;
-                                    setActionFeedback(null);
-                                    setDraft((current) =>
-                                      current
-                                        ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                            ...field,
-                                            label: value
-                                          }))
-                                        : current
-                                    );
-                                  }}
-                                  placeholder="Кабинет"
-                                />
-                              </label>
-
-                              <label className="support-filter-search">
-                                <span>Ключ поля</span>
-                                <input
-                                  aria-label="Ключ поля"
-                                  value={selectedField.key}
-                                  onChange={(event) => {
-                                    const value = event.currentTarget.value;
-                                    setActionFeedback(null);
-                                    setDraft((current) =>
-                                      current
-                                        ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                            ...field,
-                                            key: value
-                                          }))
-                                        : current
-                                    );
-                                    setSelectedFieldKey(value);
-                                  }}
-                                  placeholder="room"
-                                />
-                              </label>
-
-                              <label className="support-filter-select">
-                                <span>Тип поля</span>
-                                <select
-                                  aria-label="Тип поля"
-                                  value={selectedField.type}
-                                  onChange={(event) => {
-                                    const value = event.currentTarget.value as AdminFormsFieldType;
-                                    setActionFeedback(null);
-                                    setDraft((current) =>
-                                      current
-                                        ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                            ...field,
-                                            type: value,
-                                            options:
-                                              value === "select" || value === "radio"
-                                                ? field.options.length
-                                                  ? field.options
-                                                  : [
-                                                      { value: "option_1", label: "Вариант 1" },
-                                                      { value: "option_2", label: "Вариант 2" }
-                                                    ]
-                                                : []
-                                          }))
-                                        : current
-                                    );
-                                  }}
+                          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+                            <div className="max-h-[calc(100vh-32rem)] space-y-3 overflow-y-auto pr-1">
+                              {selectedForm.fields.map((field) => (
+                                <button
+                                  key={field.key}
+                                  className={cn(
+                                    "w-full rounded-[1rem] border px-4 py-4 text-left transition-colors",
+                                    selectedField?.key === field.key
+                                      ? "border-brand-200 bg-brand-50"
+                                      : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                                  )}
+                                  onClick={() => setSelectedFieldKey(field.key)}
+                                  type="button"
                                 >
-                                  {formsQuery.data.capabilities.field_type_options.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <label className="admin-modules-toggle">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedField.required}
-                                  onChange={(event) => {
-                                    const checked = event.currentTarget.checked;
-                                    setActionFeedback(null);
-                                    setDraft((current) =>
-                                      current
-                                        ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                            ...field,
-                                            required: checked
-                                          }))
-                                        : current
-                                    );
-                                  }}
-                                />
-                                <span>Поле обязательно</span>
-                              </label>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-slate-900">{field.label || field.key}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{field.key}</p>
+                                    </div>
+                                    <Badge tone="neutral">{fieldTypeLabel(field.type)}</Badge>
+                                  </div>
+                                  <p className="mt-3 text-xs text-slate-500">
+                                    {field.required ? "Обязательное поле" : "Необязательное поле"}
+                                  </p>
+                                </button>
+                              ))}
                             </div>
 
-                            <details className="admin-forms-advanced" open>
-                              <summary>Расширенные настройки поля</summary>
-                              <div className="admin-forms-advanced__grid">
-                                <label className="support-filter-search">
-                                  <span>Placeholder</span>
-                                  <input
-                                    aria-label="Placeholder"
-                                    value={selectedField.placeholder}
-                                    onChange={(event) => {
-                                      const value = event.currentTarget.value;
-                                      setActionFeedback(null);
-                                      setDraft((current) =>
-                                        current
-                                          ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                              ...field,
-                                              placeholder: value
-                                            }))
-                                          : current
-                                      );
-                                    }}
-                                    placeholder="Подсказка в поле ввода"
-                                  />
-                                </label>
+                            <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                              {selectedField ? (
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="font-semibold text-slate-900">Параметры поля</p>
+                                      <p className="text-xs text-slate-500">{selectedField.key}</p>
+                                    </div>
+                                    <Button
+                                      disabled={selectedForm.fields.length <= 1}
+                                      leadingIcon={<Trash2 className="h-4 w-4" />}
+                                      onClick={() => {
+                                        setDraft((current) => {
+                                          if (!current) {
+                                            return current;
+                                          }
+                                          const remainingFields = selectedForm.fields.filter(
+                                            (field) => field.key !== selectedField.key
+                                          );
+                                          setSelectedFieldKey(remainingFields[0]?.key ?? null);
+                                          return updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                            ...form,
+                                            fields: form.fields.filter((field) => field.key !== selectedField.key),
+                                          }));
+                                        });
+                                      }}
+                                      size="sm"
+                                      variant="outline"
+                                    >
+                                      Удалить
+                                    </Button>
+                                  </div>
 
-                                <label className="support-filter-search">
-                                  <span>Help text</span>
-                                  <textarea
-                                    aria-label="Help text"
-                                    value={selectedField.help_text}
-                                    onChange={(event) => {
-                                      const value = event.currentTarget.value;
-                                      setActionFeedback(null);
-                                      setDraft((current) =>
-                                        current
-                                          ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                              ...field,
-                                              help_text: value
-                                            }))
-                                          : current
-                                      );
-                                    }}
-                                    placeholder="Краткое пояснение для пользователя"
-                                  />
-                                </label>
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>Название поля</span>
+                                      <input
+                                        className="field-base h-11 w-full px-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    label: value,
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        value={selectedField.label}
+                                      />
+                                    </label>
 
-                                {fieldTypeRequiresOptions(selectedField) ? (
-                                  <label className="support-filter-search admin-forms-options-field">
-                                    <span>Варианты ответа</span>
-                                    <textarea
-                                      aria-label="Варианты ответа"
-                                      value={fieldOptionsToText(selectedField)}
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>Ключ поля</span>
+                                      <input
+                                        className="field-base h-11 w-full px-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    key: value,
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                          setSelectedFieldKey(value);
+                                        }}
+                                        value={selectedField.key}
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>Тип поля</span>
+                                      <Select
+                                        onChange={(event) => {
+                                          const value = event.target.value as AdminFormsFieldType;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    type: value,
+                                                    options:
+                                                      value === "select" || value === "radio"
+                                                        ? field.options.length
+                                                          ? field.options
+                                                          : [
+                                                              { value: "option_1", label: "Вариант 1" },
+                                                              { value: "option_2", label: "Вариант 2" },
+                                                            ]
+                                                        : [],
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        value={selectedField.type}
+                                      >
+                                        {formsQuery.data?.capabilities.field_type_options.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </Select>
+                                    </label>
+
+                                    <label className="flex h-11 items-center gap-3 rounded-pill border border-border bg-white px-4">
+                                      <input
+                                        checked={selectedField.required}
+                                        onChange={(event) => {
+                                          const checked = event.currentTarget.checked;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    required: checked,
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        type="checkbox"
+                                      />
+                                      <span className="text-sm font-medium text-slate-700">Поле обязательное</span>
+                                    </label>
+                                  </div>
+
+                                  <label className="space-y-2 text-sm font-medium text-slate-800">
+                                    <span>Placeholder</span>
+                                    <input
+                                      className="field-base h-11 w-full px-4 text-sm"
                                       onChange={(event) => {
                                         const value = event.currentTarget.value;
-                                        setActionFeedback(null);
                                         setDraft((current) =>
                                           current
-                                            ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                                ...field,
-                                                options: parseFieldOptions(value)
-                                              }))
+                                            ? updateFieldInCatalog(
+                                                current,
+                                                selectedForm.key,
+                                                selectedField.key,
+                                                (field) => ({
+                                                  ...field,
+                                                  placeholder: value,
+                                                })
+                                              )
                                             : current
                                         );
                                       }}
-                                      placeholder={"value|label\nprinter|Принтер"}
+                                      value={selectedField.placeholder}
                                     />
                                   </label>
-                                ) : null}
 
-                                <label className="support-filter-search">
-                                  <span>visible_when.field</span>
-                                  <input
-                                    aria-label="Поле условия"
-                                    value={selectedField.visible_when.field}
-                                    onChange={(event) => {
-                                      const value = event.currentTarget.value;
-                                      setActionFeedback(null);
-                                      setDraft((current) =>
-                                        current
-                                          ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                              ...field,
-                                              visible_when: {
-                                                ...field.visible_when,
-                                                field: value
-                                              }
-                                            }))
-                                          : current
-                                      );
-                                    }}
-                                    placeholder="issue_kind"
-                                  />
-                                </label>
+                                  <label className="space-y-2 text-sm font-medium text-slate-800">
+                                    <span>Help text</span>
+                                    <textarea
+                                      className="field-base min-h-[90px] w-full resize-y px-4 py-4 text-sm"
+                                      onChange={(event) => {
+                                        const value = event.currentTarget.value;
+                                        setDraft((current) =>
+                                          current
+                                            ? updateFieldInCatalog(
+                                                current,
+                                                selectedForm.key,
+                                                selectedField.key,
+                                                (field) => ({
+                                                  ...field,
+                                                  help_text: value,
+                                                })
+                                              )
+                                            : current
+                                        );
+                                      }}
+                                      value={selectedField.help_text}
+                                    />
+                                  </label>
 
-                                <label className="support-filter-search">
-                                  <span>visible_when.equals</span>
-                                  <input
-                                    aria-label="Значение условия"
-                                    value={selectedField.visible_when.equals}
-                                    onChange={(event) => {
-                                      const value = event.currentTarget.value;
-                                      setActionFeedback(null);
-                                      setDraft((current) =>
-                                        current
-                                          ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                              ...field,
-                                              visible_when: {
-                                                ...field.visible_when,
-                                                equals: value
-                                              }
-                                            }))
-                                          : current
-                                      );
-                                    }}
-                                    placeholder="site_down"
-                                  />
-                                </label>
+                                  {fieldTypeRequiresOptions(selectedField) ? (
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>Варианты ответа</span>
+                                      <textarea
+                                        className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    options: parseFieldOptions(value),
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        placeholder={"value|label\nprinter|Принтер"}
+                                        value={fieldOptionsToText(selectedField)}
+                                      />
+                                    </label>
+                                  ) : null}
 
-                                <label className="support-filter-search">
-                                  <span>visible_when.values</span>
-                                  <textarea
-                                    aria-label="Список значений условия"
-                                    value={valuesToText(selectedField.visible_when.values)}
-                                    onChange={(event) => {
-                                      const value = event.currentTarget.value;
-                                      setActionFeedback(null);
-                                      setDraft((current) =>
-                                        current
-                                          ? updateFieldInCatalog(current, selectedForm.key, selectedField.key, (field) => ({
-                                              ...field,
-                                              visible_when: {
-                                                ...field.visible_when,
-                                                values: parseValueLines(value)
-                                              }
-                                            }))
-                                          : current
-                                      );
-                                    }}
-                                    placeholder={"single\nmultiple"}
-                                  />
-                                </label>
-                              </div>
-                            </details>
-                          </>
-                        ) : (
-                          <div className="support-queue-empty">Выберите поле слева, чтобы настроить его параметры.</div>
-                        )}
+                                  <div className="grid gap-4 md:grid-cols-3">
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>visible_when.field</span>
+                                      <input
+                                        className="field-base h-11 w-full px-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    visible_when: {
+                                                      ...field.visible_when,
+                                                      field: value,
+                                                    },
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        value={selectedField.visible_when.field}
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>visible_when.equals</span>
+                                      <input
+                                        className="field-base h-11 w-full px-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    visible_when: {
+                                                      ...field.visible_when,
+                                                      equals: value,
+                                                    },
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        value={selectedField.visible_when.equals}
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2 text-sm font-medium text-slate-800">
+                                      <span>visible_when.values</span>
+                                      <textarea
+                                        className="field-base min-h-[90px] w-full resize-y px-4 py-4 text-sm"
+                                        onChange={(event) => {
+                                          const value = event.currentTarget.value;
+                                          setDraft((current) =>
+                                            current
+                                              ? updateFieldInCatalog(
+                                                  current,
+                                                  selectedForm.key,
+                                                  selectedField.key,
+                                                  (field) => ({
+                                                    ...field,
+                                                    visible_when: {
+                                                      ...field.visible_when,
+                                                      values: parseValueLines(value),
+                                                    },
+                                                  })
+                                                )
+                                              : current
+                                          );
+                                        }}
+                                        value={valuesToText(selectedField.visible_when.values)}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-[1rem] border border-dashed border-border bg-white px-4 py-8 text-sm text-slate-500">
+                                  Выберите поле слева, чтобы настроить его параметры.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
+                        Выберите форму слева или создайте новую форму.
                       </div>
-                    </div>
-                  </section>
-                </>
-              ) : (
-                <div className="support-queue-empty">Выберите форму слева или создайте новую форму.</div>
-              )}
-            </article>
-          </div>
-        </>
-      ) : null}
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="xl:sticky xl:top-[9.5rem] xl:self-start">
+          <CardHeader>
+            <CardTitle>Контекст формы</CardTitle>
+            <CardDescription>
+              Быстрый контроль над текущим редактором: выбранная форма, поле и состояние публикации.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-brand-700">Выбрано сейчас</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {selectedForm?.title ?? "Форма не выбрана"}
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                {selectedField ? `Поле: ${selectedField.label}` : "Выберите поле для редактирования справа."}
+              </p>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Черновик из версии</span>
+                <span className="font-medium text-slate-900">{loadedVersion ?? "текущая"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Форм в черновике</span>
+                <span className="font-medium text-slate-900">{draft?.forms.length ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Всего полей</span>
+                <span className="font-medium text-slate-900">
+                  {draft?.forms.reduce((sum, form) => sum + form.fields.length, 0) ?? 0}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Обязательных</span>
+                <span className="font-medium text-slate-900">
+                  {draft?.forms.reduce(
+                    (sum, form) => sum + form.fields.filter((field) => field.required).length,
+                    0
+                  ) ?? 0}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+              <div className="flex items-center gap-2">
+                <FolderClock className="h-4 w-4 text-brand-700" />
+                <p className="font-semibold text-slate-900">Последняя публикация</p>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">
+                {formsQuery.data?.summary.last_published_by ?? "builtin_default"}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {formatDateTime(formsQuery.data?.summary.last_published_at)}
+              </p>
+            </div>
+
+            <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+              Публикация всегда создаёт новую версию pack и сразу делает её активной. Если нужен откат, загрузите
+              прошлую версию слева и либо сделайте её preferred, либо выпустите на её основе новую версию.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </section>
   );
 }

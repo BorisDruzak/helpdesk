@@ -359,7 +359,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, role-aware `/app/*` routes, server-driven `default_workspace`/`available_workspaces`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, honest knowledge placeholder, and typed admin slices for inventory, device update actions, modules registry/actions, request-form builder, observer quick summary and trace drilldown surfaces.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, role-aware `/app/*` routes, server-driven `default_workspace`/`available_workspaces`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, honest knowledge placeholder, and typed admin slices for inventory, device update actions, modules registry/actions, request-form builder, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode and trace detail with agent actions.",
         aliases=(
             "webapp",
             "react app",
@@ -863,7 +863,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and guardrails against legacy queue subscribe bursts.",
+        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and agent-action-aware trace detail.",
         aliases=(
             "observer",
             "trace overlay",

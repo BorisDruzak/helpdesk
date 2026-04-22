@@ -1,14 +1,67 @@
-import { startTransition, useDeferredValue, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
 import {
-  type AdminModulesRolloutSettings,
-  fetchAdminModules,
-  patchAdminModulesRolloutSettings,
-  setAdminModulePreferredVersion
-} from "./api";
+  AlertTriangle,
+  Boxes,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  FileArchive,
+  FileCode2,
+  FileJson,
+  FolderKanban,
+  PackagePlus,
+  RefreshCcw,
+  Save,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Upload,
+  Wand2,
+  Wrench,
+} from "lucide-react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { SearchField } from "../../components/ui/search-field";
+import { Select } from "../../components/ui/select";
+import { Tabs } from "../../components/ui/tabs";
+import { cn } from "../../shared/ui/cn";
+import {
+  deleteModuleWorkbenchVersion,
+  fetchModuleWorkbenchDetail,
+  fetchModuleWorkbenchList,
+  patchModuleWorkbenchRolloutSettings,
+  saveModuleWorkbenchDraft,
+  setModuleWorkbenchPreferredVersion,
+  type ModuleArchiveUploadPayload,
+  type ModuleWorkbenchDraft,
+  type ModuleWorkbenchFamilyRecord,
+  type ModuleWorkbenchRolloutSettings,
+  type ModuleWorkbenchToolDraft,
+  type ModuleWorkbenchValidationPayload,
+  uploadModuleWorkbenchArchive,
+  validateModuleWorkbenchDraft,
+} from "./workbench-api";
 
+type WorkspaceTab = "registry" | "development" | "archive";
+type DevelopmentTab = "basics" | "tool" | "preview" | "source";
+type PreviewTab = "payload" | "curl-validate" | "curl-save";
 type ActionFeedback =
   | {
       tone: "success" | "error";
@@ -16,6 +69,9 @@ type ActionFeedback =
     }
   | null;
 
+const MODULE_NAME_RE = /^[a-z0-9_]+$/;
+const TOOL_NAME_RE = /^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/;
+const METHOD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -29,390 +85,2294 @@ function formatDateTime(value: string | null | undefined): string {
 
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
   }).format(date);
 }
 
-
-function formatRolloutSyncLabel(value: boolean): string {
-  return value ? "После смены preferred запускаем sync" : "Sync запускается вручную";
-}
-
-
-function getRolloutModeLabel(value: string): string {
-  if (value === "installed_devices") {
-    return "Обновлять установленные устройства";
+function formatDuration(value: number | null | undefined): string {
+  if (value == null || value <= 0) {
+    return "—";
   }
-  return "Только вручную";
+  if (value < 1000) {
+    return `${value} мс`;
+  }
+  return `${(value / 1000).toFixed(1)} с`;
 }
 
+function validationTone(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "passed") {
+    return "success" as const;
+  }
+  if (normalized === "warning") {
+    return "warning" as const;
+  }
+  if (normalized === "failed") {
+    return "danger" as const;
+  }
+  return "neutral" as const;
+}
+
+function rolloutModeLabel(value: string) {
+  return value === "installed_devices"
+    ? "Обновлять установленные устройства"
+    : "Только вручную";
+}
+
+function buildVersionKey(moduleName: string, version: string) {
+  return `${moduleName}:${version}`;
+}
+
+function prettyJson(value: unknown) {
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function safeParseJson<T>(raw: string, fallback: T): T {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return JSON.parse(trimmed) as T;
+}
+
+function splitLines(raw: string) {
+  return raw
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinLines(items: string[] | null | undefined) {
+  return (items ?? []).join("\n");
+}
+
+function createEmptyTool(index: number): ModuleWorkbenchToolDraft {
+  const suffix = index + 1;
+  return {
+    tool_name: `custom.tool_${suffix}`,
+    aliases: [],
+    method_name: `tool_${suffix}`,
+    description: "",
+    params_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+    output_schema: {
+      type: "object",
+      properties: {},
+    },
+    presets: [],
+    capabilities: [],
+    metadata: {
+      risk_level: "safe_read",
+      tool_kind: "diagnostic",
+      timeout_sec: 30,
+      platforms: ["any"],
+      allow_roles: ["admin"],
+      scopes: [],
+      requires_consent: false,
+      idempotent: true,
+      side_effects: false,
+    },
+    contract_version: "1.0.0",
+    dependencies: {},
+    lifecycle: "stable",
+    error_codes: [],
+    artifact_types: [],
+    redaction: {},
+    resources: {
+      max_runtime_sec: 30,
+      max_stdout_bytes: 65536,
+      max_stderr_bytes: 65536,
+      max_artifact_count: 2,
+      max_artifact_bytes: 5242880,
+      max_subprocess_count: 2,
+      allowed_filesystem_scope: [],
+      allowed_external_hosts: [],
+    },
+    user_function_body: "return {}",
+    reconstruction_strategy: "draft",
+  };
+}
+
+function createBlankDraft(): ModuleWorkbenchDraft {
+  return {
+    module_name: "new_module",
+    version: "1.0.0",
+    module_api_version: "1.0.0",
+    owner_scope: "vendor",
+    description: "",
+    platforms: ["any"],
+    requirements: [],
+    optional_requirements: [],
+    min_agent_version: null,
+    entrypoint: "module:register",
+    tools: [createEmptyTool(0)],
+    warnings: [],
+    source: {
+      manifest_json_text: "{}",
+      module_py_text: "",
+      files: [],
+      decomposition: {
+        resolved_tools: 0,
+        unresolved_tools: [],
+        available_methods: [],
+        available_tool_names: [],
+      },
+    },
+  };
+}
+
+function cloneDraft(draft: ModuleWorkbenchDraft): ModuleWorkbenchDraft {
+  return JSON.parse(JSON.stringify(draft)) as ModuleWorkbenchDraft;
+}
+
+function buildDraftPayload(draft: ModuleWorkbenchDraft) {
+  return {
+    module_name: draft.module_name.trim(),
+    version: draft.version.trim(),
+    module_api_version: draft.module_api_version.trim() || "1.0.0",
+    owner_scope: draft.owner_scope.trim() || "vendor",
+    description: draft.description.trim(),
+    platforms: draft.platforms,
+    requirements: draft.requirements,
+    optional_requirements: draft.optional_requirements,
+    min_agent_version: draft.min_agent_version?.trim() || null,
+    entrypoint: draft.entrypoint.trim() || "module:register",
+    tools: draft.tools.map((tool) => ({
+      tool_name: tool.tool_name.trim(),
+      aliases: tool.aliases,
+      method_name: tool.method_name.trim(),
+      description: tool.description.trim(),
+      params_schema: tool.params_schema,
+      output_schema: tool.output_schema,
+      presets: tool.presets,
+      capabilities: tool.capabilities,
+      metadata: tool.metadata,
+      contract_version: tool.contract_version.trim() || "1.0.0",
+      dependencies: tool.dependencies,
+      lifecycle: tool.lifecycle.trim() || "stable",
+      error_codes: tool.error_codes,
+      artifact_types: tool.artifact_types,
+      redaction: tool.redaction,
+      resources: tool.resources,
+      user_function_body: tool.user_function_body,
+    })),
+  };
+}
+
+function buildDraftFingerprint(draft: ModuleWorkbenchDraft | null) {
+  return JSON.stringify(draft ? buildDraftPayload(draft) : null);
+}
+
+function validateDraft(draft: ModuleWorkbenchDraft | null): string[] {
+  if (!draft) {
+    return [];
+  }
+
+  const issues: string[] = [];
+  if (!draft.module_name.trim()) {
+    issues.push("Укажите module_name.");
+  } else if (!MODULE_NAME_RE.test(draft.module_name.trim())) {
+    issues.push("module_name должен содержать только a-z, 0-9 и underscore.");
+  }
+
+  if (!draft.version.trim()) {
+    issues.push("Укажите версию модуля.");
+  }
+
+  if (!draft.tools.length) {
+    issues.push("Добавьте хотя бы один инструмент.");
+  }
+
+  const toolNames = new Set<string>();
+  const methodNames = new Set<string>();
+  draft.tools.forEach((tool, index) => {
+    const label = tool.tool_name.trim() || `tool #${index + 1}`;
+    if (!tool.tool_name.trim()) {
+      issues.push(`Инструмент #${index + 1}: задайте tool_name.`);
+    } else if (!TOOL_NAME_RE.test(tool.tool_name.trim())) {
+      issues.push(`${label}: tool_name должен быть в dotted-формате.`);
+    }
+    if (toolNames.has(tool.tool_name.trim())) {
+      issues.push(`${label}: tool_name повторяется в модуле.`);
+    }
+    toolNames.add(tool.tool_name.trim());
+
+    if (!tool.method_name.trim()) {
+      issues.push(`${label}: задайте method_name.`);
+    } else if (!METHOD_NAME_RE.test(tool.method_name.trim())) {
+      issues.push(`${label}: method_name должен быть валидным Python-идентификатором.`);
+    }
+    if (methodNames.has(tool.method_name.trim())) {
+      issues.push(`${label}: method_name повторяется.`);
+    }
+    methodNames.add(tool.method_name.trim());
+
+    if (!tool.user_function_body.trim()) {
+      issues.push(`${label}: добавьте тело функции.`);
+    }
+  });
+
+  return issues;
+}
+
+function familyMatchesSearch(item: ModuleWorkbenchFamilyRecord, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  const versionSearchBlob = item.versions
+    .flatMap((version) => [
+      version.version,
+      ...(version.tool_ids ?? []),
+      ...(version.platforms ?? []),
+    ])
+    .join(" ");
+  return [
+    item.module_name,
+    item.preferred_version ?? "",
+    item.latest_version ?? "",
+    versionSearchBlob,
+  ].some((value) => value.toLowerCase().includes(normalized));
+}
+
+function copyToClipboard(text: string) {
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    return;
+  }
+  void navigator.clipboard.writeText(text);
+}
+
+function parseToolEditorJson(value: string, fieldLabel: string) {
+  try {
+    return safeParseJson(value, {});
+  } catch {
+    throw new Error(`Поле «${fieldLabel}» должно содержать валидный JSON.`);
+  }
+}
+
+function buildPreviewCurl(mode: "validate" | "save", payload: Record<string, unknown>) {
+  return [
+    `curl -X POST http://192.168.100.17:8666/api/modules/workbench/${mode} \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -d '${JSON.stringify(payload, null, 2)}'`,
+  ].join("\n");
+}
+
+function MetaRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-slate-500">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-900">
+        {value == null || value === "" ? "—" : value}
+      </span>
+    </div>
+  );
+}
 
 export function ModulesPanel() {
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("registry");
+  const [developmentTab, setDevelopmentTab] = useState<DevelopmentTab>("basics");
+  const [previewTab, setPreviewTab] = useState<PreviewTab>("payload");
   const [queryDraft, setQueryDraft] = useState("");
   const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
-  const [rolloutModeDraft, setRolloutModeDraft] = useState("manual");
-  const [syncAfterPreferredDraft, setSyncAfterPreferredDraft] = useState(true);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ModuleWorkbenchDraft | null>(null);
+  const [baselineFingerprint, setBaselineFingerprint] = useState<string>("null");
+  const [requestedDraftKey, setRequestedDraftKey] = useState<string | null>(null);
+  const [loadedDraftKey, setLoadedDraftKey] = useState<string | null>(null);
+  const [selectedToolIndex, setSelectedToolIndex] = useState(0);
+  const [selectedSourcePath, setSelectedSourcePath] = useState<string>("");
+  const [serverValidation, setServerValidation] =
+    useState<ModuleWorkbenchValidationPayload | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
+  const [archiveFile, setArchiveFile] = useState<File | null>(null);
+  const [archiveModuleName, setArchiveModuleName] = useState("");
+  const [archiveVersion, setArchiveVersion] = useState("");
+  const [archiveOverwrite, setArchiveOverwrite] = useState(false);
+  const [rolloutDraft, setRolloutDraft] = useState<ModuleWorkbenchRolloutSettings | null>(null);
   const deferredQuery = useDeferredValue(queryDraft);
 
   const modulesQuery = useQuery({
-    queryKey: ["admin-modules", deferredQuery],
-    queryFn: () =>
-      fetchAdminModules({
-        query: deferredQuery
-      }),
-    retry: false
+    queryKey: ["modules-workbench-list", deferredQuery],
+    queryFn: () => fetchModuleWorkbenchList(deferredQuery),
+    retry: false,
   });
 
-  const modules = modulesQuery.data?.modules ?? [];
-  const selectedModule =
-    modules.find((item) => item.module_name === selectedModuleName) ?? modules[0] ?? null;
+  const visibleFamilies = useMemo(
+    () => (modulesQuery.data?.modules ?? []).filter((item) => familyMatchesSearch(item, deferredQuery)),
+    [deferredQuery, modulesQuery.data?.modules]
+  );
+
+  const selectedFamily =
+    visibleFamilies.find((item) => item.module_name === selectedModuleName) ??
+    visibleFamilies[0] ??
+    null;
+  const selectedRecord =
+    selectedFamily?.versions.find((item) => item.version === selectedVersion) ??
+    selectedFamily?.versions[0] ??
+    null;
+
+  const detailQuery = useQuery({
+    queryKey: ["modules-workbench-detail", selectedModuleName, selectedVersion],
+    queryFn: () => fetchModuleWorkbenchDetail(selectedModuleName!, selectedVersion!),
+    enabled: Boolean(selectedModuleName && selectedVersion),
+    retry: false,
+  });
 
   useEffect(() => {
-    if (!modules.length) {
-      if (selectedModuleName !== null) {
-        setSelectedModuleName(null);
-      }
+    if (!visibleFamilies.length) {
+      setSelectedModuleName(null);
+      setSelectedVersion(null);
       return;
     }
 
-    if (!selectedModuleName || !modules.some((item) => item.module_name === selectedModuleName)) {
-      setSelectedModuleName(modules[0].module_name);
-    }
-  }, [modules, selectedModuleName]);
-
-  useEffect(() => {
-    const settings = modulesQuery.data?.rollout_settings;
-    if (!settings) {
+    if (!selectedModuleName || !visibleFamilies.some((item) => item.module_name === selectedModuleName)) {
+      setSelectedModuleName(visibleFamilies[0].module_name);
+      setSelectedVersion(visibleFamilies[0].versions[0]?.version ?? null);
       return;
     }
-    setRolloutModeDraft(settings.preferred_version_rollout_mode);
-    setSyncAfterPreferredDraft(settings.sync_after_preferred_change);
-  }, [modulesQuery.data?.rollout_settings]);
+
+    const activeFamily = visibleFamilies.find((item) => item.module_name === selectedModuleName);
+    if (!activeFamily) {
+      return;
+    }
+
+    if (
+      !selectedVersion ||
+      !activeFamily.versions.some((item) => item.version === selectedVersion)
+    ) {
+      setSelectedVersion(activeFamily.versions[0]?.version ?? null);
+    }
+  }, [selectedModuleName, selectedVersion, visibleFamilies]);
+
+  useEffect(() => {
+    if (!draft?.tools.length) {
+      setSelectedToolIndex(0);
+      return;
+    }
+    if (selectedToolIndex > draft.tools.length - 1) {
+      setSelectedToolIndex(draft.tools.length - 1);
+    }
+  }, [draft?.tools.length, selectedToolIndex]);
+
+  useEffect(() => {
+    if (!detailQuery.data || !selectedModuleName || !selectedVersion) {
+      return;
+    }
+    const versionKey = buildVersionKey(selectedModuleName, selectedVersion);
+    if (requestedDraftKey !== versionKey || loadedDraftKey === versionKey) {
+      return;
+    }
+    const nextDraft = cloneDraft(detailQuery.data.editable_spec);
+    setDraft(nextDraft);
+    setLoadedDraftKey(versionKey);
+    setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+    setSelectedToolIndex(0);
+    setSelectedSourcePath(nextDraft.source.files[0]?.path ?? "");
+    setServerValidation(null);
+  }, [
+    detailQuery.data,
+    loadedDraftKey,
+    requestedDraftKey,
+    selectedModuleName,
+    selectedVersion,
+  ]);
+
+  useEffect(() => {
+    if (!modulesQuery.data?.rollout_settings) {
+      return;
+    }
+    setRolloutDraft({
+      preferred_version_rollout_mode:
+        modulesQuery.data.rollout_settings.preferred_version_rollout_mode,
+      sync_after_preferred_change:
+        modulesQuery.data.rollout_settings.sync_after_preferred_change,
+    });
+  }, [
+    modulesQuery.data?.rollout_settings?.preferred_version_rollout_mode,
+    modulesQuery.data?.rollout_settings?.sync_after_preferred_change,
+  ]);
+
+  const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
+  const selectedTool = draft?.tools[selectedToolIndex] ?? null;
+  const localIssues = useMemo(() => validateDraft(draft), [draft]);
+  const activeSource = serverValidation?.editable_preview?.source ?? draft?.source ?? null;
+  const selectedSourceFile =
+    activeSource?.files.find((item) => item.path === selectedSourcePath) ??
+    activeSource?.files[0] ??
+    null;
+  const payloadPreview = draft ? buildDraftPayload(draft) : null;
 
   const rolloutMutation = useMutation({
-    mutationFn: patchAdminModulesRolloutSettings,
-    onSuccess: async (settings: AdminModulesRolloutSettings) => {
+    mutationFn: patchModuleWorkbenchRolloutSettings,
+    onSuccess: async (settings) => {
+      setRolloutDraft(settings);
       setActionFeedback({
         tone: "success",
-        text: `Политика раскатки сохранена: ${settings.preferred_version_rollout_mode_label}.`
+        text: `Политика preferred-rollout сохранена: ${rolloutModeLabel(
+          settings.preferred_version_rollout_mode
+        )}.`,
       });
-      setRolloutModeDraft(settings.preferred_version_rollout_mode);
-      setSyncAfterPreferredDraft(settings.sync_after_preferred_change);
-      await queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
     },
     onError: (error) => {
       setActionFeedback({
         tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось сохранить rollout policy модулей."
+        text: error instanceof Error ? error.message : "Не удалось сохранить настройки раскатки.",
       });
-    }
+    },
   });
 
   const preferredMutation = useMutation({
-    mutationFn: setAdminModulePreferredVersion,
-    onSuccess: async (payload) => {
+    mutationFn: ({
+      moduleName,
+      version,
+    }: {
+      moduleName: string;
+      version: string | null;
+    }) => setModuleWorkbenchPreferredVersion(moduleName, version),
+    onSuccess: async (result) => {
       setActionFeedback({
         tone: "success",
-        text: payload.message
+        text:
+          result.message ??
+          (result.preferred_version
+            ? `Preferred-версия обновлена: ${result.module_name} → ${result.preferred_version}.`
+            : `Preferred-версия снята для ${result.module_name}.`),
       });
-      await queryClient.invalidateQueries({ queryKey: ["admin-modules"] });
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
+      if (selectedModuleName && selectedVersion) {
+        await queryClient.invalidateQueries({
+          queryKey: ["modules-workbench-detail", selectedModuleName, selectedVersion],
+        });
+      }
     },
     onError: (error) => {
       setActionFeedback({
         tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось обновить preferred-версию модуля."
+        text:
+          error instanceof Error
+            ? error.message
+            : "Не удалось обновить preferred-версию.",
       });
-    }
+    },
   });
 
-  const rolloutSettings = modulesQuery.data?.rollout_settings ?? null;
-  const rolloutDraftChanged =
-    rolloutSettings !== null &&
-    (rolloutSettings.preferred_version_rollout_mode !== rolloutModeDraft ||
-      rolloutSettings.sync_after_preferred_change !== syncAfterPreferredDraft);
+  const validateMutation = useMutation({
+    mutationFn: validateModuleWorkbenchDraft,
+    onSuccess: (result) => {
+      setServerValidation(result);
+      setActionFeedback({
+        tone: result.publish_ready ? "success" : "error",
+        text: result.publish_ready
+          ? "Server validate прошёл. Модуль готов к публикации."
+          : "Проверка завершена: откройте конфликты и предупреждения перед публикацией.",
+      });
+      if (result.editable_preview?.source?.files?.length) {
+        setSelectedSourcePath(result.editable_preview.source.files[0].path);
+      }
+      setDevelopmentTab("preview");
+      setWorkspaceTab("development");
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text:
+          error instanceof Error ? error.message : "Серверная проверка завершилась ошибкой.",
+      });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: saveModuleWorkbenchDraft,
+    onSuccess: async (result) => {
+      setActionFeedback({
+        tone: "success",
+        text:
+          result.message ??
+          `Модуль ${result.module_name ?? draft?.module_name ?? ""} опубликован в реестр.`,
+      });
+      if (draft) {
+        setBaselineFingerprint(buildDraftFingerprint(draft));
+      }
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
+      if (result.module_name && result.version) {
+        setSelectedModuleName(result.module_name);
+        setSelectedVersion(result.version);
+        const versionKey = buildVersionKey(result.module_name, result.version);
+        setRequestedDraftKey(versionKey);
+        setLoadedDraftKey(null);
+      }
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось опубликовать модуль.",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({
+      moduleName,
+      version,
+    }: {
+      moduleName: string;
+      version: string;
+    }) => deleteModuleWorkbenchVersion(moduleName, version),
+    onSuccess: async (result) => {
+      setActionFeedback({
+        tone: "success",
+        text: `Версия ${result.module_name} ${result.version} удалена из реестра.`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось удалить версию.",
+      });
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: uploadModuleWorkbenchArchive,
+    onSuccess: async (result: ModuleArchiveUploadPayload) => {
+      setActionFeedback({
+        tone: "success",
+        text: `Архив загружен: ${result.module_name} ${result.version}.`,
+      });
+      setArchiveOverwrite(false);
+      setArchiveFile(null);
+      setArchiveModuleName(result.module_name);
+      setArchiveVersion(result.version);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
+      setSelectedModuleName(result.module_name);
+      setSelectedVersion(result.version);
+      setRequestedDraftKey(buildVersionKey(result.module_name, result.version));
+      setLoadedDraftKey(null);
+      setWorkspaceTab("registry");
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось загрузить архив модуля.",
+      });
+    },
+  });
+
+  function mutateDraft(updater: (current: ModuleWorkbenchDraft) => ModuleWorkbenchDraft) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return updater(cloneDraft(current));
+    });
+  }
+
+  function ensureCanLeaveDraft() {
+    if (!hasUnsavedChanges) {
+      return true;
+    }
+    return window.confirm(
+      "В черновике есть несохранённые изменения. Переключиться и потерять их?"
+    );
+  }
+
+  function openDraftForVersion(moduleName: string, version: string) {
+    if (!ensureCanLeaveDraft()) {
+      return;
+    }
+    setSelectedModuleName(moduleName);
+    setSelectedVersion(version);
+    setRequestedDraftKey(buildVersionKey(moduleName, version));
+    setLoadedDraftKey(null);
+    setServerValidation(null);
+    setDevelopmentTab("basics");
+    setWorkspaceTab("development");
+  }
+
+  function startNewDraft() {
+    if (!ensureCanLeaveDraft()) {
+      return;
+    }
+    const nextDraft = createBlankDraft();
+    setDraft(nextDraft);
+    setRequestedDraftKey("new");
+    setLoadedDraftKey("new");
+    setBaselineFingerprint(buildDraftFingerprint(nextDraft));
+    setSelectedToolIndex(0);
+    setSelectedSourcePath("");
+    setServerValidation(null);
+    setDevelopmentTab("basics");
+    setWorkspaceTab("development");
+  }
+
+  function updateToolStringField(
+    field: keyof Pick<ModuleWorkbenchToolDraft, "tool_name" | "method_name" | "description" | "contract_version" | "lifecycle" | "user_function_body">,
+    value: string
+  ) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex][field] = value as never;
+      return current;
+    });
+  }
+
+  function updateToolJsonField(
+    field: keyof Pick<
+      ModuleWorkbenchToolDraft,
+      | "params_schema"
+      | "output_schema"
+      | "presets"
+      | "metadata"
+      | "dependencies"
+      | "error_codes"
+      | "artifact_types"
+      | "redaction"
+      | "resources"
+    >,
+    value: string,
+    label: string
+  ) {
+    try {
+      const parsed = parseToolEditorJson(value, label);
+      mutateDraft((current) => {
+        current.tools[selectedToolIndex][field] = parsed as never;
+        return current;
+      });
+      setActionFeedback(null);
+    } catch (error) {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : `Не удалось прочитать JSON поля ${label}.`,
+      });
+    }
+  }
+
+  function updateToolListField(
+    field: keyof Pick<ModuleWorkbenchToolDraft, "aliases" | "capabilities">,
+    value: string
+  ) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex][field] = splitLines(value) as never;
+      return current;
+    });
+  }
+
+  function addTool() {
+    mutateDraft((current) => {
+      current.tools.push(createEmptyTool(current.tools.length));
+      return current;
+    });
+    setSelectedToolIndex(draft?.tools.length ?? 0);
+    setDevelopmentTab("tool");
+  }
+
+  function duplicateTool() {
+    if (!selectedTool) {
+      return;
+    }
+    mutateDraft((current) => {
+      const clone = JSON.parse(JSON.stringify(current.tools[selectedToolIndex])) as ModuleWorkbenchToolDraft;
+      clone.tool_name = `${clone.tool_name}_copy`;
+      clone.method_name = `${clone.method_name}_copy`;
+      current.tools.splice(selectedToolIndex + 1, 0, clone);
+      return current;
+    });
+    setSelectedToolIndex(selectedToolIndex + 1);
+  }
+
+  function removeTool() {
+    if (!draft || draft.tools.length <= 1) {
+      return;
+    }
+    if (!window.confirm("Удалить инструмент из черновика модуля?")) {
+      return;
+    }
+    mutateDraft((current) => {
+      current.tools.splice(selectedToolIndex, 1);
+      return current;
+    });
+    setSelectedToolIndex((current) => Math.max(0, current - 1));
+  }
+
+  const developmentTabs = [
+    { value: "basics", label: "Модуль" },
+    { value: "tool", label: "Инструменты", count: draft?.tools.length ?? 0 },
+    { value: "preview", label: "Validate" },
+    { value: "source", label: "Source" },
+  ];
+
+  const workspaceTabs = [
+    { value: "registry", label: "Реестр", count: visibleFamilies.length },
+    { value: "development", label: "Разработка", count: draft?.tools.length ?? 0 },
+    { value: "archive", label: "Архив", count: archiveFile ? 1 : 0 },
+  ];
+
+  const previewTabs = [
+    { value: "payload", label: "JSON payload" },
+    { value: "curl-validate", label: "curl validate" },
+    { value: "curl-save", label: "curl save" },
+  ];
+
+  const rolloutSettings = rolloutDraft ?? modulesQuery.data?.rollout_settings ?? null;
+  const selectedDetailMeta = detailQuery.data?.module ?? selectedRecord;
 
   return (
-    <section className="support-workspace__panel admin-modules-panel">
-      <div className="support-workspace__panel-head">
-        <div>
-          <h2>Реестр модулей</h2>
-          <p>
-            Переносим модульный workbench в typed boundary: здесь уже видны семейства модулей,
-            preferred-version policy и статус артефактов без legacy admin modules shell.
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-700">
+            Registry
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-slate-950">
+            Реестр модулей
+          </h2>
+          <p className="mt-3 text-sm leading-7 text-slate-500 md:text-base">
+            Полный рабочий цикл модулей: реестр версий, preferred-rollout policy, редактор
+            спецификации и импорт архивов теперь собраны в одном SaaS workbench.
           </p>
         </div>
       </div>
 
-      <div className="support-filters admin-filters">
-        <label className="support-filter-search">
-          <span>Поиск по registry</span>
-          <input
-            type="search"
-            value={queryDraft}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              startTransition(() => {
-                setQueryDraft(value);
-              });
-            }}
-            placeholder="module_name, tool id или версия"
-          />
-        </label>
+      <div className="grid gap-4 xl:grid-cols-4">
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Семейств в срезе</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {modulesQuery.data?.count ?? 0}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Поиск, preferred и публикация работают на реальном реестре.
+          </p>
+        </div>
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Preferred назначений</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {modulesQuery.data?.modules.filter((item) => item.preferred_assigned).length ?? 0}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            {rolloutSettings ? rolloutModeLabel(rolloutSettings.preferred_version_rollout_mode) : "Загружаем policy"}
+          </p>
+        </div>
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Предупреждения</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {modulesQuery.data?.modules.filter((item) =>
+              item.versions.some((version) => version.validation_status !== "passed")
+            ).length ?? 0}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Включая failed validate и missing archive на диске.
+          </p>
+        </div>
+        <div className="rounded-[1.3rem] border border-border bg-white px-5 py-5 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Черновик</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {draft?.module_name ?? "—"}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            {hasUnsavedChanges ? "Есть несохранённые изменения" : "Черновик синхронизирован"}
+          </p>
+        </div>
       </div>
 
-      {modulesQuery.isLoading ? (
-        <div className="support-detail-note">
-          Собираем семейства модулей, rollout policy и preferred-version назначения…
-        </div>
-      ) : null}
-
-      {modulesQuery.isError ? (
-        <div className="support-detail-error">
-          {modulesQuery.error instanceof Error
-            ? modulesQuery.error.message
-            : "Не удалось загрузить реестр модулей."}
-        </div>
-      ) : null}
-
       {actionFeedback ? (
-        <div className={actionFeedback.tone === "success" ? "support-detail-note" : "support-detail-error"}>
+        <div
+          className={cn(
+            "rounded-[1.1rem] border px-4 py-3 text-sm shadow-soft",
+            actionFeedback.tone === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-rose-200 bg-rose-50 text-rose-700"
+          )}
+        >
           {actionFeedback.text}
         </div>
       ) : null}
 
-      {modulesQuery.data ? (
-        <>
-          <div className="support-snapshot-grid">
-            <article className="support-snapshot-card">
-              <span>Семейств в срезе</span>
-              <strong>{modulesQuery.data.summary.visible_count}</strong>
-              <p>Preferred-version назначений: {modulesQuery.data.summary.preferred_count}</p>
-            </article>
-            <article className="support-snapshot-card">
-              <span>С предупреждениями</span>
-              <strong>{modulesQuery.data.summary.invalid_count}</strong>
-              <p>Архивов отсутствует: {modulesQuery.data.summary.missing_files_count}</p>
-            </article>
-            <article className="support-snapshot-card">
-              <span>Rollout policy</span>
-              <strong>{modulesQuery.data.rollout_settings.preferred_version_rollout_mode_label}</strong>
-              <p>{formatRolloutSyncLabel(modulesQuery.data.rollout_settings.sync_after_preferred_change)}</p>
-            </article>
-          </div>
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="space-y-6">
+          <Card className="xl:sticky xl:top-[9.5rem]">
+            <CardHeader className="gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Рабочий реестр</CardTitle>
+                  <CardDescription>
+                    Полный перенос модульного цикла: реестр, preferred policy, editor и импорт ZIP.
+                  </CardDescription>
+                </div>
+                <Button
+                  leadingIcon={<RefreshCcw className="h-4 w-4" />}
+                  onClick={() => {
+                    void Promise.all([
+                      modulesQuery.refetch(),
+                      detailQuery.refetch(),
+                    ]);
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
+                  Обновить
+                </Button>
+              </div>
 
-          <section className="admin-modules-controls">
-            <label className="support-filter-select">
-              <span>Режим preferred-rollout</span>
-              <select
-                aria-label="Режим preferred-rollout"
-                value={rolloutModeDraft}
-                onChange={(event) => {
-                  setActionFeedback(null);
-                  setRolloutModeDraft(event.currentTarget.value);
-                }}
-                disabled={rolloutMutation.isPending}
-              >
-                <option value="manual">Только вручную</option>
-                <option value="installed_devices">Обновлять установленные устройства</option>
-              </select>
-            </label>
-
-            <label className="admin-modules-toggle">
-              <input
-                type="checkbox"
-                checked={syncAfterPreferredDraft}
-                onChange={(event) => {
-                  setActionFeedback(null);
-                  setSyncAfterPreferredDraft(event.currentTarget.checked);
-                }}
-                disabled={rolloutMutation.isPending}
+              <SearchField
+                onChange={(event) => setQueryDraft(event.target.value)}
+                placeholder="module_name, tool id или версия"
+                value={queryDraft}
               />
-              <span>После смены preferred запускать sync и refresh</span>
-            </label>
 
-            <button
-              type="button"
-              className="admin-modules-action"
-              disabled={!rolloutDraftChanged || rolloutMutation.isPending}
-              onClick={() => {
-                setActionFeedback(null);
-                rolloutMutation.mutate({
-                  preferred_version_rollout_mode: rolloutModeDraft,
-                  sync_after_preferred_change: syncAfterPreferredDraft
-                });
-              }}
-            >
-              {rolloutMutation.isPending ? "Сохраняем…" : "Сохранить политику"}
-            </button>
-          </section>
+              <Tabs
+                items={workspaceTabs}
+                onValueChange={(value) => setWorkspaceTab(value as WorkspaceTab)}
+                value={workspaceTab}
+              />
+            </CardHeader>
 
-          <div className="admin-modules-grid">
-            <article className="support-operation-card">
-              <div className="support-operations__head">
-                <strong>Семейства модулей</strong>
-                <span>{modules.length}</span>
+            <CardContent className="space-y-5">
+              <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Preferred rollout</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">
+                  {rolloutSettings ? rolloutModeLabel(rolloutSettings.preferred_version_rollout_mode) : "Загружаем"}
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  {rolloutSettings?.sync_after_preferred_change
+                    ? "После смены preferred сервер запускает reconcile и refresh."
+                    : "После смены preferred синхронизация остаётся ручной."}
+                </p>
               </div>
-              {modules.length ? (
-                <div className="admin-modules-list">
-                  {modules.map((moduleFamily) => (
-                    <button
-                      key={moduleFamily.module_name}
-                      type="button"
-                      className={`admin-module-card${selectedModule?.module_name === moduleFamily.module_name ? " active" : ""}`}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Семейства модулей
+                  </p>
+                  <Button
+                    leadingIcon={<PackagePlus className="h-4 w-4" />}
+                    onClick={startNewDraft}
+                    size="sm"
+                  >
+                    Новый модуль
+                  </Button>
+                </div>
+
+                <div className="max-h-[calc(100vh-24rem)] space-y-3 overflow-y-auto pr-1">
+                  {modulesQuery.isLoading ? (
+                    <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                      Загружаем семейства модулей...
+                    </div>
+                  ) : null}
+
+                  {modulesQuery.isError ? (
+                    <div className="rounded-[1.1rem] border border-dashed border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700">
+                      {modulesQuery.error instanceof Error
+                        ? modulesQuery.error.message
+                        : "Не удалось загрузить реестр модулей."}
+                    </div>
+                  ) : null}
+
+                  {visibleFamilies.map((family) => {
+                    const active = family.module_name === selectedFamily?.module_name;
+                    return (
+                      <button
+                        key={family.module_name}
+                        className={cn(
+                          "w-full rounded-[1.15rem] border px-4 py-4 text-left transition-colors",
+                          active
+                            ? "border-brand-200 bg-brand-50"
+                            : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                        )}
+                        onClick={() => {
+                          startTransition(() => {
+                            setSelectedModuleName(family.module_name);
+                            setSelectedVersion(family.versions[0]?.version ?? null);
+                            setActionFeedback(null);
+                          });
+                        }}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-950">{family.module_name}</p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              latest {family.latest_version ?? "—"} • preferred {family.preferred_version ?? "—"}
+                            </p>
+                          </div>
+                          <Badge tone={family.preferred_assigned ? "success" : "neutral"}>
+                            {family.preferred_assigned ? "preferred" : "manual"}
+                          </Badge>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-500">
+                          {family.versions
+                            .flatMap((version) => version.tool_ids ?? [])
+                            .slice(0, 3)
+                            .join(", ") || "Инструменты пока не заявлены"}
+                        </p>
+                      </button>
+                    );
+                  })}
+
+                  {!modulesQuery.isLoading && !modulesQuery.isError && visibleFamilies.length === 0 ? (
+                    <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                      Под текущий поиск модулей не найдено.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          {workspaceTab === "registry" ? (
+            <>
+              <Card>
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <CardTitle>Rollout policy</CardTitle>
+                      <CardDescription>
+                        Управление preferred-version policy без возврата в legacy modules shell.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      disabled={!rolloutSettings}
+                      leadingIcon={<ShieldCheck className="h-4 w-4" />}
                       onClick={() => {
+                        void modulesQuery.refetch();
                         setActionFeedback(null);
-                        startTransition(() => {
-                          setSelectedModuleName(moduleFamily.module_name);
+                      }}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Обновить из сервера
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-[minmax(0,240px)_minmax(0,240px)_auto] md:items-end">
+                  <label className="space-y-2 text-sm font-medium text-slate-800">
+                    <span>Режим preferred-rollout</span>
+                    <Select
+                      value={rolloutSettings?.preferred_version_rollout_mode ?? "manual"}
+                      onChange={(event) => {
+                        const nextMode = event.target.value;
+                        if (!rolloutSettings) {
+                          return;
+                        }
+                        setRolloutDraft({
+                          ...rolloutSettings,
+                          preferred_version_rollout_mode: nextMode,
                         });
                       }}
                     >
-                      <div className="admin-observer-item__head">
-                        <strong>{moduleFamily.module_name}</strong>
-                        <span>{moduleFamily.validation_status_label}</span>
-                      </div>
-                      <p>
-                        Preferred: {moduleFamily.preferred_version ?? "не назначен"} · latest:{" "}
-                        {moduleFamily.latest_version ?? "нет данных"}
-                      </p>
-                      <p>
-                        Инструментов: {moduleFamily.tools_count} · версий: {moduleFamily.version_count}
-                      </p>
-                      <p>
-                        {moduleFamily.has_missing_files
-                          ? "Есть missing archive в registry"
-                          : "Архивы для family доступны на сервере"}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="support-queue-empty">
-                  Под текущий поиск модулей пока ничего не найдено.
-                </div>
-              )}
-            </article>
+                      <option value="manual">Только вручную</option>
+                      <option value="installed_devices">Обновлять установленные устройства</option>
+                    </Select>
+                  </label>
 
-            <article className="support-operation-card">
-              <div className="support-operations__head">
-                <strong>Карточка семейства</strong>
-                <span>{selectedModule?.module_name ?? "Нет выбора"}</span>
-              </div>
-
-              {selectedModule ? (
-                <div className="admin-modules-detail">
-                  <div className="support-snapshot-grid">
-                    <article className="support-snapshot-card">
-                      <span>Предпочтительная версия</span>
-                      <strong>{selectedModule.preferred_version ?? "Не назначена"}</strong>
-                      <p>Latest: {selectedModule.latest_version ?? "Нет данных"}</p>
-                    </article>
-                    <article className="support-snapshot-card">
-                      <span>Owner scope</span>
-                      <strong>{selectedModule.owner_scope ?? "Не указан"}</strong>
-                      <p>Module API: {selectedModule.module_api_version ?? "Не указана"}</p>
-                    </article>
-                    <article className="support-snapshot-card">
-                      <span>Инструменты</span>
-                      <strong>{selectedModule.tools_count}</strong>
-                      <p>{selectedModule.tool_ids.join(", ") || "Инструменты не заявлены"}</p>
-                    </article>
-                  </div>
-
-                  <div className="admin-modules-detail__meta">
-                    <div>
-                      <span>Платформы</span>
-                      <strong>{selectedModule.platforms.join(", ") || "any"}</strong>
-                    </div>
-                    <div>
-                      <span>Статус family</span>
-                      <strong>{selectedModule.validation_status_label}</strong>
-                    </div>
-                    <div>
-                      <span>Warnings</span>
-                      <strong>{selectedModule.warnings_count}</strong>
-                    </div>
-                  </div>
-
-                  <div className="admin-modules-detail__actions">
-                    <button
-                      type="button"
-                      className="admin-modules-action"
-                      disabled={!selectedModule.preferred_assigned || preferredMutation.isPending}
-                      onClick={() => {
-                        setActionFeedback(null);
-                        preferredMutation.mutate({
-                          moduleName: selectedModule.module_name,
-                          version: null
+                  <label className="flex h-11 items-center gap-3 rounded-pill border border-border bg-white px-4">
+                    <input
+                      checked={rolloutSettings?.sync_after_preferred_change ?? true}
+                      onChange={(event) => {
+                        if (!rolloutSettings) {
+                          return;
+                        }
+                        setRolloutDraft({
+                          ...rolloutSettings,
+                          sync_after_preferred_change: event.target.checked,
                         });
                       }}
-                    >
-                      {preferredMutation.isPending && selectedModule.preferred_assigned
-                        ? "Обновляем preferred…"
-                        : "Снять preferred"}
-                    </button>
-                    <span className="admin-modules-detail__hint">
-                      Текущий режим: {getRolloutModeLabel(rolloutModeDraft)}
+                      type="checkbox"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      После смены preferred запускать reconcile и refresh
                     </span>
+                  </label>
+
+                  <Button
+                    disabled={rolloutMutation.isPending || !rolloutSettings}
+                    leadingIcon={<Save className="h-4 w-4" />}
+                    onClick={() => {
+                      if (!rolloutSettings) {
+                        return;
+                      }
+                      rolloutMutation.mutate(rolloutSettings);
+                    }}
+                  >
+                    {rolloutMutation.isPending ? "Сохраняем..." : "Сохранить политику"}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <Card>
+                  <CardHeader className="gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <CardTitle>{selectedFamily?.module_name ?? "Карточка семейства"}</CardTitle>
+                        <CardDescription>
+                          Реестр версий, preferred assignment, validate state и быстрый вход в editor.
+                        </CardDescription>
+                      </div>
+                      {selectedFamily ? (
+                        <Button
+                          leadingIcon={<Wand2 className="h-4 w-4" />}
+                          onClick={() => openDraftForVersion(selectedFamily.module_name, selectedRecord?.version ?? selectedFamily.versions[0]?.version ?? "")}
+                          size="sm"
+                        >
+                          Открыть в editor
+                        </Button>
+                      ) : null}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {selectedFamily ? (
+                      <>
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Preferred версия
+                            </p>
+                            <p className="mt-2 text-xl font-semibold text-slate-950">
+                              {selectedFamily.preferred_version ?? "Не назначена"}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              Latest: {selectedFamily.latest_version ?? "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Owner scope / API
+                            </p>
+                            <p className="mt-2 text-xl font-semibold text-slate-950">
+                              {selectedFamily.owner_scope ?? "vendor"}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              Module API {selectedFamily.module_api_version ?? "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Инструменты
+                            </p>
+                            <p className="mt-2 text-xl font-semibold text-slate-950">
+                              {selectedFamily.versions[0]?.tools_count ?? 0}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              {(selectedFamily.versions[0]?.tool_ids ?? []).join(", ") || "Без tool ids"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {selectedFamily.versions.map((version) => (
+                            <div
+                              key={buildVersionKey(selectedFamily.module_name, version.version)}
+                              className={cn(
+                                "rounded-[1.15rem] border px-4 py-4",
+                                version.version === selectedRecord?.version
+                                  ? "border-brand-200 bg-brand-50"
+                                  : "border-border bg-white"
+                              )}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-lg font-semibold text-slate-950">{version.version}</p>
+                                    <Badge tone={validationTone(version.validation_status)}>
+                                      {version.validation_status_label || version.validation_status}
+                                    </Badge>
+                                    {version.is_preferred ? (
+                                      <Badge tone="success">preferred</Badge>
+                                    ) : null}
+                                    {!version.file_exists ? (
+                                      <Badge tone="danger">archive missing</Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-2 text-sm text-slate-500">
+                                    Загружено {formatDateTime(version.created_at)}
+                                    {version.uploaded_by ? ` • ${version.uploaded_by}` : ""}
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    {(version.tool_ids ?? []).join(", ") || "Инструменты не обнаружены"}
+                                  </p>
+                                  {!version.file_exists ? (
+                                    <p className="mt-2 text-sm text-rose-600">
+                                      Архив отсутствует, нужен повторный upload.
+                                    </p>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    leadingIcon={<FolderKanban className="h-4 w-4" />}
+                                    onClick={() => {
+                                      setSelectedVersion(version.version);
+                                      setActionFeedback(null);
+                                    }}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    Выбрать
+                                  </Button>
+                                  <Button
+                                    leadingIcon={<FileCode2 className="h-4 w-4" />}
+                                    onClick={() => openDraftForVersion(selectedFamily.module_name, version.version)}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    Editor
+                                  </Button>
+                                  <Button
+                                    disabled={preferredMutation.isPending}
+                                    leadingIcon={<Sparkles className="h-4 w-4" />}
+                                    onClick={() =>
+                                      preferredMutation.mutate({
+                                        moduleName: selectedFamily.module_name,
+                                        version: version.is_preferred ? null : version.version,
+                                      })
+                                    }
+                                    size="sm"
+                                  >
+                                    {version.is_preferred
+                                      ? `Снять preferred с ${version.version}`
+                                      : `Сделать preferred для ${version.version}`}
+                                  </Button>
+                                  <Button
+                                    disabled={deleteMutation.isPending}
+                                    leadingIcon={<Trash2 className="h-4 w-4" />}
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Удалить ${selectedFamily.module_name} ${version.version} из реестра?`
+                                        )
+                                      ) {
+                                        deleteMutation.mutate({
+                                          moduleName: selectedFamily.module_name,
+                                          version: version.version,
+                                        });
+                                      }
+                                    }}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    Удалить
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
+                        Выберите семейство модулей слева, чтобы открыть реестр версий.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="h-fit">
+                  <CardHeader>
+                    <CardTitle>Контекст версии</CardTitle>
+                    <CardDescription>
+                      Быстрый operational summary по выбранной версии модуля.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {selectedDetailMeta ? (
+                      <>
+                        <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-brand-700">
+                            {selectedFamily?.module_name}
+                          </p>
+                          <p className="mt-3 text-2xl font-semibold text-slate-950">
+                            {selectedDetailMeta.version}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            SHA256: {selectedDetailMeta.sha256?.slice(0, 16) ?? "—"}
+                          </p>
+                        </div>
+
+                        <MetaRow
+                          label="Validate"
+                          value={
+                            selectedDetailMeta.validation_status_label ??
+                            selectedDetailMeta.validation_status
+                          }
+                        />
+                        <MetaRow
+                          label="Preflight"
+                          value={
+                            selectedDetailMeta.preflight_status_label ??
+                            selectedDetailMeta.preflight_status
+                          }
+                        />
+                        <MetaRow label="Manifest" value={selectedDetailMeta.manifest_version} />
+                        <MetaRow
+                          label="Размер архива"
+                          value={selectedDetailMeta.size ? `${selectedDetailMeta.size} bytes` : "—"}
+                        />
+                        <MetaRow
+                          label="Файл в storage"
+                          value={selectedDetailMeta.file_exists ? "доступен" : "отсутствует"}
+                        />
+                        <MetaRow
+                          label="Warnings"
+                          value={selectedDetailMeta.warnings?.length ?? 0}
+                        />
+
+                        <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                          <p className="text-sm font-semibold text-slate-900">Платформы</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {(selectedDetailMeta.platforms ?? ["any"]).map((platform) => (
+                              <Badge key={platform} tone="neutral">
+                                {platform}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                          <p className="text-sm font-semibold text-slate-900">Инструменты</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {(selectedDetailMeta.tool_ids ?? []).length ? (
+                              (selectedDetailMeta.tool_ids ?? []).map((toolId) => (
+                                <Badge key={toolId} tone="brand">
+                                  {toolId}
+                                </Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-slate-500">Tool ids пока не распознаны.</p>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
+                        Контекст появится после выбора версии.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          ) : null}
+
+          {workspaceTab === "development" ? (
+            <Card>
+              <CardHeader className="gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>
+                      {draft ? `${draft.module_name}:${draft.version}` : "Module editor"}
+                    </CardTitle>
+                    <CardDescription>
+                      Полноценный editor для validate-before-publish, редактирования tool metadata и просмотра source preview.
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={!draft}
+                      leadingIcon={<RefreshCcw className="h-4 w-4" />}
+                      onClick={() => {
+                        if (selectedModuleName && selectedVersion) {
+                          openDraftForVersion(selectedModuleName, selectedVersion);
+                        } else {
+                          startNewDraft();
+                        }
+                      }}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Сбросить
+                    </Button>
+                    <Button
+                      disabled={!draft || validateMutation.isPending || localIssues.length > 0}
+                      leadingIcon={<CheckCircle2 className="h-4 w-4" />}
+                      onClick={() => {
+                        if (!draft) {
+                          return;
+                        }
+                        setActionFeedback(null);
+                        validateMutation.mutate(buildDraftPayload(draft));
+                      }}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {validateMutation.isPending ? "Проверяем..." : "Server validate"}
+                    </Button>
+                    <Button
+                      disabled={!draft || saveMutation.isPending || localIssues.length > 0}
+                      leadingIcon={<Save className="h-4 w-4" />}
+                      onClick={() => {
+                        if (!draft) {
+                          return;
+                        }
+                        setActionFeedback(null);
+                        saveMutation.mutate(buildDraftPayload(draft));
+                      }}
+                      size="sm"
+                    >
+                      {saveMutation.isPending ? "Публикуем..." : "Опубликовать"}
+                    </Button>
+                  </div>
+                </div>
+
+                <Tabs
+                  items={developmentTabs}
+                  onValueChange={(value) => setDevelopmentTab(value as DevelopmentTab)}
+                  value={developmentTab}
+                />
+              </CardHeader>
+
+              <CardContent className="space-y-6">
+                {!draft ? (
+                  <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-10 text-center text-sm text-slate-500">
+                    Откройте существующую версию из реестра или создайте новый модуль.
+                  </div>
+                ) : null}
+
+                {draft && developmentTab === "basics" ? (
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Module name</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.module_name = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.module_name}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Версия</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.version = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.version}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Owner scope</span>
+                          <Select
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.owner_scope = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.owner_scope}
+                          >
+                            <option value="vendor">vendor</option>
+                            <option value="core">core</option>
+                            <option value="platform">platform</option>
+                            <option value="builtin">builtin</option>
+                          </Select>
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Module API version</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.module_api_version = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.module_api_version}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                        <span>Описание</span>
+                        <textarea
+                          className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                          onChange={(event) =>
+                            mutateDraft((current) => {
+                              current.description = event.target.value;
+                              return current;
+                            })
+                          }
+                          value={draft.description}
+                        />
+                      </label>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Entrypoint</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.entrypoint = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.entrypoint}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Min agent version</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.min_agent_version = event.target.value;
+                                return current;
+                              })
+                            }
+                            value={draft.min_agent_version ?? ""}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Platforms</span>
+                          <textarea
+                            className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.platforms = splitLines(event.target.value);
+                                return current;
+                              })
+                            }
+                            value={joinLines(draft.platforms)}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Requirements</span>
+                          <textarea
+                            className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.requirements = splitLines(event.target.value);
+                                return current;
+                              })
+                            }
+                            value={joinLines(draft.requirements)}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>Optional requirements</span>
+                          <textarea
+                            className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
+                            onChange={(event) =>
+                              mutateDraft((current) => {
+                                current.optional_requirements = splitLines(event.target.value);
+                                return current;
+                              })
+                            }
+                            value={joinLines(draft.optional_requirements)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-[1.2rem] border border-border bg-surface-subtle px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-brand-700">
+                          Draft summary
+                        </p>
+                        <p className="mt-3 text-2xl font-semibold text-slate-950">
+                          {draft.module_name}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {draft.tools.length} инструментов • {draft.platforms.join(", ") || "any"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-slate-900">Инструменты в модуле</p>
+                          <Badge tone="brand">{draft.tools.length}</Badge>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          {draft.tools.map((tool, index) => (
+                            <button
+                              key={`${tool.tool_name}:${tool.method_name}:${index}`}
+                              className={cn(
+                                "flex w-full items-center justify-between rounded-[1rem] border px-3 py-3 text-left transition-colors",
+                                selectedToolIndex === index
+                                  ? "border-brand-200 bg-brand-50"
+                                  : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                              )}
+                              onClick={() => {
+                                setSelectedToolIndex(index);
+                                setDevelopmentTab("tool");
+                              }}
+                              type="button"
+                            >
+                              <div>
+                                <p className="font-medium text-slate-900">
+                                  {tool.tool_name || `tool #${index + 1}`}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">{tool.method_name}</p>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-slate-400" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {draft.warnings.length ? (
+                        <div className="rounded-[1.2rem] border border-amber-200 bg-amber-50 px-4 py-4">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <p className="font-semibold text-amber-700">Warnings реконструкции</p>
+                          </div>
+                          <ul className="mt-3 space-y-2 text-sm text-amber-700">
+                            {draft.warnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {draft && developmentTab === "tool" ? (
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <Tabs
+                        className="max-w-full overflow-x-auto"
+                        items={draft.tools.map((tool, index) => ({
+                          value: String(index),
+                          label: tool.tool_name || `tool #${index + 1}`,
+                        }))}
+                        onValueChange={(value) => setSelectedToolIndex(Number(value))}
+                        value={String(selectedToolIndex)}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          leadingIcon={<PackagePlus className="h-4 w-4" />}
+                          onClick={addTool}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Добавить tool
+                        </Button>
+                        <Button
+                          disabled={!selectedTool}
+                          leadingIcon={<Copy className="h-4 w-4" />}
+                          onClick={duplicateTool}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Дублировать
+                        </Button>
+                        <Button
+                          disabled={draft.tools.length <= 1}
+                          leadingIcon={<Trash2 className="h-4 w-4" />}
+                          onClick={removeTool}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Удалить
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedTool ? (
+                      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                        <div className="space-y-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Tool name</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => updateToolStringField("tool_name", event.target.value)}
+                                value={selectedTool.tool_name}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Method name</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => updateToolStringField("method_name", event.target.value)}
+                                value={selectedTool.method_name}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Lifecycle</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => updateToolStringField("lifecycle", event.target.value)}
+                                value={selectedTool.lifecycle}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Contract version</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) =>
+                                  updateToolStringField("contract_version", event.target.value)
+                                }
+                                value={selectedTool.contract_version}
+                              />
+                            </label>
+                          </div>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Описание</span>
+                            <textarea
+                              className="field-base min-h-[100px] w-full resize-y px-4 py-4 text-sm"
+                              onChange={(event) =>
+                                updateToolStringField("description", event.target.value)
+                              }
+                              value={selectedTool.description}
+                            />
+                          </label>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Aliases</span>
+                              <textarea
+                                className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                                onChange={(event) =>
+                                  updateToolListField("aliases", event.target.value)
+                                }
+                                value={joinLines(selectedTool.aliases)}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Capabilities</span>
+                              <textarea
+                                className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                                onChange={(event) =>
+                                  updateToolListField("capabilities", event.target.value)
+                                }
+                                value={joinLines(selectedTool.capabilities)}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Params schema</span>
+                              <textarea
+                                className="field-base min-h-[220px] w-full resize-y px-4 py-4 font-mono text-xs"
+                                defaultValue={prettyJson(selectedTool.params_schema)}
+                                key={`params-${selectedToolIndex}-${selectedTool.tool_name}`}
+                                onBlur={(event) =>
+                                  updateToolJsonField(
+                                    "params_schema",
+                                    event.target.value,
+                                    "Params schema"
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Output schema</span>
+                              <textarea
+                                className="field-base min-h-[220px] w-full resize-y px-4 py-4 font-mono text-xs"
+                                defaultValue={prettyJson(selectedTool.output_schema)}
+                                key={`output-${selectedToolIndex}-${selectedTool.tool_name}`}
+                                onBlur={(event) =>
+                                  updateToolJsonField(
+                                    "output_schema",
+                                    event.target.value,
+                                    "Output schema"
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>User function body</span>
+                            <textarea
+                              className="field-base min-h-[280px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              onChange={(event) =>
+                                updateToolStringField("user_function_body", event.target.value)
+                              }
+                              value={selectedTool.user_function_body}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="rounded-[1.2rem] border border-border bg-surface-subtle px-4 py-4">
+                            <p className="text-xs uppercase tracking-[0.2em] text-brand-700">
+                              Tool policy
+                            </p>
+                            <p className="mt-3 text-lg font-semibold text-slate-950">
+                              {selectedTool.tool_name}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              Metadata, presets, resources и security envelopes редактируются без legacy wizard.
+                            </p>
+                          </div>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Metadata JSON</span>
+                            <textarea
+                              className="field-base min-h-[180px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.metadata)}
+                              key={`metadata-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField("metadata", event.target.value, "Metadata")
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Presets JSON</span>
+                            <textarea
+                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.presets)}
+                              key={`presets-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField("presets", event.target.value, "Presets")
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Dependencies JSON</span>
+                            <textarea
+                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.dependencies)}
+                              key={`dependencies-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField(
+                                  "dependencies",
+                                  event.target.value,
+                                  "Dependencies"
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Resources JSON</span>
+                            <textarea
+                              className="field-base min-h-[180px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.resources)}
+                              key={`resources-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField("resources", event.target.value, "Resources")
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Redaction JSON</span>
+                            <textarea
+                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.redaction)}
+                              key={`redaction-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField("redaction", event.target.value, "Redaction")
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Artifact types JSON</span>
+                            <textarea
+                              className="field-base min-h-[110px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.artifact_types)}
+                              key={`artifacts-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField(
+                                  "artifact_types",
+                                  event.target.value,
+                                  "Artifact types"
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>Error codes JSON</span>
+                            <textarea
+                              className="field-base min-h-[110px] w-full resize-y px-4 py-4 font-mono text-xs"
+                              defaultValue={prettyJson(selectedTool.error_codes)}
+                              key={`errors-${selectedToolIndex}-${selectedTool.tool_name}`}
+                              onBlur={(event) =>
+                                updateToolJsonField(
+                                  "error_codes",
+                                  event.target.value,
+                                  "Error codes"
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {draft && developmentTab === "preview" ? (
+                  <div className="space-y-6">
+                    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                      <div className="space-y-4">
+                        <Card className="border-dashed shadow-none">
+                          <CardHeader>
+                            <CardTitle>Локальная проверка</CardTitle>
+                            <CardDescription>
+                              Базовые проблемы структуры черновика до server validate.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            {localIssues.length ? (
+                              <ul className="space-y-2 text-sm text-rose-700">
+                                {localIssues.map((issue) => (
+                                  <li key={issue} className="flex gap-2">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <span>{issue}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="flex items-center gap-2 rounded-[1rem] bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                                <CheckCircle2 className="h-4 w-4" />
+                                Черновик согласован и готов к server validate.
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card className="border-dashed shadow-none">
+                          <CardHeader>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <CardTitle>Server validate</CardTitle>
+                                <CardDescription>
+                                  Preview manifest, preflight и ownership conflicts из реального backend.
+                                </CardDescription>
+                              </div>
+                              <Button
+                                disabled={validateMutation.isPending || localIssues.length > 0}
+                                leadingIcon={<CheckCircle2 className="h-4 w-4" />}
+                                onClick={() => validateMutation.mutate(buildDraftPayload(draft))}
+                                size="sm"
+                              >
+                                {validateMutation.isPending ? "Проверяем..." : "Запустить validate"}
+                              </Button>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            {serverValidation ? (
+                              <>
+                                <div className="grid gap-4 md:grid-cols-3">
+                                  <div className="rounded-[1rem] bg-surface-subtle px-4 py-4">
+                                    <p className="text-sm text-slate-500">Publish ready</p>
+                                    <p className="mt-2 text-xl font-semibold text-slate-950">
+                                      {serverValidation.publish_ready ? "Да" : "Нет"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-[1rem] bg-surface-subtle px-4 py-4">
+                                    <p className="text-sm text-slate-500">Module exists</p>
+                                    <p className="mt-2 text-xl font-semibold text-slate-950">
+                                      {serverValidation.module_exists ? "Да" : "Нет"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-[1rem] bg-surface-subtle px-4 py-4">
+                                    <p className="text-sm text-slate-500">Conflicts</p>
+                                    <p className="mt-2 text-xl font-semibold text-slate-950">
+                                      {serverValidation.conflicts?.length ?? 0}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {serverValidation.preflight_errors?.length ? (
+                                  <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-4">
+                                    <p className="font-semibold text-rose-700">Preflight errors</p>
+                                    <ul className="mt-3 space-y-2 text-sm text-rose-700">
+                                      {serverValidation.preflight_errors.map((item) => (
+                                        <li key={item}>{item}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+
+                                {serverValidation.conflicts?.length ? (
+                                  <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4">
+                                    <p className="font-semibold text-amber-700">Ownership conflicts</p>
+                                    <pre className="mt-3 overflow-x-auto text-xs text-amber-700">
+                                      {prettyJson(serverValidation.conflicts)}
+                                    </pre>
+                                  </div>
+                                ) : null}
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                                    <p className="font-semibold text-slate-900">Manifest preview</p>
+                                    <pre className="mt-3 overflow-x-auto rounded-[0.9rem] bg-slate-950 px-4 py-4 text-xs text-slate-100">
+                                      {prettyJson(serverValidation.manifest_json)}
+                                    </pre>
+                                  </div>
+                                  <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                                    <p className="font-semibold text-slate-900">Validation JSON</p>
+                                    <pre className="mt-3 overflow-x-auto rounded-[0.9rem] bg-slate-950 px-4 py-4 text-xs text-slate-100">
+                                      {prettyJson(serverValidation.validation_json)}
+                                    </pre>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                                Запустите проверку, чтобы увидеть manifest preview, source decomposition и конфликты.
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Card className="h-fit border-dashed shadow-none">
+                          <CardHeader>
+                            <CardTitle>API preview</CardTitle>
+                            <CardDescription>
+                              Те же payload/curl-сценарии, которые раньше были в legacy workbench.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <Tabs
+                              items={previewTabs}
+                              onValueChange={(value) => setPreviewTab(value as PreviewTab)}
+                              value={previewTab}
+                            />
+                            <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <p className="font-semibold text-slate-900">Preview</p>
+                                <Button
+                                  leadingIcon={<Copy className="h-4 w-4" />}
+                                  onClick={() =>
+                                    copyToClipboard(
+                                      previewTab === "payload"
+                                        ? prettyJson(payloadPreview)
+                                        : buildPreviewCurl(
+                                            previewTab === "curl-validate" ? "validate" : "save",
+                                            payloadPreview ?? {}
+                                          )
+                                    )
+                                  }
+                                  size="sm"
+                                  variant="outline"
+                                >
+                                  Копировать
+                                </Button>
+                              </div>
+                              <pre className="overflow-x-auto rounded-[0.9rem] bg-slate-950 px-4 py-4 text-xs text-slate-100">
+                                {previewTab === "payload"
+                                  ? prettyJson(payloadPreview)
+                                  : buildPreviewCurl(
+                                      previewTab === "curl-validate" ? "validate" : "save",
+                                      payloadPreview ?? {}
+                                    )}
+                              </pre>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="h-fit border-dashed shadow-none">
+                          <CardHeader>
+                            <CardTitle>Разложение source</CardTitle>
+                            <CardDescription>
+                              Сколько методов и tool names backend смог реконструировать из архива.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <MetaRow
+                              label="Resolved tools"
+                              value={activeSource?.decomposition.resolved_tools ?? 0}
+                            />
+                            <MetaRow
+                              label="Unresolved"
+                              value={activeSource?.decomposition.unresolved_tools.length ?? 0}
+                            />
+                            <MetaRow
+                              label="Files"
+                              value={activeSource?.files.length ?? 0}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              {(activeSource?.decomposition.available_methods ?? []).slice(0, 6).map((item) => (
+                                <Badge key={item} tone="neutral">
+                                  {item}
+                                </Badge>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {draft && developmentTab === "source" ? (
+                  <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+                    <Card className="h-fit">
+                      <CardHeader>
+                        <CardTitle>Source files</CardTitle>
+                        <CardDescription>
+                          Архивная декомпозиция после открытия версии или server validate preview.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {activeSource?.files.length ? (
+                          <div className="max-h-[calc(100vh-24rem)] space-y-2 overflow-y-auto pr-1">
+                            {activeSource.files.map((file) => (
+                              <button
+                                key={file.path}
+                                className={cn(
+                                  "w-full rounded-[1rem] border px-4 py-3 text-left transition-colors",
+                                  selectedSourceFile?.path === file.path
+                                    ? "border-brand-200 bg-brand-50"
+                                    : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                                )}
+                                onClick={() => setSelectedSourcePath(file.path)}
+                                type="button"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="font-medium text-slate-900">{file.path}</p>
+                                  <Badge tone="neutral">{file.language}</Badge>
+                                </div>
+                                <p className="mt-2 text-xs text-slate-500">{file.size_bytes} bytes</p>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                            Source preview появится после открытия версии или server validate.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <CardTitle>{selectedSourceFile?.path ?? "Source preview"}</CardTitle>
+                            <CardDescription>
+                              Detected tools, parse errors и содержимое выбранного файла.
+                            </CardDescription>
+                          </div>
+                          {selectedSourceFile ? (
+                            <Button
+                              leadingIcon={<Copy className="h-4 w-4" />}
+                              onClick={() => copyToClipboard(selectedSourceFile.content)}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Копировать
+                            </Button>
+                          ) : null}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {selectedSourceFile ? (
+                          <>
+                            {selectedSourceFile.detected_tools?.length ? (
+                              <div className="flex flex-wrap gap-2">
+                                {selectedSourceFile.detected_tools.map((item, index) => (
+                                  <Badge key={`${item.tool_name ?? item.method ?? index}`} tone="brand">
+                                    {item.tool_name ?? item.method ?? "tool"}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            {selectedSourceFile.parse_errors?.length ? (
+                              <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700">
+                                {selectedSourceFile.parse_errors.join("\n")}
+                              </div>
+                            ) : null}
+
+                            <pre className="max-h-[calc(100vh-24rem)] overflow-auto rounded-[1rem] bg-slate-950 px-4 py-4 text-xs text-slate-100">
+                              {selectedSourceFile.content}
+                            </pre>
+                          </>
+                        ) : (
+                          <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
+                            Выберите файл слева.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {workspaceTab === "archive" ? (
+            <Card>
+              <CardHeader className="gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>Импорт ZIP-архива</CardTitle>
+                    <CardDescription>
+                      Реальный upload в server registry, smoke/preflight и затем быстрый вход в editor.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    leadingIcon={<Upload className="h-4 w-4" />}
+                    onClick={() => fileInputRef.current?.click()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Выбрать ZIP
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                  <div className="space-y-4">
+                    <input
+                      accept=".zip"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setArchiveFile(file);
+                        if (file && !archiveModuleName.trim()) {
+                          const guessed = file.name.replace(/\.zip$/i, "");
+                          const semverMatch = guessed.match(/^(.*)-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?)$/);
+                          if (semverMatch) {
+                            setArchiveModuleName(semverMatch[1]);
+                            setArchiveVersion(semverMatch[2]);
+                          } else {
+                            setArchiveModuleName(guessed);
+                          }
+                        }
+                      }}
+                      ref={fileInputRef}
+                      type="file"
+                    />
+
+                    <div className="rounded-[1.2rem] border border-dashed border-border bg-surface-subtle px-5 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                          <FileArchive className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-950">
+                            {archiveFile?.name ?? "ZIP ещё не выбран"}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {archiveFile ? `${archiveFile.size} bytes` : "Выберите архив вида module-1.2.3.zip или заполните поля вручную."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                        <span>Module name</span>
+                        <input
+                          className="field-base h-11 w-full px-4 text-sm"
+                          onChange={(event) => setArchiveModuleName(event.target.value)}
+                          value={archiveModuleName}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                        <span>Version</span>
+                        <input
+                          className="field-base h-11 w-full px-4 text-sm"
+                          onChange={(event) => setArchiveVersion(event.target.value)}
+                          value={archiveVersion}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="flex h-11 items-center gap-3 rounded-pill border border-border bg-white px-4">
+                      <input
+                        checked={archiveOverwrite}
+                        onChange={(event) => setArchiveOverwrite(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span className="text-sm font-medium text-slate-700">
+                        Разрешить overwrite существующей версии
+                      </span>
+                    </label>
+
+                    <Button
+                      disabled={
+                        uploadMutation.isPending ||
+                        !archiveFile ||
+                        !archiveModuleName.trim() ||
+                        !archiveVersion.trim()
+                      }
+                      leadingIcon={<Upload className="h-4 w-4" />}
+                      onClick={() => {
+                        if (!archiveFile) {
+                          return;
+                        }
+                        uploadMutation.mutate({
+                          file: archiveFile,
+                          moduleName: archiveModuleName.trim(),
+                          version: archiveVersion.trim(),
+                          overwrite: archiveOverwrite,
+                        });
+                      }}
+                    >
+                      {uploadMutation.isPending ? "Загружаем..." : "Загрузить архив"}
+                    </Button>
                   </div>
 
-                  <section className="admin-modules-versions">
-                    <div className="support-operations__head">
-                      <strong>Версии в registry</strong>
-                      <span>{selectedModule.versions.length}</span>
-                    </div>
-                    <div className="admin-modules-version-list">
-                      {selectedModule.versions.map((version) => {
-                        const actionLabel = version.is_preferred
-                          ? "Снять preferred"
-                          : `Сделать preferred для ${version.version}`;
-                        const actionDisabled = preferredMutation.isPending || (!version.is_preferred && !version.file_exists);
-                        return (
-                          <article key={`${selectedModule.module_name}:${version.version}`} className="admin-modules-version-card">
-                            <div className="admin-observer-item__head">
-                              <strong>{version.version}</strong>
-                              <span>{version.is_preferred ? "preferred" : version.validation_status_label}</span>
-                            </div>
-                            <p>
-                              Preflight: {version.preflight_status_label} · tools: {version.tools_count}
-                            </p>
-                            <p>{version.platforms.join(", ") || "any"}</p>
-                            <p>
-                              {version.file_exists
-                                ? "Архив доступен на сервере"
-                                : "Архив отсутствует, нужен повторный upload"}
-                            </p>
-                            <p>Опубликован: {formatDateTime(version.created_at)}</p>
-                            <button
-                              type="button"
-                              className="admin-modules-action"
-                              disabled={actionDisabled}
-                              onClick={() => {
-                                setActionFeedback(null);
-                                preferredMutation.mutate({
-                                  moduleName: selectedModule.module_name,
-                                  version: version.is_preferred ? null : version.version
-                                });
-                              }}
-                            >
-                              {preferredMutation.isPending ? "Обновляем preferred…" : actionLabel}
-                            </button>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
+                  <div className="space-y-4">
+                    <Card className="border-dashed shadow-none">
+                      <CardHeader>
+                        <CardTitle>Что происходит при upload</CardTitle>
+                        <CardDescription>
+                          Этот же поток раньше жил в legacy workbench: preflight, smoke и запись в registry.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm text-slate-600">
+                        <div className="flex items-start gap-3 rounded-[1rem] bg-surface-subtle px-4 py-4">
+                          <Search className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+                          <span>Сервер проверяет manifest, ownership и smoke-сценарии до публикации.</span>
+                        </div>
+                        <div className="flex items-start gap-3 rounded-[1rem] bg-surface-subtle px-4 py-4">
+                          <Boxes className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+                          <span>После успешного upload версия попадает в registry и сразу доступна в editor.</span>
+                        </div>
+                        <div className="flex items-start gap-3 rounded-[1rem] bg-surface-subtle px-4 py-4">
+                          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+                          <span>
+                            Overwrite доступен только для административного сценария и сохраняет ту же backend-валидацию.
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
-              ) : (
-                <div className="support-queue-empty">
-                  Выберите семейство слева, чтобы открыть детали registry и preferred-version policy.
-                </div>
-              )}
-            </article>
-          </div>
-        </>
-      ) : null}
-    </section>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
