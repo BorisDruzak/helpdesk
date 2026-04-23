@@ -130,6 +130,23 @@ class SupportTicketObserverPayload(BaseModel):
     summary: SupportTicketObserverSummary
 
 
+class SupportTicketRequestFormRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    value: str
+
+
+class SupportTicketRequestFormPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_kind: str | None = None
+    form_key: str | None = None
+    form_title: str | None = None
+    rows: list[SupportTicketRequestFormRow] = Field(default_factory=list)
+
+
 class SupportTicketReplyTo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -293,6 +310,7 @@ class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket: SupportTicketDetail
+    request_form: SupportTicketRequestFormPayload | None = None
     observer: SupportTicketObserverPayload
     timeline: list[SupportTicketMessage]
     snapshot: SupportTicketSnapshot

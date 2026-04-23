@@ -24,8 +24,10 @@ import {
   type AdminFormsFieldOption,
   type AdminFormsFieldType,
   type AdminFormsPayload,
+  type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
   fetchAdminFormsCatalog,
+  previewAdminFormRoute,
   saveAdminFormsCatalog,
 } from "./api";
 import {
@@ -70,6 +72,8 @@ type DraftCatalog = {
   description: string;
   forms: DraftForm[];
 };
+
+type PreviewFormValues = Record<string, string | boolean>;
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -235,6 +239,15 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
   };
 }
 
+
+function serializeDraftForm(form: DraftForm): AdminFormsSaveRequest["forms"][number] {
+  return serializeDraft({
+    title: "Preview",
+    description: "",
+    forms: [form],
+  }).forms[0];
+}
+
 function buildDraftFingerprint(catalog: DraftCatalog | null): string {
   return JSON.stringify(catalog ? serializeDraft(catalog) : null);
 }
@@ -313,6 +326,39 @@ function parseValueLines(text: string): string[] {
     .filter(Boolean);
 }
 
+
+function isPreviewFieldVisible(field: DraftField, values: PreviewFormValues): boolean {
+  const dependencyKey = field.visible_when.field.trim();
+  if (!dependencyKey) {
+    return true;
+  }
+  const currentValue = values[dependencyKey];
+  if (field.visible_when.equals.trim()) {
+    return String(currentValue ?? "").trim() === field.visible_when.equals.trim();
+  }
+  const allowed = field.visible_when.values.map((item) => item.trim()).filter(Boolean);
+  if (allowed.length === 0) {
+    return true;
+  }
+  return allowed.includes(String(currentValue ?? "").trim());
+}
+
+
+function buildPreviewValues(form: DraftForm | null, current: PreviewFormValues = {}): PreviewFormValues {
+  if (!form) {
+    return {};
+  }
+  return Object.fromEntries(
+    form.fields.map((field) => {
+      const existing = current[field.key];
+      return [
+        field.key,
+        typeof existing !== "undefined" ? existing : field.type === "checkbox" ? false : "",
+      ];
+    })
+  );
+}
+
 function updateFormInCatalog(
   catalog: DraftCatalog,
   formKey: string,
@@ -334,6 +380,53 @@ function updateFieldInCatalog(
     ...form,
     fields: form.fields.map((field) => (field.key === fieldKey ? updater(field) : field)),
   }));
+}
+
+
+function clearVisibleWhenConfig(field: DraftField): DraftField {
+  return {
+    ...field,
+    visible_when: {
+      field: "",
+      equals: "",
+      values: [],
+    },
+  };
+}
+
+
+function renameFieldInForm(form: DraftForm, fromKey: string, toKey: string): DraftForm {
+  return {
+    ...form,
+    fields: form.fields.map((field) => {
+      if (field.key === fromKey) {
+        return {
+          ...field,
+          key: toKey,
+        };
+      }
+      if (field.visible_when.field !== fromKey) {
+        return field;
+      }
+      return {
+        ...field,
+        visible_when: {
+          ...field.visible_when,
+          field: toKey,
+        },
+      };
+    }),
+  };
+}
+
+
+function removeFieldFromForm(form: DraftForm, fieldKey: string): DraftForm {
+  return {
+    ...form,
+    fields: form.fields
+      .filter((field) => field.key !== fieldKey)
+      .map((field) => (field.visible_when.field === fieldKey ? clearVisibleWhenConfig(field) : field)),
+  };
 }
 
 function fieldTypeRequiresOptions(field: AdminFormsFieldItem | DraftField | null): boolean {
@@ -383,6 +476,7 @@ export function FormsBuilderPanel() {
   const [newFieldType, setNewFieldType] = useState<AdminFormsFieldType>("text");
   const [versionSearch, setVersionSearch] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
+  const [previewValues, setPreviewValues] = useState<PreviewFormValues>({});
 
   const formsQuery = useQuery({
     queryKey: ["admin-forms-builder-current"],
@@ -446,6 +540,18 @@ export function FormsBuilderPanel() {
     },
   });
 
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedForm) {
+        throw new Error("Сначала выберите форму для preview.");
+      }
+      return previewAdminFormRoute({
+        form: serializeDraftForm(selectedForm),
+        form_payload: previewValues,
+      });
+    },
+  });
+
   useEffect(() => {
     if (!formsQuery.data || draft) {
       return;
@@ -489,7 +595,13 @@ export function FormsBuilderPanel() {
     selectedForm?.fields[0] ??
     null;
 
+  useEffect(() => {
+    setPreviewValues((current) => buildPreviewValues(selectedForm, current));
+    previewMutation.reset();
+  }, [selectedForm]);
+
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
+  const routePreview: AdminFormsRoutePreviewResult | undefined = previewMutation.data;
 
   const visibleVersions = useMemo(
     () => (versionsQuery.data?.packs ?? []).filter((item) => versionMatchesSearch(item, versionSearch)),
@@ -1101,19 +1213,15 @@ export function FormsBuilderPanel() {
                                     <Button
                                       disabled={selectedForm.fields.length <= 1}
                                       leadingIcon={<Trash2 className="h-4 w-4" />}
-                                      onClick={() => {
+                                     onClick={() => {
                                         setDraft((current) => {
                                           if (!current) {
                                             return current;
                                           }
-                                          const remainingFields = selectedForm.fields.filter(
-                                            (field) => field.key !== selectedField.key
-                                          );
+                                          const nextForm = removeFieldFromForm(selectedForm, selectedField.key);
+                                          const remainingFields = nextForm.fields;
                                           setSelectedFieldKey(remainingFields[0]?.key ?? null);
-                                          return updateFormInCatalog(current, selectedForm.key, (form) => ({
-                                            ...form,
-                                            fields: form.fields.filter((field) => field.key !== selectedField.key),
-                                          }));
+                                          return updateFormInCatalog(current, selectedForm.key, () => nextForm);
                                         });
                                       }}
                                       size="sm"
@@ -1156,14 +1264,8 @@ export function FormsBuilderPanel() {
                                           const value = event.currentTarget.value;
                                           setDraft((current) =>
                                             current
-                                              ? updateFieldInCatalog(
-                                                  current,
-                                                  selectedForm.key,
-                                                  selectedField.key,
-                                                  (field) => ({
-                                                    ...field,
-                                                    key: value,
-                                                  })
+                                              ? updateFormInCatalog(current, selectedForm.key, (form) =>
+                                                  renameFieldInForm(form, selectedField.key, value)
                                                 )
                                               : current
                                           );
@@ -1470,6 +1572,159 @@ export function FormsBuilderPanel() {
               <p className="mt-1 text-sm text-slate-500">
                 {formatDateTime(formsQuery.data?.summary.last_published_at)}
               </p>
+            </div>
+
+            <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">Предпросмотр маршрута</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Заполните пример значений и проверьте, какая очередь или routing rule сработает для текущей формы.
+                  </p>
+                </div>
+                <Button
+                  disabled={!selectedForm || previewMutation.isPending}
+                  onClick={() => previewMutation.mutate()}
+                  size="sm"
+                >
+                  {previewMutation.isPending ? "Проверяем..." : "Проверить"}
+                </Button>
+              </div>
+
+              {selectedForm ? (
+                <div className="mt-4 space-y-3">
+                  {selectedForm.fields
+                    .filter((field) => isPreviewFieldVisible(field, previewValues))
+                    .map((field) => {
+                      const currentValue = previewValues[field.key];
+                      if (field.type === "checkbox") {
+                        return (
+                          <label
+                            key={field.key}
+                            className="flex items-center gap-3 rounded-[1rem] border border-border bg-surface-subtle px-4 py-3 text-sm"
+                          >
+                            <input
+                              checked={Boolean(currentValue)}
+                              onChange={(event) => {
+                                const checked = event.currentTarget.checked;
+                                setPreviewValues((current) => ({
+                                  ...current,
+                                  [field.key]: checked,
+                                }));
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{field.label}</span>
+                          </label>
+                        );
+                      }
+                      if (field.type === "select" || field.type === "radio") {
+                        return (
+                          <label key={field.key} className="space-y-2 text-sm font-medium text-slate-800">
+                            <span>{field.label}</span>
+                            <Select
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setPreviewValues((current) => ({
+                                  ...current,
+                                  [field.key]: nextValue,
+                                }));
+                              }}
+                              value={String(currentValue ?? "")}
+                            >
+                              <option value="">Не выбрано</option>
+                              {field.options.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                        );
+                      }
+                      return (
+                        <label key={field.key} className="space-y-2 text-sm font-medium text-slate-800">
+                          <span>{field.label}</span>
+                          <input
+                            className="field-base h-11 w-full px-4 text-sm"
+                            onChange={(event) => {
+                              const nextValue = event.currentTarget.value;
+                              setPreviewValues((current) => ({
+                                ...current,
+                                [field.key]: nextValue,
+                              }));
+                            }}
+                            placeholder={field.placeholder}
+                            value={String(currentValue ?? "")}
+                          />
+                        </label>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+                  Сначала выберите форму в редакторе.
+                </div>
+              )}
+
+              {previewMutation.isError ? (
+                <div className="mt-4 rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                  {previewMutation.error instanceof Error
+                    ? previewMutation.error.message
+                    : "Не удалось построить preview маршрута."}
+                </div>
+              ) : null}
+
+              {routePreview ? (
+                <div className="mt-4 space-y-3 rounded-[1rem] bg-surface-subtle px-4 py-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-brand-700">Результат</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {routePreview.target_queue_name ?? "Очередь не найдена"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {routePreview.fallback_applied
+                        ? "Совпадений по правилам не нашлось, сработал fallback."
+                        : routePreview.matched_rule
+                          ? `Совпало правило #${routePreview.matched_rule.id} с priority ${routePreview.matched_rule.priority_order}.`
+                          : "Совпадений по правилам не найдено."}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 text-sm text-slate-600">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>ticket_type</span>
+                      <code>{routePreview.ticket_type}</code>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>request_kind</span>
+                      <code>{routePreview.request_kind}</code>
+                    </div>
+                    {routePreview.matched_rule ? (
+                      <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
+                        <p className="font-medium text-slate-900">Condition JSON совпавшего правила</p>
+                        <code className="mt-2 block whitespace-pre-wrap text-xs text-slate-600">
+                          {JSON.stringify(routePreview.matched_rule.condition_json, null, 2)}
+                        </code>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {routePreview.summary_rows.length > 0 ? (
+                    <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
+                      <p className="font-medium text-slate-900">Нормализованные данные формы</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        {routePreview.summary_rows.map((row) => (
+                          <div key={row.key} className="flex items-center justify-between gap-3">
+                            <span>{row.label}</span>
+                            <strong className="text-slate-900">{row.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">

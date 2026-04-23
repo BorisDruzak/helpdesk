@@ -10,6 +10,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, UiUser
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from auth.context import AuthContext, AuthType
 from routes import setup_routes
 from tests.conftest import TEST_UI_SUPPORT_TOKEN
@@ -132,3 +133,68 @@ async def test_web_reports_summary_returns_real_metrics_payload(test_client, tes
     assert any(item["label"] == "Доступ" for item in payload["data"]["request_kinds"])
     assert payload["data"]["top_queues"][0]["queue_label"] == "ServiceDesk L1"
     assert payload["data"]["recent_tickets"][0]["queue_label"] == "ServiceDesk L1"
+
+
+@pytest.mark.asyncio
+async def test_web_reports_summary_uses_current_form_catalog_for_request_kind_labels(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        repo = TicketFormPacksRepo(session)
+        custom_pack = {
+            "pack_key": "request_forms",
+            "version": "9.9.9",
+            "title": "Каталог заявок",
+            "description": "Кастомный каталог для отчётов",
+            "forms": [
+                {
+                    "key": "software_install",
+                    "request_kind": "software_install",
+                    "title": "Установка из каталога",
+                    "description": "",
+                    "fields": [
+                        {
+                            "key": "software_name",
+                            "label": "ПО",
+                            "type": "text",
+                            "required": True,
+                        }
+                    ],
+                }
+            ],
+        }
+        await repo.upsert_pack(
+            pack_key="request_forms",
+            version="9.9.9",
+            schema_json=custom_pack,
+            created_by="admin1",
+            notes="reports-test",
+        )
+        await repo.set_preferred(pack_key="request_forms", version="9.9.9", updated_by="admin1")
+        session.add(
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-report-form",
+                title="Установка ПО",
+                description="Нужен Photoshop",
+                status="in_progress",
+                requester_id="req-form",
+                queue_id=queue.id,
+                ticket_type="software_install",
+                created_at=now - timedelta(days=1),
+                updated_at=now - timedelta(hours=3),
+                custom_fields={"request_kind": "software_install"},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/reports/summary?days=14", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert any(item["label"] == "Установка из каталога" for item in payload["data"]["request_kinds"])

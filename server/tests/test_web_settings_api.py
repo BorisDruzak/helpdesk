@@ -58,6 +58,7 @@ async def test_web_settings_returns_typed_fallback_when_db_is_unavailable(
 
     assert payload["status"] == "success"
     assert payload["data"]["capabilities"]["can_write"] is True
+    assert payload["data"]["routing_builder"]["fields"]
     assert payload["data"]["queues"] == []
     assert payload["data"]["audit"] == []
 
@@ -88,7 +89,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
         routing_rule = await repo.create_routing_rule(
             target_queue_id=queue.id,
             priority_order=10,
-            condition_json={"request_kind": "access"},
+            condition_json={"field": "request_kind", "op": "eq", "value": "access"},
             enabled=True,
         )
         calendar = await repo.create_calendar(
@@ -162,11 +163,44 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert payload["data"]["queues"][0]["members"][0]["actor_id"] == "support-test"
     assert payload["data"]["queues"][0]["ola_targets"][0]["priority"] == "P1"
     assert payload["data"]["routing_rules"][0]["target_queue_name"] == "ServiceDesk L1"
+    routing_fields = {item["field"] for item in payload["data"]["routing_builder"]["fields"]}
+    assert "ticket_type" in routing_fields
+    assert "request_kind" in routing_fields
+    assert "request_form_data.room" in routing_fields
     assert payload["data"]["sla_policies"][0]["calendar_name"] == "Будни"
     assert payload["data"]["sla_policies"][0]["targets"][0]["priority"] == "P1"
     assert payload["data"]["calendars"][0]["code"] == "weekday_ru"
     assert payload["data"]["resolution_codes"][0]["usage_count"] == 1
     assert payload["data"]["audit"][0]["trace_id"] == "trace-settings-1"
+
+
+@pytest.mark.asyncio
+async def test_web_settings_routing_rule_rejects_legacy_like_condition_json(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="admin", password_hash="secret", actor_role="admin", is_active=True))
+        repo = TicketAdminConfigRepo(session)
+        queue = await repo.create_queue("servicedesk_l1", "ServiceDesk L1", is_triage=True, auto_assign_enabled=True)
+        queue_id = queue.id
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/settings/routing_rules",
+        headers=_admin_headers(),
+        json={
+            "enabled": True,
+            "priority_order": 10,
+            "target_queue_id": queue_id,
+            "condition_json": {"request_kind": "access"},
+        },
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

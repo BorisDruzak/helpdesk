@@ -322,6 +322,7 @@ class AdminFormsBuilderCapabilities(BaseModel):
 
     current_endpoint: str
     save_endpoint: str
+    preview_endpoint: str
     field_type_options: list[AdminFilterOption]
 
 
@@ -385,6 +386,43 @@ class AdminFormsSaveResult(BaseModel):
     summary: AdminFormsSummary
     forms: list[AdminFormsFormItem] = Field(default_factory=list)
     message: str
+
+
+class AdminFormsRoutePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    form: AdminFormsSaveFormRequest
+    form_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminFormsRoutePreviewMatchedRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    priority_order: int
+    target_queue_id: int
+    target_queue_name: str | None = None
+    condition_json: dict | None = None
+
+
+class AdminFormsRoutePreviewSummaryRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    value: str
+
+
+class AdminFormsRoutePreviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: str
+    request_kind: str
+    target_queue_id: int | None = None
+    target_queue_name: str | None = None
+    fallback_applied: bool = False
+    matched_rule: AdminFormsRoutePreviewMatchedRule | None = None
+    summary_rows: list[AdminFormsRoutePreviewSummaryRow] = Field(default_factory=list)
 
 
 class AdminRolloutAssignment(BaseModel):

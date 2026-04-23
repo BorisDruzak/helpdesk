@@ -6,8 +6,16 @@ from loguru import logger
 from app.db import get_session
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from auth.middleware import require_auth
 from config import TICKET_ADMIN_CONFIG_API_ENABLED
+from tickets.form_catalog import (
+    DEFAULT_TICKET_FORM_PACK_KEY,
+    build_default_ticket_form_pack,
+    build_routing_builder_catalog,
+    resolve_ticket_form_pack,
+    validate_form_pack_schema,
+)
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.settings import (
     WebSettingsAuditItem,
@@ -20,10 +28,60 @@ from web_api.dto.settings import (
     WebSettingsQueueItem,
     WebSettingsQueueMemberItem,
     WebSettingsResolutionCodeItem,
+    WebSettingsRoutingBuilderFieldItem,
+    WebSettingsRoutingBuilderFormFieldItem,
+    WebSettingsRoutingBuilderFormItem,
+    WebSettingsRoutingBuilderOperatorItem,
+    WebSettingsRoutingBuilderPayload,
     WebSettingsRoutingRuleItem,
     WebSettingsSlaPolicyItem,
     WebSettingsSlaTargetItem,
 )
+
+
+def _build_routing_builder_payload(pack: dict | None = None) -> WebSettingsRoutingBuilderPayload:
+    catalog = build_routing_builder_catalog(pack or validate_form_pack_schema(build_default_ticket_form_pack()))
+    return WebSettingsRoutingBuilderPayload(
+        operators=[
+            WebSettingsRoutingBuilderOperatorItem(
+                value=str(item.get("value") or ""),
+                label=str(item.get("label") or ""),
+            )
+            for item in catalog.get("operators", [])
+            if isinstance(item, dict)
+        ],
+        fields=[
+            WebSettingsRoutingBuilderFieldItem(
+                field=str(item.get("field") or ""),
+                label=str(item.get("label") or item.get("field") or ""),
+                source=str(item.get("source") or "ticket"),
+                form_key=str(item.get("form_key") or "").strip() or None,
+                form_title=str(item.get("form_title") or "").strip() or None,
+                field_type=str(item.get("field_type") or "").strip() or None,
+            )
+            for item in catalog.get("fields", [])
+            if isinstance(item, dict) and str(item.get("field") or "").strip()
+        ],
+        forms=[
+            WebSettingsRoutingBuilderFormItem(
+                key=str(item.get("key") or ""),
+                request_kind=str(item.get("request_kind") or item.get("key") or ""),
+                title=str(item.get("title") or item.get("key") or ""),
+                fields=[
+                    WebSettingsRoutingBuilderFormFieldItem(
+                        key=str(field.get("key") or ""),
+                        label=str(field.get("label") or field.get("key") or ""),
+                        field=str(field.get("field") or ""),
+                        type=str(field.get("type") or "text"),
+                    )
+                    for field in item.get("fields", [])
+                    if isinstance(field, dict) and str(field.get("field") or "").strip()
+                ],
+            )
+            for item in catalog.get("forms", [])
+            if isinstance(item, dict) and str(item.get("key") or "").strip()
+        ],
+    )
 
 
 def _empty_settings_payload(*, actor_role: str) -> WebSettingsPayload:
@@ -42,6 +100,7 @@ def _empty_settings_payload(*, actor_role: str) -> WebSettingsPayload:
             resolution_codes_count=0,
             audit_records_count=0,
         ),
+        routing_builder=_build_routing_builder_payload(),
         queues=[],
         routing_rules=[],
         sla_policies=[],
@@ -63,6 +122,10 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
         async with get_session() as session:
             repo = TicketAdminConfigRepo(session)
             audit_repo = TicketAdminAuditRepo(session)
+            form_pack = await resolve_ticket_form_pack(
+                TicketFormPacksRepo(session),
+                pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+            )
 
             queues = await repo.list_queues(include_inactive=True)
             queue_name_map = {queue.id: queue.name for queue in queues}
@@ -157,6 +220,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
                     resolution_codes_count=len(resolution_codes),
                     audit_records_count=len(audit_records),
                 ),
+                routing_builder=_build_routing_builder_payload(form_pack),
                 queues=queue_items,
                 routing_rules=[
                     WebSettingsRoutingRuleItem(

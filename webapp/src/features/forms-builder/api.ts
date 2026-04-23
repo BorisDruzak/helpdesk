@@ -48,6 +48,7 @@ export type AdminFormsPayload = {
   capabilities: {
     current_endpoint: string;
     save_endpoint: string;
+    preview_endpoint: string;
     field_type_options: Array<{
       value: AdminFormsFieldType;
       label: string;
@@ -85,6 +86,26 @@ export type AdminFormsSaveResult = {
   summary: AdminFormsSummary;
   forms: AdminFormsFormItem[];
   message: string;
+};
+
+export type AdminFormsRoutePreviewResult = {
+  ticket_type: string;
+  request_kind: string;
+  target_queue_id: number | null;
+  target_queue_name: string | null;
+  fallback_applied: boolean;
+  matched_rule: {
+    id: number;
+    priority_order: number;
+    target_queue_id: number;
+    target_queue_name: string | null;
+    condition_json: Record<string, unknown> | null;
+  } | null;
+  summary_rows: Array<{
+    key: string;
+    label: string;
+    value: string;
+  }>;
 };
 
 type SuccessResponse<T> = {
@@ -150,4 +171,19 @@ export async function saveAdminFormsCatalog(
     body: JSON.stringify(payload)
   });
   return readSuccessResponse(response, "Не удалось опубликовать каталог форм");
+}
+
+export async function previewAdminFormRoute(payload: {
+  form: AdminFormsSaveRequest["forms"][number];
+  form_payload: Record<string, string | boolean>;
+}): Promise<AdminFormsRoutePreviewResult> {
+  const response = await fetch("/api/web/admin/forms/route-preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось построить preview маршрута");
 }

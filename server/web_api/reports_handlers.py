@@ -9,7 +9,14 @@ from sqlalchemy import text
 from app.db import get_session
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from auth.middleware import require_auth
+from tickets.form_catalog import (
+    DEFAULT_TICKET_FORM_PACK_KEY,
+    build_request_kind_title_map,
+    humanize_request_kind,
+    resolve_ticket_form_pack,
+)
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.reports import (
     WebReportsAgingBucketItem,
@@ -45,21 +52,6 @@ _PRIORITY_LABELS = {
     "P4": "Низкий",
 }
 
-_REQUEST_KIND_LABELS = {
-    "request": "Запрос",
-    "incident": "Инцидент",
-    "breakage": "Поломка",
-    "access": "Доступ",
-    "software_install": "Установка ПО",
-    "hardware_replacement": "Замена оборудования",
-    "printer": "Печать и принтеры",
-    "network": "Сеть",
-    "site_system": "Сайт и системы",
-    "new_account": "Новый аккаунт",
-    "mail_issue": "Почта",
-}
-
-
 def _normalize_days(value: str | None) -> int:
     try:
         days = int(value or 7)
@@ -87,9 +79,8 @@ def _status_label(value: str | None) -> str:
     return _STATUS_LABELS.get(normalized, normalized or "Неизвестно")
 
 
-def _request_kind_label(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    return _REQUEST_KIND_LABELS.get(normalized, normalized or "Прочее")
+def _request_kind_label(value: str | None, *, label_map: dict[str, str] | None = None) -> str:
+    return humanize_request_kind(value, label_map=label_map)
 
 
 def _compliance_percent(breached_rate: float | None) -> float | None:
@@ -198,6 +189,7 @@ async def _fetch_request_kinds(
     period_start: datetime,
     period_end: datetime,
     queue_id: int | None,
+    label_map: dict[str, str] | None = None,
 ) -> list[WebReportsRequestKindItem]:
     stmt = text(
         """
@@ -224,7 +216,7 @@ async def _fetch_request_kinds(
     return [
         WebReportsRequestKindItem(
             key=str(row[0]),
-            label=_request_kind_label(row[0]),
+            label=_request_kind_label(row[0], label_map=label_map),
             count=int(row[1] or 0),
         )
         for row in result.all()
@@ -281,6 +273,11 @@ async def handle_web_reports_summary(request: web.Request) -> web.Response:
                 WebReportsFilterOption(value=str(queue.id), label=queue.name)
                 for queue in queues
             ]
+            form_pack = await resolve_ticket_form_pack(
+                TicketFormPacksRepo(session),
+                pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+            )
+            request_kind_labels = build_request_kind_title_map(form_pack)
 
             backlog_rows = await repo.get_metrics_backlog(queue_id=queue_id)
             aging_rows = await repo.get_metrics_aging(queue_id=queue_id)
@@ -301,6 +298,7 @@ async def handle_web_reports_summary(request: web.Request) -> web.Response:
                 period_start=period_start,
                 period_end=period_end,
                 queue_id=queue_id,
+                label_map=request_kind_labels,
             )
             recent_tickets = await _fetch_recent_tickets(
                 repo,

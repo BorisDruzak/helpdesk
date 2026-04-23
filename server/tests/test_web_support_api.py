@@ -157,6 +157,15 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
             status="new",
             requester_id="user-a",
             queue_id=queue.id,
+            custom_fields={
+                "request_kind": "printer",
+                "request_form_key": "printer",
+                "request_form_title": "Принтер",
+                "request_form_summary": [
+                    {"key": "room", "label": "Кабинет", "value": "214"},
+                    {"key": "printer_model", "label": "Модель", "value": "HP LaserJet"},
+                ],
+            },
         )
         ticket_id = ticket.ticket_id
         session.add(
@@ -219,6 +228,9 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["ticket"]["queue"]["code"] == "servicedesk_l1"
     assert payload["data"]["observer"]["summary"]["ticket_id"] == ticket_id
     assert payload["data"]["observer"]["ticket_summary_endpoint"] == f"/api/tickets/{ticket_id}/observer"
+    assert payload["data"]["request_form"]["request_kind"] == "printer"
+    assert payload["data"]["request_form"]["form_title"] == "Принтер"
+    assert payload["data"]["request_form"]["rows"][0] == {"key": "room", "label": "Кабинет", "value": "214"}
     assert payload["data"]["timeline"][0]["message_id"] == "msg-support-1"
     assert payload["data"]["timeline"][0]["text"] == "Проверяю логи и канал связи."
     assert payload["data"]["snapshot"]["device"]["hostname"] == "ws-detail-host"

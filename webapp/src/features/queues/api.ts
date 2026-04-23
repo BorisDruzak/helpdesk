@@ -74,6 +74,16 @@ export type SupportTicketDetailPayload = {
       role_in_queue: string | null;
     }>;
   };
+  request_form: {
+    request_kind: string | null;
+    form_key: string | null;
+    form_title: string | null;
+    rows: Array<{
+      key: string;
+      label: string;
+      value: string;
+    }>;
+  } | null;
   observer: {
     ticket_summary_endpoint: string;
     summary: {

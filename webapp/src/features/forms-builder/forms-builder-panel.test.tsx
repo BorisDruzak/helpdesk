@@ -31,6 +31,7 @@ function createFormsPayload() {
     capabilities: {
       current_endpoint: "/api/web/admin/forms/current",
       save_endpoint: "/api/web/admin/forms/save",
+      preview_endpoint: "/api/web/admin/forms/route-preview",
       field_type_options: [
         { value: "text", label: "Текст" },
         { value: "textarea", label: "Большой текст" },
@@ -249,5 +250,217 @@ describe("FormsBuilderPanel", () => {
         })
       ]
     });
+  });
+
+  it("строит preview маршрута по текущей форме", async () => {
+    const previewCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              title: "Каталог заявок",
+              description: "Рабочий каталог",
+              forms_count: 1,
+              fields_count: 2,
+              required_fields_count: 1,
+              created_at: "2026-04-21T10:00:00+05:00",
+              created_by: "admin1",
+              is_preferred: true
+            },
+            preferred: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              updated_at: "2026-04-21T10:00:00+05:00",
+              updated_by: "admin1"
+            },
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/route-preview" && method === "POST") {
+          previewCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_type: "printer",
+              request_kind: "printer",
+              target_queue_id: 17,
+              target_queue_name: "Printer 214",
+              fallback_applied: false,
+              matched_rule: {
+                id: 5,
+                priority_order: 10,
+                target_queue_id: 17,
+                target_queue_name: "Printer 214",
+                condition_json: {
+                  field: "request_form_data.room",
+                  op: "eq",
+                  value: "214"
+                }
+              },
+              summary_rows: [
+                { key: "room", label: "Кабинет", value: "214" },
+                { key: "printer_model", label: "Модель", value: "HP LaserJet" }
+              ]
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await screen.findByLabelText("Кабинет");
+    fireEvent.change(screen.getByLabelText("Кабинет"), {
+      target: { value: "214" }
+    });
+    fireEvent.change(screen.getByLabelText("Модель"), {
+      target: { value: "HP LaserJet" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
+
+    expect(await screen.findByText("Printer 214")).toBeInTheDocument();
+    expect(previewCalls).toHaveLength(1);
+    expect(previewCalls[0]).toMatchObject({
+      form: {
+        key: "printer",
+        request_kind: "printer"
+      },
+      form_payload: {
+        room: "214",
+        printer_model: "HP LaserJet"
+      }
+    });
+  });
+
+  it("обновляет и очищает visible_when ссылки при rename/delete поля", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          const payload = createFormsPayload();
+          payload.forms[0].fields[1].visible_when = {
+            field: "room",
+            equals: "214",
+            values: []
+          };
+          return jsonResponse({
+            status: "success",
+            data: payload
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              title: "Каталог заявок",
+              description: "Рабочий каталог",
+              forms_count: 1,
+              fields_count: 2,
+              required_fields_count: 1,
+              created_at: "2026-04-21T10:00:00+05:00",
+              created_by: "admin1",
+              is_preferred: true
+            },
+            preferred: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              updated_at: "2026-04-21T10:00:00+05:00",
+              updated_by: "admin1"
+            },
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await screen.findByLabelText("Ключ поля");
+    fireEvent.change(screen.getByLabelText("Ключ поля"), {
+      target: { value: "office_room" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Модель/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("visible_when.field")).toHaveValue("office_room");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Кабинет/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Удалить" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("visible_when.field")).toHaveValue("");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+    expect(saveCalls[0]).toMatchObject({
+      forms: [
+        {
+          key: "printer",
+          fields: [
+            {
+              key: "printer_model",
+              label: "Модель"
+            }
+          ]
+        }
+      ]
+    });
+    expect((saveCalls[0] as { forms: Array<{ fields: Array<{ visible_when?: unknown }> }> }).forms[0].fields[0]).not.toHaveProperty(
+      "visible_when"
+    );
   });
 });

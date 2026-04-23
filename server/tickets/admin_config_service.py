@@ -23,7 +23,11 @@ def validate_condition_json(condition: Optional[dict]) -> Tuple[bool, Optional[s
         return True, None
     if not isinstance(condition, dict):
         return False, "condition_json must be object or null"
+    if not condition:
+        return True, None
     if "and" in condition:
+        if set(condition.keys()) != {"and"}:
+            return False, "condition_json.and cannot be combined with other keys"
         items = condition["and"]
         if not isinstance(items, list):
             return False, "condition_json.and must be array"
@@ -33,6 +37,8 @@ def validate_condition_json(condition: Optional[dict]) -> Tuple[bool, Optional[s
                 return False, f"condition_json.and[{i}]: {err}"
         return True, None
     if "or" in condition:
+        if set(condition.keys()) != {"or"}:
+            return False, "condition_json.or cannot be combined with other keys"
         items = condition["or"]
         if not isinstance(items, list):
             return False, "condition_json.or must be array"
@@ -43,13 +49,23 @@ def validate_condition_json(condition: Optional[dict]) -> Tuple[bool, Optional[s
         return True, None
     field = condition.get("field")
     op = condition.get("op")
-    if field is None and op is None and "value" not in condition:
-        return True, None
     valid_ops = ("eq", "ne", "in", "nin", "contains", "is_null")
+    extra_keys = sorted(set(condition.keys()) - {"field", "op", "value"})
+    if extra_keys:
+        return False, f"condition_json has unsupported keys: {', '.join(extra_keys)}"
+    if field is None or op is None:
+        return False, "condition_json leaf must contain field and op"
     if op not in valid_ops:
         return False, f"condition_json.op must be one of {valid_ops}"
     if not isinstance(field, str) or not field.strip():
         return False, "condition_json.field must be non-empty string"
+    if "value" not in condition:
+        return False, "condition_json.value is required"
+    value = condition.get("value")
+    if op in {"in", "nin"} and not isinstance(value, list):
+        return False, "condition_json.value must be array for in/nin"
+    if op == "is_null" and not isinstance(value, bool):
+        return False, "condition_json.value must be boolean for is_null"
     return True, None
 
 

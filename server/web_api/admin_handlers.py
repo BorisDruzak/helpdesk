@@ -16,6 +16,7 @@ from agents.agent_builds_handlers import (
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.devices_repo import DevicesRepo
+from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
@@ -25,10 +26,17 @@ from auth.context import AuthContext
 from auth.middleware import require_auth
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
+    build_form_custom_fields,
     build_default_ticket_form_pack,
     next_form_pack_version,
     resolve_ticket_form_pack,
     validate_form_pack_schema,
+    validate_form_submission,
+)
+from tickets.routing_service import (
+    FALLBACK_QUEUE_CODE,
+    build_form_routing_context,
+    find_matching_routing_rule,
 )
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
@@ -78,6 +86,10 @@ from web_api.dto.admin import (
     AdminFormsFieldOption,
     AdminFormsFormItem,
     AdminFormsPayload,
+    AdminFormsRoutePreviewMatchedRule,
+    AdminFormsRoutePreviewRequest,
+    AdminFormsRoutePreviewResult,
+    AdminFormsRoutePreviewSummaryRow,
     AdminFormsSaveFieldRequest,
     AdminFormsSaveRequest,
     AdminFormsSaveResult,
@@ -197,6 +209,7 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
 
 _FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
 _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
+_FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
 _FORM_FIELD_TYPE_LABELS = {
     "text": "Текст",
     "textarea": "Большой текст",
@@ -422,6 +435,7 @@ def _build_admin_forms_payload_from_pack(
         capabilities=AdminFormsBuilderCapabilities(
             current_endpoint=_FORMS_CURRENT_ENDPOINT,
             save_endpoint=_FORMS_SAVE_ENDPOINT,
+            preview_endpoint=_FORMS_PREVIEW_ENDPOINT,
             field_type_options=_form_field_type_options(),
         ),
         forms=[
@@ -488,21 +502,22 @@ def _serialize_admin_form_field_request(payload: AdminFormsSaveFieldRequest) -> 
     return field_payload
 
 
+def _serialize_admin_form_request(payload) -> dict[str, object]:
+    return {
+        "key": str(payload.key or "").strip(),
+        "request_kind": str(payload.request_kind or payload.key or "").strip(),
+        "title": str(payload.title or "").strip(),
+        "description": str(payload.description or "").strip(),
+        "fields": [_serialize_admin_form_field_request(field) for field in payload.fields],
+    }
+
+
 def _serialize_admin_forms_save_request(payload: AdminFormsSaveRequest) -> dict[str, object]:
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
         "title": str(payload.title or "").strip() or "Каталог заявок",
         "description": str(payload.description or "").strip(),
-        "forms": [
-            {
-                "key": str(form.key or "").strip(),
-                "request_kind": str(form.request_kind or form.key or "").strip(),
-                "title": str(form.title or "").strip(),
-                "description": str(form.description or "").strip(),
-                "fields": [_serialize_admin_form_field_request(field) for field in form.fields],
-            }
-            for form in payload.forms
-        ],
+        "forms": [_serialize_admin_form_request(form) for form in payload.forms],
     }
 
 
@@ -1591,6 +1606,77 @@ async def _save_admin_forms_pack(
     )
 
 
+async def _preview_admin_forms_route(
+    *,
+    payload: AdminFormsRoutePreviewRequest,
+) -> AdminFormsRoutePreviewResult:
+    raw_form = _serialize_admin_form_request(payload.form)
+    preview_pack = validate_form_pack_schema(
+        {
+            "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
+            "version": "preview",
+            "title": "Preview",
+            "description": "Preview",
+            "forms": [raw_form],
+        }
+    )
+    validated_submission = validate_form_submission(
+        preview_pack,
+        form_key=str(payload.form.key or "").strip(),
+        raw_values=payload.form_payload,
+    )
+    custom_fields = build_form_custom_fields(validated_submission)
+    context = build_form_routing_context(
+        ticket_type=str(validated_submission.get("request_kind") or payload.form.request_kind or payload.form.key or ""),
+        custom_fields=custom_fields,
+    )
+
+    async with get_session() as session:
+        config_repo = TicketAdminConfigRepo(session)
+        rules = await config_repo.list_routing_rules(include_disabled=False)
+        queues = await config_repo.list_queues(include_inactive=True)
+        queue_name_map = {queue.id: queue.name for queue in queues}
+        matched_rule = find_matching_routing_rule(rules, context)
+
+        target_queue_id = matched_rule.target_queue_id if matched_rule is not None else None
+        target_queue_name = queue_name_map.get(target_queue_id) if target_queue_id is not None else None
+        fallback_applied = False
+        if matched_rule is None:
+            fallback_queue = await config_repo.get_queue_by_code(FALLBACK_QUEUE_CODE)
+            if fallback_queue is not None:
+                target_queue_id = fallback_queue.id
+                target_queue_name = fallback_queue.name
+                fallback_applied = True
+
+    return AdminFormsRoutePreviewResult(
+        ticket_type=str(validated_submission.get("request_kind") or ""),
+        request_kind=str(validated_submission.get("request_kind") or ""),
+        target_queue_id=target_queue_id,
+        target_queue_name=target_queue_name,
+        fallback_applied=fallback_applied,
+        matched_rule=(
+            AdminFormsRoutePreviewMatchedRule(
+                id=matched_rule.id,
+                priority_order=matched_rule.priority_order,
+                target_queue_id=matched_rule.target_queue_id,
+                target_queue_name=queue_name_map.get(matched_rule.target_queue_id),
+                condition_json=matched_rule.condition_json,
+            )
+            if matched_rule is not None
+            else None
+        ),
+        summary_rows=[
+            AdminFormsRoutePreviewSummaryRow(
+                key=str(row.get("key") or ""),
+                label=str(row.get("label") or row.get("key") or ""),
+                value=str(row.get("value") or ""),
+            )
+            for row in validated_submission.get("summary_rows") or []
+            if isinstance(row, dict)
+        ],
+    )
+
+
 @require_auth("admin")
 async def handle_web_admin_bootstrap(_request):
     payload = AdminBootstrapPayload(
@@ -1798,6 +1884,48 @@ async def handle_web_admin_forms_save(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[AdminFormsSaveResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_route_preview(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsRoutePreviewRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру формы и пример значений",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _preview_admin_forms_route(payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Не удалось построить preview маршрута",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_route_preview] Failed to build route preview: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось построить preview маршрута",
+                "error_code": "ADMIN_FORMS_ROUTE_PREVIEW_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsRoutePreviewResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsRoutePreviewResult](data=typed_result))
 
 
 @require_auth("admin")

@@ -720,6 +720,38 @@ function SupportDetailPanel({
               </div>
             </section>
 
+            {ticketDetail.request_form ? (
+              <section className="support-ticket-detail__block" id="support-request-form">
+                <div className="support-ticket-detail__section-head">
+                  <h4>Данные формы</h4>
+                  <span>{ticketDetail.request_form.form_title ?? ticketDetail.request_form.form_key ?? "структурированный ввод"}</span>
+                </div>
+                <div className="support-ticket-detail__facts support-ticket-detail__facts--stacked">
+                  <div>
+                    <dt>request_kind</dt>
+                    <dd>{ticketDetail.request_form.request_kind ?? "не указан"}</dd>
+                  </div>
+                  <div>
+                    <dt>Ключ формы</dt>
+                    <dd>{ticketDetail.request_form.form_key ?? "не указан"}</dd>
+                  </div>
+                </div>
+                {ticketDetail.request_form.rows.length > 0 ? (
+                  <div className="support-ticket-layout__description">
+                    <strong>Нормализованные ответы</strong>
+                    <dl className="support-ticket-detail__facts support-ticket-detail__facts--stacked">
+                      {ticketDetail.request_form.rows.map((row) => (
+                        <div key={row.key}>
+                          <dt>{row.label}</dt>
+                          <dd>{row.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <section className="support-ticket-detail__block" id="support-observer">
               <div className="support-ticket-detail__section-head">
                 <h4>Observer</h4>

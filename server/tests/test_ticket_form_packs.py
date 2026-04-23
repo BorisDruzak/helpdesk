@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import ServerConfig, Ticket, TicketFormPack
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
+from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
 
 def _admin_headers() -> dict[str, str]:
@@ -192,3 +193,141 @@ async def test_create_ticket_accepts_form_payload_and_sets_ticket_type(test_clie
     assert custom_fields["request_form_key"] == "printer"
     assert custom_fields["request_form_data"]["room"] == "214"
     assert custom_fields["request_form_data"]["printer_model"] == "HP LaserJet"
+
+
+def test_validate_form_pack_schema_rejects_unknown_visible_when_field():
+    with pytest.raises(ValueError, match="visible_when.field"):
+        validate_form_pack_schema(
+            {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": "printer",
+                        "request_kind": "printer",
+                        "title": "Принтер",
+                        "fields": [
+                            {
+                                "key": "room",
+                                "label": "Кабинет",
+                                "type": "text",
+                                "required": True,
+                            },
+                            {
+                                "key": "printer_model",
+                                "label": "Модель",
+                                "type": "text",
+                                "required": False,
+                                "visible_when": {"field": "missing_field", "equals": "214"},
+                            },
+                        ],
+                    }
+                ],
+            },
+            require_version=False,
+        )
+
+
+def test_validate_form_submission_applies_visible_when_equals():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Каталог заявок",
+            "forms": [
+                {
+                    "key": "site_system",
+                    "request_kind": "site_system",
+                    "title": "Сайт и система",
+                    "fields": [
+                        {
+                            "key": "issue_kind",
+                            "label": "Тип проблемы",
+                            "type": "select",
+                            "required": True,
+                            "options": [
+                                {"value": "site_down", "label": "Сайт недоступен"},
+                                {"value": "auth", "label": "Вход"},
+                            ],
+                        },
+                        {
+                            "key": "url",
+                            "label": "URL",
+                            "type": "text",
+                            "required": False,
+                            "visible_when": {"field": "issue_kind", "equals": "site_down"},
+                        },
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    visible = validate_form_submission(
+        pack,
+        form_key="site_system",
+        raw_values={"issue_kind": "site_down", "url": "https://helpdesk.local"},
+    )
+    hidden = validate_form_submission(
+        pack,
+        form_key="site_system",
+        raw_values={"issue_kind": "auth", "url": "https://should-not-pass.local"},
+    )
+
+    assert visible["submitted_values"]["url"] == "https://helpdesk.local"
+    assert [item["key"] for item in visible["summary_rows"]] == ["issue_kind", "url"]
+    assert "url" not in hidden["submitted_values"]
+    assert [item["key"] for item in hidden["summary_rows"]] == ["issue_kind"]
+
+
+def test_validate_form_submission_applies_visible_when_in():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Каталог заявок",
+            "forms": [
+                {
+                    "key": "hardware",
+                    "request_kind": "hardware",
+                    "title": "Оборудование",
+                    "fields": [
+                        {
+                            "key": "asset_type",
+                            "label": "Тип актива",
+                            "type": "select",
+                            "required": True,
+                            "options": [
+                                {"value": "printer", "label": "Принтер"},
+                                {"value": "scanner", "label": "Сканер"},
+                                {"value": "pc", "label": "ПК"},
+                            ],
+                        },
+                        {
+                            "key": "inventory_number",
+                            "label": "Инвентарный номер",
+                            "type": "text",
+                            "required": False,
+                            "visible_when": {"field": "asset_type", "in": ["printer", "scanner"]},
+                        },
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    visible = validate_form_submission(
+        pack,
+        form_key="hardware",
+        raw_values={"asset_type": "scanner", "inventory_number": "INV-17"},
+    )
+    hidden = validate_form_submission(
+        pack,
+        form_key="hardware",
+        raw_values={"asset_type": "pc", "inventory_number": "INV-88"},
+    )
+
+    assert visible["submitted_values"]["inventory_number"] == "INV-17"
+    assert [item["key"] for item in visible["summary_rows"]] == ["asset_type", "inventory_number"]
+    assert "inventory_number" not in hidden["submitted_values"]
+    assert [item["key"] for item in hidden["summary_rows"]] == ["asset_type"]

@@ -61,6 +61,13 @@ type RoutingDraft = {
   condition_json_text: string;
 };
 
+type RoutingConditionBuilder = {
+  field: string;
+  op: string;
+  value_text: string;
+  null_state: "true" | "false";
+};
+
 type PolicyDraft = {
   name: string;
   timezone: string;
@@ -171,7 +178,90 @@ function buildRoutingDraft(rule: RoutingRuleItem | null, fallbackQueueId: number
     enabled: rule?.enabled ?? true,
     priority_order: rule?.priority_order ?? 100,
     target_queue_id: rule?.target_queue_id ?? fallbackQueueId ?? 0,
-    condition_json_text: prettyJson(rule?.condition_json ?? { request_kind: "access" }),
+    condition_json_text: prettyJson(rule?.condition_json ?? { field: "request_kind", op: "eq", value: "access" }),
+  };
+}
+
+
+function isLeafRoutingCondition(value: Record<string, unknown> | null): value is {
+  field: string;
+  op: string;
+  value: unknown;
+} {
+  return Boolean(
+    value &&
+      typeof value.field === "string" &&
+      typeof value.op === "string" &&
+      Object.prototype.hasOwnProperty.call(value, "value")
+  );
+}
+
+
+function buildRoutingConditionBuilder(
+  condition: Record<string, unknown> | null | undefined,
+  fallbackField: string
+): RoutingConditionBuilder {
+  if (!isLeafRoutingCondition(condition)) {
+    return {
+      field: fallbackField,
+      op: "eq",
+      value_text: "",
+      null_state: "true",
+    };
+  }
+  const op = condition.op;
+  if (op === "in" || op === "nin") {
+    return {
+      field: condition.field,
+      op,
+      value_text: Array.isArray(condition.value) ? condition.value.map((item) => String(item ?? "")).join(", ") : "",
+      null_state: "true",
+    };
+  }
+  if (op === "is_null") {
+    return {
+      field: condition.field,
+      op,
+      value_text: "",
+      null_state: condition.value === false ? "false" : "true",
+    };
+  }
+  return {
+    field: condition.field,
+    op,
+    value_text: condition.value == null ? "" : String(condition.value),
+    null_state: "true",
+  };
+}
+
+
+function buildRoutingConditionJson(builder: RoutingConditionBuilder): Record<string, unknown> {
+  const field = builder.field.trim();
+  const op = builder.op.trim() || "eq";
+  if (!field) {
+    return {};
+  }
+  if (op === "in" || op === "nin") {
+    return {
+      field,
+      op,
+      value: builder.value_text
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    };
+  }
+  if (op === "is_null") {
+    return {
+      field,
+      op,
+      value: builder.null_state === "true",
+    };
+  }
+  return {
+    field,
+    op,
+    value: builder.value_text.trim(),
   };
 }
 
@@ -286,13 +376,22 @@ export function SettingsPage() {
   const [selectedResolutionCode, setSelectedResolutionCode] = useState<string | null>(null);
 
   const selectedQueue = payload?.queues.find((item) => item.id === selectedQueueId) ?? payload?.queues[0] ?? null;
-  const selectedRule = payload?.routing_rules.find((item) => item.id === selectedRuleId) ?? payload?.routing_rules[0] ?? null;
+  const selectedRule =
+    selectedRuleId === -1
+      ? null
+      : payload?.routing_rules.find((item) => item.id === selectedRuleId) ?? null;
   const selectedPolicy = payload?.sla_policies.find((item) => item.id === selectedPolicyId) ?? payload?.sla_policies[0] ?? null;
   const selectedCalendar = payload?.calendars.find((item) => item.id === selectedCalendarId) ?? payload?.calendars[0] ?? null;
   const selectedResolution = payload?.resolution_codes.find((item) => item.code === selectedResolutionCode) ?? payload?.resolution_codes[0] ?? null;
 
   const [queueDraft, setQueueDraft] = useState<QueueDraft>(buildQueueDraft(null));
   const [routingDraft, setRoutingDraft] = useState<RoutingDraft>(buildRoutingDraft(null, null));
+  const [routingConditionBuilder, setRoutingConditionBuilder] = useState<RoutingConditionBuilder>({
+    field: "request_kind",
+    op: "eq",
+    value_text: "access",
+    null_state: "true",
+  });
   const [policyDraft, setPolicyDraft] = useState<PolicyDraft>(buildPolicyDraft(null));
   const [calendarDraft, setCalendarDraft] = useState<CalendarDraft>(buildCalendarDraft(null));
   const [resolutionDraft, setResolutionDraft] = useState<ResolutionDraft>(buildResolutionDraft(null));
@@ -317,7 +416,11 @@ export function SettingsPage() {
       setSelectedRuleId(null);
       return;
     }
-    if (!selectedRuleId || !payload.routing_rules.some((item) => item.id === selectedRuleId)) {
+    if (selectedRuleId == null) {
+      setSelectedRuleId(payload.routing_rules[0].id);
+      return;
+    }
+    if (selectedRuleId !== -1 && !payload.routing_rules.some((item) => item.id === selectedRuleId)) {
       setSelectedRuleId(payload.routing_rules[0].id);
     }
   }, [payload?.routing_rules, selectedRuleId]);
@@ -359,7 +462,13 @@ export function SettingsPage() {
 
   useEffect(() => {
     setRoutingDraft(buildRoutingDraft(selectedRule, payload?.queues[0]?.id ?? null));
-  }, [payload?.queues, selectedRule]);
+    setRoutingConditionBuilder(
+      buildRoutingConditionBuilder(
+        (selectedRule?.condition_json as Record<string, unknown> | null | undefined) ?? null,
+        payload?.routing_builder.fields[0]?.field ?? "request_kind"
+      )
+    );
+  }, [payload?.queues, payload?.routing_builder.fields, selectedRule]);
 
   useEffect(() => {
     setPolicyDraft(buildPolicyDraft(selectedPolicy));
@@ -940,15 +1049,21 @@ export function SettingsPage() {
                   <CardTitle>Правила маршрутизации</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button
-                    disabled={!canWrite}
-                    leadingIcon={<Plus className="h-4 w-4" />}
-                    onClick={() => {
-                      setSelectedRuleId(null);
-                      setRoutingDraft(buildRoutingDraft(null, payload.queues[0]?.id ?? null));
-                    }}
-                    variant="secondary"
-                  >
+                    <Button
+                      disabled={!canWrite}
+                      leadingIcon={<Plus className="h-4 w-4" />}
+                      onClick={() => {
+                        setSelectedRuleId(-1);
+                        setRoutingDraft(buildRoutingDraft(null, payload.queues[0]?.id ?? null));
+                        setRoutingConditionBuilder(
+                          buildRoutingConditionBuilder(
+                            { field: payload.routing_builder.fields[0]?.field ?? "request_kind", op: "eq", value: "" },
+                            payload.routing_builder.fields[0]?.field ?? "request_kind"
+                          )
+                        );
+                      }}
+                      variant="secondary"
+                    >
                     Новое правило
                   </Button>
                   {payload.routing_rules.map((rule) => (
@@ -973,7 +1088,11 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>{selectedRule ? `Rule #${selectedRule.id}` : "Новое правило"}</CardTitle>
-                  <CardDescription>Функционально повторяем старый routing builder, но редактируем JSON-condition прямо в новом интерфейсе.</CardDescription>
+                  <CardDescription>
+                    Роутинг теперь понимает `ticket_type`, `request_kind`, `custom_fields.request_kind` и поля вида
+                    `request_form_data.*`. Ниже можно собрать leaf-условие из текущего каталога форм и при необходимости
+                    доработать JSON вручную.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
                   <div className="grid gap-4 md:grid-cols-3">
@@ -1006,10 +1125,145 @@ export function SettingsPage() {
                     </label>
                   </div>
 
+                  <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">Form-aware builder</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Поля из текущих intake-форм уже подгружены в настройки. Собранное условие можно одной кнопкой
+                          подставить в JSON.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          setRoutingDraft((current) => ({
+                            ...current,
+                            condition_json_text: prettyJson(buildRoutingConditionJson(routingConditionBuilder)),
+                          }));
+                        }}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Подставить в JSON
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <SettingsField label="Поле">
+                        <Select
+                          onChange={(event) =>
+                            setRoutingConditionBuilder((current) => ({ ...current, field: event.target.value }))
+                          }
+                          value={routingConditionBuilder.field}
+                        >
+                          {payload.routing_builder.fields.map((item) => (
+                            <option key={`${item.field}-${item.form_key ?? "base"}`} value={item.field}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </SettingsField>
+                      <SettingsField label="Оператор">
+                        <Select
+                          onChange={(event) =>
+                            setRoutingConditionBuilder((current) => ({
+                              ...current,
+                              op: event.target.value,
+                            }))
+                          }
+                          value={routingConditionBuilder.op}
+                        >
+                          {payload.routing_builder.operators.map((item) => (
+                            <option key={item.value} value={item.value}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </SettingsField>
+                      {routingConditionBuilder.op === "is_null" ? (
+                        <SettingsField label="Значение">
+                          <Select
+                            onChange={(event) =>
+                              setRoutingConditionBuilder((current) => ({
+                                ...current,
+                                null_state: event.target.value as "true" | "false",
+                              }))
+                            }
+                            value={routingConditionBuilder.null_state}
+                          >
+                            <option value="true">Пусто</option>
+                            <option value="false">Не пусто</option>
+                          </Select>
+                        </SettingsField>
+                      ) : (
+                        <SettingsField
+                          label={routingConditionBuilder.op === "in" || routingConditionBuilder.op === "nin" ? "Значение (через запятую)" : "Значение"}
+                        >
+                          <Input
+                            onChange={(event) =>
+                              setRoutingConditionBuilder((current) => ({
+                                ...current,
+                                value_text: event.target.value,
+                              }))
+                            }
+                            placeholder={
+                              routingConditionBuilder.op === "in" || routingConditionBuilder.op === "nin"
+                                ? "214, 215"
+                                : "access"
+                            }
+                            value={routingConditionBuilder.value_text}
+                          />
+                        </SettingsField>
+                      )}
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-brand-700">Текущие формы каталога</p>
+                      {payload.routing_builder.forms.length === 0 ? (
+                        <div className="rounded-[1rem] border border-dashed border-border bg-white px-4 py-4 text-sm text-slate-500">
+                          Формы пока не опубликованы.
+                        </div>
+                      ) : (
+                        payload.routing_builder.forms.map((form) => (
+                          <div key={form.key} className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="font-medium text-slate-900">{form.title}</p>
+                                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{form.request_kind}</p>
+                              </div>
+                              <Badge tone="neutral">{form.fields.length} полей</Badge>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                              {form.fields.map((field) => (
+                                <code key={field.field} className="rounded-pill bg-surface-subtle px-3 py-1 text-[11px]">
+                                  {field.field}
+                                </code>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
                   <SettingsField label="Condition JSON">
                     <textarea
                       className="field-base min-h-[220px] w-full resize-y px-4 py-4 text-sm"
-                      onChange={(event) => setRoutingDraft((current) => ({ ...current, condition_json_text: event.target.value }))}
+                      onChange={(event) => {
+                        const nextText = event.target.value;
+                        setRoutingDraft((current) => ({ ...current, condition_json_text: nextText }));
+                        try {
+                          const parsed = JSON.parse(nextText) as Record<string, unknown>;
+                          setRoutingConditionBuilder(
+                            buildRoutingConditionBuilder(
+                              parsed,
+                              payload.routing_builder.fields[0]?.field ?? "request_kind"
+                            )
+                          );
+                        } catch {
+                          // Keep helper state as-is while user edits raw JSON.
+                        }
+                      }}
                       value={routingDraft.condition_json_text}
                     />
                   </SettingsField>

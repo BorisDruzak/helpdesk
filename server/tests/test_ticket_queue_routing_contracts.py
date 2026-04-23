@@ -204,6 +204,99 @@ async def test_create_ticket_routes_by_requester_profile_field(test_client, test
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_routes_by_request_kind_from_form_submission(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        fallback_queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1")
+        access_queue = await _seed_queue(session, code="access", name="Access Queue")
+        session.add(
+            TicketRoutingRule(
+                enabled=True,
+                priority_order=10,
+                condition_json={"field": "request_kind", "op": "eq", "value": "access"},
+                target_queue_id=access_queue.id,
+            )
+        )
+        fallback_queue_id = fallback_queue.id
+        access_queue_id = access_queue.id
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Access request",
+            "description": "Need account access",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": "access",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "system_name": "ERP",
+                "role_name": "accountant",
+            },
+            "ticket_type": "access",
+        },
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket is not None
+        assert ticket.queue_id == access_queue_id
+        assert ticket.queue_id != fallback_queue_id
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_routes_by_request_form_data_field(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        fallback_queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1")
+        printer_room_queue = await _seed_queue(session, code="printer_214", name="Printer 214")
+        session.add(
+            TicketRoutingRule(
+                enabled=True,
+                priority_order=5,
+                condition_json={"field": "request_form_data.room", "op": "eq", "value": "214"},
+                target_queue_id=printer_room_queue.id,
+            )
+        )
+        fallback_queue_id = fallback_queue.id
+        printer_room_queue_id = printer_room_queue.id
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Printer issue",
+            "description": "Paper jam on floor 2",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Nina",
+            "form_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "printer_model": "HP LaserJet",
+            },
+            "ticket_type": "printer",
+        },
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket is not None
+        assert ticket.queue_id == printer_room_queue_id
+        assert ticket.queue_id != fallback_queue_id
+        assert (ticket.custom_fields or {}).get("request_form_data", {}).get("room") == "214"
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_applies_sla_and_ola_configuration(test_client, test_engine, monkeypatch):
     session_maker = async_sessionmaker(test_engine)
     import config as server_config

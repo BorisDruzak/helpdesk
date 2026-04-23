@@ -1,5 +1,28 @@
 # PLANS.md
 
+## 2026-04-23 Form-aware routing and smart forms follow-up
+
+- Scope:
+  - добавить form-aware routing для `ticket_type`, `custom_fields.request_kind` и `request_form_data.<field>`;
+  - расширить typed `/app/settings`, чтобы UI подгружал текущий каталог форм и помогал собирать routing-условия по form-aware полям;
+  - добавить preview маршрута в `/app/admin/forms`: форма + пример значений -> matched rule / queue;
+  - показать `request_form_summary` в `/app/support` отдельным блоком `Данные формы`;
+  - усилить integrity form builder: валидация `visible_when.field`, очистка зависимостей при rename/delete, автотесты на `equals` и `in`;
+  - перевести labels в reports на текущий каталог форм вместо хардкода;
+  - пройти локальные автотесты, затем живую browser-проверку на canonical URL.
+- Delivery order:
+  1. failing tests для routing/forms/support/reports/settings contracts;
+  2. backend changes: routing context, preview endpoint, integrity validation, reports labels, support payload;
+  3. webapp changes: settings routing helper UI, forms preview UI, support form-summary block;
+  4. docs sync (`docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md`, профильные docs);
+  5. verification: targeted pytest/vitest/build + live browser signoff.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` for `server/tests/test_ticket_queue_routing_contracts.py`, `server/tests/test_ticket_form_packs.py`, `server/tests/test_web_admin_api.py`, `server/tests/test_web_support_api.py`, `server/tests/test_web_reports_api.py`, `server/tests/test_web_settings_api.py`
+  - targeted `vitest` for forms/settings/support slices
+  - `pnpm --dir webapp run build`
+  - live browser verification on `http://192.168.100.17:8666/admin` / `/app/settings` / `/app/admin/forms` / `/app/support`
+
 ## 2026-04-22 Agent update stability hardening for test rollouts
 
 - Scope:

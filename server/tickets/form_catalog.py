@@ -14,6 +14,47 @@ DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "radio", "checkbox"}
 OPTION_FIELD_TYPES = {"select", "radio"}
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
+_REQUEST_KIND_FALLBACK_LABELS = {
+    "request": "Запрос",
+    "incident": "Инцидент",
+}
+_ROUTING_BASE_FIELDS = (
+    {"field": "ticket_type", "label": "Тип тикета", "source": "ticket"},
+    {"field": "request_kind", "label": "request_kind формы", "source": "ticket"},
+    {"field": "custom_fields.request_kind", "label": "custom_fields.request_kind", "source": "ticket"},
+    {"field": "request_form_key", "label": "Ключ формы", "source": "ticket"},
+    {"field": "request_form_title", "label": "Название формы", "source": "ticket"},
+    {"field": "priority", "label": "Приоритет", "source": "ticket"},
+    {"field": "priority_class", "label": "Класс приоритета", "source": "ticket"},
+    {"field": "status", "label": "Статус", "source": "ticket"},
+    {"field": "requester_id", "label": "ID инициатора", "source": "ticket"},
+    {"field": "requester_display_name", "label": "Имя инициатора", "source": "ticket"},
+    {"field": "building", "label": "Корпус инициатора", "source": "requester_profile"},
+    {"field": "room", "label": "Кабинет инициатора", "source": "requester_profile"},
+    {"field": "phone", "label": "Телефон инициатора", "source": "requester_profile"},
+    {"field": "requester_profile.building", "label": "requester_profile.building", "source": "requester_profile"},
+    {"field": "requester_profile.room", "label": "requester_profile.room", "source": "requester_profile"},
+    {"field": "requester_profile.phone", "label": "requester_profile.phone", "source": "requester_profile"},
+    {"field": "location", "label": "Локация устройства", "source": "device"},
+    {"field": "device_type", "label": "Тип устройства", "source": "device"},
+    {"field": "device_metadata.location", "label": "device_metadata.location", "source": "device"},
+    {"field": "device_metadata.device_type", "label": "device_metadata.device_type", "source": "device"},
+    {"field": "queue_id", "label": "Текущая очередь", "source": "ticket"},
+    {"field": "category_id", "label": "Категория", "source": "ticket"},
+    {"field": "service_id", "label": "Сервис", "source": "ticket"},
+    {"field": "subcategory_id", "label": "Подкатегория", "source": "ticket"},
+    {"field": "assignee_id", "label": "Ответственный", "source": "ticket"},
+    {"field": "is_public_ticket", "label": "Публичный тикет", "source": "ticket"},
+    {"field": "public_ticket_unbound", "label": "Публичный без привязки", "source": "ticket"},
+)
+_ROUTING_OPERATOR_OPTIONS = (
+    {"value": "eq", "label": "Равно"},
+    {"value": "ne", "label": "Не равно"},
+    {"value": "in", "label": "В списке"},
+    {"value": "nin", "label": "Не в списке"},
+    {"value": "contains", "label": "Содержит"},
+    {"value": "is_null", "label": "Пусто / не пусто"},
+)
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -291,6 +332,17 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                 }
             )
 
+        for normalized_field in normalized_fields:
+            visible_when = normalized_field.get("visible_when")
+            if not isinstance(visible_when, dict):
+                continue
+            dependency_key = str(visible_when.get("field") or "").strip()
+            if dependency_key and dependency_key not in seen_fields:
+                raise ValueError(
+                    f"form {form_key!r} field {normalized_field['key']!r} "
+                    f"references unknown visible_when.field {dependency_key!r}"
+                )
+
         normalized_forms.append(
             {
                 "key": form_key,
@@ -416,6 +468,88 @@ def build_form_custom_fields(validated_submission: dict[str, Any]) -> dict[str, 
         "request_form_title": validated_submission.get("form_title"),
         "request_form_data": deepcopy(validated_submission.get("submitted_values") or {}),
         "request_form_summary": deepcopy(validated_submission.get("summary_rows") or []),
+    }
+
+
+def build_request_kind_title_map(pack: dict[str, Any]) -> dict[str, str]:
+    labels = dict(_REQUEST_KIND_FALLBACK_LABELS)
+    for form in pack.get("forms") or []:
+        if not isinstance(form, dict):
+            continue
+        request_kind = str(form.get("request_kind") or form.get("key") or "").strip().lower()
+        title = str(form.get("title") or "").strip()
+        if request_kind and title:
+            labels[request_kind] = title
+    return labels
+
+
+def humanize_request_kind(value: str | None, *, label_map: Optional[dict[str, str]] = None) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "Прочее"
+    labels = label_map or _REQUEST_KIND_FALLBACK_LABELS
+    if normalized in labels:
+        return labels[normalized]
+    readable = normalized.replace("_", " ").strip()
+    if not readable:
+        return "Прочее"
+    return readable[0].upper() + readable[1:]
+
+
+def build_routing_builder_catalog(pack: dict[str, Any]) -> dict[str, Any]:
+    fields: list[dict[str, Any]] = [dict(item) for item in _ROUTING_BASE_FIELDS]
+    forms: list[dict[str, Any]] = []
+    flat_field_map = {item["field"]: item for item in fields}
+
+    for form in pack.get("forms") or []:
+        if not isinstance(form, dict):
+            continue
+        form_key = str(form.get("key") or "").strip()
+        request_kind = str(form.get("request_kind") or form_key).strip()
+        form_title = str(form.get("title") or form_key or "Форма").strip() or "Форма"
+        form_fields: list[dict[str, Any]] = []
+        for field in form.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            field_key = str(field.get("key") or "").strip()
+            if not field_key:
+                continue
+            label = str(field.get("label") or field_key).strip() or field_key
+            field_type = str(field.get("type") or "text").strip().lower() or "text"
+            route_field = f"request_form_data.{field_key}"
+            form_fields.append(
+                {
+                    "key": field_key,
+                    "label": label,
+                    "field": route_field,
+                    "type": field_type,
+                }
+            )
+            flat_field_map.setdefault(
+                route_field,
+                {
+                    "field": route_field,
+                    "label": f"{form_title} → {label}",
+                    "source": "form",
+                    "form_key": form_key or None,
+                    "form_title": form_title,
+                    "field_type": field_type,
+                },
+            )
+
+        forms.append(
+            {
+                "key": form_key,
+                "request_kind": request_kind,
+                "title": form_title,
+                "fields": form_fields,
+            }
+        )
+
+    return {
+        "fields": list(flat_field_map.values()),
+        "forms": forms,
+        "operators": [dict(item) for item in _ROUTING_OPERATOR_OPTIONS],
     }
 
 

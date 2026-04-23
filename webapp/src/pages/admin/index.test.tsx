@@ -410,6 +410,7 @@ function cloneFormsCatalogPayload(state: FormsState) {
     capabilities: {
       current_endpoint: "/api/web/admin/forms/current",
       save_endpoint: "/api/web/admin/forms/save",
+      preview_endpoint: "/api/web/admin/forms/route-preview",
       field_type_options: [
         { value: "text", label: "Текст" },
         { value: "textarea", label: "Большой текст" },

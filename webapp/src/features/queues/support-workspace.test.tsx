@@ -829,6 +829,15 @@ describe("SupportWorkspace", () => {
           { actor_id: "support-1", role_in_queue: null }
         ]
       },
+      request_form: {
+        request_kind: "printer",
+        form_key: "printer",
+        form_title: "Принтер",
+        rows: [
+          { key: "room", label: "Кабинет", value: "214" },
+          { key: "printer_model", label: "Модель", value: "HP LaserJet" }
+        ]
+      },
       observer: {
         ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
         summary: {
@@ -1034,6 +1043,9 @@ describe("SupportWorkspace", () => {
     expect(await screen.findByText("Пользователь пишет, что ошибка повторяется.")).toBeInTheDocument();
     expect(screen.getByText("network.diagnostics")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Взять в работу" })).toBeInTheDocument();
+    expect(screen.getByText("Данные формы")).toBeInTheDocument();
+    expect(screen.getByText("Принтер")).toBeInTheDocument();
+    expect(screen.getByText("HP LaserJet")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Ответ оператору"), {
       target: { value: "Начал диагностику и проверку канала." }
@@ -1191,6 +1203,7 @@ describe("SupportWorkspace", () => {
         created_at: "2026-04-20T07:55:00+05:00",
         queue_members: []
       },
+      request_form: null,
       observer: {
         ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
         summary: {

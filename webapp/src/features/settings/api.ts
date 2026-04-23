@@ -13,6 +13,31 @@ export type WebSettingsPayload = {
     resolution_codes_count: number;
     audit_records_count: number;
   };
+  routing_builder: {
+    operators: Array<{
+      value: string;
+      label: string;
+    }>;
+    fields: Array<{
+      field: string;
+      label: string;
+      source: string;
+      form_key: string | null;
+      form_title: string | null;
+      field_type: string | null;
+    }>;
+    forms: Array<{
+      key: string;
+      request_kind: string;
+      title: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        field: string;
+        type: string;
+      }>;
+    }>;
+  };
   queues: Array<{
     id: number;
     code: string;

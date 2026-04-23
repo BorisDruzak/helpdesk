@@ -6,7 +6,7 @@
 
 - Legacy shell: вкладка `Конструктор форм` в `/admin`, файлы `server/admin_ticket_forms_builder.html` и `server/admin_ticket_forms_builder.js`.
 - Новый typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
-- Новый typed boundary для React-панели: `GET /api/web/admin/forms/current` и `POST /api/web/admin/forms/save`.
+- Новый typed boundary для React-панели: `GET /api/web/admin/forms/current`, `POST /api/web/admin/forms/save` и `POST /api/web/admin/forms/route-preview`.
 - Доменный pack-registry остаётся общим: `GET /api/ticket_forms/current`, `GET /public_api/ticket_forms/current`, `POST /api/ticket_forms/packs/save`, `PATCH /api/ticket_forms/packs/{pack_key}/{version}/preferred`.
 
 ## Зачем нужен конструктор
@@ -15,7 +15,10 @@
 
 - пользователь на странице `/help`;
 - локальный агент при создании заявки;
-- сервер при валидации `form_key`, `form_payload` и `ticket_type`.
+- сервер при валидации `form_key`, `form_payload` и `ticket_type`;
+- настройки маршрутизации в `/app/settings`, которые получают typed catalog текущих форм и могут строить правила по `request_form_data.<field>`;
+- support workspace `/app/support`, который показывает нормализованную сводку ответов в блоке `Данные формы`;
+- отчёты, которые подписывают `request_kind` по текущему preferred form pack.
 
 Цель конструктора: собирать понятные формы без ручного редактирования JSON и без лишних технических решений в обычном операторском сценарии.
 
@@ -94,6 +97,18 @@
 - `help_text`;
 - `visible_when`;
 - raw JSON preview.
+
+## Маршрутизация и preview
+
+- Конструктор форм теперь напрямую связан с routing builder: `GET /api/web/settings` возвращает `routing_builder` catalog, собранный из текущего preferred pack, поэтому правила маршрутизации можно настраивать по базовым полям тикета и по `request_form_data.<field>` без ручного угадывания ключей.
+- Preview маршрута вызывается через `POST /api/web/admin/forms/route-preview`: React-панель отправляет текущий draft формы и примерные значения, а сервер отвечает, какая очередь и какое правило совпадут, либо что сработал fallback.
+- Runtime routing использует тот же form-aware context, что и preview: `ticket_type`, `request_kind`, `custom_fields`, `request_form_data`, `request_form_key`, `request_form_title`, `request_form_summary`.
+
+## Integrity rules для зависимых полей
+
+- `visible_when.field` должен ссылаться на реально существующее поле внутри той же формы; серверная валидация отклоняет пакеты с битой ссылкой ещё до публикации.
+- При rename/delete поля React builder должен автоматически обновлять или очищать связанные `visible_when.field`, чтобы администратор не оставил невидимое навсегда поле.
+- Visibility rules поддерживают как `equals`, так и `in`; это покрыто серверными тестами и должно оставаться совместимым для `/help`, локального агента и preview маршрута.
 
 ## Правила ключей
 

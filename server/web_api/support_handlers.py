@@ -58,6 +58,8 @@ from web_api.dto.support import (
     SupportTicketPresence,
     SupportTicketQueueInfo,
     SupportTicketQueueMember,
+    SupportTicketRequestFormPayload,
+    SupportTicketRequestFormRow,
     SupportTicketReplyTo,
     SupportTicketSnapshot,
     SupportTicketToolsPayload,
@@ -209,6 +211,34 @@ def _build_support_status_actions(ticket_status: str | None, *, is_staff: bool) 
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
+    )
+
+
+def _build_support_request_form_payload(ticket_data: dict) -> SupportTicketRequestFormPayload | None:
+    custom_fields = ticket_data.get("custom_fields")
+    if not isinstance(custom_fields, dict):
+        return None
+    raw_rows = custom_fields.get("request_form_summary")
+    rows_source = raw_rows if isinstance(raw_rows, list) else []
+    rows = [
+        SupportTicketRequestFormRow(
+            key=str(row.get("key") or ""),
+            label=str(row.get("label") or row.get("key") or ""),
+            value=str(row.get("value") or ""),
+        )
+        for row in rows_source
+        if isinstance(row, dict) and str(row.get("label") or row.get("key") or "").strip()
+    ]
+    request_kind = str(custom_fields.get("request_kind") or "").strip() or None
+    form_key = str(custom_fields.get("request_form_key") or "").strip() or None
+    form_title = str(custom_fields.get("request_form_title") or "").strip() or None
+    if not rows and not request_kind and not form_key and not form_title:
+        return None
+    return SupportTicketRequestFormPayload(
+        request_kind=request_kind,
+        form_key=form_key,
+        form_title=form_title,
+        rows=rows,
     )
 
 
@@ -528,6 +558,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         ticket_data.get("status"),
         is_staff=auth_context.actor_role in {"admin", "support"},
     )
+    request_form = _build_support_request_form_payload(ticket_data)
 
     return SupportTicketDetailPayload(
         ticket=SupportTicketDetail(
@@ -556,6 +587,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
                 if member.get("actor_id")
             ],
         ),
+        request_form=request_form,
         observer=SupportTicketObserverPayload(
             ticket_summary_endpoint=f"/api/tickets/{ticket.ticket_id}/observer",
             summary=SupportTicketObserverSummary.model_validate(observer_data.get("summary", {})),

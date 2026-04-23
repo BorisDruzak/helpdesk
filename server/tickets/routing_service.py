@@ -23,32 +23,63 @@ ROUTING_LOCK_REASON_KEY = "routing_lock_reason"
 ROUTING_LOCK_AT_KEY = "routing_lock_at"
 
 
-def _get_ticket_context(ticket: Ticket, device_metadata: Optional[dict]) -> Dict[str, Any]:
-    """Контекст тикета для правил: поля тикета + devices.metadata (location, device_type и т.д.)."""
-    requester_profile = get_requester_profile(ticket)
-    requester_display_name = get_requester_display_name(ticket)
-    is_public_ticket = str(getattr(ticket, "requester_id", "") or "").startswith("public:")
+def _build_context(
+    *,
+    ticket_id: str | None,
+    device_id: str | None,
+    title: str | None,
+    description: str | None,
+    status: str | None,
+    priority: str | None,
+    priority_class: str | None,
+    impact: Any,
+    urgency: Any,
+    importance: Any,
+    queue_id: Any,
+    category_id: Any,
+    service_id: Any,
+    subcategory_id: Any,
+    assignee_id: str | None,
+    requester_id: str | None,
+    requester_display_name: str | None,
+    requester_profile: Optional[dict],
+    is_public_ticket: bool,
+    public_ticket_unbound: bool,
+    custom_fields: Optional[dict],
+    ticket_type: str | None,
+    device_metadata: Optional[dict],
+) -> Dict[str, Any]:
+    normalized_custom_fields = custom_fields if isinstance(custom_fields, dict) else {}
+    request_form_data = normalized_custom_fields.get("request_form_data")
+    request_form_summary = normalized_custom_fields.get("request_form_summary")
     ctx = {
-        "ticket_id": ticket.ticket_id,
-        "device_id": ticket.device_id,
-        "title": ticket.title,
-        "description": ticket.description,
-        "status": ticket.status,
-        "priority": ticket.priority,
-        "priority_class": extract_priority_class(ticket),
-        "impact": ticket.impact,
-        "urgency": ticket.urgency,
-        "importance": ticket.importance,
-        "queue_id": ticket.queue_id,
-        "category_id": ticket.category_id,
-        "service_id": ticket.service_id,
-        "subcategory_id": ticket.subcategory_id,
-        "assignee_id": ticket.assignee_id,
-        "requester_id": ticket.requester_id,
+        "ticket_id": ticket_id,
+        "device_id": device_id,
+        "title": title,
+        "description": description,
+        "status": status,
+        "priority": priority,
+        "priority_class": priority_class,
+        "impact": impact,
+        "urgency": urgency,
+        "importance": importance,
+        "queue_id": queue_id,
+        "category_id": category_id,
+        "service_id": service_id,
+        "subcategory_id": subcategory_id,
+        "assignee_id": assignee_id,
+        "requester_id": requester_id,
         "requester_display_name": requester_display_name,
-        "requester_profile": requester_profile,
+        "requester_profile": requester_profile or {},
         "is_public_ticket": is_public_ticket,
-        "public_ticket_unbound": is_public_unbound_ticket(ticket),
+        "public_ticket_unbound": public_ticket_unbound,
+        "custom_fields": normalized_custom_fields,
+        "ticket_type": ticket_type,
+        "request_kind": normalized_custom_fields.get("request_kind") or ticket_type,
+        "request_form_key": normalized_custom_fields.get("request_form_key"),
+        "request_form_title": normalized_custom_fields.get("request_form_title"),
+        "request_form_data": request_form_data if isinstance(request_form_data, dict) else {},
+        "request_form_summary": request_form_summary if isinstance(request_form_summary, list) else [],
     }
     if requester_profile:
         ctx["building"] = requester_profile.get("building")
@@ -59,6 +90,82 @@ def _get_ticket_context(ticket: Ticket, device_metadata: Optional[dict]) -> Dict
         ctx["location"] = device_metadata.get("location")
         ctx["device_type"] = device_metadata.get("device_type")
     return ctx
+
+
+def _get_ticket_context(ticket: Ticket, device_metadata: Optional[dict]) -> Dict[str, Any]:
+    """Контекст тикета для правил: поля тикета + devices.metadata (location, device_type и т.д.)."""
+    requester_profile = get_requester_profile(ticket)
+    requester_display_name = get_requester_display_name(ticket)
+    is_public_ticket = str(getattr(ticket, "requester_id", "") or "").startswith("public:")
+    return _build_context(
+        ticket_id=ticket.ticket_id,
+        device_id=ticket.device_id,
+        title=ticket.title,
+        description=ticket.description,
+        status=ticket.status,
+        priority=ticket.priority,
+        priority_class=extract_priority_class(ticket),
+        impact=ticket.impact,
+        urgency=ticket.urgency,
+        importance=ticket.importance,
+        queue_id=ticket.queue_id,
+        category_id=ticket.category_id,
+        service_id=ticket.service_id,
+        subcategory_id=ticket.subcategory_id,
+        assignee_id=ticket.assignee_id,
+        requester_id=ticket.requester_id,
+        requester_display_name=requester_display_name,
+        requester_profile=requester_profile,
+        is_public_ticket=is_public_ticket,
+        public_ticket_unbound=is_public_unbound_ticket(ticket),
+        custom_fields=getattr(ticket, "custom_fields", None),
+        ticket_type=getattr(ticket, "ticket_type", None),
+        device_metadata=device_metadata,
+    )
+
+
+def build_form_routing_context(
+    *,
+    ticket_type: str | None,
+    custom_fields: Optional[dict],
+) -> Dict[str, Any]:
+    return _build_context(
+        ticket_id="preview",
+        device_id=None,
+        title=None,
+        description=None,
+        status="new",
+        priority=None,
+        priority_class=None,
+        impact=None,
+        urgency=None,
+        importance=None,
+        queue_id=None,
+        category_id=None,
+        service_id=None,
+        subcategory_id=None,
+        assignee_id=None,
+        requester_id=None,
+        requester_display_name=None,
+        requester_profile=None,
+        is_public_ticket=False,
+        public_ticket_unbound=False,
+        custom_fields=custom_fields,
+        ticket_type=ticket_type,
+        device_metadata=None,
+    )
+
+
+def _lookup_context_value(context: Dict[str, Any], field_path: str) -> Any:
+    actual: Any = context
+    for part in field_path.split("."):
+        if isinstance(actual, dict):
+            actual = actual.get(part)
+        else:
+            actual = getattr(actual, part, None)
+        if actual is None:
+            break
+    return actual
 
 
 def _evaluate_condition(condition: Optional[dict], context: Dict[str, Any]) -> bool:
@@ -82,26 +189,28 @@ def _evaluate_condition(condition: Optional[dict], context: Dict[str, Any]) -> b
     op = condition.get("op")
     value = condition.get("value")
     if field is None or op is None:
-        return True
-    # Вложенные поля типа device_metadata.location
-    actual = context
-    for part in field.split("."):
-        actual = actual.get(part) if isinstance(actual, dict) else None
-        if actual is None:
-            break
+        return False
+    actual = _lookup_context_value(context, str(field))
     if op == "eq":
         return actual == value
     if op == "ne":
         return actual != value
     if op == "in":
-        return value is not None and actual in value
+        return isinstance(value, list) and actual in value
     if op == "nin":
-        return value is not None and actual not in value
+        return isinstance(value, list) and actual not in value
     if op == "contains":
         return isinstance(actual, str) and value is not None and value in actual
     if op == "is_null":
         return (value is True and actual is None) or (value is False and actual is not None)
     return False
+
+
+def find_matching_routing_rule(rules: List[Any], context: Dict[str, Any]) -> Any | None:
+    for rule in rules:
+        if _evaluate_condition(getattr(rule, "condition_json", None), context):
+            return rule
+    return None
 
 
 def has_routing_lock(custom_fields: Optional[dict]) -> bool:
@@ -165,12 +274,13 @@ class TicketRoutingService:
             device_metadata = await self.get_device_metadata(ticket.device_id)
         context = _get_ticket_context(ticket, device_metadata)
         rules = await self.ticket_repo.get_routing_rules_ordered()
-        for rule in rules:
-            if _evaluate_condition(rule.condition_json, context):
-                logger.debug(
-                    f"[Routing] Rule id={rule.id} matched ticket_id={ticket.ticket_id} -> queue_id={rule.target_queue_id}"
-                )
-                return rule.target_queue_id
+        matched_rule = find_matching_routing_rule(rules, context)
+        if matched_rule is not None:
+            logger.debug(
+                f"[Routing] Rule id={matched_rule.id} matched ticket_id={ticket.ticket_id} "
+                f"-> queue_id={matched_rule.target_queue_id}"
+            )
+            return matched_rule.target_queue_id
         queue = await self.ticket_repo.get_queue_by_code(FALLBACK_QUEUE_CODE)
         if queue:
             logger.debug(f"[Routing] Fallback to {FALLBACK_QUEUE_CODE} queue_id={queue.id}")

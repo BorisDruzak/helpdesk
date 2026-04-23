@@ -62,6 +62,50 @@ class WebSettingsRoutingRuleItem(BaseModel):
     target_queue_name: str | None = None
 
 
+class WebSettingsRoutingBuilderOperatorItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+    label: str
+
+
+class WebSettingsRoutingBuilderFieldItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    label: str
+    source: str
+    form_key: str | None = None
+    form_title: str | None = None
+    field_type: str | None = None
+
+
+class WebSettingsRoutingBuilderFormFieldItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    field: str
+    type: str
+
+
+class WebSettingsRoutingBuilderFormItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    request_kind: str
+    title: str
+    fields: list[WebSettingsRoutingBuilderFormFieldItem] = Field(default_factory=list)
+
+
+class WebSettingsRoutingBuilderPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operators: list[WebSettingsRoutingBuilderOperatorItem] = Field(default_factory=list)
+    fields: list[WebSettingsRoutingBuilderFieldItem] = Field(default_factory=list)
+    forms: list[WebSettingsRoutingBuilderFormItem] = Field(default_factory=list)
+
+
 class WebSettingsSlaTargetItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +180,7 @@ class WebSettingsPayload(BaseModel):
 
     capabilities: WebSettingsCapabilities
     overview: WebSettingsOverview
+    routing_builder: WebSettingsRoutingBuilderPayload
     queues: list[WebSettingsQueueItem] = Field(default_factory=list)
     routing_rules: list[WebSettingsRoutingRuleItem] = Field(default_factory=list)
     sla_policies: list[WebSettingsSlaPolicyItem] = Field(default_factory=list)
