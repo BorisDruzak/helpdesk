@@ -1,5 +1,28 @@
 # PLANS.md
 
+## 2026-04-22 Agent update stability hardening for test rollouts
+
+- Scope:
+  - стабилизировать текущую `launcher -> agent -> server handshake` схему как основной update-контур на период частых тестовых релизов;
+  - убрать реальные риски launcher/apply flow: path traversal, неустойчивый publish, слабую диагностику verify, platform drift между Windows/Linux;
+  - зафиксировать agent-side/GUI update UX, чтобы кнопка обновления не "зависала", а показывала понятное промежуточное состояние, pending update и итоговый статус;
+  - подготовить проверенную Windows release-сборку и прогнать несколько сценариев обновления локально;
+  - синхронно обновить docs/CODEMAP по новому стабильному update flow.
+- Main delivery:
+  1. regression tests for installer safety, publish behavior, and GUI/update-state rendering;
+  2. installer/launcher hardening without changing the core production contract;
+  3. agent + ui_bridge + GUI improvements for pending/scheduled/update-requested states;
+  4. release build via `python pc_agent/build_windows_release_v2.py`;
+  5. repeated verification for apply success, rollback/failure, and repeated update request behavior.
+- Explicit assumption:
+  - для этого цикла не вводим отдельный bootstrap-supervisor migration layer; вместо этого делаем текущий launcher достаточно стабильным, чтобы в период тестирования дальше обновлять в основном сам агент без ручной переустановки.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted `pytest` for `pc_agent/tests/test_self_update_runtime.py`, `pc_agent/tests/test_launcher_portable_main.py`, `pc_agent/tests/test_ui_api_server_shutdown.py`
+  - targeted `pytest` for `server/tests/test_p0_workbench_update_contracts.py`
+  - `python pc_agent/build_windows_release_v2.py --clean`
+  - repeated local canary/update scenario checks against the built release layout
+
 ## 2026-04-22 Webapp real-data cutover for tickets, admin, reports, settings
 
 - Scope:
@@ -543,3 +566,23 @@
   - что упало и с какими симптомами;
   - что не удалось проверить;
   - нужен ли rebuild/update локального агента для продолжения.
+## 2026-04-23 Remote deploy and canary rollout
+
+- Scope:
+  - deploy the verified launcher/agent stabilization wave from the canonical Windows workspace to the Linux stand using only the project release scripts;
+  - start the remote control/server stack, run remote smoke, and confirm the stand serves the admin/update surfaces cleanly;
+  - roll out the prepared Windows agent update bundle to a single local Windows canary device and verify the GUI/update lifecycle end-to-end;
+  - capture any deployment/runtime blockers separately from code-level update issues already fixed in the current WIP.
+- Execution checklist:
+  1. refresh UTF-8 shell and repo status in the local workspace;
+  2. rerun mandatory local verification for the current WIP before any deploy claim;
+  3. determine whether deploy should use the last committed revision or requires a fresh local commit from the current WIP;
+  4. run the canonical remote release flow, including migrations/startup/smoke unless a concrete blocker forces a narrower path;
+  5. execute a single-device update canary from the local Windows PC against the Linux stand;
+  6. verify launcher start, GUI status progression, pending apply, restart/apply, and post-update reconnect;
+  7. leave a precise report with passed checks, blocked checks, and the final remote stack state.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - targeted pytest suites for the update/runtime/server contracts touched in the current WIP
+  - `python scripts/manage_remote_stack.py status|start|smoke ...`
+  - local Windows launcher/GUI smoke against the Linux stand after rollout

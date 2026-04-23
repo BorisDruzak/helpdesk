@@ -320,6 +320,11 @@ class WSAgent:
             "pending_update_operation_id": None,
             "pending_update_received_at": None,
             "pending_update_reason": None,
+            "update_request_state": None,
+            "update_request_version": None,
+            "update_request_operation_id": None,
+            "update_request_requested_at": None,
+            "update_request_reason": None,
             "last_applied_update_version": None,
             "last_applied_update_at": None,
             "last_applied_update_operation_id": None,
@@ -335,6 +340,11 @@ class WSAgent:
             state["pending_update_operation_id"] = pending_payload.get("operation_id")
             state["pending_update_received_at"] = pending_payload.get("received_at")
             state["pending_update_reason"] = pending_payload.get("requested_reason")
+            state["update_request_state"] = "pending_restart"
+            state["update_request_version"] = pending_payload.get("version")
+            state["update_request_operation_id"] = pending_payload.get("operation_id")
+            state["update_request_requested_at"] = pending_payload.get("received_at")
+            state["update_request_reason"] = pending_payload.get("requested_reason")
 
         if isinstance(history_payload, list):
             entries = [item for item in history_payload if isinstance(item, dict)]
@@ -377,6 +387,11 @@ class WSAgent:
             "assigned_rollout": None,
             "update_status_error": None,
             "update_checked_at": self._cached_update_checked_at,
+            "update_request_state": None,
+            "update_request_version": None,
+            "update_request_operation_id": None,
+            "update_request_requested_at": None,
+            "update_request_reason": None,
         }
 
     def _merge_update_status(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -393,6 +408,11 @@ class WSAgent:
                 "assigned_rollout",
                 "update_status_error",
                 "update_checked_at",
+                "update_request_state",
+                "update_request_version",
+                "update_request_operation_id",
+                "update_request_requested_at",
+                "update_request_reason",
             ):
                 if key in payload:
                     merged[key] = payload.get(key)
@@ -401,6 +421,24 @@ class WSAgent:
             if payload.get("release_channel"):
                 merged["release_channel"] = str(payload.get("release_channel"))
         return merged
+
+    @staticmethod
+    def _finalize_update_status(status: Dict[str, Any]) -> Dict[str, Any]:
+        pending_version = str(status.get("pending_update_version") or "").strip()
+        pending_operation_id = str(status.get("pending_update_operation_id") or "").strip()
+        pending_received_at = str(status.get("pending_update_received_at") or "").strip()
+        pending_reason = str(status.get("pending_update_reason") or "").strip()
+        if pending_version:
+            status["update_request_state"] = "pending_restart"
+            status["update_request_version"] = pending_version
+            status["update_request_operation_id"] = pending_operation_id or status.get("update_request_operation_id")
+            status["update_request_requested_at"] = pending_received_at or status.get("update_request_requested_at")
+            status["update_request_reason"] = pending_reason or status.get("update_request_reason")
+
+        request_state = str(status.get("update_request_state") or "").strip().lower()
+        if request_state in {"requesting", "requested", "pending_restart"}:
+            status["update_available"] = False
+        return status
 
     @staticmethod
     def _decode_json_text(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -602,13 +640,34 @@ class WSAgent:
             "logs_dir": str(logs_dir),
             "event_bus_subscribers": self.event_bus.get_subscriber_count() if self.event_bus else 0,
         }
-        status.update(self._read_local_update_state())
         status.update(self._merge_update_status(self._cached_update_status))
-        return status
+        status.update(self._read_local_update_state())
+        return self._finalize_update_status(self._overlay_active_cached_request_state(status))
 
     async def get_runtime_status_async(self) -> Dict[str, Any]:
         status = self.get_runtime_status()
         status.update(await self._fetch_update_status())
+        status.update(self._read_local_update_state())
+        return self._finalize_update_status(self._overlay_active_cached_request_state(status))
+
+    def _overlay_active_cached_request_state(self, status: Dict[str, Any]) -> Dict[str, Any]:
+        cached = self._cached_update_status if isinstance(self._cached_update_status, dict) else None
+        if not cached:
+            return status
+        request_state = str(cached.get("update_request_state") or "").strip().lower()
+        if request_state not in {"requesting", "requested", "pending_restart"}:
+            return status
+        for key in (
+            "update_available",
+            "recommended_reason",
+            "update_request_state",
+            "update_request_version",
+            "update_request_operation_id",
+            "update_request_requested_at",
+            "update_request_reason",
+        ):
+            if key in cached:
+                status[key] = cached.get(key)
         return status
 
     async def trigger_recommended_update(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -708,11 +767,17 @@ class WSAgent:
                     summary="server accepted update request",
                     details={"request_body": request_body, "response": result},
                 )
-                self._cached_update_checked_at = datetime.now(timezone.utc).isoformat()
+                requested_at = datetime.now(timezone.utc).isoformat()
+                self._cached_update_checked_at = requested_at
                 self._cached_update_status = {
                     **recommendation,
                     "update_available": False,
                     "recommended_reason": "update_requested",
+                    "update_request_state": "requested",
+                    "update_request_version": request_body["version"],
+                    "update_request_operation_id": operation_id,
+                    "update_request_requested_at": requested_at,
+                    "update_request_reason": request_body["reason"],
                 }
                 return {
                     "status": "accepted",

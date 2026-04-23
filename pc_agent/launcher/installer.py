@@ -55,7 +55,9 @@ def _safe_join(base: Path, path: str) -> Path:
     """Проверка path traversal: итоговый путь должен быть внутри base."""
     resolved = (base / path).resolve()
     base_resolved = base.resolve()
-    if not str(resolved).startswith(str(base_resolved)):
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
         raise ValueError(f"Path traversal not allowed: {path}")
     return resolved
 
@@ -95,12 +97,16 @@ def extract_artifact(archive_type: str, artifact_path: Path, staging_dir: Path) 
                 if member.isdir():
                     dest.mkdir(parents=True, exist_ok=True)
                 else:
+                    if member.issym() or member.islnk():
+                        raise ValueError(f"Unsupported archive member type: {name}")
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     if member.isfile():
                         with tf.extractfile(member) as src:
                             if src:
                                 with open(dest, "wb") as dst:
                                     dst.write(src.read())
+                                if os.name != "nt":
+                                    os.chmod(dest, member.mode & 0o777)
                     # symlinks etc. можно пропустить или обработать при необходимости
     else:
         raise ValueError(f"Unsupported archive_type: {archive_type}")
@@ -220,12 +226,20 @@ def _cleanup_update_artifacts(updates_dir: Path, artifact_path: Optional[Path]) 
         _prune_paths(list(db_backups_dir.glob("storage.db.*")), keep=DB_BACKUP_RETENTION_LIMIT)
 
 
+def _decode_subprocess_output(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace").strip()
+    return str(raw).strip()
+
+
 def run_verify(
     binary_path: Path,
     data_root: Path,
     install_root: Path,
     timeout_sec: int = 90,
-) -> bool:
+) -> Tuple[bool, str]:
     """
     Запускает агент с --verify. Возвращает True при exit code 0.
     """
@@ -240,11 +254,50 @@ def run_verify(
             timeout=timeout_sec,
             capture_output=True,
         )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-    except Exception:
-        return False
+        stdout_text = _decode_subprocess_output(result.stdout)
+        stderr_text = _decode_subprocess_output(result.stderr)
+        if result.returncode == 0:
+            return True, stdout_text or "verify ok"
+        detail = stderr_text or stdout_text or f"verify exited with code {result.returncode}"
+        return False, detail
+    except subprocess.TimeoutExpired as exc:
+        timed_out_stdout = _decode_subprocess_output(getattr(exc, "stdout", None))
+        timed_out_stderr = _decode_subprocess_output(getattr(exc, "stderr", None))
+        detail = timed_out_stderr or timed_out_stdout or f"verify timed out after {timeout_sec}s"
+        return False, detail
+    except Exception as exc:
+        return False, f"verify launch failed: {exc}"
+
+
+def _publish_staged_version(
+    *,
+    versions_dir: Path,
+    staging_dir: Path,
+    target_version_dir: Path,
+) -> None:
+    backup_dir = versions_dir / "_backup_publish"
+    backup_target: Optional[Path] = None
+    if target_version_dir.exists():
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_target = backup_dir / f"{target_version_dir.name}.{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+        shutil.move(str(target_version_dir), str(backup_target))
+    try:
+        shutil.move(str(staging_dir), str(target_version_dir))
+    except Exception as publish_error:
+        restore_error: Optional[Exception] = None
+        if backup_target and backup_target.exists():
+            try:
+                if target_version_dir.exists():
+                    shutil.rmtree(target_version_dir, ignore_errors=True)
+                shutil.move(str(backup_target), str(target_version_dir))
+            except Exception as exc:
+                restore_error = exc
+        if restore_error is not None:
+            raise RuntimeError(f"{publish_error}; restore failed: {restore_error}") from publish_error
+        raise
+    else:
+        if backup_target and backup_target.exists():
+            shutil.rmtree(backup_target, ignore_errors=True)
 
 
 def apply_update(
@@ -372,20 +425,21 @@ def apply_update(
     except FileNotFoundError as e:
         log(str(e))
         return fail_update("binary_not_found", "Agent binary not found in extracted archive")
-    if not run_verify(binary_path, data_root, install_root):
+    verify_ok, verify_message = run_verify(binary_path, data_root, install_root)
+    if not verify_ok:
         log("Verify failed, rolling back DB")
         # Restore DB from latest backup
         backups = sorted(db_backups_dir.glob("storage.db.*"), key=lambda p: p.stat().st_mtime, reverse=True)
         if backups:
             shutil.copy2(backups[0], data_root / "storage.db")
-        return fail_update("verify_failed", "Verify failed")
+        return fail_update("verify_failed", f"Verify failed: {verify_message}")
     _record_launcher_update_trace(
         data_root=data_root,
         operation_id=operation_id,
         stage="verify",
         status="ok",
         summary="launcher verify succeeded",
-        details={"binary_path": str(binary_path)},
+        details={"binary_path": str(binary_path), "message": verify_message},
     )
     # Publish: move staging -> versions/<version>
     previous = None
@@ -397,9 +451,11 @@ def apply_update(
             previous = None
     try:
         target_version_dir = versions_dir / version
-        if target_version_dir.exists():
-            shutil.rmtree(target_version_dir, ignore_errors=True)
-        shutil.move(str(staging), str(target_version_dir))
+        _publish_staged_version(
+            versions_dir=versions_dir,
+            staging_dir=staging,
+            target_version_dir=target_version_dir,
+        )
         current_path.write_text(
             json.dumps({"version": version, "previous": previous or version}, ensure_ascii=False, indent=2),
             encoding="utf-8",

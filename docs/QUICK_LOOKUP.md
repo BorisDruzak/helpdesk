@@ -8,6 +8,13 @@
 - Local Windows launcher canary flow still goes through `python scripts/manage_local_agent.py start <name> --launcher`, with release artifacts built by `python pc_agent/build_windows_release_v2.py`.
 - Server/control runtime wrappers (`scripts/run_server.py`, `scripts/run_control_plane.py`) now always bootstrap repo-root import visibility for shared packages like `shared.redaction`; when debugging Linux boot failures, treat those wrappers as canonical entrypoints instead of ad-hoc `python server/server.py`.
 
+## 2026-04-22 update hardening
+
+- Current launcher-based update debugging starts from `pc_agent/core/orchestrator.py`, `pc_agent/launcher/installer.py`, `pc_agent/launcher/launcher_main.py`, `pc_agent/ws_agent.py`, and `pc_agent/ui_gui/main_window.py`.
+- Agent-side update scheduling is now single-flight: an existing `updates/pending_update.json` blocks overlapping update requests, while a repeated request with the same `operation_id` is treated as idempotent.
+- Runtime/UI status now surfaces both `pending_update_*` and `update_request_*` through `GET /ui/agent/status`, so the local GUI can show `requesting -> requested -> pending_restart` instead of looking hung after `POST /ui/agent/update`.
+- Launcher publish now uses staging + backup/restore, verify returns diagnostic output, `tar.gz` extraction restores POSIX mode bits and rejects links, and both launcher entrypoints roll back after repeated immediate crash of the newly switched version.
+
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, `server/web_api/admin_handlers.py`, `webapp/src/features/forms-builder/forms-builder-panel.tsx`, and `pc_agent/ui_gui/chat_panel.py`.

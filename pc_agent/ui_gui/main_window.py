@@ -1076,6 +1076,10 @@ class MainWindow(QMainWindow):
             return
         asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=update_panel))
 
+    def _schedule_update_refresh_burst(self) -> None:
+        for delay_ms in (400, 1200, 2500, 5000, 9000):
+            QTimer.singleShot(delay_ms, lambda _delay=delay_ms: self._queue_runtime_status_refresh(update_panel=False))
+
     def _render_update_status(self) -> None:
         snapshot = self._update_status_snapshot or {}
         version = str(snapshot.get("agent_version") or AGENT_VERSION)
@@ -1086,11 +1090,49 @@ class MainWindow(QMainWindow):
         recommendation_source = str(snapshot.get("recommendation_source") or "none").strip()
         assigned_rollout = snapshot.get("assigned_rollout") if isinstance(snapshot.get("assigned_rollout"), dict) else None
         assigned_version = str((assigned_rollout or {}).get("version") or "").strip()
+        pending_version = str(snapshot.get("pending_update_version") or "").strip()
+        request_state = str(snapshot.get("update_request_state") or "").strip().lower()
+        request_version = str(snapshot.get("update_request_version") or pending_version or recommended_version).strip()
+        request_operation_id = str(snapshot.get("update_request_operation_id") or "").strip()
 
         version_text = f"Агент v{version}"
         if not is_release:
             version_text = f"{version_text} • test build"
         self.agent_footer_label.setText(self._repair_text(version_text))
+        button_text = ""
+        button_enabled = False
+        meta_text = "Р РµР»РёР· Р°РєС‚СѓР°Р»РµРЅ" if is_release else "РџРѕРґРєР»СЋС‡С‘РЅ С‚РµСЃС‚РѕРІС‹Р№ Р±РёР»Рґ"
+        if request_state == "pending_restart" and request_version:
+            button_text = f"Р“РѕС‚РѕРІРёРј {request_version}"
+            meta_text = f"РџР°РєРµС‚ {request_version} СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅ, РѕР¶РёРґР°РµС‚СЃСЏ РїРµСЂРµР·Р°РїСѓСЃРє Р°РіРµРЅС‚Р°"
+        elif request_state == "requested" and request_version:
+            button_text = f"Р–РґС‘Рј {request_version}"
+            meta_text = f"РћР¶РёРґР°РµРј РґРѕСЃС‚Р°РІРєСѓ РєРѕРјР°РЅРґС‹ РѕР±РЅРѕРІР»РµРЅРёСЏ РґРѕ {request_version}"
+        elif request_state == "requesting" and request_version:
+            button_text = f"Р—Р°РїСЂР°С€РёРІР°РµРј {request_version}"
+            meta_text = f"РћС‚РїСЂР°РІР»СЏРµРј Р·Р°РїСЂРѕСЃ РЅР° РѕР±РЅРѕРІР»РµРЅРёРµ РґРѕ {request_version}"
+        elif update_available and recommended_version:
+            if comparison == "recommended_release_is_older":
+                button_text = f"РћС‚РєР°С‚РёС‚СЊ РґРѕ {recommended_version}"
+            elif recommendation_source == "assigned_rollout":
+                button_text = f"РџСЂРёРІРµСЃС‚Рё Рє {recommended_version}"
+            else:
+                button_text = f"РћР±РЅРѕРІРёС‚СЊ РґРѕ {recommended_version}"
+            button_enabled = True
+            target_version = assigned_version or recommended_version
+            meta_text = f"Р”РѕСЃС‚СѓРїРЅРѕ РґРµР№СЃС‚РІРёРµ РґР»СЏ РІРµСЂСЃРёРё {target_version or version}"
+
+        if request_operation_id and request_state in {"requested", "pending_restart"}:
+            meta_text = f"{meta_text} (op {request_operation_id})"
+
+        self.update_agent_btn.setText(self._repair_text(button_text))
+        self.update_agent_btn.setEnabled(button_enabled)
+        if button_text:
+            self.update_agent_btn.show()
+        else:
+            self.update_agent_btn.hide()
+        self.agent_footer_meta.setText(self._repair_text(meta_text))
+        return
 
         if update_available and recommended_version:
             if comparison == "recommended_release_is_older":
@@ -1132,6 +1174,15 @@ class MainWindow(QMainWindow):
             "assigned_rollout": runtime.get("assigned_rollout"),
             "update_status_error": runtime.get("update_status_error"),
             "update_checked_at": runtime.get("update_checked_at"),
+            "pending_update_version": runtime.get("pending_update_version"),
+            "pending_update_operation_id": runtime.get("pending_update_operation_id"),
+            "pending_update_received_at": runtime.get("pending_update_received_at"),
+            "pending_update_reason": runtime.get("pending_update_reason"),
+            "update_request_state": runtime.get("update_request_state"),
+            "update_request_version": runtime.get("update_request_version"),
+            "update_request_operation_id": runtime.get("update_request_operation_id"),
+            "update_request_requested_at": runtime.get("update_request_requested_at"),
+            "update_request_reason": runtime.get("update_request_reason"),
         }
         self._render_update_status()
 
@@ -1219,10 +1270,25 @@ class MainWindow(QMainWindow):
 
     async def _async_trigger_update(self) -> None:
         self.update_agent_btn.setEnabled(False)
+        requested_version = str(self._update_status_snapshot.get("recommended_version") or "").strip()
+        if requested_version:
+            self._update_status_snapshot["update_request_state"] = "requesting"
+            self._update_status_snapshot["update_request_version"] = requested_version
+            self._render_update_status()
         try:
             response = await self._async_ui_request("POST", "/ui/agent/update", payload={}, timeout_sec=30)
             if response.get("status") == "accepted":
                 recommended = response.get("recommendation") or {}
+                server_response = response.get("server_response") if isinstance(response.get("server_response"), dict) else {}
+                resolved_version = str(recommended.get("recommended_version") or "").strip()
+                version = resolved_version or "РЅРѕРІРѕР№ РІРµСЂСЃРёРё"
+                if version != "РЅРѕРІРѕР№ РІРµСЂСЃРёРё":
+                    self._update_status_snapshot["update_available"] = False
+                    self._update_status_snapshot["update_request_state"] = "requested"
+                    self._update_status_snapshot["update_request_version"] = version
+                    self._update_status_snapshot["update_request_operation_id"] = server_response.get("operation_id")
+                    self._render_update_status()
+                self._schedule_update_refresh_burst()
                 version = recommended.get("recommended_version") or "новой версии"
                 self._show_nonblocking_message(
                     "Обновление",
@@ -1230,6 +1296,10 @@ class MainWindow(QMainWindow):
                     QMessageBox.Icon.Information,
                 )
             else:
+                self._update_status_snapshot.pop("update_request_state", None)
+                self._update_status_snapshot.pop("update_request_version", None)
+                self._update_status_snapshot.pop("update_request_operation_id", None)
+                self._render_update_status()
                 self._show_nonblocking_message(
                     "Обновление",
                     str(response.get("message") or "Рекомендованное обновление сейчас недоступно."),

@@ -30,6 +30,16 @@
 - Для rollout сначала делать canary на одном устройстве, затем bulk.
 - Для ручного update/restart действия указывать `reason`, чтобы он попал в audit и diagnostics.
 
+### 2.1 2026-04-22 hardening notes
+
+- `pending_update.json` is a single-flight latch. If one update is already pending, a new update command must not overwrite it. The only allowed duplicate is the exact same `operation_id`, which should be treated as idempotent.
+- Downloaded artifacts are stored under unique names derived from version and `operation_id`, not a shared `build.zip` / `build.tar.gz` slot.
+- Agent may report `"scheduled"` only after shutdown-for-update is actually armed. A shutdown scheduling failure must return a failed command result and clean up the just-written pending marker/artifact.
+- Launcher publish must keep the current version recoverable until staging is fully promoted. Safe publish means backup/restore around the final move, not delete-then-move.
+- Installer hardening also includes path-traversal-safe extraction, rejecting archive links, restoring POSIX execute bits for `tar.gz`, and surfacing verify stdout/stderr in failure diagnostics.
+- Crash-loop rollback is required for both launcher entrypoints: `launcher_main.py` and `launcher_portable_main.py` must revert `current.json` to `previous` after repeated immediate startup failures of the newly switched version.
+- GUI update UX should expose the request lifecycle explicitly: `requesting`, `requested`, `pending_restart`, then handshake-confirmed terminal success/failure.
+
 ---
 
 ## 3. Канонический порядок работы

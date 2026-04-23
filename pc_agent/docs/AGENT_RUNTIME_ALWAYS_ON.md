@@ -22,8 +22,8 @@
 
 Локальный `ui_bridge` теперь отдаёт GUI не только connection/runtime diagnostics, но и update-related surface:
 
-- `GET /ui/agent/status` возвращает `agent_version`, `is_release`, `release_channel`, `update_available`, `recommended_version`, `recommended_channel`, `recommended_reason`, `comparison`, `update_checked_at`;
-- `POST /ui/agent/update` запускает локальный trigger recommended update: агент запрашивает server-side recommendation и, если есть кандидат, инициирует обычный server update flow для собственного `device_id`.
+- `GET /ui/agent/status` возвращает `agent_version`, `is_release`, `release_channel`, `update_available`, `recommended_version`, `recommended_channel`, `recommended_reason`, `comparison`, `update_checked_at`, `pending_update_*`, `update_request_state`, `update_request_version`, `update_request_operation_id`, `update_request_requested_at`;
+- `POST /ui/agent/update` запускает локальный trigger recommended update: агент запрашивает server-side recommendation и, если есть кандидат, инициирует обычный server update flow для собственного `device_id`; GUI должен сразу перейти в `requesting/requested`, а затем коротким refresh burst дотянуть `pending_restart`, чтобы кнопка не выглядела зависшей.
 
 Таким образом, GUI не выбирает build самостоятельно и не держит отдельную semver/release policy.
 
@@ -60,6 +60,7 @@
 1. `python scripts/manage_local_agent.py start <name> --gui --ui-port <port>`
 2. Проверить `http://127.0.0.1:<port>/ui/agent/status`
    - убедиться, что в JSON есть release/update поля и они меняются после подключения к серверу;
+   - при запросе update проверить переходы `update_request_state: requesting -> requested -> pending_restart`;
    - при наличии рекомендации проверить локальный `POST /ui/agent/update`;
 3. Программно закрыть окно `Maria Agent`
 4. Убедиться, что процесс жив, а `ui_bridge` всё ещё отвечает

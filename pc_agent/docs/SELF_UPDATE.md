@@ -46,10 +46,11 @@ PC Agent поддерживает удалённое обновление чер
 
 ## Что делает агент (при команде update)
 
-1. Скачивает артефакт в `data_root/updates/downloads/build.<ext>` с проверкой sha256/size.
-2. Пишет `data_root/updates/pending_update.json` (version, target, archive_type, artifact_path, received_at, operation_id, requested_by, requested_reason, sha256, size).
-3. Отправляет command_result со статусом "scheduled".
-4. Через короткую задержку выполняет **clean shutdown** и завершает процесс с **exit code 42** (`EXIT_UPDATE_PENDING`). Агент **не** запускает in-place updater и **не** меняет свои файлы.
+1. Скачивает артефакт в `data_root/updates/downloads/build-<version>-<operation_id>.<ext>` с проверкой sha256/size.
+2. Если `data_root/updates/pending_update.json` уже существует, не перетирает его новым update: exact same `operation_id` считается idempotent retry, любая другая операция должна завершаться ошибкой.
+3. Пишет `data_root/updates/pending_update.json` (version, target, archive_type, artifact_path, received_at, operation_id, requested_by, requested_reason, sha256, size).
+4. Отправляет command_result со статусом "scheduled" только после успешной постановки controlled shutdown-for-update.
+5. Через короткую задержку выполняет **clean shutdown** и завершает процесс с **exit code 42** (`EXIT_UPDATE_PENDING`). Агент **не** запускает in-place updater и **не** меняет свои файлы.
 
 ## Что делает launcher
 
@@ -59,10 +60,10 @@ PC Agent поддерживает удалённое обновление чер
   - иначе — перезапуск с backoff (tray-режим).
 - Если только что переключённая версия несколько раз подряд падает сразу после старта, launcher пишет причину в `launcher.log`, сохраняет `last_failed_launch.json`, добавляет failure entry в `update_history.json` и откатывает `current.json` на `previous`.
 - **Установка обновления** (модуль `launcher/installer.py`):
-  - распаковка архива в `install_root/versions/_staging/<version>/` (защита от path traversal);
+  - распаковка архива в `install_root/versions/_staging/<version>/` (защита от path traversal, запрет archive links, восстановление POSIX mode bits для `tar.gz`);
   - backup `storage.db` в `data_root/updates/db_backups/`;
-  - **verify**: запуск новой версии с `--verify` (таймаут 60–90 с);
-  - при успехе: атомарное переименование staging → `versions/<version>`, обновление `current.json`, запись в `update_history.json`, удаление `pending_update.json`;
+  - **verify**: запуск новой версии с `--verify` (таймаут 60–90 с) c возвратом stdout/stderr в diagnostics при ошибке;
+  - при успехе: safe publish staging → `versions/<version>` через backup/restore существующей версии, затем обновление `current.json`, запись в `update_history.json`, удаление `pending_update.json`;
   - при провале extract / verify / publish: восстановление БД при необходимости, запись ошибки в `update_history`, сохранение `last_failed_pending_update.json`, удаление `pending_update.json` и откат (current.json не меняется).
 
 Важно: failed `pending_update.json` больше не ретраится бесконечно на каждом цикле launcher. После terminal failure требуется новый явный запрос на update с сервера.
@@ -81,7 +82,7 @@ PC Agent поддерживает удалённое обновление чер
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
 - Если update "успешен" по логам агента, но GUI показывает `Сервер: подключение...`, проверьте локальный `ui_bridge`: поздний SSE-подписчик должен сразу получать последнее `connection_state`; см. `pc_agent/ui_bridge/event_bus.py`, `pc_agent/ui_bridge/api_server.py`.
-- Runtime status GUI должен дополнительно показывать: `comparison`, `recommendation_source`, `assigned_rollout`, `pending_update_*`, `last_applied_update_*`, `last_failed_update_*`, чтобы разбирать rollout/update состояние без ручного чтения файлов.
+- Runtime status GUI должен дополнительно показывать: `comparison`, `recommendation_source`, `assigned_rollout`, `pending_update_*`, `update_request_state`, `update_request_version`, `update_request_operation_id`, `last_applied_update_*`, `last_failed_update_*`, чтобы разбирать rollout/update состояние без ручного чтения файлов.
 
 ## Распространение (exe / rpm) и готовность к обновлению
 

@@ -80,7 +80,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="protocol_v3",
         title="Protocol V3 / handshake",
-        summary="WS handshake, reconnect-safe runtime ownership, state-level command waiters, envelope V3, ACK/NACK, optional outbox batching and graceful sender/teardown behavior in server and agent runtimes.",
+        summary="WS handshake, reconnect-safe runtime ownership, state-level command waiters, envelope V3, ACK/NACK, optional outbox batching, command_result semantics and graceful sender/teardown behavior in server and agent runtimes.",
         aliases=(
             "protocol",
             "protocol v3",
@@ -638,7 +638,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, runtime diagnostics/logging and local update request/shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, runtime diagnostics/logging, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
@@ -648,6 +648,8 @@ TOPICS: tuple[Topic, ...] = (
             "agent shutdown",
             "close to tray",
             "trigger recommended update",
+            "update_request_state",
+            "pending_restart",
             "action trace",
         ),
         first_files=(
@@ -795,7 +797,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, typed admin device-update boundary and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",
@@ -808,6 +810,12 @@ TOPICS: tuple[Topic, ...] = (
             "recommended version",
             "update availability",
             "pending_update",
+            "update_request_state",
+            "pending_restart",
+            "requested",
+            "requesting",
+            "truthful scheduled",
+            "last_failed_launch",
             "update_history",
             "agent.update.apply",
             "agent.update.command",
@@ -815,6 +823,8 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
             "pc_agent/docs/SELF_UPDATE.md",
+            "pc_agent/core/orchestrator.py",
+            "pc_agent/launcher/installer.py",
             "server/docs/AGENT_UPDATES_API.md",
             "pc_agent/version.py",
         ),
@@ -839,6 +849,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest pc_agent/tests/ -v --tb=short",
             "python -m pytest server/tests/test_p0_workbench_update_contracts.py -v --tb=short",
             "python pc_agent/build_windows_release_v2.py",
+            "python -m pytest pc_agent/tests/test_self_update_runtime.py pc_agent/tests/test_launcher_main.py pc_agent/tests/test_main_window_update_status.py -v --tb=short",
         ),
         plan_required=True,
         docs_to_update=(
@@ -851,6 +862,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         path_prefixes=("pc_agent/launcher/",),
         exact_paths=(
+            "pc_agent/core/orchestrator.py",
             "pc_agent/ws_agent.py",
             "pc_agent/ui_bridge/api_server.py",
             "pc_agent/ui_gui/main_window.py",

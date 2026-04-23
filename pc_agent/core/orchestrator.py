@@ -1469,8 +1469,50 @@ class AgentOrchestrator:
             updates_dir = data_dir / "updates"
             downloads_dir = updates_dir / "downloads"
             downloads_dir.mkdir(parents=True, exist_ok=True)
+            pending_path = updates_dir / "pending_update.json"
+            if pending_path.exists():
+                existing_pending = {}
+                try:
+                    existing_pending = json.loads(pending_path.read_text(encoding="utf-8"))
+                except Exception:
+                    existing_pending = {}
+                existing_operation_id = str(existing_pending.get("operation_id") or "").strip()
+                existing_version = str(existing_pending.get("version") or "").strip()
+                if existing_operation_id and operation_id and existing_operation_id == operation_id:
+                    observations = {
+                        "message": "already_scheduled",
+                        "requested_version": existing_version or version,
+                        "current_version": AGENT_VERSION,
+                        "pending_operation_id": existing_operation_id,
+                    }
+                    _record_update_trace(
+                        "response",
+                        status="ok",
+                        summary="update was already pending",
+                        details=observations,
+                    )
+                    return ok(data=ToolData(observations=observations), meta=meta)
+                pending_message = (
+                    f"Update {existing_version or 'unknown'} is already pending"
+                    if existing_version
+                    else "Another update is already pending"
+                )
+                _record_update_trace(
+                    "response",
+                    status="error",
+                    summary=pending_message,
+                    details={
+                        "existing_operation_id": existing_operation_id or None,
+                        "existing_version": existing_version or None,
+                    },
+                )
+                return fail(code="UPDATE_FAILED", message=pending_message, meta=meta, retriable=True)
             ext = "zip" if archive_type == "zip" else "tar.gz"
-            artifact_path = downloads_dir / f"build.{ext}"
+            safe_version = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in str(version))
+            safe_operation_id = "".join(
+                ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in str(operation_id or "update")
+            )
+            artifact_path = downloads_dir / f"build-{safe_version}-{safe_operation_id}.{ext}"
 
             dl_sha256, dl_size = await self._download_file_to_path(
                 url=download_url,
@@ -1505,7 +1547,6 @@ class AgentOrchestrator:
                 "sha256": dl_sha256,
                 "size": dl_size,
             }
-            pending_path = updates_dir / "pending_update.json"
             pending_path.write_text(json.dumps(pending_payload, ensure_ascii=False, indent=2), encoding="utf-8")
             _record_update_trace(
                 "pending_written",
@@ -1538,11 +1579,36 @@ class AgentOrchestrator:
                 )
             except Exception as e:
                 logger.warning(f"[update] Failed to schedule exit: {e}")
+                try:
+                    pending_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                try:
+                    artifact_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
                 _record_update_trace(
                     "shutdown_scheduled",
-                    status="warning",
+                    status="error",
                     summary="failed to schedule update shutdown cleanly",
+                    details={
+                        "exception_type": type(e).__name__,
+                        "message": str(e),
+                        "pending_path": str(pending_path),
+                        "artifact_path": str(artifact_path),
+                    },
+                )
+                _record_update_trace(
+                    "response",
+                    status="error",
+                    summary="update shutdown scheduling failed",
                     details={"exception_type": type(e).__name__, "message": str(e)},
+                )
+                return fail(
+                    code="UPDATE_FAILED",
+                    message=f"Failed to schedule update shutdown: {e}",
+                    meta=meta,
+                    retriable=True,
                 )
 
             observations = {
