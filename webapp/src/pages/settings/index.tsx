@@ -183,7 +183,7 @@ function buildRoutingDraft(rule: RoutingRuleItem | null, fallbackQueueId: number
 }
 
 
-function isLeafRoutingCondition(value: Record<string, unknown> | null): value is {
+function isLeafRoutingCondition(value: Record<string, unknown> | null | undefined): value is {
   field: string;
   op: string;
   value: unknown;

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { AdminFormsPayload } from "./api";
 import { FormsBuilderPanel } from "./forms-builder-panel";
 
 
@@ -15,7 +16,7 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 
-function createFormsPayload() {
+function createFormsPayload(): AdminFormsPayload {
   return {
     summary: {
       pack_key: "request_forms",
