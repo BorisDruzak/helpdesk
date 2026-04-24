@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from asyncpg import exceptions as asyncpg_exceptions
+from sqlalchemy.exc import ProgrammingError
 
 from tests import conftest as harness
 
@@ -60,3 +61,14 @@ async def test_terminate_other_test_database_backends_tolerates_missing_admin_pr
     )
 
     run_admin_sql.assert_awaited_once()
+
+
+@pytest.mark.no_db
+def test_is_admin_database_unavailable_unwraps_sqlalchemy_dbapi_errors():
+    exc = ProgrammingError(
+        "SELECT pg_terminate_backend(pid)",
+        {},
+        asyncpg_exceptions.InsufficientPrivilegeError("no privilege"),
+    )
+
+    assert harness._is_admin_database_unavailable(exc) is True

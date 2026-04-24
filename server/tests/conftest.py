@@ -22,6 +22,7 @@ from asyncpg import exceptions as asyncpg_exceptions
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError as SQLAlchemyDBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -266,6 +267,22 @@ def _should_auto_fallback_to_shared_test_db() -> bool:
     )
 
 
+def _iter_exception_causes(exc: Exception):
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        current = stack.pop()
+        ident = id(current)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        yield current
+        for attr in ("orig", "__cause__", "__context__"):
+            nested = getattr(current, attr, None)
+            if isinstance(nested, BaseException):
+                stack.append(nested)
+
+
 def _is_admin_database_unavailable(exc: Exception) -> bool:
     handled_types = (
         ConnectionRefusedError,
@@ -275,6 +292,8 @@ def _is_admin_database_unavailable(exc: Exception) -> bool:
         asyncpg_exceptions.InvalidPasswordError,
         asyncpg_exceptions.PostgresConnectionError,
     )
+    if isinstance(exc, SQLAlchemyDBAPIError):
+        return any(isinstance(nested, handled_types) for nested in _iter_exception_causes(exc))
     return isinstance(exc, handled_types)
 
 
