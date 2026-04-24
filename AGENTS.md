@@ -29,6 +29,7 @@
 ## Контекст и артефакты
 
 - Навигационный индекс: `docs/QUICK_LOOKUP.md`
+- Индекс документации: `docs/README.md`
 - Серверный CODEMAP: `server/docs/CODEMAP.md`
 - Агентский CODEMAP: `pc_agent/docs/CODEMAP.md`
 - Машиночитаемый каталог навигации и drift-правил: `scripts/navigation_catalog.py`
@@ -47,10 +48,10 @@ Observer docs поддерживаются в актуальном состоя�
 
 ## Профильные режимы
 
-- Типовые режимы работы и длинные playbook-и держать в repo-local каталогах `.cursor/rules/` и `.cursor/skills/` (это историческое имя папки, для Codex они тоже считаются каноничными playbook-ами проекта).
+- Типовые режимы работы держать в каноничных документах (`AGENTS.md`, `docs/QUICK_LOOKUP.md`, `docs/LOCAL_WORKFLOW.md`, профильные docs рядом с кодом) и в `scripts/navigation_catalog.py`.
+- Editor-specific rule/skill folders не являются каноном проекта и не должны использоваться как источник правил.
 - Корневой `AGENTS.md` хранит только инварианты проекта, pipeline и safety-правила.
-- Внешние plugin-skills допустимы как вспомогательные process-playbook-и только если они не конфликтуют с этим `AGENTS.md` и repo-local skill-ами проекта.
-- В Codex Desktop repo-local skill из `.cursor/skills/<name>/SKILL.md` считать проектным playbook-ом даже если он не появился в активном списке skills приложения; если есть stale user-level копия в `C:\Users\admin-2\.codex\skills`, приоритет у repo-local версии.
+- Внешние plugin-skills и user-level Codex skills допустимы как вспомогательные process-playbook-и только если они не конфликтуют с этим `AGENTS.md` и проектной документацией.
 - Каноничные внешние skills по умолчанию:
   - `superpowers:systematic-debugging` — для любого бага, падения теста или unexpected behavior: сначала root cause investigation, затем фикс.
   - `superpowers:verification-before-completion` — перед любым claim уровня "готово", "исправлено", "tests pass", а также перед commit/push/PR/deploy; он не заменяет проектные проверки, а требует свежего доказательства через них.
@@ -81,7 +82,7 @@ Observer docs поддерживаются в актуальном состоя�
   - `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`
   - `pc_agent/docs/CODEMAP.md`
   - `docs/QUICK_LOOKUP.md`
-- Для release/deploy/server-control сценариев ориентироваться на `docs/LOCAL_WORKFLOW.md` и профильные repo-local playbook-и в `.cursor/rules/*`.
+- Для release/deploy/server-control сценариев ориентироваться на `docs/LOCAL_WORKFLOW.md`, `docs/QUICK_LOOKUP.md` и профильные scripts в `scripts/`.
 
 ## Protocol V3: инварианты
 

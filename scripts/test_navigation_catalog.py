@@ -12,22 +12,23 @@ def test_release_topic_related_docs_include_handoff_artifacts() -> None:
     release_topic = next(topic for topic in nav.TOPICS if topic.key == "release")
 
     assert "PLANS.md" in release_topic.related_docs
-    assert ".cursor/skills/pc-client-release/SKILL.md" in release_topic.related_docs
+    assert "docs/LOCAL_WORKFLOW.md" in release_topic.related_docs
+    assert nav.RELEASE_SKILL in release_topic.skills
 
 
 def test_harness_drift_rules_require_non_markdown_artifacts() -> None:
     navigation_rule = next(rule for rule in nav.DRIFT_RULES if rule.key == "navigation_harness")
     workflow_rule = next(rule for rule in nav.DRIFT_RULES if rule.key == "workflow_harness")
 
-    assert ".cursor/rules/navigation-tools.mdc" in navigation_rule.required_docs
-    assert ".cursor/skills/pc-client-release/SKILL.md" in workflow_rule.required_docs
+    assert "docs/CONTEXT_EFFICIENCY.md" in navigation_rule.required_docs
+    assert "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md" in workflow_rule.required_docs
 
 
 def test_agent_updates_query_prefers_agent_updates_topic() -> None:
     topics = nav.find_topics_for_query("launcher rollout")
 
     assert topics[0].key == "agent_updates"
-    assert topics[0].playbook == ".cursor/rules/agent-updates-pc-client.mdc"
+    assert topics[0].playbook == "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md"
     assert topics[0].plan_required is True
 
 
@@ -36,7 +37,7 @@ def test_collect_docs_to_update_uses_drift_rules_for_task_intake() -> None:
 
     assert "AGENTS.md" in docs
     assert "docs/QUICK_LOOKUP.md" in docs
-    assert ".cursor/rules/navigation-tools.mdc" in docs
+    assert "docs/CONTEXT_EFFICIENCY.md" in docs
 
 
 def test_all_topic_artifacts_exist() -> None:

@@ -9,8 +9,8 @@ from scripts.navigation_catalog import ChangedPath, DriftRule
 
 def test_is_tracked_artifact_accepts_harness_files() -> None:
     assert drift.is_tracked_artifact("docs/QUICK_LOOKUP.md")
-    assert drift.is_tracked_artifact(".cursor/rules/navigation-tools.mdc")
-    assert drift.is_tracked_artifact(".cursor/skills/pc-client-release/SKILL.md")
+    assert drift.is_tracked_artifact("docs/CONTEXT_EFFICIENCY.md")
+    assert drift.is_tracked_artifact("docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md")
     assert drift.is_tracked_artifact(".codex/config.toml")
     assert drift.is_tracked_artifact("PLANS.md")
 
@@ -29,7 +29,7 @@ def test_main_accepts_skill_update_as_required_artifact(
         "collect_changed_paths",
         lambda **kwargs: [
             ChangedPath(status="M", path="scripts/verify_workspace.py"),
-            ChangedPath(status="M", path=".cursor/skills/pc-client-release/SKILL.md"),
+            ChangedPath(status="M", path="docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md"),
         ],
     )
     monkeypatch.setattr(
@@ -41,7 +41,7 @@ def test_main_accepts_skill_update_as_required_artifact(
                     key="workflow_harness",
                     title="Workflow harness changed",
                     reason="Harness docs must stay aligned.",
-                    required_docs=(".cursor/skills/pc-client-release/SKILL.md",),
+                    required_docs=("docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",),
                 ),
                 [ChangedPath(status="M", path="scripts/verify_workspace.py")],
             )
@@ -75,7 +75,7 @@ def test_main_json_failure_reports_required_artifacts(
                     key="navigation_harness",
                     title="Navigation harness changed",
                     reason="Navigation docs must stay aligned.",
-                    required_docs=("AGENTS.md", ".cursor/rules/navigation-tools.mdc"),
+                    required_docs=("AGENTS.md", "docs/CONTEXT_EFFICIENCY.md"),
                 ),
                 [ChangedPath(status="M", path="scripts/navigation_catalog.py")],
             )
@@ -87,7 +87,7 @@ def test_main_json_failure_reports_required_artifacts(
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "failed"
     assert payload["failures"][0]["rule"] == "navigation_harness"
-    assert ".cursor/rules/navigation-tools.mdc" in payload["failures"][0]["required_artifacts"]
+    assert "docs/CONTEXT_EFFICIENCY.md" in payload["failures"][0]["required_artifacts"]
 
 
 def test_main_fails_when_required_all_artifacts_are_missing(

@@ -16,22 +16,19 @@ AGENT_CODEMAP_PATH = Path("pc_agent/docs/CODEMAP.md")
 PLANS_PATH = Path("PLANS.md")
 CODEX_CONFIG_PATH = Path(".codex/config.toml")
 TASK_INTAKE_PATH = Path("scripts/task_intake.py")
+LOCAL_WORKFLOW_PATH = Path("docs/LOCAL_WORKFLOW.md")
+CONTEXT_EFFICIENCY_PATH = Path("docs/CONTEXT_EFFICIENCY.md")
+AGENT_CAPABILITIES_PATH = Path("docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md")
 
-SUBAGENTS_PLAYBOOK_PATH = Path(".cursor/rules/subagents-pc-client.mdc")
-NAVIGATION_PLAYBOOK_PATH = Path(".cursor/rules/navigation-tools.mdc")
-RELEASE_PLAYBOOK_PATH = Path(".cursor/rules/release-pc-client.mdc")
-AGENT_UPDATES_PLAYBOOK_PATH = Path(".cursor/rules/agent-updates-pc-client.mdc")
-AGENT_RUNTIME_PLAYBOOK_PATH = Path(".cursor/rules/agent-runtime-pc-client.mdc")
-
-DOCS_SYNC_SKILL_PATH = Path(".cursor/skills/pc-client-docs-sync/SKILL.md")
-MIGRATIONS_SKILL_PATH = Path(".cursor/skills/pc-client-migrations/SKILL.md")
-PLANS_SKILL_PATH = Path(".cursor/skills/pc-client-plans/SKILL.md")
-RELEASE_SKILL_PATH = Path(".cursor/skills/pc-client-release/SKILL.md")
-TESTS_SKILL_PATH = Path(".cursor/skills/pc-client-tests/SKILL.md")
-BROWSER_CHECK_SKILL_PATH = Path(".cursor/skills/pc-client-browser-check/SKILL.md")
-AGENT_UPDATES_SKILL_PATH = Path(".cursor/skills/pc-client-agent-updates/SKILL.md")
-AGENT_RUNTIME_SKILL_PATH = Path(".cursor/skills/pc-client-agent-runtime/SKILL.md")
-OBSERVER_DIAGNOSTICS_SKILL_PATH = Path(".cursor/skills/pc-client-observer-diagnostics/SKILL.md")
+DOCS_SYNC_SKILL = "pc-client-docs-sync"
+MIGRATIONS_SKILL = "pc-client-migrations"
+PLANS_SKILL = "pc-client-plans"
+RELEASE_SKILL = "pc-client-release"
+TESTS_SKILL = "pc-client-tests"
+BROWSER_CHECK_SKILL = "pc-client-browser-check"
+AGENT_UPDATES_SKILL = "pc-client-agent-updates"
+AGENT_RUNTIME_SKILL = "pc-client-agent-runtime"
+OBSERVER_DIAGNOSTICS_SKILL = "pc-client-observer-diagnostics"
 
 
 def repo_path(value: str | Path) -> str:
@@ -112,8 +109,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/diff_context.py",
         ),
         mode="Protocol V3 / WS",
-        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -166,7 +162,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/diff_context.py",
         ),
         mode="Tool execution / operations",
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -220,7 +216,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "token" --dir pc_agent',
         ),
         mode="Auth / token bootstrap",
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -285,7 +281,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "request_form" --dir server',
         ),
         mode="Tickets / chat / queue",
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -336,7 +332,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "module_manager" --dir pc_agent',
         ),
         mode="Modules / reconcile",
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -504,7 +500,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "ui_hello" --dir server',
         ),
         mode="Internal web platform / React",
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH), repo_path(BROWSER_CHECK_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(DOCS_SYNC_SKILL, BROWSER_CHECK_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/bootstrap_web_toolchain.py",
             "python scripts/check_webapp_cutover.py --json",
@@ -582,11 +578,11 @@ TOPICS: tuple[Topic, ...] = (
             "GUI check via MCP at http://192.168.100.17:8666/admin",
         ),
         mode="Release / deploy / web admin",
-        playbook=repo_path(RELEASE_PLAYBOOK_PATH),
+        playbook=repo_path(LOCAL_WORKFLOW_PATH),
         skills=(
-            repo_path(BROWSER_CHECK_SKILL_PATH),
-            repo_path(RELEASE_SKILL_PATH),
-            repo_path(TESTS_SKILL_PATH),
+            BROWSER_CHECK_SKILL,
+            RELEASE_SKILL,
+            TESTS_SKILL,
         ),
         checks=(
             "python scripts/verify_workspace.py",
@@ -648,8 +644,8 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/diff_context.py",
         ),
         mode="Agent runtime / tray / logs",
-        playbook=repo_path(AGENT_RUNTIME_PLAYBOOK_PATH),
-        skills=(repo_path(AGENT_RUNTIME_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        playbook="pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+        skills=(AGENT_RUNTIME_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short",
@@ -694,7 +690,7 @@ TOPICS: tuple[Topic, ...] = (
             "docs/QUICK_LOOKUP.md",
             "pc_agent/docs/CODEMAP.md",
             "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
-            ".cursor/skills/pc-client-agent-runtime/SKILL.md",
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
         suggested_commands=(
             'python scripts/agent_find.py "tray" --dir pc_agent',
@@ -702,8 +698,8 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_local_agent.py status",
         ),
         mode="Agent runtime / tray / logs",
-        playbook=repo_path(AGENT_RUNTIME_PLAYBOOK_PATH),
-        skills=(repo_path(AGENT_RUNTIME_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        playbook="pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
+        skills=(AGENT_RUNTIME_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py -v --tb=short",
@@ -757,8 +753,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "DB_SCHEMA_VERSION" --dir pc_agent',
         ),
         mode="Database / migrations",
-        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
-        skills=(repo_path(MIGRATIONS_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        skills=(MIGRATIONS_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
@@ -793,27 +788,29 @@ TOPICS: tuple[Topic, ...] = (
         ),
         first_files=(
             "AGENTS.md",
+            "docs/README.md",
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
             "pc_agent/docs/CODEMAP.md",
         ),
         related_docs=(
             "AGENTS.md",
+            "docs/README.md",
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
             "pc_agent/docs/CODEMAP.md",
-            repo_path(DOCS_SYNC_SKILL_PATH),
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
         suggested_commands=(
             "python scripts/task_intake.py --task \"add new API route\"",
             "python scripts/diff_context.py",
         ),
         mode="Docs + CODEMAP",
-        playbook=repo_path(SUBAGENTS_PLAYBOOK_PATH),
-        skills=(repo_path(DOCS_SYNC_SKILL_PATH),),
+        skills=(DOCS_SYNC_SKILL,),
         checks=("python scripts/verify_workspace.py",),
         docs_to_update=(
             "AGENTS.md",
+            "docs/README.md",
             repo_path(QUICK_LOOKUP_PATH),
             repo_path(SERVER_CODEMAP_PATH),
             repo_path(AGENT_CODEMAP_PATH),
@@ -866,7 +863,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/docs/SELF_UPDATE.md",
             "server/docs/AGENT_UPDATES_API.md",
             repo_path(AGENT_CODEMAP_PATH),
-            repo_path(AGENT_UPDATES_SKILL_PATH),
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
         suggested_commands=(
             'python scripts/agent_find.py "launcher" --dir pc_agent',
@@ -874,8 +871,8 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/diff_context.py",
         ),
         mode="Agent updates / rollout",
-        playbook=repo_path(AGENT_UPDATES_PLAYBOOK_PATH),
-        skills=(repo_path(AGENT_UPDATES_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        playbook="pc_agent/docs/AGENT_UPDATE_WORKFLOW.md",
+        skills=(AGENT_UPDATES_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest pc_agent/tests/ -v --tb=short",
@@ -942,10 +939,10 @@ TOPICS: tuple[Topic, ...] = (
         ),
         mode="Observer / tracing",
         skills=(
-            repo_path(DOCS_SYNC_SKILL_PATH),
-            repo_path(BROWSER_CHECK_SKILL_PATH),
-            repo_path(TESTS_SKILL_PATH),
-            repo_path(OBSERVER_DIAGNOSTICS_SKILL_PATH),
+            DOCS_SYNC_SKILL,
+            BROWSER_CHECK_SKILL,
+            TESTS_SKILL,
+            OBSERVER_DIAGNOSTICS_SKILL,
         ),
         checks=(
             "python scripts/verify_workspace.py",
@@ -960,7 +957,6 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(AGENT_CODEMAP_PATH),
             "server/docs/OBSERVER_LAYER.md",
             "server/docs/OBSERVER_AUTHORING_RULES.md",
-            repo_path(OBSERVER_DIAGNOSTICS_SKILL_PATH),
         ),
         path_prefixes=(
             "server/observer/",
@@ -995,14 +991,14 @@ TOPICS: tuple[Topic, ...] = (
         related_docs=(
             "PLANS.md",
             "AGENTS.md",
-            ".cursor/skills/pc-client-plans/SKILL.md",
-            ".cursor/skills/pc-client-release/SKILL.md",
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
+            "docs/LOCAL_WORKFLOW.md",
         ),
         suggested_commands=(
             "python scripts/verify_workspace.py",
         ),
         mode="Planning / handoff",
-        skills=(repo_path(PLANS_SKILL_PATH), repo_path(RELEASE_SKILL_PATH)),
+        skills=(PLANS_SKILL, RELEASE_SKILL),
         plan_required=True,
         docs_to_update=(repo_path(PLANS_PATH),),
         exact_paths=(
@@ -1035,8 +1031,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/CODEMAP.md",
             "pc_agent/docs/CODEMAP.md",
             "PLANS.md",
-            ".cursor/skills/pc-client-release/SKILL.md",
-            ".cursor/skills/pc-client-tests/SKILL.md",
+            "docs/LOCAL_WORKFLOW.md",
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
         suggested_commands=(
             "python scripts/verify_workspace.py",
@@ -1044,8 +1040,8 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
         ),
         mode="Release / deploy",
-        playbook=repo_path(RELEASE_PLAYBOOK_PATH),
-        skills=(repo_path(RELEASE_SKILL_PATH), repo_path(TESTS_SKILL_PATH)),
+        playbook=repo_path(LOCAL_WORKFLOW_PATH),
+        skills=(RELEASE_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
             "python scripts/run_ci_suite.py",
@@ -1079,7 +1075,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         required_docs=(
             "AGENTS.md",
             "docs/QUICK_LOOKUP.md",
-            ".cursor/rules/navigation-tools.mdc",
+            "docs/CONTEXT_EFFICIENCY.md",
         ),
     ),
     DriftRule(
@@ -1098,8 +1094,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         required_docs=(
             "AGENTS.md",
             "docs/LOCAL_WORKFLOW.md",
-            ".cursor/skills/pc-client-release/SKILL.md",
-            ".cursor/skills/pc-client-tests/SKILL.md",
+            "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
     ),
     DriftRule(
@@ -1119,8 +1114,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
             "server/docs/SECURITY_AND_AUTH.md",
-            ".cursor/rules/automation.mdc",
-            ".cursor/skills/pc-client-browser-check/SKILL.md",
+            "docs/LOCAL_WORKFLOW.md",
         ),
     ),
     DriftRule(
@@ -1505,7 +1499,7 @@ def is_plan_required(topics: Sequence[Topic], *, paths: Sequence[str] = ()) -> b
 def iter_topic_artifacts(topic: Topic) -> list[str]:
     ordered: list[str] = []
     seen: set[str] = set()
-    for value in (*topic.first_files, *topic.related_docs, *topic.skills, *topic.docs_to_update):
+    for value in (*topic.first_files, *topic.related_docs, *topic.docs_to_update):
         normalized = repo_path(value)
         if normalized in seen:
             continue

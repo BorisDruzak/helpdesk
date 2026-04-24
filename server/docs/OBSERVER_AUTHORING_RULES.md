@@ -190,6 +190,6 @@ Spans нужны не “для галочки”, а чтобы человек 
 Если меняется routing/навигация или playbook:
 
 - `scripts/navigation_catalog.py`
-- `.cursor/skills/pc-client-observer-diagnostics/SKILL.md`
+- Codex skill `pc-client-observer-diagnostics`
 
 Observer нельзя считать завершённым, если код уже поменяли, а canonical docs ещё нет.
