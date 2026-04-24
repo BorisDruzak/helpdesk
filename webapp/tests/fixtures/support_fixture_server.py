@@ -802,7 +802,32 @@ def build_admin_devices_payload(state: dict, *, status_filter: str, query: str) 
         ).lower()
         if normalized_query and normalized_query not in haystack:
             continue
-        devices.append(deepcopy(item))
+        device = deepcopy(item)
+        device.setdefault(
+            "identity_summary",
+            {
+                "machine_id": device["device_id"],
+                "install_id": f"install-{device['device_id']}",
+                "machine_id_source": "windows_machine_guid" if device["device_id"] == "device-1" else "linux_machine_id",
+                "identity_scheme": "machine_id_v1",
+                "source_label": "Windows MachineGuid" if device["device_id"] == "device-1" else "Linux machine-id",
+                "is_stable": True,
+            },
+        )
+        device.setdefault(
+            "duplicate_warning",
+            {
+                "kind": "hostname_has_env_uuid_duplicates",
+                "severity": "info",
+                "title": "Есть старые тестовые дубли",
+                "description": "Для hostname WS-01 найден env_uuid-дубль.",
+                "duplicate_count": 2,
+                "cleanup_available": True,
+            }
+            if device["device_id"] == "device-1"
+            else None,
+        )
+        devices.append(device)
     return {
         "query": query,
         "status_filter": status_filter,
@@ -810,6 +835,8 @@ def build_admin_devices_payload(state: dict, *, status_filter: str, query: str) 
             "visible_count": len(devices),
             "online_count": sum(1 for item in devices if item["online"]),
             "rollout_targets": len(state["admin"]["rollout"]),
+            "duplicate_hosts": 1,
+            "cleanup_candidates": 1,
         },
         "filters": {
             "status_options": [
@@ -828,6 +855,45 @@ def build_admin_device_updates_payload(state: dict, device_id: str) -> dict | No
     if not payload:
         return None
     return deepcopy(payload)
+
+
+def build_admin_device_tokens_payload(state: dict, device_id: str) -> dict:
+    tokens_by_device = state["admin"].setdefault(
+        "device_tokens",
+        {
+            "device-1": [
+                {
+                    "token_hash": "token-hash-active",
+                    "token_prefix": "tok-act",
+                    "created_at": now_iso(minutes=1),
+                    "expires_at": now_iso(minutes=5000),
+                    "revoked_at": None,
+                    "last_used_at": now_iso(minutes=30),
+                    "is_active": True,
+                },
+                {
+                    "token_hash": "token-hash-revoked",
+                    "token_prefix": "tok-old",
+                    "created_at": now_iso(minutes=-100),
+                    "expires_at": now_iso(minutes=4000),
+                    "revoked_at": now_iso(minutes=5),
+                    "last_used_at": now_iso(minutes=4),
+                    "is_active": False,
+                },
+            ],
+            "device-2": [],
+        },
+    )
+    tokens = deepcopy(tokens_by_device.get(device_id, []))
+    return {
+        "device_id": device_id,
+        "summary": {
+            "total_count": len(tokens),
+            "active_count": sum(1 for item in tokens if item["is_active"]),
+            "revoked_count": sum(1 for item in tokens if not item["is_active"]),
+        },
+        "tokens": tokens,
+    }
 
 
 def admin_module_rollout_mode_label(mode: str) -> str:
@@ -1977,6 +2043,118 @@ async def handle_admin_devices(request: web.Request) -> web.Response:
     return json_success(build_admin_devices_payload(state, status_filter=status_filter, query=query))
 
 
+async def handle_admin_device_tokens(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    return json_success(build_admin_device_tokens_payload(state, request.match_info["device_id"]))
+
+
+async def handle_admin_device_token_revoke(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    device_id = request.match_info["device_id"]
+    data = await request.json()
+    token_hash = str(data.get("token_hash") or "")
+    tokens = build_admin_device_tokens_payload(state, device_id)["tokens"]
+    for item in tokens:
+        if item["token_hash"] == token_hash:
+            item["is_active"] = False
+            item["revoked_at"] = now_iso(minutes=40)
+    state["admin"].setdefault("device_tokens", {})[device_id] = tokens
+    return json_success(build_admin_device_tokens_payload(state, device_id))
+
+
+async def handle_web_settings(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return json_success(
+        {
+            "capabilities": {"can_write": True, "actor_role": ADMIN_ACTOR_ROLE},
+            "overview": {
+                "queues_count": 1,
+                "active_queues_count": 1,
+                "routing_rules_count": 0,
+                "active_routing_rules_count": 0,
+                "sla_policies_count": 0,
+                "calendars_count": 0,
+                "resolution_codes_count": 0,
+                "audit_records_count": 0,
+            },
+            "routing_builder": {"operators": [], "fields": [], "forms": []},
+            "queues": [],
+            "routing_rules": [],
+            "sla_policies": [],
+            "calendars": [],
+            "resolution_codes": [],
+            "audit": [],
+        }
+    )
+
+
+async def handle_notification_preferences(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return web.json_response(
+        {
+            "status": "ok",
+            "preferences": {
+                "mute_internal": False,
+                "muted_event_types": [],
+                "suppress_self": True,
+            },
+        }
+    )
+
+
+async def handle_notifications(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return web.json_response(
+        {
+            "status": "ok",
+            "notifications": [
+                {
+                    "id": 1,
+                    "actor_id": "fixture",
+                    "ticket_id": "ticket-1",
+                    "event_type": "device_fingerprint_mismatch",
+                    "payload": {"message": "fingerprint mismatch"},
+                    "is_read": False,
+                    "created_at": now_iso(minutes=45),
+                    "read_at": None,
+                }
+            ],
+        }
+    )
+
+
+async def handle_admin_tech_alerts(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    return web.json_response(
+        {
+            "status": "ok",
+            "alerts": [
+                {
+                    "kind": "inventory_env_uuid_duplicates",
+                    "severity": "warning",
+                    "title": "env_uuid-дубли",
+                    "description": "Найдены тестовые дубли ADMIN-2.",
+                    "action": "/app/admin/inventory",
+                }
+            ],
+        }
+    )
+
+
 async def handle_admin_observer_quick(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -2185,8 +2363,15 @@ def build_app() -> web.Application:
             web.patch("/api/web/admin/modules/rollout_settings", handle_admin_modules_rollout_settings_patch),
             web.patch("/api/web/admin/modules/{module_name}/preferred", handle_admin_module_preferred_patch),
             web.get("/api/web/admin/devices", handle_admin_devices),
+            web.get("/api/web/admin/devices/{device_id}/tokens", handle_admin_device_tokens),
+            web.post("/api/web/admin/devices/{device_id}/tokens/revoke", handle_admin_device_token_revoke),
             web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
             web.post("/api/web/admin/devices/{device_id}/updates/run", handle_admin_device_update_run),
+            web.get("/api/web/settings", handle_web_settings),
+            web.get("/api/notifications/preferences", handle_notification_preferences),
+            web.post("/api/notifications/preferences", handle_notification_preferences),
+            web.get("/api/notifications", handle_notifications),
+            web.get("/api/admin/tech/alerts", handle_admin_tech_alerts),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
             web.get("/ws_ui", handle_ws_ui),

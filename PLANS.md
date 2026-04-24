@@ -1,5 +1,32 @@
 # PLANS.md
 
+## 2026-04-24 Device proof, token rotation, and inventory quality
+
+- Status: in progress.
+- Scope:
+  - заменить пользовательский стопор "max 2 active tokens" на доказательную модель: `machine_id` должен совпадать с `device_id`, а `device_fingerprint` должен совпасть по большинству стабильных признаков;
+  - собирать fingerprint на агенте без сырых серийников: CPU/platform, BIOS/system UUID, baseboard, boot volume, MAC set и hostname передавать как нормализованные SHA256-хэши/summary;
+  - сервер хранит последний fingerprint в `devices.metadata.device_fingerprint`, считает score и допускает замену одного компонента; при подтверждении того же ПК старые активные токены автоматически отзываются, новый токен выдаётся без жёсткого лимита;
+  - если fingerprint явно не похож на сохранённый, сервер блокирует выдачу токена с `DEVICE_FINGERPRINT_MISMATCH`, пишет runtime audit и оставляет запись видимой администратору;
+  - добавить typed UI-панель токенов в `/app/admin/inventory`: активные/отозванные токены, `last_used_at`, `created_at`, revoke action;
+  - добавить data-quality alerts: env_uuid-дубли, устройства без кабинета/локации в реестре, давно не видели агент;
+  - показать token-limit/auth-block ещё и через tray/system notification в GUI;
+  - добавить Playwright/e2e smoke на вкладку уведомлений и cleanup/tokens flow, чтобы ловить 401 в browser pipeline.
+- Delivery order:
+  1. agent fingerprint collector + unit tests;
+  2. server fingerprint scoring + token rotation tests;
+  3. typed token endpoints and React inventory token panel;
+  4. tech alerts and notification settings list update;
+  5. tray notification event handling;
+  6. docs/CODEMAP sync, focused tests, browser checks, deploy.
+- Verification target:
+  - `python -m pytest server/tests/test_connection_request_api.py server/tests/test_web_admin_api.py server/tests/test_tech_alert_rules_unit.py pc_agent/tests/test_connection_request_flow.py pc_agent/tests/test_identity_manager.py -q --tb=short`
+  - `pnpm --dir webapp run test`
+  - `pnpm --dir webapp run build`
+  - `python scripts/verify_workspace.py`
+  - live browser checks on `http://192.168.100.17:8666/app/admin/settings` and `/app/admin/inventory`
+  - live agent check through `http://127.0.0.1:8765/ui/agent/status`
+
 ## 2026-04-24 Inventory cleanup, notifications, and token-limit UX
 
 - Status: implementation complete locally; live deploy/browser/agent verification pending.

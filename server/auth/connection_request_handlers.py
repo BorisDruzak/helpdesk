@@ -24,6 +24,11 @@ from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
 from auth.service import AuthService, ArchivedDeviceError
 from auth.connection_request_service import ConnectionRequestService
+from auth.device_fingerprint import (
+    FINGERPRINT_METADATA_KEY,
+    compare_device_fingerprints,
+    normalize_device_fingerprint,
+)
 from tech.runtime_audit import write_agent_runtime_audit
 
 
@@ -31,6 +36,12 @@ TOKEN_LIMIT_ERROR_CODE = "TOKEN_LIMIT_EXCEEDED"
 TOKEN_LIMIT_MESSAGE = (
     "На сервере уже есть 2 активных токена для этого устройства. "
     "Отзовите старый токен в админке или восстановите локальное хранилище токена агента."
+)
+
+
+DEVICE_FINGERPRINT_MISMATCH_CODE = "DEVICE_FINGERPRINT_MISMATCH"
+DEVICE_FINGERPRINT_MISMATCH_MESSAGE = (
+    "Device fingerprint does not match this machine_id. Check the device or approve reprovision manually."
 )
 
 
@@ -51,6 +62,98 @@ def _token_limit_response_payload(*, active_token_count: int | None = None, erro
     if active_token_count is not None:
         payload["active_token_count"] = active_token_count
     return payload
+
+
+def _fingerprint_mismatch_response_payload(*, verdict: dict | None = None) -> dict:
+    payload = {
+        "status": "blocked",
+        "message": DEVICE_FINGERPRINT_MISMATCH_MESSAGE,
+        "error": DEVICE_FINGERPRINT_MISMATCH_MESSAGE,
+        "error_code": DEVICE_FINGERPRINT_MISMATCH_CODE,
+    }
+    if verdict:
+        payload["fingerprint_verdict"] = verdict
+    return payload
+
+
+def _fingerprint_verdict_payload(verdict) -> dict:
+    return {
+        "allowed": bool(verdict.allowed),
+        "status": verdict.status,
+        "matched_count": verdict.matched_count,
+        "mismatched_count": verdict.mismatched_count,
+        "comparable_count": verdict.comparable_count,
+        "missing_count": verdict.missing_count,
+        "details": verdict.details,
+    }
+
+
+def _metadata_fingerprint(metadata: dict) -> dict | None:
+    return normalize_device_fingerprint(metadata.get(FINGERPRINT_METADATA_KEY))
+
+
+def _stored_fingerprint(device) -> dict | None:
+    if not device:
+        return None
+    metadata = getattr(device, "device_metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    return normalize_device_fingerprint(metadata.get(FINGERPRINT_METADATA_KEY))
+
+
+async def _validate_device_fingerprint_or_block(*, device, metadata: dict) -> tuple[bool, dict | None]:
+    incoming = _metadata_fingerprint(metadata)
+    if not incoming:
+        return True, None
+    stored = _stored_fingerprint(device)
+    verdict = compare_device_fingerprints(stored, incoming)
+    verdict_payload = _fingerprint_verdict_payload(verdict)
+    metadata["device_fingerprint_verdict"] = verdict_payload
+    if verdict.allowed:
+        return True, verdict_payload
+    return False, verdict_payload
+
+
+async def _remember_device_fingerprint(devices_repo: DevicesRepo, *, device_id: str, metadata: dict) -> None:
+    fingerprint = _metadata_fingerprint(metadata)
+    if not fingerprint:
+        return
+    await devices_repo.merge_device_metadata(
+        device_id,
+        {
+            FINGERPRINT_METADATA_KEY: fingerprint,
+            "device_fingerprint_verdict": metadata.get("device_fingerprint_verdict"),
+        },
+    )
+
+
+async def _mark_pending_device_fingerprint_mismatch(
+    repo: ConnectionRequestsRepo,
+    *,
+    device_id: str,
+    ip_address: str | None,
+    hostname: str | None,
+    metadata: dict,
+    verdict: dict | None,
+) -> None:
+    metadata_patch = dict(metadata)
+    metadata_patch.update(
+        {
+            "reason": "device_fingerprint_mismatch",
+            "error_code": DEVICE_FINGERPRINT_MISMATCH_CODE,
+            "fingerprint_verdict": verdict or {},
+        }
+    )
+    existing = await repo.get_pending_by_device_id(device_id)
+    if existing:
+        await repo.touch_pending_request(device_id, metadata_patch=metadata_patch)
+        return
+    await repo.create_request(
+        device_id=device_id,
+        ip_address=ip_address or None,
+        hostname=hostname,
+        metadata=metadata_patch,
+    )
 
 
 async def _mark_pending_token_limit(
@@ -156,6 +259,32 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 status=409,
             )
 
+        fingerprint_allowed, fingerprint_verdict = await _validate_device_fingerprint_or_block(
+            device=device,
+            metadata=metadata,
+        )
+        if not fingerprint_allowed:
+            await _mark_pending_device_fingerprint_mismatch(
+                repo,
+                device_id=device_id,
+                ip_address=ip_address or None,
+                hostname=hostname,
+                metadata=metadata,
+                verdict=fingerprint_verdict,
+            )
+            await session.commit()
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="device_fingerprint_mismatch",
+                severity="critical",
+                source="connection_request",
+                details_json={"fingerprint_verdict": fingerprint_verdict or {}},
+            )
+            return web.json_response(
+                _fingerprint_mismatch_response_payload(verdict=fingerprint_verdict),
+                status=409,
+            )
+
         if policy == POLICY_REJECT_ALL:
             logger.info(f"Connection request rejected (policy=reject_all): device_id={device_id[:8]}...")
             return web.json_response(
@@ -189,6 +318,7 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                     _token_limit_response_payload(error=str(e)),
                     status=429,
                 )
+            await _remember_device_fingerprint(devices_repo, device_id=device_id, metadata=metadata)
             await repo.set_approved(device_id)
             await session.commit()
             logger.info(f"Connection request auto-approved (policy=accept_all): device_id={device_id[:8]}...")
@@ -206,35 +336,9 @@ async def handle_connection_request(request: web.Request) -> web.Response:
             })
 
         # POLICY_MANUAL: create pending request или обновить last_request_at (heartbeat)
-        active_token_count = await AuthTokensRepo(session).check_active_token_limit(device_id)
-        if active_token_count >= 2:
-            await _mark_pending_token_limit(
-                repo,
-                device_id=device_id,
-                ip_address=ip_address or None,
-                hostname=hostname,
-                metadata=metadata,
-                active_token_count=active_token_count,
-            )
-            await session.commit()
-            await write_agent_runtime_audit(
-                device_id=device_id,
-                event_type="connection_request_token_limit",
-                severity="warning",
-                source="connection_request",
-                details_json={"active_token_count": active_token_count},
-            )
-            logger.warning(
-                f"Connection request blocked by active token limit: "
-                f"device_id={device_id[:8]}..., active={active_token_count}"
-            )
-            return web.json_response(
-                _token_limit_response_payload(active_token_count=active_token_count),
-                status=429,
-            )
         existing = await repo.get_pending_by_device_id(device_id)
         if existing:
-            await repo.touch_pending_request(device_id)
+            await repo.touch_pending_request(device_id, metadata_patch=metadata)
             await session.commit()
             return web.json_response({
                 "status": "pending",
@@ -295,7 +399,9 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
         latest_request = await repo.get_latest_by_device_id(device_id)
         archived_reject = False
         token_limit_blocked = False
+        fingerprint_blocked = False
         active_token_count = None
+        fingerprint_verdict = None
         if latest_request and status == "rejected":
             metadata = latest_request.request_metadata if isinstance(latest_request.request_metadata, dict) else {}
             archived_reject = bool(metadata.get("archived_at"))
@@ -304,6 +410,12 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
             token_limit_blocked = metadata.get("error_code") == TOKEN_LIMIT_ERROR_CODE or metadata.get("reason") == "token_limit_exceeded"
             if token_limit_blocked:
                 active_token_count = metadata.get("active_token_count")
+            fingerprint_blocked = (
+                metadata.get("error_code") == DEVICE_FINGERPRINT_MISMATCH_CODE
+                or metadata.get("reason") == "device_fingerprint_mismatch"
+            )
+            if fingerprint_blocked:
+                fingerprint_verdict = metadata.get("fingerprint_verdict") or metadata.get("device_fingerprint_verdict")
 
     if not status:
         return web.json_response({
@@ -319,6 +431,11 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
         return web.json_response(
             _token_limit_response_payload(active_token_count=active_token_count),
             status=429,
+        )
+    if fingerprint_blocked:
+        return web.json_response(
+            _fingerprint_mismatch_response_payload(verdict=fingerprint_verdict),
+            status=409,
         )
     if status == "rejected":
         if archived_reject:
@@ -421,6 +538,26 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 {"status": "error", "error": "No pending request for this device"},
                 status=404,
             )
+        pending_metadata = pending.request_metadata if isinstance(pending.request_metadata, dict) else {}
+        device = await DevicesRepo(session).get_by_device_id(device_id, include_deleted=True)
+        fingerprint_allowed, fingerprint_verdict = await _validate_device_fingerprint_or_block(
+            device=device,
+            metadata=pending_metadata,
+        )
+        if not fingerprint_allowed:
+            await repo.touch_pending_request(
+                device_id,
+                metadata_patch={
+                    "reason": "device_fingerprint_mismatch",
+                    "error_code": DEVICE_FINGERPRINT_MISMATCH_CODE,
+                    "fingerprint_verdict": fingerprint_verdict or {},
+                },
+            )
+            await session.commit()
+            return web.json_response(
+                _fingerprint_mismatch_response_payload(verdict=fingerprint_verdict),
+                status=409,
+            )
         try:
             token = await auth_service.generate_agent_token(
                 device_id=device_id,
@@ -444,6 +581,7 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 _token_limit_response_payload(error=str(e)),
                 status=429,
             )
+        await _remember_device_fingerprint(DevicesRepo(session), device_id=device_id, metadata=pending_metadata)
         await repo.set_approved(device_id)
         await session.commit()
 

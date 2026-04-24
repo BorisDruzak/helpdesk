@@ -25,6 +25,7 @@ from app.db.models import (
     AgentRuntimeAudit,
     AgentToken,
     TicketAdminAudit,
+    RegistryAsset,
 )
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.observer_settings_repo import ObserverSettingsRepo
@@ -546,9 +547,12 @@ def _build_alerts_from_metrics(
     in_progress_stuck: int,
     outbox_backlog: int,
     outbox_backlog_warn: int,
-    watchdog_states: dict[str, bool],
+    env_uuid_duplicate_groups: int = 0,
+    devices_without_location: int = 0,
+    watchdog_states: dict[str, bool] | None = None,
 ) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
+    watchdog_states = watchdog_states or {}
     if stale_count > 0:
         alerts.append(
             _alert(
@@ -609,6 +613,30 @@ def _build_alerts_from_metrics(
                 entity_type="outbox",
                 entity_id="device_outbox",
                 summary=f"Высокая очередь команд outbox: {outbox_backlog}",
+            )
+        )
+    if env_uuid_duplicate_groups > 0:
+        alerts.append(
+            _alert(
+                severity="warning",
+                kind="inventory_env_uuid_duplicates",
+                entity_type="inventory",
+                entity_id="devices",
+                summary=f"Найдены env_uuid-дубли hostname: {env_uuid_duplicate_groups} групп.",
+                details={"duplicate_groups": env_uuid_duplicate_groups},
+                link="/app/admin/inventory",
+            )
+        )
+    if devices_without_location > 0:
+        alerts.append(
+            _alert(
+                severity="warning",
+                kind="inventory_devices_without_location",
+                entity_type="inventory",
+                entity_id="devices",
+                summary=f"Устройства без кабинета/локации: {devices_without_location} шт.",
+                details={"devices_without_location": devices_without_location},
+                link="/app/admin/registry",
             )
         )
     for kind, running in watchdog_states.items():
@@ -721,6 +749,31 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
             else:
                 online_count = 0
             offline_count = max(int(total_devices) - int(online_count), 0)
+
+            active_device_rows = (
+                await session.execute(
+                    select(Device.hostname, Device.device_metadata).where(Device.deleted_at.is_(None))
+                )
+            ).all()
+            env_uuid_by_hostname: dict[str, int] = {}
+            for hostname_value, metadata_value in active_device_rows:
+                metadata = metadata_value if isinstance(metadata_value, dict) else {}
+                if str(metadata.get("machine_id_source") or "").strip().lower() != "env_uuid":
+                    continue
+                hostname_key = str(hostname_value or metadata.get("hostname") or "").strip().lower()
+                if not hostname_key:
+                    continue
+                env_uuid_by_hostname[hostname_key] = env_uuid_by_hostname.get(hostname_key, 0) + 1
+            env_uuid_duplicate_groups = sum(1 for count in env_uuid_by_hostname.values() if count > 1)
+            devices_without_location = await session.scalar(
+                select(func.count()).select_from(RegistryAsset).where(
+                    and_(
+                        RegistryAsset.asset_type == "pc",
+                        RegistryAsset.status == "active",
+                        RegistryAsset.location_id.is_(None),
+                    )
+                )
+            ) or 0
 
             active_updates = await session.scalar(
                 select(func.count()).select_from(Operation).where(
@@ -877,6 +930,8 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     in_progress_stuck=int(in_progress_stuck),
                     outbox_backlog=int(outbox_backlog),
                     outbox_backlog_warn=outbox_backlog_warn,
+                    env_uuid_duplicate_groups=int(env_uuid_duplicate_groups),
+                    devices_without_location=int(devices_without_location),
                         watchdog_states=watchdog_states,
                     )
                 )
@@ -928,6 +983,10 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     "pending_connection_requests": int(pending_conn),
                     "invalid_token_recent": int(invalid_recent),
                     "reprovision_required_count": int(reprovision_required_count),
+                },
+                "inventory_quality": {
+                    "env_uuid_duplicate_groups": int(env_uuid_duplicate_groups),
+                    "devices_without_location": int(devices_without_location),
                 },
                 "update_health": {
                     "in_progress": int(active_updates),

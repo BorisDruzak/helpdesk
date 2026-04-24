@@ -157,6 +157,17 @@ class DevicesRepo:
         await self.session.flush()
         logger.info(f"[DevicesRepo] Created stub device for login: device_id={device_id}")
         return device
+
+    async def merge_device_metadata(self, device_id: str, metadata_patch: dict) -> bool:
+        device = await self.get_by_device_id(device_id, include_deleted=True)
+        if not device:
+            return False
+        current = device.device_metadata if isinstance(device.device_metadata, dict) else {}
+        merged = dict(current)
+        merged.update(metadata_patch or {})
+        device.device_metadata = merged
+        await self.session.flush()
+        return True
     
     async def update_toolset_snapshot_ref(
         self,

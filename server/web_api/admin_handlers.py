@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from aiohttp import web
 from loguru import logger
 from pydantic import ValidationError
@@ -15,6 +17,7 @@ from agents.agent_builds_handlers import (
 )
 from app.db import get_session
 from app.repos.agent_rollout_repo import AgentRolloutRepo
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
@@ -66,6 +69,9 @@ from web_api.dto.admin import (
     AdminDeviceCleanupPayload,
     AdminDeviceDuplicateWarning,
     AdminDeviceIdentitySummary,
+    AdminDeviceTokenItem,
+    AdminDeviceTokensPayload,
+    AdminDeviceTokensSummary,
     AdminDeviceUpdateAction,
     AdminDeviceUpdateRecommendation,
     AdminDeviceUpdateRunPayload,
@@ -2031,6 +2037,86 @@ async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
         kept_device_ids=kept_device_ids,
     )
     return json_model_response(SuccessResponse[AdminDeviceCleanupPayload](data=payload))
+
+
+def _device_token_item(row) -> AdminDeviceTokenItem:
+    revoked_at = getattr(row, "revoked_at", None)
+    expires_at = getattr(row, "expires_at", None)
+    is_expired = bool(expires_at and expires_at <= datetime.now(timezone.utc))
+    return AdminDeviceTokenItem(
+        token_hash=str(getattr(row, "token_hash", "") or ""),
+        token_prefix=str(getattr(row, "token_prefix", "") or "") or None,
+        created_at=_iso(getattr(row, "created_at", None)),
+        expires_at=_iso(expires_at),
+        revoked_at=_iso(revoked_at),
+        last_used_at=_iso(getattr(row, "last_used_at", None)),
+        is_active=revoked_at is None and not is_expired,
+    )
+
+
+@require_auth("admin")
+async def handle_web_admin_device_tokens(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    async with get_session() as session:
+        rows = await AuthTokensRepo(session).get_agent_tokens_by_device(device_id)
+    tokens = [_device_token_item(row) for row in rows]
+    payload = AdminDeviceTokensPayload(
+        device_id=device_id,
+        summary=AdminDeviceTokensSummary(
+            total_count=len(tokens),
+            active_count=sum(1 for item in tokens if item.is_active),
+            revoked_count=sum(1 for item in tokens if not item.is_active),
+        ),
+        tokens=tokens,
+    )
+    return json_model_response(SuccessResponse[AdminDeviceTokensPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_token_revoke(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    token_hash = str(data.get("token_hash") or "").strip()
+    if not device_id or not token_hash:
+        return web.json_response(
+            {"status": "error", "error": "device_id and token_hash are required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    async with get_session() as session:
+        repo = AuthTokensRepo(session)
+        revoked = await repo.revoke_agent_token_by_hash(token_hash)
+    if not revoked:
+        return web.json_response(
+            {"status": "error", "error": "Token not found or already revoked", "error_code": "TOKEN_NOT_FOUND"},
+            status=404,
+        )
+    auth_context = request.get("auth_context")
+    await write_agent_runtime_audit(
+        device_id=device_id,
+        event_type="agent_token_revoked",
+        severity="warning",
+        source="web_admin_inventory",
+        actor_id=getattr(auth_context, "actor_id", None) if auth_context else None,
+        actor_role=getattr(auth_context, "actor_role", None) if auth_context else None,
+        details_json={"token_hash_prefix": token_hash[:12]},
+    )
+    return json_model_response(
+        SuccessResponse[AdminDeviceTokensPayload](
+            data=AdminDeviceTokensPayload(
+                device_id=device_id,
+                summary=AdminDeviceTokensSummary(total_count=0, active_count=0, revoked_count=0),
+                tokens=[],
+            )
+        )
+    )
 
 
 @require_auth("admin")

@@ -134,7 +134,7 @@ async def test_connection_request_manual_pending(test_client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_connection_request_manual_reports_token_limit(test_client, test_engine):
+async def test_connection_request_manual_does_not_block_on_old_token_count(test_client, test_engine):
     device_id = str(uuid.uuid4())
     await _set_policy(test_engine, "accept_all")
 
@@ -152,22 +152,19 @@ async def test_connection_request_manual_reports_token_limit(test_client, test_e
     )
     payload = await response.json()
 
-    assert response.status == 429
-    assert payload["status"] == "blocked"
-    assert payload["error_code"] == "TOKEN_LIMIT_EXCEEDED"
-    assert payload["active_token_count"] == 2
+    assert response.status == 200
+    assert payload["status"] == "pending"
 
     status_response = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
     status_payload = await status_response.json()
 
-    assert status_response.status == 429
-    assert status_payload["error_code"] == "TOKEN_LIMIT_EXCEEDED"
+    assert status_response.status == 200
+    assert status_payload["status"] == "pending"
 
     list_response = await test_client.get("/api/admin/connection_requests", headers=_admin_headers())
     list_payload = await list_response.json()
     request_row = next(req for req in list_payload.get("connection_requests") or [] if req.get("device_id") == device_id)
-    assert request_row["metadata"]["reason"] == "token_limit_exceeded"
-    assert request_row["metadata"]["active_token_count"] == 2
+    assert request_row["metadata"].get("reason") != "token_limit_exceeded"
 
 
 @pytest.mark.asyncio

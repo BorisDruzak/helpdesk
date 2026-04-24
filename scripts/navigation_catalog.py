@@ -197,12 +197,15 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, connection request flow, explicit TOKEN_LIMIT_EXCEEDED diagnostics, httpOnly web session bridging for React admin/notification surfaces, and security invariants.",
+        summary="Token sources, AuthContext, connection request flow, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, httpOnly web session bridging for React admin/notification surfaces, and security invariants.",
         aliases=(
             "auth",
             "token",
             "token limit",
             "token_limit_exceeded",
+            "device_fingerprint",
+            "device_fingerprint_mismatch",
+            "hardware proof",
             "active token limit",
             "authcontext",
             "connection request",
@@ -219,11 +222,13 @@ TOPICS: tuple[Topic, ...] = (
         ),
         first_files=(
             "server/auth/",
+            "server/auth/device_fingerprint.py",
             "server/app/repos/auth_tokens_repo.py",
             "server/auth/middleware.py",
             "pc_agent/auth/token_source.py",
             "pc_agent/auth/connection_request.py",
             "pc_agent/core/identity.py",
+            "pc_agent/core/device_fingerprint.py",
         ),
         related_docs=(
             "docs/QUICK_LOOKUP.md",
@@ -257,6 +262,7 @@ TOPICS: tuple[Topic, ...] = (
         exact_paths=(
             "server/app/repos/auth_tokens_repo.py",
             "pc_agent/core/identity.py",
+            "pc_agent/core/device_fingerprint.py",
         ),
     ),
     Topic(
@@ -333,7 +339,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
         aliases=(
             "registry",
             "registries",
@@ -352,6 +358,9 @@ TOPICS: tuple[Topic, ...] = (
             "env_uuid",
             "duplicate devices",
             "cleanup env duplicates",
+            "device tokens",
+            "revoke token",
+            "fingerprint mismatch",
             "admin-2 duplicates",
             "реестр",
             "реестры",
@@ -770,7 +779,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, SSE bridge, initiator profiles and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -779,6 +788,8 @@ TOPICS: tuple[Topic, ...] = (
             "main window",
             "initiator profile",
             "connection_state",
+            "connection_rejected",
+            "tray notification",
             "окно агента",
             "мост ui",
             "локальный интерфейс",
@@ -786,6 +797,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "pc_agent/ui_gui/main_window.py",
             "pc_agent/ui_gui/chat_panel.py",
+            "pc_agent/ui_gui/tray_notifications.py",
             "pc_agent/ui_bridge/api_server.py",
             "pc_agent/ui_bridge/event_bus.py",
         ),
@@ -822,11 +834,14 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, runtime diagnostics/logging, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, auth-block system notifications, runtime diagnostics/logging, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
             "tray",
+            "tray notification",
+            "system notification",
+            "device_fingerprint_mismatch",
             "runtime logs",
             "runtime logging",
             "agent shutdown",
@@ -847,6 +862,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ws_agent.py",
             "pc_agent/core/runtime_logging.py",
             "pc_agent/ui_gui/main.py",
+            "pc_agent/ui_gui/tray_notifications.py",
         ),
         related_docs=(
             "docs/QUICK_LOOKUP.md",
@@ -879,6 +895,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/core/runtime_logging.py",
             "pc_agent/ui_gui/main.py",
             "pc_agent/ui_gui/tray_manager.py",
+            "pc_agent/ui_gui/tray_notifications.py",
         ),
         path_prefixes=(
             "pc_agent/ui_gui/",

@@ -48,7 +48,8 @@ class AuthTokensRepo:
         self,
         token: str,
         device_id: str,
-        expires_at: Optional[datetime] = None
+        expires_at: Optional[datetime] = None,
+        replace_existing: bool = True,
     ) -> Tuple[str, AgentToken]:
         """
         Create agent token with hashing.
@@ -64,22 +65,27 @@ class AuthTokensRepo:
         Returns:
             Tuple of (raw_token, AgentToken record)
             
-        Raises:
-            ValueError: If active token limit exceeded (max 2 per device_id)
+        replace_existing:
+            When true, old active tokens for the same device are revoked in the
+            same transaction. Device identity is protected by machine_id and the
+            device fingerprint, not by a hard active-token counter.
         """
-        # Check active token limit (max 2 per device_id)
-        active_count = await self.check_active_token_limit(device_id)
-        if active_count >= 2:
-            raise ValueError(f"Active token limit exceeded for device_id={device_id} (max 2)")
-        
         token_hash = self.hash_token(token)
         token_prefix = self.get_token_prefix(token)
+        now = datetime.now(timezone.utc)
+
+        if replace_existing:
+            await self.revoke_active_agent_tokens_for_device(
+                device_id,
+                except_token_hash=token_hash,
+                commit=False,
+            )
         
         agent_token = AgentToken(
             token_hash=token_hash,
             token_prefix=token_prefix,
             device_id=device_id,
-            created_at=datetime.now(timezone.utc),
+            created_at=now,
             expires_at=expires_at,
             revoked_at=None,
             replaced_by_token_hash=None,
@@ -97,6 +103,33 @@ class AuthTokensRepo:
             await self.session.rollback()
             logger.error(f"[AuthTokensRepo] Failed to create agent token: {e}")
             raise
+
+    async def revoke_active_agent_tokens_for_device(
+        self,
+        device_id: str,
+        *,
+        except_token_hash: Optional[str] = None,
+        replaced_by_token_hash: Optional[str] = None,
+        commit: bool = True,
+    ) -> int:
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(AgentToken)
+            .where(AgentToken.device_id == device_id)
+            .where(AgentToken.revoked_at.is_(None))
+        )
+        if except_token_hash:
+            stmt = stmt.where(AgentToken.token_hash != except_token_hash)
+        values = {"revoked_at": now}
+        if replaced_by_token_hash:
+            values.update({"replaced_by_token_hash": replaced_by_token_hash, "rotated_at": now})
+        result = await self.session.execute(stmt.values(**values))
+        if commit:
+            await self.session.commit()
+        count = int(result.rowcount or 0)
+        if count:
+            logger.info(f"[AuthTokensRepo] Revoked {count} old active agent token(s): device_id={device_id}")
+        return count
     
     async def create_ui_token(
         self,

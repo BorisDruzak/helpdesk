@@ -37,6 +37,8 @@ def test_alert_rules_empty_metrics():
         ({"sent_stuck": 1}, "operation_sent_too_long"),
         ({"in_progress_stuck": 1}, "operation_in_progress_too_long"),
         ({"outbox_backlog": 150}, "outbox_backlog_high"),
+        ({"env_uuid_duplicate_groups": 2}, "inventory_env_uuid_duplicates"),
+        ({"devices_without_location": 3}, "inventory_devices_without_location"),
     ],
 )
 def test_alert_rule_each_kind(kwargs, expected_kind):

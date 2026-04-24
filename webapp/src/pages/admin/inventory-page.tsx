@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ArrowUpRight, RefreshCcw, ServerCog, ShieldCheck, Trash2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, KeyRound, RefreshCcw, ServerCog, ShieldCheck, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -10,7 +10,13 @@ import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { StatTile } from "../../components/ui/stat-tile";
-import { cleanupAdminEnvUuidDuplicates, type AdminStatusFilter, fetchAdminDevices } from "../../features/admin/api";
+import {
+  cleanupAdminEnvUuidDuplicates,
+  fetchAdminDeviceTokens,
+  type AdminStatusFilter,
+  fetchAdminDevices,
+  revokeAdminDeviceToken,
+} from "../../features/admin/api";
 
 
 function formatDateTime(value: string | null | undefined): string {
@@ -81,6 +87,12 @@ export function AdminInventoryPage() {
   const devices = devicesQuery.data?.devices ?? [];
   const selectedDeviceId = searchParams.get("device");
   const selectedDevice = devices.find((item) => item.device_id === selectedDeviceId) ?? devices[0] ?? null;
+  const deviceTokensQuery = useQuery({
+    queryKey: ["admin-device-tokens", selectedDevice?.device_id],
+    queryFn: () => fetchAdminDeviceTokens(selectedDevice?.device_id ?? ""),
+    enabled: Boolean(selectedDevice?.device_id),
+    retry: false,
+  });
   const rolloutAssignments = selectedDevice
     ? (devicesQuery.data?.rollout ?? []).filter((item) => item.target === selectedDevice.target)
     : devicesQuery.data?.rollout ?? [];
@@ -110,6 +122,19 @@ export function AdminInventoryPage() {
     },
     onError: (error) => {
       setCleanupFeedback(error instanceof Error ? error.message : "Не удалось выполнить чистку дублей.");
+    },
+  });
+
+  const revokeTokenMutation = useMutation({
+    mutationFn: async (tokenHash: string) => {
+      if (!selectedDevice?.device_id) {
+        throw new Error("Не выбрано устройство.");
+      }
+      await revokeAdminDeviceToken(selectedDevice.device_id, tokenHash);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-device-tokens", selectedDevice?.device_id] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-devices-page"] });
     },
   });
 
@@ -437,6 +462,69 @@ export function AdminInventoryPage() {
                   {selectedDevice?.duplicate_warning ? selectedDevice.duplicate_warning.title : "Не найдены"}
                 </span>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-brand-700" />
+                Токены устройства
+              </CardTitle>
+              <CardDescription>Активные и отозванные agent-токены для выбранного ПК.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {deviceTokensQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем токены…</p> : null}
+              {deviceTokensQuery.isError ? (
+                <p className="text-sm text-rose-600">
+                  {deviceTokensQuery.error instanceof Error ? deviceTokensQuery.error.message : "Не удалось загрузить токены."}
+                </p>
+              ) : null}
+              {deviceTokensQuery.data ? (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="rounded-[0.9rem] bg-surface-subtle px-2 py-3">
+                    <p className="font-semibold text-slate-950">{deviceTokensQuery.data.summary.total_count}</p>
+                    <p className="mt-1 text-slate-500">Всего</p>
+                  </div>
+                  <div className="rounded-[0.9rem] bg-emerald-50 px-2 py-3">
+                    <p className="font-semibold text-emerald-800">{deviceTokensQuery.data.summary.active_count}</p>
+                    <p className="mt-1 text-emerald-700">Активные</p>
+                  </div>
+                  <div className="rounded-[0.9rem] bg-slate-100 px-2 py-3">
+                    <p className="font-semibold text-slate-700">{deviceTokensQuery.data.summary.revoked_count}</p>
+                    <p className="mt-1 text-slate-500">Закрытые</p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                {(deviceTokensQuery.data?.tokens ?? []).map((token) => (
+                  <div key={token.token_hash} className="rounded-[1rem] border border-border bg-white px-3 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-950">{token.token_prefix ?? token.token_hash.slice(0, 8)}</p>
+                        <p className="mt-1 text-xs text-slate-500">last_used: {formatDateTime(token.last_used_at)}</p>
+                      </div>
+                      <Badge tone={token.is_active ? "success" : "neutral"}>{token.is_active ? "active" : "revoked"}</Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">created: {formatDateTime(token.created_at)}</p>
+                    {token.is_active ? (
+                      <Button
+                        className="mt-3 w-full"
+                        disabled={revokeTokenMutation.isPending}
+                        leadingIcon={<Trash2 className="h-4 w-4" />}
+                        onClick={() => revokeTokenMutation.mutate(token.token_hash)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Отозвать
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              {deviceTokensQuery.data && !deviceTokensQuery.data.tokens.length ? (
+                <p className="text-sm text-slate-500">Для устройства пока нет токенов.</p>
+              ) : null}
             </CardContent>
           </Card>
 

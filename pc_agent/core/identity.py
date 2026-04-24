@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from pc_agent.core.device_fingerprint import collect_device_fingerprint
 from pc_agent.core.machine_identity import resolve_machine_identity
 
 
@@ -46,6 +47,7 @@ class IdentityManager:
         self.legacy_uuid: Optional[str] = None
         self.machine_id_source: Optional[str] = None
         self.token: Optional[str] = None
+        self._device_fingerprint_cache: Optional[Dict[str, Any]] = None
 
     @staticmethod
     def is_valid_uuid(value: Any) -> bool:
@@ -148,6 +150,7 @@ class IdentityManager:
             "machine_id": self.device_id,
             "install_id": self.install_id,
             "machine_id_source": self.machine_id_source,
+            "device_fingerprint": self._device_fingerprint(),
             "token": self.token,
             "hostname": hostname,
             "ip": ip,
@@ -163,7 +166,22 @@ class IdentityManager:
             "install_id": self.install_id,
             "machine_id_source": self.machine_id_source,
             "identity_scheme": "machine_id_v1",
+            "device_fingerprint": self._device_fingerprint(),
         }
+
+    def _device_fingerprint(self) -> Dict[str, Any]:
+        if self._device_fingerprint_cache is None:
+            try:
+                self._device_fingerprint_cache = collect_device_fingerprint()
+            except Exception as exc:
+                logger.warning("Failed to collect device fingerprint: {}", exc)
+                self._device_fingerprint_cache = {
+                    "schema": "device_fingerprint_v1",
+                    "components": {},
+                    "mac_hashes": [],
+                    "summary": {"component_count": 0, "mac_count": 0},
+                }
+        return self._device_fingerprint_cache
 
     def auth_lookup_ids(self) -> list[str]:
         """

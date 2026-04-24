@@ -18,6 +18,7 @@ from .automation_controller import GuiAutomationController
 from .sse_client import SseClient
 from .token_dialog import TokenDialog
 from .tray_manager import TrayManager
+from .tray_notifications import tray_notification_from_event
 from .wait_for_auth_dialog import WaitForAuthDialog
 
 
@@ -575,6 +576,9 @@ async def run_gui(
             return
         event_type = str(event.get("event_type") or "")
         if event_type != "connection_state":
+            notification = tray_notification_from_event(event)
+            if notification:
+                tray_manager.notify(*notification)
             return
         payload = event.get("data") or {}
         state = str(payload.get("state") or "unknown")

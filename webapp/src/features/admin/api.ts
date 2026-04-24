@@ -80,6 +80,24 @@ export type AdminDeviceCleanupPayload = {
   kept_device_ids: string[];
 };
 
+export type AdminDeviceTokensPayload = {
+  device_id: string;
+  summary: {
+    total_count: number;
+    active_count: number;
+    revoked_count: number;
+  };
+  tokens: Array<{
+    token_hash: string;
+    token_prefix: string | null;
+    created_at: string | null;
+    expires_at: string | null;
+    revoked_at: string | null;
+    last_used_at: string | null;
+    is_active: boolean;
+  }>;
+};
+
 export type AdminRegistryPayload = {
   summary: {
     assets: number;
@@ -280,6 +298,25 @@ export async function cleanupAdminEnvUuidDuplicates(payload: {
     })
   });
   return readSuccessResponse(response, "Не удалось выполнить безопасную чистку дублей");
+}
+
+export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDeviceTokensPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/tokens`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить токены устройства");
+}
+
+export async function revokeAdminDeviceToken(deviceId: string, tokenHash: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/tokens/revoke`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ token_hash: tokenHash })
+  });
+  await readSuccessResponse(response, "Не удалось отозвать токен устройства");
 }
 
 export async function fetchAdminRegistry(): Promise<AdminRegistryPayload> {

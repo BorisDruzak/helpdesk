@@ -22,7 +22,7 @@
 |------|------------------|-------|
 | Handshake / outbox / ACK | `pc_agent/ws_agent.py`, `pc_agent/ws_agent_runtime_helpers.py` | `pc_agent/core/sender.py`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / команды | `pc_agent/core/orchestrator.py`, `pc_agent/core/orchestrator_collect_helpers.py`, `pc_agent/core/orchestrator_job_helpers.py` | `pc_agent/core/registry.py`, `server/tools/service.py` |
-| Auth / bootstrap | `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py` | `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
+| Auth / bootstrap | `pc_agent/core/identity.py`, `pc_agent/core/machine_identity.py`, `pc_agent/core/device_fingerprint.py` | `pc_agent/auth/token_source.py`, `pc_agent/auth/connection_request.py`, `pc_agent/docs/AUTHENTICATION.md` |
 | Self-update / launcher / rollout | `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md` | `pc_agent/docs/SELF_UPDATE.md`, `pc_agent/launcher/installer.py`, `server/docs/AGENT_UPDATES_API.md` |
 | Always-on / tray / runtime logs | `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` | `pc_agent/ws_agent.py`, `pc_agent/core/runtime_logging.py`, `pc_agent/ui_gui/main.py`, `pc_agent/ui_gui/tray_manager.py` |
 | GUI / `ui_bridge` | `pc_agent/ui_gui/main_window.py` | `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` |
@@ -54,7 +54,8 @@
 | `pc_agent/core/consent_service.py` | Отдельный lifecycle consent (`WAITING_USER/APPROVED/REJECTED/EXPIRED`) поверх `pending_consents` |
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries; если сервер объявил `outbox_batch_v1`, flusher может отправлять несколько `outbox_item` одним `outbox_items_batch` frame без изменения per-item ACK/NACK semantics |
-| `pc_agent/core/identity.py` | Каноническая identity агента: `machine_id` -> `device_id`, вторичный `install_id`, миграция legacy `identity.json`, handshake metadata |
+| `pc_agent/core/identity.py` | Каноническая identity агента: `machine_id` -> `device_id`, вторичный `install_id`, миграция legacy `identity.json`, handshake metadata включая `device_fingerprint` |
+| `pc_agent/core/device_fingerprint.py` | Best-effort hashed hardware proof для provisioning/handshake: system UUID, baseboard, CPU signature, boot volume и MAC hashes; raw serial/MAC не отправляются |
 | `pc_agent/core/machine_identity.py` | Разрешение стабильного `machine_id` из OS/runtime (Windows MachineGuid, Linux machine-id, env override, fallback file) |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |
@@ -109,6 +110,7 @@
 | `pc_agent/ui_gui/server_api.py` | Обращение к серверу из GUI, отправка `reply_to`/message metadata, вызов `mark_ticket_read()` и ticket history API с `get_ticket(..., since_event_id=..., before_event_id=..., limit=...)`; `sync_registry_profile()` отправляет локальный профиль инициатора в `/api/registry/profile` для auto-link человека, ПК и здания/кабинета |
 | `pc_agent/ui_gui/sse_client.py` | SSE-клиент к ui_bridge |
 | `pc_agent/ui_gui/tray_manager.py` | Тонкая cross-platform обёртка над `QSystemTrayIcon`: открыть окно, открыть логи, restart agent, exit agent |
+| `pc_agent/ui_gui/tray_notifications.py` | Maps auth-block events (`TOKEN_LIMIT_EXCEEDED`, `DEVICE_FINGERPRINT_MISMATCH`, `DEVICE_ARCHIVED`) to tray/system notifications |
 | `pc_agent/ui_gui/consent_dialog.py` | Диалог согласия на операцию |
 | `pc_agent/ui_gui/token_dialog.py` | Диалог токена |
 | `pc_agent/ui_gui/wait_for_auth_dialog.py` | Диалог ожидания авторизации; читает `connection_request_error.json` и показывает пользователю `TOKEN_LIMIT_EXCEEDED`, когда сервер отказал в выпуске третьего активного токена |

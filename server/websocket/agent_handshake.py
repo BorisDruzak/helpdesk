@@ -26,6 +26,11 @@ from config import ENABLE_DB_PERSISTENCE
 from auth.agent_token_service import AgentTokenService
 from auth.connection_request_service import ConnectionRequestService
 from auth.context import AuthContext, AuthType
+from auth.device_fingerprint import (
+    FINGERPRINT_METADATA_KEY,
+    compare_device_fingerprints,
+    normalize_device_fingerprint,
+)
 from websocket.contexts import AgentConnectionContext, EnvelopeContext
 from websocket.agent_services import (
     AgentLoopSafetyService,
@@ -274,6 +279,43 @@ async def _resolve_handshake_device_id(
 
     return payload_device_id
 
+
+async def _handshake_fingerprint_allowed(device_id: str, incoming: dict | None) -> tuple[bool, dict | None]:
+    fingerprint = normalize_device_fingerprint(incoming)
+    if not fingerprint or not DB_AVAILABLE or not ENABLE_DB_PERSISTENCE:
+        return True, None
+    try:
+        async with get_session() as session:
+            from app.repos.devices_repo import DevicesRepo
+
+            device = await DevicesRepo(session).get_by_device_id(device_id, include_deleted=True)
+            metadata = getattr(device, "device_metadata", None) if device else None
+            stored = normalize_device_fingerprint(
+                metadata.get(FINGERPRINT_METADATA_KEY) if isinstance(metadata, dict) else None
+            )
+            verdict = compare_device_fingerprints(stored, fingerprint)
+            payload = {
+                "allowed": verdict.allowed,
+                "status": verdict.status,
+                "matched_count": verdict.matched_count,
+                "mismatched_count": verdict.mismatched_count,
+                "comparable_count": verdict.comparable_count,
+                "missing_count": verdict.missing_count,
+                "details": verdict.details,
+            }
+            if not verdict.allowed:
+                return False, payload
+            if device:
+                current = dict(metadata) if isinstance(metadata, dict) else {}
+                current[FINGERPRINT_METADATA_KEY] = fingerprint
+                current["device_fingerprint_verdict"] = payload
+                device.device_metadata = current
+                await session.commit()
+            return True, payload
+    except Exception as exc:
+        logger.warning(f"[handshake] Failed to validate device fingerprint: device_id={device_id} error={exc}")
+        return True, None
+
 async def handle_handshake(
     ws: web.WebSocketResponse,
     data: dict,
@@ -403,6 +445,24 @@ async def handle_handshake(
         payload_install_id=payload_install_id,
     )
     agent_id = device_id
+    fingerprint_allowed, fingerprint_verdict = await _handshake_fingerprint_allowed(
+        device_id,
+        payload.get(FINGERPRINT_METADATA_KEY),
+    )
+    if not fingerprint_allowed:
+        logger.warning(
+            f"рџ”ґ Device fingerprint mismatch during handshake: device_id={device_id[:8]}... "
+            f"verdict={fingerprint_verdict}"
+        )
+        await write_agent_runtime_audit(
+            device_id=device_id,
+            event_type="device_fingerprint_mismatch",
+            severity="critical",
+            source="handshake",
+            details_json={"fingerprint_verdict": fingerprint_verdict or {}},
+        )
+        await ws.close(code=4003, message=b"Device fingerprint mismatch")
+        return (ws, agent_id, device_id, authenticated)
     
     # Создаем AuthContext для этого соединения
     auth_context = AuthContext(
@@ -517,6 +577,12 @@ async def handle_handshake(
                     "machine_id": device_id,
                     "identity_scheme": "machine_id_v1",
                 }
+                if payload.get(FINGERPRINT_METADATA_KEY) is not None:
+                    metadata_db[FINGERPRINT_METADATA_KEY] = normalize_device_fingerprint(
+                        payload.get(FINGERPRINT_METADATA_KEY)
+                    )
+                if fingerprint_verdict is not None:
+                    metadata_db["device_fingerprint_verdict"] = fingerprint_verdict
                 if payload.get("install_id") is not None:
                     metadata_db["install_id"] = payload.get("install_id")
                 if payload.get("machine_id_source") is not None:
