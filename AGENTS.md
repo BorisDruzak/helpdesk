@@ -50,6 +50,7 @@ Observer docs поддерживаются в актуальном состоя�
 - Типовые режимы работы и длинные playbook-и держать в repo-local каталогах `.cursor/rules/` и `.cursor/skills/` (это историческое имя папки, для Codex они тоже считаются каноничными playbook-ами проекта).
 - Корневой `AGENTS.md` хранит только инварианты проекта, pipeline и safety-правила.
 - Внешние plugin-skills допустимы как вспомогательные process-playbook-и только если они не конфликтуют с этим `AGENTS.md` и repo-local skill-ами проекта.
+- В Codex Desktop repo-local skill из `.cursor/skills/<name>/SKILL.md` считать проектным playbook-ом даже если он не появился в активном списке skills приложения; если есть stale user-level копия в `C:\Users\admin-2\.codex\skills`, приоритет у repo-local версии.
 - Каноничные внешние skills по умолчанию:
   - `superpowers:systematic-debugging` — для любого бага, падения теста или unexpected behavior: сначала root cause investigation, затем фикс.
   - `superpowers:verification-before-completion` — перед любым claim уровня "готово", "исправлено", "tests pass", а также перед commit/push/PR/deploy; он не заменяет проектные проверки, а требует свежего доказательства через них.
@@ -57,18 +58,17 @@ Observer docs поддерживаются в актуальном состоя�
   - `superpowers:executing-plans` — для аккуратного исполнения уже согласованного многошагового плана с checkpoint-ами.
   - `superpowers:requesting-code-review` — как финальный self-review для рискованных, больших или cross-cutting изменений перед публикацией результата.
   - `superpowers:test-driven-development` — использовать там, где реалистично сначала зафиксировать поведение тестом, особенно для bugfix и контрактных изменений.
-  - `build-web-apps:web-design-guidelines` — обязательный внешний skill для review дизайна, UX и accessibility веб-страниц; особенно для admin UI и любых заметных правок интерфейса сервера.
-  - `build-web-apps:frontend-skill` — использовать для крупных визуальных переделок страниц, когда нужно улучшать композицию, иерархию, плотность и общий уровень интерфейса, а не только чинить отдельные элементы.
+  - `build-web-apps:frontend-app-builder` — использовать для новых webapp-экранов, крупных визуальных переделок страниц и заметных UI/UX/accessibility-аудитов, когда нужно улучшать композицию, иерархию, плотность и общий уровень интерфейса.
   - `build-web-apps:react-best-practices` — использовать при работе с React/Next.js кодом, если соответствующий стек есть в затронутой части проекта.
 - Skills `circleci:*` использовать только когда задача действительно про CircleCI pipeline, `.circleci/config.yml`, Chunk или диагностику CI; они не являются частью обязательного потока локальной разработки и deploy на Linux.
-- Для задач по веб-интерфейсу сервера сочетать MCP browser-check из проектного канона с `build-web-apps:web-design-guidelines`: сначала привести интерфейс к рабочему состоянию, затем отдельно оценить качество UI/UX и читаемость.
+- Для задач по веб-интерфейсу сервера сочетать MCP browser-check из проектного канона с `build-web-apps:frontend-app-builder`, если задача включает дизайн/UX/accessibility или заметную визуальную переработку.
 - Для задач по новому `webapp/`, React-коду и frontend build/release pipeline первым шагом считать `python scripts/bootstrap_web_toolchain.py`; каноничный frontend toolchain проекта — `Node.js 24.15.0 + corepack + pnpm 10.33.0` локально и в CI.
 - Авто-маршрутизатор для Codex в `pc_client`:
   - bugfix / падение тестов / unexpected behavior -> `superpowers:systematic-debugging`, затем при уместности `superpowers:test-driven-development`
   - длинная задача / несколько подсистем / несколько заходов -> `superpowers:writing-plans` и ведение `PLANS.md`
   - исполнение уже согласованного плана -> `superpowers:executing-plans`
-  - UI review / UX review / accessibility / audit интерфейса -> `build-web-apps:web-design-guidelines`
-  - заметная визуальная переделка страницы или admin UI -> `build-web-apps:frontend-skill`, затем `build-web-apps:web-design-guidelines`
+  - UI review / UX review / accessibility / audit интерфейса -> `pc-client-browser-check`, затем `build-web-apps:frontend-app-builder`, если нужен дизайн-аудит или визуальная правка
+  - заметная визуальная переделка страницы или admin UI -> `build-web-apps:frontend-app-builder`, затем `pc-client-browser-check`
   - React / Next.js правки -> сначала `python scripts/bootstrap_web_toolchain.py`, затем `build-web-apps:react-best-practices`
   - завершение работы / claim "готово" / commit / push / deploy -> `superpowers:verification-before-completion`; для рискованных или широких изменений дополнительно `superpowers:requesting-code-review`
 - Отдельного внешнего skill-а именно для TODO в этом наборе нет; его роль в проекте выполняют `superpowers:writing-plans`, `superpowers:executing-plans`, локальный `PLANS.md` и явная фиксация шагов по ходу задачи.

@@ -13,7 +13,7 @@ alwaysApply: false
 - Runtime control на Linux: `python scripts/runtime_stack.py` (`start|stop|restart|status|smoke|logs` для `server` / `agent` / `control` / `all`)
 - Удалённый стек из Windows: `python scripts/manage_remote_stack.py` как SSH-обёртка над `scripts/runtime_stack.py`
 - Локальный именованный агент на Windows: `python scripts/manage_local_agent.py ...`
-- Поиск по коду одним вызовом: `python scripts/agent_find.py "<шаблон>"` (см. `docs/CURSOR_TOKEN_EFFICIENCY.md`)
+- Поиск по коду одним вызовом: `python scripts/agent_find.py "<шаблон>"` (стартовые темы и команды см. в `docs/QUICK_LOOKUP.md`)
 - Smoke и админские сценарии: `scripts/smoke_test.py`, `scripts/admin_run_tool.py`
 
 Правила запуска и запреты на ручной обход — в корневом `AGENTS.md` (разделы про pipeline, Git, Linux).

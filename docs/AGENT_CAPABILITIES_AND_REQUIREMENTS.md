@@ -30,13 +30,18 @@
 
 ## Скиллы проекта
 
-Repo-local скиллы проекта сейчас лежат в `.cursor/skills/` (историческое имя каталога):
+Repo-local скиллы проекта лежат в `.cursor/skills/` (историческое имя каталога, для Codex это тоже каноничные playbook-и). Если Codex Desktop не показывает какой-то repo-local skill в активном списке, открыть соответствующий `.cursor/skills/<name>/SKILL.md` вручную и следовать ему; repo-local версия важнее устаревшей копии в `C:\Users\admin-2\.codex\skills`.
 
-- **pc-client-tests** — какие тесты и pytest запускать.
-- **pc-client-docs-sync** — синхронизация документации и CODEMAP.
-- **pc-client-browser-check** — проверка веба, только 192.168.100.17.
-- **pc-client-release** — чеклист перед push.
-- **pc-client-migrations** — строгие правила миграций, в т.ч. при PostgreSQL на удалённой шаре.
+- **pc-client-plans** — ведение `PLANS.md` для длинных задач и handoff.
+- **pc-client-tests** — какие проверки, pytest, browser/smoke и live-сценарии запускать.
+- **pc-client-docs-sync** — синхронизация документации, CODEMAP и контрактов.
+- **pc-client-browser-check** — проверка веба только через `http://192.168.100.17:8666/admin`.
+- **pc-client-release** — чеклист перед commit/push/deploy и фиксация проверок.
+- **pc-client-migrations** — строгие правила миграций PostgreSQL и remote alembic.
 - **pc-client-commit-message** — формат сообщений коммитов.
+- **pc-client-log-triage** — разбор server/agent логов через штатные scripts.
+- **pc-client-agent-updates** — launcher, self-update, build upload, canary и rollout.
+- **pc-client-agent-runtime** — always-on runtime, tray, ui_bridge, shutdown/restart и logs.
+- **pc-client-observer-diagnostics** — observer quick diagnosis, traces, signatures, degradations и dangerous-flow regression.
 
-Использовать их по контексту задачи.
+Дополнительные Codex user-level skills могут жить в `C:\Users\admin-2\.codex\skills`; полезные для этого проекта: **pc-client-safe-workflow**, **pc-client-navigation**, **pc-client-remote-control**. Они помогают приложению автоматически выбрать правильный рабочий цикл, но не заменяют repo-local playbook-и.

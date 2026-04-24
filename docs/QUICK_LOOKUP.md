@@ -100,6 +100,12 @@ Historical docs больше не канон:
 - preflight перед включением default-route switch: `python scripts/check_webapp_cutover.py --json`
 - operational checklist для полного переключения: `docs/WEBAPP_CUTOVER_CHECKLIST.md`
 
+Если задача про UI/UX/accessibility audit, admin UI или заметную визуальную переработку:
+
+- routing должен попадать в тему `New web workspaces / typed web boundary`;
+- для `webapp/` сначала `python scripts/bootstrap_web_toolchain.py`;
+- живую проверку делать через MCP на `http://192.168.100.17:8666/admin`.
+
 Если менялся веб:
 
 - browser verification через MCP на `http://192.168.100.17:8666/admin`

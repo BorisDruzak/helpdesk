@@ -50,3 +50,11 @@ def test_task_query_routes_new_api_route_to_docs_sync() -> None:
     assert payload["recommended_playbook"] == ".cursor/rules/subagents-pc-client.mdc"
     assert "server/docs/CODEMAP.md" in payload["docs_to_update_if_code_changes"]
     assert "docs/QUICK_LOOKUP.md" in payload["docs_to_update_if_code_changes"]
+
+
+def test_task_query_routes_admin_ui_review_to_web_platform() -> None:
+    payload = task_intake.build_intake(task="ui review accessibility admin")
+
+    assert payload["recommended_mode"] == "Internal web platform / React"
+    assert "python scripts/bootstrap_web_toolchain.py" in payload["checks_to_run"]
+    assert "GUI check via MCP at http://192.168.100.17:8666/admin" in payload["checks_to_run"]
