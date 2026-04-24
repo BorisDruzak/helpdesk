@@ -47,6 +47,113 @@ export type AdminDevicesPayload = {
   }>;
 };
 
+export type AdminRegistryPayload = {
+  summary: {
+    assets: number;
+    people: number;
+    locations: number;
+    departments: number;
+    services: number;
+    vendors: number;
+    data_quality_issues: number;
+    suggestions: number;
+  };
+  assets: Array<{
+    id: string;
+    asset_type: string;
+    name: string | null;
+    hostname: string | null;
+    serial_number: string | null;
+    inventory_number: string | null;
+    status: string;
+    source: string;
+    device_id: string | null;
+    assigned_person_id: string | null;
+    location_id: string | null;
+    department_id: string | null;
+    service_id: string | null;
+    vendor_id: string | null;
+    owner_name: string | null;
+    department_name: string | null;
+    location_name: string | null;
+    service_name: string | null;
+    vendor_name: string | null;
+    ticket_count: number;
+    last_seen_at: string | null;
+    updated_at: string | null;
+  }>;
+  people: Array<{
+    id: string;
+    display_name: string;
+    full_name: string | null;
+    phone: string | null;
+    email: string | null;
+    department_id: string | null;
+    location_id: string | null;
+    department_name: string | null;
+    location_name: string | null;
+    source: string;
+    status: string;
+    updated_at: string | null;
+  }>;
+  locations: Array<{
+    id: string;
+    building: string | null;
+    floor: string | null;
+    room: string | null;
+    display_name: string;
+    source: string;
+    status: string;
+    updated_at: string | null;
+  }>;
+  departments: Array<{
+    id: string;
+    code: string | null;
+    name: string;
+    source: string;
+    status: string;
+    updated_at: string | null;
+  }>;
+  services: Array<{
+    id: string;
+    code: string | null;
+    name: string;
+    support_queue: string | null;
+    owner_person_id: string | null;
+    vendor_id: string | null;
+    source: string;
+    status: string;
+    updated_at: string | null;
+  }>;
+  vendors: Array<{
+    id: string;
+    code: string | null;
+    name: string;
+    contact_name: string | null;
+    phone: string | null;
+    email: string | null;
+    source: string;
+    status: string;
+    updated_at: string | null;
+  }>;
+  data_quality: Array<{
+    kind: string;
+    severity: "danger" | "info" | "neutral" | "success" | "warning";
+    title: string;
+    description: string;
+    object_type: string;
+    object_id: string;
+  }>;
+  suggestions: Array<{
+    kind: string;
+    confidence: number;
+    title: string;
+    description: string;
+    object_type: string;
+    object_id: string;
+  }>;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -120,4 +227,11 @@ export async function fetchAdminDevices(params: AdminDevicesParams): Promise<Adm
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить inventory устройств");
+}
+
+export async function fetchAdminRegistry(): Promise<AdminRegistryPayload> {
+  const response = await fetch("/api/web/admin/registry", {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить реестры");
 }

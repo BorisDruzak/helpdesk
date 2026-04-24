@@ -7,6 +7,7 @@ from loguru import logger
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
+from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
 from observer.service import ObserverOverlayService
@@ -58,6 +59,7 @@ from web_api.dto.support import (
     SupportTicketPresence,
     SupportTicketQueueInfo,
     SupportTicketQueueMember,
+    SupportTicketRegistrySnapshot,
     SupportTicketRequestFormPayload,
     SupportTicketRequestFormRow,
     SupportTicketReplyTo,
@@ -481,8 +483,30 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
     notification_unread = await NotificationRepo(session).unread_count(auth_context.actor_id)
 
     device = None
+    registry_snapshot = None
     if getattr(ticket, "device_id", None):
         device = await DevicesRepo(session).get_by_device_id(ticket.device_id)
+        registry_repo = RegistryRepo(session)
+        asset = await registry_repo.get_asset_by_device_id(ticket.device_id)
+        person = await registry_repo.get_person(getattr(asset, "assigned_person_id", None)) if asset else None
+        location = await registry_repo.get_location(getattr(asset, "location_id", None)) if asset else None
+        department = await registry_repo.get_department(getattr(asset, "department_id", None)) if asset else None
+        if asset or person or location or department:
+            registry_snapshot = SupportTicketRegistrySnapshot(
+                person_id=getattr(person, "person_id", None),
+                person_display_name=getattr(person, "display_name", None),
+                department_id=getattr(department, "department_id", None),
+                department_name=getattr(department, "name", None),
+                location_id=getattr(location, "location_id", None),
+                location_display_name=getattr(location, "display_name", None),
+                building=getattr(location, "building", None),
+                room=getattr(location, "room", None),
+                asset_id=getattr(asset, "asset_id", None),
+                asset_name=getattr(asset, "name", None),
+                asset_type=getattr(asset, "asset_type", None),
+                service_id=getattr(asset, "service_id", None),
+                service_name=None,
+            )
 
     device_snapshot = SupportTicketDeviceSnapshot(
         device_id=getattr(ticket, "device_id", None),
@@ -521,6 +545,7 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         notification_unread=int(notification_unread or 0),
         presence=presence,
         device=device_snapshot,
+        registry=registry_snapshot,
         latest_operations=latest_operations,
     )
 

@@ -2254,6 +2254,7 @@ class ChatPanel(QWidget):
         )
         self._refresh_profile_selector()
         self.requesterProfileChanged.emit()
+        self._sync_profile_to_registry()
 
     def _load_ticket_form_pack(self) -> dict[str, Any]:
         try:
@@ -2370,6 +2371,8 @@ class ChatPanel(QWidget):
         if not profile:
             return f"Без профиля | {self.user_display_name}"
         parts = [profile.get("full_name") or profile.get("display_name") or "Без имени"]
+        if profile.get("department"):
+            parts.append(profile["department"])
         location = " ".join(filter(None, [profile.get("building"), profile.get("room")]))
         if location:
             parts.append(location)
@@ -2395,12 +2398,14 @@ class ChatPanel(QWidget):
         form = QFormLayout(form_widget)
         display_name = QLineEdit()
         full_name = QLineEdit()
+        department = QLineEdit()
         building = QLineEdit()
         room = QLineEdit()
         phone = QLineEdit()
         form.addRow("Отображаемое имя", display_name)
         form.addRow("ФИО", full_name)
-        form.addRow("Корпус", building)
+        form.addRow("Подразделение", department)
+        form.addRow("Здание", building)
         form.addRow("Кабинет", room)
         form.addRow("Телефон", phone)
         layout.addWidget(form_widget)
@@ -2429,6 +2434,7 @@ class ChatPanel(QWidget):
             profile = next((p for p in self._profiles() if p.get("id") == profile_id), None)
             display_name.setText(profile.get("display_name") if profile else "")
             full_name.setText(profile.get("full_name") if profile else "")
+            department.setText(profile.get("department") if profile else "")
             building.setText(profile.get("building") if profile else "")
             room.setText(profile.get("room") if profile else "")
             phone.setText(profile.get("phone") if profile else "")
@@ -2460,6 +2466,7 @@ class ChatPanel(QWidget):
                 "id": profile_id or str(uuid.uuid4()),
                 "display_name": display_name.text().strip(),
                 "full_name": full_name.text().strip(),
+                "department": department.text().strip(),
                 "building": building.text().strip(),
                 "room": room.text().strip(),
                 "phone": phone.text().strip(),
@@ -2479,6 +2486,7 @@ class ChatPanel(QWidget):
             profiles_list.clearSelection()
             display_name.clear()
             full_name.clear()
+            department.clear()
             building.clear()
             room.clear()
             phone.clear()
@@ -2521,13 +2529,48 @@ class ChatPanel(QWidget):
     def _current_requester_payload(self) -> tuple[dict, str]:
         profile = self._active_profile() or {}
         requester_profile = {
+            "profile_id": profile.get("id") or "",
+            "display_name": profile.get("display_name") or "",
             "full_name": profile.get("full_name") or "",
+            "department": profile.get("department") or "",
             "building": profile.get("building") or "",
             "room": profile.get("room") or "",
             "phone": profile.get("phone") or "",
         }
         display_name = profile.get("display_name") or profile.get("full_name") or self.user_display_name
         return requester_profile, display_name
+
+    def _registry_profile_payload(self, profile: Optional[dict] = None) -> Optional[tuple[str, str, dict]]:
+        profile = profile or self._active_profile()
+        if not profile:
+            return None
+        profile_id = str(profile.get("id") or "").strip()
+        if not profile_id:
+            return None
+        display_name = profile.get("display_name") or profile.get("full_name") or self.user_display_name
+        payload = {
+            "profile_id": profile_id,
+            "display_name": profile.get("display_name") or "",
+            "full_name": profile.get("full_name") or "",
+            "department": profile.get("department") or "",
+            "building": profile.get("building") or "",
+            "room": profile.get("room") or "",
+            "phone": profile.get("phone") or "",
+        }
+        return profile_id, display_name, payload
+
+    def _sync_profile_to_registry(self, profile: Optional[dict] = None) -> None:
+        registry_payload = self._registry_profile_payload(profile)
+        if registry_payload is None:
+            return
+        requester_id, display_name, payload = registry_payload
+        self._spawn_task(
+            self.ticket_client.sync_registry_profile(
+                requester_id=requester_id,
+                display_name=display_name,
+                profile=payload,
+            )
+        )
 
     def _spawn_task(self, coro) -> Optional[asyncio.Task]:
         if self._is_closing:

@@ -200,6 +200,24 @@ class SupportTicketDeviceSnapshot(BaseModel):
     online: bool = False
 
 
+class SupportTicketRegistrySnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    person_id: str | None = None
+    person_display_name: str | None = None
+    department_id: str | None = None
+    department_name: str | None = None
+    location_id: str | None = None
+    location_display_name: str | None = None
+    building: str | None = None
+    room: str | None = None
+    asset_id: str | None = None
+    asset_name: str | None = None
+    asset_type: str | None = None
+    service_id: str | None = None
+    service_name: str | None = None
+
+
 class SupportTicketOperationSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -221,6 +239,7 @@ class SupportTicketSnapshot(BaseModel):
     notification_unread: int
     presence: SupportTicketPresence
     device: SupportTicketDeviceSnapshot
+    registry: SupportTicketRegistrySnapshot | None = None
     latest_operations: list[SupportTicketOperationSnapshot] = Field(default_factory=list)
 
 

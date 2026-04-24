@@ -551,6 +551,20 @@ async def handle_handshake(
                     toolset_hash=agent_toolset_hash,
                     metadata=metadata_db
                 )
+                try:
+                    from registry.service import RegistryIngestionService
+
+                    await RegistryIngestionService(session).ingest_agent_handshake(
+                        device_id=device_id,
+                        hostname=hostname,
+                        os_name=os_info,
+                        agent_version=agent_version,
+                        metadata=metadata_db,
+                    )
+                except Exception as registry_exc:
+                    logger.warning(
+                        f"[handshake] registry ingest failed for device_id={device_id}: {registry_exc}"
+                    )
                 await _confirm_update_operation_from_handshake(
                     session=session,
                     state=state,

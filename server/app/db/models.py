@@ -653,6 +653,240 @@ class Device(Base):
         return self.deleted_at is not None
 
 
+class RegistryDepartment(Base):
+    """Lightweight registry department used by people, assets and routing context."""
+    __tablename__ = "registry_departments"
+
+    department_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_department_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_registry_departments_name", "name"),
+        Index("ix_registry_departments_status", "status"),
+    )
+
+
+class RegistryLocation(Base):
+    """Building/room registry. The project term is buildings, not corps."""
+    __tablename__ = "registry_locations"
+
+    location_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    building: Mapped[str] = mapped_column(Text, nullable=False)
+    floor: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    room: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("building", "floor", "room", name="uq_registry_locations_building_floor_room"),
+        Index("ix_registry_locations_building_room", "building", "room"),
+        Index("ix_registry_locations_status", "status"),
+    )
+
+
+class RegistryVendor(Base):
+    """External vendor/contractor registry."""
+    __tablename__ = "registry_vendors"
+
+    vendor_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    contact_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    contact_phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    contact_email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class RegistryService(Base):
+    """Business/IT system registry entry."""
+    __tablename__ = "registry_services"
+
+    service_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_queue_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    vendor_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_vendors.vendor_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_registry_services_status", "status"),
+        Index("ix_registry_services_owner_queue", "owner_queue_id"),
+    )
+
+
+class RegistryPerson(Base):
+    """Person registry entry populated manually, from AD, or from an agent profile."""
+    __tablename__ = "registry_people"
+
+    person_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    department_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    location_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_locations.location_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    profile_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("source", "profile_key", name="uq_registry_people_source_profile_key"),
+        Index("ix_registry_people_department", "department_id"),
+        Index("ix_registry_people_location", "location_id"),
+        Index("ix_registry_people_status", "status"),
+    )
+
+
+class RegistryAsset(Base):
+    """Asset registry entry for PCs, printers and related objects."""
+    __tablename__ = "registry_assets"
+
+    asset_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    asset_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    hostname: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, unique=True)
+    inventory_number: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    location_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_locations.location_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    assigned_person_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    department_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    service_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_services.service_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    vendor_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_vendors.vendor_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    discovery_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_registry_assets_type_status", "asset_type", "status"),
+        Index("ix_registry_assets_hostname", "hostname"),
+        Index("ix_registry_assets_location", "location_id"),
+        Index("ix_registry_assets_assigned_person", "assigned_person_id"),
+        Index("ix_registry_assets_department", "department_id"),
+    )
+
+
 class DeviceConfig(Base):
     """
     Device configuration model.

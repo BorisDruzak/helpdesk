@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Device, Operation, Ticket, UiUser
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
+from registry.service import RegistryIngestionService
 from routes import setup_routes
 import web_api.support_handlers as support_handlers_module
 from tests.conftest import TEST_UI_SUPPORT_TOKEN
@@ -184,6 +185,26 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         session.add(ticket)
         await session.flush()
 
+        registry_service = RegistryIngestionService(session)
+        await registry_service.ingest_agent_handshake(
+            device_id="device-detail",
+            hostname="ws-detail-host",
+            os_name="Windows 11",
+            agent_version="1.2.3",
+        )
+        await registry_service.ingest_requester_profile(
+            device_id="device-detail",
+            requester_id="user-a",
+            display_name="Иванов Иван",
+            profile={
+                "full_name": "Иванов Иван",
+                "department": "Бухгалтерия",
+                "building": "Главное здание",
+                "room": "214",
+                "phone": "+7 343 000-00-00",
+            },
+        )
+
         repo = TicketEventsRepo(session)
         await repo.add_event(
             ticket_id=ticket_id,
@@ -235,6 +256,10 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["timeline"][0]["text"] == "Проверяю логи и канал связи."
     assert payload["data"]["snapshot"]["device"]["hostname"] == "ws-detail-host"
     assert payload["data"]["snapshot"]["device"]["agent_version"] == "1.2.3"
+    assert payload["data"]["snapshot"]["registry"]["person_display_name"] == "Иванов Иван"
+    assert payload["data"]["snapshot"]["registry"]["department_name"] == "Бухгалтерия"
+    assert payload["data"]["snapshot"]["registry"]["room"] == "214"
+    assert payload["data"]["snapshot"]["registry"]["asset_name"] == "ws-detail-host"
     assert payload["data"]["snapshot"]["latest_operations"][0]["tool_name"] == "network.diagnostics"
     assert payload["data"]["snapshot"]["presence"]["agent_online"] is False
     assert {item["value"] for item in payload["data"]["actions"]["status_options"]} >= {"in_progress"}
