@@ -41,6 +41,7 @@ from tickets.routing_service import (
     build_form_routing_context,
     find_matching_routing_rule,
 )
+from tech.runtime_audit import write_agent_runtime_audit
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
     AdminBuildIdentity,
@@ -235,6 +236,14 @@ _FORM_FIELD_TYPE_LABELS = {
     "radio": "Переключатель",
     "checkbox": "Флажок",
 }
+
+
+def _iso(value) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def _normalize_status_filter(value: str | None) -> str:

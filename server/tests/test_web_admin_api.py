@@ -1,6 +1,7 @@
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from auth.context import AuthContext, AuthType
@@ -1068,3 +1069,24 @@ async def test_web_admin_device_update_run_returns_queued_action_payload(web_adm
     assert payload["status"] == "success"
     assert payload["data"]["operation_id"] == "op-admin-1"
     assert payload["data"]["build"]["version"] == "3.1.19"
+
+
+@pytest.mark.no_db
+def test_web_admin_device_token_item_serializes_datetimes():
+    created_at = datetime(2026, 4, 24, 12, 0, tzinfo=timezone.utc)
+    last_used_at = datetime(2026, 4, 24, 12, 30, tzinfo=timezone.utc)
+
+    item = admin_handlers._device_token_item(
+        SimpleNamespace(
+            token_hash="hash-1",
+            token_prefix="pc1_",
+            created_at=created_at,
+            expires_at=None,
+            revoked_at=None,
+            last_used_at=last_used_at,
+        )
+    )
+
+    assert item.created_at == created_at.isoformat()
+    assert item.last_used_at == last_used_at.isoformat()
+    assert item.is_active is True

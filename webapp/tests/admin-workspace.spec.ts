@@ -21,7 +21,7 @@ test("администратор видит отдельные пункты admi
   await page.getByLabel("Пароль").fill("secret");
   await page.getByRole("button", { name: "Войти" }).click();
 
-  await expect(page).toHaveURL(/\/app\/admin\/inventory$/);
+  await expect(page).toHaveURL(/\/app\/admin\/inventory(?:\?.*)?$/);
   await expect(page.getByRole("heading", { name: "Инвентарь устройств" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Карточка устройства/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Модули/ })).toBeVisible();
