@@ -96,7 +96,7 @@ export function AdminInventoryPage() {
       }
       return cleanupAdminEnvUuidDuplicates({
         hostname: selectedDevice.hostname,
-        keepDeviceId: selectedDevice.device_id,
+        keepDeviceId: selectedDevice.identity_summary.is_stable ? selectedDevice.device_id : undefined,
         apply,
       });
     },
