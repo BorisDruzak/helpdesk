@@ -19,6 +19,7 @@
 
 - Typed admin inventory now exposes device identity source and duplicate warnings via `GET /api/web/admin/devices`, and safe offline `env_uuid` duplicate cleanup goes through `POST /api/web/admin/devices/cleanup_env_duplicates`; the cleanup archives device rows through `DevicesRepo.archive_device()`, so active tokens and pending runtime work are revoked/cancelled instead of hard-deleted.
 - `/app/admin/inventory` shows identity source badges (`windows_machine_guid`, `linux_machine_id`, `env_uuid`) and duplicate cleanup actions for old `ADMIN-2`-style test records. `/app/admin/settings` reuses the settings workspace with the `Уведомления` tab for in-app notification preferences, recent notifications and tech alerts.
+- Notification APIs used by the React settings tab (`/api/notifications`, `/api/notifications/preferences`) are part of the web-session cookie bridge, alongside `/api/web/*`, module/admin tech and ticket-form endpoints.
 - Connection request token exhaustion is now explicit: server returns `TOKEN_LIMIT_EXCEEDED` on 429 and marks the pending request metadata; the agent writes `connection_request_error.json`, emits `connection_rejected` with the server message, and GUI auth avoids persisting a permanent local reject flag for this transient block.
 
 ## 2026-04-16 intake forms

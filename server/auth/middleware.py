@@ -18,6 +18,7 @@ WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/admin/tech/",
     "/api/admin/settings/observer",
     "/api/ticket_forms/",
+    "/api/notifications",
 )
 
 

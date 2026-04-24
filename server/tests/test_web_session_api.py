@@ -201,6 +201,8 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
         "/api/admin/tech/traces/runtime",
         "/api/admin/settings/observer",
         "/api/ticket_forms/packs",
+        "/api/notifications/preferences",
+        "/api/notifications",
     ],
 )
 async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch, path: str):

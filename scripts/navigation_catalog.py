@@ -197,7 +197,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, connection request flow, explicit TOKEN_LIMIT_EXCEEDED diagnostics, httpOnly web session bridging for React admin surfaces, and security invariants.",
+        summary="Token sources, AuthContext, connection request flow, explicit TOKEN_LIMIT_EXCEEDED diagnostics, httpOnly web session bridging for React admin/notification surfaces, and security invariants.",
         aliases=(
             "auth",
             "token",
@@ -207,6 +207,8 @@ TOPICS: tuple[Topic, ...] = (
             "authcontext",
             "connection request",
             "connection_request",
+            "notification auth",
+            "notifications preferences",
             "rbac",
             "security",
             "авторизация",
@@ -218,6 +220,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/auth/",
             "server/app/repos/auth_tokens_repo.py",
+            "server/auth/middleware.py",
             "pc_agent/auth/token_source.py",
             "pc_agent/auth/connection_request.py",
             "pc_agent/core/identity.py",
