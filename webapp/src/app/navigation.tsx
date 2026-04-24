@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   BookOpen,
+  Building2,
   Layers3,
   MonitorCog,
   Radar,
@@ -57,6 +58,13 @@ export const appNavigation: AppNavItem[] = [
     icon: MonitorCog,
     section: "admin",
     to: "/app/admin/inventory"
+  },
+  {
+    label: "Реестры",
+    description: "Люди, здания, кабинеты и сервисы",
+    icon: Building2,
+    section: "admin",
+    to: "/app/admin/registry"
   },
   {
     label: "Карточка устройства",

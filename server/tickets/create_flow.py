@@ -179,6 +179,25 @@ async def create_ticket_with_side_effects(
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
 
+    try:
+        from registry.service import RegistryIngestionService
+
+        registry_result = await RegistryIngestionService(session).ingest_requester_profile(
+            device_id=device_id,
+            requester_id=requester_id,
+            display_name=user_display_name,
+            profile=requester_profile or {},
+        )
+        custom_fields["registry_context"] = {
+            "person_id": registry_result.person_id,
+            "asset_id": registry_result.asset_id,
+            "location_id": registry_result.location_id,
+            "department_id": registry_result.department_id,
+            "source": "agent_profile",
+        }
+    except Exception as exc:
+        logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
+
     public_access_code: Optional[str] = None
     if include_public_access:
         public_access_code = generate_public_access_code()

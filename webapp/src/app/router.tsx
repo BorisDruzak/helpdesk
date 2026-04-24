@@ -15,6 +15,7 @@ import { AdminFormsPage } from "../pages/admin/forms-page";
 import { AdminInventoryPage } from "../pages/admin/inventory-page";
 import { AdminModulesPage } from "../pages/admin/modules-page";
 import { AdminObserverPage } from "../pages/admin/observer-page";
+import { AdminRegistryPage } from "../pages/admin/registry-page";
 import { KnowledgeBasePage } from "../pages/knowledge";
 import { ReportsPage } from "../pages/reports";
 import { SettingsPage } from "../pages/settings";
@@ -198,6 +199,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminDevicePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/registry",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminRegistryPage />
               </WorkspaceAccessGate>
             )
           },

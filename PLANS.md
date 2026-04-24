@@ -630,3 +630,30 @@
   - targeted pytest suites for the update/runtime/server contracts touched in the current WIP
   - `python scripts/manage_remote_stack.py status|start|smoke ...`
   - local Windows launcher/GUI smoke against the Linux stand after rollout
+
+## 2026-04-24 Registry objects MVP
+
+- Scope:
+  - add a lightweight registry domain, not a full CMDB: people, departments, buildings, rooms, assets, systems/services, vendors and their support ownership;
+  - keep automatic discovery separate from canonical manual data: agent/handshake/profile data may create unverified records and suggestions, but must not overwrite confirmed building/room/owner fields;
+  - auto-register connected agents as PC assets, sync requester profiles from the agent into people, and link person <-> device/asset/location;
+  - expose typed `/api/web/admin/registry` APIs and a React admin page named `Реестры`;
+  - enrich support ticket detail with registry context so the operator sees person, department, building, room, asset and service next to the ticket;
+  - provide operator utilities for accepted follow-up ideas: object ticket history, link suggestions, data quality issues, registry-aware routing fields, batch assignment preview, service cards and similar ticket signals.
+- Implementation checklist:
+  1. create registry tables and SQLAlchemy models with source/status fields for confirmed vs discovered records;
+  2. add repository/service tests first, then implement `RegistryRepo` and `RegistryIngestionService`;
+  3. hook agent handshake to ensure a PC asset exists for every connected device;
+  4. add a profile upsert endpoint for agent/user profile sync and return canonical location options;
+  5. extend ticket creation/profile update paths to sync requester profile into registry and attach registry ids in `tickets.custom_fields`;
+  6. add typed admin registry APIs and DTOs;
+  7. add `/app/admin/registry` navigation and UI with tabs for overview, objects, data quality, suggestions and service cards;
+  8. update support ticket sidebar payload to include registry context;
+  9. update CODEMAP/QUICK_LOOKUP for new route/API/service files;
+  10. verify with `python scripts/verify_workspace.py`, targeted pytest, webapp tests/build, and browser check on `http://192.168.100.17:8666/admin`.
+- Verification target:
+  - `python -m pytest server/tests/test_registry_service.py server/tests/test_registry_web_api.py -v --tb=short`
+  - `python -m pytest server/tests/test_ticket_create_contracts.py -v --tb=short`
+  - `pnpm --dir webapp test -- --run`
+  - `pnpm --dir webapp run build`
+  - `python scripts/verify_workspace.py`

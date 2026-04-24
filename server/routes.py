@@ -233,6 +233,10 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_traces,
     handle_web_admin_set_module_preferred_version,
 )
+from web_api.registry_handlers import (
+    handle_registry_profile_upsert,
+    handle_web_admin_registry,
+)
 from web_api.reports_handlers import handle_web_reports_summary
 from web_api.settings_handlers import handle_web_settings_payload
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
@@ -396,6 +400,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),
         web.get('/api/web/admin/observer/traces/{trace_id}', handle_web_admin_observer_trace_detail),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
+        web.get('/api/web/admin/registry', handle_web_admin_registry),
         web.get('/api/web/admin/forms/current', handle_web_admin_forms_current),
         web.post('/api/web/admin/forms/route-preview', handle_web_admin_forms_route_preview),
         web.post('/api/web/admin/forms/save', handle_web_admin_forms_save),
@@ -404,6 +409,7 @@ def setup_routes(app: web.Application) -> None:
         web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
         web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
+        web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.get('/api/web/reports/summary', handle_web_reports_summary),
         web.get('/api/web/settings', handle_web_settings_payload),
         web.get('/api/web/settings/queues', handle_admin_queues_list),

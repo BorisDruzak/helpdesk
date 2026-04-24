@@ -450,6 +450,34 @@ class TicketApiClient:
             await self._session.close()
             logger.debug("Закрыта aiohttp ClientSession для TicketApiClient")
     
+    async def sync_registry_profile(
+        self,
+        *,
+        requester_id: str,
+        display_name: str,
+        profile: dict,
+    ) -> dict:
+        """Отправляет профиль инициатора в серверный реестр людей и локаций."""
+        url = f"{self.base_url}/registry/profile"
+        payload = {
+            "device_id": self.device_id,
+            "requester_id": requester_id,
+            "display_name": display_name,
+            "profile": profile or {},
+        }
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    logger.info("Registry profile sync skipped: HTTP %s", response.status)
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return json.loads(response_text)
+        except aiohttp.ClientError as exc:
+            logger.info("Registry profile sync network error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def create_ticket(
         self,
         description: str,
