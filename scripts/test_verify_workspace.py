@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import scripts.verify_workspace as verify
@@ -49,3 +51,35 @@ class ExampleCollector(BaseCollector):
 
     assert len(failures) == 1
     assert "pc_agent\\modules\\impl\\example.py" in failures[0]
+
+
+def test_run_docs_links_returns_no_failures_on_success(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 0, stdout=b"ok\n", stderr=b"")
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+
+    assert verify.run_docs_links(tmp_path) == []
+
+
+def test_run_docs_links_returns_output_on_failure(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 1, stdout=b"broken\n", stderr=b"details\n")
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+
+    assert verify.run_docs_links(tmp_path) == ["broken", "details"]
+
+
+def test_run_docs_links_calls_docs_inventory_check(monkeypatch, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+
+    verify.run_docs_links(tmp_path)
+
+    assert calls == [[sys.executable, str(tmp_path / "scripts" / "docs_inventory.py"), "--check-links"]]

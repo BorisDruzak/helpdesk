@@ -58,3 +58,31 @@ def test_task_query_routes_admin_ui_review_to_web_platform() -> None:
     assert payload["recommended_mode"] == "Internal web platform / React"
     assert "python scripts/bootstrap_web_toolchain.py" in payload["checks_to_run"]
     assert "GUI check via MCP at http://192.168.100.17:8666/admin" in payload["checks_to_run"]
+
+
+def test_task_query_routes_russian_agent_update_aliases() -> None:
+    payload = task_intake.build_intake(task="обновление агента лаунчер раскатка")
+
+    assert payload["recommended_mode"] == "Agent updates / rollout"
+    assert payload["recommended_playbook"] == "pc_agent/docs/AGENT_UPDATE_WORKFLOW.md"
+
+
+def test_task_query_routes_russian_runtime_aliases() -> None:
+    payload = task_intake.build_intake(task="трей закрытие окна логи агента")
+
+    assert payload["recommended_mode"] == "Agent runtime / tray / logs"
+    assert payload["recommended_playbook"] == "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md"
+
+
+def test_task_query_routes_russian_release_aliases() -> None:
+    payload = task_intake.build_intake(task="релиз выкладка дымовой тест")
+
+    assert payload["recommended_mode"] == "Release / deploy"
+    assert payload["recommended_playbook"] == "docs/LOCAL_WORKFLOW.md"
+
+
+def test_task_query_routes_russian_observer_aliases() -> None:
+    payload = task_intake.build_intake(task="трасса наблюдаемость деградации")
+
+    assert payload["recommended_mode"] == "Observer / tracing"
+    assert "server/docs/OBSERVER_LAYER.md" in payload["docs_to_read"]

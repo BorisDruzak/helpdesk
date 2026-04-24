@@ -1,5 +1,26 @@
 # PLANS.md
 
+## 2026-04-24 Documentation inventory and context tooling
+
+- Status: completed locally on 2026-04-24; targeted tests, docs link check, context-pack smoke and `python scripts/verify_workspace.py` passed.
+- Scope:
+  - добавить `scripts/docs_inventory.py` для списка Markdown-документов, статусов `canonical` / `archive` / `plan` / `spec` / `historical`, broken local links и дубликатов по basename;
+  - встроить broken-link guard в `python scripts/verify_workspace.py`;
+  - усилить `scripts/task_intake.py --task` через русские алиасы в `scripts/navigation_catalog.py`;
+  - добавить `scripts/build_context_pack.py --topic ...` как компактный context bundle из `navigation_catalog`;
+  - разнести старые root roadmap/gap-analysis документы в `docs/archive/`.
+- Delivery order:
+  1. failing tests для inventory, context pack, verify integration и русских aliases;
+  2. реализация новых scripts и интеграция verify;
+  3. перенос historical root docs в archive и docs sync;
+  4. targeted pytest + `python scripts/verify_workspace.py`;
+  5. локальный commit.
+- Verification target:
+  - `python -m pytest scripts/test_docs_inventory.py scripts/test_build_context_pack.py scripts/test_verify_workspace.py scripts/test_task_intake.py scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q`
+  - `python scripts/docs_inventory.py --check-links`
+  - `python scripts/build_context_pack.py --topic "обновление агента"`
+  - `python scripts/verify_workspace.py`
+
 ## 2026-04-23 Form-aware routing and smart forms follow-up
 
 - Scope:

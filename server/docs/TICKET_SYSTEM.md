@@ -2,7 +2,7 @@
 
 Единый документ по тикетной системе сервера: маршрутизация, SLA, workflow, RBAC, уведомления, проблемы/изменения, админ-конфиг, пользователи, очереди, UI, календари, OLA, retention и вложения.
 
-**Связанные документы:** [DATABASE.md](DATABASE.md), [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md), [CHAT_MESSAGE_CONTRACT.md](CHAT_MESSAGE_CONTRACT.md), [ARTIFACTS_API.md](ARTIFACTS_API.md). Анализ пробелов и багов: [TICKET_CRM_GAP_ANALYSIS.md](../../docs/TICKET_CRM_GAP_ANALYSIS.md).
+**Связанные документы:** [DATABASE.md](DATABASE.md), [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md), [CHAT_MESSAGE_CONTRACT.md](CHAT_MESSAGE_CONTRACT.md), [ARTIFACTS_API.md](ARTIFACTS_API.md). Исторический анализ пробелов и багов: [TICKET_CRM_GAP_ANALYSIS.md](../../docs/archive/TICKET_CRM_GAP_ANALYSIS.md).
 
 ---
 

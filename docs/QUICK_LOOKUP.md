@@ -60,6 +60,8 @@ Routing-логика живёт в:
 
 - `scripts/task_intake.py`
 - `scripts/navigation_catalog.py`
+- `scripts/build_context_pack.py`
+- `scripts/docs_inventory.py`
 
 Этот файл остаётся human-facing индексом и не должен дублировать весь routing.
 
@@ -76,9 +78,9 @@ Routing-логика живёт в:
 
 Historical docs больше не канон:
 
-- `docs/TICKET_CRM_GAP_ANALYSIS.md`
-- `docs/TICKET_AND_AGENT_UPDATE_ROADMAP.md`
-- `docs/BOTTLENECKS_AND_RISKS.md`
+- `docs/archive/TICKET_CRM_GAP_ANALYSIS.md`
+- `docs/archive/TICKET_AND_AGENT_UPDATE_ROADMAP.md`
+- `docs/archive/BOTTLENECKS_AND_RISKS.md`
 
 Их архивные копии лежат в `docs/archive/`.
 

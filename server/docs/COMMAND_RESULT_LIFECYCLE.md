@@ -301,9 +301,9 @@ OPERATION_ACCEPTED_TIMEOUT = 60   # accepted -> running
 
 ## Связанные документы
 
-- [Operation State Machine](OPERATION_STATE_MACHINE.md)
-- [Device Outbox Lifecycle](DEVICE_OUTBOX_LIFECYCLE.md)
-- [Watchdog Architecture](WATCHDOG_ARCHITECTURE.md)
+- [Protocol V3](PROTOCOL_V3.md)
+- [Async command and operation poll](RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md)
+- [Server CODEMAP](CODEMAP.md)
 
 ## История изменений
 

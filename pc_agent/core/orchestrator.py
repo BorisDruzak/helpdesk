@@ -139,7 +139,7 @@ class AgentOrchestrator:
         )
 
         # Tech debt (BOTTLENECKS): Закомментированный consent-путь; при включении согласовать
-        # с текущей моделью consent в БД и server waiting_consent. См. docs/BOTTLENECKS_AND_RISKS.md
+        # с текущей моделью consent в БД и server waiting_consent. См. docs/archive/BOTTLENECKS_AND_RISKS.md
         # self.pending_tool_calls: Dict[str, Dict[str, Any]] = {}  # consent_token -> dict
         # self.consent_cache: Dict[str, Dict[str, bool]] = {}  # session_key -> {consent_token: bool}
 

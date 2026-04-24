@@ -1,15 +1,17 @@
 # Docs Index
 
-Короткий индекс по документации `pc_client`. Он нужен, чтобы не начинать с полного просмотра всей базы документов.
+Короткий индекс по документации `pc_client`, чтобы не начинать с полного просмотра всей базы документов.
 
 ## Читать сначала
 
-- `AGENTS.md` — обязательные правила проекта, source of truth, pipeline, Protocol V3 invariants.
-- `docs/QUICK_LOOKUP.md` — быстрый роутер по темам: что открыть первым, какие docs и checks нужны.
-- `server/docs/CODEMAP.md` — карта серверной части.
-- `pc_agent/docs/CODEMAP.md` — карта агентской части.
-- `docs/LOCAL_WORKFLOW.md` — локальная разработка, deploy, remote stack, browser checks.
-- `docs/CONTEXT_EFFICIENCY.md` — как экономить контекст и пользоваться `task_intake`, `agent_find`, `docs_drift_check`.
+- `AGENTS.md` - обязательные правила проекта, source of truth, pipeline, Protocol V3 invariants.
+- `docs/QUICK_LOOKUP.md` - быстрый роутер по темам: что открыть первым, какие docs и checks нужны.
+- `scripts/build_context_pack.py --topic "<тема>"` - компактный пакет контекста для Codex из `navigation_catalog`.
+- `scripts/docs_inventory.py --check-links` - инвентаризация docs, статусы, дубли и проверка локальных markdown-ссылок.
+- `server/docs/CODEMAP.md` - карта серверной части.
+- `pc_agent/docs/CODEMAP.md` - карта агентской части.
+- `docs/LOCAL_WORKFLOW.md` - локальная разработка, deploy, remote stack, browser checks.
+- `docs/CONTEXT_EFFICIENCY.md` - как экономить контекст и пользоваться `task_intake`, `agent_find`, `docs_drift_check`.
 
 ## По областям
 
@@ -24,9 +26,9 @@
 
 ## Не использовать как стартовый канон
 
-- `docs/archive/**` — исторические материалы и старые test reports.
-- `docs/superpowers/plans/**` и `docs/superpowers/specs/**` — task-specific планы и design snapshots; читать только когда `QUICK_LOOKUP` или текущая задача прямо указывает на них.
-- Старые roadmap/gap-analysis документы в корне `docs/` могут быть полезны как источник идей, но текущее поведение кода проверять по `QUICK_LOOKUP`, CODEMAP и профильным docs рядом с кодом.
+- `docs/archive/**` - исторические материалы и старые test reports.
+- `docs/superpowers/plans/**` и `docs/superpowers/specs/**` - task-specific планы и design snapshots; читать только когда `QUICK_LOOKUP` или текущая задача прямо указывает на них.
+- Старые roadmap/gap-analysis документы теперь лежат только в `docs/archive/`; корневые stub-дубли удалены.
 
 ## Когда обновлять
 

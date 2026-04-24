@@ -25,7 +25,7 @@ class ChatService:
         Returns:
             dict: Созданная сессия
         """
-        # owner_uuid: при наличии device_id в connected_agents можно взять из metadata (docs/BOTTLENECKS_AND_RISKS.md Phase 3)
+        # owner_uuid: при наличии device_id в connected_agents можно взять из metadata (docs/archive/BOTTLENECKS_AND_RISKS.md Phase 3)
         owner_uuid = None
         if getattr(self.state, "connected_agents", None) and device_id in self.state.connected_agents:
             meta = self.state.connected_agents[device_id].get("metadata", {})
@@ -121,5 +121,4 @@ class ChatService:
         """Удаляет чат-сессию."""
         self.state.delete_chat_session(chat_job_id)
         logger.info(f"[ChatService] Deleted chat session: job_id={chat_job_id}")
-
 

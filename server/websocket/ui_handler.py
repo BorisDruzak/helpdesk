@@ -498,7 +498,7 @@ async def websocket_ui_handler(request):
                                     # user can only subscribe to tickets bound to their device
                                     # Phase 3: Используем auth_context вместо user_role из payload
                                     if auth_context and not auth_context.has_role("admin", "support"):
-                                        # user_id check when user_id is implemented (docs/BOTTLENECKS_AND_RISKS.md Phase 3)
+                                        # user_id check when user_id is implemented (docs/archive/BOTTLENECKS_AND_RISKS.md Phase 3)
                                         pass
                             except Exception as e:
                                 logger.error(f"[subscribe_ticket] Error checking access: {e}")

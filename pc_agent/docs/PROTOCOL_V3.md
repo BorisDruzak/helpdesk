@@ -608,7 +608,7 @@ Protocol V3 identity v1:
 - **Ожидание send_ws_command:** синхронный режим по-прежнему используется частью API, но transport поддерживает `wait_for_result=False` для async enqueue без долгого удержания корутины.
 - **Коды UNAUTHORIZED/RATE_LIMITED в NACK:** до handshake auth failure по-прежнему закрывает соединение кодом 4003; post-handshake message-level reject возвращается через `outbox_nack` (`UNAUTHORIZED`, `RATE_LIMITED`).
 
-Подробнее об узких местах и рисках: [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) (в корне проекта).
+Подробнее об узких местах и рисках: [BOTTLENECKS_AND_RISKS.md](../../docs/archive/BOTTLENECKS_AND_RISKS.md) (исторический архив).
 
 ## Ссылки
 
@@ -616,4 +616,4 @@ Protocol V3 identity v1:
 - [DatabaseManager документация](DATABASE.md) — детали работы с базой данных
 - [WSOutboxFlusher документация](SENDER.md) — детали отправки событий
 - [AgentOrchestrator документация](ORCHESTRATOR.md) — обработка команд
-- [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) — узкие места и риски проекта
+- [BOTTLENECKS_AND_RISKS.md](../../docs/archive/BOTTLENECKS_AND_RISKS.md) — исторические узкие места и риски проекта

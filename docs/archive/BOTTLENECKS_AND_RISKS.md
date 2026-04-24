@@ -67,7 +67,7 @@
 ### 2.4 Два пути run_tool
 
 - Основной поток: `POST /api/tools/run` → `ToolService.run_tool` → создание tool_call_started в БД → `send_ws_command`. Инвариант «tool_call_started до отправки команды» соблюдён.
-- Admin API может вызывать отправку команды агенту иным путём; при этом создание tool_call_started должно происходить в том же месте, что и в ToolService, иначе возможны расхождения с документацией [TOOL_CALL_STARTED_INVARIANT.md](../server/docs/TOOL_CALL_STARTED_INVARIANT.md).
+- Admin API может вызывать отправку команды агенту иным путём; при этом создание tool_call_started должно происходить в том же месте, что и в ToolService, иначе возможны расхождения с документацией [TOOL_CALL_STARTED_INVARIANT.md](../../server/docs/TOOL_CALL_STARTED_INVARIANT.md).
 - **Рекомендация:** все вызовы run_tool к агенту проводить через ToolService.run_tool (или единый фасад), чтобы гарантировать создание tool_call_started.
 
 ### 2.5 Коды ошибок outbox_nack
@@ -131,11 +131,11 @@
 
 ## 6. Связанные документы
 
-- [pc_agent/docs/PROTOCOL_V3.md](../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация Protocol V3, сильные/слабые стороны протокола.
-- [server/docs/PROTOCOL_V3.md](../server/docs/PROTOCOL_V3.md) — требования сервера, SERVER_CAPABILITIES, коды NACK.
-- [server/docs/COMMAND_RESULT_LIFECYCLE.md](../server/docs/COMMAND_RESULT_LIFECYCLE.md) — инварианты обработки command_result.
-- [server/docs/TOOL_CALL_STARTED_INVARIANT.md](../server/docs/TOOL_CALL_STARTED_INVARIANT.md) — создание tool_call_started до отправки run_tool.
-- [server/docs/SECURITY_AND_AUTH.md](../server/docs/SECURITY_AND_AUTH.md) — безопасность и аутентификация.
-- [server/docs/MODULES_API.md](../server/docs/MODULES_API.md) — API модулей, SERVER_PUBLIC_BASE_URL, `/api/modules/ping`.
-- [server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md](../server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md) — async submit + poll операций.
-- [pc_agent/docs/MODULES.md](../pc_agent/docs/MODULES.md) — модули агента, реальный API ModuleManager.
+- [pc_agent/docs/PROTOCOL_V3.md](../../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация Protocol V3, сильные/слабые стороны протокола.
+- [server/docs/PROTOCOL_V3.md](../../server/docs/PROTOCOL_V3.md) — требования сервера, SERVER_CAPABILITIES, коды NACK.
+- [server/docs/COMMAND_RESULT_LIFECYCLE.md](../../server/docs/COMMAND_RESULT_LIFECYCLE.md) — инварианты обработки command_result.
+- [server/docs/TOOL_CALL_STARTED_INVARIANT.md](../../server/docs/TOOL_CALL_STARTED_INVARIANT.md) — создание tool_call_started до отправки run_tool.
+- [server/docs/SECURITY_AND_AUTH.md](../../server/docs/SECURITY_AND_AUTH.md) — безопасность и аутентификация.
+- [server/docs/MODULES_API.md](../../server/docs/MODULES_API.md) — API модулей, SERVER_PUBLIC_BASE_URL, `/api/modules/ping`.
+- [server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md](../../server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md) — async submit + poll операций.
+- [pc_agent/docs/MODULES.md](../../pc_agent/docs/MODULES.md) — модули агента, реальный API ModuleManager.

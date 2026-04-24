@@ -54,6 +54,8 @@ python scripts/check_webapp_cutover.py --json
 python scripts/verify_workspace.py
 ```
 
+`verify_workspace.py` включает UTF-8/compile checks, module observer guard, `docs_drift_check.py` и active-doc broken-link check через `docs_inventory.py --check-links`.
+
 6. После локальной проверки сделать локальный commit.
 
 ```powershell

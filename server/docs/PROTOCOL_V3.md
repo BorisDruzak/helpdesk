@@ -166,4 +166,4 @@ Wire-contract Protocol V3 при этом не меняется: формат en
 - [README.md](README.md) — обзор сервера и API.
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — безопасность и аутентификация (токены, handshake, middleware).
 - [pc_agent/docs/PROTOCOL_V3.md](../../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация Protocol V3.
-- [BOTTLENECKS_AND_RISKS.md](../../docs/BOTTLENECKS_AND_RISKS.md) — узкие места и риски проекта.
+- [BOTTLENECKS_AND_RISKS.md](../../docs/archive/BOTTLENECKS_AND_RISKS.md) — исторические узкие места и риски проекта.

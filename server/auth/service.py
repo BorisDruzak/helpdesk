@@ -404,7 +404,7 @@ class AuthService:
             logger.debug(f"[AuthService] Token found in legacy token store: {token[:8]}...")
             return legacy_data
         
-        # Fallback to DB требует async; этот метод sync — legacy. Использовать verify_agent_token/verify_ui_token (docs/BOTTLENECKS_AND_RISKS.md Phase 3).
+        # Fallback to DB требует async; этот метод sync — legacy. Использовать verify_agent_token/verify_ui_token (docs/archive/BOTTLENECKS_AND_RISKS.md Phase 3).
         logger.warning(
             "[AuthService] verify_token() called with token not in legacy token store. "
             "Use async verify_agent_token() or verify_ui_token() instead."

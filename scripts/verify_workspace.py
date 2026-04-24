@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
+SCRIPT_WORKSPACE = Path(__file__).resolve().parent.parent
 TEXT_SUFFIXES = {
     ".py",
     ".js",
@@ -61,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--smoke-url", help="Optional base URL for scripts/smoke_test.py")
     parser.add_argument("--skip-docs-drift", action="store_true", help="Skip docs/CODEMAP drift check")
+    parser.add_argument("--skip-docs-links", action="store_true", help="Skip markdown local-link check")
     return parser.parse_args()
 
 
@@ -209,8 +211,23 @@ def run_docs_drift(workspace: Path) -> list[str]:
     return [line for line in output.splitlines() if line.strip()]
 
 
+def run_docs_links(workspace: Path) -> list[str]:
+    result = subprocess.run(
+        [sys.executable, str(workspace / "scripts" / "docs_inventory.py"), "--check-links"],
+        cwd=workspace,
+        capture_output=True,
+        text=False,
+    )
+    if result.returncode == 0:
+        return []
+    output = _combined_output(result)
+    return [line for line in output.splitlines() if line.strip()]
+
+
 def run_module_observer_guard(workspace: Path) -> list[str]:
     server_root = workspace / "server"
+    if not (server_root / "utils" / "module_observer_contract.py").exists():
+        server_root = SCRIPT_WORKSPACE / "server"
     if str(server_root) not in sys.path:
         sys.path.insert(0, str(server_root))
     scan_workspace_module_observer_failures = getattr(
@@ -233,6 +250,8 @@ def main() -> None:
     failures.extend(run_module_observer_guard(args.workspace))
     if not args.skip_docs_drift:
         failures.extend(run_docs_drift(args.workspace))
+    if not args.skip_docs_links:
+        failures.extend(run_docs_links(args.workspace))
 
     if args.smoke_url:
         failures.extend(run_smoke(args.workspace, args.smoke_url))
