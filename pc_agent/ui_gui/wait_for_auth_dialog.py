@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Optional, Callable, Awaitable
 
 from PySide6.QtWidgets import (
@@ -58,6 +60,40 @@ class WaitForAuthDialog(QDialog):
         layout.addLayout(btn_layout)
         self._manual_token: Optional[str] = None
 
+    def _connection_error_path(self) -> Optional[Path]:
+        try:
+            from core.database import db_manager
+            db_path = getattr(db_manager, "_db_path", None)
+            if not db_path:
+                return None
+            return Path(db_path).parent / "connection_request_error.json"
+        except Exception:
+            return None
+
+    def _show_connection_error_if_any(self) -> bool:
+        path = self._connection_error_path()
+        if not path or not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.debug(f"Ошибка чтения connection_request_error.json: {exc}")
+            return False
+        error_code = str(data.get("error_code") or "")
+        if error_code != "TOKEN_LIMIT_EXCEEDED":
+            return False
+        message = str(
+            data.get("message")
+            or "На сервере уже есть 2 активных токена для этого устройства."
+        )
+        self._poll_timer.stop()
+        self._label.setText(
+            f"{message}\n\n"
+            "Агент не сможет получить новый токен автоматически, пока старый активный токен "
+            "не будет отозван администратором или восстановлен в локальном хранилище."
+        )
+        return True
+
     def start_polling(self) -> None:
         """Запускает опрос БД каждые 2 секунды."""
         self._poll_timer.start(2000)
@@ -65,6 +101,8 @@ class WaitForAuthDialog(QDialog):
     def _check_token(self) -> None:
         """Проверяет наличие токена в БД."""
         try:
+            if self._show_connection_error_if_any():
+                return
             from core.database import db_manager
             if not db_manager or not self.device_uuid:
                 return

@@ -1734,7 +1734,8 @@ class MainWindow(QMainWindow):
             )
             return
         if event_type == "connection_rejected":
-            self.set_connection_state("rejected", "подключение отклонено")
+            detail = str(data.get("message") or data.get("detail") or "подключение отклонено")
+            self.set_connection_state("rejected", detail)
             return
         
         # Этап 4: скриншот/запись — минимизация окна и STOP-кнопка

@@ -233,6 +233,14 @@ export const appRoutes: RouteObject[] = [
                 <AdminObserverPage />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "admin/settings",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <SettingsPage />
+              </WorkspaceAccessGate>
+            )
           }
         ]
       }

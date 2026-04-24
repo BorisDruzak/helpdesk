@@ -10,8 +10,9 @@ from pc_agent.auth import connection_request as flow_mod
 
 
 class _FakeDb:
-    def __init__(self):
+    def __init__(self, db_path=None):
         self.saved = []
+        self._db_path = db_path
 
     async def save_auth_token(self, token, device_id):
         self.saved.append((token, device_id))
@@ -26,9 +27,11 @@ class _FakeEventBus:
 
 
 class _FakeIdentity:
-    def __init__(self):
+    def __init__(self, identity_file=None):
         self.token = None
         self.last_connection_request_error_code = None
+        self.last_connection_request_error_message = None
+        self.identity_file = identity_file
 
 
 class _FakeResponse:
@@ -265,6 +268,51 @@ async def test_connection_request_archived_409(monkeypatch):
 
     assert (ok, rejected) == (False, True)
     assert identity.last_connection_request_error_code == "DEVICE_ARCHIVED"
+
+
+@pytest.mark.asyncio
+async def test_connection_request_token_limit_429_notifies_gui(monkeypatch, tmp_path):
+    bus = _FakeEventBus()
+    db = _FakeDb(tmp_path / "storage.db")
+    identity = _FakeIdentity(tmp_path / "identity.json")
+    message = "На сервере уже есть 2 активных токена"
+
+    monkeypatch.setattr(
+        flow_mod,
+        "ClientSession",
+        lambda: _FakeSession(
+            [
+                _FakeResponse(
+                    429,
+                    {
+                        "status": "blocked",
+                        "error_code": "TOKEN_LIMIT_EXCEEDED",
+                        "message": message,
+                        "active_token_count": 2,
+                    },
+                )
+            ],
+            [],
+        ),
+    )
+
+    ok, rejected = await flow_mod.run_connection_request_flow(
+        api_url="http://example/api",
+        device_id="dev-token-limit",
+        hostname="host-token-limit",
+        db_manager=db,
+        identity_manager=identity,
+        event_bus=bus,
+        wait_seconds=30,
+    )
+
+    assert (ok, rejected) == (False, True)
+    assert identity.last_connection_request_error_code == "TOKEN_LIMIT_EXCEEDED"
+    assert message in identity.last_connection_request_error_message
+    error_path = tmp_path / "connection_request_error.json"
+    assert error_path.exists()
+    assert "TOKEN_LIMIT_EXCEEDED" in error_path.read_text(encoding="utf-8")
+    assert bus.events[-1]["data"]["error_code"] == "TOKEN_LIMIT_EXCEEDED"
 
 
 @pytest.mark.asyncio

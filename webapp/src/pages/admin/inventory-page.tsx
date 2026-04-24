@@ -1,5 +1,5 @@
-import { Activity, ArrowUpRight, RefreshCcw, ServerCog } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Activity, AlertTriangle, ArrowUpRight, RefreshCcw, ServerCog, ShieldCheck, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -10,7 +10,7 @@ import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { StatTile } from "../../components/ui/stat-tile";
-import { type AdminStatusFilter, fetchAdminDevices } from "../../features/admin/api";
+import { cleanupAdminEnvUuidDuplicates, type AdminStatusFilter, fetchAdminDevices } from "../../features/admin/api";
 
 
 function formatDateTime(value: string | null | undefined): string {
@@ -53,11 +53,18 @@ function getUpdateTone(value: string | null | undefined): "danger" | "info" | "n
 }
 
 
+function getIdentityTone(isStable: boolean): "info" | "warning" {
+  return isStable ? "info" : "warning";
+}
+
+
 export function AdminInventoryPage() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>("all");
+  const [cleanupFeedback, setCleanupFeedback] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
 
   const devicesQuery = useQuery({
@@ -82,6 +89,30 @@ export function AdminInventoryPage() {
     return ["failed", "timed_out", "error"].includes(status);
   }).length;
 
+  const cleanupMutation = useMutation({
+    mutationFn: async (apply: boolean) => {
+      if (!selectedDevice?.hostname) {
+        throw new Error("Для чистки нужен hostname выбранного устройства.");
+      }
+      return cleanupAdminEnvUuidDuplicates({
+        hostname: selectedDevice.hostname,
+        keepDeviceId: selectedDevice.device_id,
+        apply,
+      });
+    },
+    onSuccess: async (result) => {
+      setCleanupFeedback(
+        result.applied
+          ? `Архивировано env_uuid-дублей: ${result.archived_count}.`
+          : `Кандидатов для безопасной архивации: ${result.candidates.length}.`
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin-devices-page"] });
+    },
+    onError: (error) => {
+      setCleanupFeedback(error instanceof Error ? error.message : "Не удалось выполнить чистку дублей.");
+    },
+  });
+
   useEffect(() => {
     if (!selectedDevice?.device_id) {
       return;
@@ -95,6 +126,10 @@ export function AdminInventoryPage() {
       setSearchParams(nextSearchParams, { replace: true });
     });
   }, [searchParams, selectedDevice?.device_id, setSearchParams]);
+
+  useEffect(() => {
+    setCleanupFeedback(null);
+  }, [selectedDevice?.device_id]);
 
   function openDeviceCard() {
     if (!selectedDevice) {
@@ -150,9 +185,9 @@ export function AdminInventoryPage() {
           value={String(devicesQuery.data?.summary.rollout_targets ?? 0)}
         />
         <StatTile
-          helper="Последний статус обновления устройства"
-          label="Требуют внимания"
-          value={String(alertCount)}
+          helper={`Hostname-дублей: ${devicesQuery.data?.summary.duplicate_hosts ?? 0}`}
+          label="Кандидатов на чистку"
+          value={String(devicesQuery.data?.summary.cleanup_candidates ?? alertCount)}
         />
       </div>
 
@@ -223,6 +258,16 @@ export function AdminInventoryPage() {
                       <p className="mt-3 text-sm text-slate-500">
                         {(device.os ?? "ОС не определена")} • {device.target ?? "target не определён"}
                       </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge tone={getIdentityTone(device.identity_summary.is_stable)}>
+                          {device.identity_summary.source_label}
+                        </Badge>
+                        {device.duplicate_warning ? (
+                          <Badge tone={device.duplicate_warning.severity}>
+                            {device.duplicate_warning.title}
+                          </Badge>
+                        ) : null}
+                      </div>
                       <p className="mt-2 text-xs text-slate-400">Последний контакт: {formatDateTime(device.last_seen_at)}</p>
                     </button>
                   );
@@ -271,6 +316,39 @@ export function AdminInventoryPage() {
                     </p>
                   </div>
 
+                  {selectedDevice.duplicate_warning ? (
+                    <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-4">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-amber-950">{selectedDevice.duplicate_warning.title}</p>
+                          <p className="mt-1 text-sm text-amber-800">{selectedDevice.duplicate_warning.description}</p>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              disabled={cleanupMutation.isPending}
+                              leadingIcon={<ShieldCheck className="h-4 w-4" />}
+                              onClick={() => cleanupMutation.mutate(false)}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Проверить чистку
+                            </Button>
+                            <Button
+                              disabled={!selectedDevice.duplicate_warning.cleanup_available || cleanupMutation.isPending}
+                              leadingIcon={<Trash2 className="h-4 w-4" />}
+                              onClick={() => cleanupMutation.mutate(true)}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Архивировать env_uuid дубли
+                            </Button>
+                          </div>
+                          {cleanupFeedback ? <p className="mt-3 text-sm text-amber-900">{cleanupFeedback}</p> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
                       <p className="text-sm text-slate-500">Текущее обновление</p>
@@ -280,9 +358,15 @@ export function AdminInventoryPage() {
                       </p>
                     </div>
                     <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
-                      <p className="text-sm text-slate-500">Rollout target</p>
-                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.target ?? "Не назначен"}</p>
-                      <p className="mt-2 text-sm text-slate-500">Полная карточка устройства откроет update workflow и observer quick panel.</p>
+                      <p className="text-sm text-slate-500">Identity source</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.identity_summary.source_label}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {selectedDevice.identity_summary.install_id
+                          ? `Install ID: ${selectedDevice.identity_summary.install_id}`
+                          : selectedDevice.identity_summary.is_stable
+                            ? "Стабильный machine_id, подходит для реального устройства."
+                            : "Источник нестабилен: проверьте, не тестовая ли это запись."}
+                      </p>
                     </div>
                   </div>
                 </>
@@ -342,6 +426,16 @@ export function AdminInventoryPage() {
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Версия агента</span>
                 <span className="font-medium text-slate-900">{selectedDevice?.agent_version ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-slate-500">Identity source</span>
+                <span className="text-right font-medium text-slate-900">{selectedDevice?.identity_summary.source_label ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-slate-500">Дубли</span>
+                <span className="text-right font-medium text-slate-900">
+                  {selectedDevice?.duplicate_warning ? selectedDevice.duplicate_warning.title : "Не найдены"}
+                </span>
               </div>
             </CardContent>
           </Card>

@@ -1,5 +1,28 @@
 # PLANS.md
 
+## 2026-04-24 Inventory cleanup, notifications, and token-limit UX
+
+- Status: implementation complete locally; live deploy/browser/agent verification pending.
+- Scope:
+  - безопасно архивировать старые `env_uuid` дубли устройств по hostname, не трогая текущий стабильный `windows_machine_guid` и online-агенты;
+  - отзывать токены архивируемых дублей штатным `DevicesRepo.archive_device()`;
+  - показать `identity_source`, duplicate warning и action для cleanup в `/app/admin/inventory`;
+  - добавить пункт `Уведомления` в настройки, доступный из admin workspace, с ticket preferences, последними in-app уведомлениями и live tech alerts по ошибкам;
+  - объяснить агенту `TOKEN_LIMIT_EXCEEDED` при запросе подключения, чтобы вместо вечного pending было понятное сообщение;
+  - подготовить отчёт по существующему launcher/agent update flow и список следующих bugfix-задач.
+- Delivery order:
+  1. backend typed inventory: identity summary, duplicate warnings, cleanup preview/apply endpoint;
+  2. connection-request token-limit diagnostic contract для сервера и агента;
+  3. webapp inventory UI + admin settings route + notifications tab;
+  4. focused pytest/vitest/build + live browser/agent checks;
+  5. docs/CODEMAP sync и финальный отчёт.
+- Verification target:
+  - `python scripts/verify_workspace.py`
+  - focused `pytest` for `server/tests/test_web_admin_api.py`, `server/tests/test_connection_request_api.py`, `pc_agent/tests/test_connection_request_flow.py` — passed locally on 2026-04-24
+  - `pnpm --dir webapp run test` — passed locally on 2026-04-24
+  - `pnpm --dir webapp run build` — passed locally on 2026-04-24
+  - browser verification on `http://192.168.100.17:8666/app/admin/inventory` and `/app/admin/settings`
+
 ## 2026-04-24 Documentation inventory and context tooling
 
 - Status: completed locally on 2026-04-24; targeted tests, docs link check, context-pack smoke and `python scripts/verify_workspace.py` passed.

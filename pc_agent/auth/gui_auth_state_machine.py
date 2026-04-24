@@ -67,7 +67,7 @@ class GuiAuthStateMachine:
                 if rejected:
                     self.transition(GuiAuthState.REJECTED, "server rejected device")
                     error_code = getattr(self.agent.identity_manager, "last_connection_request_error_code", None)
-                    if error_code != "DEVICE_ARCHIVED":
+                    if error_code not in {"DEVICE_ARCHIVED", "TOKEN_LIMIT_EXCEEDED"}:
                         flag_path = self.agent._connection_rejected_flag_path()
                         try:
                             flag_path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +75,10 @@ class GuiAuthStateMachine:
                         except Exception as exc:
                             logger.warning(f"[GuiAuthStateMachine] failed to persist reject flag: {exc}")
                     else:
-                        logger.info("[GuiAuthStateMachine] archived-device rejection is not persisted as local reject flag")
+                        logger.info(
+                            "[GuiAuthStateMachine] transient connection block is not persisted "
+                            f"as local reject flag: error_code={error_code}"
+                        )
                     return
                 self.transition(GuiAuthState.POLLING, "request flow ended without token")
             except asyncio.CancelledError:

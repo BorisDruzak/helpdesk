@@ -16,6 +16,8 @@ export type AdminDevicesPayload = {
     visible_count: number;
     online_count: number;
     rollout_targets: number;
+    duplicate_hosts: number;
+    cleanup_candidates: number;
   };
   filters: {
     status_options: Array<{
@@ -44,7 +46,38 @@ export type AdminDevicesPayload = {
       label: string;
       summary: string | null;
     };
+    identity_summary: {
+      machine_id: string;
+      install_id: string | null;
+      machine_id_source: string | null;
+      identity_scheme: string | null;
+      source_label: string;
+      is_stable: boolean;
+    };
+    duplicate_warning: {
+      kind: string;
+      severity: "danger" | "info" | "neutral" | "success" | "warning";
+      title: string;
+      description: string;
+      duplicate_count: number;
+      cleanup_available: boolean;
+    } | null;
   }>;
+};
+
+export type AdminDeviceCleanupPayload = {
+  hostname: string;
+  applied: boolean;
+  archived_count: number;
+  candidates: Array<{
+    device_id: string;
+    hostname: string | null;
+    agent_version: string | null;
+    last_seen_at: string | null;
+    machine_id_source: string | null;
+    online: boolean;
+  }>;
+  kept_device_ids: string[];
 };
 
 export type AdminRegistryPayload = {
@@ -227,6 +260,26 @@ export async function fetchAdminDevices(params: AdminDevicesParams): Promise<Adm
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить inventory устройств");
+}
+
+export async function cleanupAdminEnvUuidDuplicates(payload: {
+  hostname: string;
+  keepDeviceId?: string;
+  apply: boolean;
+}): Promise<AdminDeviceCleanupPayload> {
+  const response = await fetch("/api/web/admin/devices/cleanup_env_duplicates", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      hostname: payload.hostname,
+      keep_device_id: payload.keepDeviceId,
+      apply: payload.apply
+    })
+  });
+  return readSuccessResponse(response, "Не удалось выполнить безопасную чистку дублей");
 }
 
 export async function fetchAdminRegistry(): Promise<AdminRegistryPayload> {

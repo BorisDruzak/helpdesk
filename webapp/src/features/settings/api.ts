@@ -116,6 +116,43 @@ export type WebSettingsPayload = {
   }>;
 };
 
+export type NotificationPreferences = {
+  mute_internal: boolean;
+  muted_event_types: string[];
+  suppress_self: boolean;
+};
+
+export type NotificationSettingsPayload = {
+  preferences: NotificationPreferences;
+};
+
+export type NotificationItem = {
+  id: number;
+  actor_id: string;
+  ticket_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string | null;
+  read_at: string | null;
+};
+
+export type NotificationsPayload = {
+  notifications: NotificationItem[];
+};
+
+export type TechAlertItem = {
+  kind: string;
+  severity: "danger" | "info" | "neutral" | "success" | "warning";
+  title: string;
+  description: string;
+  action: string | null;
+};
+
+export type TechAlertsPayload = {
+  alerts: TechAlertItem[];
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -198,6 +235,40 @@ export async function fetchWebSettingsPayload(): Promise<WebSettingsPayload> {
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить настройки.");
+}
+
+export async function fetchNotificationSettings(): Promise<NotificationSettingsPayload> {
+  const response = await fetch("/api/notifications/preferences", {
+    credentials: "same-origin"
+  });
+  return readLegacyOk(response, "Не удалось загрузить настройки уведомлений.");
+}
+
+export async function saveNotificationPreferences(
+  preferences: Partial<NotificationPreferences>
+): Promise<NotificationSettingsPayload> {
+  return requestJson<NotificationSettingsPayload>(
+    "/api/notifications/preferences",
+    {
+      method: "POST",
+      body: JSON.stringify(preferences)
+    },
+    "Не удалось сохранить настройки уведомлений."
+  );
+}
+
+export async function fetchNotifications(limit = 20): Promise<NotificationsPayload> {
+  const response = await fetch(`/api/notifications?limit=${encodeURIComponent(String(limit))}`, {
+    credentials: "same-origin"
+  });
+  return readLegacyOk(response, "Не удалось загрузить уведомления.");
+}
+
+export async function fetchTechAlerts(): Promise<TechAlertsPayload> {
+  const response = await fetch("/api/admin/tech/alerts", {
+    credentials: "same-origin"
+  });
+  return readLegacyOk(response, "Не удалось загрузить технические alerts.");
 }
 
 export async function createWebSettingsQueue(payload: {

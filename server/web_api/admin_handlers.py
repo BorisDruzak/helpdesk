@@ -62,6 +62,10 @@ from web_api.dto.admin import (
     AdminObserverTracesQuery,
     AdminObserverTracesSummary,
     AdminDeviceItem,
+    AdminDeviceCleanupCandidate,
+    AdminDeviceCleanupPayload,
+    AdminDeviceDuplicateWarning,
+    AdminDeviceIdentitySummary,
     AdminDeviceUpdateAction,
     AdminDeviceUpdateRecommendation,
     AdminDeviceUpdateRunPayload,
@@ -108,6 +112,14 @@ STATUS_OPTIONS = [
     AdminFilterOption(value="online", label="Только онлайн"),
     AdminFilterOption(value="offline", label="Только офлайн"),
 ]
+
+_IDENTITY_SOURCE_LABELS = {
+    "windows_machine_guid": "Windows MachineGuid",
+    "linux_machine_id": "Linux machine-id",
+    "env_uuid": "Тестовый ENV UUID",
+    "env_seed": "Тестовый ENV seed",
+}
+_STABLE_IDENTITY_SOURCES = {"windows_machine_guid", "linux_machine_id"}
 
 _MODULE_VALIDATION_STATUS_LABELS = {
     "passed": "Проверен",
@@ -234,6 +246,8 @@ def _empty_devices_payload(*, query: str, status_filter: str) -> AdminDevicesPay
             visible_count=0,
             online_count=0,
             rollout_targets=0,
+            duplicate_hosts=0,
+            cleanup_candidates=0,
         ),
         filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
         rollout=[],
@@ -912,6 +926,9 @@ def _matches_query(item: AdminDeviceItem, query: str) -> bool:
             item.connection_status_label,
             item.latest_update.label,
             item.latest_update.summary or "",
+            item.identity_summary.machine_id_source or "",
+            item.identity_summary.source_label,
+            item.duplicate_warning.title if item.duplicate_warning else "",
         ]
     ).lower()
     return query.lower() in haystack
@@ -931,14 +948,111 @@ def _build_update_summary(*, online: bool) -> AdminDeviceUpdateSummary:
     )
 
 
-def _build_device_item(device, *, online: bool) -> AdminDeviceItem:
+def _identity_source_label(source: str | None) -> str:
+    normalized = str(source or "").strip().lower()
+    if not normalized:
+        return "Источник не указан"
+    return _IDENTITY_SOURCE_LABELS.get(normalized, normalized.replace("_", " "))
+
+
+def _device_identity_summary(device) -> AdminDeviceIdentitySummary:
+    metadata = getattr(device, "device_metadata", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    source = str(metadata.get("machine_id_source") or "").strip() or None
+    return AdminDeviceIdentitySummary(
+        machine_id=str(getattr(device, "device_id", "") or ""),
+        install_id=str(metadata.get("install_id") or "").strip() or None,
+        machine_id_source=source,
+        identity_scheme=str(metadata.get("identity_scheme") or "").strip() or None,
+        source_label=_identity_source_label(source),
+        is_stable=str(source or "").strip().lower() in _STABLE_IDENTITY_SOURCES,
+    )
+
+
+def _device_hostname(device) -> str | None:
     metadata = getattr(device, "device_metadata", None)
     if not isinstance(metadata, dict):
         metadata = {}
     hostname = getattr(device, "hostname", None) or metadata.get("hostname")
+    return str(hostname).strip() if hostname else None
+
+
+def _build_duplicate_index(devices: list, *, state) -> dict[str, dict[str, int]]:
+    index: dict[str, dict[str, int]] = {}
+    for device in devices:
+        hostname = _device_hostname(device)
+        if not hostname:
+            continue
+        device_id = str(getattr(device, "device_id", "") or "")
+        metadata = getattr(device, "device_metadata", None)
+        if not isinstance(metadata, dict):
+            metadata = {}
+        source = str(metadata.get("machine_id_source") or "").strip().lower()
+        online = bool(
+            device_id
+            and state is not None
+            and hasattr(state, "is_agent_online")
+            and state.is_agent_online(device_id)
+        )
+        row = index.setdefault(hostname.lower(), {"total": 0, "env_uuid": 0, "stable": 0, "cleanup": 0})
+        row["total"] += 1
+        if source == "env_uuid":
+            row["env_uuid"] += 1
+            if not online:
+                row["cleanup"] += 1
+        if source in _STABLE_IDENTITY_SOURCES:
+            row["stable"] += 1
+    return index
+
+
+def _build_duplicate_warning(device, *, duplicate_index: dict[str, dict[str, int]], online: bool) -> AdminDeviceDuplicateWarning | None:
+    hostname = _device_hostname(device)
+    if not hostname:
+        return None
+    group = duplicate_index.get(hostname.lower())
+    if not group or group.get("total", 0) <= 1:
+        return None
+    metadata = getattr(device, "device_metadata", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    source = str(metadata.get("machine_id_source") or "").strip().lower()
+    if source == "env_uuid":
+        return AdminDeviceDuplicateWarning(
+            kind="env_uuid_duplicate",
+            severity="warning",
+            title="Тестовый дубль hostname",
+            description=(
+                f"Hostname {hostname} встречается {group['total']} раз. Эта запись создана через env_uuid; "
+                "её можно безопасно архивировать, если агент оффлайн."
+            ),
+            duplicate_count=group["total"],
+            cleanup_available=not online,
+        )
+    if group.get("env_uuid", 0) > 0:
+        return AdminDeviceDuplicateWarning(
+            kind="hostname_has_env_uuid_duplicates",
+            severity="info",
+            title="Есть старые тестовые дубли",
+            description=(
+                f"Для hostname {hostname} найдено env_uuid-дублей: {group['env_uuid']}. "
+                "Текущую стабильную запись оставляем, старые оффлайн-записи можно архивировать."
+            ),
+            duplicate_count=group["total"],
+            cleanup_available=group.get("cleanup", 0) > 0,
+        )
+    return None
+
+
+def _build_device_item(device, *, online: bool, duplicate_index: dict[str, dict[str, int]] | None = None) -> AdminDeviceItem:
+    metadata = getattr(device, "device_metadata", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    hostname = _device_hostname(device)
     os_name = getattr(device, "os", None) or metadata.get("os_type")
     agent_version = getattr(device, "agent_version", None) or metadata.get("agent_version") or metadata.get("version")
     last_seen_at = getattr(device, "last_seen_at", None)
+    duplicate_index = duplicate_index or {}
     return AdminDeviceItem(
         device_id=str(getattr(device, "device_id", "") or ""),
         hostname=str(hostname) if hostname else None,
@@ -949,6 +1063,8 @@ def _build_device_item(device, *, online: bool) -> AdminDeviceItem:
         last_seen_at=last_seen_at.isoformat() if last_seen_at else None,
         connection_status_label="Онлайн" if online else "Оффлайн",
         latest_update=_build_update_summary(online=online),
+        identity_summary=_device_identity_summary(device),
+        duplicate_warning=_build_duplicate_warning(device, duplicate_index=duplicate_index, online=online),
     )
 
 
@@ -1767,6 +1883,7 @@ async def handle_web_admin_devices(request: web.Request):
 
         typed_devices: list[AdminDeviceItem] = []
         online_count = 0
+        duplicate_index = _build_duplicate_index(devices, state=state)
         for device in devices:
             device_id = str(getattr(device, "device_id", "") or "")
             is_online = bool(
@@ -1779,7 +1896,7 @@ async def handle_web_admin_devices(request: web.Request):
                 online_count += 1
             if not _matches_status_filter(online=is_online, status_filter=status_filter):
                 continue
-            item = _build_device_item(device, online=is_online)
+            item = _build_device_item(device, online=is_online, duplicate_index=duplicate_index)
             if _matches_query(item, query):
                 typed_devices.append(item)
 
@@ -1801,6 +1918,8 @@ async def handle_web_admin_devices(request: web.Request):
                 visible_count=len(typed_devices),
                 online_count=online_count,
                 rollout_targets=len(typed_rollout),
+                duplicate_hosts=sum(1 for item in duplicate_index.values() if item.get("total", 0) > 1),
+                cleanup_candidates=sum(item.get("cleanup", 0) for item in duplicate_index.values()),
             ),
             filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
             rollout=typed_rollout,
@@ -1814,6 +1933,104 @@ async def handle_web_admin_devices(request: web.Request):
         payload = _empty_devices_payload(query=query, status_filter=status_filter)
 
     return json_model_response(SuccessResponse[AdminDevicesPayload](data=payload))
+
+
+def _cleanup_candidate_from_device(device, *, online: bool) -> AdminDeviceCleanupCandidate:
+    metadata = getattr(device, "device_metadata", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    last_seen_at = getattr(device, "last_seen_at", None)
+    return AdminDeviceCleanupCandidate(
+        device_id=str(getattr(device, "device_id", "") or ""),
+        hostname=_device_hostname(device),
+        agent_version=str(getattr(device, "agent_version", None) or metadata.get("agent_version") or metadata.get("version") or "").strip() or None,
+        last_seen_at=last_seen_at.isoformat() if last_seen_at else None,
+        machine_id_source=str(metadata.get("machine_id_source") or "").strip() or None,
+        online=online,
+    )
+
+
+@require_auth("admin")
+async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    hostname = str(data.get("hostname") or "").strip()
+    apply_cleanup = bool(data.get("apply"))
+    keep_device_id = str(data.get("keep_device_id") or "").strip()
+    if not hostname:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "hostname is required",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    state = request.app.get("state")
+    auth_context = request.get("auth_context")
+    actor_id = getattr(auth_context, "actor_id", None) or "admin"
+    archived_count = 0
+    candidates: list[AdminDeviceCleanupCandidate] = []
+    kept_device_ids: list[str] = []
+
+    try:
+        async with get_session() as session:
+            repo = DevicesRepo(session)
+            devices = await repo.list_all()
+            for device in devices:
+                device_hostname = _device_hostname(device)
+                if not device_hostname or device_hostname.lower() != hostname.lower():
+                    continue
+                device_id = str(getattr(device, "device_id", "") or "")
+                metadata = getattr(device, "device_metadata", None)
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                source = str(metadata.get("machine_id_source") or "").strip().lower()
+                online = bool(
+                    device_id
+                    and state is not None
+                    and hasattr(state, "is_agent_online")
+                    and state.is_agent_online(device_id)
+                )
+                if device_id == keep_device_id or source in _STABLE_IDENTITY_SOURCES or online:
+                    kept_device_ids.append(device_id)
+                    continue
+                if source != "env_uuid":
+                    kept_device_ids.append(device_id)
+                    continue
+                candidates.append(_cleanup_candidate_from_device(device, online=online))
+                if apply_cleanup:
+                    deleted = await repo.archive_device(
+                        device_id,
+                        deleted_by=actor_id,
+                        delete_reason=f"safe env_uuid duplicate cleanup for hostname {hostname}",
+                    )
+                    if deleted:
+                        archived_count += 1
+            if apply_cleanup:
+                await session.commit()
+    except Exception as exc:
+        logger.warning(f"[web_admin_devices_cleanup_env_duplicates] failed: hostname={hostname} error={exc}")
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось выполнить безопасную чистку дублей",
+                "error_code": "ADMIN_DEVICE_CLEANUP_FAILED",
+            },
+            status=500,
+        )
+
+    payload = AdminDeviceCleanupPayload(
+        hostname=hostname,
+        applied=apply_cleanup,
+        archived_count=archived_count,
+        candidates=candidates,
+        kept_device_ids=kept_device_ids,
+    )
+    return json_model_response(SuccessResponse[AdminDeviceCleanupPayload](data=payload))
 
 
 @require_auth("admin")

@@ -93,6 +93,13 @@ export const appNavigation: AppNavItem[] = [
     icon: Radar,
     section: "admin",
     to: "/app/admin/observer"
+  },
+  {
+    label: "Настройки",
+    description: "Уведомления и политики",
+    icon: Settings2,
+    section: "admin",
+    to: "/app/admin/settings"
   }
 ];
 

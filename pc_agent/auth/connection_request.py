@@ -1,6 +1,8 @@
 import asyncio
+import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
@@ -27,6 +29,91 @@ def _set_last_error_code(identity_manager: Any, error_code: Optional[str]) -> No
         setattr(identity_manager, "last_connection_request_error_code", error_code)
     except Exception:
         pass
+
+
+def _connection_error_path(identity_manager: Any, db_manager: Any = None) -> Optional[Path]:
+    identity_file = getattr(identity_manager, "identity_file", None)
+    if identity_file:
+        return Path(identity_file).parent / "connection_request_error.json"
+    db_path = getattr(db_manager, "_db_path", None)
+    if db_path:
+        return Path(db_path).parent / "connection_request_error.json"
+    return None
+
+
+def _write_connection_error(identity_manager: Any, db_manager: Any, *, error_code: str, message: str) -> None:
+    _set_last_error_code(identity_manager, error_code)
+    try:
+        setattr(identity_manager, "last_connection_request_error_message", message)
+    except Exception:
+        pass
+    path = _connection_error_path(identity_manager, db_manager)
+    if not path:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "error_code": error_code,
+                    "message": message,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.debug(f"Не удалось записать connection_request_error.json: {exc}")
+
+
+def _clear_connection_error(identity_manager: Any, db_manager: Any = None) -> None:
+    _set_last_error_code(identity_manager, None)
+    try:
+        setattr(identity_manager, "last_connection_request_error_message", None)
+    except Exception:
+        pass
+    path = _connection_error_path(identity_manager, db_manager)
+    if not path:
+        return
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception as exc:
+        logger.debug(f"Не удалось очистить connection_request_error.json: {exc}")
+
+
+async def _read_response_json(response: aiohttp.ClientResponse) -> dict[str, Any]:
+    if response.content_type != "application/json":
+        return {}
+    try:
+        data = await response.json()
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+async def _handle_blocked_response(
+    *,
+    response: aiohttp.ClientResponse,
+    identity_manager: Any,
+    db_manager: Any,
+    event_bus: Any,
+    fallback_code: str,
+    fallback_message: str,
+) -> tuple[bool, bool]:
+    data = await _read_response_json(response)
+    error_code = str(data.get("error_code") or fallback_code)
+    message = str(data.get("message") or data.get("error") or fallback_message)
+    _write_connection_error(identity_manager, db_manager, error_code=error_code, message=message)
+    logger.warning(f"Запрос на подключение заблокирован: code={error_code}, message={message}")
+    await _publish_event(
+        event_bus,
+        "connection_rejected",
+        {"message": message, "error_code": error_code},
+    )
+    return (False, True)
 
 
 async def run_connection_request_flow(
@@ -56,7 +143,7 @@ async def run_connection_request_flow(
         return (False, False)
     if metadata is None:
         metadata = {}
-    _set_last_error_code(identity_manager, None)
+    _clear_connection_error(identity_manager, db_manager)
 
     async with ClientSession() as session:
         try:
@@ -74,26 +161,37 @@ async def run_connection_request_flow(
             return (False, False)
 
         if resp.status == 403:
-            data = await resp.json() if resp.content_type == "application/json" else {}
-            _set_last_error_code(identity_manager, data.get("error_code") or "CONNECTION_REJECTED")
-            logger.warning(f"Администратор отклонил подключение: {data.get('message', '')}")
-            await _publish_event(
-                event_bus,
-                "connection_rejected",
-                {"message": "Администратор отклонил подключение"},
+            return await _handle_blocked_response(
+                response=resp,
+                identity_manager=identity_manager,
+                db_manager=db_manager,
+                event_bus=event_bus,
+                fallback_code="CONNECTION_REJECTED",
+                fallback_message="Администратор отклонил подключение",
             )
-            return (False, True)
 
         if resp.status == 409:
-            data = await resp.json() if resp.content_type == "application/json" else {}
-            _set_last_error_code(identity_manager, data.get("error_code") or "CONNECTION_BLOCKED")
-            logger.warning(f"Запрос на подключение заблокирован: {data.get('message', '')}")
-            await _publish_event(
-                event_bus,
-                "connection_rejected",
-                {"message": data.get("message") or "Запрос на подключение заблокирован"},
+            return await _handle_blocked_response(
+                response=resp,
+                identity_manager=identity_manager,
+                db_manager=db_manager,
+                event_bus=event_bus,
+                fallback_code="CONNECTION_BLOCKED",
+                fallback_message="Запрос на подключение заблокирован",
             )
-            return (False, True)
+
+        if resp.status == 429:
+            return await _handle_blocked_response(
+                response=resp,
+                identity_manager=identity_manager,
+                db_manager=db_manager,
+                event_bus=event_bus,
+                fallback_code="TOKEN_LIMIT_EXCEEDED",
+                fallback_message=(
+                    "На сервере уже есть 2 активных токена для этого устройства. "
+                    "Отзовите старый токен в админке или восстановите локальный токен агента."
+                ),
+            )
 
         if resp.status != 200:
             logger.error(f"Сервер вернул {resp.status} при запросе подключения")
@@ -114,6 +212,7 @@ async def run_connection_request_flow(
                 except Exception as e:
                     logger.warning(f"Не удалось сохранить токен в БД: {e}")
             logger.info("✅ Токен получен по запросу подключения (accept_all)")
+            _clear_connection_error(identity_manager, db_manager)
             await _publish_event(event_bus, "connection_approved", {})
             return (True, False)
 
@@ -129,7 +228,7 @@ async def run_connection_request_flow(
             while time.monotonic() < deadline:
                 await asyncio.sleep(poll_interval)
                 try:
-                    await session.post(
+                    heartbeat_resp = await session.post(
                         f"{api_url}/connection_request",
                         json={
                             "device_id": device_id,
@@ -138,6 +237,18 @@ async def run_connection_request_flow(
                         },
                         timeout=aiohttp.ClientTimeout(total=5),
                     )
+                    if heartbeat_resp.status == 429:
+                        return await _handle_blocked_response(
+                            response=heartbeat_resp,
+                            identity_manager=identity_manager,
+                            db_manager=db_manager,
+                            event_bus=event_bus,
+                            fallback_code="TOKEN_LIMIT_EXCEEDED",
+                            fallback_message=(
+                                "На сервере уже есть 2 активных токена для этого устройства. "
+                                "Отзовите старый токен в админке или восстановите локальный токен агента."
+                            ),
+                        )
                 except Exception as e:
                     logger.debug(f"Ошибка heartbeat connection_request: {e}")
                 try:
@@ -149,6 +260,18 @@ async def run_connection_request_flow(
                 except Exception as e:
                     logger.warning(f"Ошибка опроса статуса: {e}")
                     continue
+                if status_resp.status == 429:
+                    return await _handle_blocked_response(
+                        response=status_resp,
+                        identity_manager=identity_manager,
+                        db_manager=db_manager,
+                        event_bus=event_bus,
+                        fallback_code="TOKEN_LIMIT_EXCEEDED",
+                        fallback_message=(
+                            "На сервере уже есть 2 активных токена для этого устройства. "
+                            "Отзовите старый токен в админке или восстановите локальный токен агента."
+                        ),
+                    )
                 if status_resp.status != 200:
                     continue
                 status_data = await status_resp.json()
@@ -163,15 +286,18 @@ async def run_connection_request_flow(
                             except Exception as e:
                                 logger.warning(f"Не удалось сохранить токен в БД: {e}")
                         logger.info("✅ Токен получен по опросу (одобрено администратором)")
+                        _clear_connection_error(identity_manager, db_manager)
                         await _publish_event(event_bus, "connection_approved", {})
                         return (True, False)
                 elif st == "rejected":
-                    _set_last_error_code(identity_manager, status_data.get("error_code") or "CONNECTION_REJECTED")
-                    logger.warning("Администратор отклонил подключение")
+                    error_code = status_data.get("error_code") or "CONNECTION_REJECTED"
+                    message = status_data.get("message") or "Администратор отклонил подключение"
+                    _write_connection_error(identity_manager, db_manager, error_code=error_code, message=message)
+                    logger.warning(f"Администратор отклонил подключение: code={error_code}")
                     await _publish_event(
                         event_bus,
                         "connection_rejected",
-                        {"message": status_data.get("message") or "Администратор отклонил подключение"},
+                        {"message": message, "error_code": error_code},
                     )
                     return (False, True)
             logger.warning("Таймаут ожидания одобрения администратором")

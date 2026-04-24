@@ -15,6 +15,12 @@
 - Runtime/UI status now surfaces both `pending_update_*` and `update_request_*` through `GET /ui/agent/status`, so the local GUI can show `requesting -> requested -> pending_restart` instead of looking hung after `POST /ui/agent/update`.
 - Launcher publish now uses staging + backup/restore, verify returns diagnostic output, `tar.gz` extraction restores POSIX mode bits and rejects links, and both launcher entrypoints roll back after repeated immediate crash of the newly switched version.
 
+## 2026-04-24 inventory cleanup and notifications
+
+- Typed admin inventory now exposes device identity source and duplicate warnings via `GET /api/web/admin/devices`, and safe offline `env_uuid` duplicate cleanup goes through `POST /api/web/admin/devices/cleanup_env_duplicates`; the cleanup archives device rows through `DevicesRepo.archive_device()`, so active tokens and pending runtime work are revoked/cancelled instead of hard-deleted.
+- `/app/admin/inventory` shows identity source badges (`windows_machine_guid`, `linux_machine_id`, `env_uuid`) and duplicate cleanup actions for old `ADMIN-2`-style test records. `/app/admin/settings` reuses the settings workspace with the `Уведомления` tab for in-app notification preferences, recent notifications and tech alerts.
+- Connection request token exhaustion is now explicit: server returns `TOKEN_LIMIT_EXCEEDED` on 429 and marks the pending request metadata; the agent writes `connection_request_error.json`, emits `connection_rejected` with the server message, and GUI auth avoids persisting a permanent local reject flag for this transient block.
+
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, `server/web_api/admin_handlers.py`, `webapp/src/features/forms-builder/forms-builder-panel.tsx`, and `pc_agent/ui_gui/chat_panel.py`.

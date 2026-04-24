@@ -19,6 +19,7 @@ from app.repos.connection_requests_repo import (
     POLICY_MANUAL,
     POLICY_REJECT_ALL,
 )
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
 from auth.service import AuthService, ArchivedDeviceError
@@ -26,11 +27,59 @@ from auth.connection_request_service import ConnectionRequestService
 from tech.runtime_audit import write_agent_runtime_audit
 
 
+TOKEN_LIMIT_ERROR_CODE = "TOKEN_LIMIT_EXCEEDED"
+TOKEN_LIMIT_MESSAGE = (
+    "На сервере уже есть 2 активных токена для этого устройства. "
+    "Отзовите старый токен в админке или восстановите локальное хранилище токена агента."
+)
+
+
 def _get_client_ip(request: web.Request) -> str:
     xff = request.headers.get("X-Forwarded-For")
     if xff:
         return xff.split(",")[0].strip()
     return request.remote or ""
+
+
+def _token_limit_response_payload(*, active_token_count: int | None = None, error: str | None = None) -> dict:
+    payload = {
+        "status": "blocked",
+        "message": TOKEN_LIMIT_MESSAGE,
+        "error": error or TOKEN_LIMIT_MESSAGE,
+        "error_code": TOKEN_LIMIT_ERROR_CODE,
+    }
+    if active_token_count is not None:
+        payload["active_token_count"] = active_token_count
+    return payload
+
+
+async def _mark_pending_token_limit(
+    repo: ConnectionRequestsRepo,
+    *,
+    device_id: str,
+    ip_address: str | None,
+    hostname: str | None,
+    metadata: dict,
+    active_token_count: int,
+) -> None:
+    metadata_patch = dict(metadata)
+    metadata_patch.update(
+        {
+            "reason": "token_limit_exceeded",
+            "error_code": TOKEN_LIMIT_ERROR_CODE,
+            "active_token_count": active_token_count,
+        }
+    )
+    existing = await repo.get_pending_by_device_id(device_id)
+    if existing:
+        await repo.touch_pending_request(device_id, metadata_patch=metadata_patch)
+        return
+    await repo.create_request(
+        device_id=device_id,
+        ip_address=ip_address or None,
+        hostname=hostname,
+        metadata=metadata_patch,
+    )
 
 
 async def handle_connection_request(request: web.Request) -> web.Response:
@@ -137,7 +186,7 @@ async def handle_connection_request(request: web.Request) -> web.Response:
             except ValueError as e:
                 logger.warning(f"Connection request accept_all token limit: {e}")
                 return web.json_response(
-                    {"status": "error", "error": str(e)},
+                    _token_limit_response_payload(error=str(e)),
                     status=429,
                 )
             await repo.set_approved(device_id)
@@ -157,6 +206,32 @@ async def handle_connection_request(request: web.Request) -> web.Response:
             })
 
         # POLICY_MANUAL: create pending request или обновить last_request_at (heartbeat)
+        active_token_count = await AuthTokensRepo(session).check_active_token_limit(device_id)
+        if active_token_count >= 2:
+            await _mark_pending_token_limit(
+                repo,
+                device_id=device_id,
+                ip_address=ip_address or None,
+                hostname=hostname,
+                metadata=metadata,
+                active_token_count=active_token_count,
+            )
+            await session.commit()
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="connection_request_token_limit",
+                severity="warning",
+                source="connection_request",
+                details_json={"active_token_count": active_token_count},
+            )
+            logger.warning(
+                f"Connection request blocked by active token limit: "
+                f"device_id={device_id[:8]}..., active={active_token_count}"
+            )
+            return web.json_response(
+                _token_limit_response_payload(active_token_count=active_token_count),
+                status=429,
+            )
         existing = await repo.get_pending_by_device_id(device_id)
         if existing:
             await repo.touch_pending_request(device_id)
@@ -219,9 +294,16 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
         status = await repo.get_status(device_id)
         latest_request = await repo.get_latest_by_device_id(device_id)
         archived_reject = False
+        token_limit_blocked = False
+        active_token_count = None
         if latest_request and status == "rejected":
             metadata = latest_request.request_metadata if isinstance(latest_request.request_metadata, dict) else {}
             archived_reject = bool(metadata.get("archived_at"))
+        if latest_request and status == "pending":
+            metadata = latest_request.request_metadata if isinstance(latest_request.request_metadata, dict) else {}
+            token_limit_blocked = metadata.get("error_code") == TOKEN_LIMIT_ERROR_CODE or metadata.get("reason") == "token_limit_exceeded"
+            if token_limit_blocked:
+                active_token_count = metadata.get("active_token_count")
 
     if not status:
         return web.json_response({
@@ -233,6 +315,11 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
             "status": "approved",
             "message": "Already approved; token was delivered earlier. Request a new connection if needed.",
         })
+    if token_limit_blocked:
+        return web.json_response(
+            _token_limit_response_payload(active_token_count=active_token_count),
+            status=429,
+        )
     if status == "rejected":
         if archived_reject:
             return web.json_response({
@@ -345,8 +432,16 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 status=409,
             )
         except ValueError as e:
+            await repo.touch_pending_request(
+                device_id,
+                metadata_patch={
+                    "reason": "token_limit_exceeded",
+                    "error_code": TOKEN_LIMIT_ERROR_CODE,
+                },
+            )
+            await session.commit()
             return web.json_response(
-                {"status": "error", "error": str(e)},
+                _token_limit_response_payload(error=str(e)),
                 status=429,
             )
         await repo.set_approved(device_id)

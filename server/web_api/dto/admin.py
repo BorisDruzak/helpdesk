@@ -508,6 +508,28 @@ class AdminDeviceUpdateRunPayload(BaseModel):
     build: AdminBuildIdentity
 
 
+class AdminDeviceIdentitySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    machine_id: str
+    install_id: str | None = None
+    machine_id_source: str | None = None
+    identity_scheme: str | None = None
+    source_label: str
+    is_stable: bool
+
+
+class AdminDeviceDuplicateWarning(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    severity: str
+    title: str
+    description: str
+    duplicate_count: int
+    cleanup_available: bool
+
+
 class AdminDeviceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -520,6 +542,8 @@ class AdminDeviceItem(BaseModel):
     last_seen_at: str | None = None
     connection_status_label: str
     latest_update: AdminDeviceUpdateSummary
+    identity_summary: AdminDeviceIdentitySummary
+    duplicate_warning: AdminDeviceDuplicateWarning | None = None
 
 
 class AdminDevicesSummary(BaseModel):
@@ -528,6 +552,8 @@ class AdminDevicesSummary(BaseModel):
     visible_count: int
     online_count: int
     rollout_targets: int
+    duplicate_hosts: int = 0
+    cleanup_candidates: int = 0
 
 
 class AdminDevicesFilters(BaseModel):
@@ -545,6 +571,27 @@ class AdminDevicesPayload(BaseModel):
     filters: AdminDevicesFilters
     rollout: list[AdminRolloutAssignment]
     devices: list[AdminDeviceItem]
+
+
+class AdminDeviceCleanupCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    hostname: str | None = None
+    agent_version: str | None = None
+    last_seen_at: str | None = None
+    machine_id_source: str | None = None
+    online: bool
+
+
+class AdminDeviceCleanupPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: str
+    applied: bool
+    archived_count: int
+    candidates: list[AdminDeviceCleanupCandidate]
+    kept_device_ids: list[str]
 
 
 class AdminModulesSummary(BaseModel):

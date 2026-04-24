@@ -86,8 +86,8 @@
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/auth/token_source.py` | Источник токена: `AUTH_TOKEN` → `auth_tokens` → optional GUI callback; controlled migration локального токена с legacy install-based ID на canonical `machine_id` |
-| `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus; различает обычный reject и `DEVICE_ARCHIVED`, чтобы не оставлять agent в вечном локальном rejected-state |
-| `pc_agent/auth/gui_auth_state_machine.py` | Явные состояния GUI-авторизации (`NoToken -> RequestSent -> Polling -> TokenReady/WsConnecting`) |
+| `pc_agent/auth/connection_request.py` | Connection-request flow: POST/GET polling, approve/reject и события в event_bus; различает обычный reject, `DEVICE_ARCHIVED` и `TOKEN_LIMIT_EXCEEDED`, пишет `connection_request_error.json` для GUI при блокировке сервером и не логирует raw token |
+| `pc_agent/auth/gui_auth_state_machine.py` | Явные состояния GUI-авторизации (`NoToken -> RequestSent -> Polling -> TokenReady/WsConnecting`); transient blocks `DEVICE_ARCHIVED` и `TOKEN_LIMIT_EXCEEDED` не превращаются в вечный локальный `connection_rejected.flag` |
 | `pc_agent/auth/rejected_flag.py` | Путь к локальному флагу `connection_rejected.flag` |
 
 ### 2.4 UI bridge (core ↔ GUI)
@@ -101,7 +101,7 @@
 ### 2.5 GUI (Qt)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics, release badge и кнопка recommended update из локального `ui_bridge`; update CTA now renders explicit `requesting` / `requested` / `pending_restart` states and runs a short refresh burst after an accepted local update request |
+| `pc_agent/ui_gui/main_window.py` | Главное окно (splitter: панель профиля + тикеты), настройки и статусы, секция always-on/tray/logging diagnostics, release badge и кнопка recommended update из локального `ui_bridge`; update CTA now renders explicit `requesting` / `requested` / `pending_restart` states and runs a short refresh burst after an accepted local update request; connection rejected/block events show the server-provided message, including token-limit diagnostics |
 | `pc_agent/ui_gui/chat_panel.py` | Чат, создание тикета, reply-to, mark-read, локальные профили инициатора; профиль теперь хранит подразделение/здание/кабинет/телефон и при сохранении/выборе синхронизируется в серверный реестр людей и локаций через `TicketApiClient.sync_registry_profile()`; detail refresh разделён на initial tail load, forward catch-up через `since_event_id` и reverse pagination вверх через `before_event_id`, с prepend history и сохранением viewport; список тикетов на `QListView` + модель; runtime path больше не использует deprecated chat client и работает через `TicketApiClient` как канонический GUI contract |
 | `pc_agent/ui_gui/tickets_list_model.py` | `TicketsListModel` и `TicketCardDelegate` — обновление строк без полного `clear()`, отрисовка карточек |
 | `pc_agent/ui_gui/ticket_format.py` | Подписи/цвета статусов, формат дат, отпечаток строки тикета для диффа модели |
@@ -111,6 +111,7 @@
 | `pc_agent/ui_gui/tray_manager.py` | Тонкая cross-platform обёртка над `QSystemTrayIcon`: открыть окно, открыть логи, restart agent, exit agent |
 | `pc_agent/ui_gui/consent_dialog.py` | Диалог согласия на операцию |
 | `pc_agent/ui_gui/token_dialog.py` | Диалог токена |
+| `pc_agent/ui_gui/wait_for_auth_dialog.py` | Диалог ожидания авторизации; читает `connection_request_error.json` и показывает пользователю `TOKEN_LIMIT_EXCEEDED`, когда сервер отказал в выпуске третьего активного токена |
 
 ### 2.6 Конфигурация
 | Файл | Назначение |

@@ -1,6 +1,7 @@
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from types import SimpleNamespace
 
 from auth.context import AuthContext, AuthType
 from routes import setup_routes
@@ -454,12 +455,57 @@ async def test_web_admin_devices_returns_typed_fallback_payload_when_db_is_unava
     assert payload["data"]["summary"]["visible_count"] == 0
     assert payload["data"]["summary"]["online_count"] == 0
     assert payload["data"]["summary"]["rollout_targets"] == 0
+    assert payload["data"]["summary"]["duplicate_hosts"] == 0
+    assert payload["data"]["summary"]["cleanup_candidates"] == 0
     assert payload["data"]["rollout"] == []
     assert payload["data"]["devices"] == []
     assert payload["data"]["filters"]["status_options"][0] == {
         "value": "all",
         "label": "Все устройства",
     }
+
+
+@pytest.mark.no_db
+def test_web_admin_device_item_marks_env_uuid_duplicates():
+    stable_device = SimpleNamespace(
+        device_id="11111111-1111-1111-1111-111111111111",
+        hostname="ADMIN-2",
+        os="Windows",
+        agent_version="3.1.21",
+        last_seen_at=None,
+        device_metadata={
+            "machine_id_source": "windows_machine_guid",
+            "identity_scheme": "machine_id_v1",
+            "install_id": "22222222-2222-4222-8222-222222222222",
+        },
+    )
+    env_device = SimpleNamespace(
+        device_id="33333333-3333-4333-8333-333333333333",
+        hostname="ADMIN-2",
+        os="Windows",
+        agent_version="3.1.20",
+        last_seen_at=None,
+        device_metadata={
+            "machine_id_source": "env_uuid",
+            "identity_scheme": "machine_id_v1",
+            "install_id": "44444444-4444-4444-8444-444444444444",
+        },
+    )
+    state = SimpleNamespace(is_agent_online=lambda device_id: device_id == stable_device.device_id)
+
+    duplicate_index = admin_handlers._build_duplicate_index([stable_device, env_device], state=state)
+    stable_item = admin_handlers._build_device_item(stable_device, online=True, duplicate_index=duplicate_index)
+    env_item = admin_handlers._build_device_item(env_device, online=False, duplicate_index=duplicate_index)
+
+    assert stable_item.identity_summary.source_label == "Windows MachineGuid"
+    assert stable_item.identity_summary.is_stable is True
+    assert stable_item.duplicate_warning.kind == "hostname_has_env_uuid_duplicates"
+    assert stable_item.duplicate_warning.cleanup_available is True
+
+    assert env_item.identity_summary.source_label == "Тестовый ENV UUID"
+    assert env_item.identity_summary.is_stable is False
+    assert env_item.duplicate_warning.kind == "env_uuid_duplicate"
+    assert env_item.duplicate_warning.cleanup_available is True
 
 
 @pytest.mark.asyncio

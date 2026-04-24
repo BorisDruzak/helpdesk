@@ -1,4 +1,4 @@
-import { Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { startTransition, useEffect, useState } from "react";
 
@@ -17,7 +17,11 @@ import {
   createWebSettingsSlaPolicy,
   deleteWebSettingsQueueMember,
   deleteWebSettingsResolutionCode,
+  fetchNotifications,
+  fetchNotificationSettings,
+  fetchTechAlerts,
   fetchWebSettingsPayload,
+  saveNotificationPreferences,
   saveWebSettingsOlaTargets,
   saveWebSettingsPriorityMatrix,
   saveWebSettingsSlaTargets,
@@ -32,7 +36,7 @@ import {
 } from "../../features/settings/api";
 
 
-type SettingsTab = "overview" | "queues" | "routing" | "sla" | "calendars" | "resolution" | "audit";
+type SettingsTab = "overview" | "notifications" | "queues" | "routing" | "sla" | "calendars" | "resolution" | "audit";
 type QueueItem = WebSettingsPayload["queues"][number];
 type RoutingRuleItem = WebSettingsPayload["routing_rules"][number];
 type SlaPolicyItem = WebSettingsPayload["sla_policies"][number];
@@ -113,6 +117,7 @@ type PriorityMatrixDraftRow = {
 
 const TAB_ITEMS = [
   { value: "overview", label: "Обзор" },
+  { value: "notifications", label: "Уведомления" },
   { value: "queues", label: "Очереди" },
   { value: "routing", label: "Маршрутизация" },
   { value: "sla", label: "SLA" },
@@ -124,6 +129,46 @@ const TAB_ITEMS = [
 const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 const PRIORITY_OPTIONS = ["P1", "P2", "P3", "P4"] as const;
 const IMPACT_VALUES = [1, 2, 3] as const;
+const NOTIFICATION_CATALOG = [
+  {
+    eventType: "ticket_message",
+    title: "Новые сообщения в тикетах",
+    description: "Оператор или пользователь добавил публичное сообщение.",
+  },
+  {
+    eventType: "internal_note",
+    title: "Внутренние комментарии",
+    description: "Служебные заметки поддержки; можно заглушить отдельным переключателем.",
+  },
+  {
+    eventType: "status_changed",
+    title: "Изменение статуса",
+    description: "Тикет перешёл в работу, ожидание, решение или закрытие.",
+  },
+  {
+    eventType: "assignment_changed",
+    title: "Назначение исполнителя",
+    description: "Тикет назначен на пользователя или очередь.",
+  },
+  {
+    eventType: "sla_breached",
+    title: "SLA нарушен",
+    description: "Watchdog создал уведомление о просрочке реакции или решения.",
+  },
+  {
+    eventType: "mention",
+    title: "Упоминания",
+    description: "Адресные события, которые лучше оставлять включёнными.",
+  },
+] as const;
+
+const TECH_ALERT_CATALOG = [
+  "connection_request_stuck_pending",
+  "connection_request_token_limit",
+  "agent_update_failed",
+  "observer_degradation",
+  "inventory_duplicate_env_uuid",
+] as const;
 
 
 function formatDateTime(value: string | null | undefined): string {
@@ -366,6 +411,29 @@ export function SettingsPage() {
     refetchInterval: 60_000,
   });
 
+  const notificationSettingsQuery = useQuery({
+    queryKey: ["notification-settings"],
+    queryFn: fetchNotificationSettings,
+    enabled: activeTab === "notifications",
+    retry: false,
+  });
+
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications-preview"],
+    queryFn: () => fetchNotifications(20),
+    enabled: activeTab === "notifications",
+    retry: false,
+    refetchInterval: 30_000,
+  });
+
+  const techAlertsQuery = useQuery({
+    queryKey: ["admin-tech-alerts-settings"],
+    queryFn: fetchTechAlerts,
+    enabled: activeTab === "notifications",
+    retry: false,
+    refetchInterval: 30_000,
+  });
+
   const payload = settingsQuery.data;
   const canWrite = payload?.capabilities.can_write ?? false;
 
@@ -400,6 +468,30 @@ export function SettingsPage() {
   const [priorityMatrixDraft, setPriorityMatrixDraft] = useState<PriorityMatrixDraftRow[]>(buildPriorityMatrixDraft(null));
   const [newMemberActorId, setNewMemberActorId] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("");
+
+  const notificationPreferences = notificationSettingsQuery.data?.preferences;
+  const mutedNotificationTypes = notificationPreferences?.muted_event_types ?? [];
+
+  const notificationMutation = useMutation({
+    mutationFn: saveNotificationPreferences,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["notification-settings"] });
+      reportSuccess("Настройки уведомлений сохранены.");
+    },
+    onError: (error) => reportError(error, "Не удалось сохранить настройки уведомлений."),
+  });
+
+  function toggleMutedNotification(eventType: string, checked: boolean) {
+    const current = new Set(mutedNotificationTypes);
+    if (checked) {
+      current.delete(eventType);
+    } else {
+      current.add(eventType);
+    }
+    notificationMutation.mutate({
+      muted_event_types: Array.from(current),
+    });
+  }
 
   useEffect(() => {
     if (!payload?.queues.length) {
@@ -851,6 +943,144 @@ export function SettingsPage() {
                       <p className="mt-2 text-2xl font-semibold text-slate-950">
                         {payload.capabilities.can_write ? "Разрешён" : "Только чтение"}
                       </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === "notifications" ? (
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Каналы уведомлений</CardTitle>
+                    <CardDescription>Что уже может попадать в in-app уведомления и технические alerts.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 md:grid-cols-2">
+                    {NOTIFICATION_CATALOG.map((item) => {
+                      const enabled = !mutedNotificationTypes.includes(item.eventType);
+                      return (
+                        <label
+                          key={item.eventType}
+                          className="flex items-start gap-3 rounded-[1.1rem] border border-border bg-white px-4 py-4"
+                        >
+                          <input
+                            checked={enabled}
+                            className="mt-1 h-4 w-4"
+                            disabled={!canWrite || notificationMutation.isPending || notificationSettingsQuery.isLoading}
+                            onChange={(event) => toggleMutedNotification(item.eventType, event.target.checked)}
+                            type="checkbox"
+                          />
+                          <span>
+                            <span className="block font-semibold text-slate-950">{item.title}</span>
+                            <span className="mt-1 block text-sm text-slate-500">{item.description}</span>
+                            <span className="mt-2 block text-xs uppercase tracking-[0.18em] text-slate-400">{item.eventType}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Последние уведомления</CardTitle>
+                    <CardDescription>Живой список для текущего пользователя админки.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {notificationsQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем уведомления…</p> : null}
+                    {(notificationsQuery.data?.notifications ?? []).length ? (
+                      notificationsQuery.data?.notifications.map((item) => (
+                        <div key={item.id} className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-semibold text-slate-950">{item.event_type}</p>
+                            <Badge tone={item.is_read ? "neutral" : "info"}>{item.is_read ? "Прочитано" : "Новое"}</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Тикет {item.ticket_id} • {formatDateTime(item.created_at)}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                        Последних уведомлений пока нет.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Правила тишины</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <label className="flex items-start gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <input
+                        checked={Boolean(notificationPreferences?.suppress_self ?? true)}
+                        className="mt-1 h-4 w-4"
+                        disabled={!canWrite || notificationMutation.isPending}
+                        onChange={(event) => notificationMutation.mutate({ suppress_self: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block font-medium text-slate-950">Не уведомлять о своих действиях</span>
+                        <span className="mt-1 block text-sm text-slate-500">Снижает шум от собственных комментариев и смен статуса.</span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <input
+                        checked={Boolean(notificationPreferences?.mute_internal ?? false)}
+                        className="mt-1 h-4 w-4"
+                        disabled={!canWrite || notificationMutation.isPending}
+                        onChange={(event) => notificationMutation.mutate({ mute_internal: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block font-medium text-slate-950">Глушить internal-note</span>
+                        <span className="mt-1 block text-sm text-slate-500">Оставляет публичные события и SLA, но убирает внутренние заметки.</span>
+                      </span>
+                    </label>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Ошибки и alerts</CardTitle>
+                    <CardDescription>Операционные события, которые должны быть видны администратору.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {techAlertsQuery.isLoading ? <p className="text-sm text-slate-500">Проверяем alerts…</p> : null}
+                    {(techAlertsQuery.data?.alerts ?? []).length ? (
+                      techAlertsQuery.data?.alerts.map((alert) => (
+                        <div key={`${alert.kind}:${alert.title}`} className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-4">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700" />
+                            <div>
+                              <p className="font-semibold text-amber-950">{alert.title}</p>
+                              <p className="mt-1 text-sm text-amber-800">{alert.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                        Активных технических alerts нет.
+                      </div>
+                    )}
+                    <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <div className="flex items-center gap-2 font-semibold text-slate-950">
+                        <Bell className="h-4 w-4 text-brand-700" />
+                        Контролируемые события
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {TECH_ALERT_CATALOG.map((item) => (
+                          <Badge key={item} tone="neutral">{item}</Badge>
+                        ))}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
