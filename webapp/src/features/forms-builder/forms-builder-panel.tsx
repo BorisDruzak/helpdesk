@@ -24,6 +24,7 @@ import {
   type AdminFormsFieldOption,
   type AdminFormsFieldType,
   type AdminFormsPayload,
+  type AdminFormsPlaybookTrigger,
   type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
   fetchAdminFormsCatalog,
@@ -64,6 +65,7 @@ type DraftForm = {
   request_kind: string;
   title: string;
   description: string;
+  playbook_triggers: AdminFormsPlaybookTrigger[];
   fields: DraftField[];
 };
 
@@ -100,6 +102,7 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
       request_kind: form.request_kind,
       title: form.title,
       description: form.description ?? "",
+      playbook_triggers: form.playbook_triggers ?? [],
       fields: form.fields.map((field) => ({
         key: field.key,
         label: field.label,
@@ -141,6 +144,23 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
         ),
         title: String((form as { title?: unknown }).title ?? "Новая форма"),
         description: String((form as { description?: unknown }).description ?? ""),
+        playbook_triggers: Array.isArray((form as { playbook_triggers?: unknown[] }).playbook_triggers)
+          ? ((form as { playbook_triggers: unknown[] }).playbook_triggers ?? [])
+              .map((triggerRaw) => {
+                const trigger = typeof triggerRaw === "object" && triggerRaw !== null ? triggerRaw : {};
+                const moduleKind: AdminFormsPlaybookTrigger["module_kind"] =
+                  String((trigger as { module_kind?: unknown }).module_kind ?? "diagnostic") === "remediation"
+                    ? "remediation"
+                    : "diagnostic";
+                return {
+                  event: "ticket_created" as const,
+                  playbook_key: String((trigger as { playbook_key?: unknown }).playbook_key ?? ""),
+                  module_kind: moduleKind,
+                  enabled: Boolean((trigger as { enabled?: unknown }).enabled ?? true),
+                };
+              })
+              .filter((trigger) => trigger.playbook_key.trim())
+          : [],
         fields: fieldsRaw.map((fieldRaw, fieldIndex) => {
           const field = typeof fieldRaw === "object" && fieldRaw !== null ? fieldRaw : {};
           const optionsRaw = Array.isArray((field as { options?: unknown[] }).options)
@@ -192,6 +212,7 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
       request_kind: form.request_kind,
       title: form.title,
       description: form.description,
+      playbook_triggers: form.playbook_triggers,
       fields: form.fields.map((field) => {
         const options = field.options.filter((option) => option.value.trim() && option.label.trim());
         const values = field.visible_when.values.filter((item) => item.trim());
@@ -283,6 +304,7 @@ function createEmptyForm(index: number): DraftForm {
     request_kind: key,
     title: "Новая форма",
     description: "",
+    playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
   };
 }
@@ -1127,6 +1149,92 @@ export function FormsBuilderPanel() {
                               value={selectedForm.description}
                             />
                           </label>
+                        </div>
+
+                        <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Плейбук при создании тикета</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Форма может запускать диагностический сценарий и прикладывать пакет фактов к тикету.
+                              </p>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                              <input
+                                checked={Boolean(selectedForm.playbook_triggers[0]?.enabled)}
+                                onChange={(event) => {
+                                  const checked = event.currentTarget.checked;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => {
+                                          const currentTrigger = form.playbook_triggers[0] ?? {
+                                            event: "ticket_created" as const,
+                                            playbook_key: "",
+                                            module_kind: "diagnostic" as const,
+                                            enabled: false,
+                                          };
+                                          return {
+                                            ...form,
+                                            playbook_triggers: [
+                                              {
+                                                ...currentTrigger,
+                                                enabled: checked,
+                                              },
+                                            ],
+                                          };
+                                        })
+                                      : current
+                                  );
+                                }}
+                                type="checkbox"
+                              />
+                              Включить
+                            </label>
+                          </div>
+                          <div className="mt-4 grid gap-4 md:grid-cols-2">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Ключ плейбука</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => {
+                                          const currentTrigger = form.playbook_triggers[0] ?? {
+                                            event: "ticket_created" as const,
+                                            playbook_key: "",
+                                            module_kind: "diagnostic" as const,
+                                            enabled: true,
+                                          };
+                                          return {
+                                            ...form,
+                                            playbook_triggers: [
+                                              {
+                                                ...currentTrigger,
+                                                event: "ticket_created",
+                                                module_kind: "diagnostic",
+                                                playbook_key: value,
+                                              },
+                                            ],
+                                          };
+                                        })
+                                      : current
+                                  );
+                                }}
+                                placeholder="site_not_opening"
+                                value={selectedForm.playbook_triggers[0]?.playbook_key ?? ""}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Класс сценария</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                disabled
+                                value="diagnostic"
+                              />
+                            </label>
+                          </div>
                         </div>
 
                         <div className="space-y-4">

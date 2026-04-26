@@ -845,6 +845,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             include_public_access=True,
             ticket_type=ticket_type,
             extra_custom_fields=extra_custom_fields,
+            state=request.app.get("state"),
         )
         await session.commit()
         ticket_data = await _ticket_payload(session, created["ticket"])

@@ -6,6 +6,7 @@ import {
   Layers3,
   MonitorCog,
   Radar,
+  Route,
   Settings2,
   ShieldCheck,
   Ticket,
@@ -86,6 +87,13 @@ export const appNavigation: AppNavItem[] = [
     icon: Workflow,
     section: "admin",
     to: "/app/admin/forms"
+  },
+  {
+    label: "Плейбуки",
+    description: "Диагностика и действия",
+    icon: Route,
+    section: "admin",
+    to: "/app/admin/playbooks"
   },
   {
     label: "Observer",

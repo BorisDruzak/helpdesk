@@ -23,6 +23,14 @@ from web_api.dto.admin import (
     AdminFormsSaveResult,
     AdminFormsSummary,
     AdminFormsVisibleWhen,
+    AdminPlaybookBlockCatalogItem,
+    AdminPlaybookBuilderCapabilities,
+    AdminPlaybookDraftBlock,
+    AdminPlaybookDraftRequest,
+    AdminPlaybookItem,
+    AdminPlaybookPayload,
+    AdminPlaybookSaveResult,
+    AdminScenarioTemplateItem,
     AdminObserverDangerousFlowItem,
     AdminObserverDegradationItem,
     AdminObserverQuickLinks,
@@ -902,6 +910,127 @@ async def test_web_admin_forms_route_preview_returns_typed_payload(web_admin_cli
     assert payload["data"]["matched_rule"]["id"] == 5
     assert payload["data"]["matched_rule"]["condition_json"]["field"] == "request_form_data.room"
     assert payload["data"]["summary_rows"][0]["label"] == "Кабинет"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_playbooks_catalog_returns_diagnostic_builder_payload(web_admin_client, monkeypatch):
+    async def fake_build_payload():
+        return AdminPlaybookPayload(
+            capabilities=AdminPlaybookBuilderCapabilities(
+                catalog_endpoint="/api/web/admin/playbooks/catalog",
+                save_endpoint="/api/web/admin/playbooks/save",
+                block_types=[
+                    AdminFilterOption(value="diagnostic", label="Диагностика"),
+                    AdminFilterOption(value="decision", label="Условие"),
+                    AdminFilterOption(value="report", label="Пакет фактов"),
+                ],
+                module_kind_options=[
+                    AdminFilterOption(value="diagnostic", label="Диагностика"),
+                    AdminFilterOption(value="remediation", label="Исправление"),
+                ],
+            ),
+            block_catalog=[
+                AdminPlaybookBlockCatalogItem(
+                    id="system.collect",
+                    label="Системный снимок",
+                    tool="system.collect",
+                    block_type="diagnostic",
+                    module_kind="diagnostic",
+                    description="CPU, память, сеть и платформа",
+                    default_params={"preset": "network"},
+                    changes_device=False,
+                    requires_confirmation=False,
+                    output_contract={
+                        "status": "ok|error",
+                        "found": {},
+                        "error_code": None,
+                        "attachments": [],
+                    },
+                )
+            ],
+            scenario_templates=[
+                AdminScenarioTemplateItem(
+                    key="site_not_opening",
+                    title="Сайт не открывается",
+                    problem="site_not_opening",
+                    recommended_form_keys=["site_system"],
+                    block_ids=["system.collect"],
+                )
+            ],
+            playbooks=[
+                AdminPlaybookItem(
+                    key="site_not_opening",
+                    name="Сайт не открывается",
+                    domain="network",
+                    version="1.0.0",
+                    status="published",
+                    blocks_count=1,
+                    updated_at=None,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(admin_handlers, "_build_admin_playbooks_payload", fake_build_payload)
+
+    response = await web_admin_client.get("/api/web/admin/playbooks/catalog")
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["block_catalog"][0]["module_kind"] == "diagnostic"
+    assert payload["data"]["block_catalog"][0]["output_contract"]["status"] == "ok|error"
+    assert payload["data"]["scenario_templates"][0]["recommended_form_keys"] == ["site_system"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_playbooks_save_returns_published_playbook(web_admin_client, monkeypatch):
+    async def fake_save_playbook(*, auth_context, payload):
+        assert auth_context.actor_role == "admin"
+        assert payload.key == "site_not_opening"
+        assert payload.blocks[0].tool == "system.collect"
+        return AdminPlaybookSaveResult(
+            key="site_not_opening",
+            version="1.0.1",
+            status="published",
+            blocks_count=2,
+            message="Плейбук опубликован как версия 1.0.1.",
+        )
+
+    monkeypatch.setattr(admin_handlers, "_save_admin_playbook", fake_save_playbook)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/playbooks/save",
+        json={
+            "key": "site_not_opening",
+            "name": "Сайт не открывается",
+            "domain": "network",
+            "blocks": [
+                {
+                    "id": "collect_network",
+                    "type": "diagnostic",
+                    "module_kind": "diagnostic",
+                    "tool": "system.collect",
+                    "params": {"preset": "network"},
+                },
+                {
+                    "id": "facts",
+                    "type": "report",
+                    "module_kind": "diagnostic",
+                    "params": {"title": "Пакет фактов"},
+                },
+            ],
+        },
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["key"] == "site_not_opening"
+    assert payload["data"]["blocks_count"] == 2
 
 
 @pytest.mark.asyncio

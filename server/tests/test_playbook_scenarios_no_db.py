@@ -1,0 +1,158 @@
+import pytest
+
+from playbooks.catalog import (
+    DIAGNOSTIC_MODULE_CATALOG,
+    normalize_playbook_draft,
+)
+from playbooks.form_triggers import (
+    build_ticket_playbook_context,
+    collect_ticket_created_playbook_triggers,
+)
+from tickets.form_catalog import (
+    build_form_custom_fields,
+    validate_form_pack_schema,
+    validate_form_submission,
+)
+
+
+@pytest.mark.no_db
+def test_diagnostic_module_catalog_contains_only_diagnostic_blocks():
+    tool_ids = {item["tool"] for item in DIAGNOSTIC_MODULE_CATALOG}
+
+    assert {"system.collect", "ip_address.get_ip", "diag.logs.collect"} <= tool_ids
+    assert all(item["module_kind"] == "diagnostic" for item in DIAGNOSTIC_MODULE_CATALOG)
+    assert all(item["changes_device"] is False for item in DIAGNOSTIC_MODULE_CATALOG)
+
+
+@pytest.mark.no_db
+def test_normalize_playbook_draft_rejects_remediation_without_confirmation_policy():
+    with pytest.raises(ValueError, match="remediation"):
+        normalize_playbook_draft(
+            {
+                "key": "restart_network",
+                "name": "Restart network",
+                "domain": "network",
+                "blocks": [
+                    {
+                        "id": "restart",
+                        "type": "remediate",
+                        "module_kind": "remediation",
+                        "tool": "service.restart",
+                        "params": {"service": "network"},
+                    }
+                ],
+            }
+        )
+
+
+@pytest.mark.no_db
+def test_normalize_playbook_draft_keeps_reorderable_conditions_and_report_steps():
+    normalized = normalize_playbook_draft(
+        {
+            "key": "site_not_opening",
+            "name": "Site is not opening",
+            "domain": "network",
+            "blocks": [
+                {
+                    "id": "collect_identity",
+                    "type": "diagnostic",
+                    "module_kind": "diagnostic",
+                    "tool": "system.collect",
+                    "params": {"preset": "network"},
+                },
+                {
+                    "id": "branch",
+                    "type": "decision",
+                    "module_kind": "diagnostic",
+                    "condition": "steps.collect_identity.status == 'success'",
+                    "params": {"default": "continue"},
+                },
+                {
+                    "id": "facts",
+                    "type": "report",
+                    "module_kind": "diagnostic",
+                    "params": {"title": "Network evidence package"},
+                },
+            ],
+        }
+    )
+
+    assert normalized["playbook"]["key"] == "site_not_opening"
+    assert [step["step_key"] for step in normalized["steps"]] == [
+        "collect_identity",
+        "branch",
+        "facts",
+    ]
+    assert normalized["steps"][0]["type"] == "collect"
+    assert normalized["steps"][1]["if_expr"] == "steps.collect_identity.status == 'success'"
+    assert normalized["steps"][2]["type"] == "report"
+
+
+@pytest.mark.no_db
+def test_form_pack_preserves_ticket_created_diagnostic_playbook_trigger():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "2.0.0",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "site_system",
+                    "request_kind": "site_system",
+                    "title": "Site / system",
+                    "playbook_triggers": [
+                        {
+                            "event": "ticket_created",
+                            "playbook_key": "site_not_opening",
+                            "module_kind": "diagnostic",
+                            "enabled": True,
+                        }
+                    ],
+                    "fields": [
+                        {
+                            "key": "url",
+                            "label": "URL",
+                            "type": "text",
+                            "required": True,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    submission = validate_form_submission(
+        pack,
+        form_key="site_system",
+        raw_values={"url": "https://intranet.example"},
+    )
+    custom_fields = build_form_custom_fields(submission)
+
+    assert pack["forms"][0]["playbook_triggers"][0]["playbook_key"] == "site_not_opening"
+    assert custom_fields["request_form_playbook_triggers"] == [
+        {
+            "event": "ticket_created",
+            "playbook_key": "site_not_opening",
+            "module_kind": "diagnostic",
+            "enabled": True,
+        }
+    ]
+    assert collect_ticket_created_playbook_triggers(custom_fields)[0]["playbook_key"] == "site_not_opening"
+
+
+@pytest.mark.no_db
+def test_build_ticket_playbook_context_returns_structured_fact_package():
+    context = build_ticket_playbook_context(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        trigger={"playbook_key": "agent_offline", "module_kind": "diagnostic"},
+        custom_fields={
+            "request_form_key": "network",
+            "request_form_data": {"pc_name": "WS-01"},
+            "request_form_summary": [{"key": "pc_name", "label": "PC", "value": "WS-01"}],
+        },
+    )
+
+    assert context["ticket"]["ticket_id"] == "ticket-1"
+    assert context["device"]["device_id"] == "device-1"
+    assert context["scenario"]["class"] == "diagnostic"
+    assert context["facts_package"]["request_form_data"]["pc_name"] == "WS-01"

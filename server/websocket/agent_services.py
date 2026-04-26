@@ -739,6 +739,7 @@ class AgentCommandService:
                         initial_message_sender_role="agent",
                         initial_message_from="agent",
                         include_public_access=False,
+                        state=ctx.state,
                     )
                     ticket_id = created["ticket_id"]
                     session_data["ticket_id"] = ticket_id

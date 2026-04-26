@@ -107,9 +107,18 @@ export function DeviceUpdatePanel({ device }: { device: DeviceSummary | null }) 
           <p>{updates.summary.summary ?? "Сервер ещё не сформировал рекомендацию для устройства."}</p>
         </article>
         <article className="support-snapshot-card">
+          <span>Target агента</span>
+          <strong>{updates.target ?? "не определён"}</strong>
+          <p>{updates.target?.startsWith("linux") ? "Linux агент обновляется через тот же rollout workflow." : "Платформа определена из профиля устройства."}</p>
+        </article>
+        <article className="support-snapshot-card">
           <span>Рекомендуемая сборка</span>
-          <strong>{buildBuildLabel(recommendedBuild)}</strong>
-          <p>{updates.recommendation.comparison_label}</p>
+          <strong>{recommendedBuild ? "Доступна" : "Не назначена"}</strong>
+          <p>
+            {recommendedBuild
+              ? `${updates.recommendation.comparison_label}: ${recommendedBuild.channel} / ${recommendedBuild.version}`
+              : updates.recommendation.comparison_label}
+          </p>
         </article>
         <article className="support-snapshot-card">
           <span>Назначенный rollout</span>

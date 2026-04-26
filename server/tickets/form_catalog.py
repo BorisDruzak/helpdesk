@@ -7,6 +7,7 @@ import re
 from typing import Any, Optional
 
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
+from playbooks.form_triggers import normalize_form_playbook_triggers
 
 
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
@@ -350,6 +351,7 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                 "title": form_title,
                 "description": str(raw_form.get("description") or "").strip(),
                 "fields": normalized_fields,
+                "playbook_triggers": normalize_form_playbook_triggers(raw_form.get("playbook_triggers")),
             }
         )
 
@@ -456,6 +458,7 @@ def validate_form_submission(
         "form_title": form.get("title"),
         "submitted_values": submitted_values,
         "summary_rows": summary_rows,
+        "playbook_triggers": deepcopy(form.get("playbook_triggers") or []),
     }
 
 
@@ -468,6 +471,7 @@ def build_form_custom_fields(validated_submission: dict[str, Any]) -> dict[str, 
         "request_form_title": validated_submission.get("form_title"),
         "request_form_data": deepcopy(validated_submission.get("submitted_values") or {}),
         "request_form_summary": deepcopy(validated_submission.get("summary_rows") or []),
+        "request_form_playbook_triggers": deepcopy(validated_submission.get("playbook_triggers") or []),
     }
 
 

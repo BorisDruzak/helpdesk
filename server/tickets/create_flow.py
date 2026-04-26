@@ -24,6 +24,7 @@ from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
 from tickets.workflow_service import TicketWorkflowService
+from playbooks.form_triggers import start_ticket_created_playbooks
 from utils import new_ticket_id
 
 
@@ -173,6 +174,7 @@ async def create_ticket_with_side_effects(
     include_public_access: bool = True,
     ticket_type: str = "request",
     extra_custom_fields: Optional[dict[str, Any]] = None,
+    state: Any | None = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
@@ -264,6 +266,16 @@ async def create_ticket_with_side_effects(
             trace_id=str(uuid.uuid4()),
             event_id=access_payload["message_id"],
         )
+
+    try:
+        await start_ticket_created_playbooks(
+            session=session,
+            state=state,
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+    except Exception as exc:
+        logger.warning(f"[create] playbook form triggers failed ticket_id={ticket_id} err={exc}")
 
     ticket = await ticket_repo.get_ticket(ticket_id)
     return {

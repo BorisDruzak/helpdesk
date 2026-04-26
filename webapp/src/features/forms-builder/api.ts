@@ -23,12 +23,20 @@ export type AdminFormsFieldItem = {
   visible_when: AdminFormsVisibleWhen | null;
 };
 
+export type AdminFormsPlaybookTrigger = {
+  event: "ticket_created";
+  playbook_key: string;
+  module_kind: "diagnostic" | "remediation";
+  enabled: boolean;
+};
+
 export type AdminFormsFormItem = {
   key: string;
   request_kind: string;
   title: string;
   description: string | null;
   fields: AdminFormsFieldItem[];
+  playbook_triggers?: AdminFormsPlaybookTrigger[];
 };
 
 export type AdminFormsSummary = {
@@ -65,6 +73,7 @@ export type AdminFormsSaveRequest = {
     request_kind: string;
     title: string;
     description: string;
+    playbook_triggers?: AdminFormsPlaybookTrigger[];
     fields: Array<{
       key: string;
       label: string;

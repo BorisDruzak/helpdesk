@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 from loguru import logger
 from pydantic import ValidationError
+from sqlalchemy import func, select
 
 from agents.agent_builds_handlers import (
     AgentUpdateRequestError,
@@ -16,6 +17,7 @@ from agents.agent_builds_handlers import (
     enqueue_device_agent_update,
 )
 from app.db import get_session
+from app.db.models import Playbook, PlaybookStep, PlaybookVersion
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
@@ -25,6 +27,7 @@ from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
 from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
 from observer.service import ObserverOverlayService, TraceOverlayFilters
+from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from auth.context import AuthContext
 from auth.middleware import require_auth
 from tickets.form_catalog import (
@@ -107,6 +110,13 @@ from web_api.dto.admin import (
     AdminFormsSummary,
     AdminFormsVisibleWhen,
     AdminObserverCapabilities,
+    AdminPlaybookBlockCatalogItem,
+    AdminPlaybookBuilderCapabilities,
+    AdminPlaybookDraftRequest,
+    AdminPlaybookItem,
+    AdminPlaybookPayload,
+    AdminPlaybookSaveResult,
+    AdminScenarioTemplateItem,
     AdminRolloutAssignment,
 )
 from utils.module_manifest import get_module_manifest, get_module_validation
@@ -229,6 +239,8 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
 _FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
 _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
 _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
+_PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
+_PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
 _FORM_FIELD_TYPE_LABELS = {
     "text": "Текст",
     "textarea": "Большой текст",
@@ -417,6 +429,16 @@ def _map_admin_form_item(raw_form: dict | None) -> AdminFormsFormItem:
             for field in (form.get("fields") or [])
             if isinstance(field, dict)
         ],
+        playbook_triggers=[
+            {
+                "event": str(trigger.get("event") or "ticket_created"),
+                "playbook_key": str(trigger.get("playbook_key") or ""),
+                "module_kind": str(trigger.get("module_kind") or "diagnostic"),
+                "enabled": bool(trigger.get("enabled", True)),
+            }
+            for trigger in (form.get("playbook_triggers") or [])
+            if isinstance(trigger, dict)
+        ],
     )
 
 
@@ -538,6 +560,16 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
         "title": str(payload.title or "").strip(),
         "description": str(payload.description or "").strip(),
         "fields": [_serialize_admin_form_field_request(field) for field in payload.fields],
+        "playbook_triggers": [
+            {
+                "event": str(trigger.event or "ticket_created").strip() or "ticket_created",
+                "playbook_key": str(trigger.playbook_key or "").strip(),
+                "module_kind": str(trigger.module_kind or "diagnostic").strip() or "diagnostic",
+                "enabled": bool(trigger.enabled),
+            }
+            for trigger in getattr(payload, "playbook_triggers", [])
+            if str(trigger.playbook_key or "").strip()
+        ],
     }
 
 
@@ -1812,6 +1844,140 @@ async def _save_admin_forms_pack(
     )
 
 
+def _next_playbook_version(existing_versions: list[str], requested: str | None) -> str:
+    candidate = str(requested or "1.0.0").strip() or "1.0.0"
+    existing = {str(item or "") for item in existing_versions}
+    while candidate in existing:
+        parts = candidate.split(".")
+        if parts and parts[-1].isdigit():
+            parts[-1] = str(int(parts[-1]) + 1)
+            candidate = ".".join(parts)
+        else:
+            candidate = f"{candidate}.1"
+    return candidate
+
+
+async def _build_admin_playbooks_payload() -> AdminPlaybookPayload:
+    playbooks: list[AdminPlaybookItem] = []
+    try:
+        async with get_session() as session:
+            latest_rows = await session.execute(
+                select(Playbook, PlaybookVersion, func.count(PlaybookStep.id))
+                .join(PlaybookVersion, PlaybookVersion.playbook_id == Playbook.id, isouter=True)
+                .join(PlaybookStep, PlaybookStep.playbook_version_id == PlaybookVersion.id, isouter=True)
+                .where(Playbook.archived.is_(False))
+                .group_by(Playbook.id, PlaybookVersion.id)
+                .order_by(Playbook.key.asc(), PlaybookVersion.created_at.desc().nullslast(), PlaybookVersion.id.desc())
+            )
+            seen: set[int] = set()
+            for playbook, version, steps_count in latest_rows.all():
+                if playbook.id in seen:
+                    continue
+                seen.add(playbook.id)
+                playbooks.append(
+                    AdminPlaybookItem(
+                        key=str(playbook.key),
+                        name=str(playbook.name),
+                        domain=playbook.domain,
+                        version=str(version.version) if version is not None else None,
+                        status=str(version.status) if version is not None else "draft",
+                        blocks_count=int(steps_count or 0),
+                        updated_at=_iso(getattr(version, "published_at", None) or getattr(version, "created_at", None)),
+                    )
+                )
+    except Exception as exc:
+        logger.warning(f"[web_admin_playbooks] DB unavailable, returning catalog only: {exc}")
+
+    return AdminPlaybookPayload(
+        capabilities=AdminPlaybookBuilderCapabilities(
+            catalog_endpoint=_PLAYBOOKS_CATALOG_ENDPOINT,
+            save_endpoint=_PLAYBOOKS_SAVE_ENDPOINT,
+            block_types=[
+                AdminFilterOption(value="diagnostic", label="Диагностика"),
+                AdminFilterOption(value="decision", label="Условие"),
+                AdminFilterOption(value="report", label="Пакет фактов"),
+            ],
+            module_kind_options=[
+                AdminFilterOption(value="diagnostic", label="Диагностика"),
+                AdminFilterOption(value="remediation", label="Исправление через подтверждение"),
+            ],
+        ),
+        block_catalog=[
+            AdminPlaybookBlockCatalogItem.model_validate(item)
+            for item in DIAGNOSTIC_MODULE_CATALOG
+        ],
+        scenario_templates=[
+            AdminScenarioTemplateItem.model_validate(item)
+            for item in SCENARIO_TEMPLATES
+        ],
+        playbooks=playbooks,
+    )
+
+
+async def _save_admin_playbook(
+    *,
+    auth_context: AuthContext,
+    payload: AdminPlaybookDraftRequest,
+) -> AdminPlaybookSaveResult:
+    raw_payload = payload.model_dump(mode="json")
+    raw_payload["owner"] = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    normalized = normalize_playbook_draft(raw_payload)
+    playbook_payload = normalized["playbook"]
+    steps_payload = normalized["steps"]
+
+    async with get_session() as session:
+        result = await session.execute(select(Playbook).where(Playbook.key == playbook_payload["key"]))
+        playbook = result.scalar_one_or_none()
+        if playbook is None:
+            playbook = Playbook(**playbook_payload)
+            session.add(playbook)
+            await session.flush()
+        else:
+            playbook.name = playbook_payload["name"]
+            playbook.domain = playbook_payload["domain"]
+            playbook.owner = playbook_payload["owner"]
+            playbook.archived = False
+
+        version_rows = await session.execute(
+            select(PlaybookVersion.version).where(PlaybookVersion.playbook_id == playbook.id)
+        )
+        next_version = _next_playbook_version(list(version_rows.scalars().all()), normalized.get("version"))
+        version = PlaybookVersion(
+            playbook_id=playbook.id,
+            version=next_version,
+            manifest_json=normalized["manifest"],
+            status="published",
+            published_at=datetime.now(timezone.utc),
+        )
+        session.add(version)
+        await session.flush()
+        for step in steps_payload:
+            session.add(
+                PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key=step["step_key"],
+                    order_no=step["order_no"],
+                    type=step["type"],
+                    tool=step["tool"],
+                    params_template_json=step["params_template_json"],
+                    if_expr=step["if_expr"],
+                    timeout_sec=step["timeout_sec"],
+                    retry_policy_json=step["retry_policy_json"],
+                    continue_on_error=step["continue_on_error"],
+                    parallel_group=step["parallel_group"],
+                )
+            )
+        await session.commit()
+
+    return AdminPlaybookSaveResult(
+        key=playbook_payload["key"],
+        version=next_version,
+        status="published",
+        blocks_count=len(steps_payload),
+        message=f"Плейбук опубликован как версия {next_version}. Его можно запускать из форм при создании тикета.",
+    )
+
+
 async def _preview_admin_forms_route(
     *,
     payload: AdminFormsRoutePreviewRequest,
@@ -2329,6 +2495,54 @@ async def handle_web_admin_forms_route_preview(request: web.Request):
 
     typed_result = AdminFormsRoutePreviewResult.model_validate(result)
     return json_model_response(SuccessResponse[AdminFormsRoutePreviewResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_playbooks_catalog(_request: web.Request):
+    payload = await _build_admin_playbooks_payload()
+    return json_model_response(SuccessResponse[AdminPlaybookPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_playbooks_save(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminPlaybookDraftRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру плейбука",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _save_admin_playbook(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру плейбука",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_playbooks_save] Failed to publish playbook: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать плейбук",
+                "error_code": "ADMIN_PLAYBOOK_SAVE_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminPlaybookSaveResult](data=result))
 
 
 @require_auth("admin")

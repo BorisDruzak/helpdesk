@@ -301,6 +301,15 @@ class AdminFormsFieldItem(BaseModel):
     visible_when: AdminFormsVisibleWhen | None = None
 
 
+class AdminFormsPlaybookTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event: str = "ticket_created"
+    playbook_key: str
+    module_kind: str = "diagnostic"
+    enabled: bool = True
+
+
 class AdminFormsFormItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -309,6 +318,7 @@ class AdminFormsFormItem(BaseModel):
     title: str
     description: str | None = None
     fields: list[AdminFormsFieldItem] = Field(default_factory=list)
+    playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
 
 class AdminFormsSummary(BaseModel):
@@ -378,6 +388,7 @@ class AdminFormsSaveFormRequest(BaseModel):
     title: str
     description: str | None = None
     fields: list[AdminFormsSaveFieldRequest] = Field(default_factory=list)
+    playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
 
 class AdminFormsSaveRequest(BaseModel):
@@ -431,6 +442,96 @@ class AdminFormsRoutePreviewResult(BaseModel):
     fallback_applied: bool = False
     matched_rule: AdminFormsRoutePreviewMatchedRule | None = None
     summary_rows: list[AdminFormsRoutePreviewSummaryRow] = Field(default_factory=list)
+
+
+class AdminPlaybookBlockCatalogItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    tool: str | None = None
+    block_type: str
+    module_kind: str
+    description: str
+    default_params: dict[str, Any] = Field(default_factory=dict)
+    changes_device: bool = False
+    requires_confirmation: bool = False
+    output_contract: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminScenarioTemplateItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    title: str
+    problem: str
+    recommended_form_keys: list[str] = Field(default_factory=list)
+    block_ids: list[str] = Field(default_factory=list)
+
+
+class AdminPlaybookItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    name: str
+    domain: str | None = None
+    version: str | None = None
+    status: str
+    blocks_count: int = 0
+    updated_at: str | None = None
+
+
+class AdminPlaybookBuilderCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    catalog_endpoint: str
+    save_endpoint: str
+    block_types: list[AdminFilterOption] = Field(default_factory=list)
+    module_kind_options: list[AdminFilterOption] = Field(default_factory=list)
+
+
+class AdminPlaybookPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capabilities: AdminPlaybookBuilderCapabilities
+    block_catalog: list[AdminPlaybookBlockCatalogItem] = Field(default_factory=list)
+    scenario_templates: list[AdminScenarioTemplateItem] = Field(default_factory=list)
+    playbooks: list[AdminPlaybookItem] = Field(default_factory=list)
+
+
+class AdminPlaybookDraftBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    type: str = "diagnostic"
+    module_kind: str = "diagnostic"
+    tool: str | None = None
+    label: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    condition: str | None = None
+    timeout_sec: int | None = None
+    continue_on_error: bool = False
+    parallel_group: str | None = None
+
+
+class AdminPlaybookDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    name: str
+    domain: str | None = "diagnostics"
+    version: str | None = None
+    blocks: list[AdminPlaybookDraftBlock] = Field(default_factory=list)
+
+
+class AdminPlaybookSaveResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    version: str
+    status: str
+    blocks_count: int
+    message: str
 
 
 class AdminRolloutAssignment(BaseModel):

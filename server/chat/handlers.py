@@ -195,6 +195,7 @@ async def handle_chat_raise(request):
                 initial_message_sender_role="agent",
                 initial_message_from="agent",
                 include_public_access=False,
+                state=state,
             )
             ticket_id = created["ticket_id"]
             await session.commit()
@@ -580,5 +581,4 @@ async def handle_chat_events(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-
 

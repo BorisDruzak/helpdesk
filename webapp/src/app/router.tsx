@@ -15,6 +15,7 @@ import { AdminFormsPage } from "../pages/admin/forms-page";
 import { AdminInventoryPage } from "../pages/admin/inventory-page";
 import { AdminModulesPage } from "../pages/admin/modules-page";
 import { AdminObserverPage } from "../pages/admin/observer-page";
+import { AdminPlaybooksPage } from "../pages/admin/playbooks-page";
 import { AdminRegistryPage } from "../pages/admin/registry-page";
 import { KnowledgeBasePage } from "../pages/knowledge";
 import { ReportsPage } from "../pages/reports";
@@ -232,6 +233,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminFormsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/playbooks",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminPlaybooksPage />
               </WorkspaceAccessGate>
             )
           },
