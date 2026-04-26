@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchObserverWorkbenchTraceDetail } from "./observer-workbench-api";
+import {
+  fetchObserverDiagnosticsBundle,
+  fetchObserverWorkbenchTraceDetail,
+  fetchObserverWorkbenchTraces,
+} from "./observer-workbench-api";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -113,5 +117,80 @@ describe("fetchObserverWorkbenchTraceDetail", () => {
     expect(detail.spans).toHaveLength(3);
     expect(detail.error_occurrences).toHaveLength(1);
     expect(detail.span_links).toHaveLength(2);
+  });
+});
+
+describe("observer workbench search helpers", () => {
+  it("passes server-side trace query to typed observer traces", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          query: {
+            device_id: null,
+            lookback_hours: 24,
+            status_filter: "all",
+            root_kind_filter: "all",
+            limit: 40,
+            query: "op-1",
+          },
+          summary: {
+            visible_count: 0,
+            active_count: 0,
+            error_count: 0,
+            selected_trace_id: null,
+          },
+          filters: {
+            status_options: [],
+            root_kind_options: [],
+          },
+          traces: [],
+          links: {
+            detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
+            runtime_endpoint: "/api/admin/tech/traces/runtime",
+          },
+        },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    await fetchObserverWorkbenchTraces({
+      lookbackHours: 24,
+      statusFilter: "all",
+      rootKindFilter: "all",
+      limit: 40,
+      query: "op-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/admin/observer/traces?lookback_hours=24&limit=40&q=op-1",
+      expect.objectContaining({ credentials: "same-origin" })
+    );
+  });
+
+  it("loads diagnostic bundle with agent actions", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "ok",
+        summary: {
+          primary_trace_id: "trace-1",
+          related_trace_count: 1,
+        },
+        recommended_next_checks: ["Open trace detail"],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const bundle = await fetchObserverDiagnosticsBundle({
+      traceId: "trace-1",
+      includeAgentActions: true,
+      actionLimit: 80,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/tech/diagnostics/bundle?limit=20&trace_id=trace-1&include_agent_actions=1&action_limit=80",
+      expect.objectContaining({ credentials: "same-origin" })
+    );
+    expect(bundle.summary.primary_trace_id).toBe("trace-1");
   });
 });

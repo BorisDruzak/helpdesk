@@ -61,6 +61,171 @@ async def test_tech_trace_runtime_status_endpoint(test_client):
 
 
 @pytest.mark.asyncio
+async def test_tech_observer_search_correlates_by_operation_id(test_client):
+    now = datetime.now(timezone.utc)
+    ticket_id = "00000000-0000-0000-0000-000000000151"
+    device_id = "00000000-0000-0000-0000-000000000251"
+    operation_id = "00000000-0000-0000-0000-000000000351"
+    trace_id = "00000000-0000-0000-0000-000000000451"
+    ticket_trace_id = "00000000-0000-0000-0000-000000000551"
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.0.0",
+                hostname="observer-search-host",
+                os="windows",
+                capabilities=[],
+                tools_version="t1",
+                device_metadata={"machine_id": "machine-search"},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now,
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-000151",
+                device_id=device_id,
+                title="Observer search test",
+                description="desc",
+                status="in_progress",
+                observer_root_trace_id=ticket_trace_id,
+                created_at=now - timedelta(minutes=20),
+                updated_at=now,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="system.collect",
+                actor_role="admin",
+                trace_id=trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=5),
+                started_at=now - timedelta(minutes=4),
+                finished_at=now - timedelta(minutes=3),
+                error_code="SYSTEM_COLLECT_FAILED",
+                error_message="collect failed",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/admin/tech/observer/search?q={operation_id}&lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["query"] == operation_id
+    assert payload["summary"]["trace_count"] >= 1
+    assert any(item["trace_id"] == trace_id for item in payload["traces"])
+    assert payload["recommended_next_checks"]
+
+
+@pytest.mark.asyncio
+async def test_tech_diagnostics_bundle_collects_trace_context(test_client):
+    now = datetime.now(timezone.utc)
+    ticket_id = "00000000-0000-0000-0000-000000000152"
+    device_id = "00000000-0000-0000-0000-000000000252"
+    operation_id = "00000000-0000-0000-0000-000000000352"
+    trace_id = "00000000-0000-0000-0000-000000000452"
+    append_log_record(
+        level="error",
+        message=f"diagnostics bundle synthetic failure operation={operation_id}",
+        module="tests.observer",
+        timestamp=now,
+    )
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.0.0",
+                hostname="observer-bundle-host",
+                os="windows",
+                capabilities=[],
+                tools_version="t1",
+                device_metadata={"machine_id": "machine-bundle"},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(days=1),
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-000152",
+                device_id=device_id,
+                title="Observer bundle test",
+                description="desc",
+                status="in_progress",
+                observer_root_trace_id=trace_id,
+                created_at=now - timedelta(minutes=20),
+                updated_at=now,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="system.collect",
+                actor_role="admin",
+                trace_id=trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=6),
+                sent_at=now - timedelta(minutes=5),
+                accepted_at=now - timedelta(minutes=4),
+                started_at=now - timedelta(minutes=3),
+                finished_at=now - timedelta(minutes=2),
+                retry_count=1,
+                error_code="SYSTEM_COLLECT_FAILED",
+                error_message="collect failed",
+            )
+        )
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                operation_id=operation_id,
+                event_type="tool_failed",
+                severity="error",
+                source="test",
+                details_json={"tool_name": "system.collect", "reason": "synthetic"},
+                created_at=now - timedelta(minutes=1),
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/admin/tech/diagnostics/bundle?operation_id={operation_id}&include_agent_actions=0",
+        headers=_auth(ADMIN_TOKEN),
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["summary"]["primary_trace_id"] == trace_id
+    assert payload["device"]["device_id"] == device_id
+    assert payload["ticket"]["ticket_id"] == ticket_id
+    assert payload["primary_trace"]["trace_id"] == trace_id
+    assert payload["spans"]
+    assert payload["error_occurrences"]
+    assert payload["agent_audit"]
+    assert any(operation_id in item["message"] for item in payload["recent_logs"])
+    assert payload["recommended_next_checks"]
+    assert payload["links"]["trace_detail"].endswith(f"/api/admin/tech/traces/{trace_id}")
+
+
+@pytest.mark.asyncio
 async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     now = datetime.now(timezone.utc)
     ticket_id = "00000000-0000-0000-0000-000000000101"

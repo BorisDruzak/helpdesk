@@ -94,6 +94,8 @@ Admin / tech API:
 
 - `GET /api/admin/tech/traces/runtime`
 - `GET /api/admin/tech/observer/quick`
+- `GET /api/admin/tech/observer/search`
+- `GET /api/admin/tech/diagnostics/bundle`
 - `GET /api/admin/tech/traces`
 - `GET /api/admin/tech/traces/{trace_id}`
 - `POST /api/admin/tech/traces/rebuild`
@@ -112,6 +114,11 @@ Ticket-scoped API:
 - `GET /api/web/admin/observer/quick`
 - `GET /api/web/admin/observer/traces`
 - `GET /api/web/admin/observer/traces/{trace_id}`
+
+Codex/live debugging entrypoints:
+
+- `GET /api/admin/tech/observer/search?q=...` correlates by trace, ticket, operation, device, tool, module or signature text and returns matching traces/signatures plus next checks.
+- `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
@@ -145,6 +152,8 @@ New React workspaces:
 - `/app/admin/observer` должен уметь работать и без выбранного `device_id`: global quick summary и trace list обязаны грузиться в общем режиме, а device-scoped drilldown включается только после выбора устройства или конкретной трассы.
 - `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
 - `/app/admin/observer` теперь считается полноценным observer workbench, а не просто quick-summary экраном: канонический набор вкладок для React surface — `quick`, `traces`, `signatures`, `degradations`, `runtime`; trace detail обязан показывать spans, error occurrences, span links и agent actions через `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
+- `/app/admin/observer` trace search работает на сервере: typed traces принимают `q`, `trace_id`, `ticket_id`, `operation_id`, `tool_name`, `module_name`, `error_signature` и `min_duration_ms`, поэтому UI не ограничен фильтрацией первой загруженной страницы.
+- `/app/admin/observer` trace detail показывает `GET /api/admin/tech/diagnostics/bundle` с next checks, logs/audit counters и компактными agent action rows.
 - `/app/admin/observer` допускает гибрид transport model: быстрый список и фильтры идут через typed `/api/web/admin/observer/*`, а signature/degradation/runtime/settings/detail surfaces могут читать прямые tech/settings endpoints (`/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/admin/tech/traces/runtime`, `/api/admin/settings/observer`) пока они остаются canonical source of truth для observer backend.
 - `/app/admin/device` может поверх карточки устройства встраивать тот же typed observer quick slice, но без отдельного transport-контракта: глобальная `/app/admin/observer` и device-centric `/app/admin/device` обязаны читать один и тот же `/api/web/admin/observer/*` boundary.
 - `/app/admin` может рядом показывать typed modules/actions panel (`GET /api/web/admin/modules`, `PATCH /api/web/admin/modules/rollout_settings`, `PATCH /api/web/admin/modules/{module_name}/preferred`), но observer quick/drilldown при этом остаётся изолированным typed tech slice и не должен деградировать до вызовов legacy `/api/admin/tech/*` из module UI.
@@ -196,11 +205,13 @@ Observer detail должен оставаться пригодным для ди
 ## 12. Канонический workflow диагностики
 
 1. Открыть `GET /api/admin/tech/observer/quick` или tech-panel quick dashboard.
-2. Если кейс ticket-bound, открыть `GET /api/tickets/{ticket_id}/observer`.
-3. Для нового `/app/admin/observer` сначала получить global или device-scoped trace list через `GET /api/web/admin/observer/traces`, затем при необходимости открыть `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
-4. Для массовых отказов пройти вкладки `signatures` и `degradations` через canonical endpoints `/api/admin/tech/signatures*` и `/api/admin/tech/degradations`, не сводя React workbench к raw JSON dump.
-5. Runtime health, rebuild и sampling/retention settings проверять в той же рабочей области через `/api/admin/tech/traces/runtime`, `POST /api/admin/tech/traces/rebuild` и `GET/PATCH /api/admin/settings/observer`.
-6. Для архивных кейсов использовать rebuild только если background backfill ещё не догнал исторический диапазон.
+2. Если известен любой id/текст, начать с `GET /api/admin/tech/observer/search?q=...`.
+3. Для Codex/prod debugging собрать `GET /api/admin/tech/diagnostics/bundle?...` по `trace_id`, `operation_id`, `ticket_id`, `device_id` или `q`.
+4. Если кейс ticket-bound, открыть `GET /api/tickets/{ticket_id}/observer`.
+5. Для нового `/app/admin/observer` сначала получить global или device-scoped trace list через `GET /api/web/admin/observer/traces`, затем при необходимости открыть `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
+6. Для массовых отказов пройти вкладки `signatures` и `degradations` через canonical endpoints `/api/admin/tech/signatures*` и `/api/admin/tech/degradations`, не сводя React workbench к raw JSON dump.
+7. Runtime health, rebuild и sampling/retention settings проверять в той же рабочей области через `/api/admin/tech/traces/runtime`, `POST /api/admin/tech/traces/rebuild` и `GET/PATCH /api/admin/settings/observer`.
+8. Для архивных кейсов использовать rebuild только если background backfill ещё не догнал исторический диапазон.
 
 ## 13. Что нужно обновлять вместе с observer
 

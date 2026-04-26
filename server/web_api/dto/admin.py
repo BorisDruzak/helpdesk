@@ -146,6 +146,14 @@ class AdminObserverTracesQuery(BaseModel):
     status_filter: str
     root_kind_filter: str
     limit: int
+    query: str | None = None
+    trace_id: str | None = None
+    ticket_id: str | None = None
+    operation_id: str | None = None
+    tool_name: str | None = None
+    module_name: str | None = None
+    error_signature: str | None = None
+    min_duration_ms: int | None = None
 
 
 class AdminObserverTracesSummary(BaseModel):

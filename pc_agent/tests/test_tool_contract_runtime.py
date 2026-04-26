@@ -15,13 +15,16 @@ from pc_agent.config.config_loader import ConfigLoader, init_config
 from modules.base_module import BaseCollector
 
 
-def _meta(command: str = "run_tool") -> ToolMeta:
-    return ToolMeta(
+def _meta(command: str = "run_tool", trace_id: str | None = None) -> ToolMeta:
+    meta = ToolMeta(
         timestamp_iso=datetime.now(timezone.utc).isoformat(),
         command=command,
         request_id="req-runtime-envelope",
         module_versions={},
     )
+    if trace_id:
+        meta.__dict__["trace_id"] = trace_id
+    return meta
 
 
 @pytest.mark.asyncio
@@ -246,12 +249,15 @@ async def test_run_tool_emits_module_level_action_trace_breakdown(tmp_path):
         tool="custom.traceable",
         params={"tool": "custom.traceable", "ticket_id": "ticket-traceable", "params": {"value": 7}},
         actor_role="admin",
-        meta=_meta(),
+        meta=_meta(trace_id="trace-runtime-envelope"),
     )
 
     assert result.status == "success"
     rows = search_action_trace(limit=20, operation_id="req-runtime-envelope", ticket_id="ticket-traceable")
     assert rows
+    trace_rows = search_action_trace(limit=20, trace_id="trace-runtime-envelope")
+    assert trace_rows
+    assert all(row["trace_id"] == "trace-runtime-envelope" for row in trace_rows)
     assert any(
         row["stage"] == "module.resolve"
         and row.get("details", {}).get("module_name") == "custom"

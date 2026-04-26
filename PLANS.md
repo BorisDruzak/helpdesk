@@ -1,5 +1,27 @@
 # PLANS.md
 
+## 2026-04-26 Observer diagnostics bundle and search API
+
+- Status: in progress.
+- Scope:
+  - add a Codex-friendly observer diagnostics bundle endpoint that collects trace, ticket, device, spans, errors, agent actions, logs, audit and next-check hints from one request;
+  - add an observer search endpoint for correlation by trace/ticket/operation/device/tool/module/signature text;
+  - extend typed `/api/web/admin/observer/traces` filters so the React workbench can search server-side instead of filtering only the first page;
+  - propagate server `trace_id` into agent action-trace rows and make the agent RPC filter by `trace_id`;
+  - update `/app/admin/observer` with compact agent actions and diagnostic bundle visibility.
+- Delivery order:
+  1. RED tests for diagnostics bundle/search, typed trace filters and agent trace-id propagation;
+  2. server observer query/filter and diagnostics API implementation;
+  3. agent action-trace propagation/filtering;
+  4. React observer workbench API/UI update;
+  5. docs/CODEMAP sync, focused tests, browser/API live checks.
+- Verification target:
+  - `python -m pytest server/tests/test_admin_tech_api.py server/tests/test_web_admin_api.py pc_agent/tests/test_tool_contract_runtime.py -q --tb=short`
+  - `pnpm --dir webapp run test`
+  - `pnpm --dir webapp run build`
+  - `python scripts/verify_workspace.py`
+  - live API/browser check on `http://192.168.100.17:8666/app/admin/observer` with a local agent trace.
+
 ## 2026-04-26 CI pytest layering and test rules
 
 - Status: completed locally on 2026-04-26; focused runner/harness tests, layer collect checks, `no_db` layer and `python scripts/verify_workspace.py` passed.

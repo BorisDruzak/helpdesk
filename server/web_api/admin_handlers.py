@@ -691,6 +691,17 @@ def _parse_observer_trace_limit(value: str | None) -> int:
     return max(5, min(parsed, 100))
 
 
+def _parse_optional_positive_int(value: str | None) -> int | None:
+    compacted = _compact_query_value(value)
+    if compacted is None:
+        return None
+    try:
+        parsed = int(compacted)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _observer_kind_label(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     if not normalized:
@@ -1191,12 +1202,28 @@ def _build_observer_trace_filters(
     lookback_hours: int,
     status_filter: str,
     root_kind_filter: str,
+    query: str | None = None,
+    trace_id: str | None = None,
+    ticket_id: str | None = None,
+    operation_id: str | None = None,
+    tool_name: str | None = None,
+    module_name: str | None = None,
+    error_signature: str | None = None,
+    min_duration_ms: int | None = None,
 ) -> TraceOverlayFilters:
     return TraceOverlayFilters(
+        query=query,
+        trace_id=trace_id,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
         device_id=device_id,
+        tool_name=tool_name,
+        module_name=module_name,
+        error_signature=error_signature,
         lookback_hours=lookback_hours,
         status=None if status_filter == "all" else status_filter,
         root_kind=None if root_kind_filter == "all" else root_kind_filter,
+        min_duration_ms=min_duration_ms,
     )
 
 
@@ -1207,6 +1234,14 @@ def _empty_admin_observer_traces_payload(
     status_filter: str,
     root_kind_filter: str,
     limit: int,
+    query: str | None = None,
+    trace_id: str | None = None,
+    ticket_id: str | None = None,
+    operation_id: str | None = None,
+    tool_name: str | None = None,
+    module_name: str | None = None,
+    error_signature: str | None = None,
+    min_duration_ms: int | None = None,
 ) -> AdminObserverTracesPayload:
     return AdminObserverTracesPayload(
         query=AdminObserverTracesQuery(
@@ -1215,6 +1250,14 @@ def _empty_admin_observer_traces_payload(
             status_filter=status_filter,
             root_kind_filter=root_kind_filter,
             limit=limit,
+            query=query,
+            trace_id=trace_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            tool_name=tool_name,
+            module_name=module_name,
+            error_signature=error_signature,
+            min_duration_ms=min_duration_ms,
         ),
         summary=AdminObserverTracesSummary(
             visible_count=0,
@@ -1242,12 +1285,28 @@ async def _build_admin_observer_traces_payload(
     status_filter: str,
     root_kind_filter: str,
     limit: int,
+    query: str | None = None,
+    trace_id: str | None = None,
+    ticket_id: str | None = None,
+    operation_id: str | None = None,
+    tool_name: str | None = None,
+    module_name: str | None = None,
+    error_signature: str | None = None,
+    min_duration_ms: int | None = None,
 ) -> AdminObserverTracesPayload:
     filters = _build_observer_trace_filters(
         device_id=device_id,
         lookback_hours=lookback_hours,
         status_filter=status_filter,
         root_kind_filter=root_kind_filter,
+        query=query,
+        trace_id=trace_id,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        tool_name=tool_name,
+        module_name=module_name,
+        error_signature=error_signature,
+        min_duration_ms=min_duration_ms,
     )
     try:
         async with get_session() as session:
@@ -1266,6 +1325,14 @@ async def _build_admin_observer_traces_payload(
             status_filter=status_filter,
             root_kind_filter=root_kind_filter,
             limit=limit,
+            query=query,
+            trace_id=trace_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            tool_name=tool_name,
+            module_name=module_name,
+            error_signature=error_signature,
+            min_duration_ms=min_duration_ms,
         )
 
     traces = [
@@ -1286,6 +1353,14 @@ async def _build_admin_observer_traces_payload(
             status_filter=status_filter,
             root_kind_filter=root_kind_filter,
             limit=limit,
+            query=query,
+            trace_id=trace_id,
+            ticket_id=ticket_id,
+            operation_id=operation_id,
+            tool_name=tool_name,
+            module_name=module_name,
+            error_signature=error_signature,
+            min_duration_ms=min_duration_ms,
         ),
         summary=AdminObserverTracesSummary(
             visible_count=len(traces),
@@ -1846,6 +1921,14 @@ async def handle_web_admin_observer_traces(request: web.Request):
     status_filter = _normalize_observer_status_filter(request.query.get("status"))
     root_kind_filter = _normalize_observer_root_kind_filter(request.query.get("root_kind"))
     limit = _parse_observer_trace_limit(request.query.get("limit"))
+    query = _compact_query_value(request.query.get("q") or request.query.get("query"))
+    trace_id = _compact_query_value(request.query.get("trace_id"))
+    ticket_id = _compact_query_value(request.query.get("ticket_id"))
+    operation_id = _compact_query_value(request.query.get("operation_id"))
+    tool_name = _compact_query_value(request.query.get("tool_name"))
+    module_name = _compact_query_value(request.query.get("module_name"))
+    error_signature = _compact_query_value(request.query.get("error_signature"))
+    min_duration_ms = _parse_optional_positive_int(request.query.get("min_duration_ms"))
     payload = await _build_admin_observer_traces_payload(
         request=request,
         device_id=device_id,
@@ -1853,6 +1936,14 @@ async def handle_web_admin_observer_traces(request: web.Request):
         status_filter=status_filter,
         root_kind_filter=root_kind_filter,
         limit=limit,
+        query=query,
+        trace_id=trace_id,
+        ticket_id=ticket_id,
+        operation_id=operation_id,
+        tool_name=tool_name,
+        module_name=module_name,
+        error_signature=error_signature,
+        min_duration_ms=min_duration_ms,
     )
     return json_model_response(SuccessResponse[AdminObserverTracesPayload](data=payload))
 

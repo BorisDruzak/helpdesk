@@ -2810,6 +2810,7 @@ class AgentOrchestrator:
             category="tool",
             ticket_id=ticket_id,
             operation_id=getattr(meta, "request_id", None),
+            trace_id=getattr(meta, "trace_id", None),
             request_id=getattr(meta, "request_id", None),
             tool_name=tool,
         )
@@ -3335,6 +3336,7 @@ class AgentOrchestrator:
                 parent_action_id=action_trace.action_id,
                 ticket_id=ticket_id,
                 operation_id=operation_id,
+                trace_id=getattr(meta, "trace_id", None),
                 request_id=getattr(meta, "request_id", None),
                 tool_name=tool,
             )

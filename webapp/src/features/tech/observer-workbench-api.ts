@@ -142,6 +142,49 @@ export type ObserverTraceDetailPayload = {
   };
 };
 
+export type ObserverAgentActionItem = {
+  ts?: string | null;
+  source?: string | null;
+  action?: string | null;
+  category?: string | null;
+  stage?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  trace_id?: string | null;
+  ticket_id?: string | null;
+  operation_id?: string | null;
+  tool_name?: string | null;
+  details?: Record<string, unknown>;
+};
+
+export type ObserverDiagnosticsBundlePayload = {
+  summary: {
+    primary_trace_id?: string | null;
+    related_trace_count?: number;
+    span_count?: number;
+    error_count?: number;
+    agent_action_count?: number;
+    agent_audit_count?: number;
+    recent_log_count?: number;
+  };
+  runtime?: Record<string, unknown>;
+  device?: Record<string, unknown> | null;
+  ticket?: Record<string, unknown> | null;
+  primary_trace?: AdminObserverTracesPayload["traces"][number] | null;
+  related_traces?: AdminObserverTracesPayload["traces"];
+  spans?: ObserverTraceDetailPayload["spans"];
+  span_links?: ObserverTraceDetailPayload["span_links"];
+  error_occurrences?: ObserverTraceDetailPayload["error_occurrences"];
+  agent_actions?: ObserverAgentActionItem[];
+  agent_actions_error?: string | null;
+  signatures?: ObserverSignatureListItem[];
+  degradations?: ObserverDegradationItem[];
+  recent_logs?: Array<Record<string, unknown>>;
+  agent_audit?: Array<Record<string, unknown>>;
+  links?: Record<string, string | null>;
+  recommended_next_checks?: string[];
+};
+
 type RawObserverTraceDetailPayload = Omit<ObserverTraceDetailPayload, "summary"> & {
   summary?: Partial<ObserverTraceDetailPayload["summary"]> | null;
 };
@@ -203,6 +246,13 @@ function buildTraceSearchParams(params: {
   rootKindFilter?: AdminObserverRootKindFilter;
   limit?: number;
   minDurationMs?: number | null;
+  query?: string | null;
+  traceId?: string | null;
+  ticketId?: string | null;
+  operationId?: string | null;
+  toolName?: string | null;
+  moduleName?: string | null;
+  errorSignature?: string | null;
 }): string {
   const searchParams = new URLSearchParams();
   if (params.deviceId) {
@@ -223,6 +273,27 @@ function buildTraceSearchParams(params: {
   if (params.minDurationMs && params.minDurationMs > 0) {
     searchParams.set("min_duration_ms", String(params.minDurationMs));
   }
+  if (params.query) {
+    searchParams.set("q", params.query);
+  }
+  if (params.traceId) {
+    searchParams.set("trace_id", params.traceId);
+  }
+  if (params.ticketId) {
+    searchParams.set("ticket_id", params.ticketId);
+  }
+  if (params.operationId) {
+    searchParams.set("operation_id", params.operationId);
+  }
+  if (params.toolName) {
+    searchParams.set("tool_name", params.toolName);
+  }
+  if (params.moduleName) {
+    searchParams.set("module_name", params.moduleName);
+  }
+  if (params.errorSignature) {
+    searchParams.set("error_signature", params.errorSignature);
+  }
   return searchParams.toString();
 }
 
@@ -239,6 +310,7 @@ export async function fetchObserverWorkbenchTraces(params: {
   statusFilter: AdminObserverTraceStatusFilter;
   rootKindFilter: AdminObserverRootKindFilter;
   limit?: number;
+  query?: string | null;
 }): Promise<AdminObserverTracesPayload> {
   return fetchAdminObserverTraces(params);
 }
@@ -267,6 +339,36 @@ export async function fetchObserverWorkbenchTraceDetail(
     "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґРµС‚Р°Р»Рё С‚СЂР°СЃСЃС‹."
   );
   return normalizeObserverTraceDetailPayload(payload);
+}
+
+export async function fetchObserverDiagnosticsBundle(params: {
+  traceId?: string | null;
+  ticketId?: string | null;
+  operationId?: string | null;
+  deviceId?: string | null;
+  query?: string | null;
+  lookbackHours?: number;
+  includeAgentActions?: boolean;
+  actionLimit?: number;
+}): Promise<ObserverDiagnosticsBundlePayload> {
+  const queryString = buildTraceSearchParams({
+    traceId: params.traceId,
+    ticketId: params.ticketId,
+    operationId: params.operationId,
+    deviceId: params.deviceId,
+    query: params.query,
+    lookbackHours: params.lookbackHours,
+    limit: 20,
+  });
+  const searchParams = new URLSearchParams(queryString);
+  if (params.includeAgentActions) {
+    searchParams.set("include_agent_actions", "1");
+    searchParams.set("action_limit", String(params.actionLimit ?? 80));
+  }
+  const response = await fetch(`/api/admin/tech/diagnostics/bundle?${searchParams.toString()}`, {
+    credentials: "same-origin",
+  });
+  return readLegacyOk(response, "Не удалось собрать diagnostic bundle observer.");
 }
 
 export async function fetchObserverRuntime(): Promise<ObserverRuntimePayload> {

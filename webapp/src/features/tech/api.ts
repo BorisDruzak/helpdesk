@@ -90,6 +90,14 @@ export type AdminObserverTracesPayload = {
     status_filter: AdminObserverTraceStatusFilter;
     root_kind_filter: AdminObserverRootKindFilter;
     limit: number;
+    query?: string | null;
+    trace_id?: string | null;
+    ticket_id?: string | null;
+    operation_id?: string | null;
+    tool_name?: string | null;
+    module_name?: string | null;
+    error_signature?: string | null;
+    min_duration_ms?: number | null;
   };
   summary: {
     visible_count: number;
@@ -227,6 +235,14 @@ type ObserverTracesParams = {
   statusFilter: AdminObserverTraceStatusFilter;
   rootKindFilter: AdminObserverRootKindFilter;
   limit?: number;
+  query?: string | null;
+  traceId?: string | null;
+  ticketId?: string | null;
+  operationId?: string | null;
+  toolName?: string | null;
+  moduleName?: string | null;
+  errorSignature?: string | null;
+  minDurationMs?: number | null;
 };
 
 function buildObserverSearchParams(params: {
@@ -235,6 +251,14 @@ function buildObserverSearchParams(params: {
   statusFilter?: AdminObserverTraceStatusFilter;
   rootKindFilter?: AdminObserverRootKindFilter;
   limit?: number;
+  query?: string | null;
+  traceId?: string | null;
+  ticketId?: string | null;
+  operationId?: string | null;
+  toolName?: string | null;
+  moduleName?: string | null;
+  errorSignature?: string | null;
+  minDurationMs?: number | null;
 }): string {
   const searchParams = new URLSearchParams();
   if (params.deviceId) {
@@ -251,6 +275,30 @@ function buildObserverSearchParams(params: {
   }
   if (params.limit) {
     searchParams.set("limit", String(params.limit));
+  }
+  if (params.query) {
+    searchParams.set("q", params.query);
+  }
+  if (params.traceId) {
+    searchParams.set("trace_id", params.traceId);
+  }
+  if (params.ticketId) {
+    searchParams.set("ticket_id", params.ticketId);
+  }
+  if (params.operationId) {
+    searchParams.set("operation_id", params.operationId);
+  }
+  if (params.toolName) {
+    searchParams.set("tool_name", params.toolName);
+  }
+  if (params.moduleName) {
+    searchParams.set("module_name", params.moduleName);
+  }
+  if (params.errorSignature) {
+    searchParams.set("error_signature", params.errorSignature);
+  }
+  if (params.minDurationMs && params.minDurationMs > 0) {
+    searchParams.set("min_duration_ms", String(params.minDurationMs));
   }
   return searchParams.toString();
 }
@@ -272,7 +320,15 @@ export async function fetchAdminObserverTraces(params: ObserverTracesParams): Pr
     lookbackHours: params.lookbackHours,
     statusFilter: params.statusFilter,
     rootKindFilter: params.rootKindFilter,
-    limit: params.limit ?? 12
+    limit: params.limit ?? 12,
+    query: params.query,
+    traceId: params.traceId,
+    ticketId: params.ticketId,
+    operationId: params.operationId,
+    toolName: params.toolName,
+    moduleName: params.moduleName,
+    errorSignature: params.errorSignature,
+    minDurationMs: params.minDurationMs,
   });
   const response = await fetch(`/api/web/admin/observer/traces?${queryString}`, {
     credentials: "same-origin"

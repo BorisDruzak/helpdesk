@@ -148,6 +148,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 
 - endpoint должен быть discoverable через CODEMAP и observer docs;
 - ответ должен быть компактным и redacted;
+- диагностический API для прод-тестирования должен иметь Codex-friendly форму: один запрос по `trace_id`/`ticket_id`/`operation_id`/`device_id`/`q`, redacted payload, links и recommended next checks;
 - ticket-bound observer summary должен быть пригоден для support UI;
 - tech API должен поддерживать быстрый drilldown, а не только сырой dump.
 - web bootstrap contracts (`/api/web/support/bootstrap`, `/api/web/admin/bootstrap`) должны отдавать capability links для observer surfaces, а не заставлять frontend разбрасывать raw trace URLs по коду.

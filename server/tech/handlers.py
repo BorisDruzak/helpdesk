@@ -1580,6 +1580,7 @@ async def handle_tech_operations_stuck(request: web.Request) -> web.Response:
 
 def _trace_filters_from_request(request: web.Request) -> TraceOverlayFilters:
     return TraceOverlayFilters(
+        query=_compact_query_value(request.query.get("q") or request.query.get("query")),
         trace_id=_compact_query_value(request.query.get("trace_id")),
         ticket_id=_compact_query_value(request.query.get("ticket_id")),
         job_id=_compact_query_value(request.query.get("job_id")),
@@ -1655,6 +1656,127 @@ def _serialize_trace_filters(filters: TraceOverlayFilters) -> dict[str, Any]:
     return payload
 
 
+def _observer_trace_filter_has_values(filters: TraceOverlayFilters) -> bool:
+    return any(getattr(filters, field_name) is not None for field_name in filters.__dataclass_fields__)
+
+
+def _serialize_device_context(device: Optional[Device]) -> Optional[dict[str, Any]]:
+    if device is None:
+        return None
+    metadata = redact_sensitive_payload(device.device_metadata or {})
+    return {
+        "device_id": device.device_id,
+        "hostname": device.hostname,
+        "os": device.os,
+        "agent_version": device.agent_version,
+        "protocol_version": device.protocol_version,
+        "tools_version": device.tools_version,
+        "current_toolset_hash": device.current_toolset_hash,
+        "first_seen_at": _iso(device.first_seen_at),
+        "last_seen_at": _iso(device.last_seen_at),
+        "last_handshake_at": _iso(device.last_handshake_at),
+        "deleted_at": _iso(device.deleted_at),
+        "metadata": metadata,
+    }
+
+
+def _serialize_ticket_context(ticket: Optional[Ticket]) -> Optional[dict[str, Any]]:
+    if ticket is None:
+        return None
+    return {
+        "ticket_id": ticket.ticket_id,
+        "ticket_code": ticket.ticket_code,
+        "device_id": ticket.device_id,
+        "title": ticket.title,
+        "status": ticket.status,
+        "priority": ticket.priority,
+        "requester_id": ticket.requester_id,
+        "assignee_id": ticket.assignee_id,
+        "queue_id": ticket.queue_id,
+        "observer_root_trace_id": ticket.observer_root_trace_id,
+        "created_at": _iso(ticket.created_at),
+        "updated_at": _iso(ticket.updated_at),
+        "resolved_at": _iso(ticket.resolved_at),
+        "closed_at": _iso(ticket.closed_at),
+    }
+
+
+def _serialize_agent_audit_item(item: AgentRuntimeAudit) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "device_id": item.device_id,
+        "event_type": item.event_type,
+        "event_label": _label_audit_event(item.event_type),
+        "severity": item.severity,
+        "severity_label": _severity_badge(item.severity)["label"],
+        "source": item.source,
+        "operation_id": item.operation_id,
+        "ticket_id": item.ticket_id,
+        "actor_id": item.actor_id,
+        "actor_role": item.actor_role,
+        "details_json": redact_sensitive_payload(item.details_json or {}),
+        "created_at": _iso(item.created_at),
+    }
+
+
+async def _load_agent_actions_for_trace(
+    *,
+    request: web.Request,
+    trace_id: str,
+    detail: dict[str, Any],
+    action_limit: int,
+) -> tuple[list[dict[str, Any]], Optional[str]]:
+    device_id = detail.get("trace", {}).get("device_id")
+    if not device_id:
+        return [], None
+    try:
+        operation_source_refs = {
+            str(span.get("source_ref") or "").strip()
+            for span in detail.get("spans", [])
+            if span.get("source_type") == "operation"
+        }
+        params = {
+            "trace_id": trace_id,
+            "ticket_id": detail.get("trace", {}).get("ticket_id"),
+            "limit": action_limit,
+        }
+        if len(operation_source_refs) == 1:
+            params["operation_id"] = next(iter(operation_source_refs))
+        response = await send_ws_rpc_request(
+            state=request.app["state"],
+            device_id=device_id,
+            method="search_action_trace",
+            params=params,
+            actor_role="support",
+            timeout=20,
+        )
+        return [redact_sensitive_payload(item) for item in _extract_action_trace_entries(response)], None
+    except Exception as exc:
+        return [], str(exc)
+
+
+def _bundle_next_checks(
+    *,
+    primary_trace: Optional[dict[str, Any]],
+    error_occurrences: list[dict[str, Any]],
+    agent_actions_error: Optional[str],
+) -> list[str]:
+    checks: list[str] = []
+    if primary_trace:
+        status = str(primary_trace.get("status") or "").lower()
+        if status in {"running", "queued", "accepted"}:
+            checks.append("Check operation delivery state and agent connectivity for this device.")
+        if int(primary_trace.get("error_count") or 0) > 0 or status in {"failed", "error", "timed_out"}:
+            checks.append("Open error_occurrences and matching signatures before retrying the flow.")
+    if error_occurrences:
+        checks.append("Compare this trace with signatures/degradations to detect repeated failures.")
+    if agent_actions_error:
+        checks.append("Agent action trace could not be loaded; verify that the agent is online and RPC works.")
+    if not checks:
+        checks.append("Review spans and recent agent audit events for the next narrow failure point.")
+    return checks
+
+
 @require_auth("admin")
 async def handle_observer_settings_get(request: web.Request) -> web.Response:
     async with get_session() as session:
@@ -1715,6 +1837,212 @@ async def handle_tech_observer_quick(request: web.Request) -> web.Response:
     payload["status"] = "ok"
     payload["filters"] = _serialize_trace_filters(filters)
     return web.json_response(payload)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_observer_search(request: web.Request) -> web.Response:
+    query = _compact_query_value(request.query.get("q") or request.query.get("query"))
+    if not query:
+        return web.json_response({"status": "error", "error": "q is required"}, status=400)
+    limit = _parse_query_limit(request.query.get("limit"), default=20, cap=100)
+    base_filters = _trace_filters_from_request(request)
+    trace_candidates: dict[str, dict[str, Any]] = {}
+    signature_candidates: dict[str, dict[str, Any]] = {}
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        trace_filter_variants = [
+            base_filters,
+            TraceOverlayFilters(operation_id=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(ticket_id=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(device_id=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(trace_id=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(tool_name=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(module_name=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(error_signature=query, lookback_hours=base_filters.lookback_hours),
+        ]
+        for filters in trace_filter_variants:
+            for item in await service.search_traces(filters, limit=limit):
+                trace_id = str(item.get("trace_id") or "").strip()
+                if trace_id and trace_id not in trace_candidates:
+                    trace_candidates[trace_id] = item
+            if len(trace_candidates) >= limit:
+                break
+        signature_filter_variants = [
+            TraceOverlayFilters(error_signature=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(tool_name=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(module_name=query, lookback_hours=base_filters.lookback_hours),
+            TraceOverlayFilters(query=query, lookback_hours=base_filters.lookback_hours),
+        ]
+        for filters in signature_filter_variants:
+            for item in await service.search_signatures(filters, limit=limit):
+                signature_id = str(item.get("error_signature") or "").strip()
+                if signature_id and signature_id not in signature_candidates:
+                    signature_candidates[signature_id] = item
+        await session.commit()
+
+    traces = list(trace_candidates.values())[:limit]
+    signatures = list(signature_candidates.values())[:limit]
+    return web.json_response(
+        {
+            "status": "ok",
+            "query": query,
+            "filters": _serialize_trace_filters(base_filters),
+            "summary": {
+                "trace_count": len(traces),
+                "signature_count": len(signatures),
+            },
+            "traces": traces,
+            "signatures": signatures,
+            "recommended_next_checks": [
+                "Open the most recent matching trace detail.",
+                "If several traces share one signature, inspect degradations before rerun.",
+            ],
+        }
+    )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
+    filters = _trace_filters_from_request(request)
+    if not _observer_trace_filter_has_values(filters):
+        return web.json_response(
+            {"status": "error", "error": "Provide trace_id, ticket_id, operation_id, device_id or q."},
+            status=400,
+        )
+    include_agent_actions = _parse_bool(request.query.get("include_agent_actions"))
+    action_limit = _parse_query_limit(request.query.get("action_limit"), default=80, cap=200)
+    trace_limit = _parse_query_limit(request.query.get("trace_limit"), default=20, cap=100)
+    primary_detail: Optional[dict[str, Any]] = None
+    related_traces: list[dict[str, Any]] = []
+    device_payload: Optional[dict[str, Any]] = None
+    ticket_payload: Optional[dict[str, Any]] = None
+    signatures: list[dict[str, Any]] = []
+    degradations: list[dict[str, Any]] = []
+    agent_audit: list[dict[str, Any]] = []
+
+    async with get_session() as session:
+        service = ObserverOverlayService(session)
+        related_traces = await service.search_traces(filters, limit=trace_limit)
+        primary_trace_id = filters.trace_id or (related_traces[0]["trace_id"] if related_traces else None)
+        if primary_trace_id:
+            primary_detail = await service.get_trace_detail(primary_trace_id)
+        if primary_detail is None:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": "Trace context not found"}, status=404)
+
+        primary_trace = primary_detail.get("trace") or {}
+        if not related_traces:
+            related_traces = [primary_trace]
+        device_id = primary_trace.get("device_id") or filters.device_id
+        ticket_id = primary_trace.get("ticket_id") or filters.ticket_id
+        operation_id = primary_trace.get("operation_id") or filters.operation_id
+        device_payload = _serialize_device_context(await session.get(Device, device_id)) if device_id else None
+        ticket_payload = _serialize_ticket_context(await session.get(Ticket, ticket_id)) if ticket_id else None
+
+        signature_filters = TraceOverlayFilters(
+            trace_id=primary_trace.get("trace_id"),
+            ticket_id=ticket_id,
+            device_id=device_id,
+            operation_id=operation_id,
+            lookback_hours=filters.lookback_hours,
+        )
+        signatures = await service.search_signatures(signature_filters, limit=10)
+        degradations = await service.search_degradations(
+            TraceOverlayFilters(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                operation_id=operation_id,
+                tool_name=primary_trace.get("tool_name") or filters.tool_name,
+                lookback_hours=filters.lookback_hours or 24,
+            ),
+            limit=10,
+        )
+
+        audit_stmt = select(AgentRuntimeAudit)
+        audit_conditions = []
+        if device_id:
+            audit_conditions.append(AgentRuntimeAudit.device_id == device_id)
+        if ticket_id:
+            audit_conditions.append(AgentRuntimeAudit.ticket_id == ticket_id)
+        if operation_id:
+            audit_conditions.append(AgentRuntimeAudit.operation_id == operation_id)
+        if audit_conditions:
+            audit_stmt = audit_stmt.where(or_(*audit_conditions))
+        audit_rows = (
+            await session.execute(audit_stmt.order_by(AgentRuntimeAudit.created_at.desc()).limit(30))
+        ).scalars().all()
+        agent_audit = [_serialize_agent_audit_item(item) for item in audit_rows]
+        await session.commit()
+
+    agent_actions: list[dict[str, Any]] = []
+    agent_actions_error: Optional[str] = None
+    if include_agent_actions and primary_detail:
+        agent_actions, agent_actions_error = await _load_agent_actions_for_trace(
+            request=request,
+            trace_id=primary_detail["trace"]["trace_id"],
+            detail=primary_detail,
+            action_limit=action_limit,
+        )
+
+    log_filter = (
+        filters.query
+        or filters.operation_id
+        or filters.ticket_id
+        or filters.device_id
+        or filters.trace_id
+        or filters.error_signature
+    )
+    recent_logs = [_serialize_problem_log(item) for item in list_log_records(levels=["error", "warning"], limit=30, contains=log_filter)]
+    if not recent_logs:
+        recent_logs = [_serialize_problem_log(item) for item in list_log_records(levels=["error", "warning"], limit=15)]
+
+    primary_trace = primary_detail.get("trace") if primary_detail else None
+    error_occurrences = primary_detail.get("error_occurrences", []) if primary_detail else []
+    trace_id = primary_trace.get("trace_id") if primary_trace else None
+    return web.json_response(
+        {
+            "status": "ok",
+            "filters": _serialize_trace_filters(filters),
+            "summary": {
+                "primary_trace_id": trace_id,
+                "related_trace_count": len(related_traces),
+                "span_count": len(primary_detail.get("spans", [])) if primary_detail else 0,
+                "error_count": len(error_occurrences),
+                "agent_action_count": len(agent_actions),
+                "agent_audit_count": len(agent_audit),
+                "recent_log_count": len(recent_logs),
+            },
+            "runtime": request.app._state.get("observer_refresh_runtime").status_snapshot()
+            if request.app._state.get("observer_refresh_runtime") is not None
+            else {"enabled": False, "running": False, "health": {"status": "down"}},
+            "device": device_payload,
+            "ticket": ticket_payload,
+            "primary_trace": primary_trace,
+            "related_traces": related_traces,
+            "spans": primary_detail.get("spans", []) if primary_detail else [],
+            "span_links": primary_detail.get("span_links", []) if primary_detail else [],
+            "error_occurrences": error_occurrences,
+            "agent_actions": agent_actions,
+            "agent_actions_error": agent_actions_error,
+            "signatures": signatures,
+            "degradations": degradations,
+            "recent_logs": recent_logs,
+            "agent_audit": agent_audit,
+            "links": {
+                "trace_detail": f"/api/admin/tech/traces/{trace_id}" if trace_id else None,
+                "traces": "/api/admin/tech/traces",
+                "observer_search": "/api/admin/tech/observer/search",
+                "ticket_observer": f"/api/tickets/{primary_trace.get('ticket_id')}/observer"
+                if primary_trace and primary_trace.get("ticket_id")
+                else None,
+            },
+            "recommended_next_checks": _bundle_next_checks(
+                primary_trace=primary_trace,
+                error_occurrences=error_occurrences,
+                agent_actions_error=agent_actions_error,
+            ),
+        }
+    )
 
 
 @require_auth("admin", "support", "auditor")

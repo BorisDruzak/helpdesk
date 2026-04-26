@@ -16,6 +16,7 @@ import { Tabs } from "../../components/ui/tabs";
 import { cn } from "../../shared/ui/cn";
 import {
   fetchObserverDegradations,
+  fetchObserverDiagnosticsBundle,
   fetchObserverRuntime,
   fetchObserverSettings,
   fetchObserverSignatureDetail,
@@ -25,7 +26,9 @@ import {
   fetchObserverWorkbenchTraces,
   rebuildObserverTraces,
   saveObserverSettings,
+  type ObserverAgentActionItem,
   type ObserverDegradationItem,
+  type ObserverDiagnosticsBundlePayload,
   type ObserverSignatureListItem,
   type ObserverTraceDetailPayload,
 } from "./observer-workbench-api";
@@ -115,6 +118,19 @@ function formatRuntimeStatValue(value: unknown): string {
     return value ? "Да" : "Нет";
   }
   return String(value);
+}
+
+function compactActionValue(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 
 function getStatusTone(status: string | null | undefined) {
@@ -312,10 +328,14 @@ function TraceList({
 }
 
 function TraceDetailCard({
+  bundle,
   detail,
+  isBundleLoading,
   isLoading,
 }: {
+  bundle: ObserverDiagnosticsBundlePayload | undefined;
   detail: ObserverTraceDetailPayload | undefined;
+  isBundleLoading: boolean;
   isLoading: boolean;
 }) {
   if (isLoading) {
@@ -408,6 +428,51 @@ function TraceDetailCard({
         <div className="space-y-4">
           <Card className="overflow-hidden">
             <CardHeader>
+              <CardTitle>Diagnostic bundle</CardTitle>
+              <CardDescription>
+                Trace, ticket, device, logs, audit and next checks in one payload for production debugging.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isBundleLoading ? (
+                <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                  Собираем bundle...
+                </div>
+              ) : null}
+
+              {bundle ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-[1rem] border border-border bg-surface-subtle px-3 py-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-brand-700">Logs</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">{bundle.summary.recent_log_count ?? 0}</p>
+                    </div>
+                    <div className="rounded-[1rem] border border-border bg-surface-subtle px-3 py-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-brand-700">Audit</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">{bundle.summary.agent_audit_count ?? 0}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(bundle.recommended_next_checks ?? []).slice(0, 4).map((item) => (
+                      <p key={item} className="rounded-[1rem] border border-border bg-white px-3 py-2 text-sm text-slate-600">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                  {bundle.links?.trace_detail ? (
+                    <p className="break-all text-xs text-slate-400">{bundle.links.trace_detail}</p>
+                  ) : null}
+                </>
+              ) : (
+                <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
+                  Bundle появится после выбора трассы.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <CardHeader>
               <CardTitle>Ошибки и связи</CardTitle>
               <CardDescription>
                 Сигнатуры, severity и связанные span links для быстрого расследования.
@@ -486,11 +551,31 @@ function TraceDetailCard({
               ) : null}
 
               {Array.isArray(detail.agent_actions) && detail.agent_actions.length ? (
-                detail.agent_actions.map((item, index) => (
-                  <article key={index} className="rounded-[1rem] border border-border bg-white px-4 py-4">
-                    <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 text-slate-700">
-                      {JSON.stringify(item, null, 2)}
-                    </pre>
+                (detail.agent_actions as ObserverAgentActionItem[]).map((item, index) => (
+                  <article key={`${item.action ?? "action"}-${index}`} className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-950">{item.action ?? "agent.action"}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {[item.source, item.stage, item.tool_name].filter(Boolean).join(" / ") || "agent trace"}
+                        </p>
+                      </div>
+                      <Badge tone={getStatusTone(item.status)}>{item.status ?? "ok"}</Badge>
+                    </div>
+                    {item.summary ? <p className="mt-3 text-sm text-slate-600">{item.summary}</p> : null}
+                    <div className="mt-3 grid gap-2 text-xs text-slate-500">
+                      {item.operation_id ? <p className="break-all">operation: {item.operation_id}</p> : null}
+                      {item.trace_id ? <p className="break-all">trace: {item.trace_id}</p> : null}
+                      {item.ts ? <p>{formatDateTime(item.ts)}</p> : null}
+                    </div>
+                    {item.details && Object.keys(item.details).length ? (
+                      <p className="mt-3 break-words rounded-[0.8rem] bg-surface-subtle px-3 py-2 text-xs text-slate-500">
+                        {Object.entries(item.details)
+                          .slice(0, 4)
+                          .map(([key, value]) => `${key}: ${compactActionValue(value)}`)
+                          .join(" / ")}
+                      </p>
+                    ) : null}
                   </article>
                 ))
               ) : (
@@ -528,7 +613,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
   });
 
   const tracesQuery = useQuery({
-    queryKey: ["observer-workbench-traces", deviceId, lookbackHours, statusFilter, rootKindFilter],
+    queryKey: ["observer-workbench-traces", deviceId, lookbackHours, statusFilter, rootKindFilter, deferredSearch],
     queryFn: () =>
       fetchObserverWorkbenchTraces({
         deviceId,
@@ -536,6 +621,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
         statusFilter,
         rootKindFilter,
         limit: 40,
+        query: deferredSearch || null,
       }),
     retry: false,
   });
@@ -643,6 +729,19 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
       fetchObserverWorkbenchTraceDetail(selectedTraceId!, {
         includeAgentActions: true,
         actionLimit: 120,
+      }),
+    enabled: Boolean(selectedTraceId),
+    retry: false,
+  });
+
+  const diagnosticsBundleQuery = useQuery({
+    queryKey: ["observer-workbench-diagnostics-bundle", selectedTraceId, lookbackHours],
+    queryFn: () =>
+      fetchObserverDiagnosticsBundle({
+        traceId: selectedTraceId,
+        lookbackHours,
+        includeAgentActions: true,
+        actionLimit: 80,
       }),
     enabled: Boolean(selectedTraceId),
     retry: false,
@@ -1011,7 +1110,12 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
             </CardContent>
           </Card>
 
-          <TraceDetailCard detail={traceDetailQuery.data} isLoading={traceDetailQuery.isLoading} />
+          <TraceDetailCard
+            bundle={diagnosticsBundleQuery.data}
+            detail={traceDetailQuery.data}
+            isBundleLoading={diagnosticsBundleQuery.isLoading}
+            isLoading={traceDetailQuery.isLoading}
+          />
         </div>
       ) : null}
 

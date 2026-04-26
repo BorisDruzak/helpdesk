@@ -25,6 +25,7 @@ from app.db.models import (
     Operation,
     Ticket,
     TicketEvent,
+    Device,
 )
 from shared.redaction import redact_sensitive_payload
 
@@ -40,6 +41,7 @@ _TRACE_PROJECTION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDicti
 
 @dataclass(slots=True)
 class TraceOverlayFilters:
+    query: Optional[str] = None
     trace_id: Optional[str] = None
     ticket_id: Optional[str] = None
     job_id: Optional[str] = None
@@ -247,6 +249,43 @@ class ObserverOverlayService:
             stmt = stmt.where(ObserverTrace.root_kind == filters.root_kind)
         if filters.status:
             stmt = stmt.where(ObserverTrace.status == filters.status)
+        if filters.query:
+            query = _compact_text(filters.query)
+            if query:
+                pattern = f"%{query}%"
+                stmt = stmt.where(
+                    or_(
+                        ObserverTrace.trace_id.ilike(pattern),
+                        ObserverTrace.ticket_id.ilike(pattern),
+                        ObserverTrace.operation_id.ilike(pattern),
+                        ObserverTrace.device_id.ilike(pattern),
+                        ObserverTrace.job_id.ilike(pattern),
+                        exists(
+                            select(ObserverSpan.span_id).where(
+                                ObserverSpan.trace_id == ObserverTrace.trace_id,
+                                or_(
+                                    ObserverSpan.name.ilike(pattern),
+                                    ObserverSpan.component.ilike(pattern),
+                                    ObserverSpan.module_name.ilike(pattern),
+                                    ObserverSpan.tool_name.ilike(pattern),
+                                    ObserverSpan.source_ref.ilike(pattern),
+                                ),
+                            )
+                        ),
+                        exists(
+                            select(ObserverErrorOccurrence.occurrence_id).where(
+                                ObserverErrorOccurrence.trace_id == ObserverTrace.trace_id,
+                                or_(
+                                    ObserverErrorOccurrence.error_signature.ilike(pattern),
+                                    ObserverErrorOccurrence.component.ilike(pattern),
+                                    ObserverErrorOccurrence.module_name.ilike(pattern),
+                                    ObserverErrorOccurrence.tool_name.ilike(pattern),
+                                    ObserverErrorOccurrence.message_norm.ilike(pattern),
+                                ),
+                            )
+                        ),
+                    )
+                )
         if filters.lookback_hours:
             window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
             stmt = stmt.where(
@@ -972,6 +1011,74 @@ class ObserverOverlayService:
 
         if filters.ticket_id:
             _remember([await self._load_ticket_root_trace_id(filters.ticket_id)])
+
+        if filters.query:
+            query = _compact_text(filters.query)
+            if query:
+                pattern = f"%{query}%"
+                ticket_query_stmt = (
+                    select(Ticket.observer_root_trace_id)
+                    .where(
+                        Ticket.observer_root_trace_id.isnot(None),
+                        or_(
+                            Ticket.ticket_id == query,
+                            Ticket.device_id == query,
+                            Ticket.ticket_code.ilike(pattern),
+                            Ticket.title.ilike(pattern),
+                            Ticket.description.ilike(pattern),
+                        ),
+                    )
+                    .order_by(Ticket.created_at.desc())
+                    .limit(limit)
+                )
+                _remember((await self.session.execute(ticket_query_stmt)).scalars().all())
+
+                op_query_stmt = (
+                    select(Operation.trace_id)
+                    .where(
+                        Operation.trace_id.isnot(None),
+                        or_(
+                            Operation.trace_id == query,
+                            Operation.operation_id == query,
+                            Operation.ticket_id == query,
+                            Operation.device_id == query,
+                            Operation.job_id == query,
+                            Operation.kind.ilike(pattern),
+                            Operation.tool_name.ilike(pattern),
+                            Operation.command_name.ilike(pattern),
+                            Operation.error_code.ilike(pattern),
+                            Operation.error_message.ilike(pattern),
+                        ),
+                    )
+                    .order_by(Operation.queued_at.desc())
+                    .limit(limit)
+                )
+                _remember((await self.session.execute(op_query_stmt)).scalars().all())
+
+                device_query_stmt = (
+                    select(Device.device_id)
+                    .where(
+                        or_(
+                            Device.device_id == query,
+                            Device.hostname.ilike(pattern),
+                            Device.os.ilike(pattern),
+                        )
+                    )
+                    .limit(limit)
+                )
+                device_ids = [
+                    item
+                    for item in (await self.session.execute(device_query_stmt)).scalars().all()
+                    if _compact_text(item)
+                ]
+                if device_ids:
+                    device_op_stmt = (
+                        select(Operation.trace_id)
+                        .where(Operation.trace_id.isnot(None), Operation.device_id.in_(device_ids))
+                        .order_by(Operation.queued_at.desc())
+                        .limit(limit)
+                    )
+                    _remember((await self.session.execute(device_op_stmt)).scalars().all())
 
         if filters.root_kind in (None, "ticket"):
             ticket_root_stmt = select(Ticket.observer_root_trace_id).where(Ticket.observer_root_trace_id.isnot(None))

@@ -190,6 +190,7 @@ class ActionTraceRecorder:
         operation_id: Optional[str] = None,
         message_id: Optional[str] = None,
         tool_name: Optional[str] = None,
+        trace_id: Optional[str] = None,
         source: Optional[str] = None,
         status: Optional[str] = None,
         text: Optional[str] = None,
@@ -204,6 +205,7 @@ class ActionTraceRecorder:
             "operation_id": _normalize_scalar(operation_id),
             "message_id": _normalize_scalar(message_id),
             "tool_name": _normalize_scalar(tool_name),
+            "trace_id": _normalize_scalar(trace_id),
             "source": _normalize_scalar(source),
             "status": _normalize_scalar(status),
         }

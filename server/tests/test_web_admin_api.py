@@ -250,6 +250,14 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         status_filter: str,
         root_kind_filter: str,
         limit: int,
+        query: str | None,
+        trace_id: str | None,
+        ticket_id: str | None,
+        operation_id: str | None,
+        tool_name: str | None,
+        module_name: str | None,
+        error_signature: str | None,
+        min_duration_ms: int | None,
     ):
         assert request.path == "/api/web/admin/observer/traces"
         assert device_id == "device-1"
@@ -257,6 +265,14 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         assert status_filter == "failed"
         assert root_kind_filter == "agent_update"
         assert limit == 25
+        assert query == "op-1"
+        assert trace_id == "trace-1"
+        assert ticket_id == "ticket-1"
+        assert operation_id == "op-1"
+        assert tool_name == "system.collect"
+        assert module_name == "system"
+        assert error_signature == "sig-1"
+        assert min_duration_ms == 1200
         return AdminObserverTracesPayload(
             query=AdminObserverTracesQuery(
                 device_id=device_id,
@@ -264,6 +280,14 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
                 status_filter=status_filter,
                 root_kind_filter=root_kind_filter,
                 limit=limit,
+                query=query,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                operation_id=operation_id,
+                tool_name=tool_name,
+                module_name=module_name,
+                error_signature=error_signature,
+                min_duration_ms=min_duration_ms,
             ),
             summary=AdminObserverTracesSummary(
                 visible_count=2,
@@ -329,6 +353,8 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
 
     response = await web_admin_client.get(
         "/api/web/admin/observer/traces?device_id=device-1&lookback_hours=72&status=failed&root_kind=agent_update&limit=25"
+        "&q=op-1&trace_id=trace-1&ticket_id=ticket-1&operation_id=op-1&tool_name=system.collect"
+        "&module_name=system&error_signature=sig-1&min_duration_ms=1200"
     )
 
     assert response.status == 200
@@ -339,6 +365,8 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
     assert payload["data"]["summary"]["selected_trace_id"] == "trace-1"
     assert payload["data"]["traces"][0]["operation_id"] == "op-1"
     assert payload["data"]["traces"][0]["attrs_json"]["flow"] == "agent_update"
+    assert payload["data"]["query"]["operation_id"] == "op-1"
+    assert payload["data"]["query"]["tool_name"] == "system.collect"
 
 
 @pytest.mark.asyncio
