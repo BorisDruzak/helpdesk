@@ -73,15 +73,19 @@ function getStatusTone(status: string) {
   switch (status) {
     case "accepted":
     case "queued":
+    case "assigned":
     case "sent":
     case "running":
     case "new":
     case "triaged":
       return "brand" as const;
     case "in_progress":
+    case "scheduled":
       return "success" as const;
     case "waiting_on_user":
+    case "waiting_on_internal_team":
     case "waiting_on_vendor":
+    case "waiting_on_approval":
       return "warning" as const;
     case "success":
     case "succeeded":
@@ -94,6 +98,25 @@ function getStatusTone(status: string) {
       return "danger" as const;
     default:
       return "neutral" as const;
+  }
+}
+
+function formatNextActionOwner(owner: string | null | undefined) {
+  switch (owner) {
+    case "support":
+      return "Поддержка";
+    case "requester":
+      return "Пользователь";
+    case "internal_team":
+      return "Внутренняя группа";
+    case "vendor":
+      return "Внешняя сторона";
+    case "approver":
+      return "Согласующий";
+    case "system":
+      return "Система";
+    default:
+      return owner || "Не указан";
   }
 }
 
@@ -465,6 +488,85 @@ export function TicketRequestFormCard({
   );
 }
 
+export function TicketWorkVisibilityCard({
+  ticket,
+}: {
+  ticket: Pick<
+    SupportTicketDetailPayload["ticket"],
+    | "status"
+    | "status_label"
+    | "requester_status_label"
+    | "next_action_owner"
+    | "next_action_due_at"
+    | "status_reason"
+    | "resolution_code"
+    | "resolution_summary"
+    | "requester_resolution_summary"
+    | "evidence_required"
+    | "evidence_ref"
+  >;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ход работы</CardTitle>
+        <CardDescription>Внутреннее состояние, пользовательский статус и следующий ответственный.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-500">Внутренний статус</span>
+          <Badge tone={getStatusTone(ticket.status)}>{ticket.status_label}</Badge>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-500">Статус для пользователя</span>
+          <span className="font-medium text-slate-900">{ticket.requester_status_label || "Не указан"}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-500">Чей ход</span>
+          <span className="font-medium text-slate-900">{formatNextActionOwner(ticket.next_action_owner)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-500">Следующий срок</span>
+          <span className="font-medium text-slate-900">{formatDateTime(ticket.next_action_due_at)}</span>
+        </div>
+        <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Причина ожидания</p>
+          <p className="mt-2 font-semibold text-slate-950">{ticket.status_reason || "Не указана"}</p>
+        </div>
+        {ticket.resolution_code ||
+        ticket.resolution_summary ||
+        ticket.requester_resolution_summary ||
+        ticket.evidence_required ||
+        ticket.evidence_ref ? (
+          <div className="rounded-[1.1rem] border border-border px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Решение и подтверждение</p>
+            <dl className="mt-3 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-slate-500">Код решения</dt>
+                <dd className="max-w-[60%] text-right font-medium text-slate-900">
+                  {ticket.resolution_code || "Не указан"}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-slate-500">Для пользователя</dt>
+                <dd className="max-w-[60%] text-right font-medium text-slate-900">
+                  {ticket.requester_resolution_summary || ticket.resolution_summary || "Не заполнено"}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-slate-500">Доказательство</dt>
+                <dd className="max-w-[60%] text-right font-medium text-slate-900">
+                  {ticket.evidence_ref || (ticket.evidence_required ? "Требуется" : "Не требуется")}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function TicketDetailPage() {
   const navigate = useNavigate();
   const { ticketId } = useParams();
@@ -676,6 +778,9 @@ export function TicketDetailPage() {
           <Badge tone={getStatusTone(detail?.ticket.status ?? "")} withDot>
             {detail?.ticket.status_label ?? "Загружаем"}
           </Badge>
+          {detail?.ticket.requester_status_label ? (
+            <Badge tone={getStatusTone(detail.ticket.status)}>{detail.ticket.requester_status_label}</Badge>
+          ) : null}
           <Select
             className="min-w-[230px]"
             disabled={!detail || statusMutation.isPending}
@@ -825,6 +930,10 @@ export function TicketDetailPage() {
                       {queueTicket.unread_user_messages > 0
                         ? ` • ${queueTicket.unread_user_messages} непрочит.`
                         : ""}
+                    </p>
+                    <p className="mt-2 text-xs font-medium text-slate-500">
+                      Ход: {formatNextActionOwner(queueTicket.next_action_owner)}
+                      {queueTicket.requester_status_label ? ` • ${queueTicket.requester_status_label}` : ""}
                     </p>
                   </button>
                 );
@@ -1158,6 +1267,8 @@ export function TicketDetailPage() {
         </Card>
 
         <div className="space-y-4 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
+          {detail ? <TicketWorkVisibilityCard ticket={detail.ticket} /> : null}
+
           <Card>
             <CardHeader>
               <CardTitle>Информация о тикете</CardTitle>
