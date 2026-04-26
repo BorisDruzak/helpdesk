@@ -1,5 +1,27 @@
 # PLANS.md
 
+## 2026-04-26 CI pytest layering and test rules
+
+- Status: completed locally on 2026-04-26; focused runner/harness tests, layer collect checks, `no_db` layer and `python scripts/verify_workspace.py` passed.
+- Scope:
+  - raise the server pytest layer timeout from 30 to 45 minutes;
+  - split `scripts/run_ci_suite.py` server pytest into `no_db`, DB/API and WS/agent layers;
+  - add `-vv --durations=80` and per-test watchdog stack dumps for server pytest layers;
+  - auto-mark `test_agent` fixture users as `agent_ws` so the split stays maintainable;
+  - document when to run each test layer in `docs/TESTING_RULES.md`, `server/tests/README.md`, `docs/QUICK_LOOKUP.md` and CODEMAP/navigation docs.
+- Delivery order:
+  1. RED tests for layered CI commands and pytest marker/watchdog helpers;
+  2. runner changes in `scripts/run_ci_suite.py`;
+  3. server pytest marker/watchdog hooks in `server/tests/conftest.py`;
+  4. testing rules and docs sync;
+  5. focused tests and workspace verification.
+- Verification target:
+  - `python -m pytest scripts/test_run_ci_suite.py server/tests/test_ci_pytest_layers_no_db.py -q`
+  - `python -m pytest server/tests --collect-only -q -m "not manual and no_db"`
+  - `python -m pytest server/tests --collect-only -q -m "not manual and not no_db and not agent_ws"`
+  - `python -m pytest server/tests --collect-only -q -m "not manual and agent_ws"`
+  - `python scripts/verify_workspace.py`
+
 ## 2026-04-24 Device proof, token rotation, and inventory quality
 
 - Status: in progress.

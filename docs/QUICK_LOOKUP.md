@@ -24,6 +24,12 @@
 - `/app/admin/inventory` now has a device-token panel backed by `GET /api/web/admin/devices/{device_id}/tokens` and `POST /api/web/admin/devices/{device_id}/tokens/revoke`; token rows expose ISO `created_at`/`last_used_at` values for live browser rendering, and tech alerts also include `inventory_env_uuid_duplicates` and `inventory_devices_without_location`.
 - Connection request token exhaustion is now explicit: server returns `TOKEN_LIMIT_EXCEEDED` on 429 and marks the pending request metadata; the agent writes `connection_request_error.json`, emits `connection_rejected` with the server message, and GUI auth avoids persisting a permanent local reject flag for this transient block.
 
+## 2026-04-26 test and CI layering
+
+- Canonical testing rules live in `docs/TESTING_RULES.md`.
+- `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, `server_pytest_db_api`, and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
+- `server/tests/conftest.py` auto-marks tests that use `test_agent` as `agent_ws`/`integration` and prints all Python thread stacks when a watched test exceeds the watchdog threshold.
+
 ## 2026-04-16 intake forms
 
 - Typed requester intake now lives in `server/tickets/form_catalog.py`, `server/tickets/form_pack_handlers.py`, `server/help.js`, `server/admin_ticket_forms_builder.js`, `server/web_api/admin_handlers.py`, `webapp/src/features/forms-builder/forms-builder-panel.tsx`, and `pc_agent/ui_gui/chat_panel.py`.

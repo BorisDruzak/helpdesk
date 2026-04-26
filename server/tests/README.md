@@ -9,12 +9,28 @@
 - Main fixtures: [server/tests/conftest.py](/C:/Users/admin-2/CodexProjects/pc_client/server/tests/conftest.py)
 - CI runner: [scripts/run_ci_suite.py](/C:/Users/admin-2/CodexProjects/pc_client/scripts/run_ci_suite.py)
 
+## CI layers
+
+`scripts/run_ci_suite.py` runs server pytest in three layers so one slow group does not hide the rest of the signal:
+
+1. Fast/pure tests: `python -m pytest server/tests -m "not manual and no_db" -vv --durations=80`
+2. DB/API tests: `python -m pytest server/tests -m "not manual and not no_db and not agent_ws" -vv --durations=80`
+3. WS/agent integration tests: `python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80`
+
+The `agent_ws` marker is applied automatically to tests that request the `test_agent` fixture. Do not add it by hand unless a test starts the same in-process agent/runtime path without that fixture.
+
+CI sets `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for every server pytest layer. When a test runs longer than that value, the harness prints all Python thread stacks into the pytest log so the next timeout shows the stuck test and call stacks instead of only the final process timeout.
+
+The default server pytest step timeout is 45 minutes per layer. If a layer approaches that value, split or optimize the slow tests before increasing the timeout again.
+
 ## Markers
 
 - `unit` — unit-like tests without full integration harness.
 - `integration` — integration tests against aiohttp app / DB / in-process agent.
 - `no_db` — fixture cleanup and migrations не нужны.
 - `manual` — не попадает в обычный `pytest -m "not manual"`.
+
+- `agent_ws` - tests that start the in-process WS agent fixture; auto-applied when `test_agent` is used.
 
 ## Test database
 

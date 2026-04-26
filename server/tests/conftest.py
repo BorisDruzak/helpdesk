@@ -1,12 +1,14 @@
 """Pytest configuration and fixtures for Protocol V3 integration tests."""
 
 import asyncio
+import faulthandler
 import importlib
 import os
 import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 import types
 import uuid
@@ -53,6 +55,61 @@ TEST_UI_USER_PREFIX = "test-ui-user:"
 
 _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
+_AGENT_WS_FIXTURES = {"test_agent"}
+
+
+def _pytest_watchdog_seconds() -> float | None:
+    raw = os.getenv("PC_CLIENT_PYTEST_WATCHDOG_SECONDS", "").strip()
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    if seconds <= 0:
+        return None
+    return seconds
+
+
+def _apply_ci_layer_markers(item) -> None:
+    fixture_names = set(getattr(item, "fixturenames", ()) or ())
+    if fixture_names & _AGENT_WS_FIXTURES:
+        item.add_marker("agent_ws")
+        item.add_marker("integration")
+
+
+def pytest_configure(config) -> None:
+    config.addinivalue_line("markers", "agent_ws: tests that start the in-process WS agent fixture")
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    for item in items:
+        _apply_ci_layer_markers(item)
+
+
+def pytest_runtest_setup(item) -> None:
+    seconds = _pytest_watchdog_seconds()
+    if seconds is None:
+        return
+
+    def _dump_current_test() -> None:
+        sys.stderr.write(
+            f"\n[pytest-watchdog] {item.nodeid} has been running longer than {seconds:.1f}s; "
+            "dumping all Python thread stacks.\n"
+        )
+        sys.stderr.flush()
+        faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+
+    timer = threading.Timer(seconds, _dump_current_test)
+    timer.daemon = True
+    setattr(item, "_pc_client_watchdog_timer", timer)
+    timer.start()
+
+
+def pytest_runtest_teardown(item, nextitem) -> None:
+    timer = getattr(item, "_pc_client_watchdog_timer", None)
+    if timer is not None:
+        timer.cancel()
 
 
 @pytest.fixture(scope="session")

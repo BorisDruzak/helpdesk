@@ -18,6 +18,7 @@
 - Канонические test/CI env vars: `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `PC_CLIENT_ALLOW_SHARED_TEST_DB`.
 - Windows default: if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test` through a local SSH tunnel; the shared fallback now terminates stale test backends before cleanup and applies a short `lock_timeout`, while explicit admin DSN is still required for isolated ephemeral DBs from Windows.
 - For websocket-heavy pytest on Windows, `server/tests/conftest.py` also switches the harness to `WindowsSelectorEventLoopPolicy`, which removes the old Proactor-only `unexpected connection_lost() call` noise during teardown.
+- Server CI is now layered by marker: `server_pytest_no_db` (`not manual and no_db`), `server_pytest_db_api` (`not manual and not no_db and not agent_ws`), and `server_pytest_agent_ws` (`not manual and agent_ws`). `server/tests/conftest.py` auto-marks `test_agent` users as `agent_ws`, and `scripts/run_ci_suite.py` runs each server layer with `-vv --durations=80`, `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`, and a 45 minute timeout. See `docs/TESTING_RULES.md`.
 
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|

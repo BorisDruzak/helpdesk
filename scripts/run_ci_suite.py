@@ -35,9 +35,10 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_WEB_BUILD_TIMEOUT_SECONDS = 20 * 60
-DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 45 * 60
 DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
+DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
 STEP_TIMEOUT_EXIT_CODE = 124
 
@@ -159,6 +160,7 @@ def run_and_capture(
     step_name: str,
     timeout_seconds: float,
     idle_timeout_seconds: float | None = DEFAULT_IDLE_TIMEOUT_SECONDS,
+    env_overrides: dict[str, str] | None = None,
 ) -> dict[str, object]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = now_iso()
@@ -185,9 +187,14 @@ def run_and_capture(
         handle.write(f"[ci] command={_command_text(command)}\n\n")
         handle.flush()
 
+        child_env = os.environ.copy()
+        if env_overrides:
+            child_env.update(env_overrides)
+
         process = subprocess.Popen(
             command,
             cwd=cwd,
+            env=child_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -291,6 +298,25 @@ def write_summary(summary_path: Path, summary: dict[str, object]) -> None:
         handle.write("\n")
 
 
+def _server_pytest_env() -> dict[str, str]:
+    return {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
+
+
+def _server_pytest_command(marker_expr: str, junit_path: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        "server/tests",
+        "-m",
+        marker_expr,
+        "-vv",
+        "--durations=80",
+        "--junitxml",
+        str(junit_path),
+    ]
+
+
 def main() -> None:
     args = parse_args()
     commit = detect_commit(args.workspace, args.commit)
@@ -308,6 +334,7 @@ def main() -> None:
             logs_dir / "verify_workspace.log",
             float(args.verify_timeout),
             float(args.idle_timeout),
+            None,
         ),
         (
             "build_webapp_bundle",
@@ -324,22 +351,34 @@ def main() -> None:
             logs_dir / "build_webapp_bundle.log",
             float(args.web_build_timeout),
             float(args.idle_timeout),
+            None,
         ),
         (
-            "server_pytest",
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "server/tests",
-                "-m",
-                "not manual",
-                "--junitxml",
-                str(artifact_dir / "junit-server.xml"),
-            ],
-            logs_dir / "server_pytest.log",
+            "server_pytest_no_db",
+            _server_pytest_command("not manual and no_db", artifact_dir / "junit-server-no-db.xml"),
+            logs_dir / "server_pytest_no_db.log",
             float(args.server_pytest_timeout),
             None,
+            _server_pytest_env(),
+        ),
+        (
+            "server_pytest_db_api",
+            _server_pytest_command(
+                "not manual and not no_db and not agent_ws",
+                artifact_dir / "junit-server-db-api.xml",
+            ),
+            logs_dir / "server_pytest_db_api.log",
+            float(args.server_pytest_timeout),
+            None,
+            _server_pytest_env(),
+        ),
+        (
+            "server_pytest_agent_ws",
+            _server_pytest_command("not manual and agent_ws", artifact_dir / "junit-server-agent-ws.xml"),
+            logs_dir / "server_pytest_agent_ws.log",
+            float(args.server_pytest_timeout),
+            None,
+            _server_pytest_env(),
         ),
         (
             "pc_agent_pytest",
@@ -356,6 +395,7 @@ def main() -> None:
             logs_dir / "pc_agent_pytest.log",
             float(args.pc_agent_pytest_timeout),
             None,
+            None,
         ),
     ]
 
@@ -363,7 +403,7 @@ def main() -> None:
     status = "green"
     runner_error: str | None = None
     try:
-        for step_name, command, log_path, timeout_seconds, idle_timeout_seconds in steps:
+        for step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides in steps:
             result = run_and_capture(
                 command,
                 cwd=args.workspace,
@@ -371,6 +411,7 @@ def main() -> None:
                 step_name=step_name,
                 timeout_seconds=timeout_seconds,
                 idle_timeout_seconds=idle_timeout_seconds,
+                env_overrides=env_overrides,
             )
             results.append(result)
             if result["returncode"] != 0:
@@ -394,7 +435,9 @@ def main() -> None:
                 "summary": str(summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
-                "junit_server": str(artifact_dir / "junit-server.xml"),
+                "junit_server_no_db": str(artifact_dir / "junit-server-no-db.xml"),
+                "junit_server_db_api": str(artifact_dir / "junit-server-db-api.xml"),
+                "junit_server_agent_ws": str(artifact_dir / "junit-server-agent-ws.xml"),
                 "junit_pc_agent": str(artifact_dir / "junit-pc-agent.xml"),
             },
             "steps": results,

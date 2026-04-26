@@ -1225,7 +1225,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
@@ -1245,6 +1245,7 @@ TOPICS: tuple[Topic, ...] = (
             "scripts/verify_workspace.py",
             "scripts/docs_inventory.py",
             "scripts/build_context_pack.py",
+            "scripts/run_ci_suite.py",
             "scripts/run_observer_canary_suite.py",
             "scripts/deploy_workspace_to_remote.py",
             "scripts/release_server_to_remote.py",
@@ -1257,6 +1258,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/docs/CODEMAP.md",
             "PLANS.md",
             "docs/LOCAL_WORKFLOW.md",
+            "docs/TESTING_RULES.md",
             "docs/AGENT_CAPABILITIES_AND_REQUIREMENTS.md",
         ),
         suggested_commands=(

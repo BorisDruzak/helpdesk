@@ -189,9 +189,9 @@ def test_write_output_ignores_console_oserror(monkeypatch, tmp_path):
     assert handle_path.read_text(encoding="utf-8") == "mirror-safe\n"
 
 
-def test_main_runs_webapp_bundle_step_before_pytests(tmp_path, monkeypatch):
+def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypatch):
     summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
-    steps_seen: list[tuple[str, list[str], Path, float | None]] = []
+    steps_seen: list[tuple[str, list[str], Path, float | None, dict[str, str] | None, float]] = []
 
     monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
     monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
@@ -209,8 +209,9 @@ def test_main_runs_webapp_bundle_step_before_pytests(tmp_path, monkeypatch):
         step_name: str,
         timeout_seconds: float,
         idle_timeout_seconds: float | None,
+        env_overrides: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        steps_seen.append((step_name, command, log_path, idle_timeout_seconds))
+        steps_seen.append((step_name, command, log_path, idle_timeout_seconds, env_overrides, timeout_seconds))
         return {
             "name": step_name,
             "command": command,
@@ -228,21 +229,72 @@ def test_main_runs_webapp_bundle_step_before_pytests(tmp_path, monkeypatch):
 
     run_ci_suite.main()
 
-    assert [step_name for step_name, _command, _log_path, _idle_timeout in steps_seen] == [
+    assert [step_name for step_name, _command, _log_path, _idle_timeout, _env, _timeout in steps_seen] == [
         "verify_workspace",
         "build_webapp_bundle",
-        "server_pytest",
+        "server_pytest_no_db",
+        "server_pytest_db_api",
+        "server_pytest_agent_ws",
         "pc_agent_pytest",
     ]
-    build_step = next(command for step_name, command, _log_path, _idle_timeout in steps_seen if step_name == "build_webapp_bundle")
+    build_step = next(
+        command
+        for step_name, command, _log_path, _idle_timeout, _env, _timeout in steps_seen
+        if step_name == "build_webapp_bundle"
+    )
     assert "build_webapp_bundle.py" in build_step[1]
     assert "--output-dir" in build_step
     assert "--archive" in build_step
     idle_by_step = {
         step_name: idle_timeout
-        for step_name, _command, _log_path, idle_timeout in steps_seen
+        for step_name, _command, _log_path, idle_timeout, _env, _timeout in steps_seen
     }
     assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["build_webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["server_pytest"] is None
+    assert idle_by_step["server_pytest_no_db"] is None
+    assert idle_by_step["server_pytest_db_api"] is None
+    assert idle_by_step["server_pytest_agent_ws"] is None
     assert idle_by_step["pc_agent_pytest"] is None
+
+    command_by_step = {
+        step_name: command
+        for step_name, command, _log_path, _idle_timeout, _env, _timeout in steps_seen
+    }
+    assert command_by_step["server_pytest_no_db"][-6:] == [
+        "-m",
+        "not manual and no_db",
+        "-vv",
+        "--durations=80",
+        "--junitxml",
+        str(summary_path.parent / "junit-server-no-db.xml"),
+    ]
+    assert command_by_step["server_pytest_db_api"][-6:] == [
+        "-m",
+        "not manual and not no_db and not agent_ws",
+        "-vv",
+        "--durations=80",
+        "--junitxml",
+        str(summary_path.parent / "junit-server-db-api.xml"),
+    ]
+    assert command_by_step["server_pytest_agent_ws"][-6:] == [
+        "-m",
+        "not manual and agent_ws",
+        "-vv",
+        "--durations=80",
+        "--junitxml",
+        str(summary_path.parent / "junit-server-agent-ws.xml"),
+    ]
+    env_by_step = {
+        step_name: env
+        for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
+    }
+    assert env_by_step["server_pytest_no_db"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_db_api"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_agent_ws"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    timeout_by_step = {
+        step_name: timeout
+        for step_name, _command, _log_path, _idle_timeout, _env, timeout in steps_seen
+    }
+    assert timeout_by_step["server_pytest_no_db"] == 45 * 60
+    assert timeout_by_step["server_pytest_db_api"] == 45 * 60
+    assert timeout_by_step["server_pytest_agent_ws"] == 45 * 60

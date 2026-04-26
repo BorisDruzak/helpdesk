@@ -1,0 +1,91 @@
+# Testing Rules
+
+Canonical testing flow for `pc_client`.
+
+## Always
+
+Run this before committing code or docs:
+
+```powershell
+python scripts/verify_workspace.py
+```
+
+Then run the narrowest pytest/browser layer that covers the files you changed.
+
+## Server Pytest Layers
+
+Use these layers instead of the old single long `server/tests` run when you need signal quickly:
+
+```powershell
+python -m pytest server/tests -m "not manual and no_db" -vv --durations=80
+python -m pytest server/tests -m "not manual and not no_db and not agent_ws" -vv --durations=80
+python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80
+```
+
+Layer meanings:
+
+- `no_db`: pure unit/contract checks that must not require PostgreSQL setup or cleanup.
+- `not no_db and not agent_ws`: DB/API/server contract tests without the in-process WS agent.
+- `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
+
+The full local CI runner executes these same layers:
+
+```powershell
+python scripts/run_ci_suite.py
+```
+
+## Agent Pytest
+
+Run agent tests after changes under `pc_agent/`:
+
+```powershell
+python -m pytest pc_agent/tests -m "not manual" -vv --durations=80
+```
+
+For tray/runtime/update work, also run the focused file named by the relevant playbook, for example:
+
+```powershell
+python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q
+```
+
+## Webapp
+
+Before frontend commands in `webapp/`:
+
+```powershell
+python scripts/bootstrap_web_toolchain.py
+```
+
+For React/admin/support changes:
+
+```powershell
+pnpm --dir webapp run build
+pnpm --dir webapp test:e2e -- admin-workspace.spec.ts
+```
+
+Use the in-app browser for live UI checks on the canonical URL:
+
+```text
+http://192.168.100.17:8666/admin
+```
+
+## CI Diagnostics
+
+`scripts/run_ci_suite.py` uses:
+
+- 45 minutes per server pytest layer.
+- `-vv --durations=80` for each server layer.
+- `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
+
+If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
+
+## When To Run What
+
+- Docs-only or script metadata: `python scripts/verify_workspace.py` plus the matching `scripts/test_*.py`.
+- Server API/handler/repo/schema behavior: server DB/API layer, plus focused files for the touched area.
+- WebSocket, `run_tool`, outbox, in-process agent, UI realtime: server `agent_ws` layer.
+- Agent runtime, launcher, tray, local UI bridge: focused `pc_agent/tests/*`, then live local agent status if runtime behavior changed.
+- Admin/support web UI: focused server API tests, `pnpm --dir webapp run build`, relevant Playwright spec, then browser check.
+- Release/deploy: full `python scripts/run_ci_suite.py`, remote deploy/release script, remote smoke, and browser/live agent checks.
+
+Do not raise timeouts as the first response to slow tests. First look at `--durations=80`, split the layer if needed, and optimize repeated heavy fixture setup such as `test_agent`.
