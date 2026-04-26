@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, GitBranch, Plus, RefreshCcw, ShieldCheck, Trash2, Workflow } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { startTransition, useEffect, useState } from "react";
 
@@ -36,7 +36,16 @@ import {
 } from "../../features/settings/api";
 
 
-type SettingsTab = "overview" | "notifications" | "queues" | "routing" | "sla" | "calendars" | "resolution" | "audit";
+type SettingsTab =
+  | "overview"
+  | "tickets"
+  | "notifications"
+  | "queues"
+  | "routing"
+  | "sla"
+  | "calendars"
+  | "resolution"
+  | "audit";
 type QueueItem = WebSettingsPayload["queues"][number];
 type RoutingRuleItem = WebSettingsPayload["routing_rules"][number];
 type SlaPolicyItem = WebSettingsPayload["sla_policies"][number];
@@ -117,6 +126,7 @@ type PriorityMatrixDraftRow = {
 
 const TAB_ITEMS = [
   { value: "overview", label: "Обзор" },
+  { value: "tickets", label: "Тикеты" },
   { value: "notifications", label: "Уведомления" },
   { value: "queues", label: "Очереди" },
   { value: "routing", label: "Маршрутизация" },
@@ -396,6 +406,45 @@ function SettingsField({
       {children}
     </label>
   );
+}
+
+
+function getTicketStageLabel(stage: string): string {
+  switch (stage) {
+    case "intake":
+      return "Приём";
+    case "work":
+      return "Работа";
+    case "waiting":
+      return "Ожидание";
+    case "review":
+      return "Проверка";
+    case "terminal":
+      return "Финал";
+    default:
+      return stage;
+  }
+}
+
+
+function getTicketStageTone(stage: string) {
+  switch (stage) {
+    case "waiting":
+      return "warning" as const;
+    case "terminal":
+      return "neutral" as const;
+    case "review":
+      return "info" as const;
+    case "work":
+      return "success" as const;
+    default:
+      return "brand" as const;
+  }
+}
+
+
+function formatBooleanFlag(value: boolean): string {
+  return value ? "Включено" : "Выключено";
 }
 
 
@@ -944,6 +993,228 @@ export function SettingsPage() {
                         {payload.capabilities.can_write ? "Разрешён" : "Только чтение"}
                       </p>
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === "tickets" ? (
+            <div className="space-y-6">
+              <div className="grid gap-4 xl:grid-cols-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <Workflow className="h-4 w-4 text-brand-700" />
+                      Статусы
+                    </div>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">
+                      {payload.ticket_settings.internal_statuses.length}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Пользовательских: {payload.ticket_settings.requester_statuses.length}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <ShieldCheck className="h-4 w-4 text-brand-700" />
+                      Governance
+                    </div>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">
+                      {payload.ticket_settings.governance.resolution_validation_mode}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      FSM: {payload.ticket_settings.governance.fsm_mode}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <CheckCircle2 className="h-4 w-4 text-brand-700" />
+                      Паспорт решения
+                    </div>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">
+                      {formatBooleanFlag(payload.ticket_settings.governance.passport_enabled)}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Evidence gate: {formatBooleanFlag(payload.ticket_settings.governance.evidence_gate_enabled)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <GitBranch className="h-4 w-4 text-brand-700" />
+                      SLA / OLA
+                    </div>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">
+                      {formatBooleanFlag(payload.ticket_settings.operational_flags.ola_enabled)}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Calendar SLA: {formatBooleanFlag(payload.ticket_settings.operational_flags.sla_calendar_enabled)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Жизненный цикл тикета</CardTitle>
+                    <CardDescription>
+                      Канонические внутренние статусы, пользовательское отображение и ответственный за следующий шаг.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[760px] text-left text-sm">
+                        <thead className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                          <tr>
+                            <th className="px-3 py-3">Внутренний статус</th>
+                            <th className="px-3 py-3">Для пользователя</th>
+                            <th className="px-3 py-3">Чей ход</th>
+                            <th className="px-3 py-3">Этап</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {payload.ticket_settings.internal_statuses.map((status) => (
+                            <tr key={status.value}>
+                              <td className="px-3 py-4">
+                                <div className="font-semibold text-slate-950">{status.label}</div>
+                                <code className="mt-1 block text-xs text-slate-400">{status.value}</code>
+                              </td>
+                              <td className="px-3 py-4">
+                                <div className="font-medium text-slate-800">{status.requester_label}</div>
+                                <code className="mt-1 block text-xs text-slate-400">{status.requester_status}</code>
+                              </td>
+                              <td className="px-3 py-4">
+                                <code className="text-xs text-slate-600">{status.next_action_owner}</code>
+                              </td>
+                              <td className="px-3 py-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge tone={getTicketStageTone(status.stage)}>{getTicketStageLabel(status.stage)}</Badge>
+                                  {status.waits ? <Badge tone="warning">Wait ledger</Badge> : null}
+                                  {status.terminal ? <Badge tone="neutral">Terminal</Badge> : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Правила закрытия</CardTitle>
+                      <CardDescription>То, что влияет на подтверждаемость решения.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                        <p className="text-slate-500">Подтверждение пользователя</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {formatBooleanFlag(payload.ticket_settings.governance.requester_confirmation_required)}
+                        </p>
+                      </div>
+                      <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                        <p className="text-slate-500">Автозакрытие после решения</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {payload.ticket_settings.governance.auto_close_hours} ч
+                        </p>
+                      </div>
+                      <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                        <p className="text-slate-500">Root cause обязателен для</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {payload.ticket_settings.governance.require_root_cause_priorities.map((priority) => (
+                            <Badge key={priority} tone="warning">{priority}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Operational flags</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      {[
+                        ["Admin config API", payload.ticket_settings.operational_flags.admin_config_api_enabled],
+                        ["Admin config write", payload.ticket_settings.operational_flags.admin_config_write_enabled],
+                        ["Auditor role", payload.ticket_settings.operational_flags.auditor_role_enabled],
+                        ["Retention", payload.ticket_settings.operational_flags.retention_enabled],
+                        ["Retention dry-run", payload.ticket_settings.operational_flags.retention_dry_run],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="flex items-center justify-between rounded-[1rem] bg-surface-subtle px-4 py-3">
+                          <span className="text-slate-500">{label}</span>
+                          <Badge tone={value ? "success" : "neutral"}>{formatBooleanFlag(Boolean(value))}</Badge>
+                        </div>
+                      ))}
+                      <div className="rounded-[1rem] bg-surface-subtle px-4 py-3">
+                        <p className="text-slate-500">Take-self queue mode</p>
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {payload.ticket_settings.operational_flags.take_queue_mode}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          common: {payload.ticket_settings.operational_flags.take_queue_common_code} • test:{" "}
+                          {payload.ticket_settings.operational_flags.take_queue_test_code}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-3">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Пользовательские статусы</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {payload.ticket_settings.requester_statuses.map((item) => (
+                      <div key={item.value} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-950">{item.label}</p>
+                          <Badge tone="neutral">{item.internal_statuses.length}</Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">{item.internal_statuses.join(", ") || "Нет статусов"}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Следующий ответственный</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {payload.ticket_settings.next_action_owners.map((item) => (
+                      <div key={item.value} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-950">{item.label}</p>
+                          <code className="text-xs text-slate-400">{item.value}</code>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">{item.internal_statuses.join(", ") || "Нет статусов"}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Детальные настройки</CardTitle>
+                    <CardDescription>Редактируемые части тикетной системы уже вынесены в соседние вкладки.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3">
+                    <Button onClick={() => setActiveTab("queues")} variant="outline">Очереди и OLA</Button>
+                    <Button onClick={() => setActiveTab("routing")} variant="outline">Маршрутизация</Button>
+                    <Button onClick={() => setActiveTab("sla")} variant="outline">SLA и матрица приоритетов</Button>
+                    <Button onClick={() => setActiveTab("resolution")} variant="outline">Коды решения</Button>
                   </CardContent>
                 </Card>
               </div>

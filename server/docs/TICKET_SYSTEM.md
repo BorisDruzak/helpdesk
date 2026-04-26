@@ -245,6 +245,7 @@ ITSM Problem и Change linkage.
 - **Routing rules:** GET/POST /api/admin/tickets/routing_rules, PATCH /api/admin/tickets/routing_rules/{id}.
 - **SLA policies:** GET/POST/PATCH /api/admin/tickets/sla_policies, POST set_default, PUT targets, PUT priority_matrix.
 - **Audit:** GET /api/admin/tickets/audit (entity_type, entity_id, actor_id, limit, offset).
+- **React settings:** `GET /api/web/settings` includes `ticket_settings` for `/app/settings` -> `Тикеты`: internal/requester status mapping, `next_action_owner`, resolution/evidence/passport governance and operational ticket flags. Editable parts remain in Queues, Routing, SLA, Calendars and Resolution tabs.
 
 ### RBAC
 

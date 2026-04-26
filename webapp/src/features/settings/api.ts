@@ -38,6 +38,52 @@ export type WebSettingsPayload = {
       }>;
     }>;
   };
+  ticket_settings: {
+    internal_statuses: Array<{
+      value: string;
+      label: string;
+      requester_status: string;
+      requester_label: string;
+      next_action_owner: string;
+      stage: string;
+      waits: boolean;
+      terminal: boolean;
+    }>;
+    requester_statuses: Array<{
+      value: string;
+      label: string;
+      internal_statuses: string[];
+    }>;
+    next_action_owners: Array<{
+      value: string;
+      label: string;
+      internal_statuses: string[];
+    }>;
+    governance: {
+      fsm_mode: string;
+      legacy_role_fields: boolean;
+      auto_close_hours: number;
+      resolution_validation_mode: string;
+      require_root_cause_priorities: string[];
+      evidence_gate_enabled: boolean;
+      passport_enabled: boolean;
+      requester_confirmation_required: boolean;
+    };
+    operational_flags: {
+      admin_config_api_enabled: boolean;
+      admin_config_write_enabled: boolean;
+      auditor_role_enabled: boolean;
+      sla_calendar_enabled: boolean;
+      ola_enabled: boolean;
+      retention_enabled: boolean;
+      retention_dry_run: boolean;
+      events_hot_retention_days: number;
+      admin_audit_hot_retention_days: number;
+      take_queue_mode: string;
+      take_queue_common_code: string;
+      take_queue_test_code: string;
+    };
+  };
   queues: Array<{
     id: number;
     code: string;

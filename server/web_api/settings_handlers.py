@@ -8,13 +8,38 @@ from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from auth.middleware import require_auth
-from config import TICKET_ADMIN_CONFIG_API_ENABLED
+from config import (
+    TICKET_ADMIN_AUDIT_HOT_RETENTION_DAYS,
+    TICKET_ADMIN_CONFIG_API_ENABLED,
+    TICKET_ADMIN_CONFIG_WRITE_ENABLED,
+    TICKET_AUDITOR_ROLE_ENABLED,
+    TICKET_AUTO_CLOSE_HOURS,
+    TICKET_EVENTS_HOT_RETENTION_DAYS,
+    TICKET_FSM_MODE,
+    TICKET_LEGACY_ROLE_FIELDS,
+    TICKET_OLA_ENABLED,
+    TICKET_REQUIRE_ROOT_CAUSE_PRIORITIES,
+    TICKET_RESOLUTION_VALIDATION_MODE,
+    TICKET_RETENTION_DRY_RUN,
+    TICKET_RETENTION_ENABLED,
+    TICKET_SLA_CALENDAR_ENABLED,
+    TICKET_TAKE_QUEUE_COMMON_CODE,
+    TICKET_TAKE_QUEUE_MODE,
+    TICKET_TAKE_QUEUE_TEST_CODE,
+)
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
     build_default_ticket_form_pack,
     build_routing_builder_catalog,
     resolve_ticket_form_pack,
     validate_form_pack_schema,
+)
+from tickets.statuses import (
+    CANONICAL_STATUSES,
+    REQUESTER_STATUS_LABELS_RU,
+    STATUS_LABELS_RU,
+    next_action_owner_for_status,
+    requester_status_for_internal,
 )
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.settings import (
@@ -36,7 +61,111 @@ from web_api.dto.settings import (
     WebSettingsRoutingRuleItem,
     WebSettingsSlaPolicyItem,
     WebSettingsSlaTargetItem,
+    WebSettingsNextActionOwnerItem,
+    WebSettingsRequesterStatusItem,
+    WebSettingsTicketGovernancePayload,
+    WebSettingsTicketOperationalFlags,
+    WebSettingsTicketSettingsPayload,
+    WebSettingsTicketStatusItem,
 )
+
+
+NEXT_ACTION_OWNER_LABELS = {
+    "support": "Поддержка",
+    "requester": "Пользователь",
+    "internal_team": "Внутренняя группа",
+    "vendor": "Внешняя сторона",
+    "approver": "Согласующий",
+    "system": "Система",
+}
+
+
+def _status_stage(status: str) -> str:
+    if status in {"new", "queued", "assigned"}:
+        return "intake"
+    if status in {"in_progress", "scheduled"}:
+        return "work"
+    if status.startswith("waiting_on_"):
+        return "waiting"
+    if status == "resolved":
+        return "review"
+    if status in {"closed", "canceled"}:
+        return "terminal"
+    return "work"
+
+
+def _build_ticket_settings_payload() -> WebSettingsTicketSettingsPayload:
+    requester_map: dict[str, list[str]] = {}
+    owner_map: dict[str, list[str]] = {}
+    status_items: list[WebSettingsTicketStatusItem] = []
+
+    for status in CANONICAL_STATUSES:
+        requester_status = requester_status_for_internal(status)
+        owner = next_action_owner_for_status(status)
+        requester_map.setdefault(requester_status, []).append(status)
+        owner_map.setdefault(owner, []).append(status)
+        status_items.append(
+            WebSettingsTicketStatusItem(
+                value=status,
+                label=STATUS_LABELS_RU.get(status, status),
+                requester_status=requester_status,
+                requester_label=REQUESTER_STATUS_LABELS_RU.get(requester_status, requester_status),
+                next_action_owner=owner,
+                stage=_status_stage(status),
+                waits=status.startswith("waiting_on_"),
+                terminal=status in {"resolved", "closed", "canceled"},
+            )
+        )
+
+    root_cause_priorities = [
+        item.strip()
+        for item in TICKET_REQUIRE_ROOT_CAUSE_PRIORITIES.split(",")
+        if item.strip()
+    ]
+
+    return WebSettingsTicketSettingsPayload(
+        internal_statuses=status_items,
+        requester_statuses=[
+            WebSettingsRequesterStatusItem(
+                value=value,
+                label=label,
+                internal_statuses=requester_map.get(value, []),
+            )
+            for value, label in REQUESTER_STATUS_LABELS_RU.items()
+        ],
+        next_action_owners=[
+            WebSettingsNextActionOwnerItem(
+                value=value,
+                label=label,
+                internal_statuses=owner_map.get(value, []),
+            )
+            for value, label in NEXT_ACTION_OWNER_LABELS.items()
+        ],
+        governance=WebSettingsTicketGovernancePayload(
+            fsm_mode=TICKET_FSM_MODE,
+            legacy_role_fields=TICKET_LEGACY_ROLE_FIELDS,
+            auto_close_hours=TICKET_AUTO_CLOSE_HOURS,
+            resolution_validation_mode=TICKET_RESOLUTION_VALIDATION_MODE,
+            require_root_cause_priorities=root_cause_priorities,
+            evidence_gate_enabled=True,
+            passport_enabled=True,
+            requester_confirmation_required=True,
+        ),
+        operational_flags=WebSettingsTicketOperationalFlags(
+            admin_config_api_enabled=TICKET_ADMIN_CONFIG_API_ENABLED,
+            admin_config_write_enabled=TICKET_ADMIN_CONFIG_WRITE_ENABLED,
+            auditor_role_enabled=TICKET_AUDITOR_ROLE_ENABLED,
+            sla_calendar_enabled=TICKET_SLA_CALENDAR_ENABLED,
+            ola_enabled=TICKET_OLA_ENABLED,
+            retention_enabled=TICKET_RETENTION_ENABLED,
+            retention_dry_run=TICKET_RETENTION_DRY_RUN,
+            events_hot_retention_days=TICKET_EVENTS_HOT_RETENTION_DAYS,
+            admin_audit_hot_retention_days=TICKET_ADMIN_AUDIT_HOT_RETENTION_DAYS,
+            take_queue_mode=TICKET_TAKE_QUEUE_MODE,
+            take_queue_common_code=TICKET_TAKE_QUEUE_COMMON_CODE,
+            take_queue_test_code=TICKET_TAKE_QUEUE_TEST_CODE,
+        ),
+    )
 
 
 def _build_routing_builder_payload(pack: dict | None = None) -> WebSettingsRoutingBuilderPayload:
@@ -101,6 +230,7 @@ def _empty_settings_payload(*, actor_role: str) -> WebSettingsPayload:
             audit_records_count=0,
         ),
         routing_builder=_build_routing_builder_payload(),
+        ticket_settings=_build_ticket_settings_payload(),
         queues=[],
         routing_rules=[],
         sla_policies=[],
@@ -221,6 +351,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
                     audit_records_count=len(audit_records),
                 ),
                 routing_builder=_build_routing_builder_payload(form_pack),
+                ticket_settings=_build_ticket_settings_payload(),
                 queues=queue_items,
                 routing_rules=[
                     WebSettingsRoutingRuleItem(
