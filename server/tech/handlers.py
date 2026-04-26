@@ -1841,6 +1841,23 @@ async def _load_agent_actions_for_trace(
         return [], str(exc)
 
 
+async def _sync_agent_action_spans_with_timeout(
+    *,
+    trace_id: str,
+    agent_actions: list[dict[str, Any]],
+    timeout_sec: float = 5.0,
+) -> Optional[dict[str, Any]]:
+    async def _sync() -> Optional[dict[str, Any]]:
+        async with get_session() as sync_session:
+            sync_service = ObserverOverlayService(sync_session)
+            await sync_service.sync_agent_action_spans(trace_id, agent_actions)
+            detail = await sync_service.get_trace_detail(trace_id)
+            await sync_session.commit()
+            return detail
+
+    return await asyncio.wait_for(_sync(), timeout=max(0.5, float(timeout_sec)))
+
+
 def _bundle_next_checks(
     *,
     primary_trace: Optional[dict[str, Any]],
@@ -2153,6 +2170,7 @@ async def handle_tech_traces_search(request: web.Request) -> web.Response:
 async def handle_tech_trace_detail(request: web.Request) -> web.Response:
     trace_id = request.match_info["trace_id"]
     include_agent_actions = _parse_bool(request.query.get("include_agent_actions"))
+    sync_agent_actions = _parse_bool(request.query.get("sync_agent_actions"))
     action_limit = _parse_query_limit(request.query.get("action_limit"), default=50, cap=200)
     action_sync_enabled = True
     action_sync_limit = action_limit
@@ -2199,12 +2217,15 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
                     timeout=20,
                 )
                 agent_actions = [_compact_agent_action_entry(item) for item in _extract_action_trace_entries(response)]
-                if agent_actions and action_sync_enabled:
-                    async with get_session() as sync_session:
-                        sync_service = ObserverOverlayService(sync_session)
-                        await sync_service.sync_agent_action_spans(trace_id, agent_actions)
-                        detail = await sync_service.get_trace_detail(trace_id)
-                        await sync_session.commit()
+                if agent_actions and action_sync_enabled and sync_agent_actions:
+                    synced_detail = await _sync_agent_action_spans_with_timeout(
+                        trace_id=trace_id,
+                        agent_actions=agent_actions,
+                    )
+                    if synced_detail is not None:
+                        detail = synced_detail
+                elif agent_actions and action_sync_enabled:
+                    agent_actions_error = "Agent actions loaded without span sync; pass sync_agent_actions=1 to materialize them."
             except Exception as exc:
                 agent_actions_error = str(exc)
 

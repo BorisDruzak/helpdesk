@@ -551,7 +551,7 @@ async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch:
     monkeypatch.setattr("tech.handlers.send_ws_rpc_request", _fake_send_ws_rpc_request)
 
     detail_resp = await test_client.get(
-        f"/api/admin/tech/traces/{trace_id}?include_agent_actions=1",
+        f"/api/admin/tech/traces/{trace_id}?include_agent_actions=1&sync_agent_actions=1",
         headers=_auth(),
     )
     assert detail_resp.status == 200

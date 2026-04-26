@@ -366,6 +366,14 @@ function TraceDetailCard({
     );
   }
 
+  const agentActions =
+    Array.isArray(bundle?.agent_actions) && bundle.agent_actions.length
+      ? bundle.agent_actions
+      : Array.isArray(detail.agent_actions)
+        ? (detail.agent_actions as ObserverAgentActionItem[])
+        : [];
+  const agentActionsError = bundle?.agent_actions_error ?? detail.agent_actions_error;
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-3">
@@ -561,14 +569,14 @@ function TraceDetailCard({
               </CardDescription>
             </CardHeader>
             <CardContent className="max-h-[min(28vh,18rem)] space-y-3 overflow-y-auto pr-2">
-              {detail.agent_actions_error ? (
+              {agentActionsError ? (
                 <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {detail.agent_actions_error}
+                  {agentActionsError}
                 </div>
               ) : null}
 
-              {Array.isArray(detail.agent_actions) && detail.agent_actions.length ? (
-                (detail.agent_actions as ObserverAgentActionItem[]).map((item, index) => (
+              {agentActions.length ? (
+                agentActions.map((item, index) => (
                   <article key={`${item.action ?? "action"}-${index}`} className="rounded-[1rem] border border-border bg-white px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -744,8 +752,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
     queryKey: ["observer-workbench-trace-detail", selectedTraceId],
     queryFn: () =>
       fetchObserverWorkbenchTraceDetail(selectedTraceId!, {
-        includeAgentActions: true,
-        actionLimit: 120,
+        includeAgentActions: false,
       }),
     enabled: Boolean(selectedTraceId),
     retry: false,

@@ -1108,7 +1108,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, bounded action-span sync, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and compact agent-action-aware trace detail.",
+        summary="Trace overlay, bounded action rows with opt-in action-span sync, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and compact agent-action-aware trace detail.",
         aliases=(
             "observer",
             "trace overlay",
