@@ -70,10 +70,10 @@ echo '{"version":"3.0.0","previous":null}' > "$INSTALL/current.json"
 ```bash
 PC_AGENT_DATA_DIR="$DATA" PC_AGENT_INSTALL_ROOT="$INSTALL" \
 PC_AGENT_WS_URL=ws://127.0.0.1:8666/ws PC_AGENT_API_URL=http://127.0.0.1:8666/api \
-"$INSTALL/launcher" --data-dir "$DATA" --install-root "$INSTALL"
+"$INSTALL/launcher" --data-dir "$DATA" --install-root "$INSTALL" --no-gui
 ```
 
-Launcher читает `current.json`, запускает `versions/<version>/pc_agent` с нужными env; при выходе 42 или наличии `pending_update.json` выполняет установку обновления и перезапуск.
+Launcher читает `current.json`, запускает `versions/<version>/pc_agent` с нужными env; при выходе 42 или наличии `pending_update.json` выполняет установку обновления и перезапуск. Для headless Linux-стендов используйте `--no-gui`: launcher передаст агенту `--no-gui`, и агент не будет поднимать GUI даже если в `settings.yaml` включён `ui.autostart_gui`.
 
 ## Проверка «агент онлайн»
 
@@ -107,7 +107,7 @@ Launcher читает `current.json`, запускает `versions/<version>/pc_
    ```bash
    PC_AGENT_DATA_DIR="$(pwd)/dist/data" PC_AGENT_INSTALL_ROOT="$(pwd)/dist" \
    PC_AGENT_WS_URL=ws://127.0.0.1:8666/ws PC_AGENT_API_URL=http://127.0.0.1:8666/api \
-   ./dist/launcher --data-dir dist/data --install-root dist
+   ./dist/launcher --data-dir dist/data --install-root dist --no-gui
    ```
 
 Либо запустить бинарник агента напрямую с GUI (без лаунчера):

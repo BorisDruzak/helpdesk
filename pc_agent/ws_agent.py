@@ -3520,6 +3520,7 @@ def main():
     parser.add_argument("--data-dir", type=str, default=None, help="Корень данных (БД, логи, модули). По умолчанию: по ОС (LOCALAPPDATA/XDG)")
     parser.add_argument("--install-root", type=str, default=None, help="Корень установки (для launcher; опционально)")
     parser.add_argument("--gui", action="store_true", help="Запустить GUI (альтернатива: config.ui.autostart_gui)")
+    parser.add_argument("--no-gui", action="store_true", help="Запустить агент без GUI, игнорируя config.ui.autostart_gui")
     parser.add_argument("--verify", action="store_true", help="Режим проверки: только init + миграции БД, без WS/GUI (для launcher)")
     args = parser.parse_args()
 
@@ -3537,7 +3538,7 @@ def main():
         return
 
     cfg = get_config()
-    enable_gui = args.gui or (cfg.ui and cfg.ui.autostart_gui)
+    enable_gui = False if args.no_gui else bool(args.gui or (cfg.ui and cfg.ui.autostart_gui))
     logger.info(f"🔍 Аргумент --gui: {args.gui}, итоговый enable_gui: {enable_gui}")
 
     if enable_gui:

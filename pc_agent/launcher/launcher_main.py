@@ -140,6 +140,8 @@ def main() -> None:
         agent_argv = [str(binary_path)]
         if use_gui:
             agent_argv.append("--gui")
+        else:
+            agent_argv.append("--no-gui")
         started_at = time.monotonic()
         proc = subprocess.Popen(
             agent_argv,
