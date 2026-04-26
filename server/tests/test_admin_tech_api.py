@@ -9,6 +9,7 @@ from app.db import get_session
 from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent, UiUserAudit
 from observer.runtime import ObserverRefreshRuntime
 from tech.log_buffer import append_log_record
+from tech.handlers import _compact_agent_action_entry
 
 
 ADMIN_TOKEN = "test-ui-admin-token"
@@ -18,6 +19,32 @@ USER_TOKEN = "test-ui-user:plain-user"
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_compact_agent_action_entry_bounds_large_details() -> None:
+    entry = {
+        "ts": "2026-04-26T08:00:00+00:00",
+        "source": "module",
+        "action": "module.execute",
+        "stage": "finish",
+        "status": "ok",
+        "trace_id": "trace-1",
+        "operation_id": "operation-1",
+        "details": {
+            "module_name": "system",
+            "access_token": "secret-token",
+            "huge_result": [{"name": f"item-{idx}", "value": "x" * 2000} for idx in range(200)],
+            "long_text": "y" * 1000,
+        },
+    }
+
+    compact = _compact_agent_action_entry(entry)
+
+    assert compact["trace_id"] == "trace-1"
+    assert compact["details"]["module_name"] == "system"
+    assert compact["details"]["access_token"] == "***REDACTED***"
+    assert compact["details"]["huge_result"] == {"_type": "array", "_size": 200, "_sample": []}
+    assert len(compact["details"]["long_text"]) < 260
 
 
 @pytest.mark.asyncio

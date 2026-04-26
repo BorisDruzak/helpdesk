@@ -1647,6 +1647,92 @@ def _extract_action_trace_entries(response: dict[str, Any]) -> list[dict[str, An
     return []
 
 
+_ACTION_TRACE_TOP_LEVEL_FIELDS = (
+    "ts",
+    "source",
+    "action",
+    "category",
+    "stage",
+    "status",
+    "summary",
+    "action_id",
+    "parent_action_id",
+    "trace_id",
+    "ticket_id",
+    "operation_id",
+    "message_id",
+    "tool_name",
+    "request_id",
+)
+_ACTION_TRACE_DETAIL_PRIORITY_KEYS = (
+    "module_name",
+    "method_name",
+    "tool_name",
+    "step",
+    "status",
+    "duration_ms",
+    "elapsed_ms",
+    "exit_code",
+    "error",
+    "exception_type",
+)
+
+
+def _compact_agent_action_scalar(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    text = str(value)
+    if len(text) <= 240:
+        return text
+    return f"{text[:237]}..."
+
+
+def _compact_agent_action_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            "_type": "object",
+            "_keys": [str(key) for key in list(value.keys())[:12]],
+            "_size": len(value),
+        }
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        return {
+            "_type": "array",
+            "_size": len(items),
+            "_sample": [_compact_agent_action_scalar(item) for item in items[:3] if not isinstance(item, (dict, list, tuple, set))],
+        }
+    return _compact_agent_action_scalar(value)
+
+
+def _compact_agent_action_details(details: Any) -> dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    for key in _ACTION_TRACE_DETAIL_PRIORITY_KEYS:
+        if key in details:
+            compact[key] = _compact_agent_action_value(details.get(key))
+    for key, value in details.items():
+        if len(compact) >= 12:
+            break
+        key_text = str(key)
+        if key_text in compact:
+            continue
+        compact[key_text] = _compact_agent_action_value(value)
+    if len(details) > len(compact):
+        compact["_omitted_keys"] = max(0, len(details) - len(compact))
+    return compact
+
+
+def _compact_agent_action_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        field: _compact_agent_action_scalar(entry.get(field))
+        for field in _ACTION_TRACE_TOP_LEVEL_FIELDS
+        if entry.get(field) is not None
+    }
+    compact["details"] = _compact_agent_action_details(entry.get("details"))
+    return redact_sensitive_payload(compact)
+
+
 def _serialize_trace_filters(filters: TraceOverlayFilters) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for field_name in filters.__dataclass_fields__:
@@ -1750,7 +1836,7 @@ async def _load_agent_actions_for_trace(
             actor_role="support",
             timeout=20,
         )
-        return [redact_sensitive_payload(item) for item in _extract_action_trace_entries(response)], None
+        return [_compact_agent_action_entry(item) for item in _extract_action_trace_entries(response)], None
     except Exception as exc:
         return [], str(exc)
 
@@ -2112,7 +2198,7 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
                     actor_role="support",
                     timeout=20,
                 )
-                agent_actions = [redact_sensitive_payload(item) for item in _extract_action_trace_entries(response)]
+                agent_actions = [_compact_agent_action_entry(item) for item in _extract_action_trace_entries(response)]
                 if agent_actions and action_sync_enabled:
                     async with get_session() as sync_session:
                         sync_service = ObserverOverlayService(sync_session)

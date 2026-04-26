@@ -153,7 +153,7 @@ New React workspaces:
 - `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
 - `/app/admin/observer` теперь считается полноценным observer workbench, а не просто quick-summary экраном: канонический набор вкладок для React surface — `quick`, `traces`, `signatures`, `degradations`, `runtime`; trace detail обязан показывать spans, error occurrences, span links и agent actions через `GET /api/admin/tech/traces/{trace_id}?include_agent_actions=1`.
 - `/app/admin/observer` trace search работает на сервере: typed traces принимают `q`, `trace_id`, `ticket_id`, `operation_id`, `tool_name`, `module_name`, `error_signature` и `min_duration_ms`, поэтому UI не ограничен фильтрацией первой загруженной страницы.
-- `/app/admin/observer` trace detail показывает `GET /api/admin/tech/diagnostics/bundle` с next checks, logs/audit counters и компактными agent action rows.
+- `/app/admin/observer` trace detail показывает `GET /api/admin/tech/diagnostics/bundle` с next checks, logs/audit counters и компактными agent action rows; server-side action compaction обязан ограничивать большие `details` payloads, чтобы `tool response` traces не подвешивали detail/bundle UI.
 - `/app/admin/observer` допускает гибрид transport model: быстрый список и фильтры идут через typed `/api/web/admin/observer/*`, а signature/degradation/runtime/settings/detail surfaces могут читать прямые tech/settings endpoints (`/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/admin/tech/traces/runtime`, `/api/admin/settings/observer`) пока они остаются canonical source of truth для observer backend.
 - `/app/admin/device` может поверх карточки устройства встраивать тот же typed observer quick slice, но без отдельного transport-контракта: глобальная `/app/admin/observer` и device-centric `/app/admin/device` обязаны читать один и тот же `/api/web/admin/observer/*` boundary.
 - `/app/admin` может рядом показывать typed modules/actions panel (`GET /api/web/admin/modules`, `PATCH /api/web/admin/modules/rollout_settings`, `PATCH /api/web/admin/modules/{module_name}/preferred`), но observer quick/drilldown при этом остаётся изолированным typed tech slice и не должен деградировать до вызовов legacy `/api/admin/tech/*` из module UI.
@@ -201,6 +201,8 @@ Observer runtime обязан:
 - иметь управляемый sampling для шумных success traces.
 
 Observer detail должен оставаться пригодным для диагностики, но не превращаться в экспорт сырых секретов.
+
+Agent action rows в admin tech detail/bundle являются диагностическим индексом, а не raw export: вложенные dict/list значения сворачиваются до типа, размера и небольшого sample, длинные строки обрезаются.
 
 ## 12. Канонический workflow диагностики
 

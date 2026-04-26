@@ -506,7 +506,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, typed `/api/web/*` contracts, role-aware `/app/*` routes, server-driven `default_workspace`/`available_workspaces`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, admin notifications route/tab, honest knowledge placeholder, and typed admin slices for inventory, registry objects, device update actions, modules registry/actions, request-form builder, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode and trace detail with agent actions.",
+        summary="React/Vite `webapp`, typed `/api/web/*` contracts, role-aware `/app/*` routes, server-driven `default_workspace`/`available_workspaces`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, admin notifications route/tab, honest knowledge placeholder, and typed admin slices for inventory, registry objects, device update actions, modules registry/actions, request-form builder, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode, trace detail with compact agent actions, and explicit detail/bundle error states.",
         aliases=(
             "webapp",
             "react app",
@@ -1108,7 +1108,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, action-span sync, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and agent-action-aware trace detail.",
+        summary="Trace overlay, bounded action-span sync, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and compact agent-action-aware trace detail.",
         aliases=(
             "observer",
             "trace overlay",

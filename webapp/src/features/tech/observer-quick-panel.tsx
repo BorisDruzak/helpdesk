@@ -329,12 +329,16 @@ function TraceList({
 
 function TraceDetailCard({
   bundle,
+  bundleError,
   detail,
+  error,
   isBundleLoading,
   isLoading,
 }: {
   bundle: ObserverDiagnosticsBundlePayload | undefined;
+  bundleError?: unknown;
   detail: ObserverTraceDetailPayload | undefined;
+  error?: unknown;
   isBundleLoading: boolean;
   isLoading: boolean;
 }) {
@@ -342,6 +346,14 @@ function TraceDetailCard({
     return (
       <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-sm text-slate-500">
         Загружаем детали выбранной трассы...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-[1.1rem] border border-rose-200 bg-rose-50 px-5 py-10 text-sm text-rose-700">
+        Не удалось загрузить детали трассы: {error instanceof Error ? error.message : "неизвестная ошибка"}.
       </div>
     );
   }
@@ -437,6 +449,11 @@ function TraceDetailCard({
               {isBundleLoading ? (
                 <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-6 text-sm text-slate-500">
                   Собираем bundle...
+                </div>
+              ) : null}
+              {bundleError ? (
+                <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  Bundle не собран: {bundleError instanceof Error ? bundleError.message : "неизвестная ошибка"}.
                 </div>
               ) : null}
 
@@ -1112,7 +1129,9 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
 
           <TraceDetailCard
             bundle={diagnosticsBundleQuery.data}
+            bundleError={diagnosticsBundleQuery.error}
             detail={traceDetailQuery.data}
+            error={traceDetailQuery.error}
             isBundleLoading={diagnosticsBundleQuery.isLoading}
             isLoading={traceDetailQuery.isLoading}
           />
