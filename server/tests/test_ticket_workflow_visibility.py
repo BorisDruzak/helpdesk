@@ -34,6 +34,8 @@ def test_ticket_status_catalog_exposes_product_lifecycle():
         "canceled",
     )
     assert normalize_status("triaged") == ("queued", True)
+    assert normalize_status("In Progress") == ("in_progress", True)
+    assert normalize_status("in-progress") == ("in_progress", True)
     assert normalize_status("waiting_internal") == ("waiting_on_internal_team", True)
     assert normalize_status("cancelled") == ("canceled", True)
 

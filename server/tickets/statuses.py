@@ -66,9 +66,11 @@ _NORMALIZE_MAP = {
     "assigned": "assigned",
     "in_progress": "in_progress",
     "in progress": "in_progress",
+    "in-progress": "in_progress",
     "open": "in_progress",
     "waiting_on_user": "waiting_on_user",
     "waiting on user": "waiting_on_user",
+    "waiting-for-user": "waiting_on_user",
     "waiting_user": "waiting_on_user",
     "waiting_on_internal_team": "waiting_on_internal_team",
     "waiting on internal team": "waiting_on_internal_team",
@@ -210,6 +212,9 @@ def wait_type_for_status(status: Optional[str]) -> Optional[str]:
 def status_label_ru(status: Optional[str]) -> str:
     if not status:
         return "Не указан"
+    canonical, _ = normalize_status(status)
+    if canonical:
+        return STATUS_LABELS_RU.get(canonical, canonical)
     return STATUS_LABELS_RU.get(status, status)
 
 
