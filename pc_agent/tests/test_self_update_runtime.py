@@ -51,6 +51,46 @@ def test_extract_artifact_restores_tar_member_mode_on_posix(monkeypatch, tmp_pat
     assert [(Path(path), mode) for path, mode in chmod_calls] == [(Path(staging_dir / "pc_agent"), 0o755)]
 
 
+def test_extract_artifact_allows_safe_relative_tar_symlink(monkeypatch, tmp_path):
+    artifact_path = tmp_path / "build.tar.gz"
+    staging_dir = tmp_path / "staging"
+    payload = b"library"
+
+    with tarfile.open(artifact_path, "w:gz") as tf:
+        target = tarfile.TarInfo("_internal/libexample.so.1")
+        target.size = len(payload)
+        tf.addfile(target, io.BytesIO(payload))
+        link = tarfile.TarInfo("_internal/libexample.so")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "libexample.so.1"
+        tf.addfile(link)
+
+    symlink_calls = []
+    monkeypatch.setattr(installer_module.os, "name", "posix", raising=False)
+    monkeypatch.setattr(installer_module.os, "symlink", lambda linkname, dest: symlink_calls.append((linkname, Path(dest))))
+
+    extract_artifact("tar.gz", artifact_path, staging_dir)
+
+    assert (staging_dir / "_internal" / "libexample.so.1").read_bytes() == payload
+    assert [(linkname, str(dest).replace("\\", "/")) for linkname, dest in symlink_calls] == [
+        ("libexample.so.1", str(staging_dir / "_internal" / "libexample.so").replace("\\", "/"))
+    ]
+
+
+def test_extract_artifact_rejects_symlink_traversal(tmp_path):
+    artifact_path = tmp_path / "build.tar.gz"
+    staging_dir = tmp_path / "staging"
+
+    with tarfile.open(artifact_path, "w:gz") as tf:
+        link = tarfile.TarInfo("_internal/evil")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../outside"
+        tf.addfile(link)
+
+    with pytest.raises(ValueError, match="Unsafe symlink target"):
+        extract_artifact("tar.gz", artifact_path, staging_dir)
+
+
 def test_apply_update_failure_removes_pending_and_writes_history(tmp_path):
     install_root = tmp_path / "install"
     data_root = tmp_path / "data"

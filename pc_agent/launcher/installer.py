@@ -62,6 +62,18 @@ def _safe_join(base: Path, path: str) -> Path:
     return resolved
 
 
+def _validate_symlink_target(staging_dir: Path, dest: Path, linkname: str) -> None:
+    link_path = Path(linkname)
+    if not linkname or link_path.is_absolute():
+        raise ValueError(f"Unsafe symlink target: {linkname}")
+    resolved = (dest.parent / link_path).resolve()
+    base_resolved = staging_dir.resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        raise ValueError(f"Unsafe symlink target: {linkname}")
+
+
 def extract_artifact(archive_type: str, artifact_path: Path, staging_dir: Path) -> None:
     """
     Распаковывает архив в staging_dir. Защита от zip-slip: все пути внутри staging_dir.
@@ -96,8 +108,16 @@ def extract_artifact(archive_type: str, artifact_path: Path, staging_dir: Path) 
                 dest = _safe_join(staging_dir, name)
                 if member.isdir():
                     dest.mkdir(parents=True, exist_ok=True)
+                elif member.issym():
+                    _validate_symlink_target(staging_dir, dest, member.linkname)
+                    if os.name == "nt":
+                        raise ValueError(f"Unsupported archive member type on Windows: {name}")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if dest.exists() or dest.is_symlink():
+                        dest.unlink()
+                    os.symlink(member.linkname, dest)
                 else:
-                    if member.issym() or member.islnk():
+                    if member.islnk():
                         raise ValueError(f"Unsupported archive member type: {name}")
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     if member.isfile():
@@ -107,7 +127,6 @@ def extract_artifact(archive_type: str, artifact_path: Path, staging_dir: Path) 
                                     dst.write(src.read())
                                 if os.name != "nt":
                                     os.chmod(dest, member.mode & 0o777)
-                    # symlinks etc. можно пропустить или обработать при необходимости
     else:
         raise ValueError(f"Unsupported archive_type: {archive_type}")
 
