@@ -24,12 +24,16 @@ import { Select } from "../../components/ui/select";
 import { Tabs } from "../../components/ui/tabs";
 import {
   fetchSupportQueue,
+  fetchSupportTicketPassport,
   fetchSupportTicketDetail,
   fetchSupportTicketTools,
+  generateSupportTicketPassport,
+  createSupportTicketKnowledgeDraft,
   postSupportTicketMessage,
   postSupportTicketStatus,
   postSupportTicketToolRun,
   type SupportQueueScope,
+  type SupportTicketPassportPayload,
   type SupportTicketDetailPayload,
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
@@ -567,6 +571,113 @@ export function TicketWorkVisibilityCard({
   );
 }
 
+export const PASSPORT_SECTION_LABELS: Array<[string, string]> = [
+  ["requester", "Кто и откуда обратился"],
+  ["problem", "Что произошло"],
+  ["affected_object", "Какой объект затронут"],
+  ["automated_checks", "Что проверили автоматически"],
+  ["operator_checks", "Что проверил оператор"],
+  ["changes_made", "Что изменили"],
+  ["approvals", "Кто согласовал"],
+  ["evidence", "Чем подтверждено решение"],
+  ["user_result", "Итог для пользователя"],
+  ["internal_result", "Внутренний тех. итог"],
+  ["repeat_guidance", "Что делать при повторе"],
+];
+
+export function TicketPassportPanel({
+  isCreatingKnowledgeDraft = false,
+  isGenerating,
+  knowledgeDraftMessage = null,
+  onGenerate,
+  onKnowledgeDraft,
+  onPrint,
+  onRefresh,
+  payload,
+}: {
+  isCreatingKnowledgeDraft?: boolean;
+  isGenerating: boolean;
+  knowledgeDraftMessage?: string | null;
+  onGenerate: () => void;
+  onKnowledgeDraft: () => void;
+  onPrint: () => void;
+  onRefresh: () => void;
+  payload?: SupportTicketPassportPayload;
+}) {
+  if (!payload || !payload.passport) {
+    return (
+      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center">
+        <p className="font-semibold text-slate-950">Паспорт решения ещё не собран</p>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
+          Система соберёт черновик из полей заявки, истории, операций, доказательств и итогов решения.
+        </p>
+        <Button className="mt-5" disabled={isGenerating} onClick={onGenerate}>
+          {isGenerating ? "Собираем..." : "Собрать паспорт"}
+        </Button>
+      </div>
+    );
+  }
+
+  const passport = payload.passport;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 rounded-[1.1rem] border border-border bg-white px-5 py-5 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-700">Паспорт решения</p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">Версия {passport.version}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Собран {formatDateTime(passport.generated_at)} • источник: {passport.summary_source}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={isGenerating} onClick={onRefresh} size="sm" variant="outline">
+            Обновить по последним действиям
+          </Button>
+          <Button onClick={onPrint} size="sm" variant="outline">
+            Печать / PDF
+          </Button>
+          <Button disabled={isCreatingKnowledgeDraft} onClick={onKnowledgeDraft} size="sm" variant="outline">
+            {isCreatingKnowledgeDraft ? "Готовим черновик..." : "Сохранить как черновик знания"}
+          </Button>
+        </div>
+      </div>
+
+      {knowledgeDraftMessage ? (
+        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+          {knowledgeDraftMessage}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {PASSPORT_SECTION_LABELS.map(([key, label]) => (
+          <div key={key} className="rounded-[1.1rem] border border-border bg-white px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
+            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700">
+              {passport.sections[key] || "Нет данных"}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Доказательства</p>
+          <p className="mt-2 text-lg font-semibold text-slate-950">{payload.evidence.length}</p>
+        </div>
+        <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Действия</p>
+          <p className="mt-2 text-lg font-semibold text-slate-950">{payload.actions.length}</p>
+        </div>
+        <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Согласования</p>
+          <p className="mt-2 text-lg font-semibold text-slate-950">{payload.approvals.length}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TicketDetailPage() {
   const navigate = useNavigate();
   const { ticketId } = useParams();
@@ -582,6 +693,7 @@ export function TicketDetailPage() {
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [toolParams, setToolParams] = useState<Record<string, string>>({});
   const [toolSearch, setToolSearch] = useState("");
+  const [knowledgeDraftMessage, setKnowledgeDraftMessage] = useState<string | null>(null);
   const deferredQueueSearch = useDeferredValue(queueSearch);
   const deferredToolSearch = useDeferredValue(toolSearch);
 
@@ -611,9 +723,17 @@ export function TicketDetailPage() {
     retry: false,
   });
 
+  const passportQuery = useQuery({
+    queryKey: ["ticket-passport", ticketId],
+    queryFn: () => fetchSupportTicketPassport(ticketId!),
+    enabled: Boolean(ticketId),
+    retry: false,
+  });
+
   useEffect(() => {
     setStatusAction("");
     setMessageDraft("");
+    setKnowledgeDraftMessage(null);
   }, [ticketId]);
 
   const toolList = toolsQuery.data?.tools ?? [];
@@ -657,6 +777,7 @@ export function TicketDetailPage() {
     return realtimeClient.subscribeTicket(ticketId, () => {
       void queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
       void queryClient.invalidateQueries({ queryKey: ["ticket-tools", ticketId] });
+      void queryClient.invalidateQueries({ queryKey: ["ticket-passport", ticketId] });
       void queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] });
     });
   }, [queryClient, ticketId]);
@@ -714,12 +835,41 @@ export function TicketDetailPage() {
     },
   });
 
+  const passportGenerateMutation = useMutation({
+    mutationFn: async (mode: "create" | "refresh") => {
+      if (!ticketId) {
+        throw new Error("Карточка тикета не выбрана.");
+      }
+      return generateSupportTicketPassport(ticketId, mode);
+    },
+    onSuccess: async () => {
+      setKnowledgeDraftMessage(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ticket-passport", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
+      ]);
+    },
+  });
+
+  const knowledgeDraftMutation = useMutation({
+    mutationFn: async () => {
+      if (!ticketId) {
+        throw new Error("Карточка тикета не выбрана.");
+      }
+      return createSupportTicketKnowledgeDraft(ticketId);
+    },
+    onSuccess: (draft) => {
+      setKnowledgeDraftMessage(`Черновик знания подготовлен: ${draft.title}`);
+    },
+  });
+
   if (!ticketId) {
     return <Navigate replace to="/app/tickets" />;
   }
 
   const queue = queueQuery.data;
   const detail = detailQuery.data;
+  const passport = passportQuery.data;
   const attachments = detail ? flattenAttachments(ticketId, detail.timeline) : [];
   const historyItems = detail?.timeline.filter((entry) => entry.event_type !== "chat_message") ?? [];
   const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
@@ -731,6 +881,7 @@ export function TicketDetailPage() {
     { value: "info", label: "Информация" },
     { value: "files", label: "Файлы", count: attachments.length },
     { value: "history", label: "История", count: historyItems.length + latestOperations.length },
+    { value: "passport", label: "Паспорт", count: passport?.passport ? passport.passport.version : undefined },
   ];
 
   return (
@@ -805,7 +956,7 @@ export function TicketDetailPage() {
             disabled={detailQuery.isFetching || toolsQuery.isFetching}
             leadingIcon={<RefreshCcw className="h-4 w-4" />}
             onClick={() => {
-              void Promise.all([detailQuery.refetch(), queueQuery.refetch(), toolsQuery.refetch()]);
+              void Promise.all([detailQuery.refetch(), queueQuery.refetch(), toolsQuery.refetch(), passportQuery.refetch()]);
             }}
             size="sm"
             variant="outline"
@@ -1196,6 +1347,31 @@ export function TicketDetailPage() {
                     )}
                   </div>
                 </div>
+              ) : null}
+
+              {activeTab === "passport" ? (
+                passportQuery.isLoading ? (
+                  <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                    Загружаем паспорт решения...
+                  </div>
+                ) : passportQuery.isError ? (
+                  <div className="rounded-[1.1rem] border border-rose-200 bg-rose-50 px-5 py-5 text-sm text-rose-700">
+                    {passportQuery.error instanceof Error
+                      ? passportQuery.error.message
+                      : "Не удалось загрузить паспорт решения."}
+                  </div>
+                ) : (
+                  <TicketPassportPanel
+                    isCreatingKnowledgeDraft={knowledgeDraftMutation.isPending}
+                    isGenerating={passportGenerateMutation.isPending}
+                    knowledgeDraftMessage={knowledgeDraftMessage}
+                    onGenerate={() => passportGenerateMutation.mutate("create")}
+                    onKnowledgeDraft={() => knowledgeDraftMutation.mutate()}
+                    onPrint={() => navigate(`/app/tickets/${ticketId}/passport/print`)}
+                    onRefresh={() => passportGenerateMutation.mutate("refresh")}
+                    payload={passport}
+                  />
+                )
               ) : null}
             </div>
 

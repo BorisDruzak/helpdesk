@@ -209,6 +209,84 @@ export type SupportTicketToolsPayload = {
   }>;
 };
 
+export type SupportTicketPassportPayload = {
+  ticket_id: string;
+  status: string;
+  passport: {
+    passport_id: number;
+    ticket_id: string;
+    version: number;
+    status: string;
+    summary_source: string;
+    generated_at: string | null;
+    generated_by: string | null;
+    updated_at: string | null;
+    updated_by: string | null;
+    sections: Record<string, string>;
+    source_event_ids: number[];
+    source_operation_ids: string[];
+    source_payload: Record<string, unknown>;
+    stale: boolean;
+  } | null;
+  evidence: Array<{
+    id: number;
+    ticket_id: string;
+    passport_id: number | null;
+    evidence_type: string;
+    source_ref: string | null;
+    title: string;
+    summary: string | null;
+    visibility: string;
+    created_by: string | null;
+    created_at: string | null;
+  }>;
+  actions: Array<{
+    id: number;
+    ticket_id: string;
+    passport_id: number | null;
+    action_type: string;
+    actor_id: string | null;
+    source_event_id: number | null;
+    operation_id: string | null;
+    title: string;
+    summary: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    created_at: string | null;
+  }>;
+  approvals: Array<{
+    id: number;
+    ticket_id: string;
+    passport_id: number | null;
+    approval_type: string;
+    approver_id: string | null;
+    status: string;
+    reason: string | null;
+    requested_by: string | null;
+    requested_at: string | null;
+    decided_at: string | null;
+  }>;
+  related_objects: Array<{
+    id: number;
+    ticket_id: string;
+    passport_id: number | null;
+    object_type: string;
+    object_ref: string;
+    display_name: string | null;
+    relation_type: string;
+    source: string;
+    created_at: string | null;
+  }>;
+};
+
+export type SupportTicketKnowledgeDraftPayload = {
+  title: string;
+  problem: string;
+  resolution: string;
+  repeat_guidance: string;
+  source_passport_id: number;
+};
+
 export type SupportToolActionResult = {
   ticket_id: string;
   device_id: string;
@@ -389,6 +467,69 @@ export async function fetchSupportTicketTools(ticketId: string): Promise<Support
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить список инструментов",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportTicketPassport(ticketId: string): Promise<SupportTicketPassportPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPassportPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить паспорт решения",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function generateSupportTicketPassport(
+  ticketId: string,
+  mode: "create" | "refresh"
+): Promise<SupportTicketPassportPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/generate`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ mode })
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPassportPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось собрать паспорт решения",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function createSupportTicketKnowledgeDraft(ticketId: string): Promise<SupportTicketKnowledgeDraftPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/knowledge-draft`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketKnowledgeDraftPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось подготовить черновик знания",
       response.status,
       errorPayload?.error_code
     );

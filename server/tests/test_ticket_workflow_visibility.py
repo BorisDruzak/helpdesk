@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Ticket, TicketWait
+from app.db.models import Ticket, TicketEvidenceItem, TicketWait
 from app.api.serializers import ticket_to_dict
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.statuses import (
@@ -176,3 +176,61 @@ async def test_workflow_updates_next_owner_requester_status_and_wait_ledger(test
         assert ticket.status_reason is None
         assert closed_wait.ended_at is not None
         assert closed_wait.closed_by == "network-op"
+
+
+@pytest.mark.asyncio
+async def test_resolved_requires_evidence_when_ticket_requires_it(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=str(uuid.uuid4()),
+            title="Evidence governed ticket",
+            description="Resolution must be backed by proof",
+            status="in_progress",
+            requester_id="user-a",
+            next_action_owner="support",
+            requester_status="in_work",
+            evidence_required=True,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+
+        with pytest.raises(ValueError, match="требуется подтверждение"):
+            await workflow.apply_status_transition(
+                ticket_id=ticket_id,
+                from_status="in_progress",
+                to_status="resolved",
+                actor_id="support-test",
+                actor_role="support",
+                reason="done",
+            )
+
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="operation",
+                source_ref="operation-1",
+                title="Диагностика",
+                summary="Проверка завершена успешно",
+                visibility="internal",
+                created_by="support-test",
+            )
+        )
+        await session.flush()
+
+        result = await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status="in_progress",
+            to_status="resolved",
+            actor_id="support-test",
+            actor_role="support",
+            reason="done",
+        )
+
+        assert result["updates"]["status"] == "resolved"

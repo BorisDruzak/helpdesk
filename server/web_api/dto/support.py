@@ -328,6 +328,135 @@ class SupportTicketToolsPayload(BaseModel):
     tools: list[SupportToolItem] = Field(default_factory=list)
 
 
+class SupportTicketPassportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    passport_id: int
+    ticket_id: str
+    version: int
+    status: str
+    summary_source: str
+    generated_at: str | None = None
+    generated_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+    sections: dict[str, str] = Field(default_factory=dict)
+    source_event_ids: list[int] = Field(default_factory=list)
+    source_operation_ids: list[str] = Field(default_factory=list)
+    source_payload: dict[str, Any] = Field(default_factory=dict)
+    stale: bool = False
+
+
+class SupportTicketEvidenceItemPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    ticket_id: str
+    passport_id: int | None = None
+    evidence_type: str
+    source_ref: str | None = None
+    title: str
+    summary: str | None = None
+    visibility: str
+    created_by: str | None = None
+    created_at: str | None = None
+
+
+class SupportTicketActionLogPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    ticket_id: str
+    passport_id: int | None = None
+    action_type: str
+    actor_id: str | None = None
+    source_event_id: int | None = None
+    operation_id: str | None = None
+    title: str
+    summary: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    created_at: str | None = None
+
+
+class SupportTicketApprovalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    ticket_id: str
+    passport_id: int | None = None
+    approval_type: str
+    approver_id: str | None = None
+    status: str
+    reason: str | None = None
+    requested_by: str | None = None
+    requested_at: str | None = None
+    decided_at: str | None = None
+
+
+class SupportTicketRelatedObjectPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    ticket_id: str
+    passport_id: int | None = None
+    object_type: str
+    object_ref: str
+    display_name: str | None = None
+    relation_type: str
+    source: str
+    created_at: str | None = None
+
+
+class SupportTicketPassportDetailPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    status: str
+    passport: SupportTicketPassportPayload | None = None
+    evidence: list[SupportTicketEvidenceItemPayload] = Field(default_factory=list)
+    actions: list[SupportTicketActionLogPayload] = Field(default_factory=list)
+    approvals: list[SupportTicketApprovalPayload] = Field(default_factory=list)
+    related_objects: list[SupportTicketRelatedObjectPayload] = Field(default_factory=list)
+
+
+class SupportTicketPassportGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = "refresh"
+    include_internal_notes: bool = True
+
+
+class SupportTicketPassportPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator_check_summary: str | None = None
+    changes_made_summary: str | None = None
+    repeat_guidance: str | None = None
+    user_result_summary: str | None = None
+    internal_result_summary: str | None = None
+
+
+class SupportTicketPassportEvidenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_type: str
+    source_ref: str | None = None
+    title: str
+    summary: str | None = None
+    visibility: str = "internal"
+
+
+class SupportTicketKnowledgeDraftPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    problem: str
+    resolution: str
+    repeat_guidance: str
+    source_passport_id: int
+
+
 class SupportToolActionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

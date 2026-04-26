@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { TicketRequestFormCard, TicketWorkVisibilityCard } from "./detail-page";
+import { TicketPassportPanel, TicketRequestFormCard, TicketWorkVisibilityCard } from "./detail-page";
 
 describe("TicketRequestFormCard", () => {
   it("renders structured request form data", () => {
@@ -26,6 +26,83 @@ describe("TicketRequestFormCard", () => {
     expect(screen.getAllByText("printer").length).toBeGreaterThan(0);
     expect(screen.getByText("HP LaserJet Pro M404")).toBeInTheDocument();
     expect(screen.getByText("PRN-214-01")).toBeInTheDocument();
+  });
+});
+
+describe("TicketPassportPanel", () => {
+  const passportPayload = {
+    ticket_id: "ticket-1",
+    status: "draft",
+    passport: {
+      passport_id: 1,
+      ticket_id: "ticket-1",
+      version: 2,
+      status: "draft",
+      summary_source: "deterministic",
+      generated_at: "2026-04-26T13:00:00Z",
+      generated_by: "op1",
+      updated_at: "2026-04-26T13:00:00Z",
+      updated_by: "op1",
+      sections: {
+        requester: "Иванов Иван, кабинет 214",
+        problem: "Не печатает принтер",
+        affected_object: "Принтер HP",
+        automated_checks: "system.collect: успешно",
+        operator_checks: "Проверена очередь печати",
+        changes_made: "Перезапущена служба печати",
+        approvals: "Согласования не требовались",
+        evidence: "operation-1",
+        user_result: "Печать восстановлена",
+        internal_result: "Ошибка драйвера",
+        repeat_guidance: "При повторе приложить скриншот",
+      },
+      source_event_ids: [1],
+      source_operation_ids: ["operation-1"],
+      source_payload: {},
+      stale: false,
+    },
+    evidence: [],
+    actions: [],
+    approvals: [],
+    related_objects: [],
+  };
+
+  it("renders missing passport action", () => {
+    render(
+      <TicketPassportPanel
+        isGenerating={false}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={{ ticket_id: "ticket-1", status: "missing", passport: null, evidence: [], actions: [], approvals: [], related_objects: [] }}
+      />,
+    );
+
+    expect(screen.getByText("Собрать паспорт")).toBeInTheDocument();
+  });
+
+  it("renders official passport sections and actions", () => {
+    render(
+      <TicketPassportPanel
+        isGenerating={false}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={passportPayload}
+      />,
+    );
+
+    expect(screen.getByText("Паспорт решения")).toBeInTheDocument();
+    expect(screen.getByText("Кто и откуда обратился")).toBeInTheDocument();
+    expect(screen.getByText("Что произошло")).toBeInTheDocument();
+    expect(screen.getByText("Что проверили автоматически")).toBeInTheDocument();
+    expect(screen.getByText("Что изменили")).toBeInTheDocument();
+    expect(screen.getByText("Чем подтверждено решение")).toBeInTheDocument();
+    expect(screen.getByText("Обновить по последним действиям")).toBeInTheDocument();
+    expect(screen.getByText("Печать / PDF")).toBeInTheDocument();
+    expect(screen.getByText("Сохранить как черновик знания")).toBeInTheDocument();
   });
 });
 

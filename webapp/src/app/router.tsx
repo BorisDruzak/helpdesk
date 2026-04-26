@@ -21,6 +21,7 @@ import { ReportsPage } from "../pages/reports";
 import { SettingsPage } from "../pages/settings";
 import { TicketDetailPage } from "../pages/tickets/detail-page";
 import { TicketListPage } from "../pages/tickets/list-page";
+import { TicketPassportPrintPage } from "../pages/tickets/passport-print-page";
 
 function SessionState({
   description,
@@ -151,6 +152,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="support">
                 <TicketDetailPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "tickets/:ticketId/passport/print",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <TicketPassportPrintPage />
               </WorkspaceAccessGate>
             )
           },

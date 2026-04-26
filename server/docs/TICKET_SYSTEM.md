@@ -21,6 +21,7 @@
 - Support ticket list включает queue-less active tickets как triage backlog; detail/snapshot для таких тикетов не должен давать `403`.
 - `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh и reverse pagination через `before_event_id` + `limit`; агентский GUI открывает тикет с tail-page и догружает старую историю вверх без полного reload всей ленты.
 - При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`; `closed` для таких тикетов разрешён только после подтверждения requester.
+- Для проверяемого закрытия в госсекторном контуре тикет может иметь `evidence_required=true`; переход в `resolved` тогда запрещён без `evidence_ref` или записи в `ticket_evidence_items`, а официальный `Паспорт решения` собирается из фактов тикета, событий, операций, worklog, согласований и доказательств.
 
 ---
 
@@ -164,6 +165,9 @@
 ### Resolution governance
 
 - **GET** `/api/tickets/resolution_codes` — справочник кодов. **POST** `/api/tickets/{id}/status` при переходе в Resolved/Closed: `TicketResolutionPolicyService.validate` в режиме warn | enforce. Событие `resolution_policy_warning` (warn).
+- **Паспорт решения:** миграция `059` добавляет `ticket_resolution_passports`, `ticket_evidence_items`, `ticket_action_log`, `ticket_approvals`, `ticket_related_objects`. `TicketPassportService` собирает версионированный паспорт из полей заявки, requester/device контекста, `ticket_events`, worklog, операций, evidence и approvals без выдумывания фактов; повторный refresh создаёт новую версию.
+- **Typed web API:** support/admin используют `GET /api/web/support/tickets/{ticket_id}/passport`, `POST /api/web/support/tickets/{ticket_id}/passport/generate`, `PATCH /api/web/support/tickets/{ticket_id}/passport`, `POST /api/web/support/tickets/{ticket_id}/passport/evidence`, `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft`.
+- **React UI:** `/app/tickets/:ticketId` содержит вкладку `Паспорт` с действиями `Собрать паспорт`, `Обновить по последним действиям`, `Печать / PDF`, `Сохранить как черновик знания`; печатная форма живёт на `/app/tickets/:ticketId/passport/print`.
 
 ### Метрики (GET; RBAC support/admin)
 

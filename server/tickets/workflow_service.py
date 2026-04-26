@@ -9,7 +9,7 @@ from typing import List, Optional
 from loguru import logger
 from sqlalchemy import select
 
-from app.db.models import TicketWait
+from app.db.models import TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
@@ -143,6 +143,17 @@ class TicketWorkflowService:
 
         if to_status == "resolved":
             ticket = await self.ticket_repo.get_ticket(ticket_id)
+            if ticket and getattr(ticket, "evidence_required", False) and not getattr(ticket, "evidence_ref", None):
+                evidence_exists = await self.session.scalar(
+                    select(TicketEvidenceItem.id)
+                    .where(TicketEvidenceItem.ticket_id == ticket_id)
+                    .limit(1)
+                )
+                if evidence_exists is None:
+                    raise ValueError(
+                        "Для решения тикета требуется подтверждение: "
+                        "добавьте доказательство или ссылку evidence_ref"
+                    )
             if ticket and getattr(ticket, "resolved_at", None) is None:
                 updates["resolved_at"] = now
 

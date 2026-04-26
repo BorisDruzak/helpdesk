@@ -6,9 +6,11 @@ from loguru import logger
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
+from app.db.models import TicketResolutionPassport
 from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from app.repos.ticket_passport_repo import TicketPassportRepo
 from auth.middleware import require_auth
 from observer.service import ObserverOverlayService
 from tickets.handlers import (
@@ -33,6 +35,7 @@ from tickets.statuses import (
     status_label_ru,
 )
 from tickets.sla_service import TicketSlaService
+from tickets.passport_service import TicketPassportService
 from tickets.workflow_service import TicketWorkflowService, validate_transition
 from tools.service import ToolExecutionService
 from web_api.dto.common import SuccessResponse, json_model_response
@@ -56,6 +59,10 @@ from web_api.dto.support import (
     SupportTicketObserverPayload,
     SupportTicketObserverSummary,
     SupportTicketOperationSnapshot,
+    SupportTicketPassportDetailPayload,
+    SupportTicketPassportEvidenceRequest,
+    SupportTicketPassportGenerateRequest,
+    SupportTicketPassportPatchRequest,
     SupportTicketPresence,
     SupportTicketQueueInfo,
     SupportTicketQueueMember,
@@ -65,6 +72,7 @@ from web_api.dto.support import (
     SupportTicketReplyTo,
     SupportTicketSnapshot,
     SupportTicketToolsPayload,
+    SupportTicketKnowledgeDraftPayload,
     SupportToolActionResult,
     SupportToolItem,
     SupportToolParameter,
@@ -802,6 +810,220 @@ async def handle_web_support_ticket_tools(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[SupportTicketToolsPayload](data=payload))
+
+
+def _passport_payload_model(payload: dict) -> SupportTicketPassportDetailPayload:
+    return SupportTicketPassportDetailPayload.model_validate(payload)
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_passport(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить паспорт решения",
+                "error_code": "PASSPORT_UNAVAILABLE",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_passport_generate(request: web.Request):
+    try:
+        raw = await request.json()
+    except Exception:
+        raw = {}
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        return web.json_response({"status": "error", "error": "Тело запроса должно быть объектом"}, status=400)
+    data = SupportTicketPassportGenerateRequest.model_validate(raw)
+    mode = data.mode if data.mode in {"create", "refresh"} else "refresh"
+
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            if error:
+                return error
+            payload = await TicketPassportService(session).generate(
+                ticket.ticket_id,
+                actor_id=auth_context.actor_id,
+                mode=mode,
+                include_internal_notes=data.include_internal_notes,
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_generate] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось собрать паспорт решения",
+                "error_code": "PASSPORT_GENERATE_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_passport_patch(request: web.Request):
+    try:
+        raw = await request.json()
+    except Exception:
+        return web.json_response({"status": "error", "error": "Некорректный JSON"}, status=400)
+    if not isinstance(raw, dict):
+        return web.json_response({"status": "error", "error": "Тело запроса должно быть объектом"}, status=400)
+    data = SupportTicketPassportPatchRequest.model_validate(raw)
+
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            if error:
+                return error
+            repo = TicketPassportRepo(session)
+            passport = await repo.get_latest_passport(ticket.ticket_id)
+            if passport is None:
+                payload = await TicketPassportService(session).generate(
+                    ticket.ticket_id,
+                    actor_id=auth_context.actor_id,
+                    mode="create",
+                )
+                passport_id = payload["passport"]["passport_id"]
+                passport = await session.get(TicketResolutionPassport, passport_id)
+            await repo.update_passport_sections(
+                passport,
+                updated_by=auth_context.actor_id,
+                sections=data.model_dump(exclude_none=True),
+            )
+            await session.commit()
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_patch] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось обновить паспорт решения",
+                "error_code": "PASSPORT_UPDATE_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_passport_evidence(request: web.Request):
+    try:
+        raw = await request.json()
+    except Exception:
+        return web.json_response({"status": "error", "error": "Некорректный JSON"}, status=400)
+    if not isinstance(raw, dict):
+        return web.json_response({"status": "error", "error": "Тело запроса должно быть объектом"}, status=400)
+    data = SupportTicketPassportEvidenceRequest.model_validate(raw)
+    visibility = data.visibility if data.visibility in {"public", "internal"} else "internal"
+
+    try:
+        async with get_session() as session:
+            ticket, error, ticket_repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            if error:
+                return error
+            repo = TicketPassportRepo(session)
+            passport = await repo.get_latest_passport(ticket.ticket_id)
+            item = await repo.add_evidence(
+                ticket_id=ticket.ticket_id,
+                passport_id=passport.id if passport else None,
+                evidence_type=data.evidence_type,
+                source_ref=data.source_ref,
+                title=data.title,
+                summary=data.summary,
+                visibility=visibility,
+                created_by=auth_context.actor_id,
+            )
+            if not ticket.evidence_ref:
+                await ticket_repo.update_ticket(ticket.ticket_id, evidence_ref=data.source_ref or f"evidence:{item.id}")
+            await ticket_repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type="passport_evidence_added",
+                payload={
+                    "event_id": f"passport-evidence-{item.id}",
+                    "actor_id": auth_context.actor_id,
+                    "evidence_id": item.id,
+                    "evidence_type": item.evidence_type,
+                    "title": item.title,
+                },
+                event_id=f"passport-evidence-{item.id}",
+            )
+            await session.commit()
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_evidence] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось добавить доказательство",
+                "error_code": "PASSPORT_EVIDENCE_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_passport_knowledge_draft(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+            passport = payload.get("passport")
+            if not passport:
+                payload = await TicketPassportService(session).generate(ticket.ticket_id, actor_id=None, mode="create")
+                passport = payload["passport"]
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_knowledge_draft] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось подготовить черновик знания",
+                "error_code": "PASSPORT_KB_DRAFT_FAILED",
+            },
+            status=503,
+        )
+    sections = passport.get("sections") or {}
+    draft = SupportTicketKnowledgeDraftPayload(
+        title=f"Решение по тикету {request.match_info.get('ticket_id')}",
+        problem=sections.get("problem") or "Проблема не описана",
+        resolution=sections.get("user_result") or sections.get("changes_made") or "Решение не описано",
+        repeat_guidance=sections.get("repeat_guidance") or "При повторе создать заявку с деталями ошибки.",
+        source_passport_id=int(passport["passport_id"]),
+    )
+    return json_model_response(SuccessResponse[SupportTicketKnowledgeDraftPayload](data=draft))
 
 
 @require_auth("admin", "support")

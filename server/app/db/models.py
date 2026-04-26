@@ -217,6 +217,198 @@ class TicketWait(Base):
     )
 
 
+class TicketResolutionPassport(Base):
+    """Versioned generated resolution passport for a ticket."""
+
+    __tablename__ = "ticket_resolution_passports"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    summary_source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="deterministic")
+    requester_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    problem_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    affected_object_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    automated_checks_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    operator_checks_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changes_made_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approvals_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    internal_result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    repeat_guidance: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_event_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    source_operation_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    source_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    generated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "version", name="uq_ticket_resolution_passports_ticket_version"),
+        Index("ix_ticket_resolution_passports_ticket_generated", "ticket_id", "generated_at"),
+    )
+
+
+class TicketEvidenceItem(Base):
+    """Evidence attached to a ticket passport or directly to a ticket."""
+
+    __tablename__ = "ticket_evidence_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    passport_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    evidence_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, server_default="internal")
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_ticket_evidence_items_ticket_created", "ticket_id", "created_at"),
+        Index("ix_ticket_evidence_items_passport", "passport_id"),
+    )
+
+
+class TicketActionLog(Base):
+    """Action row used by the resolution passport."""
+
+    __tablename__ = "ticket_action_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    passport_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_event_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_ticket_action_log_ticket_created", "ticket_id", "created_at"),
+        Index("ix_ticket_action_log_operation", "operation_id"),
+    )
+
+
+class TicketApproval(Base):
+    """Approval record for governed ticket work."""
+
+    __tablename__ = "ticket_approvals"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    passport_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    approval_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    approver_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="requested")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    decided_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_ticket_approvals_ticket_status", "ticket_id", "status"),
+        Index("ix_ticket_approvals_approver_status", "approver_id", "status"),
+    )
+
+
+class TicketRelatedObject(Base):
+    """Object relation captured for the resolution passport."""
+
+    __tablename__ = "ticket_related_objects"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    passport_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    object_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    relation_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="snapshot")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id",
+            "object_type",
+            "object_ref",
+            "relation_type",
+            name="uq_ticket_related_objects_unique_relation",
+        ),
+        Index("ix_ticket_related_objects_ticket", "ticket_id"),
+        Index("ix_ticket_related_objects_passport", "passport_id"),
+    )
+
+
 class TicketQueue(Base):
     """Очередь тикетов (ServiceDesk L1, SysAdmins, Network, 1C, Security и т.д.)."""
     __tablename__ = "ticket_queues"
