@@ -195,6 +195,8 @@ function SupportQueuePanel({
               <p>{ticket.requester_display_name ?? "Инициатор не указан"}</p>
               <div className="support-ticket-card__meta">
                 <span>{ticket.queue_code ?? "Без очереди"}</span>
+                <span>Ход: {ticket.next_action_owner ?? "support"}</span>
+                <span>{ticket.requester_status_label}</span>
                 <span>{formatDateTime(ticket.updated_at ?? ticket.created_at)}</span>
                 <span>{ticket.unread_user_messages > 0 ? `${ticket.unread_user_messages} непрочит.` : "без новых"}</span>
               </div>
@@ -428,6 +430,7 @@ function SupportDetailPanel({
 
           <div className="support-ticket-layout__actions">
             <div className="support-ticket-layout__status-pill">{ticketDetail.ticket.status_label}</div>
+            <div className="support-ticket-layout__status-pill">{ticketDetail.ticket.requester_status_label}</div>
             {statusOptions.length ? (
               <div className="support-status-actions">
                 {statusOptions.map((option) => (
@@ -690,6 +693,22 @@ function SupportDetailPanel({
                 <div>
                   <dt>Статус</dt>
                   <dd>{ticketDetail.ticket.status_label}</dd>
+                </div>
+                <div>
+                  <dt>Статус для пользователя</dt>
+                  <dd>{ticketDetail.ticket.requester_status_label}</dd>
+                </div>
+                <div>
+                  <dt>Чей ход</dt>
+                  <dd>{ticketDetail.ticket.next_action_owner ?? "support"}</dd>
+                </div>
+                <div>
+                  <dt>Причина ожидания</dt>
+                  <dd>{ticketDetail.ticket.status_reason ?? "не указана"}</dd>
+                </div>
+                <div>
+                  <dt>Следующий срок</dt>
+                  <dd>{formatDateTime(ticketDetail.ticket.next_action_due_at)}</dd>
                 </div>
                 <div>
                   <dt>Инициатор</dt>

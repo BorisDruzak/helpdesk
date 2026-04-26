@@ -17,6 +17,7 @@ from tickets.form_catalog import (
     humanize_request_kind,
     resolve_ticket_form_pack,
 )
+from tickets.statuses import status_label_ru
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.reports import (
     WebReportsAgingBucketItem,
@@ -76,7 +77,7 @@ def _priority_label(value: str | None) -> str:
 
 def _status_label(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
-    return _STATUS_LABELS.get(normalized, normalized or "Неизвестно")
+    return status_label_ru(normalized) if normalized else "Неизвестно"
 
 
 def _request_kind_label(value: str | None, *, label_map: dict[str, str] | None = None) -> str:

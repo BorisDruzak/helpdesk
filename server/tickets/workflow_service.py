@@ -1,37 +1,81 @@
-"""
-Workflow тикетов (Stage 3): FSM переходов статусов + side effects (SLA, resolved_at, reopen).
+"""Ticket workflow FSM and side effects."""
 
-- Нормализация статусов через statuses.normalize_status.
-- Разрешённые переходы: support/admin — полная матрица; requester — только Resolved -> New.
-- Side effects: вход в Resolved (resolved_at), в Closed (closed_at), reopen (очистка, SLA on_reopen),
-  Waiting — pause SLA, выход из Waiting — resume SLA.
-"""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Any
+from typing import List, Optional
 
 from loguru import logger
+from sqlalchemy import select
 
+from app.db.models import TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from tickets.statuses import CANONICAL_STATUSES, WAITING_STATUSES
 from tickets.sla_service import TicketSlaService
+from tickets.statuses import (
+    WAITING_STATUSES,
+    next_action_owner_for_status,
+    requester_status_for_internal,
+    wait_type_for_status,
+)
 
-# Матрица разрешённых переходов для support/admin: from_status -> [to_statuses]
+
 SUPPORT_TRANSITIONS = {
-    "new": ["triaged", "in_progress"],
-    "triaged": ["in_progress", "waiting_on_user", "waiting_on_vendor"],
-    "in_progress": ["triaged", "waiting_on_user", "waiting_on_vendor", "resolved"],
-    "waiting_on_user": ["triaged", "in_progress", "resolved"],
-    "waiting_on_vendor": ["triaged", "in_progress", "resolved"],
-    "resolved": ["new"],
+    "new": ["queued", "assigned", "in_progress", "canceled"],
+    "triaged": [
+        "assigned",
+        "in_progress",
+        "waiting_on_user",
+        "waiting_on_internal_team",
+        "waiting_on_vendor",
+        "waiting_on_approval",
+        "scheduled",
+        "resolved",
+        "canceled",
+    ],
+    "queued": [
+        "assigned",
+        "in_progress",
+        "waiting_on_user",
+        "waiting_on_internal_team",
+        "waiting_on_vendor",
+        "waiting_on_approval",
+        "scheduled",
+        "canceled",
+    ],
+    "assigned": [
+        "queued",
+        "in_progress",
+        "waiting_on_user",
+        "waiting_on_internal_team",
+        "waiting_on_vendor",
+        "waiting_on_approval",
+        "scheduled",
+        "canceled",
+    ],
+    "in_progress": [
+        "queued",
+        "assigned",
+        "waiting_on_user",
+        "waiting_on_internal_team",
+        "waiting_on_vendor",
+        "waiting_on_approval",
+        "scheduled",
+        "resolved",
+        "canceled",
+    ],
+    "waiting_on_user": ["queued", "assigned", "in_progress", "resolved", "canceled"],
+    "waiting_on_internal_team": ["queued", "assigned", "in_progress", "resolved", "canceled"],
+    "waiting_on_vendor": ["queued", "assigned", "in_progress", "resolved", "canceled"],
+    "waiting_on_approval": ["queued", "assigned", "in_progress", "resolved", "canceled"],
+    "scheduled": ["assigned", "in_progress", "canceled"],
+    "resolved": ["new", "in_progress", "closed"],
     "closed": ["new"],
+    "canceled": ["new"],
 }
 
-# Requester: может переоткрыть тикет или подтвердить решение.
 REQUESTER_TRANSITIONS = {
-    "resolved": ["new", "closed"],
+    "resolved": ["in_progress", "closed"],
 }
 
 
@@ -46,18 +90,11 @@ def validate_transition(
     to_status_canonical: str,
     is_support_or_admin: bool,
 ) -> bool:
-    """
-    Проверяет, разрешён ли переход из from_status в to_status_canonical для данной роли.
-    Статусы должны быть уже в каноническом виде.
-    """
-    allowed = _allowed_transitions(from_status, is_support_or_admin)
-    return to_status_canonical in allowed
+    return to_status_canonical in _allowed_transitions(from_status, is_support_or_admin)
 
 
 class TicketWorkflowService:
-    """
-    Применение перехода статуса с side effects (SLA pause/resume, resolved_at, reopen).
-    """
+    """Apply status transitions and keep lifecycle side effects in sync."""
 
     def __init__(self, session, ticket_repo):
         self.session = session
@@ -76,24 +113,16 @@ class TicketWorkflowService:
         root_cause: Optional[str] = None,
         source: str = "api",
     ) -> dict:
-        """
-        Применяет переход статуса: обновляет тикет, вызывает SLA side effects, пишет событие.
-
-        Args:
-            ticket_id: ID тикета
-            from_status: текущий канонический статус
-            to_status: целевой канонический статус (уже нормализован)
-            actor_id: ID актора (из AuthContext)
-            actor_role: роль актора (admin, support, user, agent, system)
-            reason, resolution_code, root_cause: опциональные поля для события
-            source: "api" | "auto_close" | "system"
-
-        Returns:
-            dict с ключами: applied (bool), no_op (bool), updates (dict полей тикета),
-            event_payload (для status_changed).
-        """
         now = datetime.now(timezone.utc)
-        updates = {}
+        updates = {
+            "next_action_owner": next_action_owner_for_status(to_status),
+            "requester_status": requester_status_for_internal(to_status),
+            "status_reason": (
+                reason or None
+                if to_status in WAITING_STATUSES or to_status in {"scheduled", "canceled"}
+                else None
+            ),
+        }
         event_payload = {
             "from_status": from_status,
             "to_status": to_status,
@@ -102,6 +131,8 @@ class TicketWorkflowService:
             "reason": reason or "",
             "source": source,
             "normalized": True,
+            "next_action_owner": updates["next_action_owner"],
+            "requester_status": updates["requester_status"],
         }
         if resolution_code is not None:
             event_payload["resolution_code"] = resolution_code
@@ -110,47 +141,55 @@ class TicketWorkflowService:
             event_payload["root_cause"] = root_cause
             updates["root_cause"] = root_cause
 
-        # Вход в Resolved: проставить resolved_at если пусто
         if to_status == "resolved":
             ticket = await self.ticket_repo.get_ticket(ticket_id)
             if ticket and getattr(ticket, "resolved_at", None) is None:
                 updates["resolved_at"] = now
 
-        # Вход в Closed: closed_at, resolution_at
         if to_status == "closed":
             updates["closed_at"] = now
             updates["resolution_at"] = now
 
-        # Reopen (Resolved/Closed -> New): очистить resolved_at, closed_at
-        if from_status in ("resolved", "closed") and to_status == "new":
+        if to_status == "canceled":
+            updates["canceled_at"] = now
+
+        if from_status in ("resolved", "closed", "canceled") and to_status in {"new", "in_progress"}:
             updates["resolved_at"] = None
             updates["closed_at"] = None
             updates["resolution_at"] = None
             updates["resolution_code"] = None
             updates["root_cause"] = None
+            updates["canceled_at"] = None
 
-        # Вход в Waiting: pause SLA (до update_ticket, чтобы sla_paused_at был корректен)
         if to_status in WAITING_STATUSES:
             await self.sla_service.pause_sla(ticket_id)
 
-        # Выход из Waiting: resume SLA
         if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
             await self.sla_service.resume_sla(ticket_id)
 
-        # Применяем обновление тикета
+        await self._sync_wait_ledger(
+            ticket_id=ticket_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id=actor_id,
+            reason=reason,
+            now=now,
+        )
+
         await self.ticket_repo.update_ticket(
             ticket_id,
             status=to_status,
             **updates,
         )
 
-        # Stage 11: при переходе в Resolved/Closed — закрыть OLA processing
         if to_status in ("resolved", "closed"):
             try:
                 from tickets.ola_service import close_ola_processing
+
                 await close_ola_processing(self.session, ticket_id)
             except Exception:
-                pass  # не ломаем workflow при отключённом OLA
+                pass
+
         if to_status == "closed":
             try:
                 auth_repo = AuthTokensRepo(self.session)
@@ -165,7 +204,6 @@ class TicketWorkflowService:
                     f"ticket_id={ticket_id} err={revoke_err}"
                 )
 
-        # После перехода в New при reopen — SLA on_reopen (сброс resolution, reopen_count++)
         if from_status in ("resolved", "closed") and to_status == "new":
             await self.sla_service.on_reopen(ticket_id)
 
@@ -189,3 +227,37 @@ class TicketWorkflowService:
             "event_payload": event_payload,
             "event_result": event_result,
         }
+
+    async def _sync_wait_ledger(
+        self,
+        *,
+        ticket_id: str,
+        from_status: str,
+        to_status: str,
+        actor_id: str,
+        reason: Optional[str],
+        now: datetime,
+    ) -> None:
+        from_wait_type = wait_type_for_status(from_status)
+        to_wait_type = wait_type_for_status(to_status)
+        if from_wait_type and from_wait_type != to_wait_type:
+            result = await self.session.execute(
+                select(TicketWait).where(
+                    TicketWait.ticket_id == ticket_id,
+                    TicketWait.ended_at.is_(None),
+                )
+            )
+            for wait in result.scalars().all():
+                wait.ended_at = now
+                wait.closed_by = actor_id
+        if to_wait_type and to_wait_type != from_wait_type:
+            self.session.add(
+                TicketWait(
+                    ticket_id=ticket_id,
+                    wait_type=to_wait_type,
+                    started_at=now,
+                    reason=reason or None,
+                    related_party=reason or None,
+                    created_by=actor_id,
+                )
+            )

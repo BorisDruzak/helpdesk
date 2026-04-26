@@ -1,9 +1,5 @@
-"""
-Канонические статусы и общие правила тикетного домена.
+"""Canonical ticket statuses and common ticket-domain helpers."""
 
-Новая каноника хранится в snake_case и используется во всех новых обработчиках.
-Для совместимости soft-нормализация принимает legacy значения из старого API/UI.
-"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,49 +8,90 @@ from typing import Any, Dict, Optional, Tuple
 
 CANONICAL_STATUSES = (
     "new",
-    "triaged",
+    "queued",
+    "assigned",
     "in_progress",
     "waiting_on_user",
+    "waiting_on_internal_team",
     "waiting_on_vendor",
+    "waiting_on_approval",
+    "scheduled",
     "resolved",
     "closed",
+    "canceled",
 )
 
-WAITING_STATUSES = {"waiting_on_user", "waiting_on_vendor"}
-TERMINAL_STATUSES = {"resolved", "closed"}
-ACTIVE_OPERATOR_STATUSES = {"in_progress"}
+WAITING_STATUSES = {
+    "waiting_on_user",
+    "waiting_on_internal_team",
+    "waiting_on_vendor",
+    "waiting_on_approval",
+}
+TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
+ACTIVE_OPERATOR_STATUSES = {"assigned", "in_progress"}
+ACTION_REQUIRED_STATUSES = {"new", "queued", "assigned", "in_progress"}
 
 STATUS_LABELS_RU = {
     "new": "Новая",
-    "triaged": "В очереди у оператора",
+    "queued": "В очереди",
+    "assigned": "Назначена",
     "in_progress": "В работе",
-    "waiting_on_user": "Ожидание ответа пользователя",
-    "waiting_on_vendor": "Ожидание внешней стороны",
+    "waiting_on_user": "Ожидает пользователя",
+    "waiting_on_internal_team": "Ожидает внутреннюю группу",
+    "waiting_on_vendor": "Ожидает внешнюю сторону",
+    "waiting_on_approval": "Ожидает согласование",
+    "scheduled": "Запланирована",
     "resolved": "Решена",
     "closed": "Закрыта",
+    "canceled": "Отменена",
 }
 
-ACTION_REQUIRED_STATUSES = {"new", "triaged", "in_progress"}
+REQUESTER_STATUS_LABELS_RU = {
+    "accepted": "Заявка принята",
+    "in_work": "Заявка в работе",
+    "needs_requester": "Нужен ваш ответ",
+    "review_solution": "Проверьте решение",
+    "closed": "Закрыта",
+    "canceled": "Отменена",
+}
 
 _NORMALIZE_MAP = {
     "new": "new",
-    "triaged": "triaged",
+    "new ticket": "new",
+    "new_request": "new",
+    "newrequest": "new",
+    "triaged": "queued",
+    "queue": "queued",
+    "queued": "queued",
+    "assigned": "assigned",
     "in_progress": "in_progress",
     "in progress": "in_progress",
     "open": "in_progress",
     "waiting_on_user": "waiting_on_user",
     "waiting on user": "waiting_on_user",
     "waiting_user": "waiting_on_user",
+    "waiting_on_internal_team": "waiting_on_internal_team",
+    "waiting on internal team": "waiting_on_internal_team",
+    "waiting_internal": "waiting_on_internal_team",
     "waiting_on_vendor": "waiting_on_vendor",
     "waiting on vendor": "waiting_on_vendor",
     "waiting_vendor": "waiting_on_vendor",
+    "waiting_on_approval": "waiting_on_approval",
+    "waiting on approval": "waiting_on_approval",
+    "waiting_approval": "waiting_on_approval",
+    "scheduled": "scheduled",
     "resolved": "resolved",
     "closed": "closed",
-    "new ticket": "new",
-    "new_request": "new",
-    "newrequest": "new",
+    "canceled": "canceled",
+    "cancelled": "canceled",
 }
 
+WAIT_STATUS_TO_TYPE = {
+    "waiting_on_user": "user",
+    "waiting_on_internal_team": "internal_team",
+    "waiting_on_vendor": "vendor",
+    "waiting_on_approval": "approval",
+}
 
 PRIORITY_CLASS_TO_LEGACY_PRIORITY = {
     "P0": "P1",
@@ -128,6 +165,46 @@ def is_active_operator_status(status: Optional[str]) -> bool:
 
 def requires_operator_action(status: Optional[str]) -> bool:
     return (status or "") in ACTION_REQUIRED_STATUSES
+
+
+def requester_status_for_internal(status: Optional[str]) -> str:
+    if status in {"new", "queued", "assigned"}:
+        return "accepted"
+    if status == "waiting_on_user":
+        return "needs_requester"
+    if status == "resolved":
+        return "review_solution"
+    if status == "closed":
+        return "closed"
+    if status == "canceled":
+        return "canceled"
+    return "in_work"
+
+
+def requester_status_label_ru(requester_status: Optional[str]) -> str:
+    if not requester_status:
+        return "Не указан"
+    return REQUESTER_STATUS_LABELS_RU.get(requester_status, requester_status)
+
+
+def next_action_owner_for_status(status: Optional[str]) -> str:
+    if status == "waiting_on_user":
+        return "requester"
+    if status == "waiting_on_internal_team":
+        return "internal_team"
+    if status == "waiting_on_vendor":
+        return "vendor"
+    if status == "waiting_on_approval":
+        return "approver"
+    if status == "resolved":
+        return "requester"
+    if status in {"closed", "canceled"}:
+        return "system"
+    return "support"
+
+
+def wait_type_for_status(status: Optional[str]) -> Optional[str]:
+    return WAIT_STATUS_TO_TYPE.get(status or "")
 
 
 def status_label_ru(status: Optional[str]) -> str:

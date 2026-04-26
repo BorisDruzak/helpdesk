@@ -40,6 +40,11 @@ export type SupportQueuePayload = {
     title: string;
     status: string;
     status_label: string;
+    requester_status?: string;
+    requester_status_label?: string;
+    next_action_owner?: string | null;
+    next_action_due_at?: string | null;
+    status_reason?: string | null;
     queue_code: string | null;
     assignee_id: string | null;
     requester_display_name: string | null;
@@ -59,6 +64,11 @@ export type SupportTicketDetailPayload = {
     description: string | null;
     status: string;
     status_label: string;
+    requester_status?: string;
+    requester_status_label?: string;
+    next_action_owner?: string | null;
+    next_action_due_at?: string | null;
+    status_reason?: string | null;
     requester_display_name: string | null;
     device_id: string | null;
     queue: {
@@ -69,6 +79,12 @@ export type SupportTicketDetailPayload = {
     assignee_id: string | null;
     updated_at: string | null;
     created_at: string | null;
+    resolution_code?: string | null;
+    resolution_summary?: string | null;
+    requester_resolution_summary?: string | null;
+    evidence_required?: boolean;
+    evidence_ref?: string | null;
+    closure_feedback?: Record<string, unknown>;
     queue_members: Array<{
       actor_id: string;
       role_in_queue: string | null;

@@ -13,7 +13,8 @@
 2. **Команда chat_raise (WebSocket)** — агент инициирует «поддержку»; сервер создаёт тикет в БД с `status="new"` и `requester_id=agent_id`, чтобы тикет участвовал в фильтрации по requester.
 
 **Инварианты:**
-- В БД хранятся только канонические статусы (snake_case): `new`, `triaged`, `in_progress`, `waiting_on_user`, `waiting_on_vendor`, `resolved`, `closed`. При создании тикета использовать `status="new"`; значение `"open"` не сохранять (legacy, при чтении нормализуется в `in_progress`).
+- В БД хранятся только канонические статусы (snake_case): `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`. Legacy `triaged` принимается soft-normalization и миграцией переводится в `queued` / `assigned`.
+- Для понятного владения работой каждый тикет хранит `next_action_owner`, `next_action_due_at`, `status_reason`, `requester_status`, summary решения, evidence-поля и `closure_feedback`; активные ожидания пишутся в `ticket_waits`.
 - Для корректного RBAC (список «мои заявки» для requester) при создании тикета должен быть задан `requester_id`.
 - Сообщения chat_message в payload должны содержать каноническое поле `sender_role` (см. CHAT_MESSAGE_CONTRACT.md).
 - `/api/tickets/create`, WS `chat_raise` и legacy `POST /api/chat_raise` используют общий DB-first create flow в `server/tickets/create_flow.py`: routing, SLA, OLA, auto-assign и initial chat event должны совпадать.
@@ -68,7 +69,7 @@
 **TicketSlaService (`tickets/sla_service.py`)**
 - При создании тикета: старт FRT и Resolution по policy + priority (24x7).
 - FRT закрывается первым public comment от support/agent (`first_response_at`).
-- В статусах Waiting on User/Vendor — пауза/возобновление с накоплением `sla_paused_seconds`.
+- В статусах ожидания (`waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`) workflow пишет `ticket_waits`, обновляет `next_action_owner` и выполняет паузу/возобновление SLA с накоплением `sla_paused_seconds`.
 - При reopen: сброс resolution timer, `reopen_count++`.
 
 **TicketSlaWatchdog (`app/services/ticket_sla_watchdog.py`)**
@@ -84,7 +85,7 @@
 - **POST** `/api/tickets/{ticket_id}/queue` — ручная смена очереди + reason, устанавливает routing lock, снимает исполнителя вне новой очереди и при необходимости запускает автоназначение уже по составу целевой очереди.
 - **GET** `/api/tickets/{ticket_id}/sla` — текущие SLA-таймеры, breach state, paused seconds.
 
-**Расширенный ответ тикета (ticket_to_dict):** `queue_id`, `queue_code`, `assignee_id`, `priority`, `impact`, `urgency`, `requester_id`, `first_response_due_at`, `resolution_due_at`, `first_response_at`, `first_response_breached_at`, `resolution_breached_at`, `sla_paused_at`, `sla_paused_seconds`, `reopen_count`, `routing_lock`, `routing_lock_reason`.
+**Расширенный ответ тикета (ticket_to_dict):** `queue_id`, `queue_code`, `assignee_id`, `priority`, `impact`, `urgency`, `requester_id`, `status_label`, `requester_status`, `requester_status_label`, `next_action_owner`, `next_action_due_at`, `status_reason`, `first_response_due_at`, `resolution_due_at`, `first_response_at`, `first_response_breached_at`, `resolution_breached_at`, `sla_paused_at`, `sla_paused_seconds`, `reopen_count`, `resolution_code`, `resolution_summary`, `requester_resolution_summary`, `evidence_required`, `evidence_ref`, `closure_feedback`, `routing_lock`, `routing_lock_reason`.
 
 **Фильтры GET `/api/tickets`:** `device_id`, `queue_id`, `priority`, `assignee_id`, `requester_id`, `status`, `first_response_breached`, `resolution_breached`.
 
@@ -107,9 +108,9 @@
 
 ### Компоненты
 
-**statuses.py (tickets/):** канонические статусы: New, Triaged, In Progress, Waiting on User, Waiting on Vendor, Resolved, Closed. `normalize_status(raw)` — soft-нормализация; неизвестный → 400 validation_error.
+**statuses.py (tickets/):** канонические статусы: New, Queued, Assigned, In Progress, Waiting on User, Waiting on Internal Team, Waiting on Vendor, Waiting on Approval, Scheduled, Resolved, Closed, Canceled. `normalize_status(raw)` — soft-нормализация; неизвестный → 400 validation_error. Пользовательский mapping: accepted / in_work / needs_requester / review_solution / closed / canceled.
 
-**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — только Resolved → New). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (resolved_at, closed_at, reopen, SLA pause/resume). Событие `status_changed`.
+**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — подтверждение/возврат решения). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (`resolved_at`, `closed_at`, `canceled_at`, reopen, SLA pause/resume, wait ledger, `next_action_owner`, `requester_status`). Событие `status_changed` несёт owner/status для UI.
 
 **RBAC:** support/admin — reroute, classify, queue, любые переходы; requester — только свои тикеты, только Resolved → New (reopen). POST /message, /close: роль только из AuthContext; from_role/closed_by_role в body — legacy, deprecation_warning.
 
@@ -377,15 +378,15 @@ API: POST status, assign, queue, priority, reroute, close, worklogs, read; GET t
 
 Целевая бизнес-модель без изменения Protocol V3 wire-контракта:
 
-- Канонические статусы тикетов хранятся в snake_case: `new`, `triaged`, `in_progress`, `waiting_on_user`, `waiting_on_vendor`, `resolved`, `closed`.
-- `triaged` в UI отображается как «В очереди у оператора»: тикет уже назначен, но ещё не занимает один из активных слотов оператора.
+- Канонические статусы тикетов хранятся в snake_case: `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`.
+- `queued` означает маршрутизированную заявку без исполнителя, `assigned` — исполнитель есть, но активная работа ещё не начата.
 - UI продолжает русифицировать статусы; soft-normalization на сервере принимает legacy-значения старых клиентов.
 - Классификация приоритета строится по `urgency` + `importance` + текстовым обоснованиям. Квадрант даёт `priority_class` (`P0..P3`), а legacy `priority` остаётся внутренним SLA-слоем совместимости.
 - `requester_profile` хранится в `tickets.custom_fields.requester_profile`, `requester_display_name` вычисляется по правилу `full_name -> user_display_name -> requester_id`.
 - В snapshot/list добавлены `priority_class`, `effective_priority`, `requester_profile`, `requester_display_name`, `requires_operator_action`; в snapshot рабочей области также доступны `queue_members`, `assignable_users`, `available_queues`, `queue_auto_assign_enabled`, `device_metadata`, `ola`.
 - POST `/api/tickets/{id}/requester_profile` обновляет профиль инициатора, не изменяя `requester_id` (RBAC-идентификатор).
-- Назначение исполнителя: `admin` может ручное/auto (`auto_assign=true`), `support` может назначать только на себя. Для auto сервер выбирает оператора с минимальным `active_count`, затем по самому давно не назначавшемуся. Новый тикет при автоназначении переводится в `triaged`.
-- Лимит `3` считается только по статусу `in_progress`; `triaged` и waiting-статусы не занимают активный слот, но сохраняют назначение за оператором.
+- Назначение исполнителя: `admin` может ручное/auto (`auto_assign=true`), `support` может назначать только на себя. Для auto сервер выбирает оператора с минимальным `active_count`, затем по самому давно не назначавшемуся. Новый тикет при автоназначении переводится в `assigned`.
+- Лимит `3` считается только по статусу `in_progress`; `assigned`, `queued` и waiting-статусы не занимают активный слот, но `assigned` и waiting-статусы сохраняют назначение за оператором.
 - При `take_self` (новый тикет без assignee) сервер может автоматически перенести тикет в целевую очередь по настройке `TICKET_TAKE_QUEUE_MODE` (`keep|common|test|<queue_code>`). Коды очередей берутся из `TICKET_TAKE_QUEUE_COMMON_CODE` / `TICKET_TAKE_QUEUE_TEST_CODE`.
 - Аудит бизнес-изменений (`status_changed`, `priority_changed`, `assignee_changed`, `queue_changed`, `requester_profile_changed`) хранится в `ticket_events` с actor/old_value/new_value/reason/comment и отображается в карточке тикета.
 

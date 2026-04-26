@@ -38,7 +38,7 @@ class Ticket(Base):
     device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -66,6 +66,16 @@ class Ticket(Base):
     subcategory_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    next_action_owner: Mapped[str] = mapped_column(String(30), nullable=False, server_default="support", index=True)
+    next_action_due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True, index=True)
+    status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requester_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="accepted", index=True)
+    resolution_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requester_resolution_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    evidence_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closure_feedback: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    canceled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     sla_policy_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     first_response_due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     resolution_due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
@@ -170,6 +180,41 @@ class TicketEvent(Base):
             f"<TicketEvent(id={self.id}, ticket_id={self.ticket_id!r}, "
             f"event_type={self.event_type!r}, agent_seq={self.agent_seq})>"
         )
+
+
+class TicketWait(Base):
+    """Wait ledger entry for requester, vendor, internal team and approval pauses."""
+
+    __tablename__ = "ticket_waits"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    wait_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    ended_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    related_party: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_ticket_waits_ticket_active", "ticket_id", "ended_at"),
+        Index("ix_ticket_waits_type_active", "wait_type", "ended_at"),
+    )
 
 
 class TicketQueue(Base):

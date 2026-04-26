@@ -57,6 +57,11 @@ class SupportQueueTicketItem(BaseModel):
     title: str
     status: str
     status_label: str
+    requester_status: str
+    requester_status_label: str
+    next_action_owner: str | None
+    next_action_due_at: str | None
+    status_reason: str | None
     queue_code: str | None
     assignee_id: str | None
     requester_display_name: str | None
@@ -102,12 +107,23 @@ class SupportTicketDetail(BaseModel):
     description: str | None
     status: str
     status_label: str
+    requester_status: str
+    requester_status_label: str
+    next_action_owner: str | None
+    next_action_due_at: str | None
+    status_reason: str | None
     requester_display_name: str | None
     device_id: str | None
     queue: SupportTicketQueueInfo
     assignee_id: str | None
     updated_at: str | None
     created_at: str | None
+    resolution_code: str | None = None
+    resolution_summary: str | None = None
+    requester_resolution_summary: str | None = None
+    evidence_required: bool = False
+    evidence_ref: str | None = None
+    closure_feedback: dict[str, Any] = Field(default_factory=dict)
     queue_members: list[SupportTicketQueueMember]
 
 

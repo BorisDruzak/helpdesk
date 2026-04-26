@@ -78,9 +78,16 @@ SCOPE_OPTIONS = [
 ]
 
 QUICK_STATUS_ACTIONS = [
+    ("queued", "В очередь"),
+    ("assigned", "Назначена"),
     ("in_progress", "Взять в работу"),
     ("waiting_on_user", "Ждём пользователя"),
+    ("waiting_on_internal_team", "Ждём внутреннюю группу"),
+    ("waiting_on_vendor", "Ждём внешнюю сторону"),
+    ("waiting_on_approval", "Ждём согласование"),
+    ("scheduled", "Запланирована"),
     ("resolved", "Решено"),
+    ("canceled", "Отменить"),
 ]
 
 
@@ -138,7 +145,12 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         ticket_code=ticket_data.get("ticket_code"),
         title=str(ticket_data.get("title") or "Без названия"),
         status=str(ticket_data.get("status") or "unknown"),
-        status_label=status_label_ru(ticket_data.get("status")),
+        status_label=str(ticket_data.get("status_label") or status_label_ru(ticket_data.get("status"))),
+        requester_status=str(ticket_data.get("requester_status") or "accepted"),
+        requester_status_label=str(ticket_data.get("requester_status_label") or ""),
+        next_action_owner=ticket_data.get("next_action_owner"),
+        next_action_due_at=ticket_data.get("next_action_due_at"),
+        status_reason=ticket_data.get("status_reason"),
         queue_code=ticket_data.get("queue_code"),
         assignee_id=ticket_data.get("assignee_id"),
         requester_display_name=ticket_data.get("requester_display_name"),
@@ -158,6 +170,9 @@ def _matches_ticket_query(ticket: SupportQueueTicketItem, query: str) -> bool:
         ticket.ticket_code,
         ticket.title,
         ticket.status_label,
+        ticket.requester_status_label,
+        ticket.next_action_owner,
+        ticket.status_reason,
         ticket.queue_code,
         ticket.assignee_id,
         ticket.requester_display_name,
@@ -592,7 +607,12 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             title=str(ticket_data.get("title") or "Без названия"),
             description=ticket_data.get("description"),
             status=str(ticket_data.get("status") or "unknown"),
-            status_label=status_label_ru(ticket_data.get("status")),
+            status_label=str(ticket_data.get("status_label") or status_label_ru(ticket_data.get("status"))),
+            requester_status=str(ticket_data.get("requester_status") or "accepted"),
+            requester_status_label=str(ticket_data.get("requester_status_label") or ""),
+            next_action_owner=ticket_data.get("next_action_owner"),
+            next_action_due_at=ticket_data.get("next_action_due_at"),
+            status_reason=ticket_data.get("status_reason"),
             requester_display_name=ticket_data.get("requester_display_name"),
             device_id=ticket_data.get("device_id"),
             queue=SupportTicketQueueInfo(
@@ -603,6 +623,12 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             assignee_id=ticket_data.get("assignee_id"),
             updated_at=ticket_data.get("updated_at"),
             created_at=ticket_data.get("created_at"),
+            resolution_code=ticket_data.get("resolution_code"),
+            resolution_summary=ticket_data.get("resolution_summary"),
+            requester_resolution_summary=ticket_data.get("requester_resolution_summary"),
+            evidence_required=bool(ticket_data.get("evidence_required")),
+            evidence_ref=ticket_data.get("evidence_ref"),
+            closure_feedback=ticket_data.get("closure_feedback") or {},
             queue_members=[
                 SupportTicketQueueMember(
                     actor_id=str(member.get("actor_id") or ""),

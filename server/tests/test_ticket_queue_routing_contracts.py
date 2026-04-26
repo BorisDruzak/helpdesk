@@ -424,7 +424,7 @@ async def test_create_ticket_without_queue_members_stays_unassigned(test_client,
     assert response.status == 200, await response.text()
     payload = await response.json()
     assert payload["ticket"]["assignee_id"] in (None, "")
-    assert payload["ticket"]["status"] == "new"
+    assert payload["ticket"]["status"] == "queued"
 
 
 @pytest.mark.asyncio
@@ -463,7 +463,7 @@ async def test_manual_queue_change_reassigns_within_target_queue(test_client, te
     payload = await response.json()
     assert payload["ticket"]["queue_id"] == target_queue_id
     assert payload["ticket"]["assignee_id"] == "network_member"
-    assert payload["ticket"]["status"] == "triaged"
+    assert payload["ticket"]["status"] == "assigned"
 
 
 @pytest.mark.asyncio
@@ -501,4 +501,4 @@ async def test_manual_queue_change_clears_assignee_when_target_queue_has_no_auto
     payload = await response.json()
     assert payload["ticket"]["queue_id"] == target_queue_id
     assert payload["ticket"]["assignee_id"] in (None, "")
-    assert payload["ticket"]["status"] == "new"
+    assert payload["ticket"]["status"] == "queued"

@@ -16,7 +16,10 @@ from tickets.statuses import (
     extract_priority_class,
     get_requester_display_name,
     get_requester_profile,
+    requester_status_for_internal,
+    requester_status_label_ru,
     requires_operator_action,
+    status_label_ru,
 )
 
 
@@ -66,6 +69,17 @@ def ticket_to_dict(ticket: Any, queue_code: Optional[str] = None) -> Dict[str, A
         "title": getattr(ticket, "title", None),
         "description": getattr(ticket, "description", None),
         "status": getattr(ticket, "status", None),
+        "status_label": status_label_ru(getattr(ticket, "status", None)),
+        "requester_status": getattr(ticket, "requester_status", None)
+        or requester_status_for_internal(getattr(ticket, "status", None)),
+        "requester_status_label": requester_status_label_ru(
+            getattr(ticket, "requester_status", None)
+            or requester_status_for_internal(getattr(ticket, "status", None))
+        ),
+        "next_action_owner": getattr(ticket, "next_action_owner", None)
+        or ("requester" if getattr(ticket, "status", None) == "waiting_on_user" else "support"),
+        "next_action_due_at": _iso(getattr(ticket, "next_action_due_at", None)),
+        "status_reason": getattr(ticket, "status_reason", None),
         "created_at": _iso(created_at),
         "updated_at": _iso(getattr(ticket, "updated_at", None)),
         "queue_id": getattr(ticket, "queue_id", None),
@@ -90,11 +104,17 @@ def ticket_to_dict(ticket: Any, queue_code: Optional[str] = None) -> Dict[str, A
         "sla_paused_seconds": getattr(ticket, "sla_paused_seconds", None),
         "resolved_at": _iso(getattr(ticket, "resolved_at", None)),
         "closed_at": _iso(getattr(ticket, "closed_at", None)),
+        "canceled_at": _iso(getattr(ticket, "canceled_at", None)),
         "reopen_count": getattr(ticket, "reopen_count", None),
         "category_id": getattr(ticket, "category_id", None),
         "service_id": getattr(ticket, "service_id", None),
         "subcategory_id": getattr(ticket, "subcategory_id", None),
         "resolution_code": getattr(ticket, "resolution_code", None),
+        "resolution_summary": getattr(ticket, "resolution_summary", None),
+        "requester_resolution_summary": getattr(ticket, "requester_resolution_summary", None),
+        "evidence_required": bool(getattr(ticket, "evidence_required", False)),
+        "evidence_ref": getattr(ticket, "evidence_ref", None),
+        "closure_feedback": serialize_datetime_recursive(getattr(ticket, "closure_feedback", None) or {}),
         "root_cause": getattr(ticket, "root_cause", None),
         "parent_ticket_id": getattr(ticket, "parent_ticket_id", None),
         "manual_rank": getattr(ticket, "manual_rank", None),

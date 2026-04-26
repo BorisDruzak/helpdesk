@@ -137,12 +137,12 @@ async def test_create_ticket_auto_assigns_and_sets_operator_queue_status(test_cl
         )
         events = list(events_result.scalars().all())
 
-    assert ticket.status == "triaged"
+    assert ticket.status == "assigned"
     assert ticket.assignee_id == "op_auto"
     assert any(event.event_type == "assignee_changed" for event in events)
     assert any(
         event.event_type == "status_changed"
-        and (event.payload or {}).get("to_status") == "triaged"
+        and (event.payload or {}).get("to_status") == "assigned"
         for event in events
     )
 
@@ -256,7 +256,7 @@ async def test_requester_reply_requeues_waiting_ticket(test_client, test_engine)
 
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
-        assert ticket.status == "triaged"
+        assert ticket.status == "assigned"
 
 
 @pytest.mark.asyncio
@@ -424,7 +424,7 @@ async def test_resolution_confirmation_reject_requeues_ticket(test_client, test_
 
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
-        assert ticket.status == "triaged"
+        assert ticket.status == "assigned"
         marker = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
         assert marker.get("pending") is False
 

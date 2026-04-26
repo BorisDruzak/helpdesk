@@ -233,7 +233,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                         await workflow.apply_status_transition(
                             ticket_id=ticket_id,
                             from_status="new",
-                            to_status="triaged",
+                            to_status="assigned",
                             actor_id="system",
                             actor_role="system",
                             reason="auto_assign_on_create",

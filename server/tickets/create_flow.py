@@ -94,7 +94,7 @@ async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, 
             await workflow.apply_status_transition(
                 ticket_id=ticket.ticket_id,
                 from_status=getattr(ticket, "status", "new") or "new",
-                to_status="triaged",
+                to_status="assigned",
                 actor_id="system",
                 actor_role="system",
                 reason="auto_assign_on_create",
@@ -137,6 +137,23 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
         logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     ticket = await _auto_assign_if_possible(session, ticket_repo, ticket)
+    if (
+        ticket
+        and getattr(ticket, "queue_id", None)
+        and not getattr(ticket, "assignee_id", None)
+        and getattr(ticket, "status", None) == "new"
+    ):
+        workflow = TicketWorkflowService(session, ticket_repo)
+        await workflow.apply_status_transition(
+            ticket_id=ticket.ticket_id,
+            from_status="new",
+            to_status="queued",
+            actor_id="system",
+            actor_role="system",
+            reason="routed_to_queue",
+            source="system",
+        )
+        ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     return ticket
 
 
