@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module, ServerConfig
+from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module, ObserverTrace, ServerConfig
 from modules.handlers import MODULES_STORAGE_DIR
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 from utils.module_builder import build_module_package
@@ -554,10 +554,17 @@ async def test_windows_module_preferred_requires_passed_windows_live_test(test_c
     assert response.status == 409, await response.text()
     data = await response.json()
     assert data["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
+    assert data["observer_trace_id"]
+
+    async with session_maker() as session:
+        trace = await session.get(ObserverTrace, data["observer_trace_id"])
+        assert trace is not None
+        assert trace.root_kind == "module_preferred_gate"
+        assert trace.status == "failed"
 
 
 @pytest.mark.asyncio
-async def test_windows_authoring_publish_set_preferred_requires_live_test(test_client):
+async def test_windows_authoring_publish_set_preferred_requires_live_test(test_client, test_engine):
     module_name = f"win_publish_gate_{uuid.uuid4().hex[:8]}"
     response = await test_client.post(
         "/api/modules/authoring/publish",
@@ -604,6 +611,123 @@ async def test_windows_authoring_publish_set_preferred_requires_live_test(test_c
     data = await response.json()
     assert data["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
     assert data["module_name"] == module_name
+    assert data["observer_trace_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        trace = await session.get(ObserverTrace, data["observer_trace_id"])
+        assert trace is not None
+        assert trace.root_kind == "module_preferred_gate"
+        assert trace.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_module_live_test_candidates_filter_platform_and_version(test_client, test_engine):
+    module_name = f"lab_candidates_{uuid.uuid4().hex[:8]}"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version="1.0.0",
+        tool_name=f"{module_name}.check",
+        method_name="run_check",
+        description="Lab candidate diagnostic",
+        user_function_body='return {"status": "ok"}',
+        platforms=["win32"],
+        metadata={"domain": module_name, "platforms": ["win32"], "risk_level": "safe_read"},
+        min_agent_version="1.2.0",
+        owner_scope="vendor",
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+    validation_json["server_harness"] = {"status": "passed", "required_before_publish": True}
+
+    now = datetime.now(timezone.utc)
+    good_device_id = str(uuid.uuid4())
+    old_device_id = str(uuid.uuid4())
+    linux_device_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                Device(
+                    device_id=good_device_id,
+                    protocol_version="ws_ticket_v3",
+                    agent_version="1.2.3",
+                    hostname="win-good",
+                    os="Windows",
+                    capabilities={},
+                    device_metadata={"os_type": "windows"},
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    last_handshake_at=now,
+                ),
+                Device(
+                    device_id=old_device_id,
+                    protocol_version="ws_ticket_v3",
+                    agent_version="1.0.0",
+                    hostname="win-old",
+                    os="win32",
+                    capabilities={},
+                    device_metadata={"os_type": "windows"},
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    last_handshake_at=now,
+                ),
+                Device(
+                    device_id=linux_device_id,
+                    protocol_version="ws_ticket_v3",
+                    agent_version="1.5.0",
+                    hostname="linux-lab",
+                    os="linux",
+                    capabilities={},
+                    device_metadata={"os_type": "linux"},
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    last_handshake_at=now,
+                ),
+                Module(
+                    module_name=module_name,
+                    version="1.0.0",
+                    sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                    size=len(zip_bytes),
+                    storage_path=f"{module_name}/1.0.0/module.zip",
+                    uploaded_by="admin",
+                    manifest_json=manifest_json,
+                    validation_json=validation_json,
+                    manifest_summary=manifest_summary,
+                ),
+            ]
+        )
+        await session.commit()
+
+    class OpenWs:
+        closed = False
+
+    test_client.app["state"].connected_agents[good_device_id] = {
+        "ws": OpenWs(),
+        "metadata": {"status": "online"},
+        "connected_at": now.isoformat(),
+    }
+
+    response = await test_client.get(
+        f"/api/modules/{module_name}/1.0.0/live_test_candidates?platform=win32",
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["module_name"] == module_name
+    assert data["version"] == "1.0.0"
+    assert data["platform"] == "win32"
+    assert data["min_agent_version"] == "1.2.0"
+    candidate_ids = [item["device_id"] for item in data["candidates"]]
+    assert candidate_ids == [good_device_id, old_device_id]
+    good = data["candidates"][0]
+    old = data["candidates"][1]
+    assert good["compatible"] is True
+    assert good["online"] is True
+    assert good["platform"] == "win32"
+    assert old["compatible"] is False
+    assert "AGENT_VERSION_TOO_OLD" in old["reasons"]
 
 
 @pytest.mark.asyncio
@@ -696,6 +820,99 @@ async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test
     )
 
     assert response.status == 200, await response.text()
+
+
+@pytest.mark.asyncio
+async def test_module_live_test_writes_observer_trace_for_selected_agent(test_client, test_engine):
+    module_name = f"win_trace_{uuid.uuid4().hex[:8]}"
+    device_id = str(uuid.uuid4())
+    tool_name = f"{module_name}.check"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version="1.0.0",
+        tool_name=tool_name,
+        method_name="run_check",
+        description="Windows observer live-test diagnostic",
+        user_function_body='return {"status": "ok", "summary": "live"}',
+        platforms=["win32"],
+        metadata={"domain": module_name, "platforms": ["win32"], "risk_level": "safe_read"},
+        min_agent_version="1.0.0",
+        owner_scope="vendor",
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+    validation_json["server_harness"] = {"status": "passed", "required_before_publish": True}
+
+    module_path = MODULES_STORAGE_DIR / module_name / "1.0.0" / "module.zip"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_bytes(zip_bytes)
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.2.0",
+                hostname="win-lab-traced",
+                os="windows",
+                capabilities={},
+                device_metadata={"os_type": "Windows"},
+                first_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc),
+                last_handshake_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            Module(
+                module_name=module_name,
+                version="1.0.0",
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=len(zip_bytes),
+                storage_path=f"{module_name}/1.0.0/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+        )
+        await session.commit()
+
+    async def fake_send_ws_command(**kwargs):
+        return {
+            "status": "success",
+            "payload": {"status": "success", "data": {"observations": {"status": "ok"}}},
+            "operation_id": str(uuid.uuid4()),
+        }
+
+    with patch("modules.handlers.send_ws_command", new=fake_send_ws_command):
+        live_response = await test_client.post(
+            f"/api/modules/{module_name}/1.0.0/live_tests",
+            json={"device_id": device_id, "tool_name": tool_name, "params": {}},
+            headers=ADMIN_HEADERS,
+        )
+
+    assert live_response.status == 200, await live_response.text()
+    live_data = await live_response.json()
+    trace_id = live_data["live_test"]["trace_id"]
+
+    async with session_maker() as session:
+        trace = await session.get(ObserverTrace, trace_id)
+        assert trace is not None
+        assert trace.root_kind == "module_live_test"
+        assert trace.device_id == device_id
+        assert trace.status == "succeeded"
+        result = await session.execute(
+            text("SELECT name, status FROM observer_spans WHERE trace_id = :trace_id ORDER BY started_at ASC"),
+            {"trace_id": trace_id},
+        )
+        spans = result.all()
+
+    span_names = [row[0] for row in spans]
+    assert "module.live_test" in span_names
+    assert "module.install_module_package" in span_names
+    assert "module.run_tool" in span_names
+    assert all(row[1] == "ok" for row in spans)
 
 
 @pytest.mark.asyncio

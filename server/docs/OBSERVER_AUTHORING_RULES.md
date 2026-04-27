@@ -169,6 +169,17 @@ Spans нужны не “для галочки”, а чтобы человек 
 
 ## 8. Минимальный набор проверок
 
+### Module lab-test flows
+
+Published module verification is observer-visible even when it is not ticket-bound:
+
+- live-test run root kind: `module_live_test`;
+- preferred rollout gate root kind: `module_preferred_gate`;
+- required live-test spans: `module.lab_agent_select`, `module.install_module_package`, `module.run_tool`;
+- Windows preferred-gate failures must return `observer_trace_id` with `MODULE_WINDOWS_LIVE_TEST_REQUIRED`.
+
+Candidate listing (`GET /api/modules/{module_name}/{version}/live_test_candidates`) remains a read-only preflight report. Do not create noisy traces for candidate browsing; trace the selected run/gate decision.
+
 Перед завершением observer-правок нужны:
 
 - `python scripts/verify_workspace.py`

@@ -55,6 +55,7 @@ Workbench API:
 - `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
 - `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
 - `POST /api/modules/upload` - upload a ready ZIP package, run server preflight/smoke, publish it into the registry, and make it available for immediate editing in the workbench
+- `GET /api/modules/{module_name}/{version}/live_test_candidates?platform=win32|linux` - list lab-agent candidates for a published module version with normalized platform, online state, agent version compatibility and blocking reasons
 - `POST /api/modules/{module_name}/{version}/live_tests` - install and run a published module command on a selected real lab agent, then append the result to `validation_json.live_tests`
 - `DELETE /api/modules/{module_name}/{version}` - remove a published module version from the registry and delete its archive from storage; clears preferred-version assignment if the deleted version was preferred
 - `PATCH /api/modules/{module_name}/preferred` - assign the preferred version used by auto-install/runtime resolution
@@ -118,6 +119,26 @@ Promotion to preferred is stricter for Windows-targeted modules: `PATCH /api/mod
 Run the live test with:
 
 ```http
+GET /api/modules/{module_name}/{version}/live_test_candidates?platform=win32
+```
+
+Candidate rows are sorted with compatible/online agents first and include:
+
+```json
+{
+  "device_id": "windows-lab-device-id",
+  "hostname": "win-lab-01",
+  "platform": "win32",
+  "agent_version": "1.3.0",
+  "online": true,
+  "compatible": true,
+  "reasons": []
+}
+```
+
+The admin React workbench uses this preflight report to let the operator choose the exact Windows or Linux lab agent before the module is installed.
+
+```http
 POST /api/modules/{module_name}/{version}/live_tests
 ```
 
@@ -133,6 +154,13 @@ Request body:
 ```
 
 The server first sends `install_module_package` to the selected agent, then sends `run_tool` only if installation succeeds. Each attempt is appended to `validation_json.live_tests` with the install/run stage, device id, normalized platform, agent version, operation ids, trace id and compact payloads.
+
+Observer coverage for this flow is first-class:
+
+- successful and failed live tests create `observer_traces.root_kind = module_live_test`;
+- spans include `module.live_test`, `module.lab_agent_select`, `module.install_module_package` and `module.run_tool`;
+- terminal install/run failures create an `observer_error_occurrences` row;
+- preferred-gate failures create `observer_traces.root_kind = module_preferred_gate` and return `observer_trace_id` next to `MODULE_WINDOWS_LIVE_TEST_REQUIRED`.
 
 ## Tool output contracts for playbooks
 
