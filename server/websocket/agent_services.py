@@ -313,6 +313,28 @@ class OperationLifecycleService:
 
                 # Снимок скаляров до выхода из get_session(): после commit/expiry повторный доступ к ORM
                 # может вызвать implicit lazy-load → greenlet_spawn / await_only (SQLAlchemy async).
+                if (
+                    processed
+                    and operation is not None
+                    and getattr(operation, "playbook_run_id", None)
+                    and lifecycle_status in {"succeeded", "failed", "timed_out", "canceled"}
+                ):
+                    from app.services.playbook_engine import advance_after_terminal
+
+                    terminal_status = "succeeded" if lifecycle_status == "succeeded" else "failed"
+                    result_payload = (
+                        {"data": normalized.data_payload}
+                        if terminal_status == "succeeded"
+                        else {"error": normalized.error_info}
+                    )
+                    await advance_after_terminal(
+                        session,
+                        ctx.state,
+                        operation_id,
+                        terminal_status,
+                        result_payload,
+                    )
+
                 operation_kind_out = operation.kind if operation else None
                 ticket_id_out = operation.ticket_id if operation else None
                 trace_id_out = operation.trace_id if operation else None
