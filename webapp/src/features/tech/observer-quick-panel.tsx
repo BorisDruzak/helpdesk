@@ -552,14 +552,14 @@ function TraceDetailCard({
                   <article key={occurrence.occurrence_id} className="rounded-[1rem] border border-border bg-white px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-semibold text-slate-950">{occurrence.error_signature}</p>
+                        <p className="break-all font-semibold text-slate-950">{occurrence.error_signature}</p>
                         <p className="mt-1 text-xs text-slate-500">
                           {occurrence.exception_type ?? occurrence.error_kind ?? "Ошибка"}
                         </p>
                       </div>
                       <Badge tone={getStatusTone(occurrence.severity)}>{occurrence.severity_label ?? occurrence.severity ?? "info"}</Badge>
                     </div>
-                    <p className="mt-3 text-sm text-slate-600">
+                    <p className="mt-3 break-words text-sm text-slate-600">
                       {occurrence.message_norm ?? "Сообщение ошибки недоступно"}
                     </p>
                     <p className="mt-2 text-xs text-slate-400">
