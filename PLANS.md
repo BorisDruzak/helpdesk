@@ -1,5 +1,40 @@
 # PLANS.md
 
+## 2026-04-27 Observer Coverage For Agent Auth, Update And Runtime
+
+Status: in progress.
+
+### Problem
+
+- Agent authorization and runtime lifecycle already write `agent_runtime_audit` records, but the observer projection only picked those records up when they were linked to an operation or ticket.
+- Manual provisioning, invalid-token handshakes and other auth-only failures have no operation, so `/api/admin/tech/observer/search`, diagnostics bundles and quick dangerous-flow summaries could miss the exact failing step.
+- Agent updates are better covered because they have `operation.kind=agent_update`, but update runtime audit should stay attached to the same trace and visible in bundle/detail.
+
+### Plan
+
+1. Add first-class observer classification for runtime audit events:
+   - `device_provisioning` for connection request create/approve/reject/token-delivery/token-limit/fingerprint issues;
+   - `agent_auth` for invalid/revoked token and handshake auth failures;
+   - `agent_runtime` for lifecycle/offline/superseded runtime events;
+   - keep operation-backed `agent_update` traces authoritative for updates.
+2. Project operation-less runtime audit records as synthetic observer traces so search, trace detail and diagnostics bundle can find them by event name, device id and root kind.
+3. Treat warning-level auth/provisioning failures as observer signatures where they represent an actionable problem.
+4. Include auth/provisioning/runtime trace kinds in hot-trace and dangerous-flow summaries.
+5. Add regression tests for:
+   - search by `connection_request` and `invalid_token`;
+   - `root_kind=device_provisioning` trace search;
+   - diagnostics bundle by auth/provisioning query;
+   - quick dangerous-flow visibility.
+6. Update observer docs, CODEMAP and QUICK_LOOKUP.
+
+### Verification Target
+
+- `python -m pytest server/tests/test_observer_diagnostics_api.py -q`
+- `python -m pytest server/tests/test_observer_v2_api.py -q`
+- `python -m pytest server/tests/test_connection_request_api.py -q`
+- `python scripts/verify_workspace.py`
+- Live Linux smoke + browser/API check at `http://192.168.100.17:8666/admin`.
+
 ## 2026-04-27 Connection Request Duplicate Approval Bug
 
 Status: fixed locally; release verification in progress.

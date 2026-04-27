@@ -19,6 +19,7 @@
 - ticket lifecycle instrumentation;
 - tool/module execution pipeline;
 - consent/update/module lifecycle;
+- agent authorization, device provisioning and handshake/token lifecycle;
 - ws/outbox/ack/nack/replay path;
 - retry/timeout/cancel semantics;
 - support/admin observer UI;
@@ -59,6 +60,8 @@ Observer строится поверх фактов исполнения. Нов
 - module breadcrumbs через observer SDK.
 
 Если flow не оставляет ни одного пригодного источника, observer coverage считается отсутствующей.
+
+Auth/provisioning flows that do not have an operation must write `agent_runtime_audit`. Observer projects operation-less audit rows as synthetic traces and classifies them by `root_kind`: `device_provisioning`, `agent_auth`, or `agent_runtime`. Warning-level actionable events must still become signatures when they represent a support-visible failure, for example `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, or `invalid_token`.
 
 ### 3.4 Материализовать диагностически полезные spans
 

@@ -34,6 +34,8 @@ Observer сейчас проецируется поверх:
 - `agent_runtime_audit`
 - agent-side `action_trace`
 
+Runtime-audit-only auth/provisioning events are first-class projection sources too. When an audit row has no `operation_id` or `ticket_id`, observer assigns a stable synthetic trace id and projects nearby same-device lifecycle audit rows into a trace so Codex/API/UI searches can still drill into the failing step.
+
 Проекция и поиск живут в:
 
 - `server/observer/service.py`
@@ -80,6 +82,9 @@ Observer runtime:
 - `run_tool`
 - `consent`
 - `agent_update`
+- `device_provisioning`
+- `agent_auth`
+- `agent_runtime`
 - `module_install`
 - `module_update`
 - `module_remove`
@@ -121,6 +126,7 @@ Codex/live debugging entrypoints:
 
 - `GET /api/admin/tech/observer/search?q=...` correlates by trace, ticket, operation, device, tool, module or signature text and returns matching traces/signatures plus next checks.
 - `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
+- Auth/provisioning debugging should start with `q=connection_request`, `q=invalid_token`, `root_kind=device_provisioning`, or `root_kind=agent_auth`. These queries must find operation-less `agent_runtime_audit` traces and signatures for warning/error events such as `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, and `invalid_token`.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.

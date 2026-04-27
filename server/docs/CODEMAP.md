@@ -198,6 +198,7 @@
 - **tech observability / tech panel** — `tech/handlers.py`, `observer/service.py`, `observer/runtime.py`, `tech/runtime_audit.py`, `tech/log_buffer.py`, `control_plane.py`, `runtime_control.py`, таблицы `agent_runtime_audit` + `observer_*`, маршруты `/api/admin/tech/*` и `/api/control/server/*` (overview, alerts, runtime health, full journal logs, lifecycle actions, traces/signatures/runtime/degradations, audits)
   - Observer queries now accept first-class filters `root_kind`, `min_duration_ms`, `min_retry_count`, `min_timeout_rate`, `min_retry_rate`, `min_slow_rate`, plus canonical ids (`trace_id`, `ticket_id`, `operation_id`, `device_id`).
   - `root_kind=agent_update` is the canonical way to isolate risky client-update traces and degradation groups from normal tool traffic.
+  - Operation-less `agent_runtime_audit` rows are projected as synthetic observer traces for auth/provisioning/runtime drilldown. Use `root_kind=device_provisioning` for connection-request/token-delivery/fingerprint issues, `root_kind=agent_auth` for invalid/revoked token and handshake failures, and `root_kind=agent_runtime` for lifecycle/offline events.
 - **device provisioning/update summary API** — `agents/handlers.py` (`GET /api/devices`, `GET /api/devices/{device_id}` возвращают `provisioning_summary`, `update_summary` и `identity_summary`)
 
 ---

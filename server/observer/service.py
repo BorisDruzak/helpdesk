@@ -35,6 +35,50 @@ TERMINAL_OPERATION_STATUSES = {"succeeded", "success", "failed", "timed_out", "c
 ERROR_OPERATION_STATUSES = {"failed", "timed_out"}
 ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
 ERROR_AUDIT_SEVERITIES = {"error", "critical"}
+PROBLEM_AUDIT_SEVERITIES = ERROR_AUDIT_SEVERITIES | {"warning"}
+RUNTIME_AUDIT_TRACE_PREFIX = "00000000-a075-4a75-8000-"
+RUNTIME_AUDIT_PROJECTION_WINDOW = timedelta(minutes=15)
+PROVISIONING_AUDIT_EVENTS = {
+    "connection_request_created",
+    "connection_request_approved",
+    "connection_request_rejected",
+    "connection_request_policy_rejected",
+    "connection_request_token_delivered",
+    "connection_request_token_limit",
+    "connection_request_approval_waiting_delivery",
+}
+AUTH_AUDIT_EVENTS = {
+    "invalid_token",
+    "token_revoked",
+    "handshake_failed",
+    "device_fingerprint_mismatch",
+}
+UPDATE_AUDIT_EVENTS = {
+    "update_requested",
+    "update_failed",
+    "update_handshake_confirmed",
+}
+RUNTIME_AUDIT_EVENTS = {
+    "handshake_ok",
+    "agent_offline",
+    "agent_disconnect",
+    "agent_superseded",
+}
+PROBLEM_AUDIT_EVENTS = (
+    PROVISIONING_AUDIT_EVENTS
+    | AUTH_AUDIT_EVENTS
+    | UPDATE_AUDIT_EVENTS
+    | {"agent_offline", "agent_disconnect", "agent_superseded"}
+)
+DANGEROUS_ROOT_KINDS = {
+    "agent_update",
+    "agent_auth",
+    "agent_runtime",
+    "device_provisioning",
+    "module_install",
+    "module_remove",
+    "consent",
+}
 _TRACE_PROJECTION_LOCK_GUARD = asyncio.Lock()
 _TRACE_PROJECTION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
@@ -131,6 +175,63 @@ def _split_tool_name(tool_name: Optional[str]) -> tuple[Optional[str], Optional[
 
 def _trace_scoped_uuid(trace_id: str, label: str) -> str:
     return str(uuid.uuid5(OBSERVER_NAMESPACE, f"{trace_id}:{label}"))
+
+
+def _runtime_audit_trace_id(audit_id: Optional[int]) -> Optional[str]:
+    if audit_id is None:
+        return None
+    try:
+        value = int(audit_id)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return None
+    if value <= 0xFFFFFFFFFFFF:
+        return f"{RUNTIME_AUDIT_TRACE_PREFIX}{value:012x}"
+    return str(uuid.uuid5(OBSERVER_NAMESPACE, f"runtime_audit:{value}"))
+
+
+def _runtime_audit_id_from_trace_id(trace_id: str) -> Optional[int]:
+    value = str(trace_id or "").strip().lower()
+    if not value.startswith(RUNTIME_AUDIT_TRACE_PREFIX):
+        return None
+    suffix = value[len(RUNTIME_AUDIT_TRACE_PREFIX):]
+    if len(suffix) != 12:
+        return None
+    try:
+        return int(suffix, 16)
+    except ValueError:
+        return None
+
+
+def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
+    event_type = str(audit.event_type or "").strip().lower()
+    source = str(audit.source or "").strip().lower()
+    if event_type in UPDATE_AUDIT_EVENTS or event_type.startswith("update_"):
+        return "agent_update"
+    if event_type in PROVISIONING_AUDIT_EVENTS or source.startswith("connection_request"):
+        return "device_provisioning"
+    if event_type in AUTH_AUDIT_EVENTS or source == "handshake":
+        return "agent_auth"
+    if event_type in RUNTIME_AUDIT_EVENTS:
+        return "agent_runtime"
+    return "agent_runtime"
+
+
+def _runtime_root_kind_from_audits(audits: Iterable[AgentRuntimeAudit]) -> str:
+    kinds = [_runtime_audit_root_kind(audit) for audit in audits]
+    for preferred in ("agent_update", "device_provisioning", "agent_auth", "agent_runtime"):
+        if preferred in kinds:
+            return preferred
+    return "trace"
+
+
+def _runtime_audit_is_problem(audit: AgentRuntimeAudit) -> bool:
+    severity = str(audit.severity or "").strip().lower()
+    if severity in ERROR_AUDIT_SEVERITIES:
+        return True
+    event_type = str(audit.event_type or "").strip().lower()
+    return severity in PROBLEM_AUDIT_SEVERITIES and event_type in PROBLEM_AUDIT_EVENTS
 
 
 def _parse_action_timestamp(value: Any) -> Optional[datetime]:
@@ -256,6 +357,7 @@ class ObserverOverlayService:
                 stmt = stmt.where(
                     or_(
                         ObserverTrace.trace_id.ilike(pattern),
+                        ObserverTrace.root_kind.ilike(pattern),
                         ObserverTrace.ticket_id.ilike(pattern),
                         ObserverTrace.operation_id.ilike(pattern),
                         ObserverTrace.device_id.ilike(pattern),
@@ -1080,6 +1182,22 @@ class ObserverOverlayService:
                     )
                     _remember((await self.session.execute(device_op_stmt)).scalars().all())
 
+                runtime_query_stmt = (
+                    select(AgentRuntimeAudit)
+                    .where(
+                        or_(
+                            AgentRuntimeAudit.device_id == query,
+                            AgentRuntimeAudit.event_type.ilike(pattern),
+                            AgentRuntimeAudit.source.ilike(pattern),
+                            AgentRuntimeAudit.severity.ilike(pattern),
+                        )
+                    )
+                    .order_by(AgentRuntimeAudit.created_at.desc(), AgentRuntimeAudit.id.desc())
+                    .limit(limit)
+                )
+                runtime_query_rows = (await self.session.execute(runtime_query_stmt)).scalars().all()
+                _remember(await self._trace_ids_for_runtime_audits(runtime_query_rows))
+
         if filters.root_kind in (None, "ticket"):
             ticket_root_stmt = select(Ticket.observer_root_trace_id).where(Ticket.observer_root_trace_id.isnot(None))
             if filters.ticket_id:
@@ -1125,6 +1243,32 @@ class ObserverOverlayService:
             _remember((await self.session.execute(ticket_stmt)).scalars().all())
             _remember((await self.session.execute(device_stmt)).scalars().all())
 
+        if len(candidates) < limit:
+            runtime_stmt = select(AgentRuntimeAudit)
+            runtime_filters = []
+            if filters.ticket_id:
+                runtime_filters.append(AgentRuntimeAudit.ticket_id == filters.ticket_id)
+            if filters.operation_id:
+                runtime_filters.append(AgentRuntimeAudit.operation_id == filters.operation_id)
+            if filters.device_id:
+                runtime_filters.append(AgentRuntimeAudit.device_id == filters.device_id)
+            if filters.status:
+                runtime_filters.append(AgentRuntimeAudit.severity == filters.status)
+            if filters.lookback_hours:
+                window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
+                runtime_filters.append(AgentRuntimeAudit.created_at >= window_start)
+            if runtime_filters:
+                runtime_stmt = runtime_stmt.where(*runtime_filters)
+            runtime_stmt = runtime_stmt.order_by(AgentRuntimeAudit.created_at.desc(), AgentRuntimeAudit.id.desc()).limit(limit)
+            runtime_rows = list((await self.session.execute(runtime_stmt)).scalars().all())
+            if filters.root_kind:
+                runtime_rows = [
+                    row
+                    for row in runtime_rows
+                    if _runtime_audit_root_kind(row) == filters.root_kind
+                ]
+            _remember(await self._trace_ids_for_runtime_audits(runtime_rows))
+
         if not candidates:
             recent_stmt = (
                 select(Operation.trace_id)
@@ -1135,6 +1279,64 @@ class ObserverOverlayService:
             _remember((await self.session.execute(recent_stmt)).scalars().all())
 
         return candidates[:limit]
+
+    async def _trace_ids_for_runtime_audits(self, audits: Iterable[AgentRuntimeAudit]) -> list[Optional[str]]:
+        rows = list(audits)
+        if not rows:
+            return []
+
+        operation_ids = {
+            operation_id
+            for operation_id in (_compact_text(row.operation_id) for row in rows)
+            if operation_id
+        }
+        ticket_ids = {
+            ticket_id
+            for ticket_id in (_compact_text(row.ticket_id) for row in rows)
+            if ticket_id
+        }
+        operation_trace_ids: dict[str, str] = {}
+        ticket_trace_ids: dict[str, str] = {}
+        if operation_ids:
+            op_rows = (
+                await self.session.execute(
+                    select(Operation.operation_id, Operation.trace_id).where(
+                        Operation.operation_id.in_(operation_ids),
+                        Operation.trace_id.isnot(None),
+                    )
+                )
+            ).all()
+            operation_trace_ids = {
+                operation_id: trace_id
+                for operation_id, trace_id in op_rows
+                if operation_id and trace_id
+            }
+        if ticket_ids:
+            ticket_rows = (
+                await self.session.execute(
+                    select(Ticket.ticket_id, Ticket.observer_root_trace_id).where(
+                        Ticket.ticket_id.in_(ticket_ids),
+                        Ticket.observer_root_trace_id.isnot(None),
+                    )
+                )
+            ).all()
+            ticket_trace_ids = {
+                ticket_id: trace_id
+                for ticket_id, trace_id in ticket_rows
+                if ticket_id and trace_id
+            }
+
+        trace_ids: list[Optional[str]] = []
+        for row in rows:
+            operation_id = _compact_text(row.operation_id)
+            ticket_id = _compact_text(row.ticket_id)
+            if operation_id and operation_id in operation_trace_ids:
+                trace_ids.append(operation_trace_ids[operation_id])
+            elif ticket_id and ticket_id in ticket_trace_ids:
+                trace_ids.append(ticket_trace_ids[ticket_id])
+            else:
+                trace_ids.append(_runtime_audit_trace_id(row.id))
+        return trace_ids
 
     async def _load_ticket_root_trace_id(self, ticket_id: Optional[str]) -> Optional[str]:
         if not ticket_id:
@@ -1175,6 +1377,9 @@ class ObserverOverlayService:
                     .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
                 )
             ).scalars().all()
+
+        if not any((operations, ticket_events, device_events, runtime_audits)):
+            runtime_audits = await self._collect_runtime_audit_trace_sources(trace_id)
 
         return TraceProjectionSources(
             operations=list(operations),
@@ -1240,6 +1445,37 @@ class ObserverOverlayService:
             runtime_audits=list(runtime_audits),
             root_ticket=ticket,
         )
+
+    async def _collect_runtime_audit_trace_sources(self, trace_id: str) -> list[AgentRuntimeAudit]:
+        audit_id = _runtime_audit_id_from_trace_id(trace_id)
+        if audit_id is None:
+            return []
+        anchor = await self.session.get(AgentRuntimeAudit, audit_id)
+        if anchor is None:
+            return []
+        if _compact_text(anchor.operation_id) or _compact_text(anchor.ticket_id):
+            return []
+        anchor_kind = _runtime_audit_root_kind(anchor)
+        started_at = anchor.created_at - RUNTIME_AUDIT_PROJECTION_WINDOW
+        finished_at = anchor.created_at + RUNTIME_AUDIT_PROJECTION_WINDOW
+        rows = (
+            await self.session.execute(
+                select(AgentRuntimeAudit)
+                .where(
+                    AgentRuntimeAudit.device_id == anchor.device_id,
+                    AgentRuntimeAudit.operation_id.is_(None),
+                    AgentRuntimeAudit.ticket_id.is_(None),
+                    AgentRuntimeAudit.created_at >= started_at,
+                    AgentRuntimeAudit.created_at <= finished_at,
+                )
+                .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
+            )
+        ).scalars().all()
+        return [
+            row
+            for row in rows
+            if _runtime_audit_root_kind(row) == anchor_kind
+        ]
 
     async def _clear_trace_dependents(self, trace_id: str) -> None:
         span_ids_subquery = select(ObserverSpan.span_id).where(ObserverSpan.trace_id == trace_id)
@@ -1580,7 +1816,7 @@ class ObserverOverlayService:
             finished_at = max(terminal_times) if terminal_times else None
 
         attrs_json = {
-            "root_scope": "ticket" if root_ticket else "execution",
+            "root_scope": "ticket" if root_ticket else ("runtime_audit" if sources.runtime_audits and not primary_operation else "execution"),
             "source_counts": {
                 "operations": len(sources.operations),
                 "ticket_events": len(sources.ticket_events),
@@ -1603,6 +1839,21 @@ class ObserverOverlayService:
                 }
             ),
         }
+        if sources.runtime_audits:
+            attrs_json["runtime_event_types"] = sorted(
+                {
+                    str(item.event_type or "").strip()
+                    for item in sources.runtime_audits
+                    if str(item.event_type or "").strip()
+                }
+            )
+            attrs_json["runtime_sources"] = sorted(
+                {
+                    str(item.source or "").strip()
+                    for item in sources.runtime_audits
+                    if str(item.source or "").strip()
+                }
+            )
         if root_ticket is not None:
             attrs_json["ticket_status"] = root_ticket.status
             attrs_json["ticket_code"] = root_ticket.ticket_code
@@ -1610,7 +1861,11 @@ class ObserverOverlayService:
 
         return payloads, links, {
             "root_span_id": root_span_id,
-            "root_kind": "ticket" if root_ticket is not None else (primary_operation.kind if primary_operation else (sources.ticket_events[0].event_type if sources.ticket_events else "trace")),
+            "root_kind": "ticket" if root_ticket is not None else (
+                primary_operation.kind if primary_operation else (
+                    sources.ticket_events[0].event_type if sources.ticket_events else _runtime_root_kind_from_audits(sources.runtime_audits)
+                )
+            ),
             "ticket_id": primary_ticket,
             "device_id": primary_device,
             "operation_id": primary_operation.operation_id if (primary_operation and len(sources.operations) == 1) else None,
@@ -1719,7 +1974,7 @@ class ObserverOverlayService:
 
         operation_lookup = {item.operation_id: item for item in sources.operations if item.operation_id}
         for audit in sources.runtime_audits:
-            if str(audit.severity or "").strip().lower() not in ERROR_AUDIT_SEVERITIES:
+            if not _runtime_audit_is_problem(audit):
                 continue
             details = redact_sensitive_payload(audit.details_json or {})
             linked_operation = operation_lookup.get(audit.operation_id or "")
@@ -1836,6 +2091,8 @@ class ObserverOverlayService:
             return "error"
         if any(str(item.severity or "").strip().lower() in ERROR_AUDIT_SEVERITIES for item in sources.runtime_audits):
             return "error"
+        if any(_runtime_audit_is_problem(item) for item in sources.runtime_audits):
+            return "warning"
         if sources.root_ticket is not None and str(sources.root_ticket.status or "").strip().lower() not in {"resolved", "closed"}:
             return "running"
         if operation_statuses == {"canceled"}:
@@ -1847,6 +2104,8 @@ class ObserverOverlayService:
     def _projected_trace_status(self, base_status: str, occurrences: list[dict[str, Any]]) -> str:
         if any(str(item.get("severity") or "").strip().lower() in ERROR_AUDIT_SEVERITIES for item in occurrences):
             return "error"
+        if base_status == "ok" and any(str(item.get("severity") or "").strip().lower() == "warning" for item in occurrences):
+            return "warning"
         return base_status
 
     def _make_error_signature(
@@ -2026,7 +2285,7 @@ class ObserverOverlayService:
             error_count = int(item.get("error_count") or 0)
             is_error = 1 if error_count > 0 or status in {"error", "failed", "timed_out"} else 0
             is_active = 1 if status in ACTIVE_OPERATION_STATUSES or status == "running" else 0
-            is_dangerous = 1 if str(item.get("root_kind") or "") in {"agent_update", "module_install", "module_remove", "consent"} else 0
+            is_dangerous = 1 if str(item.get("root_kind") or "") in DANGEROUS_ROOT_KINDS else 0
             return (is_error + is_dangerous, is_active, error_count, str(item.get("started_at") or ""))
 
         ordered = sorted(traces, key=_rank, reverse=True)
@@ -2067,20 +2326,27 @@ class ObserverOverlayService:
         ).scalars().all()
 
         grouped: dict[str, dict[str, Any]] = {}
-        for operation in rows:
-            root_kind = _compact_text(operation.kind) or "unknown"
+
+        def _ensure_flow(root_kind: str) -> dict[str, Any]:
             item = grouped.get(root_kind)
             if item is None:
                 item = grouped[root_kind] = {
                     "root_kind": root_kind,
                     "operations_count": 0,
+                    "runtime_audit_count": 0,
                     "error_count": 0,
                     "timeout_count": 0,
                     "retried_count": 0,
                     "active_count": 0,
                     "latest_operation_at": None,
+                    "latest_event_at": None,
                     "sample_trace_ids": [],
                 }
+            return item
+
+        for operation in rows:
+            root_kind = _compact_text(operation.kind) or "unknown"
+            item = _ensure_flow(root_kind)
             item["operations_count"] += 1
             status = str(operation.status or "").strip().lower()
             if status in {"failed", "timed_out", "canceled"}:
@@ -2094,7 +2360,42 @@ class ObserverOverlayService:
             latest_at = _operation_finished_at(operation) or operation.queued_at
             if latest_at and (item["latest_operation_at"] is None or latest_at > item["latest_operation_at"]):
                 item["latest_operation_at"] = latest_at
+            if latest_at and (item["latest_event_at"] is None or latest_at > item["latest_event_at"]):
+                item["latest_event_at"] = latest_at
             trace_id = _compact_text(operation.trace_id)
+            if trace_id and trace_id not in item["sample_trace_ids"] and len(item["sample_trace_ids"]) < 5:
+                item["sample_trace_ids"].append(trace_id)
+
+        runtime_stmt = select(AgentRuntimeAudit).where(AgentRuntimeAudit.created_at >= window_start)
+        if filters.ticket_id:
+            runtime_stmt = runtime_stmt.where(AgentRuntimeAudit.ticket_id == filters.ticket_id)
+        if filters.operation_id:
+            runtime_stmt = runtime_stmt.where(AgentRuntimeAudit.operation_id == filters.operation_id)
+        if filters.device_id:
+            runtime_stmt = runtime_stmt.where(AgentRuntimeAudit.device_id == filters.device_id)
+        runtime_rows = (
+            await self.session.execute(
+                runtime_stmt.order_by(AgentRuntimeAudit.created_at.desc(), AgentRuntimeAudit.id.desc()).limit(max(limit * 40, 40))
+            )
+        ).scalars().all()
+        if filters.root_kind:
+            runtime_rows = [row for row in runtime_rows if _runtime_audit_root_kind(row) == filters.root_kind]
+        runtime_trace_ids = await self._trace_ids_for_runtime_audits(runtime_rows)
+        for audit, trace_id in zip(runtime_rows, runtime_trace_ids):
+            root_kind = _runtime_audit_root_kind(audit)
+            if root_kind not in DANGEROUS_ROOT_KINDS:
+                continue
+            item = _ensure_flow(root_kind)
+            item["runtime_audit_count"] += 1
+            severity = str(audit.severity or "").strip().lower()
+            if severity in ERROR_AUDIT_SEVERITIES or _runtime_audit_is_problem(audit):
+                item["error_count"] += 1
+            if severity in ACTIVE_OPERATION_STATUSES:
+                item["active_count"] += 1
+            if audit.created_at and (item["latest_event_at"] is None or audit.created_at > item["latest_event_at"]):
+                item["latest_event_at"] = audit.created_at
+            if item["latest_operation_at"] is None and audit.created_at:
+                item["latest_operation_at"] = audit.created_at
             if trace_id and trace_id not in item["sample_trace_ids"] and len(item["sample_trace_ids"]) < 5:
                 item["sample_trace_ids"].append(trace_id)
 
@@ -2102,11 +2403,13 @@ class ObserverOverlayService:
             {
                 "root_kind": item["root_kind"],
                 "operations_count": item["operations_count"],
+                "runtime_audit_count": item["runtime_audit_count"],
                 "error_count": item["error_count"],
                 "timeout_count": item["timeout_count"],
                 "retried_count": item["retried_count"],
                 "active_count": item["active_count"],
                 "latest_operation_at": _iso(item["latest_operation_at"]),
+                "latest_event_at": _iso(item["latest_event_at"]),
                 "sample_trace_ids": item["sample_trace_ids"],
             }
             for item in grouped.values()
@@ -2118,7 +2421,8 @@ class ObserverOverlayService:
                 entry["retried_count"],
                 entry["active_count"],
                 entry["operations_count"],
-                entry["latest_operation_at"] or "",
+                entry.get("runtime_audit_count") or 0,
+                entry["latest_event_at"] or entry["latest_operation_at"] or "",
             ),
             reverse=True,
         )

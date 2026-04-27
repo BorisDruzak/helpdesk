@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.db import get_session
-from app.db.models import Device, Operation, Ticket
+from app.db.models import AgentRuntimeAudit, Device, Operation, Ticket
 from app.repos.ticket_events_repo import TicketEventsRepo
 
 
@@ -136,6 +136,106 @@ async def test_observer_quick_endpoint_returns_hot_traces_signatures_and_flows(t
         headers=_auth(USER_TOKEN),
     )
     assert forbidden.status == 403
+
+
+@pytest.mark.asyncio
+async def test_runtime_auth_and_provisioning_audits_are_observer_searchable(test_client):
+    now = datetime.now(timezone.utc)
+    device_id = "00000000-0000-0000-0000-00000000f251"
+
+    async with get_session() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.20",
+                hostname="observer-auth-host",
+                os="linux",
+                capabilities=[],
+                tools_version="observer-auth",
+                device_metadata={},
+                last_seen_at=now,
+                last_handshake_at=now,
+                first_seen_at=now - timedelta(minutes=20),
+            )
+        )
+        session.add_all(
+            [
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="connection_request_created",
+                    severity="info",
+                    source="connection_request",
+                    details_json={"hostname": "observer-auth-host"},
+                    created_at=now - timedelta(minutes=6),
+                ),
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="connection_request_token_limit",
+                    severity="warning",
+                    source="connection_request_admin",
+                    details_json={"error_code": "TOKEN_LIMIT_EXCEEDED", "reason": "too many active tokens"},
+                    created_at=now - timedelta(minutes=5),
+                ),
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="invalid_token",
+                    severity="warning",
+                    source="handshake",
+                    details_json={"reason": "invalid_token"},
+                    created_at=now - timedelta(minutes=3),
+                ),
+            ]
+        )
+        await session.commit()
+
+    provisioning_search = await test_client.get(
+        "/api/admin/tech/observer/search?q=connection_request&lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert provisioning_search.status == 200
+    provisioning_payload = await provisioning_search.json()
+    assert provisioning_payload["summary"]["trace_count"] >= 1
+    assert any(trace["root_kind"] == "device_provisioning" for trace in provisioning_payload["traces"])
+    assert any(signature["failure_stage"] == "connection_request_token_limit" for signature in provisioning_payload["signatures"])
+
+    auth_search = await test_client.get(
+        "/api/admin/tech/observer/search?q=invalid_token&lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert auth_search.status == 200
+    auth_payload = await auth_search.json()
+    assert any(trace["root_kind"] == "agent_auth" for trace in auth_payload["traces"])
+    assert any(signature["failure_stage"] == "invalid_token" for signature in auth_payload["signatures"])
+
+    root_kind_search = await test_client.get(
+        f"/api/admin/tech/traces?root_kind=device_provisioning&device_id={device_id}&lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert root_kind_search.status == 200
+    root_kind_payload = await root_kind_search.json()
+    assert root_kind_payload["count"] >= 1
+    assert root_kind_payload["traces"][0]["device_id"] == device_id
+    assert root_kind_payload["traces"][0]["attrs_json"]["runtime_event_types"]
+
+    bundle_resp = await test_client.get(
+        "/api/admin/tech/diagnostics/bundle?q=connection_request&lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert bundle_resp.status == 200
+    bundle_payload = await bundle_resp.json()
+    assert bundle_payload["status"] == "ok"
+    assert bundle_payload["primary_trace"]["root_kind"] == "device_provisioning"
+    assert any(item["event_type"] == "connection_request_token_limit" for item in bundle_payload["agent_audit"])
+
+    quick_resp = await test_client.get(
+        "/api/admin/tech/observer/quick?lookback_hours=24",
+        headers=_auth(SUPPORT_TOKEN),
+    )
+    assert quick_resp.status == 200
+    quick_payload = await quick_resp.json()
+    assert any(item["root_kind"] == "device_provisioning" for item in quick_payload["dangerous_flows"])
+    assert any(item["root_kind"] == "agent_auth" for item in quick_payload["dangerous_flows"])
 
 
 @pytest.mark.asyncio

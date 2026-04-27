@@ -143,6 +143,7 @@ python ws_agent.py --no-gui
 - Агент логирует: `Ошибка аутентификации при handshake`
 - Если GUI **не** включен: токен очищается в памяти и в БД, после чего запускается automatic reprovision через `POST /api/connection_request`.
 - Если GUI включен: токен тоже очищается, но агент уходит в тот же GUI-driven connection request flow; ручной ввод raw token больше не является обязательным сценарием восстановления.
+- Server-side observer now exposes this path through `agent_runtime_audit`: invalid/revoked token and handshake auth failures project as `root_kind=agent_auth`, while connection-request/token-delivery/fingerprint steps project as `root_kind=device_provisioning`. Debug from the server with `observer/search?q=invalid_token` or `observer/search?q=connection_request`.
 
 ## Поведение при отсутствии токена
 

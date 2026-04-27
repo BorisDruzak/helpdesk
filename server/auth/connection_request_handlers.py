@@ -289,6 +289,13 @@ async def handle_connection_request(request: web.Request) -> web.Response:
 
         if policy == POLICY_REJECT_ALL:
             logger.info(f"Connection request rejected (policy=reject_all): device_id={device_id[:8]}...")
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="connection_request_policy_rejected",
+                severity="warning",
+                source="connection_request",
+                details_json={"policy": "reject_all"},
+            )
             return web.json_response(
                 {
                     "status": "rejected",
@@ -316,6 +323,13 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 )
             except ValueError as e:
                 logger.warning(f"Connection request accept_all token limit: {e}")
+                await write_agent_runtime_audit(
+                    device_id=device_id,
+                    event_type="connection_request_token_limit",
+                    severity="warning",
+                    source="connection_request",
+                    details_json={"policy": "accept_all", "reason": str(e), "error_code": TOKEN_LIMIT_ERROR_CODE},
+                )
                 return web.json_response(
                     _token_limit_response_payload(error=str(e)),
                     status=429,
@@ -355,6 +369,13 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                     seconds=APPROVED_HEARTBEAT_GRACE_SECONDS
                 )
             if latest_request.approved_token or recent_approval:
+                await write_agent_runtime_audit(
+                    device_id=device_id,
+                    event_type="connection_request_approval_waiting_delivery",
+                    severity="info",
+                    source="connection_request",
+                    details_json={"reason": "post_approval_heartbeat"},
+                )
                 return web.json_response({
                     "status": "pending",
                     "message": "Request already approved; waiting for token delivery",
@@ -402,6 +423,12 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
     connection_request_service = ConnectionRequestService()
     token_once = await connection_request_service.consume_approved_token_once(device_id=device_id)
     if token_once:
+        await write_agent_runtime_audit(
+            device_id=device_id,
+            event_type="connection_request_token_delivered",
+            severity="info",
+            source="connection_request_status",
+        )
         return web.json_response({
             "status": "approved",
             "token": token_once,
@@ -569,6 +596,15 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 },
             )
             await session.commit()
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="device_fingerprint_mismatch",
+                severity="critical",
+                source="connection_request_admin",
+                actor_id=request["auth_context"].actor_id if request.get("auth_context") else None,
+                actor_role=request["auth_context"].actor_role if request.get("auth_context") else None,
+                details_json={"fingerprint_verdict": fingerprint_verdict or {}},
+            )
             return web.json_response(
                 _fingerprint_mismatch_response_payload(verdict=fingerprint_verdict),
                 status=409,
@@ -592,6 +628,15 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 },
             )
             await session.commit()
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="connection_request_token_limit",
+                severity="warning",
+                source="connection_request_admin",
+                actor_id=request["auth_context"].actor_id if request.get("auth_context") else None,
+                actor_role=request["auth_context"].actor_role if request.get("auth_context") else None,
+                details_json={"reason": str(e), "error_code": TOKEN_LIMIT_ERROR_CODE},
+            )
             return web.json_response(
                 _token_limit_response_payload(error=str(e)),
                 status=429,
