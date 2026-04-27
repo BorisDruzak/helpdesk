@@ -436,6 +436,11 @@ class OutboxIngestService:
             outcome=persistence_outcome,
             flush_immediately=flush_immediately,
         )
+        if not (
+            persistence_outcome.decision == "nack"
+            and persistence_outcome.retryable
+        ):
+            self._dedupe.mark_processed(ctx, envelope_check.outbox_id)
         # 6) publish side effects
         await self._event_publish.publish_after_commit(ctx=ctx, outcome=persistence_outcome)
         return persistence_outcome.should_continue
@@ -554,13 +559,21 @@ class OutboxDedupService:
             seen = {}
             setattr(ctx.state, key, seen)
         agent_seen = seen.setdefault(ctx.agent_id, set())
-        if outbox_id in agent_seen:
-            return True
+        return outbox_id in agent_seen
+
+    def mark_processed(self, ctx: AgentConnectionContext, outbox_id: Optional[str]) -> None:
+        if not ctx.agent_id or not outbox_id:
+            return
+        key = "_outbox_seen_ids"
+        seen = getattr(ctx.state, key, None)
+        if seen is None:
+            seen = {}
+            setattr(ctx.state, key, seen)
+        agent_seen = seen.setdefault(ctx.agent_id, set())
         agent_seen.add(outbox_id)
         if len(agent_seen) > 10000:
             # bound runtime memory
             seen[ctx.agent_id] = set(list(agent_seen)[-5000:])
-        return False
 
 
 class OutboxPersistenceService(OutboxPersistenceComponent):

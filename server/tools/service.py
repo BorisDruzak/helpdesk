@@ -614,6 +614,7 @@ class ToolService:
         Returns:
             Результат выполнения
         """
+        params = dict(params or {})
         if timeout is None:
             timeout = TOOL_EXECUTION_TIMEOUT
         

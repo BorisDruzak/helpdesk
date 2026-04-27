@@ -73,6 +73,8 @@
 ### 5. Trace correlation
 
 - В ответах **outbox_ack** и **outbox_nack** поле **trace_id** должно совпадать с `trace_id` из входящего envelope (корреляция запрос/ответ).
+- Если входящий `outbox_item` содержит `outbox_id`, но не содержит `trace_id`, сервер возвращает validation NACK с fallback server trace id; такой envelope не должен зависать без ACK/NACK.
+- Runtime dedupe for `outbox_id` is terminal-only: retryable NACKs are not inserted into the duplicate cache, so the same `outbox_id` can be retried after transient persistence errors.
 
 ### 6. Server-side device outbox
 
@@ -80,7 +82,8 @@
 - `request_id` в команде используется как **command_id** (единый идентификатор команды).
 - DeviceOutboxSender периодически опрашивает pending команды и отправляет их подключённым агентам; при получении `command_result` команда помечается как delivered (или failed при ошибке).
 - Drain order is no longer pure FIFO: `cancel_operation` идёт первым, затем agent update / control-health команды, затем обычный FIFO по `created_at`.
-- Для sync transport-path `send_ws_command(..., wait_for_result=True)` waiter теперь хранится в state-level runtime registry по `command_id`, а не в metadata текущего websocket, поэтому reconnect не должен терять ожидание `command_result`.
+- Для sync transport-path `send_ws_command(..., wait_for_result=True)` waiter теперь хранится в state-level runtime registry по `command_id`, а не в metadata текущего websocket, и регистрируется до wake-up dispatch, поэтому reconnect и быстрый `command_result` не должны терять ожидание.
+- `send_ws_command` и `ToolService.run_tool` копируют caller params перед чтением internal `_operation_id`; вызывающий код может безопасно переиспользовать исходный dict для retry/log/audit.
 - Если агент и сервер оба объявили capability `outbox_batch_v1`, агент может присылать несколько `outbox_item` в одном WS frame как `outbox_items_batch`; сервер при этом всё равно ACK/NACK-ит каждую запись отдельно.
 
 ### 7. Deduplication

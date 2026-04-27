@@ -134,7 +134,7 @@
 
 Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir pc_agent`. Ниже — куда смотреть в первую очередь.
 
-- **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`
+- **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
 - **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
@@ -146,7 +146,7 @@
 - **always-on, tray, runtime logs, локальный shutdown/status/logs** — `docs/AGENT_RUNTIME_ALWAYS_ON.md`, `ws_agent.py`, `core/runtime_logging.py`, `ui_gui/main.py`, `ui_gui/tray_manager.py`, `ui_bridge/api_server.py`
 - **reprovision_required / invalid token** — `ws_agent.py` (`_request_token_from_console` теперь запускает auto reprovision через `connection_request` flow без ручного ввода)
 - **артефакты, upload** — `core/artifacts.py`, `core/recording_controller.py`, `network/uploader.py`
-- **self-update, pending_update, update_history, launcher rollback, recommended update UI** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`, `ws_agent.py`, `ui_bridge/api_server.py`, `ui_gui/main_window.py`
+- **self-update, pending_update, update_history, launcher rollback, recommended update UI** — `docs/AGENT_UPDATE_WORKFLOW.md`, `docs/SELF_UPDATE.md`, `launcher/installer.py`, `build_windows_release_v2.py`, `version.py`, `ws_agent.py`, `ui_bridge/api_server.py`, `ui_gui/main_window.py`
   - Update tracing now spans `ws_agent.trigger_recommended_update` -> `core/orchestrator._handle_update` -> `ws_agent_runtime_helpers.shutdown_for_update` -> `launcher/installer.py::apply_update`, all through the shared `core/action_trace.py` recorder / external bridge.
 - **update_request_state, pending_restart, truthful scheduled** — `ws_agent.py`, `core/orchestrator.py`, `ui_gui/main_window.py`, `launcher/installer.py`, `launcher/launcher_main.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`

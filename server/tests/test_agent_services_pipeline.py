@@ -113,6 +113,18 @@ async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
         batch_ack_manager=batch,
         event_validator=EventValidator(),
     )
+
+    class _AckPersistence:
+        async def persist(self, *, message, ctx, event_validator, envelope):
+            return OutboxPersistenceOutcome(
+                should_continue=True,
+                decision="ack",
+                outbox_id=envelope.outbox_id,
+                trace_id=envelope.trace_id,
+                persisted=True,
+            )
+
+    service._persistence = _AckPersistence()
     state = SimpleNamespace()
     ctx = AgentConnectionContext(ws=SimpleNamespace(), request=SimpleNamespace(), state=state, agent_id="dev-1")
     msg = {
@@ -133,6 +145,102 @@ async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
     assert await service.handle(msg, ctx) is True
 
     assert ("dev-1", "ob-1", "tr-1") in batch.acks
+
+
+@pytest.mark.asyncio
+async def test_outbox_ingest_retryable_nack_does_not_mark_duplicate():
+    batch = _BatchAckManagerStub()
+    service = OutboxIngestService(
+        legacy_handler=None,
+        batch_ack_manager=batch,
+        event_validator=EventValidator(),
+    )
+
+    class _FlakyPersistence:
+        def __init__(self):
+            self.calls = 0
+
+        async def persist(self, *, message, ctx, event_validator, envelope):
+            self.calls += 1
+            if self.calls == 1:
+                return OutboxPersistenceOutcome(
+                    should_continue=True,
+                    decision="nack",
+                    outbox_id=envelope.outbox_id,
+                    trace_id=envelope.trace_id,
+                    retryable=True,
+                    error_code="SERVER_ERROR",
+                    error_message="transient db error",
+                )
+            return OutboxPersistenceOutcome(
+                should_continue=True,
+                decision="ack",
+                outbox_id=envelope.outbox_id,
+                trace_id=envelope.trace_id,
+                persisted=True,
+            )
+
+    persistence = _FlakyPersistence()
+    service._persistence = persistence
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = {
+        "type": "outbox_item",
+        "trace_id": "tr-retry-1",
+        "payload": {
+            "outbox_id": "ob-retry-1",
+            "item_type": "job_event",
+            "device_seq": 301,
+            "event": {"event": "tools_changed"},
+        },
+        "meta": {"actor_role": "agent"},
+    }
+
+    assert await service.handle(msg, ctx) is True
+    assert await service.handle(msg, ctx) is True
+
+    assert persistence.calls == 2
+    assert any(item[1] == "ob-retry-1" and item[3] == "SERVER_ERROR" for item in batch.nacks)
+    assert ("dev-1", "ob-retry-1", "tr-retry-1") in batch.acks
+
+
+@pytest.mark.asyncio
+async def test_outbox_ingest_missing_trace_id_returns_validation_nack():
+    batch = _BatchAckManagerStub()
+    service = OutboxIngestService(
+        legacy_handler=None,
+        batch_ack_manager=batch,
+        event_validator=EventValidator(),
+    )
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = {
+        "type": "outbox_item",
+        "payload": {
+            "outbox_id": "ob-missing-trace",
+            "item_type": "job_event",
+            "device_seq": 302,
+            "event": {"event": "tools_changed"},
+        },
+        "meta": {"actor_role": "agent"},
+    }
+
+    assert await service.handle(msg, ctx) is True
+
+    assert batch.nacks
+    device_id, outbox_id, trace_id, error_code = batch.nacks[0]
+    assert device_id == "dev-1"
+    assert outbox_id == "ob-missing-trace"
+    assert trace_id
+    assert error_code == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

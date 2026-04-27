@@ -133,3 +133,37 @@ def test_ensure_module_installed_only_persists_desired_state_when_preferred_vers
 
     assert result is None
     assert desired_calls and desired_calls[0]["desired_version"] == "2.0.0"
+
+
+@pytest.mark.no_db
+def test_run_tool_does_not_mutate_caller_params():
+    state = SimpleNamespace(get_session_by_ticket=lambda _ticket_id: None)
+    service = ToolService(state)
+    captured = {}
+
+    async def fake_ensure_module_installed(*_args, **_kwargs):
+        return None
+
+    async def fake_send_ws_command(**kwargs):
+        captured.update(kwargs)
+        return {"status": "accepted", "operation_id": kwargs["params"]["_operation_id"]}
+
+    params = {"_operation_id": "op-tool-immut-1", "message": "hello"}
+
+    with patch.object(service, "_ensure_module_installed", new=fake_ensure_module_installed), \
+         patch("websocket.protocol.send_ws_command", new=fake_send_ws_command):
+        result = asyncio.run(
+            service.run_tool(
+                device_id="device-tool-immut-1",
+                ticket_id="",
+                tool_name="system.echo",
+                params=params,
+                call_id="call-tool-immut-1",
+                wait_for_result=False,
+            )
+        )
+
+    assert result["operation_id"] == "op-tool-immut-1"
+    assert params == {"_operation_id": "op-tool-immut-1", "message": "hello"}
+    assert captured["params"]["_operation_id"] == "op-tool-immut-1"
+    assert captured["params"]["params"] == {"message": "hello"}

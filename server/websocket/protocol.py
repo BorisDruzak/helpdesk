@@ -348,6 +348,7 @@ async def send_ws_command(
         asyncio.TimeoutError: Если агент не ответил в течение timeout
     """
     # КРИТИЧНО: Используем actor_role из auth_context, не из параметра
+    params = dict(params or {})
     if auth_context:
         from auth.context import AuthContext
         if isinstance(auth_context, AuthContext):
@@ -413,7 +414,7 @@ async def send_ws_command(
         )
         raise WsCommandQueueFullError("WS command queue full")
     
-    metadata = agent_info.get("metadata", {})
+    metadata = agent_info.setdefault("metadata", {})
     agent_device_id = metadata.get("device_id", device_id)
     
     # Generate IDs
@@ -427,6 +428,21 @@ async def send_ws_command(
     else:
         command_id = str(uuid.uuid4())
     request_id = command_id  # Используем тот же UUID
+
+    future = None
+    waiter_registered = False
+    if wait_for_result:
+        future = asyncio.get_event_loop().create_future()
+        if hasattr(state, "register_pending_command_future"):
+            state.register_pending_command_future(
+                command_id,
+                future,
+                device_id=device_id,
+                connection_id=metadata.get("connection_id"),
+            )
+        else:
+            metadata.setdefault("pending_command_futures", {})[command_id] = future
+        waiter_registered = True
 
     # Phase C: Enqueue command in device_outbox AND create operation
     # КРИТИЧНО: operation_id = command_id = request_id (единый UUID)
@@ -534,6 +550,12 @@ async def send_ws_command(
                     logger.debug(f"[send_ws_command] dispatch enqueue skipped: {dispatch_exc}")
     except Exception as e:
         logger.error(f"[send_ws_command] Failed to enqueue command: {e}")
+        if waiter_registered:
+            if hasattr(state, "discard_pending_command_future"):
+                state.discard_pending_command_future(command_id)
+            else:
+                metadata.get("pending_command_futures", {}).pop(command_id, None)
+            waiter_registered = False
         if acquired_run_tool:
             run_tool_sem.release()
             acquired_run_tool = False
@@ -568,23 +590,6 @@ async def send_ws_command(
             "trace_id": trace_id,
             "wait_for_result": False,
         }
-
-    # Create Future for waiting on response
-    future = asyncio.get_event_loop().create_future()
-
-    # Store future in state-level runtime registry so reconnect does not lose the waiter.
-    if hasattr(state, "register_pending_command_future"):
-        connection_id = (agent_info.get("metadata", {}) or {}).get("connection_id")
-        state.register_pending_command_future(
-            command_id,
-            future,
-            device_id=device_id,
-            connection_id=connection_id,
-        )
-    else:
-        if "pending_command_futures" not in agent_info["metadata"]:
-            agent_info["metadata"]["pending_command_futures"] = {}
-        agent_info["metadata"]["pending_command_futures"][command_id] = future
 
     logger.info(
         f"[send_ws_command] Waiting for command_result: command_id={command_id} "

@@ -171,6 +171,14 @@ Windows note:
 - For websocket-heavy pytest on Windows, `server/tests/conftest.py` now forces `WindowsSelectorEventLoopPolicy`, so the old trailing `unexpected connection_lost() call` noise is no longer a completion criterion.
 - For isolated ephemeral test DBs from Windows, set `TEST_DATABASE_ADMIN_URL` explicitly.
 
+## 2026-04-28 Protocol hardening notes
+
+- `server/websocket/agent_services.py` now marks an `outbox_id` as runtime-deduped only after a terminal non-retryable outcome or ACK. Retryable `outbox_nack` outcomes must remain retryable by the same `outbox_id`.
+- `server/websocket/outbox_ingest_components.py` treats missing `trace_id` as an envelope validation error and returns a typed validation NACK with a fallback server trace id instead of silently skipping ACK/NACK.
+- `server/websocket/protocol.py` registers sync `send_ws_command(..., wait_for_result=True)` waiters before waking device dispatch, and copies caller params before consuming internal `_operation_id`.
+- `server/tools/service.py` also copies caller params before building `run_tool` command params, so retries/logging/audit code can safely reuse the original dict.
+- `pc_agent/ws_agent.py` handshake diagnostics must log the current `PROTOCOL_VERSION` (`ws_ticket_v3`), not legacy `ws_mcp_v1`.
+
 ## Fast map
 
 | Topic | Open first | Then |

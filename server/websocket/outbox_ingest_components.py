@@ -4,6 +4,7 @@ Focused components for outbox ingest pipeline decomposition.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -23,22 +24,30 @@ class EnvelopeValidationResult:
 
 class OutboxEnvelopeValidator:
     def validate(self, message: dict[str, Any]) -> EnvelopeValidationResult:
+        trace_raw = message.get("trace_id")
+        trace_id = str(trace_raw).strip() if trace_raw else None
         payload = message.get("payload", {})
         if not isinstance(payload, dict):
             return EnvelopeValidationResult(
                 ok=False,
                 outbox_id=None,
-                trace_id=message.get("trace_id"),
+                trace_id=trace_id or str(uuid.uuid4()),
                 error_message="Payload is not a dict",
             )
         outbox_id = payload.get("outbox_id")
-        trace_id = message.get("trace_id")
         if not outbox_id:
             return EnvelopeValidationResult(
                 ok=False,
                 outbox_id=None,
-                trace_id=trace_id,
+                trace_id=trace_id or str(uuid.uuid4()),
                 error_message="Missing outbox_id in payload",
+            )
+        if not trace_id:
+            return EnvelopeValidationResult(
+                ok=False,
+                outbox_id=str(outbox_id),
+                trace_id=str(uuid.uuid4()),
+                error_message="Missing trace_id in envelope",
             )
         return EnvelopeValidationResult(ok=True, outbox_id=str(outbox_id), trace_id=trace_id)
 

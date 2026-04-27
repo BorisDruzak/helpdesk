@@ -2859,7 +2859,7 @@ class WSAgent:
                             logger.debug(f"   Токен в handshake: {'да' if has_tok else 'нет'}" + (f" ({handshake_data['token'][:12]}...)" if has_tok else ""))
                             logger.debug(f"   Device ID: {handshake_data['uuid'][:8]}...")
                             logger.debug(f"   Hostname: {handshake_data['hostname']}")
-                            logger.debug(f"   Protocol: ws_mcp_v1")
+                            logger.debug(f"   Protocol: {PROTOCOL_VERSION}")
                             
                             # Небольшая задержка для обработки сервером
                             await asyncio.sleep(0.1)
