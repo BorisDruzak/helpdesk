@@ -1,4 +1,4 @@
-import { startTransition, createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import {
   fetchCurrentSession,
@@ -33,27 +33,21 @@ export function SessionProvider({ children }: SessionProviderProps) {
   async function refreshSession() {
     const currentSession = await fetchCurrentSession();
 
-    startTransition(() => {
-      setSession(currentSession);
-      setStatus(currentSession ? "authenticated" : "anonymous");
-    });
+    setSession(currentSession);
+    setStatus(currentSession ? "authenticated" : "anonymous");
   }
 
   async function login(credentials: { login: string; password: string }) {
     const nextSession = await loginWebSession(credentials);
-    startTransition(() => {
-      setSession(nextSession);
-      setStatus("authenticated");
-    });
+    setSession(nextSession);
+    setStatus("authenticated");
     return nextSession;
   }
 
   async function logout() {
     await logoutWebSession();
-    startTransition(() => {
-      setSession(null);
-      setStatus("anonymous");
-    });
+    setSession(null);
+    setStatus("anonymous");
   }
 
   useEffect(() => {
@@ -65,18 +59,14 @@ export function SessionProvider({ children }: SessionProviderProps) {
         if (!active) {
           return;
         }
-        startTransition(() => {
-          setSession(currentSession);
-          setStatus(currentSession ? "authenticated" : "anonymous");
-        });
+        setSession(currentSession);
+        setStatus(currentSession ? "authenticated" : "anonymous");
       } catch {
         if (!active) {
           return;
         }
-        startTransition(() => {
-          setSession(null);
-          setStatus("anonymous");
-        });
+        setSession(null);
+        setStatus("anonymous");
       }
     })();
 

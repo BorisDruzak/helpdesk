@@ -1,5 +1,5 @@
 import { LockKeyhole, ShieldCheck, Ticket } from "lucide-react";
-import { startTransition, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button } from "../../components/ui/button";
@@ -38,9 +38,7 @@ export function LoginPage() {
         password: passwordValue
       });
 
-      startTransition(() => {
-        navigate(resolveNextPath(searchParams.get("next"), nextSession), { replace: true });
-      });
+      navigate(resolveNextPath(searchParams.get("next"), nextSession), { replace: true });
     } catch (error) {
       if (error instanceof WebSessionApiError) {
         setErrorMessage(error.message);
