@@ -215,3 +215,20 @@ Verification focus:
 - Legacy module payloads without `output_contract` must stay valid.
 - New playbook-ready module payloads should declare explicit `status_values`, `success_values`, `error_values`, `summary_path` and `error_code_path`.
 - `/app/admin/playbooks` can consume these contracts through the existing module/tool catalog path.
+
+### 2026-04-27 Module Test Harness And Windows Gate
+
+Current plan:
+
+1. [done] Make the existing server-side module smoke/runtime harness explicit and mandatory in authoring validation before publish.
+2. [done] Store harness status in `validation_json.server_harness` for each module version.
+3. [done] For Windows-targeted modules (`win32` / `windows*` platforms), show a warning that a Windows lab agent live test is still required before production/preferred rollout.
+4. [done] Add a live-test API for a published module version that installs/runs the module command on a selected real agent and records the result back into `validation_json.live_tests`.
+5. [done] Block setting a Windows-targeted module version as preferred unless `validation_json.live_tests` contains a passed Windows test on an agent whose version satisfies the module `min_agent_version`.
+6. [done] Keep Linux/any modules publishable with server harness only; live lab testing stays optional unless the module targets Windows and is being promoted to preferred.
+
+Verification target:
+
+- Server tests for mandatory harness metadata, Windows warning, live-test recording and preferred gate.
+- React test for the Windows lab warning in the module constructor.
+- Live check on `/app/admin/modules` plus headless API validation on the Linux server.

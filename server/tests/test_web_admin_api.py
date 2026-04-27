@@ -1128,6 +1128,31 @@ async def test_web_admin_set_module_preferred_version_returns_typed_payload(web_
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_admin_set_windows_module_preferred_requires_live_test(web_admin_client, monkeypatch):
+    async def fake_set_preferred(*, request, auth_context, module_name: str, version: str | None):
+        assert request.path == "/api/web/admin/modules/win_diag/preferred"
+        assert auth_context.actor_role == "admin"
+        assert module_name == "win_diag"
+        assert version == "1.0.0"
+        raise ValueError("MODULE_WINDOWS_LIVE_TEST_REQUIRED")
+
+    monkeypatch.setattr(admin_handlers, "_set_admin_module_preferred_version", fake_set_preferred)
+
+    response = await web_admin_client.patch(
+        "/api/web/admin/modules/win_diag/preferred",
+        json={"version": "1.0.0"},
+    )
+
+    assert response.status == 409
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
+    assert payload["module_name"] == "win_diag"
+    assert payload["version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_admin_device_updates_returns_typed_payload(web_admin_client, monkeypatch):
     async def fake_build_payload(*, device_id: str, state):
         assert device_id == "device-1"

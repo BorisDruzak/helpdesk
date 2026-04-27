@@ -55,6 +55,7 @@ Workbench API:
 - `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
 - `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
 - `POST /api/modules/upload` - upload a ready ZIP package, run server preflight/smoke, publish it into the registry, and make it available for immediate editing in the workbench
+- `POST /api/modules/{module_name}/{version}/live_tests` - install and run a published module command on a selected real lab agent, then append the result to `validation_json.live_tests`
 - `DELETE /api/modules/{module_name}/{version}` - remove a published module version from the registry and delete its archive from storage; clears preferred-version assignment if the deleted version was preferred
 - `PATCH /api/modules/{module_name}/preferred` - assign the preferred version used by auto-install/runtime resolution
 
@@ -71,6 +72,7 @@ Workbench UX expectations:
 - local validation also checks the playbook decision contract: status path, allowed status values, success/error subsets, summary path and error-code path
 - the guided wizard and advanced editor expose these contract fields directly, and the wizard side summary shows a readiness checklist for module id, version, platforms, tool ids and output contracts
 - the typed `/app/admin/modules` editor mirrors the same contract fields and sends validate/publish requests to `/api/modules/authoring/*`
+- when a draft targets Windows (`win32` / `windows*`), the UI must show that it is not verified on a Windows agent yet; publish can proceed after the server harness, but preferred rollout is blocked until a Windows live test passes
 - archive import expects `module_name` and `version` for the upload contract, but canonical values are still reconciled against `manifest.json` inside the ZIP
 
 Workbench detail and validate preview both expose archive/source decomposition for generated ZIP packages:
@@ -85,6 +87,52 @@ The preferred version is stored server-side and is the same source of truth used
 - the admin UI
 - `run_tool` auto-install and auto-update
 - preferred module resolution in the server registry
+
+## Validation and live-test gates
+
+Server-side validation always runs the package preflight plus the local smoke/runtime harness before publish. The server harness deliberately ignores the manifest platform guard so a Linux server can still validate the package structure, imports, registration and tool catalog for Windows-targeted modules; real OS compatibility is enforced by the live-test/preferred gate. Successful validate/save/upload responses include `validation_json.server_harness`:
+
+```json
+{
+  "server_harness": {
+    "status": "passed",
+    "required_before_publish": true,
+    "runner": "pc_agent.scripts.smoke_check_module",
+    "platform": "win32",
+    "checked_at": "2026-04-27T00:00:00+00:00",
+    "tools_count": 1,
+    "smoke_result": {},
+    "errors": []
+  }
+}
+```
+
+If `manifest.platforms` contains Windows (`win32` or `windows*`), validation also adds the warning code `WINDOWS_LIVE_TEST_REQUIRED_BEFORE_PREFERRED`. This warning is not a publish blocker by itself.
+
+Promotion to preferred is stricter for Windows-targeted modules: `PATCH /api/modules/{module_name}/preferred` and the typed admin preferred endpoint return `409 MODULE_WINDOWS_LIVE_TEST_REQUIRED` until `validation_json.live_tests` contains a passed live test with:
+
+- `platform == "win32"`
+- `status == "passed"`
+- `agent_version` greater than or equal to the module/tool `min_agent_version`
+
+Run the live test with:
+
+```http
+POST /api/modules/{module_name}/{version}/live_tests
+```
+
+Request body:
+
+```json
+{
+  "device_id": "windows-lab-device-id",
+  "tool_name": "network.ping",
+  "params": {},
+  "timeout_sec": 45
+}
+```
+
+The server first sends `install_module_package` to the selected agent, then sends `run_tool` only if installation succeeds. Each attempt is appended to `validation_json.live_tests` with the install/run stage, device id, normalized platform, agent version, operation ids, trace id and compact payloads.
 
 ## Tool output contracts for playbooks
 

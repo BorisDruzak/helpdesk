@@ -26,7 +26,7 @@ from utils.module_storage import save_module_zip_from_stream, save_module_zip_by
 from utils.module_preflight import apply_smoke_validation, preflight_module_zip
 from utils.module_builder import build_module_package, DEFAULT_RISK_LEVEL
 from utils.module_manifest import get_module_manifest, get_module_validation, module_to_api_record
-from utils.versioning import version_key
+from utils.versioning import compare_versions, version_key
 from app.db import get_session
 from app.repos import ModulesRepo, DeviceModulesRepo, ModuleRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
@@ -169,6 +169,138 @@ AUTHORING_SAMPLE_PAYLOAD = {
         }
     ],
 }
+
+WINDOWS_LIVE_TEST_WARNING = "WINDOWS_LIVE_TEST_REQUIRED_BEFORE_PREFERRED"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_runtime_platform(value: object) -> str:
+    raw = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if raw in {"windows", "win", "win32"} or raw.startswith("windows"):
+        return "win32"
+    if raw.startswith("linux"):
+        return "linux"
+    if raw in {"macos", "mac", "darwin"} or raw.startswith("darwin"):
+        return "darwin"
+    return raw
+
+
+def _manifest_platforms(manifest_json: Optional[dict]) -> list[str]:
+    if not isinstance(manifest_json, dict):
+        return ["any"]
+    raw_platforms = manifest_json.get("platforms") or ["any"]
+    if not isinstance(raw_platforms, list):
+        return ["any"]
+    return [_normalize_runtime_platform(item) for item in raw_platforms if str(item or "").strip()] or ["any"]
+
+
+def _module_targets_windows(manifest_json: Optional[dict]) -> bool:
+    return any(platform == "win32" for platform in _manifest_platforms(manifest_json))
+
+
+def _module_min_agent_version(manifest_json: Optional[dict]) -> str:
+    if not isinstance(manifest_json, dict):
+        return ""
+    module_min = str(manifest_json.get("min_agent_version") or "").strip()
+    candidates = [module_min] if module_min else []
+    for tool in manifest_json.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        dependencies = tool.get("dependencies") if isinstance(tool.get("dependencies"), dict) else {}
+        tool_min = str(dependencies.get("min_agent_version") or "").strip()
+        if tool_min:
+            candidates.append(tool_min)
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda item: version_key(item).key)
+
+
+def _add_unique_warning(validation_json: dict, warning: str) -> None:
+    warnings = validation_json.setdefault("warnings", [])
+    if warning not in warnings:
+        warnings.append(warning)
+
+
+def _attach_server_harness_result(
+    *,
+    validation_json: dict,
+    manifest_json: Optional[dict],
+    smoke_result: Optional[dict],
+    status: str,
+    errors: Optional[list[str]] = None,
+) -> dict:
+    validation_json["server_harness"] = {
+        "status": status,
+        "required_before_publish": True,
+        "runner": "pc_agent.scripts.smoke_check_module",
+        "platform": sys.platform,
+        "checked_at": _utc_now_iso(),
+        "tools_count": len((manifest_json or {}).get("tools") or []),
+        "smoke_result": smoke_result or {},
+        "errors": errors or [],
+    }
+    if _module_targets_windows(manifest_json):
+        _add_unique_warning(validation_json, WINDOWS_LIVE_TEST_WARNING)
+    return validation_json
+
+
+def _has_passed_windows_live_test(validation_json: Optional[dict], *, min_agent_version: str = "") -> bool:
+    if not isinstance(validation_json, dict):
+        return False
+    for item in validation_json.get("live_tests") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "").strip().lower() != "passed":
+            continue
+        if _normalize_runtime_platform(item.get("platform")) != "win32":
+            continue
+        agent_version = str(item.get("agent_version") or "").strip()
+        if min_agent_version and (not agent_version or compare_versions(agent_version, min_agent_version) < 0):
+            continue
+        return True
+    return False
+
+
+def _preferred_gate_for_module(module: object) -> Optional[dict]:
+    manifest_json = get_module_manifest(module)
+    if not _module_targets_windows(manifest_json):
+        return None
+    validation_json = get_module_validation(module)
+    min_agent_version = _module_min_agent_version(manifest_json)
+    if _has_passed_windows_live_test(validation_json, min_agent_version=min_agent_version):
+        return None
+    return {
+        "status": "error",
+        "error": "Windows-targeted module versions require a passed Windows lab-agent live test before preferred rollout.",
+        "error_code": "MODULE_WINDOWS_LIVE_TEST_REQUIRED",
+        "module_name": str(getattr(module, "module_name", "") or ""),
+        "version": str(getattr(module, "version", "") or ""),
+        "platforms": _manifest_platforms(manifest_json),
+        "min_agent_version": min_agent_version or None,
+        "hint": "Run POST /api/modules/{module_name}/{version}/live_tests against a Windows lab agent, then set preferred again.",
+    }
+
+
+def _is_payload_success(response: object) -> bool:
+    if not isinstance(response, dict):
+        return False
+    if response.get("status") in {"success", "ok", "accepted"} and not isinstance(response.get("payload"), dict):
+        return True
+    payload = response.get("payload") if isinstance(response.get("payload"), dict) else {}
+    return str(payload.get("status") or response.get("status") or "").strip().lower() in {"success", "ok"}
+
+
+def _pick_default_tool_name(manifest_json: dict) -> str:
+    for tool in manifest_json.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        tool_name = str(tool.get("tool") or tool.get("name") or "").strip()
+        if tool_name:
+            return tool_name
+    return ""
 
 
 def _extract_tool_payload(response: object) -> dict:
@@ -457,6 +589,20 @@ async def _build_and_store_module_package(
             }
         if overwrite and auth_context.actor_role != "admin":
             return 403, {"status": "error", "error": "Only admin can overwrite modules"}
+        if set_preferred:
+            temp_module = type(
+                "PreparedModule",
+                (),
+                {
+                    "module_name": name_final,
+                    "version": version_final,
+                    "manifest_json": manifest_json,
+                    "validation_json": validation_json,
+                },
+            )()
+            preferred_blocker = _preferred_gate_for_module(temp_module)
+            if preferred_blocker:
+                return 409, preferred_blocker
 
         storage_path, sha256, size = save_module_zip_bytes(
             zip_bytes=zip_bytes,
@@ -608,6 +754,13 @@ async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dic
 
     smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_create_smoke_")
     validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
+    validation_json = _attach_server_harness_result(
+        validation_json=validation_json,
+        manifest_json=manifest_json,
+        smoke_result=smoke_result,
+        status="passed" if smoke_ok else "failed",
+        errors=smoke_errors,
+    )
     if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
         return 400, {
             "status": "error",
@@ -743,6 +896,7 @@ async def _run_module_smoke(zip_bytes: bytes, smoke_prefix: str) -> tuple[bool, 
         str(smoke_script),
         "--dir",
         str(temp_extract),
+        "--ignore-platform-check",
     )
     smoke_env = {**os.environ, "PYTHONPATH": str(project_root)}
     try:
@@ -1429,6 +1583,13 @@ async def handle_upload_module(request):
 
         smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_upload_smoke_")
         validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
+        validation_json = _attach_server_harness_result(
+            validation_json=validation_json,
+            manifest_json=manifest_json,
+            smoke_result=smoke_result,
+            status="passed" if smoke_ok else "failed",
+            errors=smoke_errors,
+        )
         if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
             preflight_errors = smoke_errors or _flatten_validation_errors(validation_json)
             logger.warning(f"Upload module smoke check failed: {preflight_errors}")
@@ -1661,6 +1822,13 @@ async def handle_create_module(request):
 
         smoke_ok, smoke_result, smoke_errors = await _run_module_smoke(zip_bytes, "pc_create_smoke_")
         validation_json = apply_smoke_validation(manifest_json, validation_json, smoke_result)
+        validation_json = _attach_server_harness_result(
+            validation_json=validation_json,
+            manifest_json=manifest_json,
+            smoke_result=smoke_result,
+            status="passed" if smoke_ok else "failed",
+            errors=smoke_errors,
+        )
         if not smoke_ok or validation_json.get("errors", {}).get("smoke"):
             return web.json_response({
                 "status": "error",
@@ -2176,6 +2344,9 @@ async def handle_set_module_preferred_version(request):
                     },
                     status=404,
                 )
+            preferred_blocker = _preferred_gate_for_module(module)
+            if preferred_blocker:
+                return web.json_response(preferred_blocker, status=409)
             assignment = await rollout_repo.set_assignment(
                 module_name=module_name,
                 version=version,
@@ -2297,6 +2468,7 @@ async def handle_get_module_authoring_catalog(request):
                     "publish": "/api/modules/authoring/publish",
                     "workbench_validate": "/api/modules/workbench/validate",
                     "workbench_save": "/api/modules/workbench/save",
+                    "live_test": "/api/modules/{module_name}/{version}/live_tests",
                 },
                 "platforms": ["any", "linux", "win32", "darwin"],
                 "owner_scopes": ["vendor", "core", "platform", "builtin"],
@@ -2345,6 +2517,200 @@ async def handle_publish_module_authoring(request):
         return web.json_response(response_payload, status=status_code)
     except Exception as e:
         logger.error(f"Publish module authoring failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_run_module_live_test(request):
+    """
+    POST /api/modules/{module_name}/{version}/live_tests
+
+    Runs a published module command on a real lab agent and records the result
+    in the module version validation_json. Server-side harness stays mandatory
+    before publish; this live test is the promotion gate for Windows modules.
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        if auth_context.actor_role != "admin":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Only admin can run module live tests",
+                    "error_code": "FORBIDDEN",
+                },
+                status=403,
+            )
+
+        module_name = request.match_info["module_name"]
+        version = request.match_info["version"]
+        payload = await request.json()
+        device_id = str(payload.get("device_id") or "").strip()
+        if not device_id:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "device_id is required",
+                    "error_code": "VALIDATION_ERROR",
+                },
+                status=400,
+            )
+        params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+        timeout_sec = int(payload.get("timeout_sec") or 45)
+        timeout_sec = max(5, min(timeout_sec, 180))
+
+        async with get_session() as session:
+            from app.repos.devices_repo import DevicesRepo
+
+            modules_repo = ModulesRepo(session)
+            devices_repo = DevicesRepo(session)
+            module = await modules_repo.get_module(module_name, version)
+            if module is None:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Module version not found",
+                        "error_code": "MODULE_NOT_FOUND",
+                        "module_name": module_name,
+                        "version": version,
+                    },
+                    status=404,
+                )
+            full_path = _module_archive_path(module)
+            if not full_path.exists():
+                return web.json_response(_module_file_missing_payload(module_name, version, module.storage_path), status=409)
+
+            device = await devices_repo.get_by_device_id(device_id)
+            if device is None:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": f"Device {device_id} not found",
+                        "error_code": "DEVICE_NOT_FOUND",
+                    },
+                    status=404,
+                )
+            manifest_json = get_module_manifest(module)
+            platforms = _manifest_platforms(manifest_json)
+            device_platform = _normalize_runtime_platform(getattr(device, "os", None) or (getattr(device, "device_metadata", {}) or {}).get("os_type"))
+            if "any" not in platforms and device_platform not in platforms:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Device platform does not match module manifest platforms",
+                        "error_code": "MODULE_PLATFORM_MISMATCH",
+                        "platforms": platforms,
+                        "device_platform": device_platform,
+                    },
+                    status=400,
+                )
+            min_agent_version = _module_min_agent_version(manifest_json)
+            agent_version = str(getattr(device, "agent_version", None) or "").strip()
+            if min_agent_version and (not agent_version or compare_versions(agent_version, min_agent_version) < 0):
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": f"Agent version {agent_version or 'unknown'} is below required {min_agent_version}",
+                        "error_code": "AGENT_VERSION_TOO_OLD",
+                    },
+                    status=400,
+                )
+
+            tool_name = str(payload.get("tool_name") or "").strip() or _pick_default_tool_name(manifest_json)
+            if not tool_name:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "tool_name is required because manifest has no tool entries",
+                        "error_code": "VALIDATION_ERROR",
+                    },
+                    status=400,
+                )
+
+            download_url = f"{SERVER_PUBLIC_BASE_URL}/api/modules/{module_name}/{version}/download"
+            install_params = {
+                "module_name": module_name,
+                "module_version": version,
+                "download_url": download_url,
+                "sha256": module.sha256,
+                "size": module.size,
+                "package_b64": None,
+                "replace_if_different_sha": True,
+            }
+
+        state = request.app.get("state")
+        trace_id = str(uuid.uuid4())
+        install_response = await send_ws_command(
+            state=state,
+            device_id=device_id,
+            command="install_module_package",
+            params=install_params,
+            actor_role=auth_context.actor_role,
+            auth_context=auth_context,
+            timeout=90,
+            trace_id=trace_id,
+        )
+        install_ok = _is_payload_success(install_response)
+        run_response: dict | None = None
+        if install_ok:
+            run_response = await send_ws_command(
+                state=state,
+                device_id=device_id,
+                command="run_tool",
+                params={
+                    "ticket_id": f"module-live-test:{module_name}:{version}",
+                    "call_id": str(uuid.uuid4()),
+                    "tool_name": tool_name,
+                    "params": params,
+                },
+                actor_role=auth_context.actor_role,
+                auth_context=auth_context,
+                timeout=timeout_sec,
+                trace_id=trace_id,
+            )
+        run_ok = bool(run_response and _is_payload_success(run_response))
+        live_test = {
+            "status": "passed" if install_ok and run_ok else "failed",
+            "stage": "run_tool" if install_ok else "install_module_package",
+            "module_name": module_name,
+            "version": version,
+            "tool_name": tool_name,
+            "device_id": device_id,
+            "platform": device_platform,
+            "agent_version": agent_version,
+            "tested_at": _utc_now_iso(),
+            "trace_id": trace_id,
+            "install_operation_id": (install_response or {}).get("operation_id"),
+            "run_operation_id": (run_response or {}).get("operation_id") if run_response else None,
+            "install_payload": (install_response or {}).get("payload") or {},
+            "run_payload": (run_response or {}).get("payload") if run_response else None,
+        }
+
+        async with get_session() as session:
+            module = await ModulesRepo(session).get_module(module_name, version)
+            if module is None:
+                return web.json_response({"status": "error", "error": "Module version not found"}, status=404)
+            validation_json = dict(get_module_validation(module))
+            live_tests = [item for item in (validation_json.get("live_tests") or []) if isinstance(item, dict)]
+            live_tests.append(live_test)
+            validation_json["live_tests"] = live_tests[-50:]
+            module.validation_json = validation_json
+            await session.commit()
+
+        status = 200 if live_test["status"] == "passed" else 502
+        return web.json_response({"status": "ok" if status == 200 else "error", "live_test": live_test}, status=status)
+    except asyncio.TimeoutError:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Timed out waiting for lab-agent live test result",
+                "error_code": "MODULE_LIVE_TEST_TIMEOUT",
+            },
+            status=504,
+        )
+    except Exception as e:
+        logger.error(f"Run module live test failed: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 

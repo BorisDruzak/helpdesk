@@ -346,6 +346,34 @@ afterEach(() => {
 
 
 describe("ModulesPanel", () => {
+  it("warns that Windows drafts need a lab-agent live test before preferred rollout", async () => {
+    const state = createModulesState();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/modules/workbench" && method === "GET") {
+          return jsonResponse({
+            status: "ok",
+            ...cloneModulesPayload(state)
+          });
+        }
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderModulesPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Новый модуль/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Platforms" }), {
+      target: { value: "win32" }
+    });
+
+    expect(await screen.findByText(/Не проверено на Windows agent/i)).toBeInTheDocument();
+  });
+
   it("renders typed module registry in Russian and updates rollout/preferred actions", async () => {
     const state = createModulesState();
 

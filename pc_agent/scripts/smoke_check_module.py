@@ -53,6 +53,11 @@ def find_module_root(extract_dir: Path) -> Path | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check модуля: load, register, list_tools")
     parser.add_argument("--dir", required=True, type=Path, help="Директория с распакованным ZIP модуля")
+    parser.add_argument(
+        "--ignore-platform-check",
+        action="store_true",
+        help="Skip manifest platform guard so server-side harness can validate packages for other target OSes.",
+    )
     args = parser.parse_args()
     extract_dir = args.dir.resolve()
     if not extract_dir.is_dir():
@@ -79,7 +84,7 @@ def main() -> int:
         return 1
     # Проверка ОС: если в manifest указаны platforms и не "any", текущая ОС должна входить в список
     platforms = manifest.get("platforms")
-    if platforms is not None and isinstance(platforms, list) and len(platforms) > 0:
+    if not args.ignore_platform_check and platforms is not None and isinstance(platforms, list) and len(platforms) > 0:
         if "any" not in [str(p).lower() for p in platforms]:
             import platform
             current = (platform.system() or sys.platform or "").lower()

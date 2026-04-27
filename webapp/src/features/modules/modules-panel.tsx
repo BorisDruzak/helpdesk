@@ -157,6 +157,18 @@ function joinLines(items: string[] | null | undefined) {
   return (items ?? []).join("\n");
 }
 
+function normalizePlatform(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "windows" || normalized === "win" || normalized === "win32" || normalized.startsWith("windows")) {
+    return "win32";
+  }
+  return normalized;
+}
+
+function targetsWindows(platforms: string[] | null | undefined): boolean {
+  return (platforms ?? []).some((platform) => normalizePlatform(platform) === "win32");
+}
+
 function stringListFromUnknown(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
@@ -1693,6 +1705,12 @@ export function ModulesPanel() {
                           />
                         </label>
                       </div>
+
+                      {targetsWindows(draft.platforms) ? (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                          Не проверено на Windows agent. Публикация доступна после server harness, но preferred rollout заблокирован, пока модуль не пройдет live test на Windows agent с подходящей версией.
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="space-y-4">

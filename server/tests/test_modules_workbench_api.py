@@ -1,4 +1,5 @@
 import json
+import sys
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -406,6 +407,295 @@ async def test_module_authoring_validate_preserves_playbook_output_contract(test
     assert tool["output_schema"]["properties"]["status"]["enum"] == ["ok", "error"]
     assert tool["output_contract"]["status_values"] == ["ok", "error"]
     assert data["editable_preview"]["tools"][0]["output_contract"]["summary_path"] == "result.output.value"
+
+
+@pytest.mark.asyncio
+async def test_module_authoring_validate_requires_server_harness_and_warns_for_windows(test_client):
+    module_name = f"authoring_win_{uuid.uuid4().hex[:8]}"
+    response = await test_client.post(
+        "/api/modules/authoring/validate",
+        json={
+            "module_name": module_name,
+            "version": "0.1.0",
+            "description": "Windows diagnostic module",
+            "owner_scope": "vendor",
+            "platforms": ["win32"],
+            "tools": [
+                {
+                    "tool_name": f"{module_name}.check",
+                    "method_name": "run_check",
+                    "description": "Check returns a predictable status",
+                    "params_schema": {"type": "object", "properties": {}, "required": []},
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"status": {"type": "string", "enum": ["ok", "error"]}},
+                    },
+                    "output_contract": {
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "success_values": ["ok"],
+                        "error_values": ["error"],
+                        "summary_path": "result.output.summary",
+                        "error_code_path": "result.error.code",
+                    },
+                    "metadata": {
+                        "risk_level": "safe_read",
+                        "tool_kind": "diagnostic",
+                        "platforms": ["win32"],
+                        "idempotent": True,
+                        "side_effects": False,
+                    },
+                    "user_function_body": 'return {"status": "ok", "summary": "server harness"}',
+                }
+            ],
+        },
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["validation_json"]["server_harness"]["status"] == "passed"
+    assert data["validation_json"]["server_harness"]["required_before_publish"] is True
+    assert "WINDOWS_LIVE_TEST_REQUIRED_BEFORE_PREFERRED" in data["validation_json"]["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_module_authoring_validate_harness_ignores_server_platform_guard(test_client):
+    module_name = f"authoring_cross_os_{uuid.uuid4().hex[:8]}"
+    current = "win32" if sys.platform.startswith("win") else ("darwin" if sys.platform == "darwin" else "linux")
+    target_platform = "linux" if current == "win32" else "win32"
+    response = await test_client.post(
+        "/api/modules/authoring/validate",
+        json={
+            "module_name": module_name,
+            "version": "0.1.0",
+            "description": "Cross-platform server harness check",
+            "owner_scope": "vendor",
+            "platforms": [target_platform],
+            "tools": [
+                {
+                    "tool_name": f"{module_name}.check",
+                    "method_name": "run_check",
+                    "description": "Check server harness on non-current target platform",
+                    "params_schema": {"type": "object", "properties": {}, "required": []},
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"status": {"type": "string", "enum": ["ok", "error"]}},
+                    },
+                    "output_contract": {
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "success_values": ["ok"],
+                        "error_values": ["error"],
+                        "summary_path": "result.output.summary",
+                        "error_code_path": "result.error.code",
+                    },
+                    "metadata": {
+                        "risk_level": "safe_read",
+                        "tool_kind": "diagnostic",
+                        "platforms": [target_platform],
+                        "idempotent": True,
+                        "side_effects": False,
+                    },
+                    "user_function_body": 'return {"status": "ok", "summary": "cross-os harness"}',
+                }
+            ],
+        },
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["validation_json"]["server_harness"]["status"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_windows_module_preferred_requires_passed_windows_live_test(test_client, test_engine):
+    module_name = f"win_gate_{uuid.uuid4().hex[:8]}"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version="1.0.0",
+        tool_name=f"{module_name}.check",
+        method_name="run_check",
+        description="Windows gated diagnostic",
+        user_function_body='return {"status": "ok"}',
+        platforms=["win32"],
+        metadata={"domain": module_name, "platforms": ["win32"], "risk_level": "safe_read"},
+        min_agent_version="1.0.0",
+        owner_scope="vendor",
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+    validation_json["server_harness"] = {"status": "passed", "required_before_publish": True}
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Module(
+                module_name=module_name,
+                version="1.0.0",
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=len(zip_bytes),
+                storage_path=f"{module_name}/1.0.0/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.patch(
+        f"/api/modules/{module_name}/preferred",
+        json={"version": "1.0.0"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 409, await response.text()
+    data = await response.json()
+    assert data["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_windows_authoring_publish_set_preferred_requires_live_test(test_client):
+    module_name = f"win_publish_gate_{uuid.uuid4().hex[:8]}"
+    response = await test_client.post(
+        "/api/modules/authoring/publish",
+        json={
+            "module_name": module_name,
+            "version": "1.0.0",
+            "description": "Windows publish preferred gate",
+            "owner_scope": "vendor",
+            "platforms": ["win32"],
+            "set_preferred": True,
+            "tools": [
+                {
+                    "tool_name": f"{module_name}.check",
+                    "method_name": "run_check",
+                    "description": "Check preferred gate",
+                    "params_schema": {"type": "object", "properties": {}, "required": []},
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"status": {"type": "string", "enum": ["ok", "error"]}},
+                    },
+                    "output_contract": {
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "success_values": ["ok"],
+                        "error_values": ["error"],
+                        "summary_path": "result.output.summary",
+                        "error_code_path": "result.error.code",
+                    },
+                    "metadata": {
+                        "risk_level": "safe_read",
+                        "tool_kind": "diagnostic",
+                        "platforms": ["win32"],
+                        "idempotent": True,
+                        "side_effects": False,
+                    },
+                    "user_function_body": 'return {"status": "ok", "summary": "preferred gate"}',
+                }
+            ],
+        },
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 409, await response.text()
+    data = await response.json()
+    assert data["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
+    assert data["module_name"] == module_name
+
+
+@pytest.mark.asyncio
+async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test_client, test_engine):
+    module_name = f"win_live_{uuid.uuid4().hex[:8]}"
+    device_id = str(uuid.uuid4())
+    tool_name = f"{module_name}.check"
+    zip_bytes, _summary = build_module_package(
+        module_name=module_name,
+        version="1.0.0",
+        tool_name=tool_name,
+        method_name="run_check",
+        description="Windows live-test diagnostic",
+        user_function_body='return {"status": "ok", "summary": "live"}',
+        platforms=["win32"],
+        metadata={"domain": module_name, "platforms": ["win32"], "risk_level": "safe_read"},
+        min_agent_version="1.0.0",
+        owner_scope="vendor",
+    )
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+    assert ok is True
+    validation_json["server_harness"] = {"status": "passed", "required_before_publish": True}
+
+    module_path = MODULES_STORAGE_DIR / module_name / "1.0.0" / "module.zip"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_bytes(zip_bytes)
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="1.2.0",
+                hostname="win-lab",
+                os="windows",
+                capabilities={},
+                device_metadata={"os_type": "Windows"},
+                first_seen_at=datetime.now(timezone.utc),
+                last_seen_at=datetime.now(timezone.utc),
+                last_handshake_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            Module(
+                module_name=module_name,
+                version="1.0.0",
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=len(zip_bytes),
+                storage_path=f"{module_name}/1.0.0/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary=manifest_summary,
+            )
+        )
+        await session.commit()
+
+    calls: list[str] = []
+
+    async def fake_send_ws_command(**kwargs):
+        calls.append(kwargs["command"])
+        return {
+            "status": "success",
+            "payload": {
+                "status": "success",
+                "data": {"observations": {"status": "ok", "summary": "live"}},
+            },
+            "operation_id": f"op-{len(calls)}",
+            "trace_id": f"trace-{len(calls)}",
+        }
+
+    with patch("modules.handlers.send_ws_command", new=fake_send_ws_command):
+        live_response = await test_client.post(
+            f"/api/modules/{module_name}/1.0.0/live_tests",
+            json={"device_id": device_id, "tool_name": tool_name, "params": {}},
+            headers=ADMIN_HEADERS,
+        )
+
+    assert live_response.status == 200, await live_response.text()
+    live_data = await live_response.json()
+    assert live_data["live_test"]["status"] == "passed"
+    assert live_data["live_test"]["platform"] == "win32"
+    assert calls == ["install_module_package", "run_tool"]
+
+    response = await test_client.patch(
+        f"/api/modules/{module_name}/preferred",
+        json={"version": "1.0.0"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 200, await response.text()
 
 
 @pytest.mark.asyncio

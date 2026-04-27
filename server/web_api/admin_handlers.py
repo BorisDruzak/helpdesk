@@ -25,7 +25,7 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
-from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
+from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings, _preferred_gate_for_module
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from playbooks.tool_catalog import normalize_tool_catalog_entry
@@ -653,6 +653,9 @@ async def _set_admin_module_preferred_version(
         module = await modules_repo.get_module(normalized_module_name, normalized_version)
         if module is None:
             raise LookupError("MODULE_NOT_FOUND")
+        preferred_blocker = _preferred_gate_for_module(module)
+        if preferred_blocker:
+            raise ValueError(preferred_blocker.get("error_code") or "MODULE_PREFERRED_GATE_FAILED")
 
         assignment = await rollout_repo.set_assignment(
             module_name=normalized_module_name,
@@ -2643,6 +2646,27 @@ async def handle_web_admin_set_module_preferred_version(request: web.Request):
                 "version": payload.version,
             },
             status=404,
+        )
+    except ValueError as exc:
+        if str(exc) == "MODULE_WINDOWS_LIVE_TEST_REQUIRED":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Windows-targeted module versions require a passed Windows lab-agent live test before preferred rollout.",
+                    "error_code": "MODULE_WINDOWS_LIVE_TEST_REQUIRED",
+                    "module_name": module_name,
+                    "version": payload.version,
+                },
+                status=409,
+            )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Preferred version validation failed",
+                "error_code": "VALIDATION_ERROR",
+                "module_name": module_name,
+            },
+            status=400,
         )
     except Exception as exc:
         logger.error(f"[web_admin_module_preferred] Failed to update preferred version for {module_name}: {exc}")
