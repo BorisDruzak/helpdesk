@@ -153,7 +153,7 @@ Request body:
 }
 ```
 
-The server first sends `install_module_package` to the selected agent, then sends `run_tool` only if installation succeeds. Module live tests are not ticket-bound, so the run command must not invent a synthetic `ticket_id`; correlation is via `trace_id` and operation ids. Each attempt is appended to `validation_json.live_tests` with the install/run stage, device id, normalized platform, agent version, operation ids, trace id and compact payloads.
+The server first sends `install_module_package` to the selected agent, then sends `run_tool` only if installation succeeds. Module live tests are not ticket-bound, so the run command must not invent a synthetic `ticket_id`; correlation is via `trace_id` and operation ids. Operation ids are read from the transport response or the agent `payload.meta.request_id`, because real agent command results may expose the command id only in metadata. Each attempt is appended to `validation_json.live_tests` with the install/run stage, device id, normalized platform, agent version, operation ids, trace id and compact payloads.
 
 Observer coverage for this flow is first-class:
 

@@ -301,6 +301,20 @@ def _is_payload_success(response: object) -> bool:
     return str(payload.get("status") or response.get("status") or "").strip().lower() in {"success", "ok"}
 
 
+def _command_operation_id(response: object) -> Optional[str]:
+    if not isinstance(response, dict):
+        return None
+    candidates = [response.get("operation_id"), response.get("command_id"), response.get("request_id")]
+    payload = response.get("payload") if isinstance(response.get("payload"), dict) else {}
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    candidates.extend([meta.get("operation_id"), meta.get("request_id")])
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if value:
+            return value
+    return None
+
+
 def _pick_default_tool_name(manifest_json: dict) -> str:
     for tool in manifest_json.get("tools") or []:
         if not isinstance(tool, dict):
@@ -3006,7 +3020,7 @@ async def handle_run_module_live_test(request):
                 "name": "module.install_module_package",
                 "status": "ok" if install_ok else "error",
                 "attrs": {
-                    "operation_id": (install_response or {}).get("operation_id"),
+                    "operation_id": _command_operation_id(install_response),
                     "payload_status": ((install_response or {}).get("payload") or {}).get("status"),
                 },
             }
@@ -3033,7 +3047,7 @@ async def handle_run_module_live_test(request):
                 "name": "module.run_tool",
                 "status": "ok" if run_ok else "error",
                 "attrs": {
-                    "operation_id": (run_response or {}).get("operation_id") if run_response else None,
+                    "operation_id": _command_operation_id(run_response) if run_response else None,
                     "payload_status": ((run_response or {}).get("payload") or {}).get("status") if run_response else None,
                 },
             }
@@ -3054,8 +3068,8 @@ async def handle_run_module_live_test(request):
             "agent_version": agent_version,
             "tested_at": _utc_now_iso(),
             "trace_id": trace_id,
-            "install_operation_id": (install_response or {}).get("operation_id"),
-            "run_operation_id": (run_response or {}).get("operation_id") if run_response else None,
+            "install_operation_id": _command_operation_id(install_response),
+            "run_operation_id": _command_operation_id(run_response) if run_response else None,
             "install_payload": (install_response or {}).get("payload") or {},
             "run_payload": (run_response or {}).get("payload") if run_response else None,
         }

@@ -799,8 +799,8 @@ async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test
             "payload": {
                 "status": "success",
                 "data": {"observations": {"status": "ok", "summary": "live"}},
+                "meta": {"request_id": f"meta-op-{len(calls)}"},
             },
-            "operation_id": f"op-{len(calls)}",
             "trace_id": f"trace-{len(calls)}",
         }
 
@@ -819,6 +819,8 @@ async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test
     assert run_tool_params is not None
     assert "ticket_id" not in run_tool_params
     assert run_tool_params["tool_name"] == tool_name
+    assert live_data["live_test"]["install_operation_id"] == "meta-op-1"
+    assert live_data["live_test"]["run_operation_id"] == "meta-op-2"
 
     response = await test_client.patch(
         f"/api/modules/{module_name}/preferred",
