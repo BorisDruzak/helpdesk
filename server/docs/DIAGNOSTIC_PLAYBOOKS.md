@@ -2,6 +2,8 @@
 
 Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2`. The server stores `required_tools` with module owner, source, install policy, platforms, minimum agent version, params/output schemas, output contract, condition hints, presets and known error codes. Tool-backed playbook steps run the existing module auto-install preflight before `run_tool`; install failures stop the step with `stage=module_install`, while capability gate failures use `stage=capability_gate`. Presets are expanded into concrete params on the server for both support tool launches and playbook steps, so agents receive normal command params.
 
+Update note 2026-04-27 low-code canvas: `/app/admin/playbooks` is now canvas-first. The React builder keeps the same typed catalog/save API, but operators assemble drafts by dragging atomic module commands from the left palette onto a grid, moving blocks visually, selecting the command inside each block, and editing presets/params/output contracts in the right inspector. Canvas coordinates are client-side UI state; the saved playbook order is derived from block position top-to-bottom so the existing server manifest and runtime contract remain compatible.
+
 Дата обновления: 2026-04-26
 
 ## Модель

@@ -1,5 +1,33 @@
 # PLANS.md
 
+## 2026-04-27 Playbook Low-Code Canvas UI
+
+Status: implementation and local verification completed; live browser verification pending remote release.
+
+### Goal
+
+Rebuild `/app/admin/playbooks` from a linear block list into a real low-code builder:
+
+- module command palette on the left;
+- draggable block canvas with a visible grid;
+- module-like blocks that can be moved and edited;
+- command selector inside each diagnostic block;
+- selected-block inspector with presets, params, output contract and error handling;
+- preview/result panel for the selected command contract;
+- preserve the current server save contract and published playbook runtime.
+
+### Implementation Notes
+
+- Keep the existing typed API: `GET /api/web/admin/playbooks/catalog` and `POST /api/web/admin/playbooks/save`.
+- Store canvas positions in client state for now; save order is derived by block position from top to bottom.
+- Use native HTML drag/drop and pointer movement to avoid a new dependency.
+- Keep remediation out of the builder; this pass is diagnostic-only.
+
+### Verification
+
+- Update the playbook panel unit test for drag/drop and command selection.
+- Run targeted playbook tests, webapp build, `verify_workspace.py`, and a browser check on `http://192.168.100.17:8666/app/admin/playbooks`.
+
 ## 2026-04-27 Self-Healing Automation And Playbook Orchestration
 
 Status: core implementation completed locally; observer drilldown and full ticket playbook runner remain next-stage work.

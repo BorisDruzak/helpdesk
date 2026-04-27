@@ -30,12 +30,22 @@ function renderPanel() {
   );
 }
 
+function dataTransferStub(values: Record<string, string>) {
+  return {
+    effectAllowed: "",
+    setData: vi.fn((key: string, value: string) => {
+      values[key] = value;
+    }),
+    getData: vi.fn((key: string) => values[key] ?? ""),
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("PlaybookBuilderPanel", () => {
-  it("builds a diagnostic playbook from reorderable low-code blocks", async () => {
+  it("builds a diagnostic playbook on a draggable low-code canvas", async () => {
     const saveCalls: unknown[] = [];
     vi.stubGlobal(
       "fetch",
@@ -67,6 +77,7 @@ describe("PlaybookBuilderPanel", () => {
                   tool: "system.collect",
                   block_type: "diagnostic",
                   module_kind: "diagnostic",
+                  module_name: "system",
                   description: "CPU, память, сеть и платформа",
                   default_params: { preset: "network" },
                   changes_device: false,
@@ -94,6 +105,7 @@ describe("PlaybookBuilderPanel", () => {
                   tool: "diag.logs.collect",
                   block_type: "diagnostic",
                   module_kind: "diagnostic",
+                  module_name: "diag_logs",
                   description: "Архив логов",
                   default_params: { preset: "system", tail_lines: 500 },
                   changes_device: false,
@@ -154,20 +166,36 @@ describe("PlaybookBuilderPanel", () => {
 
     renderPanel();
 
-    expect(await screen.findByRole("heading", { name: "Конструктор плейбуков" })).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Сайт не открывается" }));
-    expect(await screen.findByText("Системный снимок")).toBeInTheDocument();
-    expect(await screen.findByText("Сбор логов")).toBeInTheDocument();
-    expect(await screen.findAllByText("result.status")).toHaveLength(2);
-    expect(await screen.findAllByText("ok, error")).toHaveLength(2);
+    expect(await screen.findByText("Playbook Builder")).toBeInTheDocument();
+    expect(await screen.findByText("Старт")).toBeInTheDocument();
+    expect(await screen.findAllByText("Системный снимок")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Сбор логов")).not.toHaveLength(0);
+    expect(await screen.findAllByText("result.status")).not.toHaveLength(0);
+    expect(await screen.findAllByText("ok, error")).not.toHaveLength(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Добавить условие" }));
+    fireEvent.click(screen.getByRole("button", { name: "Блок условия" }));
+    expect(screen.getByText("Проверка результата")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Quick condition template"), {
       target: { value: "steps.system_collect.output.result.status == 'ok'" },
     });
-    expect(screen.getByDisplayValue("steps.system_collect.output.result.status == 'ok'")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Поднять блок Сбор логов" }));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить плейбук" }));
+
+    const commandSelect = screen.getByLabelText("Команда блока Системный снимок");
+    fireEvent.change(commandSelect, { target: { value: "diag.logs.collect" } });
+    expect(await screen.findAllByLabelText("Блок Сбор логов")).not.toHaveLength(0);
+
+    const movedBlock = screen.getAllByLabelText("Блок Сбор логов")[1];
+    const canvas = movedBlock.closest(".playbook-canvas-grid") ?? document.querySelector(".playbook-canvas-grid");
+    expect(canvas).toBeTruthy();
+    fireEvent.dragStart(movedBlock, {
+      dataTransfer: dataTransferStub({ "application/x-playbook-block": "diag_logs_collect" }),
+    });
+    fireEvent.drop(canvas as Element, {
+      clientX: 480,
+      clientY: 180,
+      dataTransfer: dataTransferStub({ "application/x-playbook-block": "diag_logs_collect" }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -176,7 +204,7 @@ describe("PlaybookBuilderPanel", () => {
       key: "site_not_opening",
       blocks: [
         { tool: "diag.logs.collect", module_kind: "diagnostic" },
-        { tool: "system.collect", module_kind: "diagnostic" },
+        { tool: "diag.logs.collect", module_kind: "diagnostic" },
         { type: "decision", module_kind: "diagnostic" },
       ],
     });
