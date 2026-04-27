@@ -173,6 +173,8 @@ describe("PlaybookBuilderPanel", () => {
     expect(await screen.findAllByText("result.status")).not.toHaveLength(0);
     expect(await screen.findAllByText("ok, error")).not.toHaveLength(0);
 
+    fireEvent.change(screen.getByLabelText("Ключ"), { target: { value: "canvas smoke key" } });
+    fireEvent.change(screen.getByLabelText("Название плейбука"), { target: { value: "Canvas smoke" } });
     fireEvent.click(screen.getByRole("button", { name: "Блок условия" }));
     expect(screen.getByText("Проверка результата")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Quick condition template"), {
@@ -201,7 +203,8 @@ describe("PlaybookBuilderPanel", () => {
       expect(saveCalls).toHaveLength(1);
     });
     expect(saveCalls[0]).toMatchObject({
-      key: "site_not_opening",
+      key: "canvas_smoke_key",
+      name: "Canvas smoke",
       blocks: [
         { tool: "diag.logs.collect", module_kind: "diagnostic" },
         { tool: "diag.logs.collect", module_kind: "diagnostic" },

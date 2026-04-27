@@ -643,20 +643,24 @@ export function PlaybookBuilderPanel() {
               <label className="min-w-[220px] space-y-1">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Ключ</span>
                 <input
+                  aria-label="Ключ"
                   className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
-                  onChange={(event) =>
-                    setDraft((current) => current ? { ...current, key: slugify(event.currentTarget.value) } : current)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setDraft((current) => current ? { ...current, key: slugify(value) } : current);
+                  }}
                   value={draft?.key ?? ""}
                 />
               </label>
               <label className="min-w-[260px] flex-1 space-y-1">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Название</span>
                 <input
+                  aria-label="Название плейбука"
                   className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
-                  onChange={(event) =>
-                    setDraft((current) => current ? { ...current, name: event.currentTarget.value } : current)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setDraft((current) => current ? { ...current, name: value } : current);
+                  }}
                   value={draft?.name ?? ""}
                 />
               </label>
@@ -863,8 +867,9 @@ export function PlaybookBuilderPanel() {
                           aria-label="Quick condition template"
                           className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
                           onChange={(event) => {
-                            if (event.currentTarget.value) {
-                              updateBlock(selectedBlock.id, { condition: event.currentTarget.value });
+                            const value = event.currentTarget.value;
+                            if (value) {
+                              updateBlock(selectedBlock.id, { condition: value });
                             }
                           }}
                           value=""
@@ -909,11 +914,12 @@ export function PlaybookBuilderPanel() {
                       <input
                         className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
                         min={0}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const value = event.currentTarget.value;
                           updateBlock(selectedBlock.id, {
-                            timeout_sec: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                          })
-                        }
+                            timeout_sec: value ? Number(value) : null,
+                          });
+                        }}
                         type="number"
                         value={selectedBlock.timeout_sec ?? ""}
                       />
