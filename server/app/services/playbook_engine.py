@@ -299,6 +299,7 @@ async def _start_group_steps(
             attempt=1,
             input_json=params,
         )
+        await session.commit()
         await enqueue_command_async(
             state,
             device_id=run.device_id,
