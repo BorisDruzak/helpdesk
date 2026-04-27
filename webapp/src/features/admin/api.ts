@@ -354,14 +354,14 @@ export async function revokeAdminDeviceToken(deviceId: string, tokenHash: string
 }
 
 export async function fetchAdminConnectionPolicy(): Promise<{ policy: AdminConnectionPolicy }> {
-  const response = await fetch("/api/admin/connection_policy", {
+  const response = await fetch("/api/web/admin/connection_policy", {
     credentials: "same-origin"
   });
   return readOkResponse(response, "Не удалось загрузить политику подключения агентов");
 }
 
 export async function updateAdminConnectionPolicy(policy: AdminConnectionPolicy): Promise<{ policy: AdminConnectionPolicy }> {
-  const response = await fetch("/api/admin/connection_policy", {
+  const response = await fetch("/api/web/admin/connection_policy", {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -373,14 +373,14 @@ export async function updateAdminConnectionPolicy(policy: AdminConnectionPolicy)
 }
 
 export async function fetchAdminConnectionRequests(): Promise<AdminConnectionRequestsPayload> {
-  const response = await fetch("/api/admin/connection_requests", {
+  const response = await fetch("/api/web/admin/connection_requests", {
     credentials: "same-origin"
   });
   return readOkResponse(response, "Не удалось загрузить запросы подключения агентов");
 }
 
 export async function approveAdminConnectionRequest(deviceId: string): Promise<void> {
-  const response = await fetch(`/api/admin/connection_requests/${encodeURIComponent(deviceId)}/approve`, {
+  const response = await fetch(`/api/web/admin/connection_requests/${encodeURIComponent(deviceId)}/approve`, {
     method: "POST",
     credentials: "same-origin"
   });
@@ -388,7 +388,7 @@ export async function approveAdminConnectionRequest(deviceId: string): Promise<v
 }
 
 export async function rejectAdminConnectionRequest(deviceId: string): Promise<void> {
-  const response = await fetch(`/api/admin/connection_requests/${encodeURIComponent(deviceId)}/reject`, {
+  const response = await fetch(`/api/web/admin/connection_requests/${encodeURIComponent(deviceId)}/reject`, {
     method: "POST",
     credentials: "same-origin"
   });

@@ -119,14 +119,14 @@ function installFetchMock() {
       });
     }
 
-    if (url === "/api/admin/connection_policy") {
+    if (url === "/api/web/admin/connection_policy") {
       if (method === "PATCH") {
         return jsonResponse({ status: "ok", policy: "manual" });
       }
       return jsonResponse({ status: "ok", policy: "manual" });
     }
 
-    if (url === "/api/admin/connection_requests") {
+    if (url === "/api/web/admin/connection_requests") {
       return jsonResponse({
         status: "ok",
         count: 1,
@@ -147,11 +147,11 @@ function installFetchMock() {
       });
     }
 
-    if (url.includes("/api/admin/connection_requests/") && url.endsWith("/approve")) {
+    if (url.includes("/api/web/admin/connection_requests/") && url.endsWith("/approve")) {
       return jsonResponse({ status: "ok", device_id: "33333333-3333-4333-8333-333333333333" });
     }
 
-    if (url.includes("/api/admin/connection_requests/") && url.endsWith("/reject")) {
+    if (url.includes("/api/web/admin/connection_requests/") && url.endsWith("/reject")) {
       return jsonResponse({ status: "ok", device_id: "33333333-3333-4333-8333-333333333333" });
     }
 
@@ -205,7 +205,7 @@ describe("AdminInventoryPage", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/admin/connection_requests/33333333-3333-4333-8333-333333333333/approve",
+        "/api/web/admin/connection_requests/33333333-3333-4333-8333-333333333333/approve",
         expect.objectContaining({ method: "POST" })
       );
     });
