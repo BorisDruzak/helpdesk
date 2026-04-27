@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   Boxes,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   FileJson,
   FolderKanban,
   PackagePlus,
+  PlayCircle,
   RefreshCcw,
   Save,
   Search,
@@ -44,11 +46,15 @@ import { Tabs } from "../../components/ui/tabs";
 import { cn } from "../../shared/ui/cn";
 import {
   deleteModuleWorkbenchVersion,
+  fetchModuleLiveTestCandidates,
   fetchModuleWorkbenchDetail,
   fetchModuleWorkbenchList,
   patchModuleWorkbenchRolloutSettings,
+  runModuleLiveTest,
   saveModuleWorkbenchDraft,
   setModuleWorkbenchPreferredVersion,
+  type ModuleLiveTestCandidate,
+  type ModuleLiveTestResult,
   type ModuleArchiveUploadPayload,
   type ModuleWorkbenchDraft,
   type ModuleWorkbenchFamilyRecord,
@@ -162,11 +168,36 @@ function normalizePlatform(value: string): string {
   if (normalized === "windows" || normalized === "win" || normalized === "win32" || normalized.startsWith("windows")) {
     return "win32";
   }
+  if (normalized === "linux" || normalized.startsWith("linux")) {
+    return "linux";
+  }
+  if (normalized === "mac" || normalized === "macos" || normalized === "darwin" || normalized.startsWith("darwin")) {
+    return "darwin";
+  }
   return normalized;
 }
 
 function targetsWindows(platforms: string[] | null | undefined): boolean {
   return (platforms ?? []).some((platform) => normalizePlatform(platform) === "win32");
+}
+
+function platformLabel(value: string): string {
+  if (value === "win32") {
+    return "Windows";
+  }
+  if (value === "linux") {
+    return "Linux";
+  }
+  if (value === "darwin") {
+    return "macOS";
+  }
+  return value || "any";
+}
+
+function candidateLabel(candidate: ModuleLiveTestCandidate): string {
+  const host = candidate.hostname || candidate.device_id;
+  const version = candidate.agent_version ? `agent ${candidate.agent_version}` : "agent ?";
+  return `${host} · ${platformLabel(candidate.platform)} · ${version}${candidate.online ? "" : " · offline"}`;
 }
 
 function stringListFromUnknown(value: unknown): string[] {
@@ -500,6 +531,10 @@ export function ModulesPanel() {
   const [archiveVersion, setArchiveVersion] = useState("");
   const [archiveOverwrite, setArchiveOverwrite] = useState(false);
   const [rolloutDraft, setRolloutDraft] = useState<ModuleWorkbenchRolloutSettings | null>(null);
+  const [labPlatform, setLabPlatform] = useState("win32");
+  const [selectedLabAgentId, setSelectedLabAgentId] = useState("");
+  const [selectedLabToolName, setSelectedLabToolName] = useState("");
+  const [labTestResult, setLabTestResult] = useState<ModuleLiveTestResult | null>(null);
   const deferredQuery = useDeferredValue(queryDraft);
 
   const modulesQuery = useQuery({
@@ -944,6 +979,129 @@ export function ModulesPanel() {
 
   const rolloutSettings = rolloutDraft ?? modulesQuery.data?.rollout_settings ?? null;
   const selectedDetailMeta = detailQuery.data?.module ?? selectedRecord;
+  const selectedLabModuleName = selectedDetailMeta?.module_name ?? selectedFamily?.module_name ?? null;
+  const labPlatformOptions = useMemo(() => {
+    const normalized = (selectedDetailMeta?.platforms ?? [])
+      .map((platform) => normalizePlatform(platform))
+      .filter(Boolean);
+    const unique = Array.from(new Set(normalized));
+    if (unique.length) {
+      return unique;
+    }
+    return ["win32", "linux"];
+  }, [selectedDetailMeta?.platforms]);
+  const labToolOptions = selectedDetailMeta?.tool_ids ?? [];
+
+  useEffect(() => {
+    if (!labPlatformOptions.length) {
+      return;
+    }
+    if (!labPlatformOptions.includes(labPlatform)) {
+      setLabPlatform(
+        labPlatformOptions.includes("win32")
+          ? "win32"
+          : labPlatformOptions.includes("linux")
+            ? "linux"
+            : labPlatformOptions[0]
+      );
+    }
+  }, [labPlatform, labPlatformOptions]);
+
+  useEffect(() => {
+    if (!labToolOptions.length) {
+      setSelectedLabToolName("");
+      return;
+    }
+    if (!labToolOptions.includes(selectedLabToolName)) {
+      setSelectedLabToolName(labToolOptions[0]);
+    }
+  }, [labToolOptions, selectedLabToolName]);
+
+  useEffect(() => {
+    setLabTestResult(null);
+  }, [selectedLabModuleName, selectedDetailMeta?.version, labPlatform]);
+
+  const labCandidatesQuery = useQuery({
+    queryKey: [
+      "modules-live-test-candidates",
+      selectedLabModuleName,
+      selectedDetailMeta?.version,
+      labPlatform,
+    ],
+    queryFn: () =>
+      fetchModuleLiveTestCandidates(selectedLabModuleName!, selectedDetailMeta!.version, labPlatform),
+    enabled: Boolean(
+      workspaceTab === "registry" &&
+        selectedLabModuleName &&
+        selectedDetailMeta?.version &&
+        labPlatform
+    ),
+    retry: false,
+  });
+  const labCandidates = labCandidatesQuery.data?.candidates ?? [];
+  const selectedLabAgent = labCandidates.find((candidate) => candidate.device_id === selectedLabAgentId) ?? null;
+
+  useEffect(() => {
+    if (!labCandidatesQuery.data) {
+      setSelectedLabAgentId("");
+      return;
+    }
+    const current = labCandidatesQuery.data.candidates.find(
+      (candidate) => candidate.device_id === selectedLabAgentId && candidate.compatible
+    );
+    if (current) {
+      return;
+    }
+    const next =
+      labCandidatesQuery.data.candidates.find((candidate) => candidate.compatible && candidate.online) ??
+      labCandidatesQuery.data.candidates.find((candidate) => candidate.compatible) ??
+      null;
+    setSelectedLabAgentId(next?.device_id ?? "");
+  }, [labCandidatesQuery.data, selectedLabAgentId]);
+
+  const liveTestMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedLabModuleName || !selectedDetailMeta?.version || !selectedLabAgentId || !selectedLabToolName) {
+        throw new Error("Выберите module version, lab agent и команду для live test.");
+      }
+      return runModuleLiveTest(selectedLabModuleName, selectedDetailMeta.version, {
+        device_id: selectedLabAgentId,
+        tool_name: selectedLabToolName,
+        params: {},
+      });
+    },
+    onSuccess: async (result) => {
+      const isPassed = ["success", "passed", "ok"].includes(String(result.live_test.status).toLowerCase());
+      setLabTestResult(result.live_test);
+      setActionFeedback({
+        tone: isPassed ? "success" : "error",
+        text:
+          isPassed
+            ? `Live test выполнен: trace ${result.live_test.trace_id}.`
+            : `Live test завершился на этапе ${result.live_test.stage}: ${result.live_test.error_code ?? "error"}.`,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "modules-live-test-candidates",
+          selectedLabModuleName,
+          selectedDetailMeta?.version,
+          labPlatform,
+        ],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["modules-workbench-list"] });
+      if (selectedLabModuleName && selectedDetailMeta?.version) {
+        await queryClient.invalidateQueries({
+          queryKey: ["modules-workbench-detail", selectedLabModuleName, selectedDetailMeta.version],
+        });
+      }
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Live test модуля завершился ошибкой.",
+      });
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -1471,6 +1629,149 @@ export function ModulesPanel() {
                             ) : (
                               <p className="text-sm text-slate-500">Tool ids пока не распознаны.</p>
                             )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-[1.1rem] border border-brand-100 bg-brand-50/40 px-4 py-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Lab test agent</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">
+                                Выберите Linux или Windows агент для проверки модуля перед preferred.
+                              </p>
+                            </div>
+                            <Badge tone={labCandidatesQuery.isError ? "danger" : "brand"}>
+                              observer
+                            </Badge>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Test platform</span>
+                              <Select
+                                aria-label="Test platform"
+                                value={labPlatform}
+                                onChange={(event) => {
+                                  setLabPlatform(event.target.value);
+                                  setSelectedLabAgentId("");
+                                }}
+                              >
+                                {labPlatformOptions.map((platform) => (
+                                  <option key={platform} value={platform}>
+                                    {platformLabel(platform)}
+                                  </option>
+                                ))}
+                              </Select>
+                            </label>
+
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Lab agent</span>
+                              <Select
+                                aria-label="Lab agent"
+                                disabled={labCandidatesQuery.isLoading || !labCandidates.length}
+                                value={selectedLabAgentId}
+                                onChange={(event) => setSelectedLabAgentId(event.target.value)}
+                              >
+                                {!labCandidates.length ? (
+                                  <option value="">
+                                    {labCandidatesQuery.isLoading ? "Загружаем агентов..." : "Нет подходящих агентов"}
+                                  </option>
+                                ) : null}
+                                {labCandidates.map((candidate) => (
+                                  <option
+                                    disabled={!candidate.compatible}
+                                    key={candidate.device_id}
+                                    value={candidate.device_id}
+                                  >
+                                    {candidateLabel(candidate)}
+                                  </option>
+                                ))}
+                              </Select>
+                            </label>
+
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Command</span>
+                              <Select
+                                aria-label="Lab command"
+                                disabled={!labToolOptions.length}
+                                value={selectedLabToolName}
+                                onChange={(event) => setSelectedLabToolName(event.target.value)}
+                              >
+                                {!labToolOptions.length ? <option value="">Нет команд</option> : null}
+                                {labToolOptions.map((toolId) => (
+                                  <option key={toolId} value={toolId}>
+                                    {toolId}
+                                  </option>
+                                ))}
+                              </Select>
+                            </label>
+
+                            {selectedLabAgent && selectedLabAgent.reasons.length ? (
+                              <div className="rounded-[0.85rem] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                                {selectedLabAgent.reasons.join(", ")}
+                              </div>
+                            ) : null}
+
+                            <Button
+                              className="w-full"
+                              disabled={
+                                liveTestMutation.isPending ||
+                                !selectedLabAgent ||
+                                !selectedLabAgent.compatible ||
+                                !selectedLabToolName
+                              }
+                              leadingIcon={<PlayCircle className="h-4 w-4" />}
+                              onClick={() => {
+                                setLabTestResult(null);
+                                liveTestMutation.mutate();
+                              }}
+                              size="sm"
+                            >
+                              {liveTestMutation.isPending ? "Запускаем..." : "Запустить live test"}
+                            </Button>
+
+                            {labCandidatesQuery.isError ? (
+                              <div className="rounded-[0.85rem] border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+                                Не удалось загрузить список lab-агентов.
+                              </div>
+                            ) : null}
+
+                            {labCandidates.length ? (
+                              <div className="space-y-2">
+                                {labCandidates.slice(0, 4).map((candidate) => (
+                                  <div
+                                    className="flex items-center justify-between gap-2 rounded-[0.85rem] border border-border bg-white px-3 py-2 text-xs"
+                                    key={candidate.device_id}
+                                  >
+                                    <span className="min-w-0 truncate text-slate-700">
+                                      {candidate.hostname || candidate.device_id}
+                                    </span>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                      <Badge tone={candidate.online ? "success" : "neutral"}>
+                                        {candidate.online ? "online" : "offline"}
+                                      </Badge>
+                                      <Badge tone={candidate.compatible ? "success" : "warning"}>
+                                        {candidate.compatible ? "compatible" : "blocked"}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            {labTestResult ? (
+                              <div className="rounded-[0.95rem] border border-border bg-white px-3 py-3 text-xs leading-5 text-slate-600">
+                                <div className="flex items-center gap-2 font-semibold text-slate-900">
+                                  <Activity className="h-4 w-4 text-brand-700" />
+                                  {["success", "passed", "ok"].includes(String(labTestResult.status).toLowerCase()) ? "Live test OK" : "Live test error"}
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  <p>stage: {labTestResult.stage}</p>
+                                  <p>trace: {labTestResult.trace_id}</p>
+                                  <p>tool: {labTestResult.tool_name}</p>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </>

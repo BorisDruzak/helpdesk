@@ -169,6 +169,45 @@ export type ModuleArchiveUploadPayload = {
   validation_json?: Record<string, unknown>;
 };
 
+export type ModuleLiveTestCandidate = {
+  device_id: string;
+  hostname: string | null;
+  platform: string;
+  raw_os: string | null;
+  agent_version: string | null;
+  online: boolean;
+  compatible: boolean;
+  reasons: string[];
+  last_seen_at: string | null;
+  last_handshake_at: string | null;
+};
+
+export type ModuleLiveTestCandidatesPayload = {
+  module_name: string;
+  version: string;
+  platform: string | null;
+  module_platforms: string[];
+  min_agent_version: string | null;
+  candidates: ModuleLiveTestCandidate[];
+};
+
+export type ModuleLiveTestResult = {
+  status: "success" | "passed" | "failed" | "error" | string;
+  stage: string;
+  module_name: string;
+  version: string;
+  tool_name: string;
+  device_id: string;
+  platform: string | null;
+  agent_version: string | null;
+  trace_id: string;
+  install_operation_id?: string | null;
+  run_operation_id?: string | null;
+  tested_at: string;
+  error_code?: string | null;
+  error?: string | null;
+};
+
 export class ModuleWorkbenchApiError extends Error {
   status: number;
   errorCode?: string;
@@ -228,6 +267,45 @@ export async function fetchModuleWorkbenchDetail(
     }
   );
   return readSuccessResponse(response, "Не удалось открыть версию модуля.");
+}
+
+export async function fetchModuleLiveTestCandidates(
+  moduleName: string,
+  version: string,
+  platform: string
+): Promise<ModuleLiveTestCandidatesPayload> {
+  const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+  const response = await fetch(
+    `/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_test_candidates${query}`,
+    {
+      credentials: "same-origin",
+    }
+  );
+  return readSuccessResponse(response, "Не удалось загрузить список lab-агентов.");
+}
+
+export async function runModuleLiveTest(
+  moduleName: string,
+  version: string,
+  payload: {
+    device_id: string;
+    tool_name: string;
+    params?: Record<string, unknown>;
+    timeout_sec?: number;
+  }
+): Promise<{ live_test: ModuleLiveTestResult }> {
+  const response = await fetch(
+    `/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_tests`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+  return readSuccessResponse(response, "Live test модуля завершился ошибкой.");
 }
 
 export async function patchModuleWorkbenchRolloutSettings(

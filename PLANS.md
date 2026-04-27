@@ -232,3 +232,24 @@ Verification target:
 - Server tests for mandatory harness metadata, Windows warning, live-test recording and preferred gate.
 - React test for the Windows lab warning in the module constructor.
 - Live check on `/app/admin/modules` plus headless API validation on the Linux server.
+
+### 2026-04-27 Module Lab Agent Selection And Observer Coverage
+
+Goal:
+
+- Let an operator choose the exact Linux or Windows lab agent used to live-test a published module version.
+- Make module authoring and lab-test failures observer-visible now, so later UI can render a step-by-step problem map instead of a raw error message.
+
+Current plan:
+
+1. [done] Add a server API that returns compatible lab-agent candidates for a module version, including normalized platform, online state, agent version compatibility and warning reasons.
+2. [done] Add a typed React lab-test panel on `/app/admin/modules` for the selected published version: platform filter, agent selector, tool selector and live-test run button.
+3. [done] Wire the panel to the existing live-test endpoint using the chosen `device_id`; show the latest result and trace id.
+4. [done] Add observer materialization for preferred gate and live-test steps: root trace, spans for candidate selection / install / run / gate, and error occurrence on terminal failures.
+5. [done] Update docs/CODEMAP/observer docs and add automated tests for API candidates, UI selector and observer trace output.
+
+Verification target:
+
+- Server pytest for candidate filtering, explicit `device_id` live-test, preferred gate and observer trace rows.
+- React test for selecting Linux/Windows lab agent and calling the live-test endpoint.
+- `python scripts/verify_workspace.py`, webapp build/test and live browser/API check on `http://192.168.100.17:8666/app/admin/modules`.

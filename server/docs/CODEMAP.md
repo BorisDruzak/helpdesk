@@ -271,11 +271,12 @@
 
 ## 2026-04-15 Module workbench note
 
-- `server/modules/handlers.py` now exposes `GET/POST /api/modules/authoring/*` for headless module creation (`catalog`, `validate`, `publish`) and `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy and `POST /api/modules/{module_name}/{version}/live_tests` for lab-agent module verification.
+- `server/modules/handlers.py` now exposes `GET/POST /api/modules/authoring/*` for headless module creation (`catalog`, `validate`, `publish`) and `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy, `GET /api/modules/{module_name}/{version}/live_test_candidates` for lab-agent selection and `POST /api/modules/{module_name}/{version}/live_tests` for lab-agent module verification.
 - Module validation now records mandatory `validation_json.server_harness`; Windows-targeted versions warn with `WINDOWS_LIVE_TEST_REQUIRED_BEFORE_PREFERRED` and cannot become preferred until `validation_json.live_tests` contains a passed Windows agent run that satisfies the module/tool `min_agent_version`.
+- Module live-test and preferred-gate failures now materialize observer traces (`module_live_test`, `module_preferred_gate`) with spans for lab-agent selection, module install, tool run and gate failure.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
 - `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, output-contract/readiness controls, API preview over headless authoring endpoints, archive/source exploration, and rollout-policy controls in the admin UI.
-- `webapp/src/features/modules/modules-panel.tsx` is the typed `/app/admin/modules` module constructor; it mirrors output-contract controls and calls `/api/modules/authoring/validate|publish`.
+- `webapp/src/features/modules/modules-panel.tsx` is the typed `/app/admin/modules` module constructor; it mirrors output-contract controls, calls `/api/modules/authoring/validate|publish`, and includes the published-version lab-test panel for choosing Windows/Linux lab agents before live verification.
 
 ## 2026-04-16 Module page refactor
 

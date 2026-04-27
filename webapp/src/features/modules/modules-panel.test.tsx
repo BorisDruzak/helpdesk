@@ -322,6 +322,43 @@ function createWorkbenchDetailPayload(state: ModulesState, moduleName: string, v
   };
 }
 
+function createLiveTestCandidatesPayload(moduleName = "network_ping", version = "1.2.1", platform = "win32") {
+  return {
+    status: "ok",
+    module_name: moduleName,
+    version,
+    platform,
+    module_platforms: ["win32", "linux"],
+    min_agent_version: "1.0.0",
+    candidates: [
+      {
+        device_id: `${platform}-agent-1`,
+        hostname: platform === "linux" ? "linux-lab-01" : "win-lab-01",
+        platform,
+        raw_os: platform === "linux" ? "Linux" : "Windows",
+        agent_version: "1.3.0",
+        online: true,
+        compatible: true,
+        reasons: [],
+        last_seen_at: "2026-04-21T10:10:00+05:00",
+        last_handshake_at: "2026-04-21T10:10:00+05:00",
+      },
+      {
+        device_id: `${platform}-agent-old`,
+        hostname: `${platform}-old`,
+        platform,
+        raw_os: platform,
+        agent_version: "0.9.0",
+        online: true,
+        compatible: false,
+        reasons: ["AGENT_VERSION_TOO_OLD"],
+        last_seen_at: "2026-04-21T09:10:00+05:00",
+        last_handshake_at: "2026-04-21T09:10:00+05:00",
+      },
+    ],
+  };
+}
+
 function renderModulesPanel() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -360,6 +397,9 @@ describe("ModulesPanel", () => {
             ...cloneModulesPayload(state)
           });
         }
+        if (url.includes("/live_test_candidates") && method === "GET") {
+          return jsonResponse(createLiveTestCandidatesPayload());
+        }
         throw new Error(`Unexpected fetch: ${method} ${url}`);
       })
     );
@@ -372,6 +412,81 @@ describe("ModulesPanel", () => {
     });
 
     expect(await screen.findByText(/Не проверено на Windows agent/i)).toBeInTheDocument();
+  });
+
+  it("lets support choose a Linux or Windows lab agent and run a module live test", async () => {
+    const state = createModulesState();
+    const postBodies: unknown[] = [];
+
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === "/api/modules/workbench" && method === "GET") {
+        return jsonResponse({
+          status: "ok",
+          ...cloneModulesPayload(state)
+        });
+      }
+
+      if (url === "/api/modules/workbench/network_ping/1.2.1" && method === "GET") {
+        return jsonResponse({
+          status: "ok",
+          ...createWorkbenchDetailPayload(state, "network_ping", "1.2.1")
+        });
+      }
+
+      if (url.includes("/live_test_candidates") && method === "GET") {
+        const platform = url.includes("platform=linux") ? "linux" : "win32";
+        return jsonResponse(createLiveTestCandidatesPayload("network_ping", "1.2.1", platform));
+      }
+
+      if (url === "/api/modules/network_ping/1.2.1/live_tests" && method === "POST") {
+        postBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return jsonResponse({
+          status: "ok",
+          live_test: {
+            status: "success",
+            stage: "run",
+            module_name: "network_ping",
+            version: "1.2.1",
+            tool_name: "network_ping.ping",
+            device_id: "linux-agent-1",
+            platform: "linux",
+            agent_version: "1.3.0",
+            trace_id: "trace-live-test-1",
+            install_operation_id: "install-op-1",
+            run_operation_id: "run-op-1",
+            tested_at: "2026-04-21T10:20:00+05:00"
+          }
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderModulesPanel();
+
+    expect(await screen.findByText("Lab test agent")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Test platform" }), {
+      target: { value: "linux" }
+    });
+
+    expect((await screen.findAllByText(/linux-lab-01/i)).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Запустить live test/i }));
+
+    expect((await screen.findAllByText(/trace-live-test-1/i)).length).toBeGreaterThan(0);
+    expect(postBodies).toEqual([
+      {
+        device_id: "linux-agent-1",
+        tool_name: "network_ping.ping",
+        params: {}
+      }
+    ]);
   });
 
   it("renders typed module registry in Russian and updates rollout/preferred actions", async () => {
@@ -409,6 +524,12 @@ describe("ModulesPanel", () => {
             status: "ok",
             ...createWorkbenchDetailPayload(state, "observer_canary", "0.9.0")
           });
+        }
+
+        if (url.includes("/live_test_candidates") && method === "GET") {
+          const platform = url.includes("platform=linux") ? "linux" : "win32";
+          const parts = url.split("/");
+          return jsonResponse(createLiveTestCandidatesPayload(parts[3] ?? "network_ping", parts[4] ?? "1.2.1", platform));
         }
 
         if (url === "/api/modules/rollout_settings" && method === "PATCH") {

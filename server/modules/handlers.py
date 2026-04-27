@@ -30,7 +30,15 @@ from utils.versioning import compare_versions, version_key
 from app.db import get_session
 from app.repos import ModulesRepo, DeviceModulesRepo, ModuleRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from app.db.models import DeviceDesiredModule, DeviceModule, DownloadAudit
+from app.db.models import (
+    DeviceDesiredModule,
+    DeviceModule,
+    DownloadAudit,
+    ObserverErrorOccurrence,
+    ObserverErrorSignature,
+    ObserverSpan,
+    ObserverTrace,
+)
 from auth.context import AuthContext
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
@@ -301,6 +309,204 @@ def _pick_default_tool_name(manifest_json: dict) -> str:
         if tool_name:
             return tool_name
     return ""
+
+
+def _device_platform(device: object) -> str:
+    metadata = getattr(device, "device_metadata", {}) or {}
+    raw = getattr(device, "os", None) or (metadata.get("os_type") if isinstance(metadata, dict) else None)
+    return _normalize_runtime_platform(raw)
+
+
+def _agent_online(state: object, device_id: str) -> bool:
+    checker = getattr(state, "is_agent_online", None)
+    if callable(checker):
+        try:
+            return bool(checker(device_id))
+        except Exception:
+            return False
+    connected = getattr(state, "connected_agents", {}) or {}
+    entry = connected.get(device_id) if isinstance(connected, dict) else None
+    if not entry:
+        return False
+    ws = entry.get("ws") if isinstance(entry, dict) else None
+    if ws is not None and getattr(ws, "closed", False):
+        return False
+    return True
+
+
+def _module_live_test_candidate_record(
+    *,
+    device: object,
+    state: object,
+    manifest_json: dict,
+    requested_platform: str,
+    min_agent_version: str,
+) -> dict:
+    device_id = str(getattr(device, "device_id", "") or "")
+    platform = _device_platform(device)
+    agent_version = str(getattr(device, "agent_version", "") or "").strip()
+    platforms = _manifest_platforms(manifest_json)
+    platform_match = "any" in platforms or platform in platforms
+    if requested_platform and requested_platform != "any":
+        platform_match = platform_match and platform == requested_platform
+    online = _agent_online(state, device_id)
+    reasons: list[str] = []
+    if not platform_match:
+        reasons.append("MODULE_PLATFORM_MISMATCH")
+    if min_agent_version and (not agent_version or compare_versions(agent_version, min_agent_version) < 0):
+        reasons.append("AGENT_VERSION_TOO_OLD")
+    if not online:
+        reasons.append("AGENT_OFFLINE")
+    compatible = not reasons
+    return {
+        "device_id": device_id,
+        "hostname": getattr(device, "hostname", None),
+        "platform": platform or "unknown",
+        "raw_os": getattr(device, "os", None),
+        "agent_version": agent_version or None,
+        "online": online,
+        "compatible": compatible,
+        "reasons": reasons,
+        "last_seen_at": getattr(device, "last_seen_at", None).isoformat() if getattr(device, "last_seen_at", None) else None,
+        "last_handshake_at": getattr(device, "last_handshake_at", None).isoformat() if getattr(device, "last_handshake_at", None) else None,
+    }
+
+
+def _observer_signature(component: str, stage: str, error_code: str) -> str:
+    seed = f"{component}:{stage}:{error_code or 'error'}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    return f"{component}:{stage}:{error_code or 'error'}:{digest}"[:160]
+
+
+async def _record_module_flow_observer_trace(
+    session,
+    *,
+    trace_id: str,
+    root_kind: str,
+    module_name: str,
+    version: str,
+    status: str,
+    device_id: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    operation_id: Optional[str] = None,
+    spans: list[dict],
+    error_code: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    root_span_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{trace_id}:root"))
+    observer_status = "succeeded" if status in {"ok", "passed", "succeeded"} else ("failed" if status in {"error", "failed"} else status)
+    trace = ObserverTrace(
+        trace_id=trace_id,
+        root_span_id=root_span_id,
+        root_kind=root_kind,
+        ticket_id=None,
+        device_id=device_id,
+        operation_id=operation_id,
+        job_id=None,
+        status=observer_status,
+        started_at=now,
+        finished_at=now,
+        duration_ms=0,
+        span_count=len(spans) + 1,
+        error_count=1 if error_code else 0,
+        attrs_json={
+            "module_name": module_name,
+            "version": version,
+            "tool_name": tool_name,
+            "error_code": error_code,
+        },
+    )
+    session.add(trace)
+    await session.flush()
+    root_name = "module.live_test" if root_kind == "module_live_test" else f"module.{root_kind}"
+    root_span = ObserverSpan(
+        span_id=root_span_id,
+        trace_id=trace_id,
+        parent_span_id=None,
+        source_type="module_flow",
+        source_ref=f"{root_kind}:root:{module_name}:{version}",
+        name=root_name,
+        kind="internal",
+        component="modules",
+        event_type=root_kind,
+        module_name=module_name,
+        tool_name=tool_name,
+        status="error" if error_code else "ok",
+        started_at=now,
+        finished_at=now,
+        duration_ms=0,
+        attrs_json={"version": version, "device_id": device_id},
+    )
+    session.add(root_span)
+    last_error_span_id = root_span_id if error_code else None
+    for index, item in enumerate(spans):
+        span_status = "error" if item.get("status") in {"error", "failed"} else "ok"
+        span_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{trace_id}:span:{index}:{item.get('name')}"))
+        if span_status == "error":
+            last_error_span_id = span_id
+        session.add(
+            ObserverSpan(
+                span_id=span_id,
+                trace_id=trace_id,
+                parent_span_id=root_span_id,
+                source_type="module_flow",
+                source_ref=f"{root_kind}:{index}:{item.get('name')}",
+                name=str(item.get("name") or "module.step"),
+                kind="internal",
+                component="modules",
+                event_type=str(item.get("event_type") or item.get("name") or "module.step"),
+                module_name=module_name,
+                tool_name=tool_name,
+                status=span_status,
+                started_at=now,
+                finished_at=now,
+                duration_ms=0,
+                attrs_json=dict(item.get("attrs") or {}),
+            )
+        )
+    await session.flush()
+    if error_code:
+        signature = _observer_signature("modules", root_kind, f"{error_code}:{trace_id}")
+        session.add(
+            ObserverErrorSignature(
+                error_signature=signature,
+                title=f"Module {root_kind} failed: {error_code}",
+                component="modules",
+                module_name=module_name,
+                tool_name=tool_name,
+                error_kind=error_code,
+                exception_type=None,
+                failure_stage=root_kind,
+                message_sample=error_message or error_code,
+                first_seen_at=now,
+                last_seen_at=now,
+                occurrences_count=1,
+                affected_devices_count=1 if device_id else 0,
+                attrs_json={"version": version},
+            )
+        )
+        await session.flush()
+        session.add(
+            ObserverErrorOccurrence(
+                trace_id=trace_id,
+                span_id=last_error_span_id,
+                error_signature=signature,
+                device_id=device_id,
+                ticket_id=None,
+                operation_id=operation_id,
+                component="modules",
+                module_name=module_name,
+                tool_name=tool_name,
+                error_kind=error_code,
+                exception_type=None,
+                failure_stage=root_kind,
+                severity="error",
+                message_norm=error_message or error_code,
+                stack_hash=None,
+                attrs_json={"version": version},
+            )
+        )
 
 
 def _extract_tool_payload(response: object) -> dict:
@@ -602,6 +808,29 @@ async def _build_and_store_module_package(
             )()
             preferred_blocker = _preferred_gate_for_module(temp_module)
             if preferred_blocker:
+                trace_id = str(uuid.uuid4())
+                await _record_module_flow_observer_trace(
+                    session,
+                    trace_id=trace_id,
+                    root_kind="module_preferred_gate",
+                    module_name=name_final,
+                    version=version_final,
+                    status="failed",
+                    spans=[
+                        {
+                            "name": "module.preferred_gate",
+                            "status": "error",
+                            "attrs": {
+                                "source": "authoring_publish",
+                                "gate": preferred_blocker.get("error_code"),
+                            },
+                        }
+                    ],
+                    error_code=preferred_blocker.get("error_code") or "MODULE_PREFERRED_GATE_FAILED",
+                    error_message=preferred_blocker.get("error"),
+                )
+                await session.commit()
+                preferred_blocker["observer_trace_id"] = trace_id
                 return 409, preferred_blocker
 
         storage_path, sha256, size = save_module_zip_bytes(
@@ -2346,6 +2575,29 @@ async def handle_set_module_preferred_version(request):
                 )
             preferred_blocker = _preferred_gate_for_module(module)
             if preferred_blocker:
+                trace_id = str(uuid.uuid4())
+                await _record_module_flow_observer_trace(
+                    session,
+                    trace_id=trace_id,
+                    root_kind="module_preferred_gate",
+                    module_name=module_name,
+                    version=version,
+                    status="failed",
+                    spans=[
+                        {
+                            "name": "module.preferred_gate",
+                            "status": "error",
+                            "attrs": {
+                                "source": "preferred_assignment",
+                                "gate": preferred_blocker.get("error_code"),
+                            },
+                        }
+                    ],
+                    error_code=preferred_blocker.get("error_code") or "MODULE_PREFERRED_GATE_FAILED",
+                    error_message=preferred_blocker.get("error"),
+                )
+                await session.commit()
+                preferred_blocker["observer_trace_id"] = trace_id
                 return web.json_response(preferred_blocker, status=409)
             assignment = await rollout_repo.set_assignment(
                 module_name=module_name,
@@ -2521,6 +2773,91 @@ async def handle_publish_module_authoring(request):
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
 
+async def handle_list_module_live_test_candidates(request):
+    """
+    GET /api/modules/{module_name}/{version}/live_test_candidates?platform=win32|linux
+
+    Returns lab-agent candidates for an explicit module live test. The list is
+    filtered to the requested platform and annotated with online/compatibility
+    reasons so the UI can prevent accidental production promotion.
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        if auth_context.actor_role != "admin":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Only admin can list module live-test candidates",
+                    "error_code": "FORBIDDEN",
+                },
+                status=403,
+            )
+        module_name = request.match_info["module_name"]
+        version = request.match_info["version"]
+        requested_platform = _normalize_runtime_platform(request.query.get("platform") or "")
+
+        async with get_session() as session:
+            from app.repos.devices_repo import DevicesRepo
+
+            modules_repo = ModulesRepo(session)
+            devices_repo = DevicesRepo(session)
+            module = await modules_repo.get_module(module_name, version)
+            if module is None:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Module version not found",
+                        "error_code": "MODULE_NOT_FOUND",
+                        "module_name": module_name,
+                        "version": version,
+                    },
+                    status=404,
+                )
+            manifest_json = get_module_manifest(module)
+            platforms = _manifest_platforms(manifest_json)
+            if not requested_platform:
+                requested_platform = next((item for item in platforms if item != "any"), "any")
+            min_agent_version = _module_min_agent_version(manifest_json)
+            state = request.app.get("state")
+            candidates = [
+                _module_live_test_candidate_record(
+                    device=device,
+                    state=state,
+                    manifest_json=manifest_json,
+                    requested_platform=requested_platform,
+                    min_agent_version=min_agent_version,
+                )
+                for device in await devices_repo.list_all(include_deleted=False)
+            ]
+            if requested_platform and requested_platform != "any":
+                candidates = [item for item in candidates if item["platform"] == requested_platform]
+            candidates.sort(
+                key=lambda item: (
+                    not bool(item["compatible"]),
+                    not bool(item["online"]),
+                    str(item["hostname"] or item["device_id"]),
+                )
+            )
+
+        return web.json_response(
+            {
+                "status": "ok",
+                "module_name": module_name,
+                "version": version,
+                "platform": requested_platform,
+                "module_platforms": platforms,
+                "min_agent_version": min_agent_version or None,
+                "candidates": candidates,
+            }
+        )
+    except Exception as e:
+        logger.error(f"List module live-test candidates failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
 async def handle_run_module_live_test(request):
     """
     POST /api/modules/{module_name}/{version}/live_tests
@@ -2641,6 +2978,18 @@ async def handle_run_module_live_test(request):
 
         state = request.app.get("state")
         trace_id = str(uuid.uuid4())
+        observer_spans = [
+            {
+                "name": "module.lab_agent_select",
+                "status": "ok",
+                "attrs": {
+                    "device_id": device_id,
+                    "platform": device_platform,
+                    "agent_version": agent_version,
+                    "min_agent_version": min_agent_version or None,
+                },
+            }
+        ]
         install_response = await send_ws_command(
             state=state,
             device_id=device_id,
@@ -2652,6 +3001,16 @@ async def handle_run_module_live_test(request):
             trace_id=trace_id,
         )
         install_ok = _is_payload_success(install_response)
+        observer_spans.append(
+            {
+                "name": "module.install_module_package",
+                "status": "ok" if install_ok else "error",
+                "attrs": {
+                    "operation_id": (install_response or {}).get("operation_id"),
+                    "payload_status": ((install_response or {}).get("payload") or {}).get("status"),
+                },
+            }
+        )
         run_response: dict | None = None
         if install_ok:
             run_response = await send_ws_command(
@@ -2670,6 +3029,21 @@ async def handle_run_module_live_test(request):
                 trace_id=trace_id,
             )
         run_ok = bool(run_response and _is_payload_success(run_response))
+        observer_spans.append(
+            {
+                "name": "module.run_tool",
+                "status": "ok" if run_ok else "error",
+                "attrs": {
+                    "operation_id": (run_response or {}).get("operation_id") if run_response else None,
+                    "payload_status": ((run_response or {}).get("payload") or {}).get("status") if run_response else None,
+                },
+            }
+        )
+        failure_code = None
+        if not install_ok:
+            failure_code = "MODULE_LIVE_TEST_INSTALL_FAILED"
+        elif not run_ok:
+            failure_code = "MODULE_LIVE_TEST_RUN_FAILED"
         live_test = {
             "status": "passed" if install_ok and run_ok else "failed",
             "stage": "run_tool" if install_ok else "install_module_package",
@@ -2696,6 +3070,20 @@ async def handle_run_module_live_test(request):
             live_tests.append(live_test)
             validation_json["live_tests"] = live_tests[-50:]
             module.validation_json = validation_json
+            await _record_module_flow_observer_trace(
+                session,
+                trace_id=trace_id,
+                root_kind="module_live_test",
+                module_name=module_name,
+                version=version,
+                status="succeeded" if live_test["status"] == "passed" else "failed",
+                device_id=device_id,
+                tool_name=tool_name,
+                operation_id=live_test["run_operation_id"] or live_test["install_operation_id"],
+                spans=observer_spans,
+                error_code=failure_code,
+                error_message=failure_code,
+            )
             await session.commit()
 
         status = 200 if live_test["status"] == "passed" else 502

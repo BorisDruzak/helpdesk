@@ -83,6 +83,8 @@ Observer runtime:
 - `module_install`
 - `module_update`
 - `module_remove`
+- `module_live_test`
+- `module_preferred_gate`
 - `ws_delivery`
 - `retry_exhausted`
 
@@ -162,6 +164,12 @@ New React workspaces:
 
 Канонический operator UX для ticket-scoped trace живёт в `/support`.
 Legacy `/ticket` shell остаётся отдельной рабочей страницей тикета и не считается основной observer-поверхностью для support workflow.
+
+Module lab-test observer coverage:
+
+- `GET /api/modules/{module_name}/{version}/live_test_candidates` is a preflight report, not a trace source by itself.
+- `POST /api/modules/{module_name}/{version}/live_tests` creates a `module_live_test` trace with `module.lab_agent_select`, `module.install_module_package` and `module.run_tool` spans.
+- Preferred rollout blocks for Windows modules create a `module_preferred_gate` trace and return `observer_trace_id` with `MODULE_WINDOWS_LIVE_TEST_REQUIRED`.
 
 ## 9. First-class деградации
 
