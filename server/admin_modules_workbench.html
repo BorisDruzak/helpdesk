@@ -56,6 +56,7 @@
   }
 
   .mw-shell .mw-chip-row,
+  .mw-shell .mw-readiness-list,
   .mw-shell .mw-summary-grid,
   .mw-shell .mw-grid-2,
   .mw-shell .mw-grid-3,
@@ -80,6 +81,11 @@
 
   .mw-shell .mw-chip-row {
     grid-template-columns: repeat(auto-fit, minmax(130px, max-content));
+    align-items: start;
+  }
+
+  .mw-shell .mw-readiness-list {
+    grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
     align-items: start;
   }
 
@@ -601,6 +607,43 @@
                 <span class="mw-field-note">Структурируйте output так, чтобы validate и playbook могли на него опираться.</span>
               </div>
             </div>
+          </div>
+          <div class="mw-section mw-output-contract" style="margin-top: 12px;">
+            <div class="mw-section-head">
+              <div>
+                <h4 style="margin: 0;">Playbook decision contract</h4>
+                <div class="mw-subtle">Предсказуемый вывод для условий: статусы, success/error ветки и короткий summary.</div>
+              </div>
+            </div>
+            <div class="mw-grid-3" style="margin-top: 12px;">
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-status-path">Status path</label>
+                <input type="text" id="modules-workbench-wizard-tool-output-contract-status-path" placeholder="result.status">
+              </div>
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-summary-path">Summary path</label>
+                <input type="text" id="modules-workbench-wizard-tool-output-contract-summary-path" placeholder="result.output.summary">
+              </div>
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-error-code-path">Error code path</label>
+                <input type="text" id="modules-workbench-wizard-tool-output-contract-error-code-path" placeholder="result.error.code">
+              </div>
+            </div>
+            <div class="mw-grid-3" style="margin-top: 12px;">
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-status-values">All statuses</label>
+                <textarea id="modules-workbench-wizard-tool-output-contract-status-values" rows="3" placeholder="ok&#10;error"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-success-values">Success statuses</label>
+                <textarea id="modules-workbench-wizard-tool-output-contract-success-values" rows="3" placeholder="ok"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="modules-workbench-wizard-tool-output-contract-error-values">Error statuses</label>
+                <textarea id="modules-workbench-wizard-tool-output-contract-error-values" rows="3" placeholder="error"></textarea>
+              </div>
+            </div>
+            <div class="mw-field-note">Playbook builder покажет только эти статусы как варианты условий, поэтому ошибки ветвления ловятся заранее.</div>
           </div>
           <div class="form-group">
             <label for="modules-workbench-wizard-tool-code">Код инструмента</label>

@@ -3,6 +3,7 @@
     const MODULE_NAME_RE = /^[a-z0-9_]+$/;
     const TOOL_NAME_RE = /^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/;
     const METHOD_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+    const CONTRACT_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
     const RESERVED_NAMESPACES = new Set(["dns", "network", "tcp", "http", "tls", "system", "service", "file", "process", "browser"]);
     const API_PREVIEW_MODES = ["payload", "curl-validate", "curl-save", "fetch-save"];
     const PLATFORM_OPTIONS = [
@@ -31,6 +32,16 @@
             },
             required: ["hostname", "answers"],
         },
+    };
+    const OUTPUT_CONTRACT_DEFAULT = {
+        schema_version: "1.0",
+        status_path: "result.status",
+        status_values: ["ok", "error"],
+        success_values: ["ok"],
+        error_values: ["error"],
+        summary_path: "result.output.summary",
+        error_code_path: "result.error.code",
+        compact_fields: [],
     };
     const TOOL_TEMPLATE_OPTIONS = [
         { key: "blank", label: "Пустой diagnostic tool" },
@@ -95,6 +106,107 @@
 
     function formatListInput(values) {
         return uniqueStrings(values).join("\n");
+    }
+
+    function normalizeOutputContract(raw) {
+        const current = raw && typeof raw === "object" ? raw : {};
+        const contract = { ...clone(OUTPUT_CONTRACT_DEFAULT), ...current };
+        contract.status_values = uniqueStrings(contract.status_values);
+        contract.success_values = uniqueStrings(contract.success_values);
+        contract.error_values = uniqueStrings(contract.error_values);
+        contract.compact_fields = Array.isArray(contract.compact_fields) ? contract.compact_fields : [];
+        if (!contract.status_values.length) {
+            contract.status_values = clone(OUTPUT_CONTRACT_DEFAULT.status_values);
+        }
+        if (!contract.success_values.length) {
+            contract.success_values = contract.status_values.includes("ok") ? ["ok"] : [contract.status_values[0]];
+        }
+        if (!contract.error_values.length) {
+            contract.error_values = contract.status_values.includes("error") ? ["error"] : [contract.status_values[contract.status_values.length - 1]];
+        }
+        return contract;
+    }
+
+    function outputContractFieldIds(prefix) {
+        return [
+            `${prefix}-status-path`,
+            `${prefix}-status-values`,
+            `${prefix}-success-values`,
+            `${prefix}-error-values`,
+            `${prefix}-summary-path`,
+            `${prefix}-error-code-path`,
+        ];
+    }
+
+    function renderOutputContractFields(prefix, contract) {
+        const value = normalizeOutputContract(contract);
+        return `
+            <div class="mw-section mw-output-contract" style="margin-top: 12px;">
+                <div class="mw-section-head">
+                    <div>
+                        <h4 style="margin: 0;">Playbook decision contract</h4>
+                        <div class="mw-subtle">Predictable output for branching: explicit status values, success/error buckets and compact summary paths.</div>
+                    </div>
+                </div>
+                <div class="mw-grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="${prefix}-status-path">Status path</label>
+                        <input type="text" id="${prefix}-status-path" value="${html(value.status_path)}" placeholder="result.status">
+                    </div>
+                    <div class="form-group">
+                        <label for="${prefix}-summary-path">Summary path</label>
+                        <input type="text" id="${prefix}-summary-path" value="${html(value.summary_path)}" placeholder="result.output.summary">
+                    </div>
+                    <div class="form-group">
+                        <label for="${prefix}-error-code-path">Error code path</label>
+                        <input type="text" id="${prefix}-error-code-path" value="${html(value.error_code_path)}" placeholder="result.error.code">
+                    </div>
+                </div>
+                <div class="mw-grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="${prefix}-status-values">All statuses</label>
+                        <textarea id="${prefix}-status-values" rows="3" placeholder="ok&#10;error">${html(formatListInput(value.status_values))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="${prefix}-success-values">Success statuses</label>
+                        <textarea id="${prefix}-success-values" rows="3" placeholder="ok">${html(formatListInput(value.success_values))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="${prefix}-error-values">Error statuses</label>
+                        <textarea id="${prefix}-error-values" rows="3" placeholder="error">${html(formatListInput(value.error_values))}</textarea>
+                    </div>
+                </div>
+                <div class="mw-field-note">Tip: keep status names short and stable. The playbook builder will show only these values as condition choices.</div>
+            </div>
+        `;
+    }
+
+    function syncOutputContractFromDom(prefix, current) {
+        const statusPathEl = byId(`${prefix}-status-path`);
+        if (!statusPathEl) {
+            return normalizeOutputContract(current);
+        }
+        return normalizeOutputContract({
+            ...(current || {}),
+            status_path: String(statusPathEl.value || "").trim() || OUTPUT_CONTRACT_DEFAULT.status_path,
+            status_values: parseListInput(byId(`${prefix}-status-values`)?.value || ""),
+            success_values: parseListInput(byId(`${prefix}-success-values`)?.value || ""),
+            error_values: parseListInput(byId(`${prefix}-error-values`)?.value || ""),
+            summary_path: String(byId(`${prefix}-summary-path`)?.value || "").trim() || OUTPUT_CONTRACT_DEFAULT.summary_path,
+            error_code_path: String(byId(`${prefix}-error-code-path`)?.value || "").trim() || OUTPUT_CONTRACT_DEFAULT.error_code_path,
+        });
+    }
+
+    function bindOutputContractControls(prefix, onChange) {
+        outputContractFieldIds(prefix).forEach((id) => {
+            const el = byId(id);
+            if (!el || el.dataset.bound === "1") {
+                return;
+            }
+            el.dataset.bound = "1";
+            el.addEventListener("input", onChange);
+            el.addEventListener("change", onChange);
+        });
     }
 
     function schemaTypeFromBlueprint(rawType) {
@@ -414,6 +526,7 @@
             description: "",
             params_schema: { type: "object", properties: {}, additionalProperties: true },
             output_schema: { type: "object", properties: {} },
+            output_contract: clone(OUTPUT_CONTRACT_DEFAULT),
             presets: [],
             capabilities: [],
             metadata: {
@@ -479,6 +592,7 @@
             resources: { ...base.resources, ...(current.resources || {}) },
             params_schema: current.params_schema && typeof current.params_schema === "object" ? current.params_schema : base.params_schema,
             output_schema: current.output_schema && typeof current.output_schema === "object" ? current.output_schema : base.output_schema,
+            output_contract: normalizeOutputContract(current.output_contract || base.output_contract),
         };
     }
 
@@ -1302,6 +1416,28 @@
         renderWizardPolicyEditor();
     }
 
+    function buildReadinessChecklist(draft) {
+        const tools = draft.tools || [];
+        const allToolsHaveContracts = tools.length > 0 && tools.every((tool) => {
+            const contract = normalizeOutputContract(tool.output_contract);
+            const successOutside = (contract.success_values || []).some((item) => !contract.status_values.includes(item));
+            const errorOutside = (contract.error_values || []).some((item) => !contract.status_values.includes(item));
+            return Boolean(
+                CONTRACT_PATH_RE.test(contract.status_path || "")
+                && contract.status_values.length
+                && !successOutside
+                && !errorOutside
+            );
+        });
+        return [
+            { ok: MODULE_NAME_RE.test(draft.module_name || ""), label: "Module id" },
+            { ok: SEMVER_RE.test(draft.version || ""), label: "Version" },
+            { ok: Array.isArray(draft.platforms) && draft.platforms.length > 0 && !(draft.platforms.includes("any") && draft.platforms.length > 1), label: "Platforms" },
+            { ok: tools.length > 0 && tools.every((tool) => TOOL_NAME_RE.test(tool.tool_name || "")), label: "Tool ids" },
+            { ok: allToolsHaveContracts, label: "Output contracts" },
+        ];
+    }
+
     function renderWizardSummary() {
         const el = byId("modules-workbench-wizard-summary");
         if (!el) {
@@ -1309,6 +1445,7 @@
         }
         const draft = state.currentDraft || createEmptyDraft();
         const tool = activeTool();
+        const readiness = buildReadinessChecklist(draft);
         el.innerHTML = `
             <label>Текущий draft</label>
             <strong>${html(draft.module_name || "Новый модуль")}</strong>
@@ -1317,6 +1454,9 @@
                 <span class="mw-chip is-accent">${html(draft.owner_scope || "vendor")}</span>
                 <span class="mw-chip">${html((draft.platforms || ["any"]).join(", "))}</span>
                 <span class="mw-chip">${html(tool?.tool_name || "tool не выбран")}</span>
+            </div>
+            <div class="mw-readiness-list" style="margin-top: 12px;">
+                ${readiness.map((item) => `<span class="mw-chip ${item.ok ? "is-accent" : "is-warning"}">${item.ok ? "OK" : "Need"} ${html(item.label)}</span>`).join("")}
             </div>
         `;
     }
@@ -1432,6 +1572,13 @@
         set("modules-workbench-wizard-tool-output-schema-lines", formatSchemaBlueprint(tool.output_schema || {}));
         set("modules-workbench-wizard-tool-output-schema-additional", tool.output_schema?.additionalProperties === true);
         set("modules-workbench-wizard-tool-output-schema", pretty(tool.output_schema || {}));
+        const outputContract = normalizeOutputContract(tool.output_contract);
+        set("modules-workbench-wizard-tool-output-contract-status-path", outputContract.status_path);
+        set("modules-workbench-wizard-tool-output-contract-status-values", formatListInput(outputContract.status_values));
+        set("modules-workbench-wizard-tool-output-contract-success-values", formatListInput(outputContract.success_values));
+        set("modules-workbench-wizard-tool-output-contract-error-values", formatListInput(outputContract.error_values));
+        set("modules-workbench-wizard-tool-output-contract-summary-path", outputContract.summary_path);
+        set("modules-workbench-wizard-tool-output-contract-error-code-path", outputContract.error_code_path);
         set("modules-workbench-wizard-tool-code", tool.user_function_body || "");
         [
             "modules-workbench-wizard-tool-name",
@@ -1439,6 +1586,12 @@
             "modules-workbench-wizard-tool-description",
             "modules-workbench-wizard-tool-params-schema",
             "modules-workbench-wizard-tool-output-schema",
+            "modules-workbench-wizard-tool-output-contract-status-path",
+            "modules-workbench-wizard-tool-output-contract-status-values",
+            "modules-workbench-wizard-tool-output-contract-success-values",
+            "modules-workbench-wizard-tool-output-contract-error-values",
+            "modules-workbench-wizard-tool-output-contract-summary-path",
+            "modules-workbench-wizard-tool-output-contract-error-code-path",
             "modules-workbench-wizard-tool-code",
         ].forEach((id) => {
             const el = byId(id);
@@ -1566,6 +1719,7 @@
         tool.description = String(byId("modules-workbench-wizard-tool-description")?.value || "").trim();
         tool.params_schema = safeParseJson(byId("modules-workbench-wizard-tool-params-schema")?.value, { type: "object", properties: {} }, "Params schema", errors);
         tool.output_schema = safeParseJson(byId("modules-workbench-wizard-tool-output-schema")?.value, { type: "object", properties: {} }, "Output schema", errors);
+        tool.output_contract = syncOutputContractFromDom("modules-workbench-wizard-tool-output-contract", tool.output_contract);
         tool.user_function_body = String(byId("modules-workbench-wizard-tool-code")?.value || "").trim();
         return errors;
     }
@@ -1984,6 +2138,7 @@
                     </div>
                 </div>
             </div>
+            ${renderOutputContractFields("modules-workbench-tool-output-contract", tool.output_contract)}
             <div class="mw-section">
                 <div class="mw-section-head">
                     <div>
@@ -2140,6 +2295,12 @@
             "modules-workbench-tool-error-codes",
             "modules-workbench-tool-params-schema",
             "modules-workbench-tool-output-schema",
+            "modules-workbench-tool-output-contract-status-path",
+            "modules-workbench-tool-output-contract-status-values",
+            "modules-workbench-tool-output-contract-success-values",
+            "modules-workbench-tool-output-contract-error-values",
+            "modules-workbench-tool-output-contract-summary-path",
+            "modules-workbench-tool-output-contract-error-code-path",
             "modules-workbench-tool-artifacts",
             "modules-workbench-tool-domain",
             "modules-workbench-tool-kind",
@@ -2183,6 +2344,10 @@
             el.addEventListener("change", handler);
         });
         bindPlatformControls("modules-workbench-tool-platforms", () => {
+            syncCurrentToolFromEditor();
+            refreshDraftViews();
+        });
+        bindOutputContractControls("modules-workbench-tool-output-contract", () => {
             syncCurrentToolFromEditor();
             refreshDraftViews();
         });
@@ -2283,6 +2448,7 @@
         tool.error_codes = parseListInput(byId("modules-workbench-tool-error-codes")?.value || "");
         tool.params_schema = safeParseJson(byId("modules-workbench-tool-params-schema")?.value, { type: "object", properties: {} }, "Params schema", errors);
         tool.output_schema = safeParseJson(byId("modules-workbench-tool-output-schema")?.value, { type: "object", properties: {} }, "Output schema", errors);
+        tool.output_contract = syncOutputContractFromDom("modules-workbench-tool-output-contract", tool.output_contract);
         tool.metadata = {
             ...blankTool().metadata,
             ...(tool.metadata || {}),
@@ -2499,6 +2665,28 @@
             if (!tool.output_schema || tool.output_schema.type !== "object") {
                 warnings.push(`${label}: output_schema обычно должен быть JSON Schema object.`);
             }
+            const outputContract = normalizeOutputContract(tool.output_contract);
+            tool.output_contract = outputContract;
+            if (!CONTRACT_PATH_RE.test(outputContract.status_path || "")) {
+                errors.push(`${label}: output_contract.status_path должен быть dotted path, например result.status.`);
+            }
+            if (!Array.isArray(outputContract.status_values) || !outputContract.status_values.length) {
+                errors.push(`${label}: output_contract.status_values должен явно перечислять возможные статусы.`);
+            }
+            const successOutside = (outputContract.success_values || []).filter((item) => !outputContract.status_values.includes(item));
+            const errorOutside = (outputContract.error_values || []).filter((item) => !outputContract.status_values.includes(item));
+            if (successOutside.length) {
+                errors.push(`${label}: success statuses должны входить в all statuses: ${successOutside.join(", ")}.`);
+            }
+            if (errorOutside.length) {
+                errors.push(`${label}: error statuses должны входить в all statuses: ${errorOutside.join(", ")}.`);
+            }
+            if (!CONTRACT_PATH_RE.test(outputContract.summary_path || "")) {
+                errors.push(`${label}: output_contract.summary_path должен быть dotted path.`);
+            }
+            if (!CONTRACT_PATH_RE.test(outputContract.error_code_path || "")) {
+                errors.push(`${label}: output_contract.error_code_path должен быть dotted path.`);
+            }
             if (!Array.isArray(tool.aliases)) {
                 errors.push(`${label}: aliases должны быть массивом.`);
             }
@@ -2626,6 +2814,7 @@
                 description: tool.description,
                 params_schema: tool.params_schema,
                 output_schema: tool.output_schema,
+                output_contract: normalizeOutputContract(tool.output_contract),
                 presets: tool.presets || [],
                 capabilities: tool.capabilities || [],
                 metadata: tool.metadata || {},
@@ -2682,7 +2871,7 @@
         }
         if (state.apiPreviewMode === "curl-validate") {
             pre.textContent = [
-                "curl -X POST http://192.168.100.17:8666/api/modules/workbench/validate \\",
+                "curl -X POST http://192.168.100.17:8666/api/modules/authoring/validate \\",
                 '  -H "Authorization: Bearer <admin-token>" \\',
                 '  -H "Content-Type: application/json" \\',
                 `  -d '${JSON.stringify(payload)}'`,
@@ -2691,7 +2880,7 @@
         }
         if (state.apiPreviewMode === "curl-save") {
             pre.textContent = [
-                "curl -X POST http://192.168.100.17:8666/api/modules/workbench/save \\",
+                "curl -X POST http://192.168.100.17:8666/api/modules/authoring/publish \\",
                 '  -H "Authorization: Bearer <admin-token>" \\',
                 '  -H "Content-Type: application/json" \\',
                 `  -d '${JSON.stringify(payload)}'`,
@@ -2701,7 +2890,7 @@
         pre.textContent = [
             "const payload = " + pretty(payload) + ";",
             "",
-            "const response = await fetch('/api/modules/workbench/save', {",
+            "const response = await fetch('/api/modules/authoring/publish', {",
             "  method: 'POST',",
             "  headers: {",
             "    ...getAuthHeaders(true),",
@@ -2779,7 +2968,7 @@
             return;
         }
         try {
-            const response = await fetch("/api/modules/workbench/validate", {
+            const response = await fetch("/api/modules/authoring/validate", {
                 method: "POST",
                 headers: getAuthHeaders(true),
                 body: JSON.stringify(draftToPayload()),
@@ -2809,7 +2998,7 @@
             return;
         }
         try {
-            const response = await fetch("/api/modules/workbench/save", {
+            const response = await fetch("/api/modules/authoring/publish", {
                 method: "POST",
                 headers: getAuthHeaders(true),
                 body: JSON.stringify(draftToPayload()),

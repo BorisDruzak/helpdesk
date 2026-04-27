@@ -196,3 +196,22 @@ Deferred to the observer stage:
 - First-class observer spans for playbook root, preflight, install, command dispatch and ticket fact attachment.
 - A dedicated ticket Automation modal for launching full playbooks with preflight preview and step progress.
 - Editable protected routing visualization over the existing routing service.
+
+### 2026-04-27 Module Authoring API/UI Notes
+
+Completed in this pass:
+
+- Added headless module authoring API:
+  - `GET /api/modules/authoring/catalog`
+  - `POST /api/modules/authoring/validate`
+  - `POST /api/modules/authoring/publish`
+- The headless endpoints reuse the existing workbench package builder, preflight, smoke check, ownership-conflict check and registry persistence path.
+- Generated module packages now preserve explicit `output_contract` in `manifest.json`, `manifest_summary` and editable workbench previews.
+- Agent-side `@exposed_tool` now accepts `output_contract` and includes it in registry/tool specs, so installed module commands can expose the same predictable contract.
+- The module workbench UI now has a `Playbook decision contract` block in guided and advanced editors, readiness chips, local validation for contract paths/status buckets, and API preview snippets pointing at the headless authoring endpoints.
+
+Verification focus:
+
+- Legacy module payloads without `output_contract` must stay valid.
+- New playbook-ready module payloads should declare explicit `status_values`, `success_values`, `error_values`, `summary_path` and `error_code_path`.
+- `/app/admin/playbooks` can consume these contracts through the existing module/tool catalog path.

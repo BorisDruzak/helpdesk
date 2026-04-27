@@ -36,6 +36,7 @@ def exposed_tool(
     params_schema: Optional[Dict[str, Any]] = None,
     params_model: Optional['type[BaseModel]'] = None,
     output_schema: Optional[Dict[str, Any]] = None,
+    output_contract: Optional[Dict[str, Any]] = None,
     presets: Optional[List[Dict[str, Any]]] = None,
     # Параметры для metadata (PolicyEngine)
     metadata_risk_level: Optional[str] = None,
@@ -151,6 +152,7 @@ def exposed_tool(
         func.__tool_params_model__ = params_model_value
         func.__tool_params_schema__ = params_schema_value
         func.__tool_output_schema__ = output_schema if isinstance(output_schema, dict) else {}
+        func.__tool_output_contract__ = output_contract if isinstance(output_contract, dict) else {}
         func.__tool_presets__ = presets if presets is not None else []
         func.__tool_metadata__ = metadata_dict
         func.__tool_contract_version__ = str(contract_version or "1.0.0")
@@ -178,6 +180,7 @@ def exposed_tool(
             async_wrapper.__tool_params_model__ = func.__tool_params_model__
             async_wrapper.__tool_params_schema__ = func.__tool_params_schema__
             async_wrapper.__tool_output_schema__ = func.__tool_output_schema__
+            async_wrapper.__tool_output_contract__ = func.__tool_output_contract__
             async_wrapper.__tool_presets__ = func.__tool_presets__
             async_wrapper.__tool_metadata__ = func.__tool_metadata__
             async_wrapper.__tool_contract_version__ = func.__tool_contract_version__
@@ -204,6 +207,7 @@ def exposed_tool(
             sync_wrapper.__tool_params_model__ = func.__tool_params_model__
             sync_wrapper.__tool_params_schema__ = func.__tool_params_schema__
             sync_wrapper.__tool_output_schema__ = func.__tool_output_schema__
+            sync_wrapper.__tool_output_contract__ = func.__tool_output_contract__
             sync_wrapper.__tool_presets__ = func.__tool_presets__
             sync_wrapper.__tool_metadata__ = func.__tool_metadata__
             sync_wrapper.__tool_contract_version__ = func.__tool_contract_version__
@@ -415,6 +419,7 @@ class ModuleRegistry:
         params_model = getattr(method, '__tool_params_model__', None)
         params_schema = getattr(method, '__tool_params_schema__', {})
         output_schema = getattr(method, '__tool_output_schema__', {})
+        output_contract = getattr(method, '__tool_output_contract__', {})
         
         # Формируем имя модели (строкой)
         params_model_name = None
@@ -469,6 +474,7 @@ class ModuleRegistry:
             'params_model': params_model_name,  # Имя класса модели
             'params_schema': params_schema,  # Машинная JSON Schema
             'output_schema': output_schema,
+            'output_contract': output_contract,
             'presets': presets,  # Предустановленные конфигурации
             'metadata': metadata_dict,  # Метаданные для PolicyEngine
             'contract_version': getattr(method, '__tool_contract_version__', "1.0.0"),
@@ -549,6 +555,7 @@ class ModuleRegistry:
             'params_model': tool_info.get('params_model'),
             'params_schema': tool_info.get('params_schema', {}),
             'output_schema': tool_info.get('output_schema', {}),
+            'output_contract': tool_info.get('output_contract', {}),
             'parameters': tool_info.get('parameters', []),
             'presets': tool_info.get('presets', []),
             'async': tool_info.get('async', False),

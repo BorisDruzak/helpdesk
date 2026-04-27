@@ -313,6 +313,102 @@ async def test_module_workbench_save_creates_module_and_sets_preferred(test_clie
 
 
 @pytest.mark.asyncio
+async def test_module_authoring_catalog_returns_headless_contract(test_client):
+    response = await test_client.get("/api/modules/authoring/catalog")
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["endpoints"]["validate"] == "/api/modules/authoring/validate"
+    assert data["endpoints"]["publish"] == "/api/modules/authoring/publish"
+    assert "network_ping" in {item["key"] for item in data["tool_templates"]}
+    assert data["output_contract_template"]["status_values"] == ["ok", "error"]
+    assert data["sample_payload"]["tools"][0]["output_contract"]["status_path"] == "result.status"
+
+
+@pytest.mark.asyncio
+async def test_module_authoring_validate_preserves_playbook_output_contract(test_client):
+    module_name = f"authoring_validate_{uuid.uuid4().hex[:8]}"
+    payload = {
+        "module_name": module_name,
+        "version": "0.1.0",
+        "description": "Headless authoring validate",
+        "owner_scope": "vendor",
+        "module_api_version": "1.0.0",
+        "entrypoint": "module:register",
+        "platforms": ["any"],
+        "requirements": [],
+        "optional_requirements": [],
+        "tools": [
+            {
+                "tool_name": "vendor_x.echo",
+                "method_name": "echo_tool",
+                "description": "Echo data",
+                "params_schema": {
+                    "type": "object",
+                    "required": ["value"],
+                    "properties": {"value": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "enum": ["ok", "error"]},
+                        "value": {"type": "string"},
+                    },
+                },
+                "output_contract": {
+                    "status_path": "result.status",
+                    "status_values": ["ok", "error"],
+                    "success_values": ["ok"],
+                    "error_values": ["error"],
+                    "summary_path": "result.output.value",
+                    "error_code_path": "result.error.code",
+                },
+                "metadata": {
+                    "domain": "vendor_x",
+                    "platforms": ["any"],
+                    "risk_level": "safe_read",
+                    "requires_consent": False,
+                    "timeout_sec": 30,
+                    "idempotent": True,
+                    "side_effects": False,
+                    "allow_roles": ["admin"],
+                    "scopes": ["custom"],
+                    "origin": "managed",
+                    "tool_kind": "diagnostic",
+                },
+                "contract_version": "1.0.0",
+                "dependencies": {
+                    "min_agent_version": "1.0.0",
+                    "required_binaries": [],
+                    "required_python_packages": [],
+                    "required_services": [],
+                    "required_permissions": [],
+                },
+                "lifecycle": "stable",
+                "error_codes": ["VALIDATION_ERROR"],
+                "artifact_types": [],
+                "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                "user_function_body": 'return {"status": "ok", "value": params.get("value")}',
+            }
+        ],
+    }
+
+    response = await test_client.post("/api/modules/authoring/validate", json=payload)
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["publish_ready"] is True
+    tool = data["manifest_json"]["tools"][0]
+    assert tool["output_schema"]["properties"]["status"]["enum"] == ["ok", "error"]
+    assert tool["output_contract"]["status_values"] == ["ok", "error"]
+    assert data["editable_preview"]["tools"][0]["output_contract"]["summary_path"] == "result.output.value"
+
+
+@pytest.mark.asyncio
 async def test_delete_module_version_removes_registry_archive_and_preferred_assignment(test_client, test_engine):
     module_name = f"wb_delete_{uuid.uuid4().hex[:8]}"
     version = "1.0.0"

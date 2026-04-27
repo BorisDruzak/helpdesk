@@ -317,6 +317,50 @@ def test_build_module_package_supports_multi_tool_semantic_names():
 
 
 @pytest.mark.no_db
+def test_build_module_package_includes_output_contract_for_playbook_builder():
+    zip_bytes, summary = build_module_package(
+        module_name="vendor_netkit",
+        version="1.0.0",
+        tool_name="",
+        description="Network tools",
+        user_function_body="",
+        platforms=["any"],
+        owner_scope="vendor",
+        tools=[
+            {
+                "tool_name": "vendor_x.echo",
+                "method_name": "echo_tool",
+                "description": "Echo value",
+                "params_schema": {"type": "object", "properties": {"value": {"type": "string"}}},
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"status": {"type": "string", "enum": ["ok", "error"]}},
+                },
+                "output_contract": {
+                    "status_path": "result.status",
+                    "status_values": ["ok", "error"],
+                    "success_values": ["ok"],
+                    "error_values": ["error"],
+                    "summary_path": "result.output.value",
+                    "error_code_path": "result.error.code",
+                },
+                "metadata": {"domain": "vendor_x", "platforms": ["any"], "risk_level": "safe_read"},
+                "user_function_body": 'return {"status": "ok", "value": params.get("value")}',
+            }
+        ],
+    )
+
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+
+    assert ok is True
+    assert manifest_json is not None
+    assert manifest_json["tools"][0]["output_contract"]["status_values"] == ["ok", "error"]
+    assert summary["tools"][0]["output_contract"]["summary_path"] == "result.output.value"
+    assert manifest_summary["tools"][0]["output_contract"]["status_path"] == "result.status"
+    assert validation_json["validation_status"] == "passed"
+
+
+@pytest.mark.no_db
 def test_preflight_module_zip_rejects_missing_observer_breadcrumbs():
     module_name = "observer_missing"
     manifest = {

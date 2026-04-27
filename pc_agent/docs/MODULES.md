@@ -40,6 +40,7 @@ Legacy aliases остаются только для compat resolution в registr
 - `contract_version`
 - `params_schema`
 - `output_schema`
+- `output_contract` when the tool is intended for predictable playbook branching
 - `metadata`
 - `dependencies`
 - `lifecycle`

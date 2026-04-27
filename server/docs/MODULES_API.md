@@ -48,6 +48,9 @@ Workbench API:
 - `GET /api/modules/workbench` - grouped module families with versions and preferred-version state
 - `GET /api/modules/rollout_settings` - current rollout policy for preferred-version changes
 - `PATCH /api/modules/rollout_settings` - update the rollout policy (`manual` or `installed_devices`, plus reconcile/refresh toggle)
+- `GET /api/modules/authoring/catalog` - headless module-authoring catalog: supported platforms/scopes/lifecycles, output-contract template, sample payload and common tool templates for API clients
+- `POST /api/modules/authoring/validate` - headless validate endpoint; uses the same package builder, preflight, smoke check, conflict detection and editable preview as the workbench
+- `POST /api/modules/authoring/publish` - headless publish endpoint; validates/smokes and persists the module using the same registry flow as the workbench save action
 - `GET /api/modules/workbench/{module_name}/{version}` - module detail plus editable draft reconstructed from manifest and archive contents
 - `POST /api/modules/workbench/validate` - build a package in memory, run preflight/smoke, report ownership conflicts, and return an editable preview without publishing
 - `POST /api/modules/workbench/save` - build, validate, smoke-check, and persist a module from the structured UI payload
@@ -65,6 +68,8 @@ Workbench UX expectations:
   - module `requirements` and `optional_requirements` are entered as one item per line instead of JSON arrays/objects
   - params/output schemas can be assembled from validated line-based blueprint rows such as `hostname:string! | Имя хоста`, while raw JSON schema stays available as an advanced fallback
 - local validation is expected to catch platform mistakes, owner-scope conflicts, and malformed schema JSON before server-side validate/publish
+- local validation also checks the playbook decision contract: status path, allowed status values, success/error subsets, summary path and error-code path
+- the guided wizard and advanced editor expose these contract fields directly, and the wizard side summary shows a readiness checklist for module id, version, platforms, tool ids and output contracts
 - archive import expects `module_name` and `version` for the upload contract, but canonical values are still reconciled against `manifest.json` inside the ZIP
 
 Workbench detail and validate preview both expose archive/source decomposition for generated ZIP packages:
@@ -104,6 +109,8 @@ For predictable automation, each playbook-ready tool should declare:
 ```
 
 Server manifest normalization keeps `output_schema` and `output_contract` separate. When `output_contract` is present, `status_values` must be explicit and unique; `success_values` and `error_values` must be subsets of `status_values`. The admin playbook catalog derives `condition_hints` from the contract and known `error_codes`, so `/app/admin/playbooks` can offer stable condition templates such as `steps.ping.output.result.status == 'ok'` instead of forcing operators to parse raw command text.
+
+Generated modules preserve `output_contract` in `manifest.json`, `manifest_summary` and the editable workbench preview. Older modules that do not declare an output contract remain valid; the field is not written as an empty object unless the author explicitly provides it.
 
 Preferred-version rollout now has an explicit server-side setting:
 

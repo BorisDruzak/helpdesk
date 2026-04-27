@@ -271,9 +271,9 @@
 
 ## 2026-04-15 Module workbench note
 
-- `server/modules/handlers.py` now exposes `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy.
+- `server/modules/handlers.py` now exposes `GET/POST /api/modules/authoring/*` for headless module creation (`catalog`, `validate`, `publish`) and `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
-- `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, API preview, archive/source exploration, and rollout-policy controls in the admin UI.
+- `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, output-contract/readiness controls, API preview over headless authoring endpoints, archive/source exploration, and rollout-policy controls in the admin UI.
 
 ## 2026-04-16 Module page refactor
 

@@ -46,6 +46,7 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
         risk_level={risk_level_literal},
         params_schema={params_schema_literal},
         output_schema={output_schema_literal},
+        output_contract={output_contract_literal},
         presets={presets_literal},
         metadata_risk_level={metadata_risk_level_literal},
         metadata_scopes={metadata_scopes_literal},
@@ -161,6 +162,7 @@ def _coerce_tools_payload(
     capabilities: Optional[List[Dict[str, Any]]],
     metadata: Optional[Dict[str, Any]],
     output_schema: Optional[Dict[str, Any]],
+    output_contract: Optional[Dict[str, Any]],
     aliases: Optional[List[str]],
     tools: Optional[List[Dict[str, Any]]],
 ) -> List[Dict[str, Any]]:
@@ -178,6 +180,7 @@ def _coerce_tools_payload(
             "capabilities": capabilities or [],
             "metadata": metadata or {},
             "output_schema": output_schema or {},
+            "output_contract": output_contract or {},
             "aliases": aliases or [],
         }
     ]
@@ -247,6 +250,7 @@ def _normalize_tool_specs(
         tool_capabilities = raw_tool.get("capabilities") if isinstance(raw_tool.get("capabilities"), list) else []
         tool_metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
         tool_output_schema = raw_tool.get("output_schema") if isinstance(raw_tool.get("output_schema"), dict) else {}
+        tool_output_contract = raw_tool.get("output_contract") if isinstance(raw_tool.get("output_contract"), dict) else {}
         tool_aliases = _normalize_tool_aliases(module_name, canonical_tool_name, raw_tool.get("aliases"))
         tool_platforms = _normalize_platforms(
             raw_tool.get("platforms")
@@ -285,6 +289,7 @@ def _normalize_tool_specs(
                 "presets": tool_presets,
                 "capabilities": tool_capabilities,
                 "output_schema": tool_output_schema,
+                "output_contract": tool_output_contract,
                 "risk_level": to_legacy_risk_level(tool_risk_level),
                 "contract_version": contract_version,
                 "dependencies": dependencies,
@@ -325,6 +330,7 @@ def _render_tool_methods(tool_specs: List[Dict[str, Any]]) -> str:
                 risk_level_literal=repr(tool["risk_level"]),
                 params_schema_literal=repr(tool["params_schema"]),
                 output_schema_literal=repr(tool["output_schema"]),
+                output_contract_literal=repr(tool["output_contract"]),
                 presets_literal=repr(tool["presets"]),
                 metadata_risk_level_literal=repr(metadata["risk_level"]),
                 metadata_scopes_literal=repr(metadata["scopes"]),
@@ -368,6 +374,7 @@ def build_module_package(
     optional_requirements: Optional[List[str]] = None,
     min_agent_version: Optional[str] = None,
     output_schema: Optional[Dict[str, Any]] = None,
+    output_contract: Optional[Dict[str, Any]] = None,
     aliases: Optional[List[str]] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
     module_api_version: str = "1.0.0",
@@ -390,6 +397,7 @@ def build_module_package(
         capabilities=capabilities,
         metadata=metadata,
         output_schema=output_schema,
+        output_contract=output_contract,
         aliases=aliases,
         tools=tools,
     )
@@ -430,6 +438,7 @@ def build_module_package(
                 "description": tool["description"],
                 "params_schema": tool["params_schema"],
                 "output_schema": tool["output_schema"],
+                **({"output_contract": tool["output_contract"]} if tool["output_contract"] else {}),
                 "presets": tool["presets"],
                 "capabilities": tool["capabilities"],
                 "metadata": tool["metadata"],

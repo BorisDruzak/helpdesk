@@ -61,6 +61,116 @@ def _flatten_validation_errors(validation_json: Optional[dict]) -> list[str]:
     return result
 
 
+AUTHORING_OUTPUT_CONTRACT_TEMPLATE = {
+    "schema_version": "1.0",
+    "status_path": "result.status",
+    "status_values": ["ok", "error"],
+    "success_values": ["ok"],
+    "error_values": ["error"],
+    "summary_path": "result.output.summary",
+    "error_code_path": "result.error.code",
+    "compact_fields": [],
+}
+
+AUTHORING_TOOL_TEMPLATES = [
+    {
+        "key": "blank",
+        "label": "Blank diagnostic command",
+        "tool_name": "vendor.check",
+        "method_name": "run_check",
+        "description": "A safe read-only command returning an explicit ok/error status.",
+    },
+    {
+        "key": "network_ping",
+        "label": "Network ping",
+        "tool_name": "network.ping",
+        "method_name": "ping_target",
+        "description": "Check host reachability from the device.",
+    },
+    {
+        "key": "dns_resolve",
+        "label": "DNS resolve",
+        "tool_name": "dns.resolve",
+        "method_name": "resolve_dns",
+        "description": "Resolve a hostname from the device.",
+    },
+    {
+        "key": "tcp_connect",
+        "label": "TCP connect",
+        "tool_name": "tcp.connect",
+        "method_name": "connect_tcp",
+        "description": "Check whether a TCP endpoint accepts connections.",
+    },
+    {
+        "key": "system_service_status",
+        "label": "Service status",
+        "tool_name": "system.service_status",
+        "method_name": "service_status",
+        "description": "Read service status without changing it.",
+    },
+]
+
+AUTHORING_SAMPLE_PAYLOAD = {
+    "module_name": "vendor_netkit",
+    "version": "0.1.0",
+    "module_api_version": "1.0.0",
+    "owner_scope": "vendor",
+    "description": "Network diagnostics module",
+    "platforms": ["any"],
+    "requirements": [],
+    "optional_requirements": [],
+    "entrypoint": "module:register",
+    "tools": [
+        {
+            "tool_name": "vendor_netkit.echo",
+            "method_name": "echo_tool",
+            "description": "Echo a value and return a predictable status.",
+            "params_schema": {
+                "type": "object",
+                "required": ["value"],
+                "properties": {"value": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["ok", "error"]},
+                    "value": {"type": "string"},
+                },
+            },
+            "output_contract": AUTHORING_OUTPUT_CONTRACT_TEMPLATE,
+            "metadata": {
+                "domain": "vendor_netkit",
+                "platforms": ["any"],
+                "risk_level": "safe_read",
+                "requires_consent": False,
+                "timeout_sec": 30,
+                "idempotent": True,
+                "side_effects": False,
+                "allow_roles": ["admin", "support"],
+                "scopes": ["diagnostic"],
+                "origin": "managed",
+                "tool_kind": "diagnostic",
+            },
+            "contract_version": "1.0.0",
+            "dependencies": {
+                "min_agent_version": "1.0.0",
+                "required_binaries": [],
+                "required_python_packages": [],
+                "required_services": [],
+                "required_permissions": [],
+            },
+            "lifecycle": "stable",
+            "error_codes": ["VALIDATION_ERROR"],
+            "artifact_types": [],
+            "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+            "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+            "user_function_body": 'return {"status": "ok", "value": params.get("value")}',
+        }
+    ],
+}
+
+
 def _extract_tool_payload(response: object) -> dict:
     if isinstance(response, dict) and isinstance(response.get("payload"), dict):
         return response["payload"]
@@ -436,6 +546,7 @@ async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dic
     capabilities = payload.get("capabilities")
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     output_schema = payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else None
+    output_contract = payload.get("output_contract") if isinstance(payload.get("output_contract"), dict) else None
     aliases = payload.get("aliases") if isinstance(payload.get("aliases"), list) else None
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
     requirements = payload.get("requirements") if isinstance(payload.get("requirements"), list) else None
@@ -470,6 +581,7 @@ async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dic
             capabilities=capabilities if isinstance(capabilities, list) else None,
             metadata=metadata,
             output_schema=output_schema,
+            output_contract=output_contract,
             aliases=aliases,
             tools=tools,
             requirements=requirements,
@@ -1479,6 +1591,7 @@ async def handle_create_module(request):
         capabilities = data.get("capabilities")
         metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
         output_schema = data.get("output_schema") if isinstance(data.get("output_schema"), dict) else None
+        output_contract = data.get("output_contract") if isinstance(data.get("output_contract"), dict) else None
         aliases = data.get("aliases") if isinstance(data.get("aliases"), list) else None
         tools = data.get("tools") if isinstance(data.get("tools"), list) else None
         requirements = data.get("requirements") if isinstance(data.get("requirements"), list) else None
@@ -1521,6 +1634,7 @@ async def handle_create_module(request):
                 capabilities=capabilities if isinstance(capabilities, list) else None,
                 metadata=metadata,
                 output_schema=output_schema,
+                output_contract=output_contract,
                 aliases=aliases,
                 tools=tools,
                 requirements=requirements,
@@ -2118,6 +2232,37 @@ async def handle_save_module_workbench(request):
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
 
+async def _validate_module_authoring_payload(payload: dict) -> tuple[int, dict]:
+    status_code, response_payload, prepared = await _prepare_module_package_payload(payload)
+    if prepared is None:
+        return status_code, response_payload
+
+    async with get_session() as session:
+        modules_repo = ModulesRepo(session)
+        tool_conflicts = await _find_registry_tool_conflicts(session, prepared["manifest_json"])
+        existing = await modules_repo.get_module(prepared["module_name"], prepared["version"])
+
+    editable_preview = build_editable_spec_from_archive_bytes(
+        zip_bytes=prepared["zip_bytes"],
+        manifest_json=prepared["manifest_json"],
+        fallback_module_name=prepared["module_name"],
+        fallback_version=prepared["version"],
+    )
+    publish_ready = existing is None and not tool_conflicts
+    response_payload.update(
+        {
+            "validation_json": prepared["validation_json"],
+            "manifest_json": prepared["manifest_json"],
+            "manifest_summary": prepared["manifest_summary"],
+            "module_exists": existing is not None,
+            "publish_ready": publish_ready,
+            "conflicts": tool_conflicts,
+            "editable_preview": editable_preview,
+        }
+    )
+    return 200, response_payload
+
+
 async def handle_validate_module_workbench(request):
     """
     POST /api/modules/workbench/validate
@@ -2127,36 +2272,79 @@ async def handle_validate_module_workbench(request):
         if not auth_context:
             return _module_auth_error_response()
 
-        status_code, response_payload, prepared = await _prepare_module_package_payload(await request.json())
-        if prepared is None:
-            return web.json_response(response_payload, status=status_code)
-
-        async with get_session() as session:
-            modules_repo = ModulesRepo(session)
-            tool_conflicts = await _find_registry_tool_conflicts(session, prepared["manifest_json"])
-            existing = await modules_repo.get_module(prepared["module_name"], prepared["version"])
-
-        editable_preview = build_editable_spec_from_archive_bytes(
-            zip_bytes=prepared["zip_bytes"],
-            manifest_json=prepared["manifest_json"],
-            fallback_module_name=prepared["module_name"],
-            fallback_version=prepared["version"],
-        )
-        publish_ready = existing is None and not tool_conflicts
-        response_payload.update(
-            {
-                "validation_json": prepared["validation_json"],
-                "manifest_json": prepared["manifest_json"],
-                "manifest_summary": prepared["manifest_summary"],
-                "module_exists": existing is not None,
-                "publish_ready": publish_ready,
-                "conflicts": tool_conflicts,
-                "editable_preview": editable_preview,
-            }
-        )
-        return web.json_response(response_payload, status=200)
+        status_code, response_payload = await _validate_module_authoring_payload(await request.json())
+        return web.json_response(response_payload, status=status_code)
     except Exception as e:
         logger.error(f"Validate module workbench failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_get_module_authoring_catalog(request):
+    """
+    GET /api/modules/authoring/catalog
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        return web.json_response(
+            {
+                "status": "ok",
+                "endpoints": {
+                    "catalog": "/api/modules/authoring/catalog",
+                    "validate": "/api/modules/authoring/validate",
+                    "publish": "/api/modules/authoring/publish",
+                    "workbench_validate": "/api/modules/workbench/validate",
+                    "workbench_save": "/api/modules/workbench/save",
+                },
+                "platforms": ["any", "linux", "win32", "darwin"],
+                "owner_scopes": ["vendor", "core", "platform", "builtin"],
+                "lifecycles": ["experimental", "stable", "deprecated", "removed"],
+                "risk_levels": ["safe_read", "safe_readonly", "safe_write", "sensitive_read", "system_write", "dangerous", "code_exec"],
+                "tool_templates": AUTHORING_TOOL_TEMPLATES,
+                "output_contract_template": AUTHORING_OUTPUT_CONTRACT_TEMPLATE,
+                "sample_payload": AUTHORING_SAMPLE_PAYLOAD,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Get module authoring catalog failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_validate_module_authoring(request):
+    """
+    POST /api/modules/authoring/validate
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        status_code, response_payload = await _validate_module_authoring_payload(await request.json())
+        return web.json_response(response_payload, status=status_code)
+    except Exception as e:
+        logger.error(f"Validate module authoring failed: {e}")
+        logger.exception(e)
+        return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+
+async def handle_publish_module_authoring(request):
+    """
+    POST /api/modules/authoring/publish
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _module_auth_error_response()
+        status_code, response_payload = await _build_and_store_module_package(
+            auth_context=auth_context,
+            payload=await request.json(),
+            app_state=request.app.get("state"),
+        )
+        return web.json_response(response_payload, status=status_code)
+    except Exception as e:
+        logger.error(f"Publish module authoring failed: {e}")
         logger.exception(e)
         return web.json_response({"status": "error", "error": str(e)}, status=500)
 
