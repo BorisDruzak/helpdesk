@@ -29,8 +29,10 @@ def main() -> None:
 
     from config import (  # noqa: PLC0415
         WEBAPP_CUTOVER_ADMIN_ENABLED,
+        WEBAPP_CUTOVER_HELP_ENABLED,
         WEBAPP_CUTOVER_LOGIN_ENABLED,
         WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        WEBAPP_CUTOVER_TICKET_ENABLED,
     )
     from static_pages.cutover import build_webapp_cutover_state  # noqa: PLC0415
     from static_pages.webapp_assets import WEBAPP_DIST_DIR  # noqa: PLC0415
@@ -40,6 +42,8 @@ def main() -> None:
         login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
         support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
         admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+        help_enabled=WEBAPP_CUTOVER_HELP_ENABLED,
+        ticket_enabled=WEBAPP_CUTOVER_TICKET_ENABLED,
     )
     report = {
         "workspace": str(workspace),
@@ -50,16 +54,22 @@ def main() -> None:
             "login": state.login.requested,
             "support": state.support.requested,
             "admin": state.admin.requested,
+            "help": state.help.requested,
+            "ticket": state.ticket.requested,
         },
         "active": {
             "login": state.login.active,
             "support": state.support.active,
             "admin": state.admin.active,
+            "help": state.help.active,
+            "ticket": state.ticket.active,
         },
         "reasons": {
             "login": state.login.reason,
             "support": state.support.reason,
             "admin": state.admin.reason,
+            "help": state.help.reason,
+            "ticket": state.ticket.reason,
         },
         "full_switch_ready": state.full_switch_ready,
         "recommended_checks": [
@@ -75,13 +85,16 @@ def main() -> None:
         print("Проверка operational cutover для нового webapp")
         print(f"- bundle: {'ready' if state.bundle_ready else 'missing'} ({WEBAPP_DIST_DIR})")
         print(
-            f"- requested: login={state.login.requested} support={state.support.requested} admin={state.admin.requested}"
+            f"- requested: login={state.login.requested} support={state.support.requested} "
+            f"admin={state.admin.requested} help={state.help.requested} ticket={state.ticket.requested}"
         )
         print(
-            f"- active: login={state.login.active} support={state.support.active} admin={state.admin.active}"
+            f"- active: login={state.login.active} support={state.support.active} "
+            f"admin={state.admin.active} help={state.help.active} ticket={state.ticket.active}"
         )
         print(
-            f"- reasons: login={state.login.reason} support={state.support.reason} admin={state.admin.reason}"
+            f"- reasons: login={state.login.reason} support={state.support.reason} "
+            f"admin={state.admin.reason} help={state.help.reason} ticket={state.ticket.reason}"
         )
         print(f"- full switch ready: {state.full_switch_ready}")
         print("- recommended checks:")

@@ -1,0 +1,374 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Send } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
+import {
+  createPublicTicket,
+  fetchPublicFormPack,
+} from "../../features/requester/api";
+import type { PublicTicketCreateResult, RequestFormDefinition, RequestFormField } from "../../features/requester/types";
+
+type FieldValues = Record<string, string | boolean>;
+
+function tokenStorageKey(ticketId: string): string {
+  return `public_ticket_token:${ticketId}`;
+}
+
+function isFieldVisible(field: RequestFormField, values: FieldValues): boolean {
+  const rule = field.visible_when;
+  if (!rule?.field) {
+    return true;
+  }
+  const currentValue = values[rule.field];
+  if (Object.prototype.hasOwnProperty.call(rule, "equals")) {
+    return String(currentValue ?? "").trim() === String(rule.equals ?? "").trim();
+  }
+  if (Array.isArray(rule.in)) {
+    return rule.in.map((item) => String(item ?? "").trim()).includes(String(currentValue ?? "").trim());
+  }
+  return true;
+}
+
+function buildDefaultFieldValues(form: RequestFormDefinition | null): FieldValues {
+  const nextValues: FieldValues = {};
+  for (const field of form?.fields ?? []) {
+    nextValues[field.key] = field.type === "checkbox" ? false : "";
+  }
+  return nextValues;
+}
+
+function collectVisiblePayload(form: RequestFormDefinition | null, values: FieldValues): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of form?.fields ?? []) {
+    if (isFieldVisible(field, values)) {
+      payload[field.key] = values[field.key] ?? (field.type === "checkbox" ? false : "");
+    }
+  }
+  return payload;
+}
+
+function missingRequiredFields(form: RequestFormDefinition | null, values: FieldValues): string[] {
+  return (form?.fields ?? [])
+    .filter((field) => field.required && isFieldVisible(field, values))
+    .filter((field) => {
+      const value = values[field.key];
+      return field.type === "checkbox" ? value !== true : !String(value ?? "").trim();
+    })
+    .map((field) => field.label || field.key);
+}
+
+function FieldControl({
+  field,
+  onChange,
+  value,
+}: {
+  field: RequestFormField;
+  onChange: (value: string | boolean) => void;
+  value: string | boolean;
+}) {
+  const label = `${field.label || field.key}${field.required ? " *" : ""}`;
+
+  if (field.type === "textarea") {
+    return (
+      <label className="grid gap-2 text-sm font-medium text-slate-700">
+        <span>{label}</span>
+        <textarea
+          className="field-base min-h-28 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400"
+          onChange={(event) => onChange(event.currentTarget.value)}
+          placeholder={field.placeholder ?? ""}
+          value={String(value ?? "")}
+        />
+      </label>
+    );
+  }
+
+  if (field.type === "select" || field.type === "radio") {
+    return (
+      <label className="grid gap-2 text-sm font-medium text-slate-700">
+        <span>{label}</span>
+        <Select onChange={(event) => onChange(event.currentTarget.value)} value={String(value ?? "")}>
+          <option value="">Выберите...</option>
+          {(field.options ?? []).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label || option.value}
+            </option>
+          ))}
+        </Select>
+      </label>
+    );
+  }
+
+  if (field.type === "checkbox") {
+    return (
+      <label className="flex items-center gap-3 rounded-[1rem] border border-border bg-white px-4 py-3 text-sm font-medium text-slate-700">
+        <input checked={value === true} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
+        <span>{label}</span>
+      </label>
+    );
+  }
+
+  return (
+    <label className="grid gap-2 text-sm font-medium text-slate-700">
+      <span>{label}</span>
+      <Input
+        onChange={(event) => onChange(event.currentTarget.value)}
+        placeholder={field.placeholder ?? ""}
+        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+        value={String(value ?? "")}
+      />
+    </label>
+  );
+}
+
+export function HelpPage() {
+  const [selectedFormKey, setSelectedFormKey] = useState("");
+  const [fieldValues, setFieldValues] = useState<FieldValues>({});
+  const [displayName, setDisplayName] = useState("");
+  const [description, setDescription] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [building, setBuilding] = useState("");
+  const [room, setRoom] = useState("");
+  const [urgency, setUrgency] = useState(false);
+  const [importance, setImportance] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [createdTicket, setCreatedTicket] = useState<PublicTicketCreateResult | null>(null);
+
+  const formsQuery = useQuery({
+    queryKey: ["requester-form-pack"],
+    queryFn: fetchPublicFormPack,
+    retry: false,
+  });
+
+  const forms = formsQuery.data?.forms ?? [];
+  const selectedForm = useMemo(
+    () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
+    [forms, selectedFormKey],
+  );
+  const visibleFields = useMemo(
+    () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
+    [fieldValues, selectedForm],
+  );
+
+  useEffect(() => {
+    if (!selectedFormKey && forms[0]) {
+      setSelectedFormKey(forms[0].key);
+    }
+  }, [forms, selectedFormKey]);
+
+  useEffect(() => {
+    setFieldValues(buildDefaultFieldValues(selectedForm));
+  }, [selectedForm?.key]);
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!displayName.trim()) {
+        throw new Error("Укажите, как к вам обращаться.");
+      }
+      if (!description.trim()) {
+        throw new Error("Опишите проблему.");
+      }
+      const missing = missingRequiredFields(selectedForm, fieldValues);
+      if (missing.length) {
+        throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
+      }
+      const formPayload = collectVisiblePayload(selectedForm, fieldValues);
+      return createPublicTicket({
+        title: selectedForm ? `Заявка: ${selectedForm.title || selectedForm.key}` : "Заявка с веб-страницы",
+        description: description.trim(),
+        user_display_name: displayName.trim(),
+        requester_profile: {
+          full_name: fullName.trim() || displayName.trim(),
+          building: building.trim(),
+          room: room.trim(),
+          phone: phone.trim(),
+        },
+        urgency,
+        importance,
+        urgency_reason: urgency ? "Указано пользователем при создании" : "",
+        importance_reason: importance ? "Указано пользователем при создании" : "",
+        ...(selectedForm && formsQuery.data
+          ? {
+              form_key: selectedForm.key,
+              form_pack_key: formsQuery.data.pack_key,
+              form_pack_version: formsQuery.data.version,
+              form_payload: formPayload,
+              ticket_type: selectedForm.request_kind || selectedForm.key,
+            }
+          : {}),
+      });
+    },
+    onSuccess: (result) => {
+      const ticketId = result.ticket.ticket_id;
+      if (ticketId && result.public_token) {
+        sessionStorage.setItem(tokenStorageKey(ticketId), result.public_token);
+      }
+      setCreatedTicket(result);
+      setFeedback({ tone: "success", text: "Заявка создана." });
+    },
+    onError: (error) => {
+      setFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось создать заявку.",
+      });
+    },
+  });
+
+  const ticketId = createdTicket?.ticket.ticket_id;
+  const accessCode = createdTicket?.public_access_code ?? "";
+
+  return (
+    <main className="min-h-screen bg-app px-4 py-6 md:px-8">
+      <section className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,1.4fr)_360px]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Создать заявку</CardTitle>
+            <CardDescription>
+              Опишите проблему, и заявка сразу попадет в очередь поддержки с нужными полями для маршрутизации.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                createMutation.mutate();
+              }}
+            >
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                <span>Как к вам обращаться</span>
+                <Input onChange={(event) => setDisplayName(event.currentTarget.value)} value={displayName} />
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  <span>ФИО</span>
+                  <Input onChange={(event) => setFullName(event.currentTarget.value)} value={fullName} />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  <span>Телефон</span>
+                  <Input onChange={(event) => setPhone(event.currentTarget.value)} value={phone} />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  <span>Корпус</span>
+                  <Input onChange={(event) => setBuilding(event.currentTarget.value)} value={building} />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  <span>Кабинет</span>
+                  <Input onChange={(event) => setRoom(event.currentTarget.value)} value={room} />
+                </label>
+              </div>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                <span>Описание проблемы</span>
+                <textarea
+                  className="field-base min-h-32 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400"
+                  onChange={(event) => setDescription(event.currentTarget.value)}
+                  value={description}
+                />
+              </label>
+
+              {formsQuery.isLoading ? (
+                <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+                  Загружаем каталог форм...
+                </div>
+              ) : null}
+
+              {forms.length ? (
+                <>
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    <span>Тип обращения</span>
+                    <Select
+                      onChange={(event) => setSelectedFormKey(event.currentTarget.value)}
+                      value={selectedForm?.key ?? ""}
+                    >
+                      {forms.map((form) => (
+                        <option key={form.key} value={form.key}>
+                          {form.title || form.key}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+
+                  <div className="grid gap-3">
+                    {visibleFields.map((field) => (
+                      <FieldControl
+                        field={field}
+                        key={field.key}
+                        onChange={(value) => {
+                          setFieldValues((current) => ({ ...current, [field.key]: value }));
+                        }}
+                        value={fieldValues[field.key] ?? (field.type === "checkbox" ? false : "")}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex items-center gap-3 rounded-[1rem] border border-border bg-white px-4 py-3 text-sm font-medium text-slate-700">
+                  <input checked={urgency} onChange={(event) => setUrgency(event.currentTarget.checked)} type="checkbox" />
+                  <span>Срочно</span>
+                </label>
+                <label className="flex items-center gap-3 rounded-[1rem] border border-border bg-white px-4 py-3 text-sm font-medium text-slate-700">
+                  <input
+                    checked={importance}
+                    onChange={(event) => setImportance(event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>Влияет на работу отдела</span>
+                </label>
+              </div>
+
+              {feedback ? (
+                <div
+                  className={
+                    feedback.tone === "error"
+                      ? "rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+                      : "rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+                  }
+                >
+                  {feedback.text}
+                </div>
+              ) : null}
+
+              <Button disabled={createMutation.isPending} leadingIcon={<Send className="h-4 w-4" />} type="submit">
+                Создать заявку
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <aside className="grid content-start gap-5">
+          <Card>
+            <CardHeader>
+              <CardTitle>Войти в тикет</CardTitle>
+              <CardDescription>Если заявка уже создана, откройте ее по ссылке и коду доступа.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-slate-600">
+              {ticketId ? (
+                <>
+                  <p className="font-semibold text-slate-950">Код доступа: {accessCode}</p>
+                  <p>Сохраните код до завершения обращения.</p>
+                  <Link
+                    className="inline-flex h-11 w-full items-center justify-center rounded-pill border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+                    to={`/app/ticket/${encodeURIComponent(ticketId)}?code=${encodeURIComponent(accessCode)}`}
+                  >
+                    Открыть тикет
+                  </Link>
+                </>
+              ) : (
+                <p>После создания заявки здесь появится код доступа и ссылка на чат.</p>
+              )}
+            </CardContent>
+          </Card>
+        </aside>
+      </section>
+    </main>
+  );
+}

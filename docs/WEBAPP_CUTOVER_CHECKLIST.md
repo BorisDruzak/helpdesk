@@ -81,3 +81,21 @@ pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:86
 - Уже нормализованный пример: `server/ticket.html` теперь ведёт в `/admin`, а не в pinned legacy shell.
 - Сами legacy shell-ссылки теперь должны использовать `?legacy=1`, а не version-pinned `_shell=...`, чтобы fallback оставался стабильным даже после следующего deploy.
 - Удаление `server/login.js`, `server/support.js`, `server/admin.js` и связанных HTML/CSS допустимо только после стабильного remote signoff и явного решения о завершении migration window.
+
+## Requester Cutover
+
+- `/help` switches to `/app/help` only when `WEBAPP_CUTOVER_HELP_ENABLED=true` and the built bundle is present.
+- `/ticket` and `/ticket/{ticket_id}` switch to `/app/ticket` / `/app/ticket/{ticket_id}` only when `WEBAPP_CUTOVER_TICKET_ENABLED=true` and the built bundle is present.
+- `?legacy=1` remains the escape hatch for requester pages too.
+
+## React API Boundary Matrix
+
+| Owner | Old endpoint used by React | Decision | Typed target |
+|------|-----------------------------|----------|--------------|
+| Observer workbench | `/api/admin/tech/observer/*`, `/api/admin/tech/traces*`, `/api/admin/settings/observer` | alias | `/api/web/admin/observer/*` |
+| Tech alerts | `/api/admin/tech/alerts` | alias | `/api/web/admin/tech/alerts` |
+| Notifications | `/api/notifications*` | alias | `/api/web/notifications*` |
+| Module workbench | `/api/modules/workbench*`, `/api/modules/authoring/*`, `/api/modules/upload`, `/api/modules/{name}/{version}/live_*` | alias | `/api/web/admin/modules/workbench/*` |
+| Module preferred policy | `/api/modules/rollout_settings`, `/api/modules/{name}/preferred` | alias | `/api/web/admin/modules/rollout_settings`, `/api/web/admin/modules/{name}/preferred` |
+| Public requester intake | `/public_api/ticket_forms/current`, `/public_api/tickets/create`, `/public_api/tickets/{id}/authorize` | keep | intentionally public, not session-bound |
+| Ticket runtime | `/api/tickets/{id}` and ticket message/close endpoints | keep for now | requester page uses public token bearer auth until a dedicated `/api/web/requester/*` boundary lands |

@@ -345,6 +345,8 @@ PUBLIC_TICKET_SESSION_MINUTES = int(os.getenv("PUBLIC_TICKET_SESSION_MINUTES", "
 WEBAPP_CUTOVER_LOGIN_ENABLED = os.getenv("WEBAPP_CUTOVER_LOGIN_ENABLED", "true").lower() == "true"
 WEBAPP_CUTOVER_SUPPORT_ENABLED = os.getenv("WEBAPP_CUTOVER_SUPPORT_ENABLED", "true").lower() == "true"
 WEBAPP_CUTOVER_ADMIN_ENABLED = os.getenv("WEBAPP_CUTOVER_ADMIN_ENABLED", "true").lower() == "true"
+WEBAPP_CUTOVER_HELP_ENABLED = os.getenv("WEBAPP_CUTOVER_HELP_ENABLED", "false").lower() == "true"
+WEBAPP_CUTOVER_TICKET_ENABLED = os.getenv("WEBAPP_CUTOVER_TICKET_ENABLED", "false").lower() == "true"
 # Operational rule: support/admin cutover becomes active only when the web bundle is built
 # and login cutover is also enabled. The route handlers enforce those prerequisites at runtime.
 # Explicit WEBAPP_CUTOVER_*=false in server/.env remains the rollback path.

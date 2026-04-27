@@ -284,7 +284,7 @@ export async function fetchWebSettingsPayload(): Promise<WebSettingsPayload> {
 }
 
 export async function fetchNotificationSettings(): Promise<NotificationSettingsPayload> {
-  const response = await fetch("/api/notifications/preferences", {
+  const response = await fetch("/api/web/notifications/preferences", {
     credentials: "same-origin"
   });
   return readLegacyOk(response, "Не удалось загрузить настройки уведомлений.");
@@ -294,7 +294,7 @@ export async function saveNotificationPreferences(
   preferences: Partial<NotificationPreferences>
 ): Promise<NotificationSettingsPayload> {
   return requestJson<NotificationSettingsPayload>(
-    "/api/notifications/preferences",
+    "/api/web/notifications/preferences",
     {
       method: "POST",
       body: JSON.stringify(preferences)
@@ -304,14 +304,14 @@ export async function saveNotificationPreferences(
 }
 
 export async function fetchNotifications(limit = 20): Promise<NotificationsPayload> {
-  const response = await fetch(`/api/notifications?limit=${encodeURIComponent(String(limit))}`, {
+  const response = await fetch(`/api/web/notifications?limit=${encodeURIComponent(String(limit))}`, {
     credentials: "same-origin"
   });
   return readLegacyOk(response, "Не удалось загрузить уведомления.");
 }
 
 export async function fetchTechAlerts(): Promise<TechAlertsPayload> {
-  const response = await fetch("/api/admin/tech/alerts", {
+  const response = await fetch("/api/web/admin/tech/alerts", {
     credentials: "same-origin"
   });
   return readLegacyOk(response, "Не удалось загрузить технические alerts.");

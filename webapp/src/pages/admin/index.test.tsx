@@ -693,35 +693,35 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/modules/workbench" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...cloneModulesPayload(modulesState),
           });
         }
 
-        if (url === "/api/modules/workbench/network_ping/1.2.1" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/network_ping/1.2.1" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(modulesState, "network_ping", "1.2.1"),
           });
         }
 
-        if (url === "/api/modules/workbench/network_ping/1.2.0" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/network_ping/1.2.0" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(modulesState, "network_ping", "1.2.0"),
           });
         }
 
-        if (url === "/api/modules/workbench/observer_canary/0.9.0" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/observer_canary/0.9.0" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(modulesState, "observer_canary", "0.9.0"),
           });
         }
 
-        if (url === "/api/modules/rollout_settings" && method === "PATCH") {
+        if (url === "/api/web/admin/modules/rollout_settings" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as {
             preferred_version_rollout_mode?: string;
             sync_after_preferred_change?: boolean;
@@ -743,7 +743,7 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/modules/network_ping/preferred" && method === "PATCH") {
+        if (url === "/api/web/admin/modules/network_ping/preferred" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as { version?: string | null };
           applyPreferredVersion(modulesState, "network_ping", payload.version ?? null);
           return jsonResponse({
@@ -924,7 +924,7 @@ describe("AdminWorkspacePage", () => {
               links: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
@@ -958,7 +958,7 @@ describe("AdminWorkspacePage", () => {
               links: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
@@ -992,7 +992,7 @@ describe("AdminWorkspacePage", () => {
               links: {
                 quick_endpoint: "/api/web/admin/observer/quick",
                 traces_endpoint: "/api/web/admin/observer/traces",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
@@ -1027,8 +1027,8 @@ describe("AdminWorkspacePage", () => {
               },
               traces: [traceUpdate],
               links: {
-                detail_endpoint_template: "/api/admin/tech/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                detail_endpoint_template: "/api/web/admin/observer/trace-detail/{trace_id}",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
@@ -1063,8 +1063,8 @@ describe("AdminWorkspacePage", () => {
               },
               traces: [traceLinux],
               links: {
-                detail_endpoint_template: "/api/admin/tech/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                detail_endpoint_template: "/api/web/admin/observer/trace-detail/{trace_id}",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
@@ -1099,14 +1099,17 @@ describe("AdminWorkspacePage", () => {
               },
               traces: [traceLinux],
               links: {
-                detail_endpoint_template: "/api/admin/tech/traces/{trace_id}",
-                runtime_endpoint: "/api/admin/tech/traces/runtime",
+                detail_endpoint_template: "/api/web/admin/observer/trace-detail/{trace_id}",
+                runtime_endpoint: "/api/web/admin/observer/runtime",
               },
             },
           });
         }
 
-        if (url === "/api/admin/tech/traces/trace-update-1?include_agent_actions=1&action_limit=120") {
+        if (
+          url === "/api/web/admin/observer/trace-detail/trace-update-1" ||
+          url === "/api/web/admin/observer/trace-detail/trace-update-1?include_agent_actions=1&action_limit=120"
+        ) {
           return jsonResponse({
             status: "ok",
             trace: traceUpdate,
@@ -1183,7 +1186,10 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/traces/trace-linux-1?include_agent_actions=1&action_limit=120") {
+        if (
+          url === "/api/web/admin/observer/trace-detail/trace-linux-1" ||
+          url === "/api/web/admin/observer/trace-detail/trace-linux-1?include_agent_actions=1&action_limit=120"
+        ) {
           return jsonResponse({
             status: "ok",
             trace: traceLinux,
@@ -1223,7 +1229,73 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/signatures?device_id=device-1&lookback_hours=24&limit=40") {
+        if (
+          url ===
+          "/api/web/admin/observer/diagnostics/bundle?lookback_hours=24&limit=20&trace_id=trace-update-1&include_agent_actions=1&action_limit=80"
+        ) {
+          return jsonResponse({
+            status: "ok",
+            summary: {
+              primary_trace_id: "trace-update-1",
+              related_trace_count: 1,
+              span_count: 6,
+              error_count: 1,
+              agent_action_count: 1,
+              agent_audit_count: 1,
+              recent_log_count: 2,
+            },
+            primary_trace: traceUpdate,
+            related_traces: [traceUpdate],
+            spans: [
+              {
+                span_id: "span-update-root",
+                trace_id: "trace-update-1",
+                parent_span_id: null,
+                source_type: "operation",
+                source_ref: "op-update-1",
+                name: "agent.update.run",
+                kind: "server",
+                component: "agent_update",
+                event_type: "operation.stage.failed",
+                module_name: null,
+                tool_name: "update",
+                status: "failed",
+                status_label: "РћС€РёР±РєР°",
+                started_at: "2026-04-20T11:24:00+05:00",
+                finished_at: "2026-04-20T11:24:06+05:00",
+                duration_ms: 6400,
+                attrs_json: {},
+              },
+            ],
+            span_links: [
+              {
+                id: 1,
+                span_id: "span-update-root",
+                linked_trace_id: "trace-runtime-audit-1",
+                linked_span_id: "span-runtime-audit-1",
+                reason: "operation_id_bridge",
+                attrs_json: {},
+                created_at: "2026-04-20T11:24:06+05:00",
+              },
+            ],
+            error_occurrences: [],
+            agent_actions: [
+              {
+                action: "handshake.confirmed",
+                source: "agent_runtime_audit",
+                status: "ok",
+                summary: "handshake confirmed",
+                operation_id: "operation_id_bridge",
+              },
+            ],
+            recommended_next_checks: ["РџСЂРѕРІРµСЂРёС‚СЊ rollout Рё РїРѕРґРїРёСЃСЊ launcher"],
+            links: {
+              trace_detail: "/api/web/admin/observer/trace-detail/trace-update-1",
+            },
+          });
+        }
+
+        if (url === "/api/web/admin/observer/signatures?device_id=device-1&lookback_hours=24&limit=40") {
           return jsonResponse({
             status: "ok",
             signatures: [
@@ -1242,14 +1314,14 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/signatures?device_id=device-2&lookback_hours=24&limit=40") {
+        if (url === "/api/web/admin/observer/signatures?device_id=device-2&lookback_hours=24&limit=40") {
           return jsonResponse({
             status: "ok",
             signatures: [],
           });
         }
 
-        if (url === "/api/admin/tech/signatures?device_id=device-2&lookback_hours=72&limit=40") {
+        if (url === "/api/web/admin/observer/signatures?device_id=device-2&lookback_hours=72&limit=40") {
           return jsonResponse({
             status: "ok",
             signatures: [
@@ -1268,7 +1340,7 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/signatures/sig-1") {
+        if (url === "/api/web/admin/observer/signatures/sig-1") {
           return jsonResponse({
             status: "ok",
             signature: {
@@ -1305,7 +1377,7 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/signatures/sig-linux-1") {
+        if (url === "/api/web/admin/observer/signatures/sig-linux-1") {
           return jsonResponse({
             status: "ok",
             signature: {
@@ -1323,7 +1395,7 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/degradations?device_id=device-1&lookback_hours=24&limit=40") {
+        if (url === "/api/web/admin/observer/degradations?device_id=device-1&lookback_hours=24&limit=40") {
           return jsonResponse({
             status: "ok",
             items: [
@@ -1348,14 +1420,14 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/degradations?device_id=device-2&lookback_hours=24&limit=40") {
+        if (url === "/api/web/admin/observer/degradations?device_id=device-2&lookback_hours=24&limit=40") {
           return jsonResponse({
             status: "ok",
             items: [],
           });
         }
 
-        if (url === "/api/admin/tech/degradations?device_id=device-2&lookback_hours=72&limit=40") {
+        if (url === "/api/web/admin/observer/degradations?device_id=device-2&lookback_hours=72&limit=40") {
           return jsonResponse({
             status: "ok",
             items: [
@@ -1380,11 +1452,11 @@ describe("AdminWorkspacePage", () => {
           });
         }
 
-        if (url === "/api/admin/tech/traces/runtime" && method === "GET") {
+        if (url === "/api/web/admin/observer/runtime" && method === "GET") {
           return jsonResponse(createObserverRuntimePayload());
         }
 
-        if (url === "/api/admin/settings/observer" && method === "GET") {
+        if (url === "/api/web/admin/observer/settings" && method === "GET") {
           return jsonResponse(createObserverSettingsPayload());
         }
 
@@ -1588,5 +1660,5 @@ describe("AdminWorkspacePage", () => {
     await waitFor(() => {
       expect(screen.getByText("Есть отставание")).toBeInTheDocument();
     });
-  });
+  }, 10000);
 });

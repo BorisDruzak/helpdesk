@@ -15,8 +15,10 @@ from static_pages.handlers import (
     LOGIN_SHELL_VERSION,
     SUPPORT_SHELL_VERSION,
     handle_admin_page,
+    handle_help_page,
     handle_login_page,
     handle_support_page,
+    handle_ticket_page_by_id,
 )
 import static_pages.handlers as static_handlers_module
 import static_pages.webapp_assets as webapp_assets_module
@@ -130,6 +132,48 @@ async def test_support_page_keeps_legacy_escape_when_cutover_enabled(tmp_path, m
         await handle_support_page(request)
 
     assert exc_info.value.location == f"/support?legacy=1&_shell={SUPPORT_SHELL_VERSION}"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_help_page_redirects_to_react_when_requester_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_HELP_ENABLED", True)
+    request = make_mocked_request("GET", "/help?source=qr")
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_help_page(request)
+
+    assert exc_info.value.location == "/app/help?source=qr"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_ticket_page_redirects_to_react_when_requester_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_TICKET_ENABLED", True)
+    request = make_mocked_request("GET", "/ticket/T-100?code=A1B2C3", match_info={"ticket_id": "T-100"})
+
+    with pytest.raises(web.HTTPFound) as exc_info:
+        await handle_ticket_page_by_id(request)
+
+    assert exc_info.value.location == "/app/ticket/T-100?code=A1B2C3"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_help_and_ticket_keep_legacy_escape_when_requester_cutover_enabled(tmp_path, monkeypatch):
+    _install_built_webapp_bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_HELP_ENABLED", True)
+    monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_TICKET_ENABLED", True)
+
+    help_response = await handle_help_page(make_mocked_request("GET", "/help?legacy=1"))
+    ticket_response = await handle_ticket_page_by_id(
+        make_mocked_request("GET", "/ticket/T-100?legacy=1", match_info={"ticket_id": "T-100"})
+    )
+
+    assert help_response.status == 200
+    assert ticket_response.status == 200
 
 
 @pytest.mark.no_db

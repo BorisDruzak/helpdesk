@@ -391,7 +391,7 @@ describe("ModulesPanel", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
-        if (url === "/api/modules/workbench" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...cloneModulesPayload(state)
@@ -422,14 +422,14 @@ describe("ModulesPanel", () => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
-      if (url === "/api/modules/workbench" && method === "GET") {
+      if (url === "/api/web/admin/modules/workbench" && method === "GET") {
         return jsonResponse({
           status: "ok",
           ...cloneModulesPayload(state)
         });
       }
 
-      if (url === "/api/modules/workbench/network_ping/1.2.1" && method === "GET") {
+      if (url === "/api/web/admin/modules/workbench/network_ping/1.2.1" && method === "GET") {
         const detail = createWorkbenchDetailPayload(state, "network_ping", "1.2.1");
         const { tool_ids: _toolIds, ...moduleWithoutToolIds } = detail.module;
         return jsonResponse({
@@ -444,7 +444,7 @@ describe("ModulesPanel", () => {
         return jsonResponse(createLiveTestCandidatesPayload("network_ping", "1.2.1", platform));
       }
 
-      if (url === "/api/modules/network_ping/1.2.1/live_tests" && method === "POST") {
+      if (url === "/api/web/admin/modules/workbench/network_ping/1.2.1/live_tests" && method === "POST") {
         postBodies.push(JSON.parse(String(init?.body ?? "{}")));
         return jsonResponse({
           status: "ok",
@@ -501,28 +501,28 @@ describe("ModulesPanel", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
 
-        if (url === "/api/modules/workbench" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...cloneModulesPayload(state)
           });
         }
 
-        if (url === "/api/modules/workbench/network_ping/1.2.1" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/network_ping/1.2.1" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(state, "network_ping", "1.2.1")
           });
         }
 
-        if (url === "/api/modules/workbench/network_ping/1.2.0" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/network_ping/1.2.0" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(state, "network_ping", "1.2.0")
           });
         }
 
-        if (url === "/api/modules/workbench/observer_canary/0.9.0" && method === "GET") {
+        if (url === "/api/web/admin/modules/workbench/observer_canary/0.9.0" && method === "GET") {
           return jsonResponse({
             status: "ok",
             ...createWorkbenchDetailPayload(state, "observer_canary", "0.9.0")
@@ -532,10 +532,10 @@ describe("ModulesPanel", () => {
         if (url.includes("/live_test_candidates") && method === "GET") {
           const platform = url.includes("platform=linux") ? "linux" : "win32";
           const parts = url.split("/");
-          return jsonResponse(createLiveTestCandidatesPayload(parts[3] ?? "network_ping", parts[4] ?? "1.2.1", platform));
+          return jsonResponse(createLiveTestCandidatesPayload(parts[6] ?? "network_ping", parts[7] ?? "1.2.1", platform));
         }
 
-        if (url === "/api/modules/rollout_settings" && method === "PATCH") {
+        if (url === "/api/web/admin/modules/rollout_settings" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as {
             preferred_version_rollout_mode?: string;
             sync_after_preferred_change?: boolean;
@@ -555,7 +555,7 @@ describe("ModulesPanel", () => {
           });
         }
 
-        if (url === "/api/modules/network_ping/preferred" && method === "PATCH") {
+        if (url === "/api/web/admin/modules/network_ping/preferred" && method === "PATCH") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as { version?: string | null };
           applyPreferredVersion(state, "network_ping", payload.version ?? null);
           return jsonResponse({

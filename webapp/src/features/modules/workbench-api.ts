@@ -250,7 +250,7 @@ async function readSuccessResponse<T>(response: Response, fallbackMessage: strin
 
 export async function fetchModuleWorkbenchList(query: string): Promise<ModuleWorkbenchListPayload> {
   void query;
-  const response = await fetch("/api/modules/workbench", {
+  const response = await fetch("/api/web/admin/modules/workbench", {
     credentials: "same-origin",
   });
   return readSuccessResponse(response, "Не удалось загрузить реестр модулей.");
@@ -261,7 +261,7 @@ export async function fetchModuleWorkbenchDetail(
   version: string
 ): Promise<ModuleWorkbenchDetailPayload> {
   const response = await fetch(
-    `/api/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`,
+    `/api/web/admin/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`,
     {
       credentials: "same-origin",
     }
@@ -276,7 +276,7 @@ export async function fetchModuleLiveTestCandidates(
 ): Promise<ModuleLiveTestCandidatesPayload> {
   const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
   const response = await fetch(
-    `/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_test_candidates${query}`,
+    `/api/web/admin/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_test_candidates${query}`,
     {
       credentials: "same-origin",
     }
@@ -295,7 +295,7 @@ export async function runModuleLiveTest(
   }
 ): Promise<{ live_test: ModuleLiveTestResult }> {
   const response = await fetch(
-    `/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_tests`,
+    `/api/web/admin/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}/live_tests`,
     {
       method: "POST",
       credentials: "same-origin",
@@ -311,7 +311,7 @@ export async function runModuleLiveTest(
 export async function patchModuleWorkbenchRolloutSettings(
   payload: ModuleWorkbenchRolloutSettings
 ): Promise<ModuleWorkbenchRolloutSettings> {
-  const response = await fetch("/api/modules/rollout_settings", {
+  const response = await fetch("/api/web/admin/modules/rollout_settings", {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -337,7 +337,7 @@ export async function setModuleWorkbenchPreferredVersion(
   updated_by?: string | null;
   rollout_summary?: ModuleWorkbenchSavePayload["rollout_summary"];
 }> {
-  const response = await fetch(`/api/modules/${encodeURIComponent(moduleName)}/preferred`, {
+  const response = await fetch(`/api/web/admin/modules/${encodeURIComponent(moduleName)}/preferred`, {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -351,7 +351,7 @@ export async function setModuleWorkbenchPreferredVersion(
 export async function validateModuleWorkbenchDraft(
   payload: Record<string, unknown>
 ): Promise<ModuleWorkbenchValidationPayload> {
-  const response = await fetch("/api/modules/authoring/validate", {
+  const response = await fetch("/api/web/admin/modules/workbench/authoring/validate", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -365,7 +365,7 @@ export async function validateModuleWorkbenchDraft(
 export async function saveModuleWorkbenchDraft(
   payload: Record<string, unknown>
 ): Promise<ModuleWorkbenchSavePayload> {
-  const response = await fetch("/api/modules/authoring/publish", {
+  const response = await fetch("/api/web/admin/modules/workbench/authoring/publish", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -388,7 +388,7 @@ export async function uploadModuleWorkbenchArchive(payload: {
   formData.append("version", payload.version);
   formData.append("overwrite", payload.overwrite ? "true" : "false");
 
-  const response = await fetch("/api/modules/upload", {
+  const response = await fetch("/api/web/admin/modules/workbench/upload", {
     method: "POST",
     credentials: "same-origin",
     body: formData,
@@ -404,7 +404,7 @@ export async function deleteModuleWorkbenchVersion(
   version: string;
 }> {
   const response = await fetch(
-    `/api/modules/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`,
+    `/api/web/admin/modules/workbench/${encodeURIComponent(moduleName)}/${encodeURIComponent(version)}`,
     {
       method: "DELETE",
       credentials: "same-origin",

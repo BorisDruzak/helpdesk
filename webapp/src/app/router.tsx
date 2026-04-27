@@ -1,8 +1,25 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
 import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
+import {
+  AdminDevicePage,
+  AdminFormsPage,
+  AdminInventoryPage,
+  AdminModulesPage,
+  AdminObserverPage,
+  AdminPlaybooksPage,
+  AdminRegistryPage,
+  HelpPage,
+  KnowledgeBasePage,
+  ReportsPage,
+  RequesterTicketPage,
+  SettingsPage,
+  TicketDetailPage,
+  TicketListPage,
+  TicketPassportPrintPage,
+} from "./routes/lazy-pages";
 import { LoginPage } from "../features/auth/login-page";
 import { useSession } from "../features/auth/session-provider";
 import {
@@ -10,19 +27,6 @@ import {
   resolveDefaultWorkspacePath,
   type AppWorkspace
 } from "../features/auth/workspace-access";
-import { AdminDevicePage } from "../pages/admin/device-page";
-import { AdminFormsPage } from "../pages/admin/forms-page";
-import { AdminInventoryPage } from "../pages/admin/inventory-page";
-import { AdminModulesPage } from "../pages/admin/modules-page";
-import { AdminObserverPage } from "../pages/admin/observer-page";
-import { AdminPlaybooksPage } from "../pages/admin/playbooks-page";
-import { AdminRegistryPage } from "../pages/admin/registry-page";
-import { KnowledgeBasePage } from "../pages/knowledge";
-import { ReportsPage } from "../pages/reports";
-import { SettingsPage } from "../pages/settings";
-import { TicketDetailPage } from "../pages/tickets/detail-page";
-import { TicketListPage } from "../pages/tickets/list-page";
-import { TicketPassportPrintPage } from "../pages/tickets/passport-print-page";
 
 function SessionState({
   description,
@@ -53,6 +57,28 @@ function NoWorkspacePage() {
   );
 }
 
+function WorkspaceFallback() {
+  return (
+    <SessionState
+      description="РџРѕРґРіСЂСѓР¶Р°РµРј РЅСѓР¶РЅС‹Р№ СЂР°Р·РґРµР» Рё РґР°РЅРЅС‹Рµ РґР»СЏ СЌС‚РѕР№ СЂР°Р±РѕС‡РµР№ РѕР±Р»Р°СЃС‚Рё."
+      title="Р—Р°РіСЂСѓР¶Р°РµРј СЂР°Р±РѕС‡СѓСЋ РѕР±Р»Р°СЃС‚СЊ"
+    />
+  );
+}
+
+function PublicPageFallback() {
+  return (
+    <SessionState
+      description="Подгружаем страницу обращения и публичный контракт тикета."
+      title="Загружаем страницу"
+    />
+  );
+}
+
+function PublicPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PublicPageFallback />}>{children}</Suspense>;
+}
+
 function ProtectedWorkspaceLayout() {
   const location = useLocation();
   const { session, status } = useSession();
@@ -81,7 +107,9 @@ function ProtectedWorkspaceLayout() {
 
   return (
     <AppShell>
-      <Outlet />
+      <Suspense fallback={<WorkspaceFallback />}>
+        <Outlet />
+      </Suspense>
     </AppShell>
   );
 }
@@ -124,6 +152,30 @@ export const appRoutes: RouteObject[] = [
       {
         path: "login",
         element: <LoginPage />
+      },
+      {
+        path: "help",
+        element: (
+          <PublicPage>
+            <HelpPage />
+          </PublicPage>
+        )
+      },
+      {
+        path: "ticket",
+        element: (
+          <PublicPage>
+            <RequesterTicketPage />
+          </PublicPage>
+        )
+      },
+      {
+        path: "ticket/:ticketId",
+        element: (
+          <PublicPage>
+            <RequesterTicketPage />
+          </PublicPage>
+        )
       },
       {
         element: <ProtectedWorkspaceLayout />,

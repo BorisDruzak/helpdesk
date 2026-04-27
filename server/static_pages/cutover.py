@@ -25,6 +25,8 @@ class WebappCutoverState:
     login: WebappCutoverRouteState
     support: WebappCutoverRouteState
     admin: WebappCutoverRouteState
+    help: WebappCutoverRouteState
+    ticket: WebappCutoverRouteState
 
     @property
     def full_switch_ready(self) -> bool:
@@ -45,6 +47,8 @@ def build_webapp_cutover_state(
     login_enabled: bool,
     support_enabled: bool,
     admin_enabled: bool,
+    help_enabled: bool = False,
+    ticket_enabled: bool = False,
 ) -> WebappCutoverState:
     bundle_ready = has_built_webapp_bundle(dist_dir)
     bundle_reason = None if bundle_ready else CUTOVER_REASON_BUNDLE_MISSING
@@ -66,12 +70,24 @@ def build_webapp_cutover_state(
         bundle_ready=bundle_ready,
         login_enabled=login_enabled,
     )
+    help = _build_route_state(
+        requested=help_enabled,
+        target_path="/app/help",
+        bundle_ready=bundle_ready,
+    )
+    ticket = _build_route_state(
+        requested=ticket_enabled,
+        target_path="/app/ticket",
+        bundle_ready=bundle_ready,
+    )
     return WebappCutoverState(
         bundle_ready=bundle_ready,
         bundle_reason=bundle_reason,
         login=login,
         support=support,
         admin=admin,
+        help=help,
+        ticket=ticket,
     )
 
 

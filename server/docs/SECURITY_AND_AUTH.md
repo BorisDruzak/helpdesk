@@ -99,6 +99,9 @@
 
 ### 4.1 Middleware
 
+- New React code should prefer typed cookie-session routes under `/api/web/*`. The current React-only bridges include `/api/web/admin/observer/*`, `/api/web/admin/modules/*`, `/api/web/notifications*` and `/api/web/admin/tech/alerts`.
+- Legacy `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/notifications*` and `/api/ticket_forms/*` remain authenticated compatibility endpoints; do not add new React callers to them unless the endpoint is intentionally public/requester-facing.
+
 - Применяется ко всем запросам с путём, начинающимся с `/api/`.
 - Для `/api/web/*` middleware сначала читает httpOnly cookie `pc_client_web_session`, затем стандартные схемы `Authorization: Bearer <token>` / `Authorization: Token <token>`, затем заголовок `X-Auth-Token`, затем query-параметр `token` (не рекомендуется: логируется предупреждение о небезопасном использовании).
 - Тот же httpOnly cookie bridge разрешён и для canonical React-admin endpoints вне `/api/web/*`: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer` и `/api/ticket_forms/*`. Это нужно, чтобы новый `/app/admin/*` работал с реальными backend surfaces без дублирующих proxy-handler'ов, но при этом всё равно оставался под server-authoritative UI session.
@@ -228,7 +231,7 @@
 - Новый React `webapp` живёт на `/app/support` и `/app/admin`, использует `/app/login` и проверяет сессию через `/api/web/session/me`.
 - `/app` теперь считается role-aware точкой входа: после логина или прямого захода индекс выбирает `default_workspace` из session payload и уводит пользователя в допустимую рабочую область.
 - Если пользователь без доступа к `/app/admin` идёт туда напрямую, access gate обязан вернуть его в допустимую workspace-зону, а не оставлять на частично загруженном экране.
-- Cutover legacy shell управляется флагами `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, `WEBAPP_CUTOVER_ADMIN_ENABLED` в `server/config.py`; после финального переключения эти флаги включены по умолчанию, а старые `/login`, `/support`, `/admin` редиректят в `/app/*`. Явный escape на legacy shell сохраняется через `?legacy=1`, а rollback возможен через `WEBAPP_CUTOVER_*=false` в `server/.env`.
+- Cutover legacy shell управляется флагами `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, `WEBAPP_CUTOVER_ADMIN_ENABLED` в `server/config.py`; после финального переключения эти флаги включены по умолчанию, а старые `/login`, `/support`, `/admin` редиректят в `/app/*`. Requester cutover is separate: `WEBAPP_CUTOVER_HELP_ENABLED` and `WEBAPP_CUTOVER_TICKET_ENABLED` default to false and only redirect `/help` and `/ticket/{id}` to `/app/help` and `/app/ticket/{id}` when explicitly enabled. Явный escape на legacy shell сохраняется через `?legacy=1`, а rollback возможен через `WEBAPP_CUTOVER_*=false` в `server/.env`.
 - Operational prerequisite для cutover: redirect в новый shell активируется только если built bundle реально присутствует в `webapp/dist`; для `/support` и `/admin` дополнительно обязателен включённый login cutover, иначе route остаётся на legacy shell.
 - Каноничный preflight перед полным переключением: `python scripts/check_webapp_cutover.py --json`; каноничный live signoff после release: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666`, который подтверждает и raw redirects `/login|/admin|/support`, и `?legacy=1` escape.
 - Support workspace в work-режиме не дублирует composer/timeline вручную, а встраивает `ticket.html?embed=1`. Это сохраняет RBAC, вложения, reply-to, скриншоты и прочие возможности ticket chat без расхождения поведения между страницами.

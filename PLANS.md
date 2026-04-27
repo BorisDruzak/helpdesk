@@ -1,5 +1,42 @@
 # PLANS.md
 
+## 2026-04-27 Webapp Unification And API Boundary
+
+Status: local implementation verified; remote/live signoff pending.
+
+### Goal
+
+Finish the new React web stack in three implementation tracks:
+
+1. Split the current React bundle so large admin/support workspaces do not ship as one heavy chunk.
+2. Move requester-facing `/help` and `/ticket` flows into React under `/app/help` and `/app/ticket/*`, keeping legacy escape routes during cutover.
+3. Normalize React API calls behind typed `/api/web/*` boundaries where practical, starting with observer, notifications and module workbench calls.
+
+### Plan
+
+- Detailed implementation plan: `docs/superpowers/plans/2026-04-27-webapp-unification-and-api-boundary.md`.
+- Phase 1: lazy route boundaries and nested admin panel splitting; verify `pnpm --dir webapp run test`, `pnpm --dir webapp run build`, and cutover preflight.
+- Phase 2: requester API client, React `/app/help`, React requester ticket view, and controlled `/help`/`/ticket` cutover flags defaulting off.
+- Phase 3: endpoint inventory and typed `/api/web/*` aliases for observer, notifications and modules workbench; migrate React clients without removing legacy endpoints.
+- Phase 4: remote browser signoff and docs sync.
+
+### 2026-04-27 Progress
+
+- Done locally: React route-level lazy imports, public `/app/help`, public `/app/ticket` / `/app/ticket/:ticketId`, `/help` and `/ticket` cutover flags defaulting off, and typed web aliases for observer, notifications, module workbench and tech alerts.
+- React no longer calls the migrated legacy admin/module/notification URLs directly; remaining non-`/api/web/*` calls are intentional public requester APIs or support/ticket runtime APIs that stay outside this pass.
+- Verified locally with frontend tests/build, static-page handler tests, Python compile checks, and cutover preflight. Remote browser signoff and deploy remain next.
+
+### Verification Target
+
+- `python scripts/bootstrap_web_toolchain.py`
+- `pnpm --dir webapp run test`
+- `pnpm --dir webapp run build`
+- `python -m pytest server/tests/test_static_pages_handlers.py -q`
+- `python -m pytest server/tests/test_web_admin_api.py -q`
+- `python scripts/check_webapp_cutover.py --json`
+- `python scripts/verify_workspace.py`
+- `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666`
+
 ## 2026-04-27 Observer Coverage For Agent Auth, Update And Runtime
 
 Status: in progress.

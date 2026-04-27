@@ -329,7 +329,7 @@ export async function fetchObserverWorkbenchTraceDetail(
   }
   const query = params.toString();
   const response = await fetch(
-    `/api/admin/tech/traces/${encodeURIComponent(traceId)}${query ? `?${query}` : ""}`,
+    `/api/web/admin/observer/trace-detail/${encodeURIComponent(traceId)}${query ? `?${query}` : ""}`,
     {
       credentials: "same-origin",
     }
@@ -365,14 +365,14 @@ export async function fetchObserverDiagnosticsBundle(params: {
     searchParams.set("include_agent_actions", "1");
     searchParams.set("action_limit", String(params.actionLimit ?? 80));
   }
-  const response = await fetch(`/api/admin/tech/diagnostics/bundle?${searchParams.toString()}`, {
+  const response = await fetch(`/api/web/admin/observer/diagnostics/bundle?${searchParams.toString()}`, {
     credentials: "same-origin",
   });
   return readLegacyOk(response, "Не удалось собрать diagnostic bundle observer.");
 }
 
 export async function fetchObserverRuntime(): Promise<ObserverRuntimePayload> {
-  const response = await fetch("/api/admin/tech/traces/runtime", {
+  const response = await fetch("/api/web/admin/observer/runtime", {
     credentials: "same-origin",
   });
   const payload = await readLegacyOk<{ runtime: ObserverRuntimePayload }>(
@@ -383,7 +383,7 @@ export async function fetchObserverRuntime(): Promise<ObserverRuntimePayload> {
 }
 
 export async function fetchObserverSettings(): Promise<Record<string, unknown>> {
-  const response = await fetch("/api/admin/settings/observer", {
+  const response = await fetch("/api/web/admin/observer/settings", {
     credentials: "same-origin",
   });
   const payload = await readLegacyOk<{ settings: Record<string, unknown> }>(
@@ -396,7 +396,7 @@ export async function fetchObserverSettings(): Promise<Record<string, unknown>> 
 export async function saveObserverSettings(
   settings: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const response = await fetch("/api/admin/settings/observer", {
+  const response = await fetch("/api/web/admin/observer/settings", {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -423,7 +423,7 @@ export async function fetchObserverSignatures(params: {
     rootKindFilter: params.rootKindFilter,
     limit: params.limit ?? 50,
   });
-  const response = await fetch(`/api/admin/tech/signatures?${queryString}`, {
+  const response = await fetch(`/api/web/admin/observer/signatures?${queryString}`, {
     credentials: "same-origin",
   });
   const payload = await readLegacyOk<{ signatures: ObserverSignatureListItem[] }>(
@@ -436,7 +436,7 @@ export async function fetchObserverSignatures(params: {
 export async function fetchObserverSignatureDetail(
   errorSignature: string
 ): Promise<ObserverSignatureDetailPayload> {
-  const response = await fetch(`/api/admin/tech/signatures/${encodeURIComponent(errorSignature)}`, {
+  const response = await fetch(`/api/web/admin/observer/signatures/${encodeURIComponent(errorSignature)}`, {
     credentials: "same-origin",
   });
   return readLegacyOk(response, "Не удалось загрузить детали сигнатуры.");
@@ -456,7 +456,7 @@ export async function fetchObserverDegradations(params: {
     limit: params.limit ?? 50,
     minDurationMs: params.minDurationMs ?? null,
   });
-  const response = await fetch(`/api/admin/tech/degradations?${queryString}`, {
+  const response = await fetch(`/api/web/admin/observer/degradations?${queryString}`, {
     credentials: "same-origin",
   });
   const payload = await readLegacyOk<{ items: ObserverDegradationItem[] }>(
@@ -476,7 +476,7 @@ export async function rebuildObserverTraces(params: {
     lookbackHours: params.lookbackHours,
     limit: params.limit ?? 50,
   });
-  const response = await fetch(`/api/admin/tech/traces/rebuild?${queryString}`, {
+  const response = await fetch(`/api/web/admin/observer/traces/rebuild?${queryString}`, {
     method: "POST",
     credentials: "same-origin",
   });

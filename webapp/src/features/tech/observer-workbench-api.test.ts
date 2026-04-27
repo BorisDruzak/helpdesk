@@ -104,7 +104,7 @@ describe("fetchObserverWorkbenchTraceDetail", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/admin/tech/traces/trace-1?include_agent_actions=1&action_limit=120",
+      "/api/web/admin/observer/trace-detail/trace-1?include_agent_actions=1&action_limit=120",
       expect.objectContaining({
         credentials: "same-origin",
       })
@@ -147,7 +147,7 @@ describe("observer workbench search helpers", () => {
           traces: [],
           links: {
             detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
-            runtime_endpoint: "/api/admin/tech/traces/runtime",
+            runtime_endpoint: "/api/web/admin/observer/runtime",
           },
         },
       })
@@ -188,7 +188,7 @@ describe("observer workbench search helpers", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/admin/tech/diagnostics/bundle?limit=20&trace_id=trace-1&include_agent_actions=1&action_limit=80",
+      "/api/web/admin/observer/diagnostics/bundle?limit=20&trace_id=trace-1&include_agent_actions=1&action_limit=80",
       expect.objectContaining({ credentials: "same-origin" })
     );
     expect(bundle.summary.primary_trace_id).toBe("trace-1");

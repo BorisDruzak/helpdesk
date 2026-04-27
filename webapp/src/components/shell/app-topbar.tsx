@@ -25,7 +25,7 @@ type AppTopbarProps = {
 };
 
 async function fetchUnreadNotificationCount(): Promise<number> {
-  const response = await fetch("/api/notifications/unread_count", {
+  const response = await fetch("/api/web/notifications/unread_count", {
     credentials: "same-origin"
   });
   if (!response.ok) {

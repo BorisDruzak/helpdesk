@@ -152,4 +152,31 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("link", { name: /Инвентарь устройств/ })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
   });
+
+  it("opens requester help without a web session", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return new Response("", { status: 401 });
+      }
+
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack: {
+            pack_key: "request_forms",
+            version: "1.0.0",
+            forms: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderApp(["/app/help"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Создать заявку" })).toBeInTheDocument();
+  });
 });

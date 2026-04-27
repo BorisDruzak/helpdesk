@@ -3,8 +3,10 @@ from pathlib import Path
 from aiohttp import web
 from config import (
     WEBAPP_CUTOVER_ADMIN_ENABLED,
+    WEBAPP_CUTOVER_HELP_ENABLED,
     WEBAPP_CUTOVER_LOGIN_ENABLED,
     WEBAPP_CUTOVER_SUPPORT_ENABLED,
+    WEBAPP_CUTOVER_TICKET_ENABLED,
 )
 from static_pages.cutover import build_webapp_cutover_state
 from static_pages.webapp_assets import WEBAPP_DIST_DIR
@@ -61,6 +63,13 @@ def _webapp_cutover_redirect(
         if key not in {"_shell", "legacy"}
     }
     return web.HTTPFound(location=str(request.rel_url.with_path(target_path).with_query(query)))
+
+
+def _webapp_ticket_target_path(request: web.Request) -> str:
+    ticket_id = str(request.match_info.get("ticket_id") or "").strip()
+    if not ticket_id:
+        return "/app/ticket"
+    return f"/app/ticket/{ticket_id}"
 
 
 async def handle_index(request):
@@ -177,10 +186,40 @@ async def handle_login_js(request):
 
 
 async def handle_ticket_page(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+        help_enabled=WEBAPP_CUTOVER_HELP_ENABLED,
+        ticket_enabled=WEBAPP_CUTOVER_TICKET_ENABLED,
+    )
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=cutover_state.ticket.active,
+        target_path="/app/ticket",
+    )
+    if redirect is not None:
+        raise redirect
     return _text_file_response(BASE_DIR / "ticket.html", "text/html", no_cache=True)
 
 
 async def handle_ticket_page_by_id(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+        help_enabled=WEBAPP_CUTOVER_HELP_ENABLED,
+        ticket_enabled=WEBAPP_CUTOVER_TICKET_ENABLED,
+    )
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=cutover_state.ticket.active,
+        target_path=_webapp_ticket_target_path(request),
+    )
+    if redirect is not None:
+        raise redirect
     return _text_file_response(BASE_DIR / "ticket.html", "text/html", no_cache=True)
 
 
@@ -221,6 +260,21 @@ async def handle_public_queue_js(request):
 
 
 async def handle_help_page(request):
+    cutover_state = build_webapp_cutover_state(
+        dist_dir=WEBAPP_DIST_DIR,
+        login_enabled=WEBAPP_CUTOVER_LOGIN_ENABLED,
+        support_enabled=WEBAPP_CUTOVER_SUPPORT_ENABLED,
+        admin_enabled=WEBAPP_CUTOVER_ADMIN_ENABLED,
+        help_enabled=WEBAPP_CUTOVER_HELP_ENABLED,
+        ticket_enabled=WEBAPP_CUTOVER_TICKET_ENABLED,
+    )
+    redirect = _webapp_cutover_redirect(
+        request,
+        enabled=cutover_state.help.active,
+        target_path=cutover_state.help.target_path,
+    )
+    if redirect is not None:
+        raise redirect
     return _text_file_response(BASE_DIR / "help.html", "text/html", no_cache=True)
 
 
