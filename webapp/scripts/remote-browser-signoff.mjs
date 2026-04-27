@@ -13,24 +13,24 @@ const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_checks", "live-
 const DEFAULT_EXPECT_ROUTE_MODE = "auto";
 
 const LOGIN_HEADING = "Вход в рабочие места";
-const ADMIN_HEADING = "Рабочее место администрирования";
-const SUPPORT_HEADING = "Рабочее место поддержки";
+const ADMIN_HEADING = "Агенты";
+const SUPPORT_HEADING = "Тикеты";
 const RUSSIAN_TITLE = "pc_client — рабочие места";
 
 const ADMIN_REQUIRED_TEXT = [
   "Инвентарь устройств",
-  "Обновление агента",
-  "Быстрый срез трассировки",
-  "Детальный разбор трасс",
-  "Реестр модулей",
-  "Конструктор форм заявок"
+  "Подключения",
+  "Токены",
+  "Rollout",
+  "Плейбуки",
+  "Observer"
 ];
 
 const SUPPORT_REQUIRED_TEXT = [
-  "Очередь и фильтры",
-  "Карточка и рабочая лента",
-  "Инструменты и запуск",
-  "Вкладка трассы"
+  "Рабочая панель",
+  "Список тикетов",
+  "Видимых тикетов",
+  "Все статусы"
 ];
 
 const CUTOVER_REDIRECTS = [
@@ -306,7 +306,7 @@ async function main() {
     sessionData?.default_workspace !== "admin" ||
     !Array.isArray(sessionData?.available_workspaces) ||
     sessionData.available_workspaces.includes("admin") !== true ||
-    defaultRouteUrl !== `${options.baseUrl}/app/admin` ||
+    !defaultRouteUrl.startsWith(`${options.baseUrl}/app/admin/inventory`) ||
     adminState.lang !== "ru" ||
     adminState.title !== RUSSIAN_TITLE ||
     adminState.headingVisible !== true ||
