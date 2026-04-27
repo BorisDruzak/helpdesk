@@ -74,6 +74,25 @@ def test_seed_release_install_keeps_existing_versioned_layout(tmp_path, monkeypa
     assert payload["version"] == "3.0.2"
 
 
+def test_seed_release_install_keeps_existing_layout_without_repo_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage_local_agent, "INSTANCE_ROOT", tmp_path / "instances")
+    monkeypatch.setattr(manage_local_agent, "_read_agent_version", lambda: "3.0.3")
+    build_root = tmp_path / "missing-build-root"
+
+    install_root = tmp_path / "instances" / "existing-canary" / "install"
+    (install_root / "versions" / "3.0.2").mkdir(parents=True, exist_ok=True)
+    (install_root / "launcher.exe").write_bytes(b"legacy-launcher")
+    (install_root / "current.json").write_text(
+        json.dumps({"version": "3.0.2", "previous": "3.0.1"}),
+        encoding="utf-8",
+    )
+
+    seeded = manage_local_agent._seed_release_install("existing-canary", build_root)
+
+    assert seeded == "3.0.2"
+    assert not build_root.exists()
+
+
 def test_seed_release_install_reseeds_if_current_layout_is_broken(tmp_path, monkeypatch):
     monkeypatch.setattr(manage_local_agent, "INSTANCE_ROOT", tmp_path / "instances")
     monkeypatch.setattr(manage_local_agent, "_read_agent_version", lambda: "3.0.3")

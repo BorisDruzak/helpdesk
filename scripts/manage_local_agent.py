@@ -348,6 +348,15 @@ def _seed_release_install(name: str, build_root: Path) -> str:
     install_root = layout["install_root"]
     launcher_src = build_root / "launcher.exe"
     agent_dir = build_root / "pc_agent"
+    current_path = install_root / "current.json"
+    launcher_dst = install_root / "launcher.exe"
+    existing_version = _read_install_current_version(install_root)
+
+    if current_path.exists() and launcher_dst.exists() and existing_version:
+        existing_version_dir = install_root / "versions" / existing_version
+        if existing_version_dir.exists():
+            return existing_version
+
     if not launcher_src.exists():
         raise SystemExit(
             f"Launcher build not found: {launcher_src}. "
@@ -361,14 +370,6 @@ def _seed_release_install(name: str, build_root: Path) -> str:
 
     version = _read_agent_version()
     version_dir = install_root / "versions" / version
-    current_path = install_root / "current.json"
-    launcher_dst = install_root / "launcher.exe"
-    existing_version = _read_install_current_version(install_root)
-
-    if current_path.exists() and launcher_dst.exists() and existing_version:
-        existing_version_dir = install_root / "versions" / existing_version
-        if existing_version_dir.exists():
-            return existing_version
 
     install_root.mkdir(parents=True, exist_ok=True)
     (install_root / "versions").mkdir(parents=True, exist_ok=True)
