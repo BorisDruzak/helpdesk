@@ -208,7 +208,7 @@ Completed in this pass:
 - The headless endpoints reuse the existing workbench package builder, preflight, smoke check, ownership-conflict check and registry persistence path.
 - Generated module packages now preserve explicit `output_contract` in `manifest.json`, `manifest_summary` and editable workbench previews.
 - Agent-side `@exposed_tool` now accepts `output_contract` and includes it in registry/tool specs, so installed module commands can expose the same predictable contract.
-- The module workbench UI now has a `Playbook decision contract` block in guided and advanced editors, readiness chips, local validation for contract paths/status buckets, and API preview snippets pointing at the headless authoring endpoints.
+- The module workbench UI now has a `Playbook decision contract` block in legacy guided/advanced editors and in the typed `/app/admin/modules` React editor, readiness chips/local validation for contract paths/status buckets, and API preview snippets pointing at the headless authoring endpoints.
 
 Verification focus:
 

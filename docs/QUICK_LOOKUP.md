@@ -68,6 +68,7 @@
 - Everyday module authoring no longer starts from raw JSON: platforms are selected from supported values, requirements are entered line-by-line, and params/output schemas can be assembled from validated blueprint rows before publish.
 - The server validate endpoint for the workbench is `POST /api/modules/workbench/validate`; API clients should prefer the headless authoring trio `GET /api/modules/authoring/catalog`, `POST /api/modules/authoring/validate`, and `POST /api/modules/authoring/publish`.
 - New playbook-ready modules should use the module workbench `Playbook decision contract` controls or send `output_contract` through the headless API so the playbook builder can branch on explicit status values instead of raw command text.
+- In the typed React UI, the active module constructor is `webapp/src/features/modules/modules-panel.tsx`; keep its payload builder and API preview aligned with the legacy workbench endpoints.
 - Preferred-version rollout settings now live in `server/app/repos/module_rollout_repo.py` and are exposed via `GET/PATCH /api/modules/rollout_settings`; in `installed_devices` mode a preferred-version change rewrites desired state, triggers reconcile for matching devices, and then refreshes inventory/toolset so the admin UI converges.
 
 # QUICK_LOOKUP

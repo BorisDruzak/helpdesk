@@ -78,6 +78,7 @@ export type ModuleWorkbenchToolDraft = {
   description: string;
   params_schema: Record<string, unknown> | unknown[];
   output_schema: Record<string, unknown> | unknown[];
+  output_contract: Record<string, unknown>;
   presets: Array<Record<string, unknown>>;
   capabilities: string[];
   metadata: Record<string, unknown>;
@@ -272,7 +273,7 @@ export async function setModuleWorkbenchPreferredVersion(
 export async function validateModuleWorkbenchDraft(
   payload: Record<string, unknown>
 ): Promise<ModuleWorkbenchValidationPayload> {
-  const response = await fetch("/api/modules/workbench/validate", {
+  const response = await fetch("/api/modules/authoring/validate", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -286,7 +287,7 @@ export async function validateModuleWorkbenchDraft(
 export async function saveModuleWorkbenchDraft(
   payload: Record<string, unknown>
 ): Promise<ModuleWorkbenchSavePayload> {
-  const response = await fetch("/api/modules/workbench/save", {
+  const response = await fetch("/api/modules/authoring/publish", {
     method: "POST",
     credentials: "same-origin",
     headers: {

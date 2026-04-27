@@ -70,6 +70,7 @@ Workbench UX expectations:
 - local validation is expected to catch platform mistakes, owner-scope conflicts, and malformed schema JSON before server-side validate/publish
 - local validation also checks the playbook decision contract: status path, allowed status values, success/error subsets, summary path and error-code path
 - the guided wizard and advanced editor expose these contract fields directly, and the wizard side summary shows a readiness checklist for module id, version, platforms, tool ids and output contracts
+- the typed `/app/admin/modules` editor mirrors the same contract fields and sends validate/publish requests to `/api/modules/authoring/*`
 - archive import expects `module_name` and `version` for the upload contract, but canonical values are still reconciled against `manifest.json` inside the ZIP
 
 Workbench detail and validate preview both expose archive/source decomposition for generated ZIP packages:

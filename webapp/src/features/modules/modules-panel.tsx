@@ -72,6 +72,17 @@ type ActionFeedback =
 const MODULE_NAME_RE = /^[a-z0-9_]+$/;
 const TOOL_NAME_RE = /^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/;
 const METHOD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CONTRACT_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
+const OUTPUT_CONTRACT_DEFAULT = {
+  schema_version: "1.0",
+  status_path: "result.status",
+  status_values: ["ok", "error"],
+  success_values: ["ok"],
+  error_values: ["error"],
+  summary_path: "result.output.summary",
+  error_code_path: "result.error.code",
+  compact_fields: [],
+} satisfies Record<string, unknown>;
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -146,6 +157,52 @@ function joinLines(items: string[] | null | undefined) {
   return (items ?? []).join("\n");
 }
 
+function stringListFromUnknown(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeOutputContract(value: unknown): Record<string, unknown> {
+  const current =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const statusValues = stringListFromUnknown(current.status_values);
+  const normalizedStatusValues = statusValues.length
+    ? Array.from(new Set(statusValues))
+    : [...OUTPUT_CONTRACT_DEFAULT.status_values];
+  const successValues = stringListFromUnknown(current.success_values);
+  const errorValues = stringListFromUnknown(current.error_values);
+  return {
+    ...OUTPUT_CONTRACT_DEFAULT,
+    ...current,
+    status_path: String(current.status_path ?? OUTPUT_CONTRACT_DEFAULT.status_path),
+    status_values: normalizedStatusValues,
+    success_values: successValues.length
+      ? Array.from(new Set(successValues))
+      : normalizedStatusValues.includes("ok")
+        ? ["ok"]
+        : [normalizedStatusValues[0]],
+    error_values: errorValues.length
+      ? Array.from(new Set(errorValues))
+      : normalizedStatusValues.includes("error")
+        ? ["error"]
+        : [normalizedStatusValues[normalizedStatusValues.length - 1]],
+    summary_path: String(current.summary_path ?? OUTPUT_CONTRACT_DEFAULT.summary_path),
+    error_code_path: String(current.error_code_path ?? OUTPUT_CONTRACT_DEFAULT.error_code_path),
+    compact_fields: Array.isArray(current.compact_fields) ? current.compact_fields : [],
+  };
+}
+
+function outputContractString(contract: Record<string, unknown>, key: string): string {
+  return String(contract[key] ?? "");
+}
+
+function outputContractList(contract: Record<string, unknown>, key: string): string[] {
+  return stringListFromUnknown(contract[key]);
+}
+
 function createEmptyTool(index: number): ModuleWorkbenchToolDraft {
   const suffix = index + 1;
   return {
@@ -162,6 +219,7 @@ function createEmptyTool(index: number): ModuleWorkbenchToolDraft {
       type: "object",
       properties: {},
     },
+    output_contract: normalizeOutputContract(null),
     presets: [],
     capabilities: [],
     metadata: {
@@ -247,6 +305,7 @@ function buildDraftPayload(draft: ModuleWorkbenchDraft) {
       description: tool.description.trim(),
       params_schema: tool.params_schema,
       output_schema: tool.output_schema,
+      output_contract: normalizeOutputContract(tool.output_contract),
       presets: tool.presets,
       capabilities: tool.capabilities,
       metadata: tool.metadata,
@@ -313,6 +372,33 @@ function validateDraft(draft: ModuleWorkbenchDraft | null): string[] {
     if (!tool.user_function_body.trim()) {
       issues.push(`${label}: добавьте тело функции.`);
     }
+    const outputContract = normalizeOutputContract(tool.output_contract);
+    const statusPath = outputContractString(outputContract, "status_path");
+    const summaryPath = outputContractString(outputContract, "summary_path");
+    const errorCodePath = outputContractString(outputContract, "error_code_path");
+    const statusValues = outputContractList(outputContract, "status_values");
+    const successValues = outputContractList(outputContract, "success_values");
+    const errorValues = outputContractList(outputContract, "error_values");
+    if (!CONTRACT_PATH_RE.test(statusPath)) {
+      issues.push(`${label}: output_contract.status_path должен быть dotted path, например result.status.`);
+    }
+    if (!statusValues.length) {
+      issues.push(`${label}: output_contract.status_values должен явно перечислять статусы.`);
+    }
+    const successOutside = successValues.filter((item) => !statusValues.includes(item));
+    const errorOutside = errorValues.filter((item) => !statusValues.includes(item));
+    if (successOutside.length) {
+      issues.push(`${label}: success statuses должны входить в all statuses: ${successOutside.join(", ")}.`);
+    }
+    if (errorOutside.length) {
+      issues.push(`${label}: error statuses должны входить в all statuses: ${errorOutside.join(", ")}.`);
+    }
+    if (!CONTRACT_PATH_RE.test(summaryPath)) {
+      issues.push(`${label}: output_contract.summary_path должен быть dotted path.`);
+    }
+    if (!CONTRACT_PATH_RE.test(errorCodePath)) {
+      issues.push(`${label}: output_contract.error_code_path должен быть dotted path.`);
+    }
   });
 
   return issues;
@@ -354,8 +440,9 @@ function parseToolEditorJson(value: string, fieldLabel: string) {
 }
 
 function buildPreviewCurl(mode: "validate" | "save", payload: Record<string, unknown>) {
+  const action = mode === "validate" ? "validate" : "publish";
   return [
-    `curl -X POST http://192.168.100.17:8666/api/modules/workbench/${mode} \\`,
+    `curl -X POST http://192.168.100.17:8666/api/modules/authoring/${action} \\`,
     `  -H "Content-Type: application/json" \\`,
     `  -d '${JSON.stringify(payload, null, 2)}'`,
   ].join("\n");
@@ -506,6 +593,9 @@ export function ModulesPanel() {
 
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
   const selectedTool = draft?.tools[selectedToolIndex] ?? null;
+  const selectedOutputContract = selectedTool
+    ? normalizeOutputContract(selectedTool.output_contract)
+    : null;
   const localIssues = useMemo(() => validateDraft(draft), [draft]);
   const activeSource = serverValidation?.editable_preview?.source ?? draft?.source ?? null;
   const selectedSourceFile =
@@ -769,6 +859,17 @@ export function ModulesPanel() {
   ) {
     mutateDraft((current) => {
       current.tools[selectedToolIndex][field] = splitLines(value) as never;
+      return current;
+    });
+  }
+
+  function updateToolOutputContractField(field: string, value: string, list = false) {
+    mutateDraft((current) => {
+      const tool = current.tools[selectedToolIndex];
+      tool.output_contract = normalizeOutputContract({
+        ...(tool.output_contract ?? {}),
+        [field]: list ? splitLines(value) : value,
+      });
       return current;
     });
   }
@@ -1805,6 +1906,88 @@ export function ModulesPanel() {
                               />
                             </label>
                           </div>
+
+                          {selectedOutputContract ? (
+                            <div className="rounded-[1.2rem] border border-border bg-surface-subtle px-4 py-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.2em] text-brand-700">
+                                    Playbook decision contract
+                                  </p>
+                                  <p className="mt-2 text-sm text-slate-500">
+                                    Эти поля задают варианты условий в low-code playbook builder.
+                                  </p>
+                                </div>
+                                <Badge tone="brand">
+                                  {outputContractList(selectedOutputContract, "status_values").join(" / ")}
+                                </Badge>
+                              </div>
+                              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Status path</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("status_path", event.target.value)
+                                    }
+                                    value={outputContractString(selectedOutputContract, "status_path")}
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Summary path</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("summary_path", event.target.value)
+                                    }
+                                    value={outputContractString(selectedOutputContract, "summary_path")}
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Error code path</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("error_code_path", event.target.value)
+                                    }
+                                    value={outputContractString(selectedOutputContract, "error_code_path")}
+                                  />
+                                </label>
+                              </div>
+                              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>All statuses</span>
+                                  <textarea
+                                    className="field-base min-h-[96px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("status_values", event.target.value, true)
+                                    }
+                                    value={joinLines(outputContractList(selectedOutputContract, "status_values"))}
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Success statuses</span>
+                                  <textarea
+                                    className="field-base min-h-[96px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("success_values", event.target.value, true)
+                                    }
+                                    value={joinLines(outputContractList(selectedOutputContract, "success_values"))}
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Error statuses</span>
+                                  <textarea
+                                    className="field-base min-h-[96px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) =>
+                                      updateToolOutputContractField("error_values", event.target.value, true)
+                                    }
+                                    value={joinLines(outputContractList(selectedOutputContract, "error_values"))}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ) : null}
 
                           <label className="space-y-2 text-sm font-medium text-slate-800">
                             <span>User function body</span>
