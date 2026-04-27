@@ -1,5 +1,59 @@
 # PLANS.md
 
+## 2026-04-28 Admin Support SaaS Redesign And Playbook Module Entry
+
+Status: in progress.
+
+### Goal
+
+Redesign the React support and admin workspaces into one dense SaaS-style operator UI, using the existing device inventory and playbook builder as the visual/functional baseline, without adding a new UI library.
+
+### Constraints
+
+- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
+- Keep the existing React/Tailwind/component stack.
+- Prefer typed `/api/web/*` contracts; add server aliases only when the current frontend cannot express a required workflow.
+- Do not expose raw JSON as the normal operator configuration path. UI must use controlled fields and generate payloads for the existing JSON-backed APIs.
+- Keep legacy `/admin?legacy=1` and `/support?legacy=1` as rollback escapes unless a separate cutover task explicitly removes them.
+
+### Implementation Tracks
+
+1. Add a shared schema-driven parameter editor for module/tool/playbook params:
+   - render text, textarea, boolean, number, integer, select/radio-like enum and object/array fields from typed schema;
+   - keep object/array JSON only as a bounded advanced field where the schema does not expose a safer shape;
+   - expose generated params preview as read-only/debug context.
+2. Make `/app/admin/playbooks` the true entry point for module command launch and setup:
+   - group command catalog by module/source/platform/risk;
+   - show install policy, preset, params, output contract and condition hints in one inspector;
+   - replace `Params JSON` with controlled parameter controls from `params_schema`;
+   - keep save payload compatible with `POST /api/web/admin/playbooks/save`.
+3. Apply the same parameter editor to support ticket tool launches in `/app/tickets/:ticketId` and compatibility `/app/support`.
+4. Replace settings JSON textareas with controlled builders where server payload already provides the catalog:
+   - routing condition builder writes `condition_json`;
+   - SLA business hours and calendars use day/time rows and holiday rows;
+   - JSON remains only as read-only preview or advanced fallback if needed.
+5. Tighten the shared SaaS shell:
+   - compact topbar/sidebar, reduce decorative copy, keep accessible labels;
+   - use existing `Button`, `Badge`, `Card`, `Tabs`, `Select`, `SearchField`;
+   - no new UI library.
+6. Verify:
+   - focused Vitest for params editor/playbooks/support/settings;
+   - `pnpm --dir webapp run build`;
+   - focused server pytest if typed API changes;
+   - `python scripts/verify_workspace.py`;
+   - live remote smoke/browser check at `http://192.168.100.17:8666/admin`, then stop server.
+
+### Current Notes
+
+- Current live signoff shows `/app/admin/inventory` and `/app/tickets` working, but long tables and raw JSON fields need an operator-focused pass.
+- Main raw JSON hotspots found in:
+  - `webapp/src/features/playbooks/playbook-builder-panel.tsx`;
+  - `webapp/src/features/modules/modules-panel.tsx`;
+  - `webapp/src/pages/tickets/detail-page.tsx`;
+  - `webapp/src/features/queues/support-workspace.tsx`;
+  - `webapp/src/pages/settings/index.tsx`.
+- First implementation slice starts with playbook/module command params because it directly supports fast launch and configuration of concrete modules.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.
@@ -542,3 +596,19 @@ Verification target:
 - `pnpm --dir webapp run test -- observer` and `pnpm --dir webapp run build`
 - Windows release via `python pc_agent/build_windows_release_v2.py`
 - Linux release on `/var/chat_bot/pc_client` via the documented PyInstaller specs, then upload both agent builds and verify `/app/admin/observer` live.
+
+### 2026-04-28 Protocol/Outbox Review Fixes
+
+Current plan:
+
+1. [in progress] Add focused regressions for outbox retry NACK dedupe, sync waiter race, missing trace_id NACK, params immutability and protocol-version logging.
+2. [pending] Fix server-side outbox ingest and command dispatch without touching unrelated worktree changes.
+3. [pending] Bump/build the Windows agent release only for the `ws_agent.py` protocol-log change, upload it and promote it as the preferred version.
+4. [pending] Run local verification, deploy server fixes to Linux with the project scripts, smoke the remote stack and stop the server afterwards unless a follow-up requires it online.
+
+Verification target:
+
+- `python -m pytest server/tests/test_agent_services_pipeline.py server/tests/test_protocol_waiters.py server/tests/test_tool_service_auto_install_no_db.py pc_agent/tests/test_ws_agent_protocol_logging.py -q`
+- `python scripts/verify_workspace.py`
+- `python pc_agent/build_windows_release_v2.py`
+- remote deploy/release and agent-build promotion through the documented scripts/APIs.

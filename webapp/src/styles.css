@@ -23,7 +23,7 @@
   --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.08);
   --shadow-card: 0 8px 22px rgba(15, 23, 42, 0.05);
 
-  --radius-panel: 1.3rem;
+  --radius-panel: 0.6rem;
   --radius-pill: 999px;
 }
 
@@ -34,10 +34,7 @@
 
   body {
     min-height: 100vh;
-    background:
-      radial-gradient(circle at top left, rgba(21, 114, 67, 0.08), transparent 24%),
-      radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 22%),
-      linear-gradient(180deg, #f7faf7 0%, #f2f6f2 100%);
+    background: linear-gradient(180deg, #f7faf7 0%, #f2f6f2 100%);
     color: #0f172a;
   }
 
@@ -68,7 +65,7 @@
 }
 
 @utility field-base {
-  @apply rounded-[1rem] border border-border bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none transition-all duration-200;
+  @apply rounded-[0.6rem] border border-border bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none transition-all duration-200;
   @apply focus:border-brand-200 focus:ring-4 focus:ring-brand-100/80;
 }
 

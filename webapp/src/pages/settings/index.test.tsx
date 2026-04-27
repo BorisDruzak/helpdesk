@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPage } from "./index";
+import type { WebSettingsPayload } from "../../features/settings/api";
 
 function jsonResponse(payload: unknown) {
   return new Response(JSON.stringify(payload), {
@@ -12,7 +13,7 @@ function jsonResponse(payload: unknown) {
   });
 }
 
-function createSettingsPayload() {
+function createSettingsPayload(): WebSettingsPayload {
   return {
     capabilities: {
       can_write: true,
@@ -170,5 +171,77 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Evidence gate: Включено")).toBeInTheDocument();
     expect(screen.getByText("Правила закрытия")).toBeInTheDocument();
     expect(screen.getByText("Take-self queue mode")).toBeInTheDocument();
+  });
+
+  it("uses bounded settings editors instead of raw JSON textareas", async () => {
+    const payload = createSettingsPayload();
+    payload.routing_rules = [
+      {
+        id: 10,
+        enabled: true,
+        priority_order: 10,
+        target_queue_id: 1,
+        target_queue_name: "ServiceDesk L1",
+        condition_json: { field: "request_kind", op: "eq", value: "access" },
+      },
+    ];
+    payload.sla_policies = [
+      {
+        id: 20,
+        name: "Стандартная",
+        timezone: "Asia/Yekaterinburg",
+        calendar_id: 30,
+        calendar_name: "Будни",
+        is_default: true,
+        is_active: true,
+        open_tickets_count: 0,
+        business_hours_json: { mode: "calendar" },
+        targets: [],
+        priority_matrix: [],
+      },
+    ];
+    payload.calendars = [
+      {
+        id: 30,
+        code: "weekday_ru",
+        name: "Будни",
+        timezone: "Asia/Yekaterinburg",
+        is_active: true,
+        weekly_hours_json: { mon: [["09:00", "18:00"]] },
+        holidays_json: { dates: ["2026-01-01"] },
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/web/settings") {
+          return jsonResponse({
+            status: "success",
+            data: payload,
+          });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    renderSettingsPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Маршрутизация" }));
+    expect(screen.getByText("Собранное условие")).toBeInTheDocument();
+    expect(screen.queryByText("Condition JSON")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "SLA" }));
+    expect(screen.getByLabelText("Режим рабочих часов")).toBeInTheDocument();
+    expect(screen.queryByText("Business hours JSON")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Календари" }));
+    expect(screen.getByText("Рабочая неделя")).toBeInTheDocument();
+    expect(screen.getByLabelText("Праздники и исключения")).toBeInTheDocument();
+    expect(screen.queryByText("Weekly hours JSON")).not.toBeInTheDocument();
+    expect(screen.queryByText("Holidays JSON")).not.toBeInTheDocument();
   });
 });

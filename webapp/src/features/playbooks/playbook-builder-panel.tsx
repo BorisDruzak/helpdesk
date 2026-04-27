@@ -20,6 +20,7 @@ import {
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { SchemaParamEditor, type SchemaParamField, type SchemaParamOption } from "../../components/forms/schema-param-editor";
 import { cn } from "../../shared/ui/cn";
 import {
   type AdminPlaybookBlockCatalogItem,
@@ -155,19 +156,6 @@ function sortedBlocks(
   });
 }
 
-function stringifyParams(params: Record<string, unknown>): string {
-  return JSON.stringify(params ?? {}, null, 2);
-}
-
-function parseParamsJson(value: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
 function outputContractSummary(item: AdminPlaybookBlockCatalogItem | null | undefined) {
   const contract = item?.output_contract ?? {};
   const statusPath = String(contract.status_path ?? item?.condition_hints?.status_path ?? "result.status");
@@ -182,6 +170,92 @@ function outputContractSummary(item: AdminPlaybookBlockCatalogItem | null | unde
     errorCodePath,
     errorCodes,
   };
+}
+
+function inferParamType(value: unknown): string {
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "integer" : "number";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (value && typeof value === "object") {
+    return "object";
+  }
+  return "string";
+}
+
+function normalizeSchemaOptions(rawSchema: Record<string, unknown>): SchemaParamOption[] | undefined {
+  const enumValues = Array.isArray(rawSchema.enum) ? rawSchema.enum : null;
+  if (enumValues?.length) {
+    return enumValues.map((item) => {
+      const value = String(item ?? "");
+      return { value, label: value };
+    });
+  }
+
+  const oneOf = Array.isArray(rawSchema.oneOf) ? rawSchema.oneOf : null;
+  if (oneOf?.length) {
+    return oneOf
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+      .map((item) => {
+        const value = String(item.const ?? item.value ?? "");
+        return {
+          value,
+          label: String(item.title ?? item.label ?? value),
+        };
+      })
+      .filter((item) => item.value);
+  }
+
+  return undefined;
+}
+
+function normalizeParamSchema(
+  paramsSchema: Record<string, unknown> | undefined,
+  params: Record<string, unknown>
+): SchemaParamField[] {
+  const required = new Set(
+    Array.isArray(paramsSchema?.required)
+      ? paramsSchema.required.map((item) => String(item ?? "")).filter(Boolean)
+      : []
+  );
+  const properties =
+    paramsSchema && typeof paramsSchema.properties === "object" && paramsSchema.properties && !Array.isArray(paramsSchema.properties)
+      ? paramsSchema.properties as Record<string, unknown>
+      : paramsSchema;
+
+  const fields = Object.entries(properties ?? {})
+    .filter(([name, rawField]) => name !== "required" && name !== "properties" && Boolean(rawField))
+    .map(([name, rawField]) => {
+      const rawSchema = typeof rawField === "object" && rawField && !Array.isArray(rawField)
+        ? rawField as Record<string, unknown>
+        : {};
+      const defaultValue = rawSchema.default ?? params[name];
+      return {
+        name,
+        label: String(rawSchema.title ?? rawSchema.label ?? name),
+        description: rawSchema.description ? String(rawSchema.description) : null,
+        type: String(rawSchema.type ?? inferParamType(defaultValue)),
+        required: required.has(name) || Boolean(rawSchema.required),
+        default: defaultValue,
+        options: normalizeSchemaOptions(rawSchema),
+      };
+    });
+
+  if (fields.length) {
+    return fields;
+  }
+
+  return Object.entries(params).map(([name, value]) => ({
+    name,
+    label: name,
+    type: inferParamType(value),
+    default: value,
+  }));
 }
 
 function quickConditionOptions(blocks: AdminPlaybookDraftBlock[], decisionIndex: number) {
@@ -398,8 +472,6 @@ export function PlaybookBuilderPanel() {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [moduleSearch, setModuleSearch] = useState("");
   const [showGrid, setShowGrid] = useState(true);
-  const [paramsDraft, setParamsDraft] = useState("");
-  const [paramsError, setParamsError] = useState<string | null>(null);
 
   const catalogQuery = useQuery({
     queryKey: ["admin-playbooks-catalog"],
@@ -463,10 +535,13 @@ export function PlaybookBuilderPanel() {
   );
   const selectedOrderedIndex = orderedBlocks.findIndex((block) => block.id === selectedBlock?.id);
 
-  useEffect(() => {
-    setParamsDraft(stringifyParams(selectedBlock?.params ?? {}));
-    setParamsError(null);
-  }, [selectedBlock?.id, selectedBlock?.params]);
+  const selectedParamFields = useMemo(
+    () =>
+      selectedBlock?.type === "diagnostic"
+        ? normalizeParamSchema(selectedBlock.tool_manifest?.params_schema, selectedBlock.params)
+        : [],
+    [selectedBlock?.params, selectedBlock?.tool_manifest?.params_schema, selectedBlock?.type]
+  );
 
   function updateBlock(blockId: string, patch: Partial<AdminPlaybookDraftBlock>) {
     setDraft((current) =>
@@ -884,28 +959,19 @@ export function PlaybookBuilderPanel() {
                       </label>
                     </>
                   ) : (
-                    <label className="block space-y-2">
-                      <FieldLabel>Params JSON</FieldLabel>
-                      <textarea
-                        className={cn(
-                          "min-h-[122px] w-full resize-y rounded-lg border px-3 py-3 font-mono text-xs outline-none focus:border-blue-400",
-                          paramsError ? "border-rose-300 bg-rose-50" : "border-slate-200"
-                        )}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
-                          setParamsDraft(value);
-                          const parsed = parseParamsJson(value);
-                          if (parsed === null) {
-                            setParamsError("Некорректный JSON");
-                            return;
-                          }
-                          setParamsError(null);
-                          updateBlock(selectedBlock.id, { params: parsed });
-                        }}
-                        value={paramsDraft}
+                    <div className="space-y-3">
+                      <div>
+                        <FieldLabel>Параметры команды</FieldLabel>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          Настройки формируются из manifest schema и будут сохранены как params payload.
+                        </p>
+                      </div>
+                      <SchemaParamEditor
+                        fields={selectedParamFields}
+                        onChange={(params) => updateBlock(selectedBlock.id, { params })}
+                        value={selectedBlock.params}
                       />
-                      {paramsError ? <span className="text-xs text-rose-600">{paramsError}</span> : null}
-                    </label>
+                    </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-3">

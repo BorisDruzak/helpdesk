@@ -19,6 +19,7 @@ import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { Tabs } from "../../components/ui/tabs";
@@ -37,6 +38,7 @@ import {
   type SupportTicketDetailPayload,
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
+import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import { cn } from "../../shared/ui/cn";
 
@@ -385,65 +387,9 @@ function ArtifactPreview({ attachment }: { attachment: NormalizedAttachment }) {
 function parseToolParams(
   selectedTool: SupportTicketToolsPayload["tools"][number] | null,
   selectedPresetId: string,
-  toolParams: Record<string, string>,
+  toolParams: Record<string, unknown>,
 ) {
-  if (!selectedTool) {
-    throw new Error("Выберите инструмент.");
-  }
-
-  if (selectedPresetId.trim()) {
-    const preset = selectedTool.presets.find((item) => item.preset_id === selectedPresetId.trim());
-    return {
-      presetId: selectedPresetId.trim(),
-      params: preset?.params ?? {},
-    };
-  }
-
-  const params: Record<string, unknown> = {};
-  for (const field of selectedTool.params_schema) {
-    const defaultValue =
-      field.default == null
-        ? ""
-        : typeof field.default === "object"
-          ? JSON.stringify(field.default, null, 2)
-          : String(field.default);
-    const rawValue = toolParams[field.name] ?? defaultValue;
-    const trimmedValue = rawValue.trim();
-
-    if (!trimmedValue) {
-      if (field.required) {
-        throw new Error(`Заполните поле «${field.label ?? field.name}».`);
-      }
-      continue;
-    }
-
-    if (field.type === "boolean") {
-      params[field.name] = trimmedValue === "true";
-      continue;
-    }
-    if (field.type === "integer") {
-      params[field.name] = Number.parseInt(trimmedValue, 10);
-      continue;
-    }
-    if (field.type === "number") {
-      params[field.name] = Number.parseFloat(trimmedValue);
-      continue;
-    }
-    if (field.type === "object" || field.type === "array") {
-      try {
-        params[field.name] = JSON.parse(trimmedValue);
-      } catch {
-        throw new Error(`Поле «${field.label ?? field.name}» должно содержать валидный JSON.`);
-      }
-      continue;
-    }
-    params[field.name] = trimmedValue;
-  }
-
-  return {
-    presetId: null,
-    params,
-  };
+  return validateSupportToolParams(selectedTool, selectedPresetId, toolParams);
 }
 
 export function TicketRequestFormCard({
@@ -692,7 +638,7 @@ export function TicketDetailPage() {
   const [statusAction, setStatusAction] = useState("");
   const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
-  const [toolParams, setToolParams] = useState<Record<string, string>>({});
+  const [toolParams, setToolParams] = useState<Record<string, unknown>>({});
   const [toolSearch, setToolSearch] = useState("");
   const [knowledgeDraftMessage, setKnowledgeDraftMessage] = useState<string | null>(null);
   const deferredQueueSearch = useDeferredValue(queueSearch);
@@ -1667,18 +1613,7 @@ export function TicketDetailPage() {
                               const value = event.target.value;
                               setSelectedPresetId(value);
                               const preset = selectedTool.presets.find((item) => item.preset_id === value);
-                              setToolParams(
-                                preset?.params
-                                  ? Object.fromEntries(
-                                      Object.entries(preset.params).map(([key, paramValue]) => [
-                                        key,
-                                        typeof paramValue === "object"
-                                          ? JSON.stringify(paramValue, null, 2)
-                                          : String(paramValue),
-                                      ])
-                                    )
-                                  : {}
-                              );
+                              setToolParams(preset?.params ? { ...preset.params } : {});
                             }}
                             value={selectedPresetId}
                           >
@@ -1693,67 +1628,12 @@ export function TicketDetailPage() {
                       ) : null}
 
                       {selectedPresetId ? null : (
-                        <div className="space-y-3">
-                          {selectedTool.params_schema.map((field) => {
-                            const defaultValue =
-                              field.default == null
-                                ? ""
-                                : typeof field.default === "object"
-                                  ? JSON.stringify(field.default, null, 2)
-                                  : String(field.default);
-                            const value = toolParams[field.name] ?? defaultValue;
-                            const multiline =
-                              field.type === "object" || field.type === "array" || field.type === "textarea";
-
-                            return (
-                              <label key={field.name} className="space-y-2 text-sm font-medium text-slate-800">
-                                <span>
-                                  {field.label ?? field.name}
-                                  {field.required ? " *" : ""}
-                                </span>
-                                {multiline ? (
-                                  <textarea
-                                    className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
-                                    onChange={(event) =>
-                                      setToolParams((current) => ({
-                                        ...current,
-                                        [field.name]: event.target.value,
-                                      }))
-                                    }
-                                    value={value}
-                                  />
-                                ) : field.type === "boolean" ? (
-                                  <Select
-                                    onChange={(event) =>
-                                      setToolParams((current) => ({
-                                        ...current,
-                                        [field.name]: event.target.value,
-                                      }))
-                                    }
-                                    value={value || "false"}
-                                  >
-                                    <option value="false">false</option>
-                                    <option value="true">true</option>
-                                  </Select>
-                                ) : (
-                                  <input
-                                    className="field-base h-11 w-full px-4 text-sm text-slate-900"
-                                    onChange={(event) =>
-                                      setToolParams((current) => ({
-                                        ...current,
-                                        [field.name]: event.target.value,
-                                      }))
-                                    }
-                                    value={value}
-                                  />
-                                )}
-                                {field.description ? (
-                                  <p className="text-xs text-slate-500">{field.description}</p>
-                                ) : null}
-                              </label>
-                            );
-                          })}
-                        </div>
+                        <SchemaParamEditor
+                          className="space-y-3"
+                          fields={supportToolParamFields(selectedTool)}
+                          onChange={setToolParams}
+                          value={toolParams}
+                        />
                       )}
 
                       {toolMutation.isSuccess ? (

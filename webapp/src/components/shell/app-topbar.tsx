@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, LogOut, Sparkles } from "lucide-react";
+import { Bell, ChevronDown, CircleUserRound, LogOut } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ChangeEvent } from "react";
 import { useState } from "react";
@@ -78,22 +78,13 @@ export function AppTopbar({
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-white/80 backdrop-blur-xl">
-      <div className="flex flex-col gap-4 px-4 py-4 md:px-6 xl:px-8">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-3 px-4 py-3 md:px-6 xl:px-8">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-700">
-                Верхняя шторка
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Рабочая зона, выход и глобальный поиск теперь живут здесь.
-              </p>
-            </div>
-
             <div className="relative">
               <Select
                 aria-label="Рабочая зона"
-                className="min-w-[220px] bg-brand-50 pr-12 text-brand-900"
+                className="h-10 min-w-[220px] bg-brand-50 pr-12 text-brand-900"
                 onChange={onWorkspaceChange}
                 value={workspaceValue}
               >
@@ -108,7 +99,7 @@ export function AppTopbar({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="w-full max-w-[420px] flex-1">
+            <div className="w-full min-w-[240px] max-w-[420px] flex-1">
               <SearchField placeholder={searchPlaceholder} />
             </div>
 
@@ -128,7 +119,7 @@ export function AppTopbar({
               </button>
 
               {notificationsOpen ? (
-                <div className="absolute right-0 top-12 z-30 w-[340px] overflow-hidden rounded-2xl border border-border bg-white shadow-soft">
+                <div className="absolute right-0 top-12 z-30 w-[340px] overflow-hidden rounded-panel border border-border bg-white shadow-soft">
                   <div className="border-b border-border px-4 py-3">
                     <p className="text-sm font-semibold text-slate-950">Уведомления</p>
                     <p className="mt-0.5 text-xs text-slate-500">
@@ -184,9 +175,9 @@ export function AppTopbar({
               ) : null}
             </div>
 
-            <div className="hidden items-center gap-3 rounded-pill border border-border bg-white px-4 py-2.5 md:flex">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-800">
-                <Sparkles className="h-4 w-4" />
+            <div className="hidden items-center gap-3 rounded-panel border border-border bg-white px-3 py-2 md:flex">
+              <div className="flex h-9 w-9 items-center justify-center rounded-panel bg-brand-100 text-brand-800">
+                <CircleUserRound className="h-4 w-4" />
               </div>
               <div className="leading-tight">
                 <p className="text-sm font-semibold text-slate-900">{userLogin}</p>

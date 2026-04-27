@@ -71,7 +71,6 @@ type RoutingDraft = {
   enabled: boolean;
   priority_order: number;
   target_queue_id: number;
-  condition_json_text: string;
 };
 
 type RoutingConditionBuilder = {
@@ -87,7 +86,14 @@ type PolicyDraft = {
   calendar_id: string;
   is_default: boolean;
   is_active: boolean;
-  business_hours_json_text: string;
+  business_hours_mode: "calendar" | "always_on";
+};
+
+type CalendarDayDraft = {
+  day: number;
+  enabled: boolean;
+  start: string;
+  end: string;
 };
 
 type CalendarDraft = {
@@ -95,8 +101,8 @@ type CalendarDraft = {
   name: string;
   timezone: string;
   is_active: boolean;
-  weekly_hours_json_text: string;
-  holidays_json_text: string;
+  weekly_hours: CalendarDayDraft[];
+  holidays_text: string;
 };
 
 type ResolutionDraft = {
@@ -139,6 +145,15 @@ const TAB_ITEMS = [
 const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 const PRIORITY_OPTIONS = ["P1", "P2", "P3", "P4"] as const;
 const IMPACT_VALUES = [1, 2, 3] as const;
+const CALENDAR_DAYS = [
+  { day: 0, key: "mon", label: "Пн" },
+  { day: 1, key: "tue", label: "Вт" },
+  { day: 2, key: "wed", label: "Ср" },
+  { day: 3, key: "thu", label: "Чт" },
+  { day: 4, key: "fri", label: "Пт" },
+  { day: 5, key: "sat", label: "Сб" },
+  { day: 6, key: "sun", label: "Вс" },
+] as const;
 const NOTIFICATION_CATALOG = [
   {
     eventType: "ticket_message",
@@ -204,16 +219,108 @@ function prettyJson(value: unknown): string {
 }
 
 
-function parseJsonInput(text: string, fieldLabel: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return null;
+function readBusinessHoursMode(value: Record<string, unknown> | null | undefined): PolicyDraft["business_hours_mode"] {
+  return value?.mode === "calendar" ? "calendar" : "always_on";
+}
+
+
+function buildBusinessHoursJson(mode: PolicyDraft["business_hours_mode"]): Record<string, unknown> | null {
+  return mode === "calendar" ? { mode: "calendar" } : null;
+}
+
+
+function defaultCalendarHours(): CalendarDayDraft[] {
+  return CALENDAR_DAYS.map((item) => ({
+    day: item.day,
+    enabled: item.day < 5,
+    start: "09:00",
+    end: "18:00",
+  }));
+}
+
+
+function dayIndexFromKey(value: string): number | null {
+  const normalized = value.toLowerCase().slice(0, 3);
+  const found = CALENDAR_DAYS.find((item) => item.key === normalized);
+  return found?.day ?? null;
+}
+
+
+function readCalendarHours(value: unknown): CalendarDayDraft[] {
+  const rows = defaultCalendarHours().map((row) => ({ ...row, enabled: false }));
+  const applySlot = (day: number | null, start: unknown, end: unknown) => {
+    if (day == null || day < 0 || day > 6) {
+      return;
+    }
+    rows[day] = {
+      day,
+      enabled: true,
+      start: String(start ?? "09:00"),
+      end: String(end ?? "18:00"),
+    };
+  };
+
+  if (Array.isArray(value)) {
+    for (const slot of value) {
+      if (!slot || typeof slot !== "object") {
+        continue;
+      }
+      const item = slot as Record<string, unknown>;
+      const rawDay = item.day;
+      const day = typeof rawDay === "number" ? rawDay : typeof rawDay === "string" ? dayIndexFromKey(rawDay) : null;
+      applySlot(day, item.start, item.end);
+    }
+    return rows;
   }
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    throw new Error(`${fieldLabel}: некорректный JSON.`);
+
+  if (value && typeof value === "object") {
+    for (const [key, ranges] of Object.entries(value as Record<string, unknown>)) {
+      const day = dayIndexFromKey(key);
+      const firstRange = Array.isArray(ranges) ? ranges[0] : null;
+      if (Array.isArray(firstRange)) {
+        applySlot(day, firstRange[0], firstRange[1]);
+      }
+    }
+    return rows;
   }
+
+  return defaultCalendarHours();
+}
+
+
+function buildCalendarHoursJson(rows: CalendarDayDraft[]): Record<string, unknown> {
+  return Object.fromEntries(
+    rows
+      .filter((row) => row.enabled)
+      .map((row) => {
+        const dayKey = CALENDAR_DAYS.find((item) => item.day === row.day)?.key ?? String(row.day);
+        return [dayKey, [[row.start || "09:00", row.end || "18:00"]]];
+      }),
+  );
+}
+
+
+function readHolidayText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join("\n");
+  }
+  if (value && typeof value === "object") {
+    const dates = (value as Record<string, unknown>).dates;
+    if (Array.isArray(dates)) {
+      return dates.map((item) => String(item)).join("\n");
+    }
+  }
+  return "";
+}
+
+
+function buildHolidaysJson(text: string): Record<string, unknown> {
+  return {
+    dates: text
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  };
 }
 
 
@@ -233,7 +340,6 @@ function buildRoutingDraft(rule: RoutingRuleItem | null, fallbackQueueId: number
     enabled: rule?.enabled ?? true,
     priority_order: rule?.priority_order ?? 100,
     target_queue_id: rule?.target_queue_id ?? fallbackQueueId ?? 0,
-    condition_json_text: prettyJson(rule?.condition_json ?? { field: "request_kind", op: "eq", value: "access" }),
   };
 }
 
@@ -328,7 +434,7 @@ function buildPolicyDraft(policy: SlaPolicyItem | null): PolicyDraft {
     calendar_id: policy?.calendar_id ? String(policy.calendar_id) : "",
     is_default: policy?.is_default ?? false,
     is_active: policy?.is_active ?? true,
-    business_hours_json_text: prettyJson(policy?.business_hours_json),
+    business_hours_mode: readBusinessHoursMode(policy?.business_hours_json),
   };
 }
 
@@ -339,8 +445,8 @@ function buildCalendarDraft(calendar: CalendarItem | null): CalendarDraft {
     name: calendar?.name ?? "",
     timezone: calendar?.timezone ?? "UTC",
     is_active: calendar?.is_active ?? true,
-    weekly_hours_json_text: prettyJson(calendar?.weekly_hours_json),
-    holidays_json_text: prettyJson(calendar?.holidays_json),
+    weekly_hours: readCalendarHours(calendar?.weekly_hours_json),
+    holidays_text: readHolidayText(calendar?.holidays_json),
   };
 }
 
@@ -723,12 +829,12 @@ export function SettingsPage() {
       if (!routingDraft.target_queue_id) {
         throw new Error("Для правила нужно выбрать целевую очередь.");
       }
-      const conditionJson = parseJsonInput(routingDraft.condition_json_text, "Условие маршрутизации");
+      const conditionJson = buildRoutingConditionJson(routingConditionBuilder);
       const payloadToSave = {
         enabled: routingDraft.enabled,
         priority_order: Number(routingDraft.priority_order),
         target_queue_id: Number(routingDraft.target_queue_id),
-        condition_json: conditionJson ?? {},
+        condition_json: conditionJson,
       };
       if (selectedRule) {
         await updateWebSettingsRoutingRule(selectedRule.id, payloadToSave);
@@ -751,11 +857,10 @@ export function SettingsPage() {
       if (!policyDraft.name.trim()) {
         throw new Error("У SLA-политики должно быть имя.");
       }
-      const businessHoursJson = parseJsonInput(policyDraft.business_hours_json_text, "Business hours");
       const payloadToSave = {
         name: policyDraft.name.trim(),
         timezone: policyDraft.timezone.trim() || "UTC",
-        business_hours_json: businessHoursJson,
+        business_hours_json: buildBusinessHoursJson(policyDraft.business_hours_mode),
         calendar_id: policyDraft.calendar_id ? Number(policyDraft.calendar_id) : null,
         is_default: policyDraft.is_default,
         ...(selectedPolicy ? { is_active: policyDraft.is_active } : {}),
@@ -810,14 +915,12 @@ export function SettingsPage() {
       if (!calendarDraft.code.trim() || !calendarDraft.name.trim()) {
         throw new Error("Для календаря нужны code и name.");
       }
-      const weeklyHoursJson = parseJsonInput(calendarDraft.weekly_hours_json_text, "Weekly hours");
-      const holidaysJson = parseJsonInput(calendarDraft.holidays_json_text, "Holidays");
       const payloadToSave = {
         code: calendarDraft.code.trim(),
         name: calendarDraft.name.trim(),
         timezone: calendarDraft.timezone.trim() || "UTC",
-        weekly_hours_json: weeklyHoursJson,
-        holidays_json: holidaysJson,
+        weekly_hours_json: buildCalendarHoursJson(calendarDraft.weekly_hours),
+        holidays_json: buildHolidaysJson(calendarDraft.holidays_text),
         ...(selectedCalendar ? { is_active: calendarDraft.is_active } : {}),
       };
       if (selectedCalendar) {
@@ -1591,8 +1694,7 @@ export function SettingsPage() {
                   <CardTitle>{selectedRule ? `Rule #${selectedRule.id}` : "Новое правило"}</CardTitle>
                   <CardDescription>
                     Роутинг теперь понимает `ticket_type`, `request_kind`, `custom_fields.request_kind` и поля вида
-                    `request_form_data.*`. Ниже можно собрать leaf-условие из текущего каталога форм и при необходимости
-                    доработать JSON вручную.
+                    `request_form_data.*`. Ниже можно собрать leaf-условие из текущего каталога форм без ручного JSON.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
@@ -1631,22 +1733,9 @@ export function SettingsPage() {
                       <div>
                         <p className="font-semibold text-slate-900">Form-aware builder</p>
                         <p className="mt-1 text-sm text-slate-500">
-                          Поля из текущих intake-форм уже подгружены в настройки. Собранное условие можно одной кнопкой
-                          подставить в JSON.
+                          Поля из текущих intake-форм уже подгружены в настройки. Условие собирается автоматически при сохранении.
                         </p>
                       </div>
-                      <Button
-                        onClick={() => {
-                          setRoutingDraft((current) => ({
-                            ...current,
-                            condition_json_text: prettyJson(buildRoutingConditionJson(routingConditionBuilder)),
-                          }));
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Подставить в JSON
-                      </Button>
                     </div>
 
                     <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -1747,27 +1836,12 @@ export function SettingsPage() {
                     </div>
                   </div>
 
-                  <SettingsField label="Condition JSON">
-                    <textarea
-                      className="field-base min-h-[220px] w-full resize-y px-4 py-4 text-sm"
-                      onChange={(event) => {
-                        const nextText = event.target.value;
-                        setRoutingDraft((current) => ({ ...current, condition_json_text: nextText }));
-                        try {
-                          const parsed = JSON.parse(nextText) as Record<string, unknown>;
-                          setRoutingConditionBuilder(
-                            buildRoutingConditionBuilder(
-                              parsed,
-                              payload.routing_builder.fields[0]?.field ?? "request_kind"
-                            )
-                          );
-                        } catch {
-                          // Keep helper state as-is while user edits raw JSON.
-                        }
-                      }}
-                      value={routingDraft.condition_json_text}
-                    />
-                  </SettingsField>
+                  <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Собранное условие</p>
+                    <code className="mt-3 block whitespace-pre-wrap rounded-[0.8rem] bg-surface-subtle px-4 py-3 text-xs text-slate-700">
+                      {prettyJson(buildRoutingConditionJson(routingConditionBuilder))}
+                    </code>
+                  </div>
 
                   <Button disabled={!canWrite || routingMutation.isPending} onClick={() => routingMutation.mutate()} className="w-full">
                     {routingMutation.isPending ? "Сохраняем…" : "Сохранить правило"}
@@ -1869,12 +1943,19 @@ export function SettingsPage() {
                         <span>Политика активна</span>
                       </label>
                     </div>
-                    <SettingsField label="Business hours JSON">
-                      <textarea
-                        className="field-base min-h-[160px] w-full resize-y px-4 py-4 text-sm"
-                        onChange={(event) => setPolicyDraft((current) => ({ ...current, business_hours_json_text: event.target.value }))}
-                        value={policyDraft.business_hours_json_text}
-                      />
+                    <SettingsField label="Режим рабочих часов">
+                      <Select
+                        onChange={(event) =>
+                          setPolicyDraft((current) => ({
+                            ...current,
+                            business_hours_mode: event.target.value as PolicyDraft["business_hours_mode"],
+                          }))
+                        }
+                        value={policyDraft.business_hours_mode}
+                      >
+                        <option value="calendar">По выбранному календарю</option>
+                        <option value="always_on">24×7 без календаря</option>
+                      </Select>
                     </SettingsField>
                     <Button disabled={!canWrite || policyMutation.isPending} onClick={() => policyMutation.mutate()} className="w-full">
                       Сохранить SLA-политику
@@ -2038,18 +2119,77 @@ export function SettingsPage() {
                     />
                     <span>Календарь активен</span>
                   </label>
-                  <SettingsField label="Weekly hours JSON">
-                    <textarea
-                      className="field-base min-h-[160px] w-full resize-y px-4 py-4 text-sm"
-                      onChange={(event) => setCalendarDraft((current) => ({ ...current, weekly_hours_json_text: event.target.value }))}
-                      value={calendarDraft.weekly_hours_json_text}
-                    />
-                  </SettingsField>
-                  <SettingsField label="Holidays JSON">
+                  <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">Рабочая неделя</p>
+                        <p className="mt-1 text-sm text-slate-500">Один интервал на день; структура календаря собирается автоматически.</p>
+                      </div>
+                      <Button
+                        onClick={() => setCalendarDraft((current) => ({ ...current, weekly_hours: defaultCalendarHours() }))}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Будни 09:00–18:00
+                      </Button>
+                    </div>
+                    <div className="mt-4 grid gap-3">
+                      {calendarDraft.weekly_hours.map((row) => {
+                        const dayLabel = CALENDAR_DAYS.find((item) => item.day === row.day)?.label ?? String(row.day);
+                        return (
+                          <div key={row.day} className="grid gap-3 rounded-[0.9rem] bg-white px-3 py-3 md:grid-cols-[7rem_1fr_1fr]">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                              <input
+                                checked={row.enabled}
+                                onChange={(event) =>
+                                  setCalendarDraft((current) => ({
+                                    ...current,
+                                    weekly_hours: current.weekly_hours.map((item) =>
+                                      item.day === row.day ? { ...item, enabled: event.target.checked } : item,
+                                    ),
+                                  }))
+                                }
+                                type="checkbox"
+                              />
+                              <span>{dayLabel}</span>
+                            </label>
+                            <Input
+                              disabled={!row.enabled}
+                              onChange={(event) =>
+                                setCalendarDraft((current) => ({
+                                  ...current,
+                                  weekly_hours: current.weekly_hours.map((item) =>
+                                    item.day === row.day ? { ...item, start: event.target.value } : item,
+                                  ),
+                                }))
+                              }
+                              type="time"
+                              value={row.start}
+                            />
+                            <Input
+                              disabled={!row.enabled}
+                              onChange={(event) =>
+                                setCalendarDraft((current) => ({
+                                  ...current,
+                                  weekly_hours: current.weekly_hours.map((item) =>
+                                    item.day === row.day ? { ...item, end: event.target.value } : item,
+                                  ),
+                                }))
+                              }
+                              type="time"
+                              value={row.end}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <SettingsField label="Праздники и исключения">
                     <textarea
                       className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
-                      onChange={(event) => setCalendarDraft((current) => ({ ...current, holidays_json_text: event.target.value }))}
-                      value={calendarDraft.holidays_json_text}
+                      onChange={(event) => setCalendarDraft((current) => ({ ...current, holidays_text: event.target.value }))}
+                      placeholder="2026-01-01&#10;2026-01-07"
+                      value={calendarDraft.holidays_text}
                     />
                   </SettingsField>
                   <Button disabled={!canWrite || calendarMutation.isPending} onClick={() => calendarMutation.mutate()} className="w-full">

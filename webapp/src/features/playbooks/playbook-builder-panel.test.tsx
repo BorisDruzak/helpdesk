@@ -80,6 +80,21 @@ describe("PlaybookBuilderPanel", () => {
                   module_name: "system",
                   description: "CPU, память, сеть и платформа",
                   default_params: { preset: "network" },
+                  params_schema: {
+                    properties: {
+                      preset: {
+                        type: "string",
+                        title: "Preset",
+                        enum: ["network", "system"],
+                      },
+                      tail_lines: {
+                        type: "integer",
+                        title: "Tail lines",
+                        default: 200,
+                      },
+                    },
+                    required: ["preset"],
+                  },
                   changes_device: false,
                   requires_confirmation: false,
                   output_contract: {
@@ -212,5 +227,130 @@ describe("PlaybookBuilderPanel", () => {
       ],
     });
     expect(await screen.findByText("Плейбук опубликован как версия 1.0.0.")).toBeInTheDocument();
+  });
+
+  it("uses controlled module command params instead of a raw params JSON editor", async () => {
+    const saveCalls: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/playbooks/catalog") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              capabilities: {
+                catalog_endpoint: "/api/web/admin/playbooks/catalog",
+                save_endpoint: "/api/web/admin/playbooks/save",
+                block_types: [{ value: "diagnostic", label: "Диагностика" }],
+                module_kind_options: [{ value: "diagnostic", label: "Диагностика" }],
+              },
+              block_catalog: [
+                {
+                  id: "diag.logs.collect",
+                  label: "Сбор логов",
+                  tool: "diag.logs.collect",
+                  block_type: "diagnostic",
+                  module_kind: "diagnostic",
+                  module_name: "diag_logs",
+                  description: "Архив логов",
+                  default_params: { preset: "system", tail_lines: 500, include_journal: false },
+                  params_schema: {
+                    properties: {
+                      preset: {
+                        type: "string",
+                        title: "Preset",
+                        enum: ["system", "network"],
+                      },
+                      tail_lines: {
+                        type: "integer",
+                        title: "Tail lines",
+                        default: 500,
+                      },
+                      include_journal: {
+                        type: "boolean",
+                        title: "Include journal",
+                        default: false,
+                      },
+                    },
+                    required: ["preset"],
+                  },
+                  changes_device: false,
+                  requires_confirmation: true,
+                  output_contract: {
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    success_values: ["ok"],
+                    error_values: ["error"],
+                    summary_path: "result.output.summary",
+                  },
+                  condition_hints: {
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    error_codes: ["LOG_ACCESS_DENIED"],
+                    condition_templates: [],
+                  },
+                },
+              ],
+              scenario_templates: [
+                {
+                  key: "logs",
+                  title: "Logs",
+                  problem: "logs",
+                  recommended_form_keys: [],
+                  block_ids: ["diag.logs.collect"],
+                },
+              ],
+              playbooks: [],
+            },
+          });
+        }
+
+        if (url === "/api/web/admin/playbooks/save") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              key: "logs",
+              version: "1.0.0",
+              status: "published",
+              blocks_count: 1,
+              message: "Сохранено.",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch ${url}`);
+      }),
+    );
+
+    renderPanel();
+
+    expect(await screen.findByText("Сбор логов")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preset")).toBeInTheDocument();
+    expect(screen.getByLabelText("Tail lines")).toBeInTheDocument();
+    expect(screen.getByLabelText("Include journal")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Params JSON")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Tail lines"), { target: { value: "900" } });
+    fireEvent.click(screen.getByLabelText("Include journal"));
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+    expect(saveCalls[0]).toMatchObject({
+      blocks: [
+        {
+          tool: "diag.logs.collect",
+          params: {
+            preset: "system",
+            tail_lines: 900,
+            include_journal: true,
+          },
+        },
+      ],
+    });
   });
 });

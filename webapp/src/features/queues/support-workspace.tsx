@@ -14,7 +14,9 @@ import {
   type SupportTicketDetailPayload,
   type SupportTicketToolsPayload,
 } from "./api";
+import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
+import { supportToolParamFields, validateSupportToolParams } from "./tool-param-fields";
 
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
@@ -53,23 +55,6 @@ function timelineEventLabel(entry: SupportTicketDetailPayload["timeline"][number
     return "Системное событие";
   }
   return "Публичное сообщение";
-}
-
-function formatToolFieldValue(value: unknown, fieldType: string) {
-  if (value == null) {
-    return "";
-  }
-  if (fieldType === "object" || fieldType === "array") {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-  return String(value);
 }
 
 function describeQueueScope(scope: SupportQueueScope) {
@@ -249,7 +234,7 @@ function SupportDetailPanel({
   const [toolError, setToolError] = useState<string | null>(null);
   const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
-  const [toolParams, setToolParams] = useState<Record<string, string>>({});
+  const [toolParams, setToolParams] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     setComposerError(null);
@@ -299,55 +284,7 @@ function SupportDetailPanel({
   }
 
   function parseToolParams() {
-    if (!selectedTool) {
-      throw new Error("Выберите инструмент из списка.");
-    }
-    if (selectedPresetId.trim()) {
-      const preset = selectedTool.presets.find((item) => item.preset_id === selectedPresetId.trim());
-      return {
-        presetId: selectedPresetId.trim(),
-        params: preset?.params ?? {},
-      };
-    }
-
-    const params: Record<string, unknown> = {};
-    for (const field of selectedTool.params_schema) {
-      const rawValue = toolParams[field.name] ?? formatToolFieldValue(field.default, field.type);
-      const trimmedValue = rawValue.trim();
-      if (!trimmedValue) {
-        if (field.required) {
-          throw new Error(`Заполните поле «${field.label ?? field.name}».`);
-        }
-        continue;
-      }
-
-      if (field.type === "boolean") {
-        params[field.name] = trimmedValue === "true";
-        continue;
-      }
-      if (field.type === "integer") {
-        params[field.name] = Number.parseInt(trimmedValue, 10);
-        continue;
-      }
-      if (field.type === "number") {
-        params[field.name] = Number.parseFloat(trimmedValue);
-        continue;
-      }
-      if (field.type === "object" || field.type === "array") {
-        try {
-          params[field.name] = JSON.parse(trimmedValue);
-        } catch {
-          throw new Error(`Поле «${field.label ?? field.name}» должно содержать валидный JSON.`);
-        }
-        continue;
-      }
-      params[field.name] = trimmedValue;
-    }
-
-    return {
-      presetId: null,
-      params,
-    };
+    return validateSupportToolParams(selectedTool, selectedPresetId, toolParams);
   }
 
   async function handleRunTool() {
@@ -596,18 +533,7 @@ function SupportDetailPanel({
                                 const value = event.target.value;
                                 setSelectedPresetId(value);
                                 const preset = selectedTool.presets.find((item) => item.preset_id === value);
-                                setToolParams(
-                                  preset?.params
-                                    ? Object.fromEntries(
-                                        Object.entries(preset.params).map(([key, paramValue]) => [
-                                          key,
-                                          typeof paramValue === "object"
-                                            ? JSON.stringify(paramValue, null, 2)
-                                            : String(paramValue),
-                                        ])
-                                      )
-                                    : {}
-                                );
+                                setToolParams(preset?.params ? { ...preset.params } : {});
                               }}
                               value={selectedPresetId}
                             >
@@ -622,55 +548,12 @@ function SupportDetailPanel({
                         ) : null}
 
                         {!selectedPresetId ? (
-                          <div className="support-tool-fields">
-                            {selectedTool.params_schema.map((field) => {
-                              const fieldValue = toolParams[field.name] ?? formatToolFieldValue(field.default, field.type);
-                              if (field.type === "boolean") {
-                                return (
-                                  <label className="support-tool-field" key={field.name}>
-                                    <span>{field.label ?? field.name}</span>
-                                    <select
-                                      aria-label={field.label ?? field.name}
-                                      onChange={(event) =>
-                                        setToolParams((current) => ({ ...current, [field.name]: event.target.value }))
-                                      }
-                                      value={fieldValue || "false"}
-                                    >
-                                      <option value="false">false</option>
-                                      <option value="true">true</option>
-                                    </select>
-                                    {field.description ? <small>{field.description}</small> : null}
-                                  </label>
-                                );
-                              }
-
-                              const multiline = field.type === "object" || field.type === "array";
-                              return (
-                                <label className="support-tool-field" key={field.name}>
-                                  <span>{field.label ?? field.name}</span>
-                                  {multiline ? (
-                                    <textarea
-                                      aria-label={field.label ?? field.name}
-                                      onChange={(event) =>
-                                        setToolParams((current) => ({ ...current, [field.name]: event.target.value }))
-                                      }
-                                      value={fieldValue}
-                                    />
-                                  ) : (
-                                    <input
-                                      aria-label={field.label ?? field.name}
-                                      onChange={(event) =>
-                                        setToolParams((current) => ({ ...current, [field.name]: event.target.value }))
-                                      }
-                                      type={field.type === "integer" || field.type === "number" ? "number" : "text"}
-                                      value={fieldValue}
-                                    />
-                                  )}
-                                  {field.description ? <small>{field.description}</small> : null}
-                                </label>
-                              );
-                            })}
-                          </div>
+                          <SchemaParamEditor
+                            className="support-tool-fields"
+                            fields={supportToolParamFields(selectedTool)}
+                            onChange={setToolParams}
+                            value={toolParams}
+                          />
                         ) : null}
 
                         <div className="support-tool-inspector__actions">
