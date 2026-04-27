@@ -132,6 +132,46 @@ def test_tool_catalog_expands_presets_into_concrete_params():
 
 
 @pytest.mark.no_db
+def test_tool_catalog_exposes_predictable_output_contract_and_condition_hints():
+    tool = normalize_tool_catalog_entry(
+        {
+            "tool": "network.ping",
+            "module": "network_basic",
+            "description": "Ping target",
+            "spec": {
+                "params_schema": {},
+                "output_schema": {"type": "object", "properties": {"reachable": {"type": "boolean"}}},
+                "output_contract": {
+                    "status_path": "result.status",
+                    "status_values": ["ok", "error"],
+                    "success_values": ["ok"],
+                    "error_values": ["error"],
+                    "summary_path": "result.output.summary",
+                    "error_code_path": "result.error.code",
+                    "compact_fields": [
+                        {"path": "result.output.reachable", "label": "Reachable", "type": "boolean"}
+                    ],
+                },
+                "metadata": {"platforms": ["linux", "win32"], "risk_level": "safe_read"},
+                "dependencies": {"min_agent_version": "3.1.0"},
+                "error_codes": ["HOST_UNREACHABLE"],
+            },
+            "install_required": True,
+        },
+        source="server",
+    )
+
+    assert tool["output_contract"]["status_values"] == ["ok", "error"]
+    assert tool["condition_hints"]["status_path"] == "result.status"
+    assert tool["condition_hints"]["status_values"] == ["ok", "error"]
+    assert tool["condition_hints"]["error_codes"] == ["HOST_UNREACHABLE"]
+    assert tool["condition_hints"]["condition_templates"][0] == {
+        "label": "status == ok",
+        "expression": "{step}.output.result.status == 'ok'",
+    }
+
+
+@pytest.mark.no_db
 def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_policy():
     catalog_entry = normalize_tool_catalog_entry(
         {
@@ -141,6 +181,13 @@ def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_
             "spec": {
                 "params_schema": {},
                 "output_schema": {"type": "object", "properties": {"ip": {"type": "string"}}},
+                "output_contract": {
+                    "status_path": "result.status",
+                    "status_values": ["ok", "error"],
+                    "success_values": ["ok"],
+                    "error_values": ["error"],
+                    "summary_path": "result.output.summary",
+                },
                 "presets": [],
                 "metadata": {
                     "platforms": ["linux", "win32"],
@@ -180,6 +227,8 @@ def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_
     ]
     assert normalized["manifest"]["required_tools"][0]["module_name"] == "ip_address"
     assert normalized["manifest"]["required_tools"][0]["min_agent_version"] == "3.1.0"
+    assert normalized["manifest"]["required_tools"][0]["output_contract"]["status_values"] == ["ok", "error"]
+    assert normalized["manifest"]["required_tools"][0]["condition_hints"]["status_path"] == "result.status"
 
 
 @pytest.mark.no_db

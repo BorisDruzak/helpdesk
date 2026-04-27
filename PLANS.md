@@ -181,6 +181,16 @@ Completed in this pass:
 - `/app/admin/playbooks` shows module/source/install/platform/min-agent metadata and lets an operator select presets and inspect/edit params JSON per step.
 - Ticket tool surfaces now carry preset params to the server, and the server still re-expands the preset before dispatch for consistency.
 
+### 2026-04-27 Output Contract Tightening
+
+Completed in this pass:
+
+- Module manifest normalization now preserves a separate tool-level `output_contract` instead of relying on verbose `output_schema`.
+- Declared `output_contract.status_values` must be explicit and unique; `success_values` / `error_values` are checked against the declared status set.
+- `server/playbooks/tool_catalog.py` derives `condition_hints` from `output_contract` and known `error_codes` so the low-code builder can offer predictable condition templates.
+- Saved playbook `required_tools` now carry `output_schema`, `output_contract` and `condition_hints` separately.
+- `/app/admin/playbooks` displays status path, allowed status values, summary path and error codes for each command block, and decision blocks can insert a quick condition from previous command output.
+
 Deferred to the observer stage:
 
 - First-class observer spans for playbook root, preflight, install, command dispatch and ticket fact attachment.

@@ -14,11 +14,119 @@ def _as_list(value: Any) -> list[Any]:
     return deepcopy(value) if isinstance(value, list) else []
 
 
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
 def _first_dict(*values: Any) -> dict[str, Any]:
     for value in values:
         if isinstance(value, dict):
             return value
     return {}
+
+
+def _enum_from_schema(schema: dict[str, Any], path: str) -> list[str]:
+    current: Any = schema
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return []
+        properties = current.get("properties")
+        if isinstance(properties, dict) and part in properties:
+            current = properties.get(part)
+            continue
+        current = current.get(part)
+    enum_values = current.get("enum") if isinstance(current, dict) else None
+    return _string_list(enum_values)
+
+
+def normalize_output_contract(
+    raw_contract: Any,
+    *,
+    output_schema: dict[str, Any] | None = None,
+    error_codes: list[str] | None = None,
+) -> dict[str, Any]:
+    contract = deepcopy(raw_contract) if isinstance(raw_contract, dict) else {}
+    schema = output_schema or {}
+    status_values = _string_list(contract.get("status_values"))
+    legacy_status = contract.get("status")
+    if not status_values and isinstance(legacy_status, str) and "|" in legacy_status:
+        status_values = [item.strip() for item in legacy_status.split("|") if item.strip()]
+    if not status_values:
+        status_values = _enum_from_schema(schema, "status") or _enum_from_schema(schema, "result.status")
+    if not status_values:
+        status_values = ["ok", "error"]
+
+    success_values = _string_list(contract.get("success_values"))
+    error_values = _string_list(contract.get("error_values"))
+    if not success_values:
+        success_values = [value for value in ("ok", "success") if value in status_values][:1]
+    if not error_values:
+        error_values = [value for value in ("error", "failed") if value in status_values][:1]
+
+    compact_fields = []
+    for item in _as_list(contract.get("compact_fields")):
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "").strip()
+        if not path:
+            continue
+        compact_fields.append(
+            {
+                "path": path,
+                "label": str(item.get("label") or path).strip(),
+                "type": str(item.get("type") or "string").strip() or "string",
+            }
+        )
+
+    return {
+        "schema_version": str(contract.get("schema_version") or "1.0").strip() or "1.0",
+        "status_path": str(contract.get("status_path") or "result.status").strip(),
+        "status_values": status_values,
+        "success_values": success_values,
+        "error_values": error_values,
+        "summary_path": str(contract.get("summary_path") or "result.output.summary").strip(),
+        "error_code_path": str(contract.get("error_code_path") or "result.error.code").strip(),
+        "compact_fields": compact_fields,
+        "error_codes": _string_list(error_codes),
+    }
+
+
+def build_condition_hints(output_contract: dict[str, Any], error_codes: list[str]) -> dict[str, Any]:
+    status_path = str(output_contract.get("status_path") or "result.status")
+    error_code_path = str(output_contract.get("error_code_path") or "result.error.code")
+    templates: list[dict[str, str]] = []
+    for value in _string_list(output_contract.get("status_values")):
+        templates.append(
+            {
+                "label": f"status == {value}",
+                "expression": f"{{step}}.output.{status_path} == '{value}'",
+            }
+        )
+    for code in _string_list(error_codes):
+        templates.append(
+            {
+                "label": f"error_code == {code}",
+                "expression": f"{{step}}.output.{error_code_path} == '{code}'",
+            }
+        )
+    return {
+        "status_path": status_path,
+        "status_values": _string_list(output_contract.get("status_values")),
+        "success_values": _string_list(output_contract.get("success_values")),
+        "error_values": _string_list(output_contract.get("error_values")),
+        "summary_path": str(output_contract.get("summary_path") or "result.output.summary"),
+        "error_code_path": error_code_path,
+        "error_codes": _string_list(error_codes),
+        "condition_templates": templates,
+        "compact_fields": _as_list(output_contract.get("compact_fields")),
+    }
 
 
 def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> dict[str, Any]:
@@ -59,6 +167,13 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
     error_codes = spec.get("error_codes") or raw_tool.get("error_codes") or []
     if not isinstance(error_codes, list):
         error_codes = []
+    error_codes = [str(item) for item in error_codes]
+    output_contract = normalize_output_contract(
+        spec.get("output_contract") or raw_tool.get("output_contract"),
+        output_schema=output_schema,
+        error_codes=error_codes,
+    )
+    condition_hints = build_condition_hints(output_contract, error_codes)
 
     min_agent_version = (
         dependencies.get("min_agent_version")
@@ -78,7 +193,8 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
         "changes_device": bool(metadata.get("changes_device", False)),
         "requires_confirmation": bool(metadata.get("requires_confirmation") or metadata.get("requires_consent")),
         "requires_consent": bool(metadata.get("requires_consent")),
-        "output_contract": deepcopy(output_schema or raw_tool.get("output_contract") or {}),
+        "output_contract": output_contract,
+        "condition_hints": condition_hints,
         "source": source,
         "install_required": bool(raw_tool.get("install_required")),
         "install_policy": "lazy" if raw_tool.get("install_required") else "preinstalled",
@@ -89,7 +205,7 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
         "params_schema": params_schema,
         "output_schema": output_schema,
         "presets": presets,
-        "error_codes": [str(item) for item in error_codes],
+        "error_codes": error_codes,
     }
     return normalized
 
@@ -141,7 +257,9 @@ def build_required_tools_manifest(
                 "risk_level": entry.get("risk_level"),
                 "requires_consent": bool(entry.get("requires_consent") or entry.get("requires_confirmation")),
                 "params_schema": _as_dict(entry.get("params_schema")),
-                "output_schema": _as_dict(entry.get("output_schema") or entry.get("output_contract")),
+                "output_schema": _as_dict(entry.get("output_schema")),
+                "output_contract": _as_dict(entry.get("output_contract")),
+                "condition_hints": _as_dict(entry.get("condition_hints")),
                 "presets": _as_list(entry.get("presets")),
                 "error_codes": _as_list(entry.get("error_codes")),
             }

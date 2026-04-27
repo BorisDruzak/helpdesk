@@ -72,10 +72,20 @@ describe("PlaybookBuilderPanel", () => {
                   changes_device: false,
                   requires_confirmation: false,
                   output_contract: {
-                    status: "ok|error",
-                    found: {},
-                    error_code: null,
-                    attachments: [],
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    success_values: ["ok"],
+                    error_values: ["error"],
+                    summary_path: "result.output.summary",
+                  },
+                  condition_hints: {
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    error_codes: [],
+                    condition_templates: [
+                      { label: "status == ok", expression: "{step}.output.result.status == 'ok'" },
+                      { label: "status == error", expression: "{step}.output.result.status == 'error'" },
+                    ],
                   },
                 },
                 {
@@ -89,10 +99,24 @@ describe("PlaybookBuilderPanel", () => {
                   changes_device: false,
                   requires_confirmation: true,
                   output_contract: {
-                    status: "ok|error",
-                    found: {},
-                    error_code: null,
-                    attachments: ["logs_zip"],
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    success_values: ["ok"],
+                    error_values: ["error"],
+                    summary_path: "result.output.summary",
+                  },
+                  condition_hints: {
+                    status_path: "result.status",
+                    status_values: ["ok", "error"],
+                    error_codes: ["LOG_ACCESS_DENIED"],
+                    condition_templates: [
+                      { label: "status == ok", expression: "{step}.output.result.status == 'ok'" },
+                      { label: "status == error", expression: "{step}.output.result.status == 'error'" },
+                      {
+                        label: "error_code == LOG_ACCESS_DENIED",
+                        expression: "{step}.output.result.error.code == 'LOG_ACCESS_DENIED'",
+                      },
+                    ],
                   },
                 },
               ],
@@ -134,8 +158,14 @@ describe("PlaybookBuilderPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Сайт не открывается" }));
     expect(await screen.findByText("Системный снимок")).toBeInTheDocument();
     expect(await screen.findByText("Сбор логов")).toBeInTheDocument();
+    expect(await screen.findAllByText("result.status")).toHaveLength(2);
+    expect(await screen.findAllByText("ok, error")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Добавить условие" }));
+    fireEvent.change(screen.getByLabelText("Quick condition template"), {
+      target: { value: "steps.system_collect.output.result.status == 'ok'" },
+    });
+    expect(screen.getByDisplayValue("steps.system_collect.output.result.status == 'ok'")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Поднять блок Сбор логов" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить плейбук" }));
 

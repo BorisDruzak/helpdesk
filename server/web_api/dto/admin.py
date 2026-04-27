@@ -460,6 +460,7 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     requires_confirmation: bool = False
     requires_consent: bool = False
     output_contract: dict[str, Any] = Field(default_factory=dict)
+    condition_hints: dict[str, Any] = Field(default_factory=dict)
     source: str | None = None
     install_required: bool = False
     install_policy: str | None = None

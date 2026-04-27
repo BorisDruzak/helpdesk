@@ -64,6 +64,91 @@ def test_normalize_manifest_keeps_semantic_tool_name_and_legacy_alias():
 
 
 @pytest.mark.no_db
+def test_normalize_manifest_keeps_playbook_output_contract():
+    normalized, validation, summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "core",
+            "tools": [
+                {
+                    "tool": "network.ping",
+                    "method": "ping_host",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": ["HOST_UNREACHABLE"],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "output_schema": {"type": "object", "properties": {"reachable": {"type": "boolean"}}},
+                    "output_contract": {
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "success_values": ["ok"],
+                        "error_values": ["error"],
+                        "summary_path": "result.output.summary",
+                        "error_code_path": "result.error.code",
+                        "compact_fields": [
+                            {"path": "result.output.reachable", "label": "Reachable", "type": "boolean"}
+                        ],
+                    },
+                    "metadata": {
+                        "domain": "network",
+                        "platforms": ["linux", "win32"],
+                        "risk_level": "safe_read",
+                        "requires_consent": False,
+                        "idempotent": True,
+                    },
+                }
+            ],
+        }
+    )
+
+    assert normalized is not None
+    assert not validation["errors"]["tools"]
+    tool = normalized["tools"][0]
+    assert tool["output_contract"]["status_values"] == ["ok", "error"]
+    assert tool["output_contract"]["success_values"] == ["ok"]
+    assert tool["output_contract"]["error_values"] == ["error"]
+    assert tool["output_contract"]["summary_path"] == "result.output.summary"
+    assert summary is not None
+    assert summary["tools"][0]["output_contract"]["status_path"] == "result.status"
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_rejects_ambiguous_output_contract_statuses():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "network_basic",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "core",
+            "tools": [
+                {
+                    "tool": "network.ping",
+                    "method": "ping_host",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": [],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "output_contract": {"status_values": ["ok", "ok"]},
+                }
+            ],
+        }
+    )
+
+    assert normalized is None
+    assert any("output_contract.status_values" in error for error in validation["errors"]["tools"])
+
+
+@pytest.mark.no_db
 def test_normalize_manifest_rejects_duplicate_tool_alias_conflicts():
     normalized, validation, _summary = normalize_manifest(
         {

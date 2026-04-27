@@ -28,6 +28,7 @@ MANIFEST_V2 = 2
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$")
 TOOL_KEY_RE = re.compile(r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
 PY_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CONTRACT_PATH_RE = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
 
 
 def _ensure_list(value: Any, default: Optional[List[Any]] = None) -> List[Any]:
@@ -109,6 +110,113 @@ def _normalize_optional_timeout(raw_value: Any, *, field_name: str, errors: List
     return raw_value
 
 
+def _normalize_contract_path(raw_value: Any, *, field_name: str, errors: List[str], default: str) -> str:
+    if raw_value is None:
+        return default
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        errors.append(f"{field_name} must be a non-empty dotted path")
+        return default
+    value = raw_value.strip()
+    if not CONTRACT_PATH_RE.match(value):
+        errors.append(f"{field_name} must be a dotted path like result.status")
+        return default
+    return value
+
+
+def _normalize_output_contract(raw_value: Any, *, field_name: str, errors: List[str]) -> Dict[str, Any]:
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        errors.append(f"{field_name} must be an object")
+        return {}
+
+    raw_status_values = raw_value.get("status_values")
+    if raw_status_values is None:
+        errors.append(f"{field_name}.status_values is required when output_contract is declared")
+        status_values: List[str] = []
+    else:
+        status_values = _normalize_string_list(
+            raw_status_values,
+            field_name=f"{field_name}.status_values",
+            errors=errors,
+        )
+    if len(status_values) != len(set(status_values)):
+        errors.append(f"{field_name}.status_values must not contain duplicates")
+        status_values = list(dict.fromkeys(status_values))
+
+    success_values = _normalize_string_list(
+        raw_value.get("success_values"),
+        field_name=f"{field_name}.success_values",
+        errors=errors,
+    )
+    error_values = _normalize_string_list(
+        raw_value.get("error_values"),
+        field_name=f"{field_name}.error_values",
+        errors=errors,
+    )
+    if status_values:
+        if not success_values:
+            success_values = [value for value in ("ok", "success") if value in status_values][:1]
+        if not error_values:
+            error_values = [value for value in ("error", "failed") if value in status_values][:1]
+    for bucket_name, bucket_values in (("success_values", success_values), ("error_values", error_values)):
+        unknown = [value for value in bucket_values if value not in status_values]
+        if unknown:
+            errors.append(
+                f"{field_name}.{bucket_name} contains values outside status_values: {', '.join(unknown)}"
+            )
+
+    compact_fields: List[Dict[str, Any]] = []
+    raw_compact_fields = raw_value.get("compact_fields")
+    if raw_compact_fields is not None:
+        if not isinstance(raw_compact_fields, list):
+            errors.append(f"{field_name}.compact_fields must be a list")
+        else:
+            for index, item in enumerate(raw_compact_fields, start=1):
+                if not isinstance(item, dict):
+                    errors.append(f"{field_name}.compact_fields[{index}] must be an object")
+                    continue
+                path = _normalize_contract_path(
+                    item.get("path"),
+                    field_name=f"{field_name}.compact_fields[{index}].path",
+                    errors=errors,
+                    default="result.output",
+                )
+                compact_fields.append(
+                    {
+                        "path": path,
+                        "label": str(item.get("label") or path).strip(),
+                        "type": str(item.get("type") or "string").strip() or "string",
+                    }
+                )
+
+    return {
+        "schema_version": str(raw_value.get("schema_version") or "1.0").strip() or "1.0",
+        "status_path": _normalize_contract_path(
+            raw_value.get("status_path"),
+            field_name=f"{field_name}.status_path",
+            errors=errors,
+            default="result.status",
+        ),
+        "status_values": status_values,
+        "success_values": success_values,
+        "error_values": error_values,
+        "summary_path": _normalize_contract_path(
+            raw_value.get("summary_path"),
+            field_name=f"{field_name}.summary_path",
+            errors=errors,
+            default="result.output.summary",
+        ),
+        "error_code_path": _normalize_contract_path(
+            raw_value.get("error_code_path"),
+            field_name=f"{field_name}.error_code_path",
+            errors=errors,
+            default="result.error.code",
+        ),
+        "compact_fields": compact_fields,
+    }
+
+
 def _normalize_tool_name(module_name: str, raw_tool: Any, fallback: str) -> str:
     candidate = str(raw_tool or fallback).strip()
     if not candidate:
@@ -174,6 +282,11 @@ def _normalize_tool_entry(
     elif not isinstance(output_schema, dict):
         errors.append(f"Tool '{tool_name}' has invalid output_schema type")
         output_schema = {}
+    output_contract = _normalize_output_contract(
+        raw_tool.get("output_contract"),
+        field_name=f"Tool '{tool_name}' output_contract",
+        errors=errors,
+    )
 
     capabilities = raw_tool.get("capabilities")
     if capabilities is None:
@@ -340,6 +453,7 @@ def _normalize_tool_entry(
         "description": str(raw_tool.get("description") or "").strip(),
         "params_schema": params_schema,
         "output_schema": output_schema,
+        "output_contract": output_contract,
         "presets": presets,
         "capabilities": capabilities,
         "metadata": {
@@ -378,6 +492,7 @@ def manifest_summary_from_manifest(manifest_json: Dict[str, Any]) -> Dict[str, A
                 "description": tool.get("description") or "",
                 "params_schema": tool.get("params_schema") or {},
                 "output_schema": tool.get("output_schema") or {},
+                "output_contract": tool.get("output_contract") or {},
                 "presets": tool.get("presets") or [],
                 "capabilities": tool.get("capabilities") or [],
                 "aliases": tool.get("aliases") or [],
@@ -534,6 +649,7 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                 "description": normalized["description"],
                 "params_schema": {},
                 "output_schema": {},
+                "output_contract": {},
                 "aliases": [],
                 "presets": [],
                 "capabilities": [],

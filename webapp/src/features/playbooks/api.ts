@@ -12,6 +12,17 @@ export type AdminPlaybookBlockCatalogItem = {
   requires_confirmation: boolean;
   requires_consent?: boolean;
   output_contract: Record<string, unknown>;
+  condition_hints?: {
+    status_path?: string;
+    status_values?: string[];
+    success_values?: string[];
+    error_values?: string[];
+    summary_path?: string;
+    error_code_path?: string;
+    error_codes?: string[];
+    condition_templates?: Array<{ label: string; expression: string }>;
+    compact_fields?: Array<Record<string, unknown>>;
+  };
   source?: string | null;
   install_required?: boolean;
   install_policy?: string | null;

@@ -80,6 +80,31 @@ The preferred version is stored server-side and is the same source of truth used
 - `run_tool` auto-install and auto-update
 - preferred module resolution in the server registry
 
+## Tool output contracts for playbooks
+
+`output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and compact support-facing display.
+
+For predictable automation, each playbook-ready tool should declare:
+
+```json
+{
+  "output_contract": {
+    "schema_version": "1.0",
+    "status_path": "result.status",
+    "status_values": ["ok", "error"],
+    "success_values": ["ok"],
+    "error_values": ["error"],
+    "summary_path": "result.output.summary",
+    "error_code_path": "result.error.code",
+    "compact_fields": [
+      { "path": "result.output.reachable", "label": "Reachable", "type": "boolean" }
+    ]
+  }
+}
+```
+
+Server manifest normalization keeps `output_schema` and `output_contract` separate. When `output_contract` is present, `status_values` must be explicit and unique; `success_values` and `error_values` must be subsets of `status_values`. The admin playbook catalog derives `condition_hints` from the contract and known `error_codes`, so `/app/admin/playbooks` can offer stable condition templates such as `steps.ping.output.result.status == 'ok'` instead of forcing operators to parse raw command text.
+
 Preferred-version rollout now has an explicit server-side setting:
 
 - `manual` - changing preferred only changes the registry/source-of-truth; devices update later through `run_tool`, manual install, or other runtime touch points

@@ -1,6 +1,6 @@
 # Diagnostic playbooks
 
-Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2`. The server stores `required_tools` with module owner, source, install policy, platforms, minimum agent version, schemas, presets and known error codes. Tool-backed playbook steps run the existing module auto-install preflight before `run_tool`; install failures stop the step with `stage=module_install`, while capability gate failures use `stage=capability_gate`. Presets are expanded into concrete params on the server for both support tool launches and playbook steps, so agents receive normal command params.
+Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2`. The server stores `required_tools` with module owner, source, install policy, platforms, minimum agent version, params/output schemas, output contract, condition hints, presets and known error codes. Tool-backed playbook steps run the existing module auto-install preflight before `run_tool`; install failures stop the step with `stage=module_install`, while capability gate failures use `stage=capability_gate`. Presets are expanded into concrete params on the server for both support tool launches and playbook steps, so agents receive normal command params.
 
 Дата обновления: 2026-04-26
 
@@ -20,6 +20,24 @@ Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2
 - `found`: найденные факты
 - `error_code`: машинный код ошибки или `null`
 - `attachments`: ссылки на логи, скриншоты, замеры или другие артефакты
+
+For playbook branching the command catalog does not rely on free-form text. Each atomic tool may declare an `output_contract`:
+
+```json
+{
+  "status_path": "result.status",
+  "status_values": ["ok", "error"],
+  "success_values": ["ok"],
+  "error_values": ["error"],
+  "summary_path": "result.output.summary",
+  "error_code_path": "result.error.code",
+  "compact_fields": [
+    { "path": "result.output.reachable", "label": "Reachable", "type": "boolean" }
+  ]
+}
+```
+
+`server/playbooks/tool_catalog.py` normalizes this into `condition_hints`. The builder shows status path, allowed values and error codes, then offers quick condition templates for decision blocks. This keeps the UI predictable even when the full module result contains verbose logs, stdout or diagnostic measurements.
 
 ## Диагностика и исправление
 

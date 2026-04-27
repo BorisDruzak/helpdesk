@@ -98,6 +98,64 @@ function parseParamsJson(value: string): Record<string, unknown> | null {
   }
 }
 
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function outputContractSummary(item: AdminPlaybookBlockCatalogItem) {
+  const contract = item.output_contract ?? {};
+  const statusPath = String(contract.status_path ?? item.condition_hints?.status_path ?? "result.status");
+  const statusValues = stringList(contract.status_values ?? item.condition_hints?.status_values);
+  const summaryPath = String(contract.summary_path ?? item.condition_hints?.summary_path ?? "result.output.summary");
+  const errorCodes = stringList(item.error_codes ?? item.condition_hints?.error_codes);
+  return {
+    statusPath,
+    statusValues: statusValues.length ? statusValues : ["ok", "error"],
+    summaryPath,
+    errorCodes,
+  };
+}
+
+function quickConditionOptions(blocks: AdminPlaybookDraftBlock[], decisionIndex: number) {
+  return blocks.slice(0, decisionIndex).flatMap((block) => {
+    const templates = block.tool_manifest?.condition_hints?.condition_templates ?? [];
+    return templates
+      .filter((template) => template?.expression)
+      .map((template) => ({
+        label: `${block.label}: ${template.label}`,
+        value: template.expression.replaceAll("{step}", `steps.${block.id}`),
+      }));
+  });
+}
+
+function OutputContractPreview({ item }: { item: AdminPlaybookBlockCatalogItem }) {
+  const summary = outputContractSummary(item);
+  return (
+    <div className="mt-3 grid gap-2 rounded-[0.7rem] border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 md:grid-cols-3">
+      <div>
+        <span className="block font-semibold text-slate-800">Status path</span>
+        <code>{summary.statusPath}</code>
+      </div>
+      <div>
+        <span className="block font-semibold text-slate-800">Values</span>
+        <code>{summary.statusValues.join(", ")}</code>
+      </div>
+      <div>
+        <span className="block font-semibold text-slate-800">Summary path</span>
+        <code>{summary.summaryPath}</code>
+      </div>
+      {summary.errorCodes.length ? (
+        <div className="md:col-span-3">
+          <span className="block font-semibold text-slate-800">Error codes</span>
+          <code>{summary.errorCodes.join(", ")}</code>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PlaybookBuilderPanel() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AdminPlaybookDraftRequest | null>(null);
@@ -251,16 +309,19 @@ export function PlaybookBuilderPanel() {
                           {block.tool ?? "Локальный блок"} · {block.module_kind}
                         </p>
                         {block.tool_manifest ? (
-                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                            <Badge>{block.tool_manifest.module_name ?? "builtin"}</Badge>
-                            <Badge>{block.install_policy ?? "preinstalled"}</Badge>
-                            {block.tool_manifest.supported_platforms?.length ? (
-                              <Badge>{block.tool_manifest.supported_platforms.join(", ")}</Badge>
-                            ) : null}
-                            {block.tool_manifest.min_agent_version ? (
-                              <Badge>{`agent >= ${block.tool_manifest.min_agent_version}`}</Badge>
-                            ) : null}
-                          </div>
+                          <>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                              <Badge>{block.tool_manifest.module_name ?? "builtin"}</Badge>
+                              <Badge>{block.install_policy ?? "preinstalled"}</Badge>
+                              {block.tool_manifest.supported_platforms?.length ? (
+                                <Badge>{block.tool_manifest.supported_platforms.join(", ")}</Badge>
+                              ) : null}
+                              {block.tool_manifest.min_agent_version ? (
+                                <Badge>{`agent >= ${block.tool_manifest.min_agent_version}`}</Badge>
+                              ) : null}
+                            </div>
+                            <OutputContractPreview item={block.tool_manifest} />
+                          </>
                         ) : null}
                       </div>
                       <div className="flex items-center gap-2">
@@ -378,6 +439,39 @@ export function PlaybookBuilderPanel() {
                           }}
                           value={block.condition ?? ""}
                         />
+                      </label>
+                    ) : null}
+                    {block.type === "decision" ? (
+                      <label className="mt-3 block space-y-2 text-sm font-medium text-slate-800">
+                        <span>Quick condition</span>
+                        <select
+                          aria-label="Quick condition template"
+                          className="field-base h-11 w-full px-4 text-sm"
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            if (!value) {
+                              return;
+                            }
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    blocks: current.blocks.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, condition: value } : item
+                                    ),
+                                  }
+                                : current
+                            );
+                          }}
+                          value=""
+                        >
+                          <option value="">Select output...</option>
+                          {quickConditionOptions(draft.blocks, index).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                     ) : null}
                   </article>

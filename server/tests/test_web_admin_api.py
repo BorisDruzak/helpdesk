@@ -942,10 +942,18 @@ async def test_web_admin_playbooks_catalog_returns_diagnostic_builder_payload(we
                     changes_device=False,
                     requires_confirmation=False,
                     output_contract={
-                        "status": "ok|error",
-                        "found": {},
-                        "error_code": None,
-                        "attachments": [],
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "success_values": ["ok"],
+                        "error_values": ["error"],
+                        "summary_path": "result.output.summary",
+                    },
+                    condition_hints={
+                        "status_path": "result.status",
+                        "status_values": ["ok", "error"],
+                        "condition_templates": [
+                            {"label": "status == ok", "expression": "{step}.output.result.status == 'ok'"}
+                        ],
                     },
                 )
             ],
@@ -980,7 +988,8 @@ async def test_web_admin_playbooks_catalog_returns_diagnostic_builder_payload(we
 
     assert payload["status"] == "success"
     assert payload["data"]["block_catalog"][0]["module_kind"] == "diagnostic"
-    assert payload["data"]["block_catalog"][0]["output_contract"]["status"] == "ok|error"
+    assert payload["data"]["block_catalog"][0]["output_contract"]["status_values"] == ["ok", "error"]
+    assert payload["data"]["block_catalog"][0]["condition_hints"]["status_path"] == "result.status"
     assert payload["data"]["scenario_templates"][0]["recommended_form_keys"] == ["site_system"]
 
 

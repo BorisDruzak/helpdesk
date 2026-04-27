@@ -6,16 +6,24 @@ from copy import deepcopy
 import re
 from typing import Any
 
-from playbooks.tool_catalog import build_required_tools_manifest, expand_preset_params
+from playbooks.tool_catalog import build_condition_hints, build_required_tools_manifest, expand_preset_params
 
 
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 DIAGNOSTIC_OUTPUT_CONTRACT = {
-    "status": "success|error",
-    "found": "object",
-    "error_code": "string|null",
-    "attachments": "array",
+    "schema_version": "1.0",
+    "status_path": "result.status",
+    "status_values": ["ok", "error"],
+    "success_values": ["ok"],
+    "error_values": ["error"],
+    "summary_path": "result.output.summary",
+    "error_code_path": "result.error.code",
+    "compact_fields": [],
 }
+
+
+def _diagnostic_condition_hints(error_codes: list[str] | None = None) -> dict[str, Any]:
+    return build_condition_hints(DIAGNOSTIC_OUTPUT_CONTRACT, error_codes or [])
 
 DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = [
     {
@@ -29,6 +37,7 @@ DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = [
         "changes_device": False,
         "requires_confirmation": False,
         "output_contract": deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
+        "condition_hints": _diagnostic_condition_hints(),
     },
     {
         "id": "ip_address.get_ip",
@@ -41,6 +50,7 @@ DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = [
         "changes_device": False,
         "requires_confirmation": False,
         "output_contract": deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
+        "condition_hints": _diagnostic_condition_hints(),
     },
     {
         "id": "diag.logs.collect",
@@ -54,8 +64,11 @@ DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = [
         "requires_confirmation": True,
         "output_contract": {
             **deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
-            "attachments": ["logs_bundle"],
+            "compact_fields": [
+                {"path": "result.output.logs_bundle", "label": "logs_bundle", "type": "artifact"}
+            ],
         },
+        "condition_hints": _diagnostic_condition_hints(["LOG_ACCESS_DENIED"]),
     },
 ]
 
