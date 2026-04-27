@@ -3018,7 +3018,6 @@ async def handle_run_module_live_test(request):
                 device_id=device_id,
                 command="run_tool",
                 params={
-                    "ticket_id": f"module-live-test:{module_name}:{version}",
                     "call_id": str(uuid.uuid4()),
                     "tool_name": tool_name,
                     "params": params,

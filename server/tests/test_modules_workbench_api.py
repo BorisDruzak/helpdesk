@@ -787,9 +787,13 @@ async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test
         await session.commit()
 
     calls: list[str] = []
+    run_tool_params: dict | None = None
 
     async def fake_send_ws_command(**kwargs):
+        nonlocal run_tool_params
         calls.append(kwargs["command"])
+        if kwargs["command"] == "run_tool":
+            run_tool_params = dict(kwargs["params"])
         return {
             "status": "success",
             "payload": {
@@ -812,6 +816,9 @@ async def test_module_live_test_records_windows_pass_and_unblocks_preferred(test
     assert live_data["live_test"]["status"] == "passed"
     assert live_data["live_test"]["platform"] == "win32"
     assert calls == ["install_module_package", "run_tool"]
+    assert run_tool_params is not None
+    assert "ticket_id" not in run_tool_params
+    assert run_tool_params["tool_name"] == tool_name
 
     response = await test_client.patch(
         f"/api/modules/{module_name}/preferred",
