@@ -98,6 +98,22 @@ export type AdminDeviceTokensPayload = {
   }>;
 };
 
+export type AdminConnectionPolicy = "reject_all" | "accept_all" | "manual";
+
+export type AdminConnectionRequestItem = {
+  device_id: string;
+  status: string;
+  ip_address: string | null;
+  hostname: string | null;
+  created_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type AdminConnectionRequestsPayload = {
+  connection_requests: AdminConnectionRequestItem[];
+  count: number;
+};
+
 export type AdminRegistryPayload = {
   summary: {
     assets: number;
@@ -216,6 +232,10 @@ type ErrorResponse = {
   error_code?: string;
 };
 
+type OkResponse<T> = {
+  status: "ok";
+} & T;
+
 export class AdminWorkspaceApiError extends Error {
   status: number;
   errorCode?: string;
@@ -247,6 +267,20 @@ async function readSuccessResponse<T>(response: Response, fallbackMessage: strin
     );
   }
   return payload.data;
+}
+
+async function readOkResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await readJson<OkResponse<T> | ErrorResponse>(response);
+  if (!response.ok || !payload || payload.status !== "ok") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new AdminWorkspaceApiError(
+      errorPayload?.error ?? fallbackMessage,
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+  const { status: _status, ...data } = payload;
+  return data as T;
 }
 
 export async function fetchAdminBootstrap(): Promise<AdminBootstrapPayload> {
@@ -317,6 +351,48 @@ export async function revokeAdminDeviceToken(deviceId: string, tokenHash: string
     body: JSON.stringify({ token_hash: tokenHash })
   });
   await readSuccessResponse(response, "Не удалось отозвать токен устройства");
+}
+
+export async function fetchAdminConnectionPolicy(): Promise<{ policy: AdminConnectionPolicy }> {
+  const response = await fetch("/api/admin/connection_policy", {
+    credentials: "same-origin"
+  });
+  return readOkResponse(response, "Не удалось загрузить политику подключения агентов");
+}
+
+export async function updateAdminConnectionPolicy(policy: AdminConnectionPolicy): Promise<{ policy: AdminConnectionPolicy }> {
+  const response = await fetch("/api/admin/connection_policy", {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ policy })
+  });
+  return readOkResponse(response, "Не удалось сохранить политику подключения агентов");
+}
+
+export async function fetchAdminConnectionRequests(): Promise<AdminConnectionRequestsPayload> {
+  const response = await fetch("/api/admin/connection_requests", {
+    credentials: "same-origin"
+  });
+  return readOkResponse(response, "Не удалось загрузить запросы подключения агентов");
+}
+
+export async function approveAdminConnectionRequest(deviceId: string): Promise<void> {
+  const response = await fetch(`/api/admin/connection_requests/${encodeURIComponent(deviceId)}/approve`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  await readOkResponse(response, "Не удалось одобрить подключение агента");
+}
+
+export async function rejectAdminConnectionRequest(deviceId: string): Promise<void> {
+  const response = await fetch(`/api/admin/connection_requests/${encodeURIComponent(deviceId)}/reject`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  await readOkResponse(response, "Не удалось отклонить подключение агента");
 }
 
 export async function fetchAdminRegistry(): Promise<AdminRegistryPayload> {

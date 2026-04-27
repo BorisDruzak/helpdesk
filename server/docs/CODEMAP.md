@@ -273,6 +273,10 @@
 
 - `server/modules/handlers.py` now exposes `GET/POST /api/modules/authoring/*` for headless module creation (`catalog`, `validate`, `publish`) and `POST /api/modules/workbench/validate` in addition to list/detail/save/preferred endpoints, plus `GET/PATCH /api/modules/rollout_settings` for preferred-version auto-rollout policy, `GET /api/modules/{module_name}/{version}/live_test_candidates` for lab-agent selection and `POST /api/modules/{module_name}/{version}/live_tests` for lab-agent module verification.
 - Module validation now records mandatory `validation_json.server_harness`; Windows-targeted versions warn with `WINDOWS_LIVE_TEST_REQUIRED_BEFORE_PREFERRED` and cannot become preferred until `validation_json.live_tests` contains a passed Windows agent run that satisfies the module/tool `min_agent_version`.
+
+## 2026-04-27 React inventory provisioning note
+
+- `/app/admin/inventory` now combines the typed inventory/device-token/rollout data from `GET /api/web/admin/devices*` with the existing manual provisioning endpoints `GET/PATCH /api/admin/connection_policy` and `GET/POST /api/admin/connection_requests*`. The React shell notification bell polls ticket unread count and active connection requests, then deep-links administrators to `/app/admin/inventory?panel=requests` for approve/reject.
 - Module live-test and preferred-gate failures now materialize observer traces (`module_live_test`, `module_preferred_gate`) with spans for lab-agent selection, module install, tool run and gate failure.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
 - `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, output-contract/readiness controls, API preview over headless authoring endpoints, archive/source exploration, and rollout-policy controls in the admin UI.
