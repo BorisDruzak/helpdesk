@@ -2,7 +2,7 @@
 
 ## 2026-04-27 Playbook Low-Code Canvas UI
 
-Status: implementation and local verification completed; live browser verification pending remote release.
+Status: completed and verified on the Linux stand.
 
 ### Goal
 
@@ -26,7 +26,8 @@ Rebuild `/app/admin/playbooks` from a linear block list into a real low-code bui
 ### Verification
 
 - Update the playbook panel unit test for drag/drop and command selection.
-- Run targeted playbook tests, webapp build, `verify_workspace.py`, and a browser check on `http://192.168.100.17:8666/app/admin/playbooks`.
+- Ran targeted playbook tests, webapp build, `verify_workspace.py`, release smoke, and a browser check on `http://192.168.100.17:8666/app/admin/playbooks`.
+- Live browser check published smoke playbook `codex_canvas_smoke_1777297678971` after changing a block command, adding a decision block, dragging a block on the canvas, and saving successfully.
 
 ## 2026-04-27 Self-Healing Automation And Playbook Orchestration
 
