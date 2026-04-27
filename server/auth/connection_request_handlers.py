@@ -9,6 +9,7 @@ HTTP handlers for device connection requests (no-token flow).
 - POST /api/admin/connection_requests/{device_id}/reject — reject (admin)
 """
 import uuid as uuid_lib
+from datetime import datetime, timedelta, timezone
 from aiohttp import web
 from loguru import logger
 
@@ -37,6 +38,7 @@ TOKEN_LIMIT_MESSAGE = (
     "На сервере уже есть 2 активных токена для этого устройства. "
     "Отзовите старый токен в админке или восстановите локальное хранилище токена агента."
 )
+APPROVED_HEARTBEAT_GRACE_SECONDS = 600
 
 
 DEVICE_FINGERPRINT_MISMATCH_CODE = "DEVICE_FINGERPRINT_MISMATCH"
@@ -344,6 +346,19 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 "status": "pending",
                 "message": "Request already pending",
             })
+        latest_request = await repo.get_latest_by_device_id(device_id)
+        if latest_request and latest_request.status == "approved" and latest_request.approved_token_delivered_at is None:
+            approved_at = latest_request.resolved_at or latest_request.created_at
+            recent_approval = False
+            if approved_at:
+                recent_approval = datetime.now(timezone.utc) - approved_at <= timedelta(
+                    seconds=APPROVED_HEARTBEAT_GRACE_SECONDS
+                )
+            if latest_request.approved_token or recent_approval:
+                return web.json_response({
+                    "status": "pending",
+                    "message": "Request already approved; waiting for token delivery",
+                })
         await repo.create_request(
             device_id=device_id,
             ip_address=ip_address or None,

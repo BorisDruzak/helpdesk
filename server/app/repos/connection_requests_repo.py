@@ -134,12 +134,21 @@ class ConnectionRequestsRepo:
         Persists one-time approval token in latest approved request.
         Returns True when token was stored.
         """
-        result = await self.session.execute(
-            update(ConnectionRequest)
+        row = await self.session.execute(
+            select(ConnectionRequest.id)
             .where(
                 ConnectionRequest.device_id == device_id,
                 ConnectionRequest.status == "approved",
             )
+            .order_by(ConnectionRequest.created_at.desc())
+            .limit(1)
+        )
+        request_id = row.scalar_one_or_none()
+        if request_id is None:
+            return False
+        result = await self.session.execute(
+            update(ConnectionRequest)
+            .where(ConnectionRequest.id == request_id)
             .values(
                 approved_token=token,
                 approved_token_delivered_at=None,
@@ -169,7 +178,12 @@ class ConnectionRequestsRepo:
         token = req.approved_token
         await self.session.execute(
             update(ConnectionRequest)
-            .where(ConnectionRequest.id == req.id)
+            .where(
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "approved",
+                ConnectionRequest.approved_token.isnot(None),
+                ConnectionRequest.approved_token_delivered_at.is_(None),
+            )
             .values(approved_token_delivered_at=datetime.now(timezone.utc))
         )
         await self.session.flush()

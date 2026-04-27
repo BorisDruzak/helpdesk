@@ -277,6 +277,7 @@
 ## 2026-04-27 React inventory provisioning note
 
 - `/app/admin/inventory` now combines the typed inventory/device-token/rollout data from `GET /api/web/admin/devices*` with web-session aliases for the existing manual provisioning endpoints: `GET/PATCH /api/web/admin/connection_policy` and `GET/POST /api/web/admin/connection_requests*`. The React shell notification bell polls ticket unread count and active connection requests, then deep-links administrators to `/app/admin/inventory?panel=requests` for approve/reject.
+- Manual connection approval is race-safe in `server/auth/connection_request_handlers.py` and `server/app/repos/connection_requests_repo.py`: a post-approval agent heartbeat no longer creates a second `pending` row, new approval tokens are stored only on the latest approved request, and token consumption marks legacy duplicate approved rows as delivered.
 - Module live-test and preferred-gate failures now materialize observer traces (`module_live_test`, `module_preferred_gate`) with spans for lab-agent selection, module install, tool run and gate failure.
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
 - `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, output-contract/readiness controls, API preview over headless authoring endpoints, archive/source exploration, and rollout-policy controls in the admin UI.

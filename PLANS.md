@@ -1,5 +1,27 @@
 # PLANS.md
 
+## 2026-04-27 Connection Request Duplicate Approval Bug
+
+Status: fixed locally; release verification in progress.
+
+### Findings
+
+- The observer layer did not expose this as a first-class provisioning trace; the useful facts came from `connection_requests`, `agent_tokens` and server runtime audit/logs.
+- Real DB showed duplicate approved rows for the same `device_id` on `Sirius` and `AD-MAIN`.
+- Root cause: while waiting for approval, the agent sends heartbeat `POST /api/connection_request`; if admin approval happens just before that heartbeat, the server no longer sees a `pending` row and created a fresh pending request.
+- Secondary issue: old `set_approval_token` updated every approved row for the same device, so legacy duplicate approved rows could retain an undelivered approval token.
+
+### Fix
+
+- Manual provisioning now treats post-approval heartbeats as "already approved, waiting for token delivery" and does not create a second pending row.
+- New approval tokens are stored only on the latest approved request.
+- Status consumption marks all undelivered approved-token rows for the device as delivered, preventing legacy duplicate rows from returning a token more than once.
+
+### Verification
+
+- Added regression tests for the approval heartbeat race and legacy duplicate approval-token consumption.
+- Ran focused server and agent connection-request tests successfully.
+
 ## 2026-04-27 Playbook Low-Code Canvas UI
 
 Status: completed and verified on the Linux stand.

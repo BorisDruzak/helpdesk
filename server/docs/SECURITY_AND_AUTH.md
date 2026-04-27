@@ -182,7 +182,7 @@
   - выпускает новый agent token;
   - возвращает его прямо в ответе `{"status":"approved","token":...}`;
   - обязательно закрывает все существующие `pending` записи в `connection_requests` для этого `device_id`, чтобы не копились ложные stale-request алерты в техпанели.
-- При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а токен выдаётся только после ручного approve оператором.
+- При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а токен выдаётся только после ручного approve оператором. Heartbeat `POST /api/connection_request`, пришедший после approve, но до `GET /api/connection_request/status`, считается уже ожидающим доставки токена и не создаёт второй `pending`-запрос.
 - При `reject_all` токен не выдаётся, а агент получает `403 CONNECTION_REJECTED`.
 - Если pending-запрос отклонён по причине архивированного устройства, status API должен возвращать `error_code=DEVICE_ARCHIVED`, чтобы агент не сохранял вечный локальный reject-флаг и мог повторить provisioning после административного восстановления устройства.
 

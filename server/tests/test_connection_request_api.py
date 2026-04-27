@@ -7,7 +7,7 @@ Tests for connection request API (device authorization flow).
 - GET /api/admin/connection_requests, POST approve/reject (admin)
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, text
 from app.db.models import ConnectionRequest, Device
@@ -227,6 +227,96 @@ async def test_admin_connection_requests_list_approve_reject(test_client, test_e
     data4 = await r4.json()
     assert data4.get("status") == "approved"
     assert "token" not in data4 or data4.get("message", "").find("delivered") != -1
+
+
+@pytest.mark.asyncio
+async def test_manual_heartbeat_after_approval_does_not_create_second_pending(test_client, test_engine):
+    """Agent heartbeat can race with admin approval; it must not create a second prompt."""
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+
+    initial = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "race-pc"},
+    )
+    assert initial.status == 200
+
+    approved = await test_client.post(
+        f"/api/admin/connection_requests/{device_id}/approve",
+        headers=_admin_headers(),
+        json={},
+    )
+    assert approved.status == 200
+
+    heartbeat = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "race-pc"},
+    )
+    heartbeat_payload = await heartbeat.json()
+
+    assert heartbeat.status == 200
+    assert heartbeat_payload["status"] == "pending"
+
+    async with test_engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                select(ConnectionRequest.status)
+                .where(ConnectionRequest.device_id == device_id)
+                .order_by(ConnectionRequest.created_at.asc())
+            )
+        ).all()
+
+    assert [row.status for row in rows] == ["approved"]
+
+    status = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    status_payload = await status.json()
+    assert status.status == 200
+    assert status_payload["status"] == "approved"
+    assert status_payload["token"]
+
+
+@pytest.mark.asyncio
+async def test_status_consumes_legacy_duplicate_approval_tokens_once(test_client, test_engine):
+    """Pre-fix duplicate approved rows must not deliver multiple tokens."""
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+
+    await test_client.post("/api/connection_request", json={"device_id": device_id, "hostname": "legacy-race"})
+    approved = await test_client.post(
+        f"/api/admin/connection_requests/{device_id}/approve",
+        headers=_admin_headers(),
+        json={},
+    )
+    assert approved.status == 200
+
+    async with get_session() as session:
+        session.add(
+            ConnectionRequest(
+                device_id=device_id,
+                status="approved",
+                ip_address="127.0.0.1",
+                hostname="legacy-race",
+                request_metadata={},
+                created_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+                last_request_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+                resolved_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+                approved_token="legacy-duplicate-token",
+                approved_token_delivered_at=None,
+            )
+        )
+        await session.commit()
+
+    first = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    first_payload = await first.json()
+    assert first.status == 200
+    assert first_payload["status"] == "approved"
+    assert first_payload["token"]
+
+    second = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    second_payload = await second.json()
+    assert second.status == 200
+    assert second_payload["status"] == "approved"
+    assert "token" not in second_payload
 
 
 @pytest.mark.asyncio
