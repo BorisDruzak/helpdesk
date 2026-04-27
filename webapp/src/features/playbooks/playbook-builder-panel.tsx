@@ -32,6 +32,9 @@ function blockFromCatalog(item: AdminPlaybookBlockCatalogItem): AdminPlaybookDra
     module_kind: "diagnostic",
     tool: item.tool,
     label: item.label,
+    preset_id: null,
+    install_policy: item.install_policy ?? (item.install_required ? "lazy" : "preinstalled"),
+    tool_manifest: item,
     params: { ...item.default_params },
     condition: null,
     timeout_sec: null,
@@ -80,6 +83,19 @@ function moveBlock(blocks: AdminPlaybookDraftBlock[], index: number, direction: 
   const [item] = next.splice(index, 1);
   next.splice(nextIndex, 0, item);
   return next;
+}
+
+function stringifyParams(params: Record<string, unknown>): string {
+  return JSON.stringify(params ?? {}, null, 2);
+}
+
+function parseParamsJson(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
 }
 
 export function PlaybookBuilderPanel() {
@@ -234,6 +250,18 @@ export function PlaybookBuilderPanel() {
                         <p className="mt-1 text-xs text-slate-500">
                           {block.tool ?? "Локальный блок"} · {block.module_kind}
                         </p>
+                        {block.tool_manifest ? (
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                            <Badge>{block.tool_manifest.module_name ?? "builtin"}</Badge>
+                            <Badge>{block.install_policy ?? "preinstalled"}</Badge>
+                            {block.tool_manifest.supported_platforms?.length ? (
+                              <Badge>{block.tool_manifest.supported_platforms.join(", ")}</Badge>
+                            ) : null}
+                            {block.tool_manifest.min_agent_version ? (
+                              <Badge>{`agent >= ${block.tool_manifest.min_agent_version}`}</Badge>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -264,6 +292,72 @@ export function PlaybookBuilderPanel() {
                         </Button>
                       </div>
                     </div>
+                    {block.tool_manifest?.presets?.length ? (
+                      <label className="mt-4 block space-y-2 text-sm font-medium text-slate-800">
+                        <span>Preset</span>
+                        <select
+                          className="field-base h-11 w-full px-4 text-sm"
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            const preset = block.tool_manifest?.presets?.find(
+                              (item) => (item.preset_id ?? item.id) === value
+                            );
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    blocks: current.blocks.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? {
+                                            ...item,
+                                            preset_id: value || null,
+                                            params: preset?.params ? { ...preset.params } : {},
+                                          }
+                                        : item
+                                    ),
+                                  }
+                                : current
+                            );
+                          }}
+                          value={block.preset_id ?? ""}
+                        >
+                          <option value="">Manual params</option>
+                          {block.tool_manifest.presets.map((preset) => {
+                            const presetId = preset.preset_id ?? preset.id ?? "";
+                            return (
+                              <option key={presetId} value={presetId}>
+                                {preset.label ?? presetId}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+                    ) : null}
+                    {block.tool ? (
+                      <label className="mt-4 block space-y-2 text-sm font-medium text-slate-800">
+                        <span>Params JSON</span>
+                        <textarea
+                          className="field-base min-h-[110px] w-full resize-y px-4 py-3 font-mono text-xs"
+                          onChange={(event) => {
+                            const parsed = parseParamsJson(event.currentTarget.value);
+                            if (parsed === null) {
+                              return;
+                            }
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    blocks: current.blocks.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, params: parsed } : item
+                                    ),
+                                  }
+                                : current
+                            );
+                          }}
+                          value={stringifyParams(block.params)}
+                        />
+                      </label>
+                    ) : null}
                     {block.type === "decision" ? (
                       <label className="mt-4 block space-y-2 text-sm font-medium text-slate-800">
                         <span>Условие продолжения</span>

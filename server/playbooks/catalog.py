@@ -6,6 +6,8 @@ from copy import deepcopy
 import re
 from typing import Any
 
+from playbooks.tool_catalog import build_required_tools_manifest, expand_preset_params
+
 
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 DIAGNOSTIC_OUTPUT_CONTRACT = {
@@ -129,6 +131,7 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
 
     normalized_blocks: list[dict[str, Any]] = []
     steps: list[dict[str, Any]] = []
+    catalog_by_tool: dict[str, dict[str, Any]] = {}
     for index, raw_block in enumerate(blocks, start=1):
         if not isinstance(raw_block, dict):
             raise ValueError("each block must be an object")
@@ -148,6 +151,15 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
             params = {}
         if not isinstance(params, dict):
             raise ValueError(f"block {block_id!r} params must be an object")
+        preset_id = str(raw_block.get("preset_id") or "").strip() or None
+        tool_manifest = raw_block.get("tool_manifest") if isinstance(raw_block.get("tool_manifest"), dict) else None
+        if tool and tool_manifest:
+            catalog_by_tool[tool] = deepcopy(tool_manifest)
+        if preset_id and tool_manifest:
+            params = expand_preset_params(tool_manifest, preset_id=preset_id, overrides=params)
+        install_policy = str(raw_block.get("install_policy") or "").strip().lower() or None
+        if install_policy and install_policy not in {"lazy", "preinstalled", "required"}:
+            raise ValueError(f"unsupported install_policy: {install_policy}")
 
         step_type = _step_type_for_block(block_type, tool)
         step = {
@@ -171,13 +183,18 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
             "tool": tool,
             "label": str(raw_block.get("label") or block_id).strip(),
             "params": deepcopy(params),
+            "preset_id": preset_id,
+            "install_policy": install_policy or ("lazy" if tool_manifest and tool_manifest.get("install_required") else "preinstalled"),
             "condition": step["if_expr"],
             "timeout_sec": step["timeout_sec"],
             "continue_on_error": step["continue_on_error"],
             "parallel_group": step["parallel_group"],
+            "tool_manifest": deepcopy(tool_manifest) if tool_manifest else None,
         }
         normalized_blocks.append(normalized_block)
         steps.append(step)
+
+    required_tools = build_required_tools_manifest(normalized_blocks, catalog_by_tool)
 
     return {
         "playbook": {
@@ -188,11 +205,11 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
         },
         "version": str(raw.get("version") or "1.0.0").strip() or "1.0.0",
         "manifest": {
-            "schema": "pc_client.playbook.diagnostic.v1",
+            "schema": "pc_client.playbook.self_healing.v2",
             "scenario_class": "diagnostic",
             "blocks": normalized_blocks,
+            "required_tools": required_tools,
             "source": "admin_low_code_builder",
         },
         "steps": steps,
     }
-

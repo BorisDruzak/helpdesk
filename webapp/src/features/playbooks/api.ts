@@ -2,13 +2,32 @@ export type AdminPlaybookBlockCatalogItem = {
   id: string;
   label: string;
   tool: string | null;
+  tool_name?: string | null;
   block_type: string;
   module_kind: "diagnostic" | "remediation";
+  module_name?: string | null;
   description: string;
   default_params: Record<string, unknown>;
   changes_device: boolean;
   requires_confirmation: boolean;
+  requires_consent?: boolean;
   output_contract: Record<string, unknown>;
+  source?: string | null;
+  install_required?: boolean;
+  install_policy?: string | null;
+  supported_platforms?: string[];
+  min_agent_version?: string | null;
+  risk_level?: string | null;
+  params_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  presets?: Array<{
+    preset_id?: string;
+    id?: string;
+    label?: string;
+    description?: string | null;
+    params?: Record<string, unknown>;
+  }>;
+  error_codes?: string[];
 };
 
 export type AdminScenarioTemplateItem = {
@@ -47,6 +66,9 @@ export type AdminPlaybookDraftBlock = {
   module_kind: "diagnostic";
   tool: string | null;
   label: string;
+  preset_id?: string | null;
+  install_policy?: string | null;
+  tool_manifest?: AdminPlaybookBlockCatalogItem | null;
   params: Record<string, unknown>;
   condition?: string | null;
   timeout_sec?: number | null;

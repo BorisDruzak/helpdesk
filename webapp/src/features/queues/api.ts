@@ -205,6 +205,8 @@ export type SupportTicketToolsPayload = {
     presets: Array<{
       preset_id: string;
       label: string;
+      description: string | null;
+      params: Record<string, unknown>;
     }>;
   }>;
 };

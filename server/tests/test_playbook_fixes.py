@@ -105,6 +105,75 @@ class TestOperationsRepoHasPendingListTools:
 
 class TestPlaybookTypedLocalSteps:
     @pytest.mark.asyncio
+    async def test_tool_step_fails_before_enqueue_when_lazy_install_preflight_fails(self, test_engine):
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        device_id = str(uuid.uuid4())
+
+        async with session_maker() as session:
+            playbook = Playbook(
+                key=f"pb_{uuid.uuid4().hex[:8]}",
+                name="Lazy install preflight",
+                domain="diag",
+                owner="tests",
+                archived=False,
+            )
+            session.add(playbook)
+            await session.flush()
+            version = PlaybookVersion(
+                playbook_id=playbook.id,
+                version="1.0.0",
+                manifest_json={},
+                status="published",
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(version)
+            await session.flush()
+            playbook_version_id = version.id
+            session.add(
+                PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key="get_ip",
+                    order_no=10,
+                    type="collect",
+                    tool="ip_address.get_ip",
+                    params_template_json={},
+                )
+            )
+            await session.commit()
+
+        ensure_error = {
+            "status": "error",
+            "error_code": "MODULE_INSTALL_FAILED",
+            "error": "install failed",
+        }
+        with patch("app.services.playbook_engine.config.CAPABILITY_GATE_STRICT", False), \
+             patch("tools.service.ToolExecutionService._ensure_module_installed", AsyncMock(return_value=ensure_error)), \
+             patch("app.services.operation_service.OperationService") as operation_service, \
+             patch("websocket.protocol.enqueue_command_async", AsyncMock()) as enqueue:
+            operation_service.return_value.enqueue_operation = AsyncMock()
+            async with session_maker() as session:
+                run_id, first_operation_id = await playbook_engine.start_run(
+                    session=session,
+                    state=MagicMock(),
+                    playbook_version_id=playbook_version_id,
+                    device_id=device_id,
+                    context_json={},
+                )
+                await session.commit()
+
+        assert first_operation_id is None
+        assert operation_service.return_value.enqueue_operation.await_count == 0
+        assert enqueue.await_count == 0
+
+        async with session_maker() as session:
+            step_run = (
+                await session.execute(select(PlaybookStepRun).where(PlaybookStepRun.playbook_run_id == run_id))
+            ).scalar_one()
+            assert step_run.status == "failed"
+            assert step_run.error_json["code"] == "MODULE_INSTALL_FAILED"
+            assert step_run.error_json["stage"] == "module_install"
+
+    @pytest.mark.asyncio
     async def test_start_run_executes_transform_and_decision_steps_without_operations(self, test_engine):
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         playbook_version_id = None

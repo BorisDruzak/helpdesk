@@ -13,6 +13,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from auth.middleware import require_auth
 from observer.service import ObserverOverlayService
+from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
 from tickets.handlers import (
     RESOLUTION_CONFIRMATION_TEXT,
     _build_resolution_confirmation_request,
@@ -441,8 +442,16 @@ def _normalize_tool_presets(raw_presets: object) -> list[SupportToolPreset]:
         ).strip()
         if not preset_id:
             continue
-        label = str(preset.get("title") or preset.get("name") or preset_id).strip()
-        presets.append(SupportToolPreset(preset_id=preset_id, label=label))
+        label = str(preset.get("label") or preset.get("title") or preset.get("name") or preset_id).strip()
+        params = preset.get("params") if isinstance(preset.get("params"), dict) else {}
+        presets.append(
+            SupportToolPreset(
+                preset_id=preset_id,
+                label=label,
+                description=str(preset.get("description") or "").strip() or None,
+                params=params,
+            )
+        )
     return presets
 
 
@@ -499,6 +508,49 @@ async def _build_support_tools_payload(ticket: object, tool_service: ToolExecuti
         device_id=str(device_id),
         tools=tools,
     )
+
+
+def _find_raw_tool_entry(raw_items: list[object], tool_name: str) -> dict | None:
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        current = str(raw_item.get("tool") or raw_item.get("name") or "").strip()
+        aliases = raw_item.get("aliases") if isinstance(raw_item.get("aliases"), list) else []
+        if current == tool_name or tool_name in aliases:
+            return raw_item
+    return None
+
+
+async def _build_tool_params_for_dispatch(
+    *,
+    tool_service: ToolExecutionService,
+    device_id: str,
+    tool_name: str,
+    params: dict,
+    preset_id: str | None,
+    operation_id: str,
+) -> dict:
+    dispatch_params = {"_operation_id": operation_id}
+    if not preset_id:
+        dispatch_params.update(params)
+        return dispatch_params
+
+    device_tools_raw = await tool_service.get_tools_list(device_id) or []
+    server_tools_raw = await tool_service.get_tools_from_server(device_id) or []
+    raw_tool = _find_raw_tool_entry(device_tools_raw, tool_name)
+    source = "device"
+    if raw_tool is None:
+        raw_tool = _find_raw_tool_entry(server_tools_raw, tool_name)
+        source = "server"
+    if raw_tool is None:
+        dispatch_params.update(params)
+        dispatch_params["preset_id"] = preset_id
+        return dispatch_params
+
+    tool_entry = normalize_tool_catalog_entry(raw_tool, source=source)
+    dispatch_params.update(expand_preset_params(tool_entry, preset_id=preset_id, overrides=params))
+    dispatch_params["preset_id"] = preset_id
+    return dispatch_params
 
 
 async def _build_support_snapshot(request: web.Request, session, ticket, auth_context) -> SupportTicketSnapshot:
@@ -1285,13 +1337,17 @@ async def handle_web_support_run_tool(request: web.Request):
                 )
 
             operation_id = str(uuid.uuid4())
-            params_with_operation = {"_operation_id": operation_id}
-            if preset_id:
-                params_with_operation["preset_id"] = preset_id
-            else:
-                params_with_operation.update(params)
+            tool_service = ToolExecutionService(request.app["state"])
+            params_with_operation = await _build_tool_params_for_dispatch(
+                tool_service=tool_service,
+                device_id=device_id,
+                tool_name=tool_name,
+                params=params,
+                preset_id=preset_id,
+                operation_id=operation_id,
+            )
 
-            result = await ToolExecutionService(request.app["state"]).run_tool(
+            result = await tool_service.run_tool(
                 device_id=device_id,
                 ticket_id=ticket.ticket_id,
                 tool_name=tool_name,

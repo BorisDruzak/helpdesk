@@ -304,6 +304,8 @@ class SupportToolPreset(BaseModel):
 
     preset_id: str
     label: str
+    description: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class SupportToolItem(BaseModel):

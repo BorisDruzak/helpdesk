@@ -303,9 +303,10 @@ function SupportDetailPanel({
       throw new Error("Выберите инструмент из списка.");
     }
     if (selectedPresetId.trim()) {
+      const preset = selectedTool.presets.find((item) => item.preset_id === selectedPresetId.trim());
       return {
         presetId: selectedPresetId.trim(),
-        params: {},
+        params: preset?.params ?? {},
       };
     }
 
@@ -591,7 +592,23 @@ function SupportDetailPanel({
                             <span>Preset</span>
                             <select
                               aria-label="Preset"
-                              onChange={(event) => setSelectedPresetId(event.target.value)}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setSelectedPresetId(value);
+                                const preset = selectedTool.presets.find((item) => item.preset_id === value);
+                                setToolParams(
+                                  preset?.params
+                                    ? Object.fromEntries(
+                                        Object.entries(preset.params).map(([key, paramValue]) => [
+                                          key,
+                                          typeof paramValue === "object"
+                                            ? JSON.stringify(paramValue, null, 2)
+                                            : String(paramValue),
+                                        ])
+                                      )
+                                    : {}
+                                );
+                              }}
                               value={selectedPresetId}
                             >
                               <option value="">Без preset, задать параметры вручную</option>

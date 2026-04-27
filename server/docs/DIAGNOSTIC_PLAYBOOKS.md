@@ -1,5 +1,7 @@
 # Diagnostic playbooks
 
+Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2`. The server stores `required_tools` with module owner, source, install policy, platforms, minimum agent version, schemas, presets and known error codes. Tool-backed playbook steps run the existing module auto-install preflight before `run_tool`; install failures stop the step with `stage=module_install`, while capability gate failures use `stage=capability_gate`. Presets are expanded into concrete params on the server for both support tool launches and playbook steps, so agents receive normal command params.
+
 Дата обновления: 2026-04-26
 
 ## Модель

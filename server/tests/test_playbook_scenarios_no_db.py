@@ -4,6 +4,11 @@ from playbooks.catalog import (
     DIAGNOSTIC_MODULE_CATALOG,
     normalize_playbook_draft,
 )
+from playbooks.tool_catalog import (
+    build_required_tools_manifest,
+    expand_preset_params,
+    normalize_tool_catalog_entry,
+)
 from playbooks.form_triggers import (
     build_ticket_playbook_context,
     collect_ticket_created_playbook_triggers,
@@ -86,6 +91,95 @@ def test_normalize_playbook_draft_keeps_reorderable_conditions_and_report_steps(
     assert normalized["steps"][0]["type"] == "collect"
     assert normalized["steps"][1]["if_expr"] == "steps.collect_identity.status == 'success'"
     assert normalized["steps"][2]["type"] == "report"
+
+
+@pytest.mark.no_db
+def test_tool_catalog_expands_presets_into_concrete_params():
+    tool = normalize_tool_catalog_entry(
+        {
+            "tool": "system.collect",
+            "module": "system",
+            "description": "System snapshot",
+            "spec": {
+                "params_schema": {
+                    "type": "object",
+                    "properties": {
+                        "preset": {"type": "string", "default": "basic"},
+                        "include_ip": {"type": "boolean", "default": False},
+                    },
+                },
+                "presets": [
+                    {
+                        "id": "network",
+                        "name": "Network",
+                        "params": {"preset": "network", "include_ip": True},
+                    }
+                ],
+                "metadata": {
+                    "platforms": ["any"],
+                    "risk_level": "safe_read",
+                    "requires_consent": False,
+                },
+            },
+            "install_required": False,
+        },
+        source="builtin",
+    )
+
+    params = expand_preset_params(tool, preset_id="network", overrides={"include_ip": False})
+
+    assert params == {"preset": "network", "include_ip": False}
+
+
+@pytest.mark.no_db
+def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_policy():
+    catalog_entry = normalize_tool_catalog_entry(
+        {
+            "tool": "ip_address.get_ip",
+            "module": "ip_address",
+            "description": "IP address",
+            "spec": {
+                "params_schema": {},
+                "output_schema": {"type": "object", "properties": {"ip": {"type": "string"}}},
+                "presets": [],
+                "metadata": {
+                    "platforms": ["linux", "win32"],
+                    "risk_level": "safe_read",
+                    "requires_consent": False,
+                },
+                "dependencies": {"min_agent_version": "3.1.0"},
+                "error_codes": ["NETWORK_UNAVAILABLE"],
+            },
+            "install_required": True,
+        },
+        source="server",
+    )
+    normalized = normalize_playbook_draft(
+        {
+            "key": "internet_not_working",
+            "name": "Internet is not working",
+            "blocks": [
+                {
+                    "id": "get_ip",
+                    "type": "diagnostic",
+                    "module_kind": "diagnostic",
+                    "tool": "ip_address.get_ip",
+                    "label": "IP address",
+                    "params": {},
+                    "install_policy": "lazy",
+                    "tool_manifest": catalog_entry,
+                }
+            ],
+        }
+    )
+
+    assert normalized["manifest"]["schema"] == "pc_client.playbook.self_healing.v2"
+    assert normalized["manifest"]["blocks"][0]["install_policy"] == "lazy"
+    assert normalized["manifest"]["required_tools"] == [
+        build_required_tools_manifest([normalized["manifest"]["blocks"][0]], {"ip_address.get_ip": catalog_entry})[0]
+    ]
+    assert normalized["manifest"]["required_tools"][0]["module_name"] == "ip_address"
+    assert normalized["manifest"]["required_tools"][0]["min_agent_version"] == "3.1.0"
 
 
 @pytest.mark.no_db

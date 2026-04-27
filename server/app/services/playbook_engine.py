@@ -20,6 +20,7 @@ from app.services.playbook_capability import check_tool_available
 
 TOOL_BACKED_STEP_TYPES = frozenset({"run_tool", "collect", "enrich", "remediate"})
 LOCAL_STEP_TYPES = frozenset({"transform", "decision", "report"})
+PLAYBOOK_TOOL_ACTOR_ROLE = "support"
 
 
 def _step_type(step: PlaybookStep) -> str:
@@ -89,6 +90,46 @@ async def _execute_local_step(
         error_json=error_payload,
         finished_at=now,
     )
+
+
+async def _fail_tool_step_before_enqueue(
+    repo: PlaybookRepo,
+    run,
+    step: PlaybookStep,
+    *,
+    code: str,
+    message: str,
+    stage: str,
+    input_json: dict | None = None,
+):
+    now = datetime.now(timezone.utc)
+    return await repo.create_step_run(
+        playbook_run_id=run.id,
+        playbook_step_id=step.id,
+        operation_id=None,
+        attempt=1,
+        input_json=input_json or {},
+        status="failed",
+        error_json={"code": code, "message": message, "stage": stage},
+        finished_at=now,
+    )
+
+
+async def _ensure_tool_step_ready(state, run, step: PlaybookStep) -> tuple[bool, str | None, str | None]:
+    from tools.service import ToolExecutionService
+
+    ensure_err = await ToolExecutionService(state)._ensure_module_installed(
+        run.device_id,
+        str(step.tool or ""),
+        auth_context=None,
+    )
+    if ensure_err:
+        return (
+            False,
+            str(ensure_err.get("error_code") or "TOOL_PRECHECK_FAILED"),
+            str(ensure_err.get("error") or "Tool dispatch precheck failed"),
+        )
+    return (True, None, None)
 
 
 def _retry_allowed(step: PlaybookStep, step_run, error_code: Optional[str]) -> bool:
@@ -202,11 +243,34 @@ async def _start_group_steps(
                 break
             continue
         # Этап 9: Capability Gate — проверка до enqueue (отключается CAPABILITY_GATE_STRICT=false)
+        params = _step_params(step, context, prev_steps)
+        ready, err_code, err_msg = await _ensure_tool_step_ready(state, run, step)
+        if not ready:
+            step_run_fail = await _fail_tool_step_before_enqueue(
+                repo,
+                run,
+                step,
+                code=err_code or "TOOL_PRECHECK_FAILED",
+                message=err_msg or "Tool dispatch precheck failed",
+                stage="module_install",
+                input_json=params,
+            )
+            processed_steps += 1
+            await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
+            if getattr(run, "status", None) != "running":
+                break
+            continue
         if config.CAPABILITY_GATE_STRICT:
             ok, err_code, err_msg = await check_tool_available(session, run.device_id, step.tool)
             if not ok:
-                step_run_fail = await repo.create_step_run_failed(
-                    run.id, step.id, err_code or "UNSUPPORTED_CAPABILITY", err_msg or "Tool not available"
+                step_run_fail = await _fail_tool_step_before_enqueue(
+                    repo,
+                    run,
+                    step,
+                    code=err_code or "UNSUPPORTED_CAPABILITY",
+                    message=err_msg or "Tool not available",
+                    stage="capability_gate",
+                    input_json=params,
                 )
                 processed_steps += 1
                 await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
@@ -220,7 +284,7 @@ async def _start_group_steps(
             operation_id=operation_id,
             device_id=run.device_id,
             kind="tool_call",
-            actor_role="system",
+            actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
             trace_id=str(uuid.uuid4()),
             ticket_id=None,
             job_id=None,
@@ -228,7 +292,6 @@ async def _start_group_steps(
             timeout_override_sec=step.timeout_sec,
             playbook_run_id=run.id,
         )
-        params = _step_params(step, context, prev_steps)
         await repo.create_step_run(
             playbook_run_id=run.id,
             playbook_step_id=step.id,
@@ -241,7 +304,7 @@ async def _start_group_steps(
             device_id=run.device_id,
             command="run_tool",
             params={"tool_name": step.tool, "params": params},
-            actor_role="system",
+            actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
             operation_id=operation_id,
             require_online=False,
         )
@@ -445,7 +508,7 @@ async def advance_after_terminal(
                 operation_id=next_operation_id,
                 device_id=run.device_id,
                 kind="tool_call",
-                actor_role="system",
+                actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
                 trace_id=str(uuid.uuid4()),
                 ticket_id=None,
                 job_id=None,
@@ -469,7 +532,7 @@ async def advance_after_terminal(
                 device_id=run.device_id,
                 command="run_tool",
                 params={"tool_name": step.tool, "params": params},
-                actor_role="system",
+                actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
                 operation_id=next_operation_id,
                 require_online=False,
             )

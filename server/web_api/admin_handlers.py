@@ -28,6 +28,8 @@ from config import MODULES_STORAGE_DIR
 from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
+from playbooks.tool_catalog import normalize_tool_catalog_entry
+from tools.service import ToolExecutionService
 from auth.context import AuthContext
 from auth.middleware import require_auth
 from tickets.form_catalog import (
@@ -1857,8 +1859,20 @@ def _next_playbook_version(existing_versions: list[str], requested: str | None) 
     return candidate
 
 
-async def _build_admin_playbooks_payload() -> AdminPlaybookPayload:
+async def _build_admin_playbooks_payload(state: object | None = None) -> AdminPlaybookPayload:
     playbooks: list[AdminPlaybookItem] = []
+    block_catalog: list[dict] = [dict(item) for item in DIAGNOSTIC_MODULE_CATALOG]
+    seen_catalog_tools = {str(item.get("tool") or "") for item in block_catalog if item.get("tool")}
+    try:
+        for raw_tool in await ToolExecutionService(state).get_tools_from_server(None):
+            entry = normalize_tool_catalog_entry(raw_tool, source="server")
+            tool_name = str(entry.get("tool") or "")
+            if not tool_name or tool_name in seen_catalog_tools:
+                continue
+            seen_catalog_tools.add(tool_name)
+            block_catalog.append(entry)
+    except Exception as exc:
+        logger.warning(f"[web_admin_playbooks] failed to load server command catalog: {exc}")
     try:
         async with get_session() as session:
             latest_rows = await session.execute(
@@ -1904,7 +1918,7 @@ async def _build_admin_playbooks_payload() -> AdminPlaybookPayload:
         ),
         block_catalog=[
             AdminPlaybookBlockCatalogItem.model_validate(item)
-            for item in DIAGNOSTIC_MODULE_CATALOG
+            for item in block_catalog
         ],
         scenario_templates=[
             AdminScenarioTemplateItem.model_validate(item)
@@ -2498,8 +2512,13 @@ async def handle_web_admin_forms_route_preview(request: web.Request):
 
 
 @require_auth("admin")
-async def handle_web_admin_playbooks_catalog(_request: web.Request):
-    payload = await _build_admin_playbooks_payload()
+async def handle_web_admin_playbooks_catalog(request: web.Request):
+    try:
+        payload = await _build_admin_playbooks_payload(request.app.get("state"))
+    except TypeError as exc:
+        if "positional" not in str(exc) and "argument" not in str(exc):
+            raise
+        payload = await _build_admin_playbooks_payload()
     return json_model_response(SuccessResponse[AdminPlaybookPayload](data=payload))
 
 

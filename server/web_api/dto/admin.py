@@ -450,13 +450,27 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     id: str
     label: str
     tool: str | None = None
+    tool_name: str | None = None
     block_type: str
     module_kind: str
+    module_name: str | None = None
     description: str
     default_params: dict[str, Any] = Field(default_factory=dict)
     changes_device: bool = False
     requires_confirmation: bool = False
+    requires_consent: bool = False
     output_contract: dict[str, Any] = Field(default_factory=dict)
+    source: str | None = None
+    install_required: bool = False
+    install_policy: str | None = None
+    supported_platforms: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    min_agent_version: str | None = None
+    risk_level: str | None = None
+    params_schema: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] = Field(default_factory=dict)
+    presets: list[dict[str, Any]] = Field(default_factory=list)
+    error_codes: list[str] = Field(default_factory=list)
 
 
 class AdminScenarioTemplateItem(BaseModel):
@@ -507,6 +521,9 @@ class AdminPlaybookDraftBlock(BaseModel):
     module_kind: str = "diagnostic"
     tool: str | None = None
     label: str | None = None
+    preset_id: str | None = None
+    install_policy: str | None = "lazy"
+    tool_manifest: dict[str, Any] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     condition: str | None = None
     timeout_sec: int | None = None
