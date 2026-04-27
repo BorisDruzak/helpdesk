@@ -253,6 +253,9 @@ function buildTraceSearchParams(params: {
   toolName?: string | null;
   moduleName?: string | null;
   errorSignature?: string | null;
+  playbookRunId?: number | null;
+  stepRunId?: number | null;
+  route?: string | null;
 }): string {
   const searchParams = new URLSearchParams();
   if (params.deviceId) {
@@ -294,6 +297,15 @@ function buildTraceSearchParams(params: {
   if (params.errorSignature) {
     searchParams.set("error_signature", params.errorSignature);
   }
+  if (params.playbookRunId && params.playbookRunId > 0) {
+    searchParams.set("playbook_run_id", String(params.playbookRunId));
+  }
+  if (params.stepRunId && params.stepRunId > 0) {
+    searchParams.set("step_run_id", String(params.stepRunId));
+  }
+  if (params.route) {
+    searchParams.set("route", params.route);
+  }
   return searchParams.toString();
 }
 
@@ -311,6 +323,9 @@ export async function fetchObserverWorkbenchTraces(params: {
   rootKindFilter: AdminObserverRootKindFilter;
   limit?: number;
   query?: string | null;
+  playbookRunId?: number | null;
+  stepRunId?: number | null;
+  route?: string | null;
 }): Promise<AdminObserverTracesPayload> {
   return fetchAdminObserverTraces(params);
 }
@@ -347,6 +362,10 @@ export async function fetchObserverDiagnosticsBundle(params: {
   operationId?: string | null;
   deviceId?: string | null;
   query?: string | null;
+  rootKindFilter?: AdminObserverRootKindFilter;
+  playbookRunId?: number | null;
+  stepRunId?: number | null;
+  route?: string | null;
   lookbackHours?: number;
   includeAgentActions?: boolean;
   actionLimit?: number;
@@ -357,6 +376,10 @@ export async function fetchObserverDiagnosticsBundle(params: {
     operationId: params.operationId,
     deviceId: params.deviceId,
     query: params.query,
+    rootKindFilter: params.rootKindFilter,
+    playbookRunId: params.playbookRunId,
+    stepRunId: params.stepRunId,
+    route: params.route,
     lookbackHours: params.lookbackHours,
     limit: 20,
   });

@@ -58,6 +58,17 @@ Ticket-root anchor:
 
 Это техническая опора для полного trace жизненного цикла тикета.
 
+### Coverage Matrix
+
+| Flow | Source row | Target root_kind | Spans | Signatures | Bundle/search |
+| --- | --- | --- | --- | --- | --- |
+| Agent invalid token / handshake auth | `agent_runtime_audit` | `agent_auth` | yes | yes | `q=invalid_token`, `root_kind=agent_auth` |
+| Agent uploaded local telemetry | `agent_observer_events` | `agent_runtime`, `agent_update`, `tool_call`, `module_install` | yes | warning/error only | `device_id`, `trace_id`, `operation_id`, `q=agent.update` |
+| Module reconcile pre-operation failure | `agent_runtime_audit` with `source=module_reconcile` | `module_reconcile` | yes | yes | `q=reconcile`, `root_kind=module_reconcile` |
+| Playbook local/skipped/preflight step | `playbook_run`, `playbook_step_run` | `playbook_run` | yes | failed steps only | `playbook_run_id`, `step_run_id`, `q=MODULE_PRECHECK_FAILED` |
+| Web auth/API boundary failure | rate-limited `agent_runtime_audit` with `source=web_auth` | `web_auth` | yes | yes | `route=/api/...`, `q=AUTH_REQUIRED`, `q=FORBIDDEN` |
+| Observer projector degraded health | bounded `agent_runtime_audit` with `source=observer_runtime` | `observer_runtime` | yes | yes | `root_kind=observer_runtime`, runtime endpoint |
+
 ## 5. Runtime и проекция
 
 Observer runtime:
@@ -90,6 +101,10 @@ Observer runtime:
 - `module_remove`
 - `module_live_test`
 - `module_preferred_gate`
+- `module_reconcile`
+- `playbook_run`
+- `web_auth`
+- `observer_runtime`
 - `ws_delivery`
 - `retry_exhausted`
 
@@ -125,7 +140,7 @@ Ticket-scoped API:
 Codex/live debugging entrypoints:
 
 - `GET /api/admin/tech/observer/search?q=...` correlates by trace, ticket, operation, device, tool, module or signature text and returns matching traces/signatures plus next checks.
-- `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
+- `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `playbook_run_id`, `step_run_id`, `route`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
 - Auth/provisioning debugging should start with `q=connection_request`, `q=invalid_token`, `root_kind=device_provisioning`, or `root_kind=agent_auth`. These queries must find operation-less `agent_runtime_audit` traces and signatures for warning/error events such as `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, and `invalid_token`.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.

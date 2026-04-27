@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.repos import DeviceDesiredModulesRepo, DeviceModulesRepo, ModulesRepo
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.devices_repo import DevicesRepo
 from websocket.protocol import enqueue_command_async
 from config import SERVER_PUBLIC_BASE_URL, MODULES_STORAGE_DIR
@@ -49,6 +50,33 @@ async def reconcile_device(
         actual_repo = DeviceModulesRepo(sess)
         modules_repo = ModulesRepo(sess)
         devices_repo = DevicesRepo(sess)
+        audit_repo = AgentRuntimeAuditRepo(sess)
+
+        async def _write_reconcile_failure(
+            *,
+            module_name: str,
+            desired_version: Optional[str],
+            error_kind: str,
+            message: str,
+            severity: str = "warning",
+            operation_id: Optional[str] = None,
+        ) -> None:
+            await audit_repo.add(
+                device_id=device_id,
+                event_type="module_reconcile_failed",
+                severity=severity,
+                source="module_reconcile",
+                operation_id=operation_id,
+                actor_role="system",
+                details_json={
+                    "module_name": module_name,
+                    "module_version": desired_version,
+                    "stage": "reconcile",
+                    "reason": reason,
+                    "message": message,
+                    "error_kind": error_kind,
+                },
+            )
 
         # Проверяем, что устройство существует
         device = await devices_repo.get_by_device_id(device_id)
@@ -84,6 +112,12 @@ async def reconcile_device(
                         f"[reconcile] desired=installed but no version: "
                         f"device={device_id} module={module_name}, skip"
                     )
+                    await _write_reconcile_failure(
+                        module_name=module_name,
+                        desired_version=desired_version,
+                        error_kind="MODULE_DESIRED_VERSION_MISSING",
+                        message="desired=installed without desired_version",
+                    )
                     stats["skipped"] += 1
                     continue
 
@@ -92,6 +126,12 @@ async def reconcile_device(
                 if not module:
                     logger.warning(
                         f"[reconcile] module {module_name}/{desired_version} not in server registry, skip"
+                    )
+                    await _write_reconcile_failure(
+                        module_name=module_name,
+                        desired_version=desired_version,
+                        error_kind="MODULE_REGISTRY_MISSING",
+                        message="module version is not present in server registry",
                     )
                     stats["skipped"] += 1
                     continue
@@ -103,6 +143,13 @@ async def reconcile_device(
                         f"[reconcile] module archive missing on disk, skip: "
                         f"device={device_id} module={module_name}/{desired_version} "
                         f"storage_path={module.storage_path} full_path={full_path}"
+                    )
+                    await _write_reconcile_failure(
+                        module_name=module_name,
+                        desired_version=desired_version,
+                        error_kind="MODULE_ARCHIVE_MISSING",
+                        message=f"module archive missing: {module.storage_path}",
+                        severity="error",
                     )
                     stats["skipped"] += 1
                     continue
@@ -123,6 +170,12 @@ async def reconcile_device(
                         logger.warning(
                             f"[reconcile] OS mismatch: device={device_id} os={device_os} "
                             f"module={module_name} platforms={allowed}, skip"
+                        )
+                        await _write_reconcile_failure(
+                            module_name=module_name,
+                            desired_version=desired_version,
+                            error_kind="MODULE_PLATFORM_MISMATCH",
+                            message=f"device os {device_os} not in module platforms {allowed}",
                         )
                         stats["skipped"] += 1
                         continue
@@ -156,6 +209,14 @@ async def reconcile_device(
                         f"[reconcile] Failed to enqueue install: device={device_id} "
                         f"module={module_name}@{desired_version}: {e}"
                     )
+                    await _write_reconcile_failure(
+                        module_name=module_name,
+                        desired_version=desired_version,
+                        error_kind="MODULE_RECONCILE_ENQUEUE_FAILED",
+                        message=str(e),
+                        severity="error",
+                        operation_id=operation_id,
+                    )
                     stats["skipped"] += 1
 
             elif desired.state == "absent":
@@ -184,6 +245,14 @@ async def reconcile_device(
                     logger.error(
                         f"[reconcile] Failed to enqueue remove: device={device_id} "
                         f"module={module_name}: {e}"
+                    )
+                    await _write_reconcile_failure(
+                        module_name=module_name,
+                        desired_version=getattr(current_actual, "version", None),
+                        error_kind="MODULE_RECONCILE_ENQUEUE_FAILED",
+                        message=str(e),
+                        severity="error",
+                        operation_id=operation_id,
                     )
                     stats["skipped"] += 1
 

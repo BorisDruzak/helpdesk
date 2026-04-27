@@ -154,6 +154,9 @@ class AdminObserverTracesQuery(BaseModel):
     module_name: str | None = None
     error_signature: str | None = None
     min_duration_ms: int | None = None
+    playbook_run_id: int | None = None
+    step_run_id: int | None = None
+    route: str | None = None
 
 
 class AdminObserverTracesSummary(BaseModel):

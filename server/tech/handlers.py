@@ -1602,6 +1602,9 @@ def _trace_filters_from_request(request: web.Request) -> TraceOverlayFilters:
         min_retry_rate=_parse_query_ratio(request.query.get("min_retry_rate")),
         min_slow_rate=_parse_query_ratio(request.query.get("min_slow_rate")),
         lookback_hours=_parse_query_int(request.query.get("lookback_hours")),
+        playbook_run_id=_parse_query_int(request.query.get("playbook_run_id")),
+        step_run_id=_parse_query_int(request.query.get("step_run_id")),
+        route=_compact_query_value(request.query.get("route")),
     )
 
 

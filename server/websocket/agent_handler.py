@@ -157,6 +157,7 @@ async def websocket_handler(request):
                         "command",
                         "outbox_item",
                         "outbox_items_batch",
+                        "agent_observer_batch",
                     }:
                         await loop_safety_service.handle_unknown_message_type(msg_type, connection_ctx)
                     if route_result == "__continue__":

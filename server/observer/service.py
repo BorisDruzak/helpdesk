@@ -10,11 +10,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
 from weakref import WeakValueDictionary
 
+import sqlalchemy as sa
 from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.db.models import (
+    AgentObserverEvent,
     AgentRuntimeAudit,
     DeviceEvent,
     ObserverErrorOccurrence,
@@ -23,6 +25,9 @@ from app.db.models import (
     ObserverSpanLink,
     ObserverTrace,
     Operation,
+    PlaybookRun,
+    PlaybookStep,
+    PlaybookStepRun,
     Ticket,
     TicketEvent,
     Device,
@@ -37,6 +42,7 @@ ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_c
 ERROR_AUDIT_SEVERITIES = {"error", "critical"}
 PROBLEM_AUDIT_SEVERITIES = ERROR_AUDIT_SEVERITIES | {"warning"}
 RUNTIME_AUDIT_TRACE_PREFIX = "00000000-a075-4a75-8000-"
+PLAYBOOK_RUN_TRACE_PREFIX = "00000000-71a7-4b00-8000-"
 RUNTIME_AUDIT_PROJECTION_WINDOW = timedelta(minutes=15)
 PROVISIONING_AUDIT_EVENTS = {
     "connection_request_created",
@@ -64,10 +70,16 @@ RUNTIME_AUDIT_EVENTS = {
     "agent_disconnect",
     "agent_superseded",
 }
+MODULE_RECONCILE_AUDIT_EVENTS = {"module_reconcile_failed"}
+WEB_AUTH_AUDIT_EVENTS = {"web_auth_failed", "web_auth_forbidden"}
+OBSERVER_RUNTIME_AUDIT_EVENTS = {"observer_runtime_degraded"}
 PROBLEM_AUDIT_EVENTS = (
     PROVISIONING_AUDIT_EVENTS
     | AUTH_AUDIT_EVENTS
     | UPDATE_AUDIT_EVENTS
+    | MODULE_RECONCILE_AUDIT_EVENTS
+    | WEB_AUTH_AUDIT_EVENTS
+    | OBSERVER_RUNTIME_AUDIT_EVENTS
     | {"agent_offline", "agent_disconnect", "agent_superseded"}
 )
 DANGEROUS_ROOT_KINDS = {
@@ -76,7 +88,10 @@ DANGEROUS_ROOT_KINDS = {
     "agent_runtime",
     "device_provisioning",
     "module_install",
+    "module_reconcile",
     "module_remove",
+    "web_auth",
+    "observer_runtime",
     "consent",
 }
 _TRACE_PROJECTION_LOCK_GUARD = asyncio.Lock()
@@ -102,6 +117,9 @@ class TraceOverlayFilters:
     min_retry_rate: Optional[float] = None
     min_slow_rate: Optional[float] = None
     lookback_hours: Optional[int] = None
+    playbook_run_id: Optional[int] = None
+    step_run_id: Optional[int] = None
+    route: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -110,11 +128,23 @@ class TraceProjectionSources:
     ticket_events: list[TicketEvent]
     device_events: list[DeviceEvent]
     runtime_audits: list[AgentRuntimeAudit]
+    agent_events: list[AgentObserverEvent]
+    playbook_run: Optional[PlaybookRun] = None
+    playbook_step_runs: list[tuple[PlaybookStepRun, PlaybookStep]] | None = None
     root_ticket: Optional[Ticket] = None
 
     @property
     def empty(self) -> bool:
-        return not any((self.operations, self.ticket_events, self.device_events, self.runtime_audits, self.root_ticket))
+        return not any((
+            self.operations,
+            self.ticket_events,
+            self.device_events,
+            self.runtime_audits,
+            self.agent_events,
+            self.playbook_run,
+            self.playbook_step_runs,
+            self.root_ticket,
+        ))
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -204,6 +234,33 @@ def _runtime_audit_id_from_trace_id(trace_id: str) -> Optional[int]:
         return None
 
 
+def _playbook_run_trace_id(playbook_run_id: Optional[int]) -> Optional[str]:
+    if playbook_run_id is None:
+        return None
+    try:
+        value = int(playbook_run_id)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    if value <= 0xFFFFFFFFFFFF:
+        return f"{PLAYBOOK_RUN_TRACE_PREFIX}{value:012x}"
+    return str(uuid.uuid5(OBSERVER_NAMESPACE, f"playbook_run:{value}"))
+
+
+def _playbook_run_id_from_trace_id(trace_id: str) -> Optional[int]:
+    value = str(trace_id or "").strip().lower()
+    if not value.startswith(PLAYBOOK_RUN_TRACE_PREFIX):
+        return None
+    suffix = value[len(PLAYBOOK_RUN_TRACE_PREFIX):]
+    if len(suffix) != 12:
+        return None
+    try:
+        return int(suffix, 16)
+    except ValueError:
+        return None
+
+
 def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
     event_type = str(audit.event_type or "").strip().lower()
     source = str(audit.source or "").strip().lower()
@@ -213,6 +270,12 @@ def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
         return "device_provisioning"
     if event_type in AUTH_AUDIT_EVENTS or source == "handshake":
         return "agent_auth"
+    if event_type in MODULE_RECONCILE_AUDIT_EVENTS or source == "module_reconcile":
+        return "module_reconcile"
+    if event_type in WEB_AUTH_AUDIT_EVENTS or source == "web_auth":
+        return "web_auth"
+    if event_type in OBSERVER_RUNTIME_AUDIT_EVENTS or source == "observer_runtime":
+        return "observer_runtime"
     if event_type in RUNTIME_AUDIT_EVENTS:
         return "agent_runtime"
     return "agent_runtime"
@@ -220,7 +283,7 @@ def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
 
 def _runtime_root_kind_from_audits(audits: Iterable[AgentRuntimeAudit]) -> str:
     kinds = [_runtime_audit_root_kind(audit) for audit in audits]
-    for preferred in ("agent_update", "device_provisioning", "agent_auth", "agent_runtime"):
+    for preferred in ("agent_update", "module_reconcile", "web_auth", "observer_runtime", "device_provisioning", "agent_auth", "agent_runtime"):
         if preferred in kinds:
             return preferred
     return "trace"
@@ -270,6 +333,17 @@ def _span_status_from_severity(severity: Optional[str]) -> str:
         return "error"
     if key == "warning":
         return "warning"
+    return "ok"
+
+
+def _span_status_from_playbook_status(status: Optional[str]) -> str:
+    key = str(status or "").strip().lower()
+    if key in {"failed", "error", "timed_out"}:
+        return "error"
+    if key in {"running", "pending"}:
+        return "running"
+    if key == "skipped":
+        return "skipped"
     return "ok"
 
 
@@ -348,6 +422,27 @@ class ObserverOverlayService:
             stmt = stmt.where(ObserverTrace.device_id == filters.device_id)
         if filters.root_kind:
             stmt = stmt.where(ObserverTrace.root_kind == filters.root_kind)
+        if filters.playbook_run_id:
+            stmt = stmt.where(ObserverTrace.attrs_json["playbook_run_id"].astext == str(filters.playbook_run_id))
+        if filters.step_run_id:
+            stmt = stmt.where(
+                exists(
+                    select(ObserverSpan.span_id).where(
+                        ObserverSpan.trace_id == ObserverTrace.trace_id,
+                        ObserverSpan.attrs_json["playbook_step_run_id"].astext == str(filters.step_run_id),
+                    )
+                )
+            )
+        if filters.route:
+            route_pattern = f"%{filters.route}%"
+            stmt = stmt.where(
+                exists(
+                    select(ObserverSpan.span_id).where(
+                        ObserverSpan.trace_id == ObserverTrace.trace_id,
+                        ObserverSpan.attrs_json.cast(sa.Text).ilike(route_pattern),
+                    )
+                )
+            )
         if filters.status:
             stmt = stmt.where(ObserverTrace.status == filters.status)
         if filters.query:
@@ -1114,6 +1209,17 @@ class ObserverOverlayService:
         if filters.ticket_id:
             _remember([await self._load_ticket_root_trace_id(filters.ticket_id)])
 
+        if filters.playbook_run_id and filters.root_kind in (None, "playbook_run"):
+            _remember([_playbook_run_trace_id(filters.playbook_run_id)])
+
+        if filters.step_run_id and filters.root_kind in (None, "playbook_run"):
+            step_run_row = (
+                await self.session.execute(
+                    select(PlaybookStepRun.playbook_run_id).where(PlaybookStepRun.id == filters.step_run_id).limit(1)
+                )
+            ).scalar_one_or_none()
+            _remember([_playbook_run_trace_id(step_run_row)])
+
         if filters.query:
             query = _compact_text(filters.query)
             if query:
@@ -1190,6 +1296,7 @@ class ObserverOverlayService:
                             AgentRuntimeAudit.event_type.ilike(pattern),
                             AgentRuntimeAudit.source.ilike(pattern),
                             AgentRuntimeAudit.severity.ilike(pattern),
+                            AgentRuntimeAudit.details_json.cast(sa.Text).ilike(pattern),
                         )
                     )
                     .order_by(AgentRuntimeAudit.created_at.desc(), AgentRuntimeAudit.id.desc())
@@ -1197,6 +1304,65 @@ class ObserverOverlayService:
                 )
                 runtime_query_rows = (await self.session.execute(runtime_query_stmt)).scalars().all()
                 _remember(await self._trace_ids_for_runtime_audits(runtime_query_rows))
+
+                agent_event_query_stmt = (
+                    select(AgentObserverEvent.trace_id)
+                    .where(
+                        AgentObserverEvent.trace_id.isnot(None),
+                        or_(
+                            AgentObserverEvent.device_id == query,
+                            AgentObserverEvent.trace_id == query,
+                            AgentObserverEvent.operation_id == query,
+                            AgentObserverEvent.ticket_id == query,
+                            AgentObserverEvent.event_id.ilike(pattern),
+                            AgentObserverEvent.event_type.ilike(pattern),
+                            AgentObserverEvent.component.ilike(pattern),
+                            AgentObserverEvent.stage.ilike(pattern),
+                            AgentObserverEvent.status.ilike(pattern),
+                            AgentObserverEvent.root_kind.ilike(pattern),
+                            AgentObserverEvent.tool_name.ilike(pattern),
+                            AgentObserverEvent.module_name.ilike(pattern),
+                            AgentObserverEvent.attrs_json.cast(sa.Text).ilike(pattern),
+                        ),
+                    )
+                    .order_by(AgentObserverEvent.created_at.desc(), AgentObserverEvent.id.desc())
+                    .limit(limit)
+                )
+                _remember((await self.session.execute(agent_event_query_stmt)).scalars().all())
+
+                if filters.root_kind in (None, "playbook_run"):
+                    playbook_query_stmt = (
+                        select(PlaybookRun.id)
+                        .join(PlaybookStepRun, PlaybookStepRun.playbook_run_id == PlaybookRun.id, isouter=True)
+                        .join(PlaybookStep, PlaybookStepRun.playbook_step_id == PlaybookStep.id, isouter=True)
+                        .where(
+                            or_(
+                                sa.cast(PlaybookRun.id, sa.Text).ilike(pattern),
+                                PlaybookRun.device_id == query,
+                                PlaybookRun.status.ilike(pattern),
+                                PlaybookRun.trigger_type.ilike(pattern),
+                                PlaybookRun.error_code.ilike(pattern),
+                                PlaybookRun.error_message.ilike(pattern),
+                                PlaybookRun.context_json.cast(sa.Text).ilike(pattern),
+                                sa.cast(PlaybookStepRun.id, sa.Text).ilike(pattern),
+                                PlaybookStepRun.status.ilike(pattern),
+                                PlaybookStepRun.operation_id == query,
+                                PlaybookStepRun.input_json.cast(sa.Text).ilike(pattern),
+                                PlaybookStepRun.output_json.cast(sa.Text).ilike(pattern),
+                                PlaybookStepRun.error_json.cast(sa.Text).ilike(pattern),
+                                PlaybookStep.step_key.ilike(pattern),
+                                PlaybookStep.type.ilike(pattern),
+                                PlaybookStep.tool.ilike(pattern),
+                            )
+                        )
+                        .group_by(PlaybookRun.id)
+                        .order_by(func.max(PlaybookRun.scheduled_at).desc())
+                        .limit(limit)
+                    )
+                    _remember([
+                        _playbook_run_trace_id(item)
+                        for item in (await self.session.execute(playbook_query_stmt)).scalars().all()
+                    ])
 
         if filters.root_kind in (None, "ticket"):
             ticket_root_stmt = select(Ticket.observer_root_trace_id).where(Ticket.observer_root_trace_id.isnot(None))
@@ -1254,6 +1420,8 @@ class ObserverOverlayService:
                 runtime_filters.append(AgentRuntimeAudit.device_id == filters.device_id)
             if filters.status:
                 runtime_filters.append(AgentRuntimeAudit.severity == filters.status)
+            if filters.route:
+                runtime_filters.append(AgentRuntimeAudit.details_json["route"].astext == filters.route)
             if filters.lookback_hours:
                 window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
                 runtime_filters.append(AgentRuntimeAudit.created_at >= window_start)
@@ -1268,6 +1436,53 @@ class ObserverOverlayService:
                     if _runtime_audit_root_kind(row) == filters.root_kind
                 ]
             _remember(await self._trace_ids_for_runtime_audits(runtime_rows))
+
+        if len(candidates) < limit:
+            agent_event_stmt = select(AgentObserverEvent.trace_id).where(AgentObserverEvent.trace_id.isnot(None))
+            if filters.ticket_id:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.ticket_id == filters.ticket_id)
+            if filters.operation_id:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.operation_id == filters.operation_id)
+            if filters.device_id:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.device_id == filters.device_id)
+            if filters.status:
+                agent_event_stmt = agent_event_stmt.where(
+                    or_(AgentObserverEvent.severity == filters.status, AgentObserverEvent.status == filters.status)
+                )
+            if filters.root_kind:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.root_kind == filters.root_kind)
+            if filters.tool_name:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.tool_name == filters.tool_name)
+            if filters.module_name:
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.module_name == filters.module_name)
+            if filters.lookback_hours:
+                window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
+                agent_event_stmt = agent_event_stmt.where(AgentObserverEvent.created_at >= window_start)
+            agent_event_stmt = agent_event_stmt.order_by(AgentObserverEvent.created_at.desc(), AgentObserverEvent.id.desc()).limit(limit)
+            _remember((await self.session.execute(agent_event_stmt)).scalars().all())
+
+        if len(candidates) < limit and filters.root_kind in (None, "playbook_run"):
+            playbook_stmt = select(PlaybookRun.id)
+            if filters.playbook_run_id:
+                playbook_stmt = playbook_stmt.where(PlaybookRun.id == filters.playbook_run_id)
+            if filters.device_id:
+                playbook_stmt = playbook_stmt.where(PlaybookRun.device_id == filters.device_id)
+            if filters.status:
+                playbook_stmt = playbook_stmt.where(PlaybookRun.status == filters.status)
+            if filters.lookback_hours:
+                window_start = datetime.now(timezone.utc) - timedelta(hours=max(int(filters.lookback_hours), 1))
+                playbook_stmt = playbook_stmt.where(
+                    or_(PlaybookRun.scheduled_at >= window_start, PlaybookRun.finished_at >= window_start)
+                )
+            if filters.step_run_id:
+                playbook_stmt = playbook_stmt.join(PlaybookStepRun, PlaybookStepRun.playbook_run_id == PlaybookRun.id).where(
+                    PlaybookStepRun.id == filters.step_run_id
+                )
+            playbook_stmt = playbook_stmt.order_by(PlaybookRun.scheduled_at.desc(), PlaybookRun.id.desc()).limit(limit)
+            _remember([
+                _playbook_run_trace_id(item)
+                for item in (await self.session.execute(playbook_stmt)).scalars().all()
+            ])
 
         if not candidates:
             recent_stmt = (
@@ -1353,6 +1568,12 @@ class ObserverOverlayService:
         if root_ticket is not None:
             return await self._collect_ticket_root_sources(trace_id, root_ticket)
 
+        playbook_run_id = _playbook_run_id_from_trace_id(trace_id)
+        if playbook_run_id is not None:
+            playbook_sources = await self._collect_playbook_run_sources(playbook_run_id)
+            if not playbook_sources.empty:
+                return playbook_sources
+
         operations = (
             await self.session.execute(select(Operation).where(Operation.trace_id == trace_id).order_by(Operation.queued_at.asc()))
         ).scalars().all()
@@ -1368,6 +1589,7 @@ class ObserverOverlayService:
         ).scalars().all()
 
         runtime_audits: list[AgentRuntimeAudit] = []
+        agent_events: list[AgentObserverEvent] = []
         operation_ids = [item.operation_id for item in operations if item.operation_id]
         if operation_ids:
             runtime_audits = (
@@ -1377,8 +1599,23 @@ class ObserverOverlayService:
                     .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
                 )
             ).scalars().all()
+            agent_events = (
+                await self.session.execute(
+                    select(AgentObserverEvent)
+                    .where(or_(AgentObserverEvent.trace_id == trace_id, AgentObserverEvent.operation_id.in_(operation_ids)))
+                    .order_by(AgentObserverEvent.created_at.asc(), AgentObserverEvent.id.asc())
+                )
+            ).scalars().all()
+        else:
+            agent_events = (
+                await self.session.execute(
+                    select(AgentObserverEvent)
+                    .where(AgentObserverEvent.trace_id == trace_id)
+                    .order_by(AgentObserverEvent.created_at.asc(), AgentObserverEvent.id.asc())
+                )
+            ).scalars().all()
 
-        if not any((operations, ticket_events, device_events, runtime_audits)):
+        if not any((operations, ticket_events, device_events, runtime_audits, agent_events)):
             runtime_audits = await self._collect_runtime_audit_trace_sources(trace_id)
 
         return TraceProjectionSources(
@@ -1386,6 +1623,55 @@ class ObserverOverlayService:
             ticket_events=list(ticket_events),
             device_events=list(device_events),
             runtime_audits=list(runtime_audits),
+            agent_events=list(agent_events),
+        )
+
+    async def _collect_playbook_run_sources(self, playbook_run_id: int) -> TraceProjectionSources:
+        playbook_run = await self.session.get(PlaybookRun, playbook_run_id)
+        if playbook_run is None:
+            return TraceProjectionSources([], [], [], [], [])
+
+        step_rows = (
+            await self.session.execute(
+                select(PlaybookStepRun, PlaybookStep)
+                .join(PlaybookStep, PlaybookStepRun.playbook_step_id == PlaybookStep.id)
+                .where(PlaybookStepRun.playbook_run_id == playbook_run_id)
+                .order_by(PlaybookStepRun.id.asc())
+            )
+        ).all()
+        operations = (
+            await self.session.execute(
+                select(Operation)
+                .where(Operation.playbook_run_id == playbook_run_id)
+                .order_by(Operation.queued_at.asc(), Operation.operation_id.asc())
+            )
+        ).scalars().all()
+        operation_ids = [item.operation_id for item in operations if item.operation_id]
+        runtime_audits: list[AgentRuntimeAudit] = []
+        agent_events: list[AgentObserverEvent] = []
+        if operation_ids:
+            runtime_audits = (
+                await self.session.execute(
+                    select(AgentRuntimeAudit)
+                    .where(AgentRuntimeAudit.operation_id.in_(operation_ids))
+                    .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
+                )
+            ).scalars().all()
+            agent_events = (
+                await self.session.execute(
+                    select(AgentObserverEvent)
+                    .where(AgentObserverEvent.operation_id.in_(operation_ids))
+                    .order_by(AgentObserverEvent.created_at.asc(), AgentObserverEvent.id.asc())
+                )
+            ).scalars().all()
+        return TraceProjectionSources(
+            operations=list(operations),
+            ticket_events=[],
+            device_events=[],
+            runtime_audits=list(runtime_audits),
+            agent_events=list(agent_events),
+            playbook_run=playbook_run,
+            playbook_step_runs=[(row[0], row[1]) for row in step_rows],
         )
 
     async def _collect_ticket_root_sources(self, trace_id: str, ticket: Ticket) -> TraceProjectionSources:
@@ -1407,6 +1693,7 @@ class ObserverOverlayService:
         operation_ids = [item.operation_id for item in operations if item.operation_id]
         device_events: list[DeviceEvent] = []
         runtime_audits: list[AgentRuntimeAudit] = []
+        agent_events: list[AgentObserverEvent] = []
         if operation_ids:
             device_events = (
                 await self.session.execute(
@@ -1420,6 +1707,13 @@ class ObserverOverlayService:
                     select(AgentRuntimeAudit)
                     .where(or_(AgentRuntimeAudit.operation_id.in_(operation_ids), AgentRuntimeAudit.ticket_id == ticket.ticket_id))
                     .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
+                )
+            ).scalars().all()
+            agent_events = (
+                await self.session.execute(
+                    select(AgentObserverEvent)
+                    .where(or_(AgentObserverEvent.operation_id.in_(operation_ids), AgentObserverEvent.ticket_id == ticket.ticket_id))
+                    .order_by(AgentObserverEvent.created_at.asc(), AgentObserverEvent.id.asc())
                 )
             ).scalars().all()
         else:
@@ -1437,12 +1731,20 @@ class ObserverOverlayService:
                     .order_by(AgentRuntimeAudit.created_at.asc(), AgentRuntimeAudit.id.asc())
                 )
             ).scalars().all()
+            agent_events = (
+                await self.session.execute(
+                    select(AgentObserverEvent)
+                    .where(AgentObserverEvent.ticket_id == ticket.ticket_id)
+                    .order_by(AgentObserverEvent.created_at.asc(), AgentObserverEvent.id.asc())
+                )
+            ).scalars().all()
 
         return TraceProjectionSources(
             operations=list(operations),
             ticket_events=list(ticket_events),
             device_events=list(device_events),
             runtime_audits=list(runtime_audits),
+            agent_events=list(agent_events),
             root_ticket=ticket,
         )
 
@@ -1574,6 +1876,23 @@ class ObserverOverlayService:
             *[item.created_at for item in sources.ticket_events if item.created_at],
             *[item.created_at for item in sources.device_events if item.created_at],
             *[item.created_at for item in sources.runtime_audits if item.created_at],
+            *[item.created_at for item in sources.agent_events if item.created_at],
+            *[item.received_at for item in sources.agent_events if item.received_at],
+            *[
+                timestamp
+                for timestamp in (
+                    getattr(sources.playbook_run, "scheduled_at", None),
+                    getattr(sources.playbook_run, "started_at", None),
+                    getattr(sources.playbook_run, "finished_at", None),
+                )
+                if timestamp
+            ],
+            *[
+                timestamp
+                for step_run, _step in (sources.playbook_step_runs or [])
+                for timestamp in (step_run.started_at, step_run.finished_at)
+                if timestamp
+            ],
         ]
         return max(candidates) if candidates else None
 
@@ -1606,10 +1925,13 @@ class ObserverOverlayService:
             primary_operation.ticket_id if primary_operation else next((item.ticket_id for item in sources.ticket_events), None)
         )
         primary_device = root_ticket.device_id if root_ticket else (
-            primary_operation.device_id if primary_operation else next(
-            (item.device_id for item in [*sources.ticket_events, *sources.device_events, *sources.runtime_audits] if getattr(item, "device_id", None)),
-            None,
-        ))
+            sources.playbook_run.device_id if sources.playbook_run is not None else (
+                primary_operation.device_id if primary_operation else next(
+                    (item.device_id for item in [*sources.ticket_events, *sources.device_events, *sources.runtime_audits, *sources.agent_events] if getattr(item, "device_id", None)),
+                    None,
+                )
+            )
+        )
         primary_job_id = primary_operation.job_id if primary_operation else None
         root_span_id = None
 
@@ -1637,6 +1959,39 @@ class ObserverOverlayService:
                         "ticket_code": root_ticket.ticket_code,
                         "ticket_status": root_ticket.status,
                         "observer_root_trace_id": root_ticket.observer_root_trace_id,
+                    },
+                }
+            )
+
+        if sources.playbook_run is not None:
+            playbook_run = sources.playbook_run
+            root_span_id = _trace_scoped_uuid(trace_id, f"playbook_run:{playbook_run.id}")
+            payloads.append(
+                {
+                    "span_id": root_span_id,
+                    "trace_id": trace_id,
+                    "parent_span_id": None,
+                    "source_type": "playbook_run",
+                    "source_ref": str(playbook_run.id),
+                    "name": "playbook.run",
+                    "kind": "internal",
+                    "component": "playbook",
+                    "event_type": playbook_run.status,
+                    "module_name": None,
+                    "tool_name": None,
+                    "status": _span_status_from_playbook_status(playbook_run.status),
+                    "started_at": playbook_run.started_at or playbook_run.scheduled_at,
+                    "finished_at": playbook_run.finished_at,
+                    "duration_ms": _duration_ms(playbook_run.started_at or playbook_run.scheduled_at, playbook_run.finished_at),
+                    "attrs_json": {
+                        "playbook_run_id": playbook_run.id,
+                        "playbook_version_id": playbook_run.playbook_version_id,
+                        "device_id": playbook_run.device_id,
+                        "trigger_type": playbook_run.trigger_type,
+                        "status": playbook_run.status,
+                        "error_code": playbook_run.error_code,
+                        "error_message": playbook_run.error_message,
+                        "context_json": redact_sensitive_payload(playbook_run.context_json or {}),
                     },
                 }
             )
@@ -1680,6 +2035,58 @@ class ObserverOverlayService:
                 }
             )
             payloads.extend(self._build_operation_stage_spans(trace_id, operation, span_id))
+
+        for step_run, step in (sources.playbook_step_runs or []):
+            linked_operation_span_id = operation_span_ids.get(step_run.operation_id or "")
+            span_id = _trace_scoped_uuid(trace_id, f"playbook_step_run:{step_run.id}")
+            module_name, tool_name = _split_tool_name(step.tool)
+            redacted_input = redact_sensitive_payload(step_run.input_json or {})
+            redacted_output = redact_sensitive_payload(step_run.output_json or {})
+            redacted_error = redact_sensitive_payload(step_run.error_json or {})
+            payloads.append(
+                {
+                    "span_id": span_id,
+                    "trace_id": trace_id,
+                    "parent_span_id": root_span_id,
+                    "source_type": "playbook_step_run",
+                    "source_ref": str(step_run.id),
+                    "name": f"playbook.step.{step.step_key}",
+                    "kind": "internal",
+                    "component": "playbook",
+                    "event_type": step_run.status,
+                    "module_name": module_name,
+                    "tool_name": tool_name,
+                    "status": _span_status_from_playbook_status(step_run.status),
+                    "started_at": step_run.started_at,
+                    "finished_at": step_run.finished_at,
+                    "duration_ms": _duration_ms(step_run.started_at, step_run.finished_at),
+                    "attrs_json": {
+                        "playbook_run_id": step_run.playbook_run_id,
+                        "playbook_step_run_id": step_run.id,
+                        "playbook_step_id": step.id,
+                        "step_key": step.step_key,
+                        "step_type": step.type,
+                        "operation_id": step_run.operation_id,
+                        "attempt": step_run.attempt,
+                        "input_json": redacted_input,
+                        "output_json": redacted_output,
+                        "error_json": redacted_error,
+                    },
+                }
+            )
+            if linked_operation_span_id:
+                links.append(
+                    {
+                        "span_id": span_id,
+                        "linked_trace_id": trace_id,
+                        "linked_span_id": linked_operation_span_id,
+                        "reason": "playbook_step_operation",
+                        "attrs_json": {
+                            "operation_id": step_run.operation_id,
+                            "playbook_step_run_id": step_run.id,
+                        },
+                    }
+                )
 
         if root_span_id is None:
             root_span_id = operation_span_ids.get(primary_operation.operation_id) if primary_operation else None
@@ -1788,12 +2195,73 @@ class ObserverOverlayService:
             if root_span_id is None:
                 root_span_id = span_id
 
+        for event in sources.agent_events:
+            linked_operation_span_id = operation_span_ids.get(event.operation_id or "")
+            span_id = _trace_scoped_uuid(trace_id, f"agent_observer_event:{event.id}")
+            attrs = redact_sensitive_payload(event.attrs_json or {})
+            payloads.append(
+                {
+                    "span_id": span_id,
+                    "trace_id": trace_id,
+                    "parent_span_id": linked_operation_span_id or root_span_id,
+                    "source_type": "agent_observer_event",
+                    "source_ref": str(event.id),
+                    "name": f"agent.telemetry.{event.event_type}",
+                    "kind": "event",
+                    "component": event.component or "agent",
+                    "event_type": event.event_type,
+                    "module_name": event.module_name,
+                    "tool_name": event.tool_name,
+                    "status": _span_status_from_severity(event.severity) if not event.status else _span_status_from_severity(event.severity),
+                    "started_at": event.started_at or event.created_at,
+                    "finished_at": event.finished_at or event.created_at,
+                    "duration_ms": event.duration_ms or _duration_ms(event.started_at, event.finished_at),
+                    "attrs_json": {
+                        "agent_observer_event_id": event.id,
+                        "event_id": event.event_id,
+                        "severity": event.severity,
+                        "stage": event.stage,
+                        "status": event.status,
+                        "root_kind": event.root_kind,
+                        "attrs_json": attrs,
+                    },
+                }
+            )
+            if linked_operation_span_id:
+                links.append(
+                    {
+                        "span_id": span_id,
+                        "linked_trace_id": trace_id,
+                        "linked_span_id": linked_operation_span_id,
+                        "reason": "operation_id_bridge",
+                        "attrs_json": {"operation_id": event.operation_id},
+                    }
+                )
+            if root_span_id is None:
+                root_span_id = span_id
+
         all_times = [
             *([root_ticket.created_at] if root_ticket and root_ticket.created_at else []),
             *[item.queued_at for item in sources.operations if item.queued_at],
             *[item.created_at for item in sources.ticket_events],
             *[item.created_at for item in sources.device_events],
             *[item.created_at for item in sources.runtime_audits],
+            *[item.created_at for item in sources.agent_events],
+            *[
+                timestamp
+                for timestamp in (
+                    getattr(sources.playbook_run, "scheduled_at", None),
+                    getattr(sources.playbook_run, "started_at", None),
+                    getattr(sources.playbook_run, "finished_at", None),
+                )
+                if timestamp
+            ],
+            *[
+                timestamp
+                for step_run, _step in (sources.playbook_step_runs or [])
+                for timestamp in (step_run.started_at, step_run.finished_at)
+                if timestamp
+            ],
         ]
         started_at = min(all_times)
         trace_status = self._summarize_trace_status(sources)
@@ -1812,6 +2280,13 @@ class ObserverOverlayService:
                 *[item.created_at for item in sources.ticket_events],
                 *[item.created_at for item in sources.device_events],
                 *[item.created_at for item in sources.runtime_audits],
+                *[item.created_at for item in sources.agent_events],
+                *[
+                    timestamp
+                    for timestamp in (getattr(sources.playbook_run, "finished_at", None),)
+                    if timestamp
+                ],
+                *[step_run.finished_at for step_run, _step in (sources.playbook_step_runs or []) if step_run.finished_at],
             ]
             finished_at = max(terminal_times) if terminal_times else None
 
@@ -1822,6 +2297,8 @@ class ObserverOverlayService:
                 "ticket_events": len(sources.ticket_events),
                 "device_events": len(sources.device_events),
                 "agent_runtime_audit": len(sources.runtime_audits),
+                "agent_observer_events": len(sources.agent_events),
+                "playbook_step_runs": len(sources.playbook_step_runs or []),
             },
             "operation_count": len(sources.operations),
             "max_retry_count": max((int(item.retry_count or 0) for item in sources.operations), default=0),
@@ -1834,11 +2311,20 @@ class ObserverOverlayService:
                         *[(item.payload or {}).get("tool_name") for item in sources.ticket_events],
                         *[(item.payload or {}).get("tool_name") for item in sources.device_events],
                         *[(item.details_json or {}).get("tool_name") for item in sources.runtime_audits],
+                        *[item.tool_name for item in sources.agent_events],
                     ]
                     if value
                 }
             ),
         }
+        if sources.agent_events:
+            attrs_json["agent_event_types"] = sorted(
+                {
+                    str(item.event_type or "").strip()
+                    for item in sources.agent_events
+                    if str(item.event_type or "").strip()
+                }
+            )
         if sources.runtime_audits:
             attrs_json["runtime_event_types"] = sorted(
                 {
@@ -1854,6 +2340,17 @@ class ObserverOverlayService:
                     if str(item.source or "").strip()
                 }
             )
+        if sources.playbook_run is not None:
+            attrs_json["playbook_run_id"] = sources.playbook_run.id
+            attrs_json["playbook_version_id"] = sources.playbook_run.playbook_version_id
+            attrs_json["playbook_status"] = sources.playbook_run.status
+            attrs_json["playbook_step_statuses"] = sorted(
+                {
+                    str(step_run.status or "").strip()
+                    for step_run, _step in (sources.playbook_step_runs or [])
+                    if str(step_run.status or "").strip()
+                }
+            )
         if root_ticket is not None:
             attrs_json["ticket_status"] = root_ticket.status
             attrs_json["ticket_code"] = root_ticket.ticket_code
@@ -1862,8 +2359,12 @@ class ObserverOverlayService:
         return payloads, links, {
             "root_span_id": root_span_id,
             "root_kind": "ticket" if root_ticket is not None else (
+                "playbook_run" if sources.playbook_run is not None else (
                 primary_operation.kind if primary_operation else (
-                    sources.ticket_events[0].event_type if sources.ticket_events else _runtime_root_kind_from_audits(sources.runtime_audits)
+                    sources.ticket_events[0].event_type if sources.ticket_events else (
+                        sources.agent_events[0].root_kind if sources.agent_events else _runtime_root_kind_from_audits(sources.runtime_audits)
+                    )
+                )
                 )
             ),
             "ticket_id": primary_ticket,
@@ -1973,6 +2474,90 @@ class ObserverOverlayService:
             )
 
         operation_lookup = {item.operation_id: item for item in sources.operations if item.operation_id}
+        if sources.playbook_run is not None and str(sources.playbook_run.status or "").strip().lower() == "failed":
+            error_kind = _compact_text(sources.playbook_run.error_code) or "PLAYBOOK_RUN_FAILED"
+            message_norm = _normalize_message(sources.playbook_run.error_message or error_kind)
+            signature = self._make_error_signature(
+                error_kind=error_kind,
+                component="playbook",
+                module_name=None,
+                tool_name=None,
+                exception_type=None,
+                failure_stage="playbook_run",
+                message_norm=message_norm,
+            )
+            occurrences.append(
+                {
+                    "trace_id": trace_id,
+                    "span_id": span_ids_by_source.get(("playbook_run", str(sources.playbook_run.id))),
+                    "error_signature": signature,
+                    "device_id": sources.playbook_run.device_id,
+                    "ticket_id": None,
+                    "operation_id": None,
+                    "component": "playbook",
+                    "module_name": None,
+                    "tool_name": None,
+                    "error_kind": error_kind,
+                    "exception_type": None,
+                    "failure_stage": "playbook_run",
+                    "severity": "error",
+                    "message_norm": message_norm,
+                    "stack_hash": hashlib.sha1((message_norm or "").encode("utf-8")).hexdigest()[:16] if message_norm else None,
+                    "attrs_json": {
+                        "playbook_run_id": sources.playbook_run.id,
+                        "playbook_version_id": sources.playbook_run.playbook_version_id,
+                        "status": sources.playbook_run.status,
+                    },
+                    "created_at": sources.playbook_run.finished_at or sources.playbook_run.started_at or sources.playbook_run.scheduled_at,
+                }
+            )
+
+        for step_run, step in (sources.playbook_step_runs or []):
+            if str(step_run.status or "").strip().lower() != "failed":
+                continue
+            details = redact_sensitive_payload(step_run.error_json or {})
+            module_name, tool_name = _split_tool_name(step.tool)
+            error_kind = _compact_text(details.get("code")) or "PLAYBOOK_STEP_FAILED"
+            exception_type = _compact_text(details.get("exception_type"))
+            failure_stage = _compact_text(details.get("stage")) or _compact_text(step.type) or "playbook_step"
+            message_norm = _normalize_message(details.get("message") or error_kind)
+            signature = self._make_error_signature(
+                error_kind=error_kind,
+                component="playbook",
+                module_name=module_name,
+                tool_name=tool_name,
+                exception_type=exception_type,
+                failure_stage=failure_stage,
+                message_norm=message_norm,
+            )
+            occurrences.append(
+                {
+                    "trace_id": trace_id,
+                    "span_id": span_ids_by_source.get(("playbook_step_run", str(step_run.id))),
+                    "error_signature": signature,
+                    "device_id": sources.playbook_run.device_id if sources.playbook_run is not None else None,
+                    "ticket_id": None,
+                    "operation_id": step_run.operation_id,
+                    "component": "playbook",
+                    "module_name": module_name,
+                    "tool_name": tool_name,
+                    "error_kind": error_kind,
+                    "exception_type": exception_type,
+                    "failure_stage": failure_stage,
+                    "severity": "error",
+                    "message_norm": message_norm,
+                    "stack_hash": hashlib.sha1(json.dumps(details, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16],
+                    "attrs_json": {
+                        "playbook_run_id": step_run.playbook_run_id,
+                        "playbook_step_run_id": step_run.id,
+                        "step_key": step.step_key,
+                        "step_type": step.type,
+                        "error_json": details,
+                    },
+                    "created_at": step_run.finished_at or step_run.started_at,
+                }
+            )
+
         for audit in sources.runtime_audits:
             if not _runtime_audit_is_problem(audit):
                 continue
@@ -2013,6 +2598,46 @@ class ObserverOverlayService:
                     "stack_hash": hashlib.sha1(json.dumps(details, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16],
                     "attrs_json": {"source": audit.source, "details_json": details},
                     "created_at": audit.created_at,
+                }
+            )
+
+        for event in sources.agent_events:
+            severity = str(event.severity or "").strip().lower()
+            if severity not in PROBLEM_AUDIT_SEVERITIES:
+                continue
+            details = redact_sensitive_payload(event.attrs_json or {})
+            error_kind = _compact_text(details.get("error_kind")) or event.event_type
+            exception_type = _compact_text(details.get("exception_type"))
+            failure_stage = _compact_text(event.stage) or _compact_text(event.status) or event.event_type
+            message_norm = _normalize_message(details.get("message") or details.get("reason") or event.event_type)
+            signature = self._make_error_signature(
+                error_kind=error_kind,
+                component=event.component or "agent",
+                module_name=event.module_name,
+                tool_name=event.tool_name,
+                exception_type=exception_type,
+                failure_stage=failure_stage,
+                message_norm=message_norm,
+            )
+            occurrences.append(
+                {
+                    "trace_id": trace_id,
+                    "span_id": span_ids_by_source.get(("agent_observer_event", str(event.id))),
+                    "error_signature": signature,
+                    "device_id": event.device_id,
+                    "ticket_id": event.ticket_id,
+                    "operation_id": event.operation_id,
+                    "component": event.component or "agent",
+                    "module_name": event.module_name,
+                    "tool_name": event.tool_name,
+                    "error_kind": error_kind,
+                    "exception_type": exception_type,
+                    "failure_stage": failure_stage,
+                    "severity": "error" if severity == "critical" else severity,
+                    "message_norm": message_norm,
+                    "stack_hash": hashlib.sha1(json.dumps(details, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16],
+                    "attrs_json": {"event_id": event.event_id, "event_type": event.event_type, "attrs_json": details},
+                    "created_at": event.created_at,
                 }
             )
 
@@ -2085,13 +2710,25 @@ class ObserverOverlayService:
 
     def _summarize_trace_status(self, sources: TraceProjectionSources) -> str:
         operation_statuses = {str(item.status or "").strip().lower() for item in sources.operations}
+        if sources.playbook_run is not None:
+            playbook_status = str(sources.playbook_run.status or "").strip().lower()
+            if playbook_status in {"pending", "running"}:
+                return "running"
+            if playbook_status == "failed":
+                return "error"
+            if playbook_status in {"success", "succeeded"}:
+                return "ok"
         if operation_statuses & ACTIVE_OPERATION_STATUSES:
             return "running"
         if operation_statuses & ERROR_OPERATION_STATUSES:
             return "error"
         if any(str(item.severity or "").strip().lower() in ERROR_AUDIT_SEVERITIES for item in sources.runtime_audits):
             return "error"
+        if any(str(item.severity or "").strip().lower() in (ERROR_AUDIT_SEVERITIES | {"critical"}) for item in sources.agent_events):
+            return "error"
         if any(_runtime_audit_is_problem(item) for item in sources.runtime_audits):
+            return "warning"
+        if any(str(item.severity or "").strip().lower() == "warning" for item in sources.agent_events):
             return "warning"
         if sources.root_ticket is not None and str(sources.root_ticket.status or "").strip().lower() not in {"resolved", "closed"}:
             return "running"

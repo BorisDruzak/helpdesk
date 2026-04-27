@@ -72,6 +72,140 @@ Status: in progress.
 - `python scripts/verify_workspace.py`
 - Live Linux smoke + browser/API check at `http://192.168.100.17:8666/admin`.
 
+## 2026-04-27 Observer Coverage Closure And Agent Telemetry Channel
+
+Status: planned.
+
+Detailed implementation and handoff plan:
+
+- `docs/superpowers/plans/2026-04-27-observer-coverage-closure-agent-telemetry.md`
+
+### Goal
+
+Close the known observer blind spots so support operators and Codex can diagnose authorization, updates, module reconcile, playbook execution, web API failures and agent-side failures through one server-side observer surface.
+
+### Core Decision
+
+Add a narrow agent observer/telemetry channel, but do not create a second independent observer system inside the agent.
+
+The agent may keep local `action_trace.jsonl` as its durable local black box, but important lifecycle/action events must be uploaded to the server as bounded, redacted telemetry and projected into the existing server observer tables. The server remains the canonical query surface for support UI, diagnostics bundles and Codex API access.
+
+### Scope
+
+Covered in this plan:
+
+- server observer projection gaps;
+- module reconcile and module auto-install failures;
+- playbook run/step/preflight visibility;
+- web auth/RBAC/API boundary failures;
+- agent local black-box upload for crashes, startup, update launcher, WS reconnect and tool execution;
+- observer runtime self-health.
+
+Out of scope for this plan:
+
+- replacing existing operations/ticket/device event contracts;
+- making routing fully editable as arbitrary automation;
+- streaming raw logs/tokens/screenshots without redaction and retention limits.
+
+### Architecture
+
+Use one canonical observer graph on the server:
+
+- existing sources stay: `operations`, `ticket_events`, `device_events`, `agent_runtime_audit`;
+- add server-side source rows for `playbook_step_run` and selected system flows;
+- add bounded `agent_observer_events` or equivalent ingestion source for agent local telemetry;
+- projector materializes all sources into `observer_traces`, `observer_spans`, signatures and degradations.
+
+Agent-side telemetry should be batched, redacted, idempotent and best-effort:
+
+- local append-only queue on agent;
+- upload after successful auth/handshake or via existing WS/RPC channel;
+- no raw token, password, cookie, consent token, or full command output by default;
+- server accepts only known event schemas and applies retention/sampling.
+
+### Implementation Plan
+
+1. Inventory trace sources and define a coverage matrix:
+   - rows: auth/provisioning, update, module reconcile, module live test, playbook, web auth, ticket routing, notification delivery, agent startup/crash, WS reconnect, tool execution;
+   - columns: source table, root_kind, spans, signatures, UI entrypoint, Codex diagnostics bundle.
+2. Add first-class projection for playbook runs:
+   - `root_kind=playbook_run`;
+   - spans for preflight, skipped decision/local steps, module install precheck, command dispatch, retry, result normalization and ticket fact attachment;
+   - link each operation-backed step to its operation trace.
+3. Make module reconcile observer-visible:
+   - write `agent_runtime_audit` or a dedicated system audit record for desired-state install/remove failures before enqueue;
+   - emit `root_kind=module_reconcile` or map to `module_install` / `module_remove` with `source=reconcile`;
+   - produce signatures for missing package, platform mismatch, agent offline and enqueue failure.
+4. Add web auth/API boundary observability:
+   - record rate-limited audit events for repeated 401/403 on important `/api/web/*`, `/api/tickets*`, `/api/admin/*` paths;
+   - group by route, actor role, error_code and session state;
+   - expose in diagnostics bundle and admin observer.
+5. Add agent observer telemetry ingestion:
+   - define schema for `agent.startup`, `agent.shutdown`, `agent.crash_detected`, `agent.ws.reconnect`, `agent.update.launcher`, `agent.update.apply`, `agent.tool.step`, `agent.module.install_step`;
+   - implement local agent queue using the existing action trace recorder as source;
+   - upload compact batches with sequence/idempotency keys;
+   - store server-side rows linked by `device_id`, `operation_id`, `trace_id`, `tool_name`, `module_name`.
+6. Project agent telemetry into server observer:
+   - attach telemetry events to operation traces when `operation_id`/`trace_id` exists;
+   - create synthetic `agent_runtime` traces for startup/crash/reconnect events without an operation;
+   - create signatures for repeated crash/update/reconnect/tool-step failures.
+7. Add observer self-health:
+   - expose projector backlog, last error and stale projection as a trace-visible system health event;
+   - keep `/api/web/admin/observer/runtime` as quick status;
+   - add diagnostics bundle recommendations when projection is lagging.
+8. Update UI:
+   - `/app/admin/observer` root_kind filters include playbook, module reconcile and web auth/API;
+   - trace detail shows playbook step graph and agent telemetry spans;
+   - ticket Automation overlay links to the exact failing playbook step trace.
+9. Update API for Codex/support:
+   - diagnostics bundle accepts `playbook_run_id`, `step_run_id`, `route`, `root_kind=web_auth`, `root_kind=module_reconcile`;
+   - bundle includes recent server logs only as fallback, with a flag when no first-class trace exists.
+10. Add tests and canaries:
+   - unit tests for projection from every new source;
+   - integration tests for playbook preflight fail, reconcile offline agent, repeated web auth failure, agent telemetry upload and projection;
+   - live canary for Linux agent startup/tool/update telemetry;
+   - Windows live agent telemetry canary when a Windows lab agent is available.
+
+### Verification Target
+
+- `python -m pytest server/tests/test_observer_diagnostics_api.py -q`
+- `python -m pytest server/tests/test_observer_v2_api.py -q`
+- `python -m pytest server/tests/test_playbook_scenarios_no_db.py -q`
+- new tests for playbook observer projection, module reconcile observer projection, web auth observer audit and agent telemetry ingestion;
+- targeted agent tests for telemetry queue/upload/redaction;
+- `python scripts/verify_workspace.py`;
+- browser check on `http://192.168.100.17:8666/app/admin/observer`;
+- live Linux agent check for startup, reconnect and tool telemetry;
+- optional Windows lab check before claiming Windows telemetry coverage.
+
+### Handoff
+
+Start from:
+
+- `server/observer/service.py`
+- `server/observer/runtime.py`
+- `server/tech/handlers.py`
+- `server/app/services/playbook_engine.py`
+- `server/app/repos/playbook_repo.py`
+- `server/modules/reconcile.py`
+- `server/auth/middleware.py`
+- `server/web_api/admin_handlers.py`
+- `server/websocket/agent_handshake.py`
+- `server/websocket/agent_handler.py`
+- `pc_agent/core/action_trace.py`
+- `pc_agent/core/orchestrator.py`
+- `pc_agent/ws_agent.py`
+- `pc_agent/ws_agent_runtime_helpers.py`
+- `webapp/src/features/tech/*`
+- `webapp/src/pages/admin/observer-page.tsx`
+- `server/docs/OBSERVER_LAYER.md`
+- `server/docs/OBSERVER_AUTHORING_RULES.md`
+- `server/docs/CODEMAP.md`
+- `pc_agent/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+
+Design rule: every newly observed problem must answer three questions in the UI/API: what failed, at which exact step, and what source row/event proves it.
+
 ## 2026-04-27 Connection Request Duplicate Approval Bug
 
 Status: fixed locally; release verification in progress.
@@ -376,3 +510,20 @@ Verification target:
 - Server pytest for candidate filtering, explicit `device_id` live-test, preferred gate and observer trace rows.
 - React test for selecting Linux/Windows lab agent and calling the live-test endpoint.
 - `python scripts/verify_workspace.py`, webapp build/test and live browser/API check on `http://192.168.100.17:8666/app/admin/modules`.
+
+### 2026-04-27 Observer Coverage Closure And Agent Telemetry
+
+Current status:
+
+1. [done] Added `agent_observer_events` source rows, websocket `agent_observer_batch` ingest, projection into observer spans/signatures and agent-side action-trace export/upload cursor.
+2. [done] Added first-class `module_reconcile`, `playbook_run`, `web_auth` and `observer_runtime` root kinds for previously log-only gaps.
+3. [done] Extended typed observer filters for `playbook_run_id`, `step_run_id` and `route`; React observer workbench serializes the new filters and shows source evidence from trace attrs.
+4. [in progress] Verification/release: focused pytest and observer Vitest are green; full workspace verification, Linux/Windows agent release artifacts, deploy and live browser checks are next.
+
+Verification target:
+
+- `python scripts/verify_workspace.py`
+- focused server/agent observer pytest
+- `pnpm --dir webapp run test -- observer` and `pnpm --dir webapp run build`
+- Windows release via `python pc_agent/build_windows_release_v2.py`
+- Linux release on `/var/chat_bot/pc_client` via the documented PyInstaller specs, then upload both agent builds and verify `/app/admin/observer` live.

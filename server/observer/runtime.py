@@ -10,9 +10,13 @@ from loguru import logger
 from sqlalchemy import and_, delete, distinct, exists, func, or_, select
 
 from app.db import get_session
-from app.db.models import AgentRuntimeAudit, DeviceEvent, ObserverTrace, Operation, Ticket, TicketEvent
+from app.db.models import AgentObserverEvent, AgentRuntimeAudit, DeviceEvent, ObserverTrace, Operation, PlaybookRun, PlaybookStepRun, Ticket, TicketEvent
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.observer_settings_repo import DEFAULT_OBSERVER_SETTINGS, ObserverSettingsRepo
-from observer.service import ObserverOverlayService
+from observer.service import ObserverOverlayService, _playbook_run_trace_id, _runtime_audit_trace_id
+
+
+OBSERVER_RUNTIME_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000b0b0"
 
 
 @dataclass(slots=True)
@@ -80,6 +84,7 @@ class ObserverRefreshRuntime:
         self._last_scan_at: Optional[datetime] = None
         self._stats = ObserverRefreshStats()
         self._settings: dict[str, Any] = dict(DEFAULT_OBSERVER_SETTINGS)
+        self._last_self_health_key: Optional[str] = None
 
     @property
     def running(self) -> bool:
@@ -179,6 +184,7 @@ class ObserverRefreshRuntime:
                 await self.enqueue_trace(trace_id, delay_sec=0.0)
         await self._project_due_traces()
         await self._cleanup_expired_traces()
+        await self._emit_self_health_if_degraded()
 
     async def _run_loop(self) -> None:
         while True:
@@ -190,9 +196,43 @@ class ObserverRefreshRuntime:
                 self._stats.last_error = str(exc)
                 self._stats.consecutive_failures += 1
                 logger.opt(exception=exc).warning("[observer_refresh] loop failed")
+                await self._emit_self_health_if_degraded()
             else:
                 self._stats.consecutive_failures = 0
             await asyncio.sleep(self.scan_interval_sec)
+
+    async def _emit_self_health_if_degraded(self) -> Optional[str]:
+        snapshot = self.status_snapshot()
+        health = snapshot.get("health") or {}
+        if health.get("status") != "degraded":
+            self._last_self_health_key = None
+            return None
+        issues = [str(item) for item in (health.get("issues") or []) if str(item or "").strip()]
+        issue_key = "|".join(sorted(issues)) or "degraded"
+        if self._last_self_health_key == issue_key:
+            return None
+        self._last_self_health_key = issue_key
+        severity = "error" if "last_error" in issues else "warning"
+        async with get_session() as session:
+            audit = await AgentRuntimeAuditRepo(session).add(
+                device_id=OBSERVER_RUNTIME_AUDIT_DEVICE_ID,
+                event_type="observer_runtime_degraded",
+                severity=severity,
+                source="observer_runtime",
+                actor_id="system",
+                actor_role="system",
+                details_json={
+                    "issues": issues,
+                    "pending_trace_count": health.get("pending_trace_count"),
+                    "last_projected_age_sec": health.get("last_projected_age_sec"),
+                    "last_error": self._stats.last_error,
+                    "consecutive_failures": self._stats.consecutive_failures,
+                },
+            )
+            await session.commit()
+        trace_id = _runtime_audit_trace_id(audit.id)
+        await self.enqueue_trace(trace_id, delay_sec=0.0)
+        return trace_id
 
     async def _discover_recent_trace_ids(self) -> list[str]:
         now = datetime.now(timezone.utc)
@@ -292,6 +332,38 @@ class ObserverRefreshRuntime:
                 )
                 _remember(list(audit_trace_rows.scalars().all()))
 
+            agent_event_rows = await session.execute(
+                select(distinct(AgentObserverEvent.trace_id))
+                .where(AgentObserverEvent.trace_id.isnot(None), AgentObserverEvent.created_at >= window_start)
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(agent_event_rows.scalars().all()))
+
+            playbook_run_rows = await session.execute(
+                select(distinct(PlaybookRun.id))
+                .where(
+                    or_(
+                        PlaybookRun.scheduled_at >= window_start,
+                        PlaybookRun.started_at >= window_start,
+                        PlaybookRun.finished_at >= window_start,
+                    )
+                )
+                .limit(self.max_batch * 2)
+            )
+            _remember([_playbook_run_trace_id(item) for item in playbook_run_rows.scalars().all()])
+
+            playbook_step_rows = await session.execute(
+                select(distinct(PlaybookStepRun.playbook_run_id))
+                .where(
+                    or_(
+                        PlaybookStepRun.started_at >= window_start,
+                        PlaybookStepRun.finished_at >= window_start,
+                    )
+                )
+                .limit(self.max_batch * 2)
+            )
+            _remember([_playbook_run_trace_id(item) for item in playbook_step_rows.scalars().all()])
+
         self._last_scan_at = now
         self._stats.last_scan_completed_at = datetime.now(timezone.utc)
         self._stats.discovered_trace_count = len(discovered)
@@ -351,6 +423,25 @@ class ObserverRefreshRuntime:
                 .limit(self.max_batch * 2)
             )
             _remember(list(orphan_ticket_rows.scalars().all()))
+
+            agent_event_rows = await session.execute(
+                select(AgentObserverEvent.trace_id)
+                .where(
+                    AgentObserverEvent.trace_id.isnot(None),
+                    ~exists(select(ObserverTrace.trace_id).where(ObserverTrace.trace_id == AgentObserverEvent.trace_id)),
+                )
+                .group_by(AgentObserverEvent.trace_id)
+                .order_by(func.min(AgentObserverEvent.created_at).asc())
+                .limit(self.max_batch * 2)
+            )
+            _remember(list(agent_event_rows.scalars().all()))
+
+            playbook_rows = await session.execute(
+                select(PlaybookRun.id)
+                .order_by(PlaybookRun.scheduled_at.asc())
+                .limit(self.max_batch * 2)
+            )
+            _remember([_playbook_run_trace_id(item) for item in playbook_rows.scalars().all()])
 
         self._stats.discovered_backfill_trace_count = len(discovered)
         self._stats.last_backfill_scan_completed_at = datetime.now(timezone.utc)

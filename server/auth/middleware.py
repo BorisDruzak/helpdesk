@@ -5,13 +5,19 @@ Protects all /api/* endpoints (except whitelist) with token authentication.
 Creates AuthContext from token and attaches it to request.
 """
 from aiohttp import web
+from datetime import datetime, timezone
 from loguru import logger
 from typing import Optional
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
+from app.db import get_session
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
+WEB_AUTH_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000a11d"
+WEB_AUTH_AUDIT_WINDOW_SEC = 60
+_WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
 WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/web/",
     "/api/modules/",
@@ -151,6 +157,58 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     return None
 
 
+def _route_pattern(request: web.Request) -> str:
+    route = getattr(request, "match_info", None)
+    route_obj = getattr(route, "route", None)
+    resource = getattr(route_obj, "resource", None)
+    canonical = getattr(resource, "canonical", None)
+    return str(canonical or request.path)
+
+
+async def _write_web_auth_audit(
+    request: web.Request,
+    *,
+    event_type: str,
+    error_code: str,
+    auth_state: str,
+    actor_id: str | None = None,
+    actor_role: str | None = None,
+    severity: str = "warning",
+) -> None:
+    route = _route_pattern(request)
+    key = (event_type, request.method, route, auth_state)
+    now = datetime.now(timezone.utc)
+    previous = _WEB_AUTH_AUDIT_LAST_SEEN.get(key)
+    if previous and (now - previous).total_seconds() < WEB_AUTH_AUDIT_WINDOW_SEC:
+        return
+    _WEB_AUTH_AUDIT_LAST_SEEN[key] = now
+    details = {
+        "route": route,
+        "path": request.path,
+        "method": request.method,
+        "error_code": error_code,
+        "error_kind": error_code,
+        "failure_stage": event_type,
+        "auth_state": auth_state,
+        "remote": request.remote,
+        "user_agent": request.headers.get("User-Agent", "")[:160],
+    }
+    try:
+        async with get_session() as session:
+            await AgentRuntimeAuditRepo(session).add(
+                device_id=WEB_AUTH_AUDIT_DEVICE_ID,
+                event_type=event_type,
+                severity=severity,
+                source="web_auth",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                details_json=details,
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.debug(f"[AuthMiddleware] web auth audit write skipped: {exc}")
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """
@@ -209,6 +267,12 @@ async def auth_middleware(request: web.Request, handler):
                 f"[AuthMiddleware] Authentication failed: path={request.path}, "
                 f"method={request.method}"
             )
+        await _write_web_auth_audit(
+            request,
+            event_type="web_auth_failed",
+            error_code="AUTH_REQUIRED",
+            auth_state="missing_or_invalid_token",
+        )
         return web.json_response(
             {
                 "status": "error",
@@ -263,6 +327,15 @@ def require_auth(*allowed_roles: str):
                 logger.warning(
                     f"[require_auth] Access denied: path={request.path}, "
                     f"actor_role={auth_context.actor_role}, allowed_roles={allowed_roles}"
+                )
+                await _write_web_auth_audit(
+                    request,
+                    event_type="web_auth_forbidden",
+                    error_code="FORBIDDEN",
+                    auth_state="forbidden_role",
+                    actor_id=auth_context.actor_id,
+                    actor_role=auth_context.actor_role,
+                    severity="warning",
                 )
                 return web.json_response(
                     {

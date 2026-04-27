@@ -63,6 +63,8 @@ Observer строится поверх фактов исполнения. Нов
 
 Auth/provisioning flows that do not have an operation must write `agent_runtime_audit`. Observer projects operation-less audit rows as synthetic traces and classifies them by `root_kind`: `device_provisioning`, `agent_auth`, or `agent_runtime`. Warning-level actionable events must still become signatures when they represent a support-visible failure, for example `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, or `invalid_token`.
 
+Agent telemetry, playbook local steps, module reconcile, web-auth/API boundary failures and observer-runtime self-health are first-class observer sources. Use `agent_observer_events` for bounded agent-uploaded telemetry; use existing `playbook_run`/`playbook_step_run` rows for local playbook steps; write structured `agent_runtime_audit` rows with `source=module_reconcile`, `source=web_auth` or `source=observer_runtime` for server-originated failures that would otherwise be log-only. These flows map to `root_kind=module_reconcile`, `playbook_run`, `web_auth` and `observer_runtime`.
+
 ### 3.4 Материализовать диагностически полезные spans
 
 Spans нужны не “для галочки”, а чтобы человек видел этапы.

@@ -37,6 +37,26 @@ function formatDuration(value: number | null | undefined): string {
   return `${(value / 1000).toFixed(1)} с`;
 }
 
+function formatTraceSources(attrs: Record<string, unknown> | null | undefined): string {
+  const rawCounts = attrs?.source_counts;
+  if (!rawCounts || typeof rawCounts !== "object") {
+    return "sources: unknown";
+  }
+  const counts = rawCounts as Record<string, unknown>;
+  const labels: Array<[string, string]> = [
+    ["operations", "operation"],
+    ["agent_runtime_audit", "runtime audit"],
+    ["playbook_step_runs", "playbook step"],
+    ["agent_observer_events", "agent telemetry"],
+    ["ticket_events", "ticket event"],
+    ["device_events", "device event"],
+  ];
+  const visible = labels
+    .filter(([key]) => Number(counts[key] ?? 0) > 0)
+    .map(([, label]) => label);
+  return visible.length ? `sources: ${visible.join(", ")}` : "sources: root";
+}
+
 type ObserverTraceDrilldownProps = {
   deviceId: string | null;
   deviceLabel: string;
@@ -196,6 +216,7 @@ export function ObserverTraceDrilldown({
                         {trace.operation_id ? `Операция ${trace.operation_id}` : "Операция не привязана"}
                         {trace.ticket_id ? ` · Тикет ${trace.ticket_id}` : ""}
                       </p>
+                      <p>{formatTraceSources(trace.attrs_json)}</p>
                       <p>Завершение: {formatDateTime(trace.finished_at ?? trace.started_at)}</p>
                     </button>
                   );

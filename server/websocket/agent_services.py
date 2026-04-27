@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Optional
 from loguru import logger
 
 from app.db import get_session
+from app.repos.agent_observer_events_repo import AgentObserverEventsRepo
 from app.repos.operations_repo import OperationsRepo
 from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
@@ -856,6 +857,64 @@ class RpcResponseService:
             future.set_result(message)
 
 
+class AgentObserverTelemetryService:
+    """Persists authenticated agent observer telemetry batches."""
+
+    async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> None:
+        request_id = message.get("request_id")
+        payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
+        event_container = payload if payload else message
+        if not ctx.authenticated or not ctx.agent_id:
+            await ctx.ws.send_json(
+                {
+                    "type": "agent_observer_batch_ack",
+                    "request_id": request_id,
+                    "status": "error",
+                    "error_code": "UNAUTHENTICATED",
+                    "accepted_count": 0,
+                    "rejected_count": len(event_container.get("events") or []) if isinstance(event_container.get("events"), list) else 0,
+                }
+            )
+            return
+
+        events = event_container.get("events")
+        if not isinstance(events, list):
+            await ctx.ws.send_json(
+                {
+                    "type": "agent_observer_batch_ack",
+                    "request_id": request_id,
+                    "status": "error",
+                    "error_code": "INVALID_SCHEMA",
+                    "accepted_count": 0,
+                    "rejected_count": 0,
+                }
+            )
+            return
+
+        async with get_session() as session:
+            repo = AgentObserverEventsRepo(session)
+            rows = await repo.ingest_batch(device_id=ctx.agent_id, events=events)
+            await session.commit()
+
+        runtime = getattr(ctx.state, "observer_refresh_runtime", None)
+        for row in rows:
+            if runtime is not None and getattr(row, "trace_id", None):
+                try:
+                    await runtime.enqueue_trace(row.trace_id)
+                except Exception as exc:
+                    logger.debug(f"[agent_observer_batch] enqueue skipped: {exc}")
+
+        await ctx.ws.send_json(
+            {
+                "type": "agent_observer_batch_ack",
+                "request_id": request_id,
+                "status": "ok",
+                "accepted_count": len(rows),
+                "rejected_count": max(0, len(events) - len(rows)),
+            }
+        )
+
+
 class AgentMessageRouter:
     """Routes incoming messages by envelope type to dedicated services."""
 
@@ -868,6 +927,7 @@ class AgentMessageRouter:
         outbox_ingest_service: OutboxIngestService,
         agent_command_service: AgentCommandService,
         outbox_batch_ingest_service: Optional[OutboxBatchIngestService] = None,
+        agent_observer_telemetry_service: Optional[AgentObserverTelemetryService] = None,
     ) -> None:
         self._handshake_service = handshake_service
         self._command_ack_service = command_ack_service
@@ -876,6 +936,7 @@ class AgentMessageRouter:
         self._outbox_ingest_service = outbox_ingest_service
         self._outbox_batch_ingest_service = outbox_batch_ingest_service
         self._agent_command_service = agent_command_service
+        self._agent_observer_telemetry_service = agent_observer_telemetry_service or AgentObserverTelemetryService()
 
     async def route(
         self,
@@ -912,6 +973,9 @@ class AgentMessageRouter:
         if msg_type == "outbox_items_batch" and self._outbox_batch_ingest_service is not None:
             should_continue = await self._outbox_batch_ingest_service.handle(message, ctx)
             return "__continue__" if should_continue else None
+        if msg_type == "agent_observer_batch":
+            await self._agent_observer_telemetry_service.handle(message, ctx)
+            return None
         return None
 
 

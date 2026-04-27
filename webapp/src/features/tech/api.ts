@@ -5,7 +5,11 @@ export type AdminObserverRootKindFilter =
   | "tool_call"
   | "agent_update"
   | "module_install"
+  | "module_reconcile"
   | "module_remove"
+  | "playbook_run"
+  | "web_auth"
+  | "observer_runtime"
   | "consent";
 
 export type AdminObserverTraceItem = {
@@ -98,6 +102,9 @@ export type AdminObserverTracesPayload = {
     module_name?: string | null;
     error_signature?: string | null;
     min_duration_ms?: number | null;
+    playbook_run_id?: number | null;
+    step_run_id?: number | null;
+    route?: string | null;
   };
   summary: {
     visible_count: number;
@@ -243,6 +250,9 @@ type ObserverTracesParams = {
   moduleName?: string | null;
   errorSignature?: string | null;
   minDurationMs?: number | null;
+  playbookRunId?: number | null;
+  stepRunId?: number | null;
+  route?: string | null;
 };
 
 function buildObserverSearchParams(params: {
@@ -259,6 +269,9 @@ function buildObserverSearchParams(params: {
   moduleName?: string | null;
   errorSignature?: string | null;
   minDurationMs?: number | null;
+  playbookRunId?: number | null;
+  stepRunId?: number | null;
+  route?: string | null;
 }): string {
   const searchParams = new URLSearchParams();
   if (params.deviceId) {
@@ -300,6 +313,15 @@ function buildObserverSearchParams(params: {
   if (params.minDurationMs && params.minDurationMs > 0) {
     searchParams.set("min_duration_ms", String(params.minDurationMs));
   }
+  if (params.playbookRunId && params.playbookRunId > 0) {
+    searchParams.set("playbook_run_id", String(params.playbookRunId));
+  }
+  if (params.stepRunId && params.stepRunId > 0) {
+    searchParams.set("step_run_id", String(params.stepRunId));
+  }
+  if (params.route) {
+    searchParams.set("route", params.route);
+  }
   return searchParams.toString();
 }
 
@@ -329,6 +351,9 @@ export async function fetchAdminObserverTraces(params: ObserverTracesParams): Pr
     moduleName: params.moduleName,
     errorSignature: params.errorSignature,
     minDurationMs: params.minDurationMs,
+    playbookRunId: params.playbookRunId,
+    stepRunId: params.stepRunId,
+    route: params.route,
   });
   const response = await fetch(`/api/web/admin/observer/traces?${queryString}`, {
     credentials: "same-origin"

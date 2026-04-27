@@ -168,6 +168,63 @@ describe("observer workbench search helpers", () => {
     );
   });
 
+  it("serializes observer closure filters for playbook and web auth traces", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          query: {
+            device_id: null,
+            lookback_hours: 24,
+            status_filter: "all",
+            root_kind_filter: "playbook_run",
+            limit: 40,
+            query: "AUTH_REQUIRED",
+            playbook_run_id: 42,
+            step_run_id: 7,
+            route: "/api/tickets",
+          },
+          summary: {
+            visible_count: 0,
+            active_count: 0,
+            error_count: 0,
+            selected_trace_id: null,
+          },
+          filters: {
+            status_options: [],
+            root_kind_options: [
+              { value: "playbook_run", label: "Playbook run" },
+              { value: "web_auth", label: "Web auth" },
+              { value: "observer_runtime", label: "Observer runtime" },
+            ],
+          },
+          traces: [],
+          links: {
+            detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
+            runtime_endpoint: "/api/web/admin/observer/runtime",
+          },
+        },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    await fetchObserverWorkbenchTraces({
+      lookbackHours: 24,
+      statusFilter: "all",
+      rootKindFilter: "playbook_run",
+      limit: 40,
+      query: "AUTH_REQUIRED",
+      playbookRunId: 42,
+      stepRunId: 7,
+      route: "/api/tickets",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/admin/observer/traces?lookback_hours=24&root_kind=playbook_run&limit=40&q=AUTH_REQUIRED&playbook_run_id=42&step_run_id=7&route=%2Fapi%2Ftickets",
+      expect.objectContaining({ credentials: "same-origin" })
+    );
+  });
+
   it("loads diagnostic bundle with agent actions", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

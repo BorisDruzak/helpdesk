@@ -38,6 +38,58 @@ def _normalize_scalar(value: Any) -> Optional[str]:
     return cleaned or None
 
 
+def _status_to_severity(status: Any) -> str:
+    key = str(status or "").strip().lower()
+    if key in {"error", "failed", "failure", "timed_out", "critical"}:
+        return "error"
+    if key in {"warning", "warn", "retrying"}:
+        return "warning"
+    return "info"
+
+
+def _root_kind_for_category(category: Any) -> str:
+    key = str(category or "").strip().lower()
+    if key == "update":
+        return "agent_update"
+    if key in {"module", "module_install"}:
+        return "module_install"
+    if key in {"tool", "tool_call"}:
+        return "tool_call"
+    return "agent_runtime"
+
+
+def _event_type_for_row(row: Dict[str, Any]) -> str:
+    category = str(row.get("category") or "").strip().lower()
+    source = str(row.get("source") or "").strip().lower()
+    action = str(row.get("action") or "").strip().lower()
+    stage = str(row.get("stage") or "").strip().lower()
+    if category == "update":
+        if stage == "launcher" or action == "launcher":
+            return "agent.update.launcher"
+        if stage in {"check", "recommendation"}:
+            return "agent.update.check"
+        return "agent.update.apply"
+    if category in {"module", "module_install"}:
+        if stage in {"activate", "activation"}:
+            return "agent.module.activate"
+        return "agent.module.install_step"
+    if category in {"tool", "tool_call"}:
+        return "agent.tool.step"
+    if stage == "startup" or action == "startup":
+        return "agent.startup"
+    if stage == "shutdown" or action == "shutdown":
+        return "agent.shutdown"
+    if "reconnect" in action or stage == "reconnect":
+        return "agent.ws.reconnect"
+    if stage == "connected":
+        return "agent.ws.connected"
+    if stage == "connecting":
+        return "agent.ws.connecting"
+    if stage == "handshake" or "handshake" in action:
+        return "agent.ws.handshake_sent"
+    return "agent.telemetry.upload_failed" if stage == "upload_failed" else "agent.startup"
+
+
 def resolve_action_trace_text_filter(
     *,
     text: Any = None,
@@ -140,16 +192,21 @@ class ActionTraceRecorder:
         summary: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        payload = {
-            "ts": _utc_now(),
-            **context.as_dict(),
-            "stage": str(stage or "").strip() or "event",
-            "status": str(status or "").strip() or "ok",
-            "summary": _normalize_scalar(summary),
-            "details": redact_sensitive_payload(_safe_json(details or {})),
-        }
-        line = json.dumps(payload, ensure_ascii=False)
         with self._lock:
+            seq = 1
+            if self._path.exists():
+                with self._path.open("r", encoding="utf-8", errors="replace") as existing:
+                    seq = sum(1 for line in existing if line.strip()) + 1
+            payload = {
+                "seq": seq,
+                "ts": _utc_now(),
+                **context.as_dict(),
+                "stage": str(stage or "").strip() or "event",
+                "status": str(status or "").strip() or "ok",
+                "summary": _normalize_scalar(summary),
+                "details": redact_sensitive_payload(_safe_json(details or {})),
+            }
+            line = json.dumps(payload, ensure_ascii=False)
             with self._path.open("a", encoding="utf-8") as fh:
                 fh.write(line)
                 fh.write("\n")
@@ -238,6 +295,59 @@ class ActionTraceRecorder:
                     break
         return matched
 
+    def export_observer_events(self, *, after_seq: int | None, limit: int = 100) -> List[Dict[str, Any]]:
+        if not self._path.exists():
+            return []
+        min_seq = int(after_seq or 0)
+        max_items = max(1, min(int(limit or 100), 100))
+        exported: List[Dict[str, Any]] = []
+        with self._path.open("r", encoding="utf-8", errors="replace") as fh:
+            for line_no, raw_line in enumerate(fh, start=1):
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    row = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                seq = int(row.get("seq") or line_no)
+                if seq <= min_seq:
+                    continue
+                details = row.get("details") if isinstance(row.get("details"), dict) else {}
+                attrs = {
+                    **details,
+                    "action_trace_seq": seq,
+                    "action_id": row.get("action_id"),
+                    "parent_action_id": row.get("parent_action_id"),
+                    "source": row.get("source"),
+                    "action": row.get("action"),
+                    "category": row.get("category"),
+                    "summary": row.get("summary"),
+                }
+                exported.append(
+                    {
+                        "event_id": f"action_trace:{row.get('action_id') or seq}:{seq}",
+                        "agent_seq": seq,
+                        "trace_id": _normalize_scalar(row.get("trace_id")),
+                        "operation_id": _normalize_scalar(row.get("operation_id")),
+                        "ticket_id": _normalize_scalar(row.get("ticket_id")),
+                        "root_kind": _root_kind_for_category(row.get("category")),
+                        "event_type": _event_type_for_row(row),
+                        "severity": _status_to_severity(row.get("status")),
+                        "component": _normalize_scalar(row.get("source")) or "agent",
+                        "stage": _normalize_scalar(row.get("stage")),
+                        "status": _normalize_scalar(row.get("status")),
+                        "tool_name": _normalize_scalar(row.get("tool_name")),
+                        "created_at": row.get("ts"),
+                        "attrs_json": redact_sensitive_payload(_safe_json(attrs)),
+                    }
+                )
+                if len(exported) >= max_items:
+                    break
+        return exported
+
 
 class NullActionTraceRecorder(ActionTraceRecorder):
     def __init__(self) -> None:
@@ -262,6 +372,9 @@ class NullActionTraceRecorder(ActionTraceRecorder):
         }
 
     def search(self, **_: Any) -> List[Dict[str, Any]]:
+        return []
+
+    def export_observer_events(self, *, after_seq: int | None, limit: int = 100) -> List[Dict[str, Any]]:
         return []
 
 

@@ -194,6 +194,15 @@ _OBSERVER_ROOT_KIND_LABELS = {
     "consent": "Запрос согласия",
 }
 
+_OBSERVER_ROOT_KIND_LABELS.update(
+    {
+        "module_reconcile": "Module reconcile",
+        "playbook_run": "Playbook run",
+        "web_auth": "Web auth",
+        "observer_runtime": "Observer runtime",
+    }
+)
+
 _OBSERVER_STATUS_LABELS = {
     "queued": "В очереди",
     "sent": "Отправлено",
@@ -237,6 +246,15 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
     AdminFilterOption(value="module_remove", label="Удаление модуля"),
     AdminFilterOption(value="consent", label="Запрос согласия"),
 ]
+
+_OBSERVER_TRACE_ROOT_KIND_OPTIONS.extend(
+    [
+        AdminFilterOption(value="module_reconcile", label="Module reconcile"),
+        AdminFilterOption(value="playbook_run", label="Playbook run"),
+        AdminFilterOption(value="web_auth", label="Web auth"),
+        AdminFilterOption(value="observer_runtime", label="Observer runtime"),
+    ]
+)
 
 _FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
 _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
@@ -714,7 +732,18 @@ def _normalize_observer_status_filter(value: str | None) -> str:
 
 def _normalize_observer_root_kind_filter(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
-    allowed = {"ticket", "tool_call", "agent_update", "module_install", "module_remove", "consent"}
+    allowed = {
+        "ticket",
+        "tool_call",
+        "agent_update",
+        "module_install",
+        "module_reconcile",
+        "module_remove",
+        "playbook_run",
+        "web_auth",
+        "observer_runtime",
+        "consent",
+    }
     if normalized in allowed:
         return normalized
     return "all"
@@ -1247,6 +1276,9 @@ def _build_observer_trace_filters(
     module_name: str | None = None,
     error_signature: str | None = None,
     min_duration_ms: int | None = None,
+    playbook_run_id: int | None = None,
+    step_run_id: int | None = None,
+    route: str | None = None,
 ) -> TraceOverlayFilters:
     return TraceOverlayFilters(
         query=query,
@@ -1261,6 +1293,9 @@ def _build_observer_trace_filters(
         status=None if status_filter == "all" else status_filter,
         root_kind=None if root_kind_filter == "all" else root_kind_filter,
         min_duration_ms=min_duration_ms,
+        playbook_run_id=playbook_run_id,
+        step_run_id=step_run_id,
+        route=route,
     )
 
 
@@ -1279,6 +1314,9 @@ def _empty_admin_observer_traces_payload(
     module_name: str | None = None,
     error_signature: str | None = None,
     min_duration_ms: int | None = None,
+    playbook_run_id: int | None = None,
+    step_run_id: int | None = None,
+    route: str | None = None,
 ) -> AdminObserverTracesPayload:
     return AdminObserverTracesPayload(
         query=AdminObserverTracesQuery(
@@ -1295,6 +1333,9 @@ def _empty_admin_observer_traces_payload(
             module_name=module_name,
             error_signature=error_signature,
             min_duration_ms=min_duration_ms,
+            playbook_run_id=playbook_run_id,
+            step_run_id=step_run_id,
+            route=route,
         ),
         summary=AdminObserverTracesSummary(
             visible_count=0,
@@ -1330,6 +1371,9 @@ async def _build_admin_observer_traces_payload(
     module_name: str | None = None,
     error_signature: str | None = None,
     min_duration_ms: int | None = None,
+    playbook_run_id: int | None = None,
+    step_run_id: int | None = None,
+    route: str | None = None,
 ) -> AdminObserverTracesPayload:
     filters = _build_observer_trace_filters(
         device_id=device_id,
@@ -1344,6 +1388,9 @@ async def _build_admin_observer_traces_payload(
         module_name=module_name,
         error_signature=error_signature,
         min_duration_ms=min_duration_ms,
+        playbook_run_id=playbook_run_id,
+        step_run_id=step_run_id,
+        route=route,
     )
     try:
         async with get_session() as session:
@@ -2112,6 +2159,9 @@ async def handle_web_admin_observer_traces(request: web.Request):
     module_name = _compact_query_value(request.query.get("module_name"))
     error_signature = _compact_query_value(request.query.get("error_signature"))
     min_duration_ms = _parse_optional_positive_int(request.query.get("min_duration_ms"))
+    playbook_run_id = _parse_optional_positive_int(request.query.get("playbook_run_id"))
+    step_run_id = _parse_optional_positive_int(request.query.get("step_run_id"))
+    route = _compact_query_value(request.query.get("route"))
     payload = await _build_admin_observer_traces_payload(
         request=request,
         device_id=device_id,
@@ -2127,6 +2177,9 @@ async def handle_web_admin_observer_traces(request: web.Request):
         module_name=module_name,
         error_signature=error_signature,
         min_duration_ms=min_duration_ms,
+        playbook_run_id=playbook_run_id,
+        step_run_id=step_run_id,
+        route=route,
     )
     return json_model_response(SuccessResponse[AdminObserverTracesPayload](data=payload))
 

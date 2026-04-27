@@ -1847,6 +1847,54 @@ class AgentRuntimeAudit(Base):
     )
 
 
+class AgentObserverEvent(Base):
+    """Bounded agent-uploaded telemetry source for server-side observer projection."""
+    __tablename__ = "agent_observer_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    install_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    machine_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    agent_seq: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    playbook_run_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    playbook_step_run_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    root_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, server_default="info")
+    component: Mapped[str] = mapped_column(String(64), nullable=False, server_default="agent")
+    stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tool_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    module_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    attrs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_agent_observer_events_device_created", "device_id", "created_at"),
+        Index("ix_agent_observer_events_trace_id", "trace_id"),
+        Index("ix_agent_observer_events_operation_id", "operation_id"),
+        Index("ix_agent_observer_events_event_created", "event_type", "created_at"),
+        Index("ix_agent_observer_events_severity_created", "severity", "created_at"),
+        Index("ix_agent_observer_events_root_created", "root_kind", "created_at"),
+    )
+
+
 class ObserverTrace(Base):
     """Materialized technical trace overlay built from existing runtime sources."""
     __tablename__ = "observer_traces"

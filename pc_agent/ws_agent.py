@@ -114,6 +114,7 @@ ALLOWED_MESSAGE_TYPES = {
     "rpc_response",
     "outbox_ack",
     "outbox_nack",
+    "agent_observer_batch_ack",
     # Legacy support (будут удалены)
     "command",
     "command_result",
@@ -232,6 +233,70 @@ class WSAgent:
         # Protocol V3: Current ticket_id и job_id контекст
         self._current_ticket_id: Optional[str] = None
         self._current_job_id: Optional[str] = None
+        self._pending_agent_observer_upload: Optional[Dict[str, Any]] = None
+
+    def _agent_observer_upload_state_path(self) -> Path:
+        data_root = self._data_root or runtime_paths.resolve_data_root()
+        logs_dir = runtime_paths.resolve_logs_dir(Path(data_root))
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir / "action_trace_upload_state.json"
+
+    def _load_agent_observer_upload_cursor(self) -> int:
+        path = self._agent_observer_upload_state_path()
+        if not path.exists():
+            return 0
+        try:
+            payload = jsonlib.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return 0
+        if not isinstance(payload, dict):
+            return 0
+        try:
+            return max(0, int(payload.get("last_uploaded_seq") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _save_agent_observer_upload_cursor(self, seq: int) -> None:
+        path = self._agent_observer_upload_state_path()
+        payload = {
+            "last_uploaded_seq": max(0, int(seq or 0)),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        path.write_text(jsonlib.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    async def _upload_agent_observer_events_once(self, ws: ClientWebSocketResponse) -> int:
+        if self._pending_agent_observer_upload:
+            return 0
+        cursor = self._load_agent_observer_upload_cursor()
+        events = get_action_trace_recorder().export_observer_events(after_seq=cursor, limit=100)
+        if not events:
+            return 0
+        request_id = str(uuid.uuid4())
+        max_seq = max(int((event.get("attrs_json") or {}).get("action_trace_seq") or event.get("agent_seq") or 0) for event in events)
+        self._pending_agent_observer_upload = {
+            "request_id": request_id,
+            "max_seq": max_seq,
+            "event_count": len(events),
+        }
+        await self.send_envelope(
+            ws,
+            "agent_observer_batch",
+            request_id,
+            {"events": events},
+            trace_id=self._current_trace_id or str(uuid.uuid4()),
+            actor_role="agent",
+        )
+        return len(events)
+
+    async def _handle_agent_observer_batch_ack(self, payload: Dict[str, Any]) -> None:
+        pending = self._pending_agent_observer_upload
+        if not pending:
+            return
+        status = str(payload.get("status") or "").strip().lower()
+        accepted_count = int(payload.get("accepted_count") or 0)
+        if status == "ok" and accepted_count >= int(pending.get("event_count") or 0):
+            self._save_agent_observer_upload_cursor(int(pending.get("max_seq") or 0))
+        self._pending_agent_observer_upload = None
 
     def _get_latest_update_handshake_payload(self) -> Optional[Dict[str, str]]:
         """Returns the latest launcher-applied update result for handshake diagnostics."""
@@ -1485,6 +1550,22 @@ class WSAgent:
             return envelope
         
         # Старый формат: {"type": "ping"}
+        if data.get("type") == "agent_observer_batch_ack":
+            trace_id = data.get("trace_id") or self._current_trace_id or str(uuid.uuid4())
+            self._current_trace_id = trace_id
+            return {
+                "type": "agent_observer_batch_ack",
+                "request_id": data.get("request_id") or str(uuid.uuid4()),
+                "device_id": data.get("device_id") or self.device_id,
+                "protocol_version": data.get("protocol_version") or "ws_ticket_v3",
+                "trace_id": trace_id,
+                "payload": data,
+                "meta": {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "actor_role": "server",
+                },
+            }
+
         if data.get("type") == "ping":
             trace_id = str(uuid.uuid4())
             self._current_trace_id = trace_id
@@ -1718,11 +1799,19 @@ class WSAgent:
                     self.server_capabilities = set()
                 if self.flusher:
                     self.flusher.supports_outbox_batch = "outbox_batch_v1" in self.server_capabilities
+                try:
+                    await self._upload_agent_observer_events_once(ws)
+                except Exception as exc:
+                    logger.debug(f"[agent-observer] telemetry upload skipped: {exc}")
                 logger.info("✅ Получен handshake_ack от сервера")
                 await self._publish_connection_state("connected", "WS подключён")
                 return
             
             # Protocol V3: outbox_ack (предпочтительный)
+            if msg_type == "agent_observer_batch_ack":
+                await self._handle_agent_observer_batch_ack(payload)
+                return
+
             if msg_type == "outbox_ack":
                 trace_id = envelope.get("trace_id", "unknown")
                 logger.info(f"✅ [V3] Получен outbox_ack от сервера (trace_id={trace_id})")
