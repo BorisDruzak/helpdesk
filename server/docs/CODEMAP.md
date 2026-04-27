@@ -314,6 +314,7 @@
 - Tech API and `/admin` now expose degradation search (`GET /api/admin/tech/degradations`) alongside trace/signature drilldown, with first-class filters for `min_duration_ms`, `min_retry_count`, and `lookback_hours`.
 - Tech API now also exposes quick diagnosis via `GET /api/admin/tech/observer/quick`, and support workspace gets ticket-scoped observer summary via `GET /api/tickets/{ticket_id}/observer`.
 - `/admin` now shows a quick observer dashboard for operators, while `/support` gets a dedicated `Трасса` drawer tab with root trace, related traces, signatures and recent occurrences.
+- `/app/admin/observer` trace detail surfaces `attrs_json.source_counts` as evidence-source counters and diagnostics bundle counters for agent actions, runtime audit, logs and related traces; live coverage closure is checked by `scripts/run_observer_canary_suite.py` with JSON/Markdown reports.
 - Everyday authoring should happen through the direct form -> field -> parameter flow; raw JSON preview, visibility rules, placeholders, and other power-user controls live in advanced sections instead of the main path.
 - The UI no longer exposes manual version management for request-form packs: saving the catalog automatically creates the next internal version and immediately makes it active.
 - The canonical operator guide for this UI is `server/docs/REQUEST_FORM_BUILDER.md`.

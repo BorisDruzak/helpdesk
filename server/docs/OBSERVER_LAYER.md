@@ -145,6 +145,17 @@ Codex/live debugging entrypoints:
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
+
+## 8. Live canary coverage
+
+`python scripts/run_observer_canary_suite.py` is the canonical live observer canary. In addition to consent, module lifecycle, retry exhaustion, disconnect and WS replay flows, it now seeds and verifies first-class source probes for:
+
+- `module_reconcile`;
+- `playbook_run`;
+- `web_auth`;
+- `observer_runtime`.
+
+The canary report includes `coverage.required_root_kinds`, `coverage.observed_root_kinds`, `coverage.missing_root_kinds` and trace references. Use `--markdown-report-path artifacts/observer_canaries/<name>.md` when the result needs to be attached to release notes or a handoff. The same run checks that the current local `pc_agent.version.AGENT_VERSION` exists in the stable build registry for `windows_amd64` and `linux_alt_x86_64`; it does not force-update production devices by default.
 Signature rows в ticket summary обязаны различать глобальный `occurrences_count` и ticket-local `ticket_occurrences_count`, чтобы support UI не путал историю конкретного тикета с общей картиной по signature.
 Новый typed web boundary должен рекламировать observer capability endpoints через bootstrap payloads, чтобы React workspace не зашивал raw tech/ticket URLs прямо в feature-код.
 

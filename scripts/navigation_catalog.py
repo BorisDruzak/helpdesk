@@ -1273,7 +1273,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and source-aware trace detail.",
+        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, live coverage canary reports, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and evidence-source trace detail.",
         aliases=(
             "observer",
             "trace overlay",
@@ -1317,6 +1317,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/core/action_trace.py",
             "pc_agent/ws_agent.py",
             "webapp/src/features/tech/api.ts",
+            "webapp/src/features/tech/observer-evidence.ts",
             "server/admin.js",
             "server/support.js",
         ),
@@ -1370,7 +1371,9 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ws_agent.py",
             "pc_agent/core/orchestrator.py",
             "pc_agent/modules/base_module.py",
+            "scripts/run_observer_canary_suite.py",
             "webapp/src/features/tech/api.ts",
+            "webapp/src/features/tech/observer-evidence.ts",
             "webapp/src/features/tech/observer-workbench-api.ts",
             "webapp/src/features/tech/observer-trace-drilldown.tsx",
         ),

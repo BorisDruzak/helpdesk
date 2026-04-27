@@ -450,7 +450,7 @@ async def test_web_support_ticket_tools_returns_typed_inventory(test_client, tes
     assert payload["data"]["tools"][1]["install_required"] is True
     assert payload["data"]["tools"][1]["requires_consent"] is True
     assert payload["data"]["tools"][1]["presets"] == [
-        {"preset_id": "full", "label": "Полный экран"}
+        {"preset_id": "full", "label": "Полный экран", "description": None, "params": {}}
     ]
 
 

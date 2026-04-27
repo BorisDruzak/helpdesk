@@ -32,6 +32,7 @@ import {
   type ObserverSignatureListItem,
   type ObserverTraceDetailPayload,
 } from "./observer-workbench-api";
+import { buildBundleEvidenceStats, buildTraceEvidenceSources } from "./observer-evidence";
 import {
   type AdminObserverRootKindFilter,
   type AdminObserverTraceItem,
@@ -373,6 +374,8 @@ function TraceDetailCard({
         ? (detail.agent_actions as ObserverAgentActionItem[])
         : [];
   const agentActionsError = bundle?.agent_actions_error ?? detail.agent_actions_error;
+  const evidenceSources = buildTraceEvidenceSources(detail.trace);
+  const bundleEvidenceStats = buildBundleEvidenceStats(bundle);
 
   return (
     <div className="space-y-4">
@@ -401,6 +404,46 @@ function TraceDetailCard({
           <p className="mt-2 text-sm text-slate-500">
             Завершена: {formatDateTime(detail.trace.finished_at ?? detail.trace.started_at)}
           </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+        <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Evidence sources</p>
+              <p className="mt-2 text-sm text-slate-500">Materialized rows behind this trace.</p>
+            </div>
+            <Badge tone={evidenceSources.length ? "info" : "neutral"}>{evidenceSources.length || "none"}</Badge>
+          </div>
+          {evidenceSources.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {evidenceSources.map((source) => (
+                <span
+                  key={source.key}
+                  className="rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                  title={source.key}
+                >
+                  {source.label}: {source.count}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-[1rem] border border-dashed border-border bg-white px-3 py-2 text-sm text-slate-500">
+              Source counters are not available for this trace yet.
+            </p>
+          )}
+        </div>
+        <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Bundle coverage</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {bundleEvidenceStats.map((stat) => (
+              <div key={stat.key} className="rounded-[1rem] border border-border bg-white px-3 py-2">
+                <p className="text-[0.68rem] uppercase tracking-[0.14em] text-slate-400">{stat.label}</p>
+                <p className="mt-1 text-base font-semibold text-slate-950">{stat.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

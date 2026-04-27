@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -36,6 +37,18 @@ DEFAULT_WS_URL = "ws://192.168.100.17:8666/ws"
 DEFAULT_UI_WS_URL = "ws://192.168.100.17:8666/ws_ui"
 INSTANCE_ROOT = WORKSPACE / ".local-agent" / "instances"
 ARTIFACTS_DIR = WORKSPACE / "artifacts" / "observer_canaries"
+DEFAULT_COVERAGE_ROOT_KINDS = (
+    "module_install",
+    "module_update",
+    "module_remove",
+    "consent",
+    "retry_exhausted",
+    "ws_delivery",
+    "module_reconcile",
+    "playbook_run",
+    "web_auth",
+    "observer_runtime",
+)
 
 
 @dataclass
@@ -56,6 +69,79 @@ def _print_step(message: str) -> None:
 
 def _json_dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _scenario_to_dict(result: ScenarioResult | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(result, ScenarioResult):
+        return asdict(result)
+    return dict(result)
+
+
+def build_observer_coverage_summary(
+    results: list[ScenarioResult | dict[str, Any]],
+    *,
+    required_root_kinds: list[str] | tuple[str, ...] = DEFAULT_COVERAGE_ROOT_KINDS,
+) -> dict[str, Any]:
+    observed: dict[str, list[dict[str, str]]] = {}
+    trace_refs: list[dict[str, str]] = []
+    for raw in results:
+        item = _scenario_to_dict(raw)
+        if not item.get("ok"):
+            continue
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        root_kind = str(details.get("root_kind") or "").strip()
+        trace_id = str(details.get("trace_id") or "").strip()
+        if not root_kind or not trace_id:
+            continue
+        ref = {
+            "scenario": str(item.get("name") or ""),
+            "root_kind": root_kind,
+            "trace_id": trace_id,
+        }
+        observed.setdefault(root_kind, []).append(ref)
+        trace_refs.append(ref)
+
+    required = [str(item).strip() for item in required_root_kinds if str(item).strip()]
+    observed_root_kinds = sorted(root_kind for root_kind in observed if root_kind in required)
+    missing_root_kinds = [root_kind for root_kind in required if root_kind not in observed]
+    return {
+        "ok": not missing_root_kinds,
+        "required_root_kinds": required,
+        "observed_root_kinds": observed_root_kinds,
+        "missing_root_kinds": missing_root_kinds,
+        "trace_refs": trace_refs,
+    }
+
+
+def render_markdown_report(report: dict[str, Any]) -> str:
+    coverage = report.get("coverage") if isinstance(report.get("coverage"), dict) else {}
+    coverage_ok = bool(coverage.get("ok"))
+    missing = [f"`{item}`" for item in coverage.get("missing_root_kinds") or []]
+    observed = [f"`{item}`" for item in coverage.get("observed_root_kinds") or []]
+    lines = [
+        "# Observer Canary Report",
+        "",
+        f"- Generated: `{report.get('generated_at') or ''}`",
+        f"- Base URL: `{report.get('base_url') or ''}`",
+        f"- Device: `{report.get('device_id') or 'n/a'}`",
+        f"- Coverage: **{'passed' if coverage_ok else 'failed'}**",
+        f"- Observed root kinds: {', '.join(observed) if observed else 'none'}",
+        f"- Missing root kinds: {', '.join(missing) if missing else 'none'}",
+        "",
+        "## Results",
+        "",
+        "| Status | Scenario | Summary |",
+        "| --- | --- | --- |",
+    ]
+    for item in report.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        marker = "OK" if item.get("ok") else "FAIL"
+        name = str(item.get("name") or "").replace("|", "\\|")
+        summary = str(item.get("summary") or "").replace("|", "\\|")
+        lines.append(f"| {marker} | {name} | {summary} |")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def extract_tool_result_version(tool_result: Any) -> Optional[str]:
@@ -139,6 +225,7 @@ def build_canary_module_payload(module_name: str, version: str) -> dict[str, Any
         "required_services": [],
         "required_permissions": [],
     }
+
     shared_redaction = {"enabled": True, "allow_raw_sensitive_data": False}
     shared_metadata = {
         "domain": module_name,
@@ -271,6 +358,17 @@ def build_canary_module_payload(module_name: str, version: str) -> dict[str, Any
             },
         ],
     }
+
+
+def read_local_agent_version() -> str:
+    version_py = (WORKSPACE / "pc_agent" / "version.py").read_text(encoding="utf-8")
+    marker = 'AGENT_VERSION = "'
+    start = version_py.find(marker)
+    if start < 0:
+        return ""
+    start += len(marker)
+    end = version_py.find('"', start)
+    return version_py[start:end] if end > start else ""
 
 
 class ApiClient:
@@ -688,6 +786,192 @@ def remote_trigger_ws_rate_limit_code(
     ).strip()
 
 
+def remote_seed_observer_source_coverage_code(device_id: str) -> str:
+    return textwrap.dedent(
+        f"""
+        import asyncio
+        import json
+        import uuid
+        from datetime import datetime, timezone, timedelta
+        from types import SimpleNamespace
+
+        from dotenv import load_dotenv
+        from app.db import get_session, init_db
+        from app.db.models import (
+            AgentRuntimeAudit,
+            Device,
+            DeviceDesiredModule,
+            Playbook,
+            PlaybookRun,
+            PlaybookStep,
+            PlaybookStepRun,
+            PlaybookVersion,
+        )
+        from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+        from modules.reconcile import reconcile_device
+        from observer.service import ObserverOverlayService, TraceOverlayFilters, _playbook_run_trace_id, _runtime_audit_trace_id
+
+        async def _project_runtime_audit(session, audit):
+            service = ObserverOverlayService(session)
+            trace_id = _runtime_audit_trace_id(audit.id)
+            trace = await service.project_trace(trace_id, force=True)
+            return trace.trace_id if trace else trace_id
+
+        async def main() -> None:
+            load_dotenv(".env")
+            await init_db()
+            device_id = {device_id!r}
+            suffix = uuid.uuid4().hex[:8]
+            now = datetime.now(timezone.utc)
+            output = {{"expected_event_types": ["module_reconcile_failed", "web_auth_failed", "observer_runtime_degraded"]}}
+
+            async with get_session() as session:
+                device = await session.get(Device, device_id)
+                if device is None:
+                    session.add(
+                        Device(
+                            device_id=device_id,
+                            protocol_version="ws_ticket_v3",
+                            agent_version="observer-canary",
+                            hostname="observer-canary-coverage",
+                            os="Windows",
+                            capabilities=[],
+                            tools_version="observer-canary",
+                            device_metadata={{}},
+                            last_seen_at=now,
+                            last_handshake_at=now,
+                            first_seen_at=now,
+                        )
+                    )
+                session.add(
+                    DeviceDesiredModule(
+                        device_id=device_id,
+                        module_name=f"observer_canary_missing_{{suffix}}",
+                        desired_version="9.9.9",
+                        desired_sha256=None,
+                        state="installed",
+                        reason="observer_canary",
+                        updated_by="observer_canary",
+                    )
+                )
+                await session.commit()
+
+            async with get_session() as session:
+                await reconcile_device(device_id, state=SimpleNamespace(), session=session, reason="observer_canary")
+                service = ObserverOverlayService(session)
+                module_trace_ids = await service._candidate_trace_ids(
+                    TraceOverlayFilters(root_kind="module_reconcile", device_id=device_id, query="observer_canary_missing"),
+                    limit=5,
+                )
+                if module_trace_ids:
+                    trace = await service.project_trace(module_trace_ids[0], force=True)
+                    output["module_reconcile"] = {{"trace_id": trace.trace_id if trace else module_trace_ids[0]}}
+                await session.commit()
+
+            async with get_session() as session:
+                playbook = Playbook(key=f"observer_canary_{{suffix}}", name="Observer canary coverage", domain="diagnostics")
+                session.add(playbook)
+                await session.flush()
+                version = PlaybookVersion(playbook_id=playbook.id, version="1.0.0", status="published")
+                session.add(version)
+                await session.flush()
+                skipped_step = PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key="branch",
+                    order_no=1,
+                    type="decision",
+                )
+                failed_step = PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key="install_missing_module",
+                    order_no=2,
+                    type="run_tool",
+                    tool="missing.module_tool",
+                )
+                session.add_all([skipped_step, failed_step])
+                await session.flush()
+                run = PlaybookRun(
+                    playbook_version_id=version.id,
+                    device_id=device_id,
+                    status="failed",
+                    scheduled_at=now - timedelta(seconds=4),
+                    started_at=now - timedelta(seconds=4),
+                    finished_at=now,
+                    trigger_type="observer_canary",
+                    context_json={{"canary": "observer_coverage"}},
+                    error_code="STEP_FAILED",
+                    error_message="Canary playbook failed on missing module step",
+                )
+                session.add(run)
+                await session.flush()
+                session.add_all(
+                    [
+                        PlaybookStepRun(
+                            playbook_run_id=run.id,
+                            playbook_step_id=skipped_step.id,
+                            attempt=1,
+                            status="skipped",
+                            started_at=now - timedelta(seconds=3),
+                            finished_at=now - timedelta(seconds=3),
+                            input_json={{"reason": "if_expr=false"}},
+                        ),
+                        PlaybookStepRun(
+                            playbook_run_id=run.id,
+                            playbook_step_id=failed_step.id,
+                            attempt=1,
+                            status="failed",
+                            started_at=now - timedelta(seconds=2),
+                            finished_at=now - timedelta(seconds=1),
+                            input_json={{"target": "device"}},
+                            error_json={{"code": "MODULE_PRECHECK_FAILED", "stage": "module_install"}},
+                        ),
+                    ]
+                )
+                await session.flush()
+                trace_id = _playbook_run_trace_id(run.id)
+                trace = await ObserverOverlayService(session).project_trace(trace_id, force=True)
+                output["playbook_run"] = {{"trace_id": trace.trace_id if trace else trace_id, "playbook_run_id": run.id}}
+                await session.commit()
+
+            async with get_session() as session:
+                audit_repo = AgentRuntimeAuditRepo(session)
+                web_auth = await audit_repo.add(
+                    device_id=device_id,
+                    event_type="web_auth_failed",
+                    severity="warning",
+                    source="web_auth",
+                    actor_role="anonymous",
+                    details_json={{
+                        "route": "/api/tickets",
+                        "method": "GET",
+                        "error_code": "AUTH_REQUIRED",
+                        "canary": "observer_coverage",
+                    }},
+                )
+                output["web_auth"] = {{"trace_id": await _project_runtime_audit(session, web_auth)}}
+                observer_runtime = await audit_repo.add(
+                    device_id="observer-runtime",
+                    event_type="observer_runtime_degraded",
+                    severity="warning",
+                    source="observer_runtime",
+                    actor_role="system",
+                    details_json={{
+                        "issues": ["observer_canary"],
+                        "pending_trace_count": 1,
+                        "last_error": None,
+                        "canary": "observer_coverage",
+                    }},
+                )
+                output["observer_runtime"] = {{"trace_id": await _project_runtime_audit(session, observer_runtime)}}
+                await session.commit()
+
+            print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+
+        asyncio.run(main())
+        """
+    ).strip()
+
+
 async def ensure_support_user(
     api: ApiClient,
     *,
@@ -910,6 +1194,119 @@ async def get_trace_detail(api: ApiClient, *, admin_token: str, trace_id: str, i
     return payload
 
 
+async def search_observer_traces(
+    api: ApiClient,
+    *,
+    admin_token: str,
+    trace_id: str | None = None,
+    root_kind: str | None = None,
+    query: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    params = {"limit": str(limit)}
+    if trace_id:
+        params["trace_id"] = trace_id
+    if root_kind:
+        params["root_kind"] = root_kind
+    if query:
+        params["q"] = query
+    _, payload = await api.request_json(
+        "GET",
+        f"/api/admin/tech/traces?{urlencode(params)}",
+        token=admin_token,
+        expected_statuses=(200,),
+    )
+    return payload
+
+
+async def scenario_observer_source_coverage(
+    api: ApiClient,
+    *,
+    admin_token: str,
+    device_id: str,
+    remote: str,
+) -> list[ScenarioResult]:
+    raw = await run_remote_python(remote=remote, code=remote_seed_observer_source_coverage_code(device_id))
+    payload = json.loads(raw.splitlines()[-1])
+    results: list[ScenarioResult] = []
+    for root_kind in ("module_reconcile", "playbook_run", "web_auth", "observer_runtime"):
+        item = payload.get(root_kind) if isinstance(payload, dict) else None
+        trace_id = str((item or {}).get("trace_id") or "").strip()
+        if not trace_id:
+            results.append(
+                ScenarioResult(
+                    name=f"coverage_{root_kind}",
+                    ok=False,
+                    summary=f"Coverage source probe did not return a trace for {root_kind}.",
+                    details={"root_kind": root_kind},
+                )
+            )
+            continue
+        detail = await get_trace_detail(api, admin_token=admin_token, trace_id=trace_id, include_agent_actions=True)
+        trace = detail.get("trace") if isinstance(detail.get("trace"), dict) else {}
+        spans = detail.get("spans") if isinstance(detail.get("spans"), list) else []
+        errors = detail.get("error_occurrences") if isinstance(detail.get("error_occurrences"), list) else []
+        actual_root_kind = str(trace.get("root_kind") or "")
+        results.append(
+            ScenarioResult(
+                name=f"coverage_{root_kind}",
+                ok=actual_root_kind == root_kind and bool(spans),
+                summary=f"Seeded {root_kind} source row and verified observer trace detail.",
+                details={
+                    "root_kind": root_kind,
+                    "trace_id": trace_id,
+                    "actual_root_kind": actual_root_kind,
+                    "span_count": len(spans),
+                    "error_count": len(errors),
+                    **({"playbook_run_id": item.get("playbook_run_id")} if isinstance(item, dict) and item.get("playbook_run_id") else {}),
+                },
+            )
+        )
+    return results
+
+
+async def scenario_agent_build_registry(
+    api: ApiClient,
+    *,
+    admin_token: str,
+    expected_version: str,
+    targets: tuple[str, ...] = ("windows_amd64", "linux_alt_x86_64"),
+) -> list[ScenarioResult]:
+    results: list[ScenarioResult] = []
+    for target in targets:
+        _, payload = await api.request_json(
+            "GET",
+            f"/api/agent_builds?{urlencode({'target': target, 'channel': 'stable', 'limit': '10'})}",
+            token=admin_token,
+            expected_statuses=(200,),
+        )
+        builds = payload.get("builds") if isinstance(payload.get("builds"), list) else []
+        match = next(
+            (
+                build
+                for build in builds
+                if str(build.get("version") or "") == expected_version and str(build.get("target") or "") == target
+            ),
+            None,
+        )
+        results.append(
+            ScenarioResult(
+                name=f"agent_build_registry_{target}",
+                ok=bool(match),
+                summary=f"Stable agent build registry contains {expected_version} for {target}.",
+                details={
+                    "target": target,
+                    "root_kind": "agent_update",
+                    "expected_version": expected_version,
+                    "available_versions": [str(build.get("version") or "") for build in builds],
+                    "sha256": match.get("sha256") if match else None,
+                    "download_path": match.get("download_path") if match else None,
+                },
+            )
+        )
+    return results
+
+
 async def ws_expect_messages(
     ws: aiohttp.ClientWebSocketResponse,
     *,
@@ -1011,6 +1408,7 @@ async def scenario_consent(
                     "operation_id": approve_operation_id,
                     "status": approve_precheck_operation.get("status"),
                     "trace_id": approve_precheck_operation.get("trace_id"),
+                    "root_kind": "consent",
                 },
             )
         )
@@ -1042,6 +1440,7 @@ async def scenario_consent(
                 "ticket_id": ticket_id,
                 "operation_id": approve_operation_id,
                 "trace_id": approve_trace["trace_id"],
+                "root_kind": "consent",
                 "status": approve_operation["status"],
             },
         )
@@ -1087,6 +1486,7 @@ async def scenario_consent(
                 "ticket_id": ticket_id,
                 "operation_id": deny_operation_id,
                 "trace_id": deny_trace["trace_id"],
+                "root_kind": "consent",
                 "status": deny_operation["status"],
             },
         )
@@ -1132,6 +1532,7 @@ async def scenario_consent(
                 "ticket_id": ticket_id,
                 "operation_id": timeout_operation_id,
                 "trace_id": timeout_trace["trace_id"],
+                "root_kind": "consent",
                 "status": timeout_operation["status"],
                 "error_code": timeout_operation.get("error_code"),
             },
@@ -1190,6 +1591,7 @@ async def scenario_module_lifecycle(
                 "module_name": module_name,
                 "install_operation_id": install_v1_operation_id,
                 "trace_id": install_v1_trace["trace_id"],
+                "root_kind": "module_install",
                 "ticket_id": ticket_id,
                 "observed_version": extract_tool_result_version(echo_v1.get("result")),
                 "tool_result": echo_v1.get("result"),
@@ -1237,6 +1639,8 @@ async def scenario_module_lifecycle(
                 "module_name": module_name,
                 "install_operation_id": install_v2_operation_id,
                 "install_trace_id": install_v2_trace["trace_id"],
+                "trace_id": install_v2_trace["trace_id"],
+                "root_kind": "module_update",
                 "activate_operation_id": activate_v2_operation_id,
                 "activate_trace_id": activate_v2_trace["trace_id"],
                 "observed_version": extract_tool_result_version(echo_v2.get("result")),
@@ -1269,6 +1673,7 @@ async def scenario_module_lifecycle(
                 "module_name": module_name,
                 "operation_id": remove_version_operation_id,
                 "trace_id": remove_version_trace["trace_id"],
+                "root_kind": "module_remove",
             },
         )
     )
@@ -1295,6 +1700,7 @@ async def scenario_retry_exhausted(api: ApiClient, *, admin_token: str, device_i
         details={
             "operation_id": operation_id,
             "trace_id": trace["trace_id"],
+            "root_kind": "retry_exhausted",
             "status": operation.get("status"),
             "error_code": operation.get("error_code"),
             "spans_count": len(detail.get("spans") or []),
@@ -1376,6 +1782,7 @@ async def scenario_ws_ack_nack_replay(
                     summary="Post-handshake unauthorized outbox_item was rejected with typed outbox_nack.",
                     details={
                         "trace_id": unauthorized_nack.get("trace_id"),
+                        "root_kind": "ws_delivery",
                         "payload": unauthorized_nack.get("payload"),
                     },
                 )
@@ -1417,6 +1824,8 @@ async def scenario_ws_ack_nack_replay(
                     ),
                     summary="Duplicate outbox_item received direct ACK on replayed outbox_id.",
                     details={
+                        "trace_id": duplicate_trace_id,
+                        "root_kind": "ws_delivery",
                         "first_ack": first_ack.get("payload") if first_ack else None,
                         "first_nack": first_nack.get("payload") if first_nack else None,
                         "duplicate_ack": duplicate_ack.get("payload") if duplicate_ack else None,
@@ -1456,6 +1865,8 @@ async def scenario_ws_ack_nack_replay(
                     details={
                         "device_id": rate_device_id,
                         "ticket_id": rate_ticket_id,
+                        "trace_id": (rate_limited or {}).get("trace_id") if isinstance(rate_limited, dict) else None,
+                        "root_kind": "ws_delivery",
                         "payload": rate_limited_payload,
                         "observed_tail": rate_limit_result.get("observed_tail"),
                     },
@@ -1522,7 +1933,7 @@ async def scenario_ws_ack_nack_replay(
                 name="ws_ui_replay",
                 ok=replay_message is not None,
                 summary="UI reconnect replay delivered the missing ticket event via since_event_id catch-up.",
-                details={"ticket_id": replay_ticket_id, "replayed_event": replay_message},
+                details={"ticket_id": replay_ticket_id, "root_kind": "ws_delivery", "replayed_event": replay_message},
             )
         )
     except Exception as exc:
@@ -1592,6 +2003,7 @@ async def scenario_disconnect(
             "ticket_id": ticket_id,
             "operation_id": operation_id,
             "trace_id": trace["trace_id"],
+            "root_kind": "tool_call",
             "status": operation.get("status"),
             "error_code": operation.get("error_code"),
             "agent_actions": len(detail.get("agent_actions") or []),
@@ -1629,6 +2041,7 @@ async def cleanup_module(api: ApiClient, *, admin_token: str, device_id: str, mo
             "module_name": module_name,
             "operation_id": operation_id or None,
             "trace_id": trace_id,
+            "root_kind": "module_remove",
             "status": (operation or {}).get("status"),
             "error_code": (operation or {}).get("error_code"),
         },
@@ -1650,6 +2063,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-local-agent-start", action="store_true")
     parser.add_argument("--leave-local-agent-running", action="store_true")
     parser.add_argument("--report-path", type=Path)
+    parser.add_argument("--markdown-report-path", type=Path)
+    parser.add_argument("--skip-source-coverage-probes", action="store_true")
+    parser.add_argument("--expected-agent-version", default=os.environ.get("PC_CLIENT_EXPECTED_AGENT_VERSION") or read_local_agent_version())
     return parser.parse_args()
 
 
@@ -1734,6 +2150,27 @@ async def main_async() -> int:
                 )
             )
 
+            if not args.skip_source_coverage_probes:
+                _print_step("Seeding observer source coverage probes")
+                results.extend(
+                    await scenario_observer_source_coverage(
+                        api,
+                        admin_token=admin_token,
+                        device_id=device_id,
+                        remote=args.remote,
+                    )
+                )
+
+            if args.expected_agent_version:
+                _print_step(f"Checking stable agent build registry for {args.expected_agent_version}")
+                results.extend(
+                    await scenario_agent_build_registry(
+                        api,
+                        admin_token=admin_token,
+                        expected_version=str(args.expected_agent_version),
+                    )
+                )
+
             if module_name:
                 _print_step(f"Restarting local launcher instance {args.instance_name} for cleanup")
                 await asyncio.to_thread(
@@ -1771,8 +2208,12 @@ async def main_async() -> int:
             "device_id": instance_payload.get("machine_id") if instance_payload else None,
             "results": [asdict(item) for item in results],
         }
+        report["coverage"] = build_observer_coverage_summary(results)
         report_path.write_text(_json_dump(report), encoding="utf-8")
         _print_step(f"Report written to {report_path}")
+        if args.markdown_report_path:
+            args.markdown_report_path.write_text(render_markdown_report(report), encoding="utf-8")
+            _print_step(f"Markdown report written to {args.markdown_report_path}")
 
     failed = [item for item in results if not item.ok]
     for item in results:

@@ -119,7 +119,7 @@ async def test_web_admin_observer_quick_returns_typed_fallback_payload_when_db_i
     assert payload["data"]["runtime"]["health_status"] == "down"
     assert payload["data"]["links"]["quick_endpoint"] == "/api/web/admin/observer/quick"
     assert payload["data"]["links"]["traces_endpoint"] == "/api/web/admin/observer/traces"
-    assert payload["data"]["links"]["runtime_endpoint"] == "/api/admin/tech/traces/runtime"
+    assert payload["data"]["links"]["runtime_endpoint"] == "/api/web/admin/observer/runtime"
     assert payload["data"]["hot_traces"] == []
 
 
@@ -203,7 +203,7 @@ async def test_web_admin_observer_quick_returns_typed_payload(web_admin_client, 
             links=AdminObserverQuickLinks(
                 quick_endpoint="/api/web/admin/observer/quick",
                 traces_endpoint="/api/web/admin/observer/traces",
-                runtime_endpoint="/api/admin/tech/traces/runtime",
+                runtime_endpoint="/api/web/admin/observer/runtime",
             ),
         )
 
@@ -266,6 +266,9 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         module_name: str | None,
         error_signature: str | None,
         min_duration_ms: int | None,
+        playbook_run_id: int | None,
+        step_run_id: int | None,
+        route: str | None,
     ):
         assert request.path == "/api/web/admin/observer/traces"
         assert device_id == "device-1"
@@ -281,6 +284,9 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         assert module_name == "system"
         assert error_signature == "sig-1"
         assert min_duration_ms == 1200
+        assert playbook_run_id is None
+        assert step_run_id is None
+        assert route is None
         return AdminObserverTracesPayload(
             query=AdminObserverTracesQuery(
                 device_id=device_id,
@@ -353,7 +359,7 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
             ],
             links=AdminObserverTracesLinks(
                 detail_endpoint_template="/api/web/admin/observer/traces/{trace_id}",
-                runtime_endpoint="/api/admin/tech/traces/runtime",
+                runtime_endpoint="/api/web/admin/observer/runtime",
             ),
         )
 

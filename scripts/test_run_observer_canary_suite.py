@@ -107,3 +107,74 @@ def test_remote_trigger_ws_rate_limit_code_contains_expected_contract() -> None:
     assert "ticket-1" in code
     assert "observer-rate-remote" in code
     assert "\"nack\": payload" in code
+
+
+def test_build_observer_coverage_summary_tracks_required_root_kinds() -> None:
+    results = [
+        suite.ScenarioResult(
+            name="module_install",
+            ok=True,
+            summary="ok",
+            details={"root_kind": "module_install", "trace_id": "trace-module"},
+        ),
+        suite.ScenarioResult(
+            name="coverage_playbook_run",
+            ok=True,
+            summary="ok",
+            details={"root_kind": "playbook_run", "trace_id": "trace-playbook", "span_count": 2},
+        ),
+        suite.ScenarioResult(
+            name="coverage_web_auth",
+            ok=False,
+            summary="failed",
+            details={"root_kind": "web_auth", "trace_id": "trace-web-auth"},
+        ),
+    ]
+
+    summary = suite.build_observer_coverage_summary(
+        results,
+        required_root_kinds=["module_install", "playbook_run", "web_auth", "observer_runtime"],
+    )
+
+    assert summary["ok"] is False
+    assert summary["observed_root_kinds"] == ["module_install", "playbook_run"]
+    assert summary["missing_root_kinds"] == ["web_auth", "observer_runtime"]
+    assert summary["trace_refs"] == [
+        {"scenario": "module_install", "root_kind": "module_install", "trace_id": "trace-module"},
+        {"scenario": "coverage_playbook_run", "root_kind": "playbook_run", "trace_id": "trace-playbook"},
+    ]
+
+
+def test_render_markdown_report_includes_coverage_and_results() -> None:
+    report = {
+        "generated_at": "2026-04-28T10:00:00+00:00",
+        "base_url": "http://192.168.100.17:8666",
+        "device_id": "device-1",
+        "coverage": {
+            "ok": False,
+            "required_root_kinds": ["module_install", "web_auth"],
+            "observed_root_kinds": ["module_install"],
+            "missing_root_kinds": ["web_auth"],
+        },
+        "results": [
+            {"name": "module_install", "ok": True, "summary": "Installed canary module."},
+            {"name": "coverage_web_auth", "ok": False, "summary": "No web auth trace."},
+        ],
+    }
+
+    markdown = suite.render_markdown_report(report)
+
+    assert "# Observer Canary Report" in markdown
+    assert "Coverage: **failed**" in markdown
+    assert "`web_auth`" in markdown
+    assert "| FAIL | coverage_web_auth | No web auth trace. |" in markdown
+
+
+def test_remote_seed_observer_source_coverage_code_contains_projection_sources() -> None:
+    code = suite.remote_seed_observer_source_coverage_code("device-1")
+
+    assert "module_reconcile_failed" in code
+    assert "observer_runtime_degraded" in code
+    assert "web_auth_failed" in code
+    assert "PlaybookRun" in code
+    assert "ObserverOverlayService" in code

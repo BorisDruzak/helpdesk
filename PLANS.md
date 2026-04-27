@@ -206,6 +206,21 @@ Start from:
 
 Design rule: every newly observed problem must answer three questions in the UI/API: what failed, at which exact step, and what source row/event proves it.
 
+### 2026-04-28 Follow-up: Canary, Live Agent Checks And UX
+
+Status: in progress.
+
+Detailed follow-up plan:
+
+- `docs/superpowers/plans/2026-04-28-observer-canary-live-agent-ux.md`
+
+Current execution focus:
+
+1. Extend the live observer canary suite so it verifies first-class traces for `module_reconcile`, `playbook_run`, `web_auth` and `observer_runtime`.
+2. Add report-level coverage closure output in JSON and Markdown.
+3. Verify the current agent release is present in the stable build registry for both `windows_amd64` and `linux_alt_x86_64`.
+4. Improve `/app/admin/observer` trace detail UX with evidence-source and diagnostics-bundle counters.
+
 ## 2026-04-27 Connection Request Duplicate Approval Bug
 
 Status: fixed locally; release verification in progress.
