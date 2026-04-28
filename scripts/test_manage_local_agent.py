@@ -190,6 +190,30 @@ def test_normalize_machine_id_accepts_uuid_and_seed():
     assert seeded_first != other_seed
 
 
+def test_resolve_start_machine_id_prefers_explicit_override() -> None:
+    current = {"machine_id": "16a3bdb1-78fe-5459-aca4-a911c5ae76cb"}
+
+    resolved = manage_local_agent._resolve_start_machine_id(
+        "codex-live",
+        "explicit-live-agent",
+        current,
+    )
+
+    assert resolved == manage_local_agent._normalize_machine_id("explicit-live-agent")
+
+
+def test_resolve_start_machine_id_reuses_saved_instance_identity() -> None:
+    current = {"machine_id": "16a3bdb1-78fe-5459-aca4-a911c5ae76cb"}
+
+    resolved = manage_local_agent._resolve_start_machine_id("codex-live", None, current)
+
+    assert resolved == "16a3bdb1-78fe-5459-aca4-a911c5ae76cb"
+
+
+def test_resolve_start_machine_id_without_existing_identity_returns_none() -> None:
+    assert manage_local_agent._resolve_start_machine_id("codex-live", None, None) is None
+
+
 def test_build_env_includes_machine_id_and_auth_token():
     env = manage_local_agent._build_env(
         "ws://example/ws",

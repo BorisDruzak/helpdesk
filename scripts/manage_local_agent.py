@@ -228,6 +228,17 @@ def _normalize_machine_id(value: str | None) -> str | None:
         return str(uuid.uuid5(LOCAL_AGENT_MACHINE_ID_NAMESPACE, raw))
 
 
+def _resolve_start_machine_id(name: str, machine_id: str | None, current: dict | None) -> str | None:
+    resolved_machine_id = _normalize_machine_id(machine_id)
+    if resolved_machine_id:
+        return resolved_machine_id
+    if current:
+        current_machine_id = _normalize_machine_id(str(current.get("machine_id") or ""))
+        if current_machine_id:
+            return current_machine_id
+    return None
+
+
 def _build_env(
     ws_url: str,
     api_url: str,
@@ -437,7 +448,7 @@ def _start(
         raise SystemExit(f"Instance '{name}' is already running with PID {current['pid']}")
 
     layout = _ensure_instance_layout(name)
-    resolved_machine_id = _normalize_machine_id(machine_id)
+    resolved_machine_id = _resolve_start_machine_id(name, machine_id, current)
     resolved_auth_token = auth_token
     if issue_token and not resolved_auth_token:
         if not resolved_machine_id:
