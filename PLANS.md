@@ -134,6 +134,7 @@ Findings:
 
 - Root cause found: server processed `module_state_changed` into `device_modules`, but ignored `tools_changed`, so `list_tools` was not queued after agent-side registry rebuild. Snapshot could stay stale until reconnect or manual sync even though the module was already usable.
 - Fix in progress: outbox publish now debounces and queues `list_tools` after `tools_changed`; `module_state_changed` also requests the same refresh as a fallback.
+- Live no-op auto-install showed that agent lifecycle events are not enough as the only convergence trigger, so server-side `_ensure_module_installed()` now also queues `list_installed_modules` and `list_tools` immediately after successful `install_module_package`.
 
 ### 2026-04-28 Fifth Wave: Live Playbook Run And Auto-Install Fix
 

@@ -93,6 +93,12 @@ const modulesWithDrift = modulesData.modules.map(m => {
      3. Когда `list_tools` выполнится → `device_toolset_snapshots` обновится (см. пункт 1).
    - Ожидаемый результат: auto-install/reconcile install обновляет toolset snapshot без reconnect и без ручного Sync Modules.
 
+5. **После server-side auto-install перед `run_tool`** (автоматически)
+   - Файл: `server/tools/service.py`
+   - Триггер: `_ensure_module_installed()` получил успешный `command_result` от `install_module_package`.
+   - Процесс: сервер ставит follow-up `list_installed_modules` и `list_tools` с `require_online=false`.
+   - Зачем: повторная/no-op установка может не дать нового agent-side `tools_changed`, но snapshot всё равно должен сойтись после запуска модуля.
+
 ### КРИТИЧНО: Commit транзакции
 
 После обновления snapshot **обязательно** вызывается `await session.commit()` внутри post-process слоя `command_result`.

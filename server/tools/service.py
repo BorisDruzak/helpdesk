@@ -62,6 +62,35 @@ class ToolService:
                 identifiers.append(alias_name)
         return list(dict.fromkeys(identifiers))
 
+    async def _enqueue_module_refresh_after_install(
+        self,
+        *,
+        device_id: str,
+        actor_role: str,
+    ) -> None:
+        try:
+            from websocket.protocol import enqueue_command_async
+
+            for command in ("list_installed_modules", "list_tools"):
+                await enqueue_command_async(
+                    state=self.state,
+                    device_id=device_id,
+                    command=command,
+                    params={},
+                    actor_role=actor_role,
+                    trace_id=None,
+                    require_online=False,
+                )
+            logger.info(
+                "[ensure_module] queued post-install inventory/toolset refresh: "
+                f"device_id={device_id}"
+            )
+        except Exception as exc:
+            logger.warning(
+                "[ensure_module] post-install inventory/toolset refresh enqueue failed: "
+                f"device_id={device_id} error={exc}"
+            )
+
     @staticmethod
     def _pick_preferred_module(modules: List[object]):
         if not modules:
@@ -472,6 +501,10 @@ class ToolService:
                 "error": f"Ошибка установки модуля {module_name!r}: {err}",
                 "error_code": payload.get("error_code") or "MODULE_INSTALL_FAILED",
             }
+        await self._enqueue_module_refresh_after_install(
+            device_id=device_id,
+            actor_role=actor_role,
+        )
         logger.info(f"✅ Модуль {module_name}@{version} установлен на {device_id}, продолжаем run_tool")
         return None
 

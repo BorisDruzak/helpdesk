@@ -176,6 +176,37 @@ async def test_ensure_module_installed_upgrades_preferred_version_even_when_snap
 
 
 @pytest.mark.asyncio
+async def test_ensure_module_installed_queues_followup_refresh_after_successful_install():
+    device_id = str(uuid.uuid4())
+    module_name = f"network_basic_{uuid.uuid4().hex[:8]}"
+    await _seed_device(device_id)
+    await _seed_module(module_name, "1.0.0")
+
+    service = ToolService(SimpleNamespace())
+    refresh_commands = []
+
+    async def fake_send_ws_command(**kwargs):
+        return {"payload": {"status": "success"}}
+
+    async def fake_enqueue_command_async(**kwargs):
+        refresh_commands.append(kwargs)
+        return f"refresh-{len(refresh_commands)}"
+
+    with patch("websocket.protocol.send_ws_command", new=fake_send_ws_command), \
+         patch("websocket.protocol.enqueue_command_async", new=fake_enqueue_command_async):
+        result = await service._ensure_module_installed(device_id, "dns.resolve")
+
+    assert result is None
+    assert [item["command"] for item in refresh_commands] == [
+        "list_installed_modules",
+        "list_tools",
+    ]
+    assert all(item["device_id"] == device_id for item in refresh_commands)
+    assert all(item["actor_role"] == "admin" for item in refresh_commands)
+    assert all(item["require_online"] is False for item in refresh_commands)
+
+
+@pytest.mark.asyncio
 async def test_ensure_module_installed_persists_desired_state_without_reinstall_when_preferred_is_active():
     device_id = str(uuid.uuid4())
     module_name = f"network_basic_{uuid.uuid4().hex[:8]}"
