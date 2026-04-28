@@ -803,3 +803,26 @@ Verification target:
 - `python scripts/verify_workspace.py`
 - `python pc_agent/build_windows_release_v2.py`
 - remote deploy/release and agent-build promotion through the documented scripts/APIs.
+
+### 2026-04-28 Eleventh Wave: Ticket FSM And Form Launch UX
+
+Goal:
+
+- Make ticket status management more operator-safe by separating allowed transitions from blocked transitions and explaining the guard before apply.
+- Make the forms builder publish path safer by showing a validation summary and an end-to-end intake -> routing -> diagnostic playbook preview.
+
+Current plan:
+
+1. [completed] Add failing React tests for FSM-aware status actions: allowed transitions remain clickable, blocked transitions are visible with a reason, and blocked transitions cannot be applied.
+2. [completed] Implement transition classification in `/app/tickets/:ticketId` without changing the typed server contract: use server-provided `status_options` as allowed transitions and derive blocked common statuses client-side for operator visibility.
+3. [completed] Add failing React tests for forms builder validation summary and playbook launch preview: missing form keys, duplicate field keys, select/radio options, enabled trigger key, and publish disabled when hard validation fails.
+4. [completed] Implement validation summary and a predictable launch preview panel next to route preview; keep serialized payload compatible with existing `playbook_triggers`.
+5. [in progress] Run focused Vitest, full webapp test/build, `python scripts/verify_workspace.py`, deploy to Linux, live browser-check ticket/actions/forms, then stop the remote server.
+
+Verification target:
+
+- `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx`
+- `pnpm --dir webapp run test`
+- `pnpm --dir webapp run build`
+- `python scripts/verify_workspace.py`
+- Browser live check on `http://192.168.100.17:8666/admin`, then `python scripts/manage_remote_stack.py stop server`.

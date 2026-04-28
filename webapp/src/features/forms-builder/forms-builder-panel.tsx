@@ -77,6 +77,12 @@ type DraftCatalog = {
 
 type PreviewFormValues = Record<string, string | boolean>;
 
+type DraftValidationIssue = {
+  key: string;
+  severity: "error" | "warning";
+  message: string;
+};
+
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
     return "Нет данных";
@@ -437,6 +443,102 @@ function buildPreviewValues(form: DraftForm | null, current: PreviewFormValues =
   );
 }
 
+function validateDraftCatalog(catalog: DraftCatalog | null): DraftValidationIssue[] {
+  if (!catalog) {
+    return [];
+  }
+
+  const issues: DraftValidationIssue[] = [];
+  const formKeys = new Set<string>();
+
+  catalog.forms.forEach((form, formIndex) => {
+    const formLabel = form.title.trim() || form.key.trim() || `Форма ${formIndex + 1}`;
+    const formKey = form.key.trim();
+
+    if (!formKey) {
+      issues.push({
+        key: `form-${formIndex}-key`,
+        severity: "error",
+        message: `У формы «${formLabel}» нужен ключ формы.`,
+      });
+    } else if (formKeys.has(formKey)) {
+      issues.push({
+        key: `form-${formIndex}-duplicate`,
+        severity: "error",
+        message: `Ключ формы «${formKey}» используется повторно.`,
+      });
+    }
+    formKeys.add(formKey);
+
+    if (!form.request_kind.trim()) {
+      issues.push({
+        key: `form-${formIndex}-request-kind`,
+        severity: "error",
+        message: `У формы «${formLabel}» нужен request_kind.`,
+      });
+    }
+
+    const enabledTrigger = form.playbook_triggers.find((trigger) => trigger.enabled);
+    if (enabledTrigger && !enabledTrigger.playbook_key.trim()) {
+      issues.push({
+        key: `form-${formIndex}-playbook-key`,
+        severity: "error",
+        message: "Укажите ключ плейбука или выключите автозапуск.",
+      });
+    }
+
+    const fieldKeys = new Set<string>();
+    form.fields.forEach((field, fieldIndex) => {
+      const fieldLabel = field.label.trim() || field.key.trim() || `Поле ${fieldIndex + 1}`;
+      const fieldKey = field.key.trim();
+
+      if (!fieldKey) {
+        issues.push({
+          key: `form-${formIndex}-field-${fieldIndex}-key`,
+          severity: "error",
+          message: `У поля «${fieldLabel}» нужен ключ.`,
+        });
+      } else if (fieldKeys.has(fieldKey)) {
+        issues.push({
+          key: `form-${formIndex}-field-${fieldIndex}-duplicate`,
+          severity: "error",
+          message: `Ключ поля «${fieldKey}» используется повторно в форме «${formLabel}».`,
+        });
+      }
+      fieldKeys.add(fieldKey);
+
+      if (!field.label.trim()) {
+        issues.push({
+          key: `form-${formIndex}-field-${fieldIndex}-label`,
+          severity: "error",
+          message: `У поля «${fieldKey || fieldIndex + 1}» нужно название.`,
+        });
+      }
+
+      if ((field.type === "select" || field.type === "radio") && field.options.length === 0) {
+        issues.push({
+          key: `form-${formIndex}-field-${fieldIndex}-options`,
+          severity: "error",
+          message: `У поля «${fieldLabel}» нужны варианты ответа.`,
+        });
+      }
+
+      if (field.visible_when.field && !fieldKeys.has(field.visible_when.field)) {
+        const dependencyExists = form.fields.some((item) => item.key === field.visible_when.field);
+        if (!dependencyExists) {
+          issues.push({
+            key: `form-${formIndex}-field-${fieldIndex}-visible-when`,
+            severity: "warning",
+            message: `Условие показа поля «${fieldLabel}» ссылается на неизвестное поле.`,
+          });
+        }
+      }
+    });
+  });
+
+  return issues;
+}
+
 function updateFormInCatalog(
   catalog: DraftCatalog,
   formKey: string,
@@ -711,6 +813,9 @@ export function FormsBuilderPanel() {
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
   const routePreview: AdminFormsRoutePreviewResult | undefined = previewMutation.data;
   const playbookTriggerReadiness = getPlaybookTriggerReadiness(selectedForm?.playbook_triggers[0]);
+  const validationIssues = useMemo(() => validateDraftCatalog(draft), [draft]);
+  const validationErrors = validationIssues.filter((issue) => issue.severity === "error");
+  const hasBlockingValidationIssues = validationErrors.length > 0;
   const dependencyFields =
     selectedForm && selectedField ? getDependencyFields(selectedForm, selectedField.key) : [];
   const dependencyField =
@@ -875,7 +980,7 @@ export function FormsBuilderPanel() {
                 Загрузить текущую
               </Button>
               <Button
-                disabled={!draft || saveMutation.isPending}
+                disabled={!draft || saveMutation.isPending || hasBlockingValidationIssues}
                 leadingIcon={<Save className="h-4 w-4" />}
                 onClick={() => {
                   if (!draft) {
@@ -999,7 +1104,7 @@ export function FormsBuilderPanel() {
                   {hasUnsavedChanges ? "Есть несохранённые изменения" : "Черновик синхронизирован"}
                 </Badge>
                 <Button
-                  disabled={!draft || saveMutation.isPending}
+                  disabled={!draft || saveMutation.isPending || hasBlockingValidationIssues}
                   leadingIcon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={() => {
                     if (!draft) {
@@ -1964,6 +2069,39 @@ export function FormsBuilderPanel() {
               </p>
             </div>
 
+            <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">Проверка публикации</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {validationIssues.length
+                      ? `${validationErrors.length} блокирующих, ${validationIssues.length - validationErrors.length} предупреждений`
+                      : "Каталог можно публиковать."}
+                  </p>
+                </div>
+                <Badge tone={hasBlockingValidationIssues ? "warning" : "success"}>
+                  {hasBlockingValidationIssues ? "Нужно исправить" : "Готово"}
+                </Badge>
+              </div>
+              {validationIssues.length ? (
+                <ul className="mt-3 space-y-2 text-sm">
+                  {validationIssues.slice(0, 5).map((issue) => (
+                    <li
+                      className={cn(
+                        "rounded-[0.8rem] px-3 py-2",
+                        issue.severity === "error"
+                          ? "bg-rose-50 text-rose-700"
+                          : "bg-amber-50 text-amber-800",
+                      )}
+                      key={issue.key}
+                    >
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-slate-500">Черновик из версии</span>
@@ -2150,6 +2288,28 @@ export function FormsBuilderPanel() {
                           </div>
                         ))}
                       </div>
+                    </div>
+                  ) : null}
+
+                  {selectedForm?.playbook_triggers[0]?.enabled &&
+                  selectedForm.playbook_triggers[0].playbook_key.trim() ? (
+                    <div className="rounded-[0.9rem] border border-brand-100 bg-white px-3 py-3">
+                      <p className="font-medium text-slate-900">Автозапуск плейбука</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>Ключ плейбука</span>
+                          <strong className="text-slate-900">
+                            {selectedForm.playbook_triggers[0].playbook_key}
+                          </strong>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span>Событие</span>
+                          <strong className="text-slate-900">ticket_created</strong>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-500">
+                        Факты формы будут приложены к запуску после создания тикета.
+                      </p>
                     </div>
                   ) : null}
                 </div>
