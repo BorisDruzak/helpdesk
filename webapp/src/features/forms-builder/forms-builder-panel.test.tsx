@@ -435,14 +435,14 @@ describe("FormsBuilderPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Модель/ }));
     await waitFor(() => {
-      expect(screen.getByLabelText("visible_when.field")).toHaveValue("office_room");
+      expect(screen.getByLabelText("Поле условия")).toHaveValue("office_room");
     });
 
     fireEvent.click(screen.getByRole("button", { name: /Кабинет/ }));
     fireEvent.click(screen.getByRole("button", { name: "Удалить" }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("visible_when.field")).toHaveValue("");
+      expect(screen.getByLabelText("Поле условия")).toHaveValue("");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
@@ -466,6 +466,130 @@ describe("FormsBuilderPanel", () => {
     expect((saveCalls[0] as { forms: Array<{ fields: Array<{ visible_when?: unknown }> }> }).forms[0].fields[0]).not.toHaveProperty(
       "visible_when"
     );
+  });
+
+  it("редактирует options и условия видимости через контролы, а не технический textarea", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          const payload = createFormsPayload();
+          payload.forms[0].fields[0] = {
+            key: "issue_type",
+            label: "Тип проблемы",
+            type: "select",
+            type_label: "Список",
+            required: true,
+            placeholder: "",
+            help_text: "",
+            options: [
+              { value: "printer", label: "Принтер" },
+              { value: "network", label: "Сеть" },
+            ],
+            visible_when: null,
+          };
+          payload.forms[0].fields[1].visible_when = {
+            field: "issue_type",
+            equals: "printer",
+            values: [],
+          };
+          return jsonResponse({
+            status: "success",
+            data: payload,
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: [],
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.5",
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.5.",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    fireEvent.click(await screen.findByRole("button", { name: /Тип проблемы/ }));
+
+    expect(screen.getByText("Варианты ответа")).toBeInTheDocument();
+    expect(screen.queryByText("visible_when.field")).not.toBeInTheDocument();
+    expect(screen.queryByText("visible_when.equals")).not.toBeInTheDocument();
+    expect(screen.queryByText("visible_when.values")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Название варианта 1"), {
+      target: { value: "Печать" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить вариант" }));
+    fireEvent.change(screen.getByLabelText("Значение варианта 3"), {
+      target: { value: "software" },
+    });
+    fireEvent.change(screen.getByLabelText("Название варианта 3"), {
+      target: { value: "ПО" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Модель/ }));
+    expect(screen.getByText("Условие показа")).toBeInTheDocument();
+    expect(screen.getByLabelText("Поле условия")).toHaveValue("issue_type");
+    expect(screen.getByLabelText("Значение условия")).toHaveValue("printer");
+    fireEvent.change(screen.getByLabelText("Значение условия"), {
+      target: { value: "network" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+    expect(saveCalls[0]).toMatchObject({
+      forms: [
+        {
+          fields: [
+            expect.objectContaining({
+              key: "issue_type",
+              options: [
+                { value: "printer", label: "Печать" },
+                { value: "network", label: "Сеть" },
+                { value: "software", label: "ПО" },
+              ],
+            }),
+            expect.objectContaining({
+              key: "printer_model",
+              visible_when: {
+                field: "issue_type",
+                equals: "network",
+              },
+            }),
+          ],
+        },
+      ],
+    });
   });
 
   it("показывает readiness запуска плейбука без ручного JSON", async () => {

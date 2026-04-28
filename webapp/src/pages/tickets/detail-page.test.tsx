@@ -213,6 +213,70 @@ describe("TicketStatusActionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
     expect(onApply).toHaveBeenCalledWith("resolved");
   });
+
+  it("groups quick transition actions without applying until confirmation", () => {
+    const onValueChange = vi.fn();
+    const onApply = vi.fn();
+
+    const { rerender } = render(
+      <TicketStatusActionPanel
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus=""
+        statusOptions={[
+          { value: "in_progress", label: "Взять в работу" },
+          { value: "waiting_on_vendor", label: "Ждём внешнюю сторону" },
+          { value: "resolved", label: "Решено" },
+        ]}
+        ticket={{
+          status: "assigned",
+          status_label: "Назначена",
+          requester_status_label: "Заявка принята",
+          next_action_owner: "support",
+          evidence_required: false,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Быстрые переходы")).toBeInTheDocument();
+    expect(screen.getByText("В работе")).toBeInTheDocument();
+    expect(screen.getByText("Ожидание")).toBeInTheDocument();
+    expect(screen.getByText("Решение")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Ждём внешнюю сторону/ }));
+    expect(onValueChange).toHaveBeenCalledWith("waiting_on_vendor");
+    expect(onApply).not.toHaveBeenCalled();
+
+    rerender(
+      <TicketStatusActionPanel
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus="waiting_on_vendor"
+        statusOptions={[
+          { value: "in_progress", label: "Взять в работу" },
+          { value: "waiting_on_vendor", label: "Ждём внешнюю сторону" },
+          { value: "resolved", label: "Решено" },
+        ]}
+        ticket={{
+          status: "assigned",
+          status_label: "Назначена",
+          requester_status_label: "Заявка принята",
+          next_action_owner: "support",
+          evidence_required: false,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Следующий ответственный: Внешняя сторона")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
+    expect(onApply).toHaveBeenCalledWith("waiting_on_vendor");
+  });
 });
 
 describe("TicketAutomationPanel", () => {

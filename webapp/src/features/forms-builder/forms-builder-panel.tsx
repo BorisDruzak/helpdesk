@@ -370,37 +370,40 @@ function nextFieldIndex(fields: DraftField[]): number {
   return fields.length + 1;
 }
 
-function fieldOptionsToText(field: DraftField): string {
-  return field.options.map((option) => `${option.value}|${option.label}`).join("\n");
+function updateFieldOption(field: DraftField, index: number, patch: Partial<AdminFormsFieldOption>): DraftField {
+  return {
+    ...field,
+    options: field.options.map((option, optionIndex) =>
+      optionIndex === index
+        ? {
+            ...option,
+            ...patch,
+          }
+        : option
+    ),
+  };
 }
 
-function parseFieldOptions(text: string): AdminFormsFieldOption[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      const [valuePart, ...labelParts] = line.split("|");
-      const value = valuePart?.trim() || `option_${index + 1}`;
-      const label = labelParts.join("|").trim() || value;
-      return {
-        value,
-        label,
-      };
-    });
+function addFieldOption(field: DraftField): DraftField {
+  const nextIndex = field.options.length + 1;
+  return {
+    ...field,
+    options: [
+      ...field.options,
+      {
+        value: `option_${nextIndex}`,
+        label: `Вариант ${nextIndex}`,
+      },
+    ],
+  };
 }
 
-function valuesToText(values: string[]): string {
-  return values.join("\n");
+function removeFieldOption(field: DraftField, index: number): DraftField {
+  return {
+    ...field,
+    options: field.options.filter((_, optionIndex) => optionIndex !== index),
+  };
 }
-
-function parseValueLines(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
 
 function isPreviewFieldVisible(field: DraftField, values: PreviewFormValues): boolean {
   const dependencyKey = field.visible_when.field.trim();
@@ -521,6 +524,36 @@ function fieldTypeLabel(type: AdminFormsFieldType): string {
     default:
       return "Текст";
   }
+}
+
+function getVisibilityMode(field: DraftField): "always" | "equals" | "values" {
+  if (!field.visible_when.field.trim()) {
+    return "always";
+  }
+  if (field.visible_when.values.length > 0) {
+    return "values";
+  }
+  return "equals";
+}
+
+function getDependencyFields(form: DraftForm, fieldKey: string): DraftField[] {
+  return form.fields.filter((field) => field.key !== fieldKey);
+}
+
+function getDependencyValueOptions(field: DraftField | null | undefined): AdminFormsFieldOption[] {
+  if (!field) {
+    return [];
+  }
+  if (field.type === "checkbox") {
+    return [
+      { value: "true", label: "Да" },
+      { value: "false", label: "Нет" },
+    ];
+  }
+  if (field.type === "select" || field.type === "radio") {
+    return field.options;
+  }
+  return [];
 }
 
 function versionMatchesSearch(item: TicketFormsPackSummary, query: string): boolean {
@@ -678,6 +711,12 @@ export function FormsBuilderPanel() {
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
   const routePreview: AdminFormsRoutePreviewResult | undefined = previewMutation.data;
   const playbookTriggerReadiness = getPlaybookTriggerReadiness(selectedForm?.playbook_triggers[0]);
+  const dependencyFields =
+    selectedForm && selectedField ? getDependencyFields(selectedForm, selectedField.key) : [];
+  const dependencyField =
+    dependencyFields.find((field) => field.key === selectedField?.visible_when.field) ?? null;
+  const dependencyValueOptions = getDependencyValueOptions(dependencyField);
+  const visibilityMode = selectedField ? getVisibilityMode(selectedField) : "always";
 
   const visibleVersions = useMemo(
     () => (versionsQuery.data?.packs ?? []).filter((item) => versionMatchesSearch(item, versionSearch)),
@@ -1583,113 +1622,307 @@ export function FormsBuilderPanel() {
                                   </label>
 
                                   {fieldTypeRequiresOptions(selectedField) ? (
-                                    <label className="space-y-2 text-sm font-medium text-slate-800">
-                                      <span>Варианты ответа</span>
-                                      <textarea
-                                        className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
-                                        onChange={(event) => {
-                                          const value = event.currentTarget.value;
-                                          setDraft((current) =>
-                                            current
-                                              ? updateFieldInCatalog(
-                                                  current,
-                                                  selectedForm.key,
-                                                  selectedField.key,
-                                                  (field) => ({
-                                                    ...field,
-                                                    options: parseFieldOptions(value),
-                                                  })
-                                                )
-                                              : current
-                                          );
-                                        }}
-                                        placeholder={"value|label\nprinter|Принтер"}
-                                        value={fieldOptionsToText(selectedField)}
-                                      />
-                                    </label>
+                                    <div className="space-y-3 rounded-[1rem] border border-border bg-white px-4 py-4">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                          <p className="text-sm font-semibold text-slate-900">Варианты ответа</p>
+                                          <p className="mt-1 text-xs text-slate-500">
+                                            Значения уходят в payload, названия показываются пользователю.
+                                          </p>
+                                        </div>
+                                        <Button
+                                          onClick={() => {
+                                            setDraft((current) =>
+                                              current
+                                                ? updateFieldInCatalog(
+                                                    current,
+                                                    selectedForm.key,
+                                                    selectedField.key,
+                                                    addFieldOption
+                                                  )
+                                                : current
+                                            );
+                                          }}
+                                          size="sm"
+                                          variant="outline"
+                                        >
+                                          Добавить вариант
+                                        </Button>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {selectedField.options.map((option, optionIndex) => (
+                                          <div
+                                            className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                                            key={`${option.value}-${optionIndex}`}
+                                          >
+                                            <label className="space-y-1 text-xs font-semibold text-slate-500">
+                                              <span>Значение</span>
+                                              <input
+                                                aria-label={`Значение варианта ${optionIndex + 1}`}
+                                                className="field-base h-10 w-full px-3 text-sm"
+                                                onChange={(event) => {
+                                                  const value = event.currentTarget.value;
+                                                  setDraft((current) =>
+                                                    current
+                                                      ? updateFieldInCatalog(
+                                                          current,
+                                                          selectedForm.key,
+                                                          selectedField.key,
+                                                          (field) => updateFieldOption(field, optionIndex, { value })
+                                                        )
+                                                      : current
+                                                  );
+                                                }}
+                                                value={option.value}
+                                              />
+                                            </label>
+                                            <label className="space-y-1 text-xs font-semibold text-slate-500">
+                                              <span>Название</span>
+                                              <input
+                                                aria-label={`Название варианта ${optionIndex + 1}`}
+                                                className="field-base h-10 w-full px-3 text-sm"
+                                                onChange={(event) => {
+                                                  const label = event.currentTarget.value;
+                                                  setDraft((current) =>
+                                                    current
+                                                      ? updateFieldInCatalog(
+                                                          current,
+                                                          selectedForm.key,
+                                                          selectedField.key,
+                                                          (field) => updateFieldOption(field, optionIndex, { label })
+                                                        )
+                                                      : current
+                                                  );
+                                                }}
+                                                value={option.label}
+                                              />
+                                            </label>
+                                            <Button
+                                              disabled={selectedField.options.length <= 1}
+                                              onClick={() => {
+                                                setDraft((current) =>
+                                                  current
+                                                    ? updateFieldInCatalog(
+                                                        current,
+                                                        selectedForm.key,
+                                                        selectedField.key,
+                                                        (field) => removeFieldOption(field, optionIndex)
+                                                      )
+                                                    : current
+                                                );
+                                              }}
+                                              size="sm"
+                                              variant="ghost"
+                                            >
+                                              Удалить
+                                            </Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
                                   ) : null}
 
-                                  <div className="grid gap-4 md:grid-cols-3">
-                                    <label className="space-y-2 text-sm font-medium text-slate-800">
-                                      <span>visible_when.field</span>
-                                      <input
-                                        className="field-base h-11 w-full px-4 text-sm"
-                                        onChange={(event) => {
-                                          const value = event.currentTarget.value;
-                                          setDraft((current) =>
-                                            current
-                                              ? updateFieldInCatalog(
-                                                  current,
-                                                  selectedForm.key,
-                                                  selectedField.key,
-                                                  (field) => ({
-                                                    ...field,
-                                                    visible_when: {
-                                                      ...field.visible_when,
-                                                      field: value,
-                                                    },
-                                                  })
-                                                )
-                                              : current
-                                          );
-                                        }}
-                                        value={selectedField.visible_when.field}
-                                      />
-                                    </label>
+                                  <div className="space-y-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900">Условие показа</p>
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        Ограничьте поле ответом в другом поле формы. Пустое условие значит, что поле показывается всегда.
+                                      </p>
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-3">
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Зависит от поля</span>
+                                        <Select
+                                          aria-label="Поле условия"
+                                          onChange={(event) => {
+                                            const value = event.target.value;
+                                            setDraft((current) =>
+                                              current
+                                                ? updateFieldInCatalog(
+                                                    current,
+                                                    selectedForm.key,
+                                                    selectedField.key,
+                                                    (field) => ({
+                                                      ...field,
+                                                      visible_when: {
+                                                        field: value,
+                                                        equals: value ? "" : "",
+                                                        values: [],
+                                                      },
+                                                    })
+                                                  )
+                                                : current
+                                            );
+                                          }}
+                                          value={selectedField.visible_when.field}
+                                        >
+                                          <option value="">Показывать всегда</option>
+                                          {dependencyFields.map((field) => (
+                                            <option key={field.key} value={field.key}>
+                                              {field.label || field.key}
+                                            </option>
+                                          ))}
+                                        </Select>
+                                      </label>
 
-                                    <label className="space-y-2 text-sm font-medium text-slate-800">
-                                      <span>visible_when.equals</span>
-                                      <input
-                                        className="field-base h-11 w-full px-4 text-sm"
-                                        onChange={(event) => {
-                                          const value = event.currentTarget.value;
-                                          setDraft((current) =>
-                                            current
-                                              ? updateFieldInCatalog(
-                                                  current,
-                                                  selectedForm.key,
-                                                  selectedField.key,
-                                                  (field) => ({
-                                                    ...field,
-                                                    visible_when: {
-                                                      ...field.visible_when,
-                                                      equals: value,
-                                                    },
-                                                  })
-                                                )
-                                              : current
-                                          );
-                                        }}
-                                        value={selectedField.visible_when.equals}
-                                      />
-                                    </label>
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Правило</span>
+                                        <Select
+                                          aria-label="Условие показа"
+                                          disabled={!selectedField.visible_when.field}
+                                          onChange={(event) => {
+                                            const mode = event.target.value;
+                                            setDraft((current) =>
+                                              current
+                                                ? updateFieldInCatalog(
+                                                    current,
+                                                    selectedForm.key,
+                                                    selectedField.key,
+                                                    (field) => {
+                                                      if (mode === "always") {
+                                                        return clearVisibleWhenConfig(field);
+                                                      }
+                                                      const firstValue =
+                                                        field.visible_when.equals ||
+                                                        field.visible_when.values[0] ||
+                                                        dependencyValueOptions[0]?.value ||
+                                                        "";
+                                                      return {
+                                                        ...field,
+                                                        visible_when: {
+                                                          field: field.visible_when.field,
+                                                          equals: mode === "equals" ? firstValue : "",
+                                                          values: mode === "values" && firstValue ? [firstValue] : [],
+                                                        },
+                                                      };
+                                                    }
+                                                  )
+                                                : current
+                                            );
+                                          }}
+                                          value={visibilityMode}
+                                        >
+                                          <option value="always">Показывать всегда</option>
+                                          <option value="equals">Равно одному значению</option>
+                                          <option value="values">Одно из значений</option>
+                                        </Select>
+                                      </label>
 
-                                    <label className="space-y-2 text-sm font-medium text-slate-800">
-                                      <span>visible_when.values</span>
-                                      <textarea
-                                        className="field-base min-h-[90px] w-full resize-y px-4 py-4 text-sm"
-                                        onChange={(event) => {
-                                          const value = event.currentTarget.value;
-                                          setDraft((current) =>
-                                            current
-                                              ? updateFieldInCatalog(
-                                                  current,
-                                                  selectedForm.key,
-                                                  selectedField.key,
-                                                  (field) => ({
-                                                    ...field,
-                                                    visible_when: {
-                                                      ...field.visible_when,
-                                                      values: parseValueLines(value),
-                                                    },
-                                                  })
-                                                )
-                                              : current
-                                          );
-                                        }}
-                                        value={valuesToText(selectedField.visible_when.values)}
-                                      />
-                                    </label>
+                                      {visibilityMode === "equals" ? (
+                                        <label className="space-y-2 text-sm font-medium text-slate-800">
+                                          <span>Значение</span>
+                                          {dependencyValueOptions.length ? (
+                                            <Select
+                                              aria-label="Значение условия"
+                                              onChange={(event) => {
+                                                const value = event.target.value;
+                                                setDraft((current) =>
+                                                  current
+                                                    ? updateFieldInCatalog(
+                                                        current,
+                                                        selectedForm.key,
+                                                        selectedField.key,
+                                                        (field) => ({
+                                                          ...field,
+                                                          visible_when: {
+                                                            ...field.visible_when,
+                                                            equals: value,
+                                                            values: [],
+                                                          },
+                                                        })
+                                                      )
+                                                    : current
+                                                );
+                                              }}
+                                              value={selectedField.visible_when.equals}
+                                            >
+                                              <option value="">Не выбрано</option>
+                                              {dependencyValueOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                            </Select>
+                                          ) : (
+                                            <input
+                                              aria-label="Значение условия"
+                                              className="field-base h-11 w-full px-4 text-sm"
+                                              onChange={(event) => {
+                                                const value = event.currentTarget.value;
+                                                setDraft((current) =>
+                                                  current
+                                                    ? updateFieldInCatalog(
+                                                        current,
+                                                        selectedForm.key,
+                                                        selectedField.key,
+                                                        (field) => ({
+                                                          ...field,
+                                                          visible_when: {
+                                                            ...field.visible_when,
+                                                            equals: value,
+                                                            values: [],
+                                                          },
+                                                        })
+                                                      )
+                                                    : current
+                                                );
+                                              }}
+                                              value={selectedField.visible_when.equals}
+                                            />
+                                          )}
+                                        </label>
+                                      ) : null}
+                                    </div>
+                                    {visibilityMode === "values" ? (
+                                      <div className="grid gap-2 sm:grid-cols-2">
+                                        {dependencyValueOptions.length ? (
+                                          dependencyValueOptions.map((option) => (
+                                            <label
+                                              className="flex items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
+                                              key={option.value}
+                                            >
+                                              <input
+                                                checked={selectedField.visible_when.values.includes(option.value)}
+                                                onChange={(event) => {
+                                                  const checked = event.currentTarget.checked;
+                                                  setDraft((current) =>
+                                                    current
+                                                      ? updateFieldInCatalog(
+                                                          current,
+                                                          selectedForm.key,
+                                                          selectedField.key,
+                                                          (field) => {
+                                                            const values = new Set(field.visible_when.values);
+                                                            if (checked) {
+                                                              values.add(option.value);
+                                                            } else {
+                                                              values.delete(option.value);
+                                                            }
+                                                            return {
+                                                              ...field,
+                                                              visible_when: {
+                                                                ...field.visible_when,
+                                                                equals: "",
+                                                                values: Array.from(values),
+                                                              },
+                                                            };
+                                                          }
+                                                        )
+                                                      : current
+                                                  );
+                                                }}
+                                                type="checkbox"
+                                              />
+                                              <span>{option.label}</span>
+                                            </label>
+                                          ))
+                                        ) : (
+                                          <p className="text-sm text-slate-500">
+                                            Для нескольких значений выберите зависимое поле со списком вариантов.
+                                          </p>
+                                        )}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </div>
                               ) : (

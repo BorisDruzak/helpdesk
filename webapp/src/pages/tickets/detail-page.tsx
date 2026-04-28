@@ -44,6 +44,7 @@ import {
 } from "../../features/queues/api";
 import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
 import {
+  getNextActionOwnerForStatus,
   getTicketStatusPresentation,
   getTicketStatusTone,
 } from "../../features/tickets/status-presentation";
@@ -349,6 +350,31 @@ function parseToolParams(
   return validateSupportToolParams(selectedTool, selectedPresetId, toolParams);
 }
 
+function getTransitionGroupLabel(status: string): string {
+  if (status.startsWith("waiting_on_")) {
+    return "Ожидание";
+  }
+  if (status === "resolved") {
+    return "Решение";
+  }
+  if (status === "closed" || status === "canceled") {
+    return "Финал";
+  }
+  if (status === "scheduled") {
+    return "План";
+  }
+  return getTicketStatusPresentation({ status }).stageLabel;
+}
+
+function groupStatusOptions(statusOptions: Array<{ value: string; label: string }>) {
+  const groups = new Map<string, Array<{ value: string; label: string }>>();
+  statusOptions.forEach((option) => {
+    const groupLabel = getTransitionGroupLabel(option.value);
+    groups.set(groupLabel, [...(groups.get(groupLabel) ?? []), option]);
+  });
+  return Array.from(groups.entries()).map(([label, options]) => ({ label, options }));
+}
+
 export function TicketRequestFormCard({
   requestForm,
 }: {
@@ -544,13 +570,14 @@ export function TicketStatusActionPanel({
         status: selectedOption.value,
         statusLabel: selectedOption.label,
         requesterStatusLabel: ticket.requester_status_label,
-        nextActionOwner: ticket.next_action_owner,
+        nextActionOwner: getNextActionOwnerForStatus(selectedOption.value),
         evidenceRequired: ticket.evidence_required,
         evidenceRef: ticket.evidence_ref,
       })
     : null;
   const evidenceBlocked =
     selectedStatus === "resolved" && Boolean(ticket.evidence_required) && !ticket.evidence_ref;
+  const transitionGroups = groupStatusOptions(statusOptions);
 
   return (
     <div className="min-w-[320px] rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
@@ -590,6 +617,52 @@ export function TicketStatusActionPanel({
         </div>
       </div>
 
+      {transitionGroups.length ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-900">Быстрые переходы</p>
+            <p className="text-xs text-slate-500">Выбор не меняет статус до подтверждения.</p>
+          </div>
+          {transitionGroups.map((group) => (
+            <div key={group.label} className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{group.label}</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {group.options.map((option) => {
+                  const optionPresentation = getTicketStatusPresentation({
+                    status: option.value,
+                    statusLabel: option.label,
+                    requesterStatusLabel: ticket.requester_status_label,
+                    nextActionOwner: getNextActionOwnerForStatus(option.value),
+                    evidenceRequired: ticket.evidence_required,
+                    evidenceRef: ticket.evidence_ref,
+                  });
+                  const active = selectedStatus === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      className={cn(
+                        "rounded-[0.9rem] border px-3 py-3 text-left transition-colors",
+                        active
+                          ? "border-brand-200 bg-brand-50 text-brand-900"
+                          : "border-border bg-white text-slate-700 hover:border-brand-100 hover:bg-surface-subtle",
+                      )}
+                      disabled={disabled || pending}
+                      onClick={() => onValueChange(option.value)}
+                      type="button"
+                    >
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {optionPresentation.ownerLabel} · {optionPresentation.evidenceLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="mt-4 rounded-[0.95rem] bg-surface-subtle px-3 py-3 text-sm">
         {preview ? (
           <div className="space-y-3">
@@ -604,6 +677,7 @@ export function TicketStatusActionPanel({
               <span>Текущий ход: {current.ownerLabel}</span>
               <span>Guard: {preview.evidenceLabel}</span>
             </div>
+            <p className="text-slate-600">Следующий ответственный: {preview.ownerLabel}</p>
             {evidenceBlocked ? (
               <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
                 Перед решением нужен evidence или паспорт решения.

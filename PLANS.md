@@ -119,6 +119,22 @@ Completed:
 - Live staging check exposed a real lazy module install edge case: `network_basic@1.0.0` installed successfully, but the playbook failed before `run_tool` because the strict capability gate read a stale/no toolset snapshot.
 - The lazy-install playbook gate now allows the immediate `run_tool` after successful DB-backed module install, and live observer signoff confirmed `network.ping` completed successfully.
 
+### 2026-04-28 Tenth Wave: Ticket Control And Forms UX
+
+Current focus:
+
+1. Make ticket status management more operator-safe:
+   - group available transitions by workflow stage;
+   - show quick action cards with next-action owner and evidence/terminal markers;
+   - keep the explicit apply button as the only mutation path.
+2. Make form visibility rules predictable for admins:
+   - replace `visible_when.field` / `visible_when.equals` / `visible_when.values` technical inputs with field/condition/value controls;
+   - derive value choices from the selected dependency field when it has options;
+   - continue generating the same `visible_when` payload for the server.
+3. Replace pipe-delimited option editing with row-based value/label controls.
+4. Keep playbook-trigger readiness and route preview visible, but avoid raw JSON or schema-like labels in the normal authoring surface.
+5. Verify with focused red/green Vitest, full webapp test/build, `python scripts/verify_workspace.py`, deploy smoke and live browser checks for `/app/tickets/:id` + `/app/admin/forms`.
+
 ### 2026-04-28 Fifth Wave: Module Launch Convergence
 
 Current focus:

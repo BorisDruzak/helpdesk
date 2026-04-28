@@ -152,6 +152,26 @@ export function getNextActionOwnerLabel(owner: string | null | undefined): strin
   }
 }
 
+export function getNextActionOwnerForStatus(status: string | null | undefined): string {
+  switch (status) {
+    case "waiting_on_user":
+      return "requester";
+    case "waiting_on_internal_team":
+      return "internal_team";
+    case "waiting_on_vendor":
+      return "vendor";
+    case "waiting_on_approval":
+      return "approver";
+    case "resolved":
+      return "requester";
+    case "closed":
+    case "canceled":
+      return "system";
+    default:
+      return "support";
+  }
+}
+
 function getOperatorActionLabel(status: string, owner: string | null | undefined): string {
   if (status === "closed" || status === "canceled") {
     return "Контроль не требуется";
@@ -187,6 +207,9 @@ export function getTicketStatusPresentation(input: TicketStatusPresentationInput
   const evidenceRequired = Boolean(input.evidenceRequired);
   const terminal = TERMINAL_STATUSES.has(normalizedStatus);
   const waits = WAITING_STATUSES.has(normalizedStatus);
+  const stageLabel = getTicketStageLabel(normalizedStatus);
+  const nextActionOwner =
+    input.nextActionOwner ?? (stageLabel !== "Другое" ? getNextActionOwnerForStatus(normalizedStatus) : undefined);
 
   let evidenceLabel = "Не требуется";
   let evidenceTone: TicketBadgeTone = "neutral";
@@ -202,8 +225,8 @@ export function getTicketStatusPresentation(input: TicketStatusPresentationInput
     status: normalizedStatus,
     statusLabel,
     requesterStatusLabel,
-    ownerLabel: getNextActionOwnerLabel(input.nextActionOwner),
-    stageLabel: getTicketStageLabel(normalizedStatus),
+    ownerLabel: getNextActionOwnerLabel(nextActionOwner),
+    stageLabel,
     tone: getTicketStatusTone(normalizedStatus),
     evidenceLabel,
     evidenceTone,
