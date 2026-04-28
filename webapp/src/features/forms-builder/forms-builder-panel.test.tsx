@@ -499,6 +499,10 @@ describe("FormsBuilderPanel", () => {
 
     await screen.findByRole("heading", { name: "Конструктор форм заявок" });
     await screen.findByText("Плейбук при создании тикета");
+    expect(screen.getByText("Цепочка запуска")).toBeInTheDocument();
+    expect(screen.getByText("Форма")).toBeInTheDocument();
+    expect(screen.getByText("Роутинг")).toBeInTheDocument();
+    expect(screen.getByText("Плейбук")).toBeInTheDocument();
     expect(screen.getByText("Запуск выключен")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Включить"));

@@ -76,6 +76,24 @@ Current focus:
 5. Align `/app/settings` ticket lifecycle display with the same status model and labels.
 6. Verify with focused Vitest, webapp build, workspace verification and live browser checks on `http://192.168.100.17:8666/admin`.
 
+Completed:
+
+- Shared ticket status presentation helper now drives `/app/tickets`, ticket detail, support workspace and settings lifecycle badges.
+- Ticket detail shows stage, next action owner, operator action and evidence gate.
+- Forms builder shows playbook-trigger readiness and route preview no longer exposes condition JSON as the normal operator surface.
+
+### 2026-04-28 Third Wave: Safer Ticket Status Actions
+
+Current focus:
+
+1. Replace immediate status mutation from the ticket detail select with a deliberate transition panel:
+   - choose target status;
+   - preview the target stage;
+   - show evidence/passport guard before resolution;
+   - apply through an explicit button.
+2. Keep the server FSM/evidence validation authoritative; frontend only explains the next action.
+3. Keep support/admin styling dense and operational.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

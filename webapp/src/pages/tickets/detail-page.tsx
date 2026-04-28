@@ -501,6 +501,124 @@ export function TicketWorkVisibilityCard({
   );
 }
 
+export function TicketStatusActionPanel({
+  disabled,
+  onApply,
+  onValueChange,
+  pending,
+  selectedStatus,
+  statusOptions,
+  ticket,
+}: {
+  disabled: boolean;
+  onApply: (status: string) => void;
+  onValueChange: (status: string) => void;
+  pending: boolean;
+  selectedStatus: string;
+  statusOptions: Array<{ value: string; label: string }>;
+  ticket: Pick<
+    SupportTicketDetailPayload["ticket"],
+    | "status"
+    | "status_label"
+    | "requester_status_label"
+    | "next_action_owner"
+    | "evidence_required"
+    | "evidence_ref"
+  >;
+}) {
+  const current = getTicketStatusPresentation({
+    status: ticket.status,
+    statusLabel: ticket.status_label,
+    requesterStatusLabel: ticket.requester_status_label,
+    nextActionOwner: ticket.next_action_owner,
+    evidenceRequired: ticket.evidence_required,
+    evidenceRef: ticket.evidence_ref,
+  });
+  const selectedOption = statusOptions.find((option) => option.value === selectedStatus) ?? null;
+  const preview = selectedOption
+    ? getTicketStatusPresentation({
+        status: selectedOption.value,
+        statusLabel: selectedOption.label,
+        requesterStatusLabel: ticket.requester_status_label,
+        nextActionOwner: ticket.next_action_owner,
+        evidenceRequired: ticket.evidence_required,
+        evidenceRef: ticket.evidence_ref,
+      })
+    : null;
+  const evidenceBlocked =
+    selectedStatus === "resolved" && Boolean(ticket.evidence_required) && !ticket.evidence_ref;
+
+  return (
+    <div className="min-w-[320px] rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-700">Управление статусом</p>
+          <p className="mt-1 text-sm text-slate-500">Выберите переход, проверьте guard и примените явно.</p>
+        </div>
+        <Badge tone={current.tone}>{current.statusLabel}</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Целевой статус</span>
+          <Select
+            aria-label="Целевой статус"
+            disabled={disabled || pending || statusOptions.length === 0}
+            onChange={(event) => onValueChange(event.target.value)}
+            value={selectedStatus}
+          >
+            <option value="">Выберите действие</option>
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <div className="flex items-end">
+          <Button
+            disabled={disabled || pending || !selectedStatus}
+            onClick={() => onApply(selectedStatus)}
+            size="md"
+          >
+            {pending ? "Применяем..." : "Применить статус"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-[0.95rem] bg-surface-subtle px-3 py-3 text-sm">
+        {preview ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="font-medium text-slate-700">Предпросмотр перехода</span>
+              <div className="flex flex-wrap gap-2">
+                <Badge tone={preview.tone}>{preview.statusLabel}</Badge>
+                <Badge tone={preview.tone}>{preview.stageLabel}</Badge>
+              </div>
+            </div>
+            <div className="grid gap-2 text-slate-600 sm:grid-cols-2">
+              <span>Текущий ход: {current.ownerLabel}</span>
+              <span>Guard: {preview.evidenceLabel}</span>
+            </div>
+            {evidenceBlocked ? (
+              <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                Перед решением нужен evidence или паспорт решения.
+              </p>
+            ) : (
+              <p className="text-slate-500">Сервер всё равно проверит FSM, evidence gate и права роли перед записью.</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-slate-500">
+            Текущий этап: <span className="font-medium text-slate-800">{current.stageLabel}</span>. Быстрое изменение не
+            отправляется, пока оператор не подтвердит действие.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export const PASSPORT_SECTION_LABELS: Array<[string, string]> = [
   ["requester", "Кто и откуда обратился"],
   ["problem", "Что произошло"],
@@ -855,33 +973,27 @@ export function TicketDetailPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Badge tone={getTicketStatusTone(detail?.ticket.status ?? "")} withDot>
-            {detail?.ticket.status_label ?? "Загружаем"}
-          </Badge>
-          {detail?.ticket.requester_status_label ? (
-            <Badge tone={getTicketStatusTone(detail.ticket.status)}>{detail.ticket.requester_status_label}</Badge>
-          ) : null}
-          <Select
-            className="min-w-[230px]"
-            disabled={!detail || statusMutation.isPending}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusAction(value);
-              if (!value) {
-                return;
-              }
-              void statusMutation.mutateAsync(value);
-            }}
-            value={statusAction}
-          >
-            <option value="">Быстрое действие по статусу</option>
-            {(detail?.actions.status_options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
+        <div className="flex flex-wrap items-start justify-end gap-3">
+          {detail ? (
+            <TicketStatusActionPanel
+              disabled={!detail}
+              onApply={(value) => {
+                if (!value) {
+                  return;
+                }
+                void statusMutation.mutateAsync(value);
+              }}
+              onValueChange={setStatusAction}
+              pending={statusMutation.isPending}
+              selectedStatus={statusAction}
+              statusOptions={detail.actions.status_options}
+              ticket={detail.ticket}
+            />
+          ) : (
+            <div className="min-w-[260px] rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
+              <Badge tone={getTicketStatusTone("")} withDot>Загружаем</Badge>
+            </div>
+          )}
           <Button
             disabled={detailQuery.isFetching || toolsQuery.isFetching}
             leadingIcon={<RefreshCcw className="h-4 w-4" />}

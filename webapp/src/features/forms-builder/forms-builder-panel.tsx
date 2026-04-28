@@ -1260,6 +1260,25 @@ export function FormsBuilderPanel() {
                               ) : null}
                             </div>
                           </div>
+                          <div className="mt-4 rounded-[0.9rem] border border-border bg-white px-3 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Цепочка запуска</p>
+                            <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
+                              <div className="rounded-[0.8rem] bg-surface-subtle px-3 py-3">
+                                <p className="font-semibold text-slate-950">Форма</p>
+                                <p className="mt-1 text-xs text-slate-500">{selectedForm.title || selectedForm.key}</p>
+                              </div>
+                              <div className="rounded-[0.8rem] bg-surface-subtle px-3 py-3">
+                                <p className="font-semibold text-slate-950">Роутинг</p>
+                                <p className="mt-1 text-xs text-slate-500">request_kind: {selectedForm.request_kind || "не указан"}</p>
+                              </div>
+                              <div className="rounded-[0.8rem] bg-surface-subtle px-3 py-3">
+                                <p className="font-semibold text-slate-950">Плейбук</p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {selectedForm.playbook_triggers[0]?.playbook_key || "запуск не настроен"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                           <div className="mt-4 grid gap-4 md:grid-cols-2">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
                               <span>Ключ плейбука</span>

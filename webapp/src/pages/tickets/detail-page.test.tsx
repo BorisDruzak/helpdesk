@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { TicketPassportPanel, TicketRequestFormCard, TicketWorkVisibilityCard } from "./detail-page";
+import { TicketPassportPanel, TicketRequestFormCard, TicketStatusActionPanel, TicketWorkVisibilityCard } from "./detail-page";
 
 describe("TicketRequestFormCard", () => {
   it("renders structured request form data", () => {
@@ -141,5 +141,70 @@ describe("TicketWorkVisibilityCard", () => {
     expect(screen.getByText("Провайдер")).toBeInTheDocument();
     expect(screen.getByText("Evidence gate")).toBeInTheDocument();
     expect(screen.getAllByText("Нужно доказательство").length).toBeGreaterThan(0);
+  });
+});
+
+describe("TicketStatusActionPanel", () => {
+  it("previews status transition and applies it only after explicit confirmation", () => {
+    const onValueChange = vi.fn();
+    const onApply = vi.fn();
+
+    const { rerender } = render(
+      <TicketStatusActionPanel
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus=""
+        statusOptions={[
+          { value: "in_progress", label: "Взять в работу" },
+          { value: "resolved", label: "Решено" },
+        ]}
+        ticket={{
+          status: "waiting_on_user",
+          status_label: "Ожидает пользователя",
+          requester_status_label: "Нужен ваш ответ",
+          next_action_owner: "requester",
+          evidence_required: true,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Целевой статус"), {
+      target: { value: "resolved" },
+    });
+
+    expect(onValueChange).toHaveBeenCalledWith("resolved");
+    expect(onApply).not.toHaveBeenCalled();
+
+    rerender(
+      <TicketStatusActionPanel
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus="resolved"
+        statusOptions={[
+          { value: "in_progress", label: "Взять в работу" },
+          { value: "resolved", label: "Решено" },
+        ]}
+        ticket={{
+          status: "waiting_on_user",
+          status_label: "Ожидает пользователя",
+          requester_status_label: "Нужен ваш ответ",
+          next_action_owner: "requester",
+          evidence_required: true,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Предпросмотр перехода")).toBeInTheDocument();
+    expect(screen.getAllByText("Решено").length).toBeGreaterThan(0);
+    expect(screen.getByText("Перед решением нужен evidence или паспорт решения.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
+    expect(onApply).toHaveBeenCalledWith("resolved");
   });
 });
