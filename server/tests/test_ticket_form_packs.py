@@ -303,6 +303,110 @@ async def test_create_ticket_from_form_starts_configured_playbook(test_client, t
     }
 
 
+@pytest.mark.asyncio
+async def test_public_create_ticket_from_form_starts_configured_playbook(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    playbook_key = f"public_printer_diag_{uuid.uuid4().hex[:8]}"
+
+    async with session_maker() as session:
+        playbook = Playbook(
+            key=playbook_key,
+            name="Публичная диагностика принтера",
+            domain="diagnostics",
+            owner="tests",
+            archived=False,
+        )
+        session.add(playbook)
+        await session.flush()
+        session.add(
+            PlaybookVersion(
+                playbook_id=playbook.id,
+                version="1.0.0",
+                manifest_json={},
+                status="published",
+                created_at=datetime.now(timezone.utc),
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+
+    pack_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": "printer",
+                        "request_kind": "printer",
+                        "title": "Печать / принтер",
+                        "fields": [
+                            {"key": "room", "label": "Кабинет", "type": "text", "required": True},
+                            {"key": "symptom", "label": "Симптом", "type": "text", "required": True},
+                        ],
+                        "playbook_triggers": [
+                            {
+                                "event": "ticket_created",
+                                "playbook_key": playbook_key,
+                                "module_kind": "diagnostic",
+                                "enabled": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert pack_response.status == 200, await pack_response.text()
+
+    response = await test_client.post(
+        "/public_api/tickets/create",
+        json={
+            "title": "Printer public issue",
+            "description": "Printer does not print",
+            "user_display_name": "Public Alice",
+            "form_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "symptom": "Не печатает",
+            },
+            "ticket_type": "printer",
+            "urgency": False,
+            "importance": False,
+            "urgency_reason": "Live/public request",
+            "importance_reason": "Live/public request",
+        },
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+        run = (
+            await session.execute(select(PlaybookRun).where(PlaybookRun.device_id == ticket.device_id))
+        ).scalar_one()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "playbook_started",
+                )
+            )
+        ).scalar_one()
+
+    assert run.trigger_type == "ticket_created"
+    assert run.context_json["facts_package"]["request_form_data"] == {
+        "room": "214",
+        "symptom": "Не печатает",
+    }
+    assert event.payload["playbook_key"] == playbook_key
+    assert event.payload["playbook_run_id"] == run.id
+
+
 def test_validate_form_pack_schema_rejects_unknown_visible_when_field():
     with pytest.raises(ValueError, match="visible_when.field"):
         validate_form_pack_schema(

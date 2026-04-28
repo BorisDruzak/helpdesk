@@ -44,6 +44,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_submission,
 )
+from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
 
 
@@ -262,6 +263,17 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 event_id=initial_message_id,
             )
             await _create_public_access_event(ticket_repo, ticket, public_access_code)
+            try:
+                await start_ticket_created_playbooks(
+                    session=db_session,
+                    state=request.app.get("state"),
+                    ticket=ticket,
+                    custom_fields=custom_fields,
+                )
+            except Exception as playbook_err:
+                logger.warning(
+                    f"[public_create] playbook form triggers failed ticket_id={ticket_id}: {playbook_err}"
+                )
             await db_session.commit()
             ticket = await ticket_repo.get_ticket(ticket_id)
     except Exception as exc:
