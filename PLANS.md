@@ -94,6 +94,25 @@ Current focus:
 2. Keep the server FSM/evidence validation authoritative; frontend only explains the next action.
 3. Keep support/admin styling dense and operational.
 
+Completed:
+
+- Ticket detail now applies status transitions only through an explicit confirmation button.
+- Forms builder shows the launch chain from request form to routing and playbook trigger.
+
+### 2026-04-28 Fourth Wave: Ticket Automation Entry
+
+Current focus:
+
+1. Add typed support endpoints for ticket-bound playbook launch:
+   - list published playbooks available from a ticket;
+   - expose version id, required tools, blocks count and readiness;
+   - start a selected playbook against the ticket device with `trigger_type=support_ticket`.
+2. Add an `/app/tickets/:ticketId` automation panel:
+   - show playbook readiness/preflight summary;
+   - launch through an explicit `Запустить плейбук` action;
+   - show recent operation context next to the launch surface.
+3. Keep the existing module command launcher intact for typed params/presets while the new automation panel becomes the entry point for playbook runs.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

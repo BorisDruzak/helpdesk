@@ -211,6 +211,24 @@ export type SupportTicketToolsPayload = {
   }>;
 };
 
+export type SupportTicketPlaybooksPayload = {
+  ticket_id: string;
+  device_id: string | null;
+  playbooks: Array<{
+    playbook_version_id: number;
+    key: string;
+    name: string;
+    domain: string | null;
+    version: string | null;
+    status: string;
+    blocks_count: number;
+    required_tools: string[];
+    can_run: boolean;
+    readiness_label: string;
+    updated_at: string | null;
+  }>;
+};
+
 export type SupportTicketPassportPayload = {
   ticket_id: string;
   status: string;
@@ -297,6 +315,17 @@ export type SupportToolActionResult = {
   operation_id: string;
   poll_url: string;
   trace_id: string | null;
+  message: string;
+};
+
+export type SupportPlaybookRunActionResult = {
+  ticket_id: string;
+  device_id: string;
+  playbook_version_id: number;
+  playbook_run_id: number;
+  status: string;
+  first_operation_id: string | null;
+  observer_url: string;
   message: string;
 };
 
@@ -477,6 +506,24 @@ export async function fetchSupportTicketTools(ticketId: string): Promise<Support
   return payload.data;
 }
 
+export async function fetchSupportTicketPlaybooks(ticketId: string): Promise<SupportTicketPlaybooksPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/playbooks`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPlaybooksPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить плейбуки тикета",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
 export async function fetchSupportTicketPassport(ticketId: string): Promise<SupportTicketPassportPayload> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport`, {
     credentials: "same-origin"
@@ -566,6 +613,36 @@ export async function postSupportTicketToolRun(
     const errorPayload = result && result.status === "error" ? result : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось запустить инструмент",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return result.data;
+}
+
+export async function postSupportTicketPlaybookRun(
+  ticketId: string,
+  payload: {
+    playbookVersionId: number;
+  }
+): Promise<SupportPlaybookRunActionResult> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/playbooks/run`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      playbook_version_id: payload.playbookVersionId
+    })
+  });
+  const result = await readJson<SuccessResponse<SupportPlaybookRunActionResult> | ErrorResponse>(response);
+
+  if (!response.ok || !result || result.status !== "success") {
+    const errorPayload = result && result.status === "error" ? result : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось запустить плейбук",
       response.status,
       errorPayload?.error_code
     );

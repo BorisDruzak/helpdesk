@@ -330,6 +330,30 @@ class SupportTicketToolsPayload(BaseModel):
     tools: list[SupportToolItem] = Field(default_factory=list)
 
 
+class SupportPlaybookItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playbook_version_id: int
+    key: str
+    name: str
+    domain: str | None = None
+    version: str | None = None
+    status: str
+    blocks_count: int = 0
+    required_tools: list[str] = Field(default_factory=list)
+    can_run: bool = False
+    readiness_label: str
+    updated_at: str | None = None
+
+
+class SupportTicketPlaybooksPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    device_id: str | None = None
+    playbooks: list[SupportPlaybookItem] = Field(default_factory=list)
+
+
 class SupportTicketPassportPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -469,6 +493,19 @@ class SupportToolActionResult(BaseModel):
     operation_id: str
     poll_url: str
     trace_id: str | None = None
+    message: str
+
+
+class SupportPlaybookRunActionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    device_id: str
+    playbook_version_id: int
+    playbook_run_id: int
+    status: str
+    first_operation_id: str | None = None
+    observer_url: str
     message: str
 
 

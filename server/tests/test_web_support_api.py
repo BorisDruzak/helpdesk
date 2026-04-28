@@ -8,7 +8,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Operation, Ticket, UiUser
+from app.db.models import Device, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, UiUser
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.service import RegistryIngestionService
@@ -533,3 +533,143 @@ async def test_web_support_tool_action_returns_typed_result_and_dispatches_run_t
     assert captured["actor_role"] == "support"
     assert captured["wait_for_result"] is False
     assert captured["params"] == {"target": "srv-gateway", "_operation_id": operation_id}
+
+
+@pytest.mark.asyncio
+async def test_web_support_ticket_playbooks_returns_published_playbooks_for_ticket(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-playbooks",
+            title="Нужен диагностический плейбук",
+            description="Оператор должен запускать опубликованный плейбук из карточки тикета.",
+            status="in_progress",
+            requester_id="user-playbook",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        playbook = Playbook(key="printer.quick_diag", name="Быстрая диагностика принтера", domain="diagnostics")
+        session.add_all([ticket, playbook])
+        await session.flush()
+        published_at = datetime.now(timezone.utc)
+        version = PlaybookVersion(
+            playbook_id=playbook.id,
+            version="1.0.0",
+            status="published",
+            manifest_json={"required_tools": [{"tool": "system.collect", "install_policy": "preinstalled"}]},
+            published_at=published_at,
+        )
+        session.add(version)
+        await session.flush()
+        session.add(
+            PlaybookStep(
+                playbook_version_id=version.id,
+                step_key="collect",
+                order_no=1,
+                type="run_tool",
+                tool="system.collect",
+                params_template_json={},
+            )
+        )
+        ticket_id = ticket.ticket_id
+        version_id = version.id
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/playbooks",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["ticket_id"] == ticket_id
+    assert payload["data"]["device_id"] == "device-playbooks"
+    assert payload["data"]["playbooks"] == [
+        {
+            "playbook_version_id": version_id,
+            "key": "printer.quick_diag",
+            "name": "Быстрая диагностика принтера",
+            "domain": "diagnostics",
+            "version": "1.0.0",
+            "status": "published",
+            "blocks_count": 1,
+            "required_tools": ["system.collect"],
+            "can_run": True,
+            "readiness_label": "Готов к запуску",
+            "updated_at": published_at.isoformat(),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_web_support_playbook_action_starts_ticket_bound_run(test_client, test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-playbook-run",
+            title="Запуск плейбука из тикета",
+            description="Typed support endpoint должен запускать playbook run на устройстве тикета.",
+            status="in_progress",
+            requester_id="user-playbook-run",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        playbook = Playbook(key="network.quick_diag", name="Быстрая диагностика сети", domain="diagnostics")
+        session.add_all([ticket, playbook])
+        await session.flush()
+        version = PlaybookVersion(
+            playbook_id=playbook.id,
+            version="1.0.0",
+            status="published",
+            manifest_json={},
+            published_at=datetime.now(timezone.utc),
+        )
+        session.add(version)
+        await session.flush()
+        ticket_id = ticket.ticket_id
+        version_id = version.id
+        await session.commit()
+
+    captured: dict[str, object] = {}
+
+    async def fake_start_run(**kwargs):
+        captured.update(kwargs)
+        return 42, "operation-first"
+
+    monkeypatch.setattr(support_handlers_module, "start_run", fake_start_run)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/playbooks/run",
+        headers=_support_headers(),
+        json={"playbook_version_id": version_id},
+    )
+
+    assert response.status == 202, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"] == {
+        "ticket_id": ticket_id,
+        "device_id": "device-playbook-run",
+        "playbook_version_id": version_id,
+        "playbook_run_id": 42,
+        "status": "running",
+        "first_operation_id": "operation-first",
+        "observer_url": "/app/admin/observer?root_kind=playbook_run&playbook_run_id=42",
+        "message": "Плейбук поставлен в очередь выполнения.",
+    }
+    assert captured["playbook_version_id"] == version_id
+    assert captured["device_id"] == "device-playbook-run"
+    assert captured["trigger_type"] == "support_ticket"
+    assert captured["context_json"]["ticket_id"] == ticket_id
+    assert captured["context_json"]["triggered_by"] == "support-test"

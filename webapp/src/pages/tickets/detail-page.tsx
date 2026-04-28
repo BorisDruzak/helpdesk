@@ -27,15 +27,19 @@ import {
   fetchSupportQueue,
   fetchSupportTicketPassport,
   fetchSupportTicketDetail,
+  fetchSupportTicketPlaybooks,
   fetchSupportTicketTools,
   generateSupportTicketPassport,
   createSupportTicketKnowledgeDraft,
   postSupportTicketMessage,
+  postSupportTicketPlaybookRun,
   postSupportTicketStatus,
   postSupportTicketToolRun,
+  type SupportPlaybookRunActionResult,
   type SupportQueueScope,
   type SupportTicketPassportPayload,
   type SupportTicketDetailPayload,
+  type SupportTicketPlaybooksPayload,
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
 import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
@@ -619,6 +623,154 @@ export function TicketStatusActionPanel({
   );
 }
 
+type TicketAutomationPlaybook = SupportTicketPlaybooksPayload["playbooks"][number];
+
+export function TicketAutomationPanel({
+  latestOperations,
+  onRunPlaybook,
+  playbookErrorMessage,
+  playbookPending,
+  playbookResultMessage,
+  playbooks,
+  playbooksErrorMessage,
+  playbooksLoading,
+  selectedPlaybookVersionId,
+  setSelectedPlaybookVersionId,
+}: {
+  latestOperations: SupportTicketDetailPayload["snapshot"]["latest_operations"];
+  onRunPlaybook: (playbookVersionId: number) => void;
+  playbookErrorMessage: string | null;
+  playbookPending: boolean;
+  playbookResultMessage: string | null;
+  playbooks: TicketAutomationPlaybook[];
+  playbooksErrorMessage: string | null;
+  playbooksLoading: boolean;
+  selectedPlaybookVersionId: number | null;
+  setSelectedPlaybookVersionId: (playbookVersionId: number | null) => void;
+}) {
+  const selectedPlaybook = playbooks.find((item) => item.playbook_version_id === selectedPlaybookVersionId) ?? null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Автоматизация</CardTitle>
+        <CardDescription>
+          Единая точка запуска диагностических плейбуков из тикета: выбор, preflight-readiness и контроль последних операций.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Плейбук</p>
+            <p className="mt-2 font-semibold text-slate-950">
+              {selectedPlaybook?.name ?? "Выберите опубликованный сценарий"}
+            </p>
+          </div>
+          <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Preflight</p>
+            <p className="mt-2 font-semibold text-slate-950">
+              {selectedPlaybook?.readiness_label ?? "Ожидаем выбор"}
+            </p>
+          </div>
+        </div>
+
+        {playbooksLoading ? <p className="text-sm text-slate-500">Загружаем опубликованные плейбуки...</p> : null}
+        {playbooksErrorMessage ? <p className="text-sm text-rose-700">{playbooksErrorMessage}</p> : null}
+
+        {playbooks.length ? (
+          <label className="space-y-2 text-sm font-medium text-slate-800">
+            <span>Сценарий запуска</span>
+            <Select
+              aria-label="Сценарий запуска"
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setSelectedPlaybookVersionId(Number.isFinite(value) && value > 0 ? value : null);
+              }}
+              value={selectedPlaybookVersionId ?? ""}
+            >
+              <option value="">Выберите плейбук</option>
+              {playbooks.map((playbook) => (
+                <option key={playbook.playbook_version_id} value={playbook.playbook_version_id}>
+                  {playbook.name} · {playbook.version ?? playbook.key}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : !playbooksLoading ? (
+          <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-5 text-sm text-slate-500">
+            Опубликованных диагностических плейбуков пока нет. Создайте их в конструкторе плейбуков.
+          </div>
+        ) : null}
+
+        {selectedPlaybook ? (
+          <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-slate-950">{selectedPlaybook.name}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {selectedPlaybook.key} · {selectedPlaybook.blocks_count} шагов
+                </p>
+              </div>
+              <Badge tone={selectedPlaybook.can_run ? "success" : "warning"}>{selectedPlaybook.readiness_label}</Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedPlaybook.required_tools.length ? (
+                selectedPlaybook.required_tools.map((tool) => (
+                  <Badge key={tool} tone="neutral">
+                    {tool}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-xs text-slate-500">Required tools будут проверены серверным preflight.</span>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {playbookResultMessage ? <p className="text-sm text-emerald-700">{playbookResultMessage}</p> : null}
+        {playbookErrorMessage ? <p className="text-sm text-rose-700">{playbookErrorMessage}</p> : null}
+
+        <Button
+          className="w-full"
+          disabled={playbookPending || !selectedPlaybook || !selectedPlaybook.can_run}
+          onClick={() => {
+            if (selectedPlaybook) {
+              onRunPlaybook(selectedPlaybook.playbook_version_id);
+            }
+          }}
+        >
+          {playbookPending ? "Запускаем плейбук..." : "Запустить плейбук"}
+        </Button>
+
+        <div className="rounded-[1rem] bg-surface-subtle px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-semibold text-slate-900">Последние запуски</p>
+            <Badge tone="neutral">{latestOperations.length}</Badge>
+          </div>
+          {latestOperations.length ? (
+            <div className="mt-3 space-y-2">
+              {latestOperations.slice(0, 3).map((operation) => (
+                <div
+                  className="flex items-start justify-between gap-3 rounded-[0.9rem] border border-border bg-white px-3 py-3"
+                  key={operation.operation_id}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{getOperationTitle(operation)}</p>
+                    <p className="mt-1 text-xs text-slate-500">{operation.operation_id}</p>
+                  </div>
+                  <Badge tone={getTicketStatusTone(operation.status)}>{operation.status}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">Запусков по тикету пока нет.</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export const PASSPORT_SECTION_LABELS: Array<[string, string]> = [
   ["requester", "Кто и откуда обратился"],
   ["problem", "Что произошло"],
@@ -741,6 +893,7 @@ export function TicketDetailPage() {
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [toolParams, setToolParams] = useState<Record<string, unknown>>({});
   const [toolSearch, setToolSearch] = useState("");
+  const [selectedPlaybookVersionId, setSelectedPlaybookVersionId] = useState<number | null>(null);
   const [knowledgeDraftMessage, setKnowledgeDraftMessage] = useState<string | null>(null);
   const deferredQueueSearch = useDeferredValue(queueSearch);
   const deferredToolSearch = useDeferredValue(toolSearch);
@@ -771,6 +924,13 @@ export function TicketDetailPage() {
     retry: false,
   });
 
+  const playbooksQuery = useQuery({
+    queryKey: ["ticket-playbooks", ticketId],
+    queryFn: () => fetchSupportTicketPlaybooks(ticketId!),
+    enabled: Boolean(ticketId),
+    retry: false,
+  });
+
   const passportQuery = useQuery({
     queryKey: ["ticket-passport", ticketId],
     queryFn: () => fetchSupportTicketPassport(ticketId!),
@@ -782,6 +942,7 @@ export function TicketDetailPage() {
     setStatusAction("");
     setMessageDraft("");
     setKnowledgeDraftMessage(null);
+    setSelectedPlaybookVersionId(null);
   }, [ticketId]);
 
   const toolList = toolsQuery.data?.tools ?? [];
@@ -816,6 +977,18 @@ export function TicketDetailPage() {
     }
   }, [selectedToolName, visibleTools]);
 
+  const playbooks = playbooksQuery.data?.playbooks ?? [];
+
+  useEffect(() => {
+    if (!playbooks.length) {
+      setSelectedPlaybookVersionId(null);
+      return;
+    }
+    if (!selectedPlaybookVersionId || !playbooks.some((playbook) => playbook.playbook_version_id === selectedPlaybookVersionId)) {
+      setSelectedPlaybookVersionId(playbooks[0].playbook_version_id);
+    }
+  }, [playbooks, selectedPlaybookVersionId]);
+
   useEffect(() => {
     if (!ticketId) {
       return;
@@ -825,6 +998,7 @@ export function TicketDetailPage() {
     return realtimeClient.subscribeTicket(ticketId, () => {
       void queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
       void queryClient.invalidateQueries({ queryKey: ["ticket-tools", ticketId] });
+      void queryClient.invalidateQueries({ queryKey: ["ticket-playbooks", ticketId] });
       void queryClient.invalidateQueries({ queryKey: ["ticket-passport", ticketId] });
       void queryClient.invalidateQueries({ queryKey: ["ticket-detail-queue"] });
     });
@@ -879,6 +1053,21 @@ export function TicketDetailPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
         queryClient.invalidateQueries({ queryKey: ["ticket-tools", ticketId] }),
+      ]);
+    },
+  });
+
+  const playbookMutation = useMutation<SupportPlaybookRunActionResult, Error, number>({
+    mutationFn: async (playbookVersionId: number) => {
+      if (!ticketId) {
+        throw new Error("Карточка тикета не выбрана.");
+      }
+      return postSupportTicketPlaybookRun(ticketId, { playbookVersionId });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["ticket-playbooks", ticketId] }),
       ]);
     },
   });
@@ -995,10 +1184,16 @@ export function TicketDetailPage() {
             </div>
           )}
           <Button
-            disabled={detailQuery.isFetching || toolsQuery.isFetching}
+            disabled={detailQuery.isFetching || toolsQuery.isFetching || playbooksQuery.isFetching}
             leadingIcon={<RefreshCcw className="h-4 w-4" />}
             onClick={() => {
-              void Promise.all([detailQuery.refetch(), queueQuery.refetch(), toolsQuery.refetch(), passportQuery.refetch()]);
+              void Promise.all([
+                detailQuery.refetch(),
+                queueQuery.refetch(),
+                toolsQuery.refetch(),
+                playbooksQuery.refetch(),
+                passportQuery.refetch(),
+              ]);
             }}
             size="sm"
             variant="outline"
@@ -1607,6 +1802,33 @@ export function TicketDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <TicketAutomationPanel
+            latestOperations={latestOperations}
+            onRunPlaybook={(playbookVersionId) => {
+              void playbookMutation.mutateAsync(playbookVersionId);
+            }}
+            playbookErrorMessage={
+              playbookMutation.isError
+                ? playbookMutation.error instanceof Error
+                  ? playbookMutation.error.message
+                  : "Не удалось запустить плейбук."
+                : null
+            }
+            playbookPending={playbookMutation.isPending}
+            playbookResultMessage={playbookMutation.isSuccess ? playbookMutation.data.message : null}
+            playbooks={playbooks}
+            playbooksErrorMessage={
+              playbooksQuery.isError
+                ? playbooksQuery.error instanceof Error
+                  ? playbooksQuery.error.message
+                  : "Не удалось загрузить плейбуки."
+                : null
+            }
+            playbooksLoading={playbooksQuery.isLoading}
+            selectedPlaybookVersionId={selectedPlaybookVersionId}
+            setSelectedPlaybookVersionId={setSelectedPlaybookVersionId}
+          />
 
           <Card className="overflow-hidden">
             <CardHeader>

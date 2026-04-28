@@ -218,9 +218,11 @@ from web_api.support_handlers import (
     handle_web_support_ticket_passport_knowledge_draft,
     handle_web_support_ticket_passport_patch,
     handle_web_support_queue,
+    handle_web_support_run_playbook,
     handle_web_support_run_tool,
     handle_web_support_send_message,
     handle_web_support_ticket_detail,
+    handle_web_support_ticket_playbooks,
     handle_web_support_ticket_tools,
 )
 from web_api.admin_handlers import (
@@ -414,9 +416,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/passport/evidence', handle_web_support_ticket_passport_evidence),
         web.post('/api/web/support/tickets/{ticket_id}/passport/knowledge-draft', handle_web_support_ticket_passport_knowledge_draft),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
+        web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
         web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
+        web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),

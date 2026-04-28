@@ -326,3 +326,9 @@
 - `server/static_pages/cutover.py`, `server/static_pages/handlers.py`, and `server/config.py` now prepare and enable legacy-shell cutover through `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, and `WEBAPP_CUTOVER_ADMIN_ENABLED`; redirect в новый shell активируется по умолчанию при наличии built bundle, а для `/support` и `/admin` дополнительно требуется включённый login cutover; explicit legacy escape remains `?legacy=1`, while `WEBAPP_CUTOVER_*=false` in `server/.env` is the rollback path.
 - `server/tests/conftest.py`, `server/websocket/device_outbox_sender.py`, `server/server.py`, and `pc_agent/ws_agent.py` now close websocket-heavy test/runtime paths more gracefully; on Windows pytest also switches to `WindowsSelectorEventLoopPolicy`, which removes the non-fatal `unexpected connection_lost() call` tail noise from websocket suites.
 - `webapp/scripts/remote-browser-signoff.mjs` plus `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` are now the canonical live browser signoff for the new `/app/*` shell after release: the script logs in, verifies `/app` default routing, checks `/app/admin` and `/app/support`, confirms Russian UI strings, validates raw redirects `/login|/admin|/support` and `?legacy=1` escape, and fails fast on browser console/page errors.
+
+## 2026-04-28 Ticket-bound playbook launch
+
+- Typed support playbook launch starts from `server/web_api/support_handlers.py`, `server/web_api/dto/support.py`, `server/routes.py`, and `server/app/services/playbook_engine.py`.
+- `GET /api/web/support/tickets/{ticket_id}/playbooks` lists published playbook versions with version id, required tools, block count and readiness for the ticket device.
+- `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version with `trigger_type=support_ticket` and a ticket-bound context for observer correlation.

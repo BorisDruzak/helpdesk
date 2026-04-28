@@ -3,14 +3,16 @@ import uuid
 
 from aiohttp import web
 from loguru import logger
+from sqlalchemy import func, select
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.db.models import TicketResolutionPassport
+from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketResolutionPassport
 from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
+from app.services.playbook_engine import start_run
 from auth.middleware import require_auth
 from observer.service import ObserverOverlayService
 from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
@@ -64,6 +66,7 @@ from web_api.dto.support import (
     SupportTicketPassportEvidenceRequest,
     SupportTicketPassportGenerateRequest,
     SupportTicketPassportPatchRequest,
+    SupportTicketPlaybooksPayload,
     SupportTicketPresence,
     SupportTicketQueueInfo,
     SupportTicketQueueMember,
@@ -74,6 +77,8 @@ from web_api.dto.support import (
     SupportTicketSnapshot,
     SupportTicketToolsPayload,
     SupportTicketKnowledgeDraftPayload,
+    SupportPlaybookItem,
+    SupportPlaybookRunActionResult,
     SupportToolActionResult,
     SupportToolItem,
     SupportToolParameter,
@@ -481,6 +486,68 @@ def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportTo
     )
 
 
+def _iso(value: object) -> str | None:
+    if value is None:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return str(value)
+
+
+def _required_tools_from_manifest(manifest_json: object) -> list[str]:
+    if not isinstance(manifest_json, dict):
+        return []
+    tools: list[str] = []
+    for raw_item in manifest_json.get("required_tools") or []:
+        if not isinstance(raw_item, dict):
+            continue
+        tool_name = str(raw_item.get("tool") or raw_item.get("tool_name") or "").strip()
+        if tool_name and tool_name not in tools:
+            tools.append(tool_name)
+    return tools
+
+
+async def _build_support_playbooks_payload(session, ticket: object) -> SupportTicketPlaybooksPayload:
+    device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
+    rows = await session.execute(
+        select(Playbook, PlaybookVersion, func.count(PlaybookStep.id))
+        .join(PlaybookVersion, PlaybookVersion.playbook_id == Playbook.id)
+        .join(PlaybookStep, PlaybookStep.playbook_version_id == PlaybookVersion.id, isouter=True)
+        .where(Playbook.archived.is_(False), PlaybookVersion.status == "published")
+        .group_by(Playbook.id, PlaybookVersion.id)
+        .order_by(Playbook.key.asc(), PlaybookVersion.published_at.desc().nullslast(), PlaybookVersion.id.desc())
+    )
+    seen_playbook_ids: set[int] = set()
+    playbooks: list[SupportPlaybookItem] = []
+    for playbook, version, steps_count in rows.all():
+        playbook_id = int(getattr(playbook, "id"))
+        if playbook_id in seen_playbook_ids:
+            continue
+        seen_playbook_ids.add(playbook_id)
+        can_run = bool(device_id)
+        playbooks.append(
+            SupportPlaybookItem(
+                playbook_version_id=int(version.id),
+                key=str(playbook.key),
+                name=str(playbook.name),
+                domain=playbook.domain,
+                version=str(version.version) if version.version is not None else None,
+                status=str(version.status),
+                blocks_count=int(steps_count or 0),
+                required_tools=_required_tools_from_manifest(version.manifest_json),
+                can_run=can_run,
+                readiness_label="Готов к запуску" if can_run else "Нужна привязка к устройству",
+                updated_at=_iso(version.published_at or version.created_at),
+            )
+        )
+    return SupportTicketPlaybooksPayload(
+        ticket_id=str(getattr(ticket, "ticket_id")),
+        device_id=device_id,
+        playbooks=playbooks,
+    )
+
+
 async def _build_support_tools_payload(ticket: object, tool_service: ToolExecutionService) -> SupportTicketToolsPayload:
     device_id = getattr(ticket, "device_id", None)
     if not device_id:
@@ -862,6 +929,30 @@ async def handle_web_support_ticket_tools(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[SupportTicketToolsPayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_playbooks(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            payload = await _build_support_playbooks_payload(session, ticket)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_playbooks] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить плейбуки для тикета",
+                "error_code": "SUPPORT_PLAYBOOKS_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPlaybooksPayload](data=payload))
 
 
 def _passport_payload_model(payload: dict) -> SupportTicketPassportDetailPayload:
@@ -1399,3 +1490,96 @@ async def handle_web_support_run_tool(request: web.Request):
         SuccessResponse[SupportToolActionResult](data=payload),
         status=202,
     )
+
+
+@require_auth("admin", "support")
+async def handle_web_support_run_playbook(request: web.Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Некорректный JSON"},
+            status=400,
+        )
+    if not isinstance(data, dict):
+        return web.json_response(
+            {"status": "error", "error": "Тело запроса должно быть объектом"},
+            status=400,
+        )
+    try:
+        playbook_version_id = int(data.get("playbook_version_id"))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Нужно выбрать опубликованную версию плейбука",
+                "error_code": "PLAYBOOK_VERSION_REQUIRED",
+            },
+            status=400,
+        )
+
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            if error:
+                return error
+            device_id = str(getattr(ticket, "device_id", "") or "").strip()
+            if not device_id:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Тикет не привязан к устройству, плейбук нельзя запустить",
+                        "error_code": "DEVICE_REQUIRED",
+                    },
+                    status=400,
+                )
+            version = await session.get(PlaybookVersion, playbook_version_id)
+            if version is None or str(version.status) != "published":
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Выбранный плейбук не опубликован",
+                        "error_code": "PLAYBOOK_NOT_PUBLISHED",
+                    },
+                    status=400,
+                )
+            context_json = {
+                "ticket_id": str(getattr(ticket, "ticket_id")),
+                "ticket_code": getattr(ticket, "ticket_code", None),
+                "requester_id": getattr(ticket, "requester_id", None),
+                "triggered_by": auth_context.actor_id,
+                "triggered_from": "support_ticket_detail",
+            }
+            run_id, first_operation_id = await start_run(
+                session=session,
+                state=request.app["state"],
+                playbook_version_id=playbook_version_id,
+                device_id=device_id,
+                trigger_type="support_ticket",
+                context_json=context_json,
+                idempotency_key=str(data.get("idempotency_key") or "").strip() or None,
+            )
+            await session.commit()
+            payload = SupportPlaybookRunActionResult(
+                ticket_id=str(getattr(ticket, "ticket_id")),
+                device_id=device_id,
+                playbook_version_id=playbook_version_id,
+                playbook_run_id=int(run_id),
+                status="running",
+                first_operation_id=first_operation_id,
+                observer_url=f"/app/admin/observer?root_kind=playbook_run&playbook_run_id={run_id}",
+                message="Плейбук поставлен в очередь выполнения.",
+            )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_run_playbook] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось запустить плейбук из карточки тикета",
+                "error_code": "PLAYBOOK_ACTION_FAILED",
+            },
+            status=503,
+        )
+    return json_model_response(SuccessResponse[SupportPlaybookRunActionResult](data=payload), status=202)

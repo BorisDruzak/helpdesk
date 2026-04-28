@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { TicketPassportPanel, TicketRequestFormCard, TicketStatusActionPanel, TicketWorkVisibilityCard } from "./detail-page";
+import {
+  TicketAutomationPanel,
+  TicketPassportPanel,
+  TicketRequestFormCard,
+  TicketStatusActionPanel,
+  TicketWorkVisibilityCard,
+} from "./detail-page";
 
 describe("TicketRequestFormCard", () => {
   it("renders structured request form data", () => {
@@ -206,5 +212,62 @@ describe("TicketStatusActionPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
     expect(onApply).toHaveBeenCalledWith("resolved");
+  });
+});
+
+describe("TicketAutomationPanel", () => {
+  it("shows playbook readiness and launches the selected playbook explicitly", () => {
+    const onRunPlaybook = vi.fn();
+
+    render(
+      <TicketAutomationPanel
+        latestOperations={[
+          {
+            operation_id: "operation-1",
+            kind: "tool_call",
+            status: "queued",
+            tool_name: "system.collect",
+            command_name: null,
+            queued_at: "2026-04-28T08:00:00Z",
+            finished_at: null,
+            result_summary: null,
+            error_message: null,
+          },
+        ]}
+        onRunPlaybook={onRunPlaybook}
+        playbookErrorMessage={null}
+        playbookPending={false}
+        playbookResultMessage={null}
+        playbooks={[
+          {
+            playbook_version_id: 7,
+            key: "printer.quick_diag",
+            name: "Быстрая диагностика принтера",
+            domain: "diagnostics",
+            version: "1.0.0",
+            status: "published",
+            blocks_count: 3,
+            required_tools: ["system.collect", "printer.queue"],
+            can_run: true,
+            readiness_label: "Готов к запуску",
+            updated_at: "2026-04-28T07:30:00Z",
+          },
+        ]}
+        playbooksErrorMessage={null}
+        playbooksLoading={false}
+        selectedPlaybookVersionId={7}
+        setSelectedPlaybookVersionId={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("Автоматизация")).toBeInTheDocument();
+    expect(screen.getByText("Плейбук")).toBeInTheDocument();
+    expect(screen.getAllByText("Быстрая диагностика принтера").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Готов к запуску").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("system.collect").length).toBeGreaterThan(0);
+    expect(screen.getByText("Последние запуски")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Запустить плейбук" }));
+    expect(onRunPlaybook).toHaveBeenCalledWith(7);
   });
 });
