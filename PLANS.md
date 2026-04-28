@@ -113,6 +113,25 @@ Current focus:
    - show recent operation context next to the launch surface.
 3. Keep the existing module command launcher intact for typed params/presets while the new automation panel becomes the entry point for playbook runs.
 
+Completed:
+
+- Ticket-bound playbook launch is available from `/app/tickets/:ticketId` through typed support endpoints.
+- Live staging check exposed a real lazy module install edge case: `network_basic@1.0.0` installed successfully, but the playbook failed before `run_tool` because the strict capability gate read a stale/no toolset snapshot.
+
+### 2026-04-28 Fifth Wave: Live Playbook Run And Auto-Install Fix
+
+Current focus:
+
+1. Reproduce real playbook launch from a support ticket against an online Windows agent.
+2. Verify module auto-install through server logs and observer trace/detail/bundle.
+3. Fix stale snapshot gating after successful lazy install so the playbook proceeds to `run_tool`.
+4. Re-deploy and repeat live playbook run with observer proof.
+
+Completed:
+
+- Added a regression test for successful lazy install with strict capability gate and stale/no snapshot.
+- Updated playbook engine preflight so successful DB-backed module install/registry preflight is authoritative for the immediate command enqueue.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

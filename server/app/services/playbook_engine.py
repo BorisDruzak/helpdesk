@@ -115,12 +115,13 @@ async def _fail_tool_step_before_enqueue(
     )
 
 
-async def _ensure_tool_step_ready(state, run, step: PlaybookStep) -> tuple[bool, str | None, str | None]:
-    from tools.service import ToolExecutionService
+async def _ensure_tool_step_ready(state, run, step: PlaybookStep) -> tuple[bool, str | None, str | None, bool]:
+    from tools.service import DB_AVAILABLE, ToolExecutionService
 
+    tool_name = str(step.tool or "")
     ensure_err = await ToolExecutionService(state)._ensure_module_installed(
         run.device_id,
-        str(step.tool or ""),
+        tool_name,
         auth_context=None,
     )
     if ensure_err:
@@ -128,8 +129,11 @@ async def _ensure_tool_step_ready(state, run, step: PlaybookStep) -> tuple[bool,
             False,
             str(ensure_err.get("error_code") or "TOOL_PRECHECK_FAILED"),
             str(ensure_err.get("error") or "Tool dispatch precheck failed"),
+            False,
         )
-    return (True, None, None)
+    builtin_prefix = tool_name.split(".", 1)[0].lower() if "." in tool_name else ""
+    preflight_authoritative = bool(DB_AVAILABLE or builtin_prefix in config.AGENT_BUILTIN_MODULES)
+    return (True, None, None, preflight_authoritative)
 
 
 def _retry_allowed(step: PlaybookStep, step_run, error_code: Optional[str]) -> bool:
@@ -244,7 +248,7 @@ async def _start_group_steps(
             continue
         # Этап 9: Capability Gate — проверка до enqueue (отключается CAPABILITY_GATE_STRICT=false)
         params = _step_params(step, context, prev_steps)
-        ready, err_code, err_msg = await _ensure_tool_step_ready(state, run, step)
+        ready, err_code, err_msg, preflight_authoritative = await _ensure_tool_step_ready(state, run, step)
         if not ready:
             step_run_fail = await _fail_tool_step_before_enqueue(
                 repo,
@@ -260,7 +264,7 @@ async def _start_group_steps(
             if getattr(run, "status", None) != "running":
                 break
             continue
-        if config.CAPABILITY_GATE_STRICT:
+        if config.CAPABILITY_GATE_STRICT and not preflight_authoritative:
             ok, err_code, err_msg = await check_tool_available(session, run.device_id, step.tool)
             if not ok:
                 step_run_fail = await _fail_tool_step_before_enqueue(

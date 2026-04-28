@@ -174,6 +174,76 @@ class TestPlaybookTypedLocalSteps:
             assert step_run.error_json["stage"] == "module_install"
 
     @pytest.mark.asyncio
+    async def test_tool_step_enqueues_after_lazy_install_even_when_snapshot_is_stale(self, test_engine):
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        device_id = str(uuid.uuid4())
+
+        async with session_maker() as session:
+            playbook = Playbook(
+                key=f"pb_{uuid.uuid4().hex[:8]}",
+                name="Lazy install stale snapshot",
+                domain="diag",
+                owner="tests",
+                archived=False,
+            )
+            session.add(playbook)
+            await session.flush()
+            version = PlaybookVersion(
+                playbook_id=playbook.id,
+                version="1.0.0",
+                manifest_json={},
+                status="published",
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(version)
+            await session.flush()
+            playbook_version_id = version.id
+            session.add(
+                PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key="network_ping",
+                    order_no=10,
+                    type="collect",
+                    tool="network.ping",
+                    params_template_json={"target": "127.0.0.1", "count": 1},
+                )
+            )
+            await session.commit()
+
+        operation_service = MagicMock()
+        operation_service.return_value.enqueue_operation = AsyncMock()
+        enqueue = AsyncMock()
+        stale_capability = AsyncMock(return_value=(False, "TOOL_UNAVAILABLE", "No toolset snapshot for device"))
+
+        with patch("app.services.playbook_engine.config.CAPABILITY_GATE_STRICT", True), \
+             patch("tools.service.DB_AVAILABLE", True), \
+             patch("tools.service.ToolExecutionService._ensure_module_installed", AsyncMock(return_value=None)), \
+             patch("app.services.playbook_engine.check_tool_available", stale_capability), \
+             patch("app.services.operation_service.OperationService", operation_service), \
+             patch("websocket.protocol.enqueue_command_async", enqueue):
+            async with session_maker() as session:
+                run_id, first_operation_id = await playbook_engine.start_run(
+                    session=session,
+                    state=MagicMock(),
+                    playbook_version_id=playbook_version_id,
+                    device_id=device_id,
+                    context_json={},
+                )
+                await session.commit()
+
+        assert first_operation_id
+        assert stale_capability.await_count == 0
+        assert operation_service.return_value.enqueue_operation.await_count == 1
+        assert enqueue.await_count == 1
+
+        async with session_maker() as session:
+            step_run = (
+                await session.execute(select(PlaybookStepRun).where(PlaybookStepRun.playbook_run_id == run_id))
+            ).scalar_one()
+            assert step_run.status == "running"
+            assert step_run.operation_id == first_operation_id
+
+    @pytest.mark.asyncio
     async def test_start_run_executes_transform_and_decision_steps_without_operations(self, test_engine):
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         playbook_version_id = None

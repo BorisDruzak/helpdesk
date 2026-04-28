@@ -119,7 +119,7 @@
 | `server/app/services/operation_service.py` | Жизненный цикл операций |
 | `server/app/services/ticket_sla_watchdog.py` | SLA тикетов |
 | `server/app/services/ticket_auto_close_watchdog.py` | Контроль policy для resolved; закрытие только после подтверждения пользователя |
-| `server/app/services/playbook_engine.py` | Движок playbook execution: создаёт runs/step_runs, запускает module auto-install preflight перед tool-backed шагами, пишет `stage=module_install` / `stage=capability_gate` failures и отправляет diagnostic tool calls через support actor |
+| `server/app/services/playbook_engine.py` | Движок playbook execution: создаёт runs/step_runs, запускает module auto-install preflight перед tool-backed шагами, после успешного DB-backed preflight не блокируется stale/no toolset snapshot и сразу enqueue-ит `run_tool`, пишет `stage=module_install` / `stage=capability_gate` failures и отправляет diagnostic tool calls через support actor |
 | `server/playbooks/catalog.py` | Каталог диагностических low-code блоков и шаблонов сценариев (`system.collect`, `ip_address.get_ip`, `diag.logs.collect`) + нормализация draft в PlaybookStep и self-healing manifest v2 |
 | `server/playbooks/tool_catalog.py` | Нормализация atomic command manifests для playbook UI/runtime: source, module owner, install policy, platforms, min agent version, params/output schemas, presets, error codes |
 | `server/playbooks/form_triggers.py` | Автозапуск опубликованных диагностических плейбуков при создании тикета из request-form trigger и сбор `facts_package` из ответов формы |
