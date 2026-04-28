@@ -418,6 +418,10 @@ describe("ModulesPanel", () => {
     expect(screen.getByRole("combobox", { name: "Risk level" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Tool kind" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Добавить preset" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Добавить поле" }).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Schema preview").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByLabelText("Params schema JSON")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Output schema JSON")).not.toBeInTheDocument();
     expect(screen.queryByText("Metadata JSON")).not.toBeInTheDocument();
     expect(screen.queryByText("Presets JSON")).not.toBeInTheDocument();
     expect(screen.queryByText("Dependencies JSON")).not.toBeInTheDocument();

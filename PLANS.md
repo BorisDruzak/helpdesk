@@ -186,6 +186,23 @@ Completed:
 - `modules-panel` no longer exposes metadata/presets/dependencies/resources/redaction/error/artifact policy as raw JSON textareas.
 - ModulesPanel regression now verifies bounded tool policy controls and absence of the removed JSON editors.
 
+### 2026-04-28 Eighth Wave: Module Schema Builder
+
+Current focus:
+
+1. Remove the remaining normal JSON authoring surface for module tool schemas.
+2. Add a reusable schema-object builder for `type: object` JSON Schema:
+   - field rows with name/type/description/default/enum/required;
+   - generated `properties` and `required`;
+   - read-only Schema preview.
+3. Use it for `params_schema` and `output_schema` in `/app/admin/modules`.
+
+Completed:
+
+- `SchemaObjectBuilder` now builds object schemas without an editable JSON textarea.
+- Module tool editor uses the builder for Params schema and Output schema.
+- Focused regression covers builder output and module UI absence of schema JSON textareas.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

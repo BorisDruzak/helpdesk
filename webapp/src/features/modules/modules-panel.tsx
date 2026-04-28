@@ -33,6 +33,7 @@ import {
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { SchemaObjectBuilder } from "../../components/forms/schema-object-builder";
 import {
   Card,
   CardContent,
@@ -161,14 +162,6 @@ function buildVersionKey(moduleName: string, version: string) {
 
 function prettyJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
-}
-
-function safeParseJson<T>(raw: string, fallback: T): T {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return fallback;
-  }
-  return JSON.parse(trimmed) as T;
 }
 
 function splitLines(raw: string) {
@@ -573,14 +566,6 @@ function copyToClipboard(text: string) {
   void navigator.clipboard.writeText(text);
 }
 
-function parseToolEditorJson(value: string, fieldLabel: string) {
-  try {
-    return safeParseJson(value, {});
-  } catch {
-    throw new Error(`Поле «${fieldLabel}» должно содержать валидный JSON.`);
-  }
-}
-
 function buildPreviewCurl(mode: "validate" | "save", payload: Record<string, unknown>) {
   const action = mode === "validate" ? "validate" : "publish";
   return [
@@ -968,35 +953,11 @@ export function ModulesPanel() {
     });
   }
 
-  function updateToolJsonField(
-    field: keyof Pick<
-      ModuleWorkbenchToolDraft,
-      | "params_schema"
-      | "output_schema"
-      | "presets"
-      | "metadata"
-      | "dependencies"
-      | "error_codes"
-      | "artifact_types"
-      | "redaction"
-      | "resources"
-    >,
-    value: string,
-    label: string
-  ) {
-    try {
-      const parsed = parseToolEditorJson(value, label);
-      mutateDraft((current) => {
-        current.tools[selectedToolIndex][field] = parsed as never;
-        return current;
-      });
-      setActionFeedback(null);
-    } catch (error) {
-      setActionFeedback({
-        tone: "error",
-        text: error instanceof Error ? error.message : `Не удалось прочитать JSON поля ${label}.`,
-      });
-    }
+  function updateToolSchemaField(field: "params_schema" | "output_schema", value: Record<string, unknown>) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex][field] = value;
+      return current;
+    });
   }
 
   function updateToolListField(
@@ -2418,37 +2379,17 @@ export function ModulesPanel() {
                             </label>
                           </div>
 
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>Params schema</span>
-                              <textarea
-                                className="field-base min-h-[220px] w-full resize-y px-4 py-4 font-mono text-xs"
-                                defaultValue={prettyJson(selectedTool.params_schema)}
-                                key={`params-${selectedToolIndex}-${selectedTool.tool_name}`}
-                                onBlur={(event) =>
-                                  updateToolJsonField(
-                                    "params_schema",
-                                    event.target.value,
-                                    "Params schema"
-                                  )
-                                }
-                              />
-                            </label>
-                            <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>Output schema</span>
-                              <textarea
-                                className="field-base min-h-[220px] w-full resize-y px-4 py-4 font-mono text-xs"
-                                defaultValue={prettyJson(selectedTool.output_schema)}
-                                key={`output-${selectedToolIndex}-${selectedTool.tool_name}`}
-                                onBlur={(event) =>
-                                  updateToolJsonField(
-                                    "output_schema",
-                                    event.target.value,
-                                    "Output schema"
-                                  )
-                                }
-                              />
-                            </label>
+                          <div className="grid gap-4 xl:grid-cols-2">
+                            <SchemaObjectBuilder
+                              label="Params schema"
+                              onChange={(schema) => updateToolSchemaField("params_schema", schema)}
+                              value={selectedTool.params_schema}
+                            />
+                            <SchemaObjectBuilder
+                              label="Output schema"
+                              onChange={(schema) => updateToolSchemaField("output_schema", schema)}
+                              value={selectedTool.output_schema}
+                            />
                           </div>
 
                           {selectedOutputContract ? (
