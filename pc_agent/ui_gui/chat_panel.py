@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -1721,21 +1721,20 @@ class TicketsSidebarWidget(QFrame):
     def __init__(self, panel: "ChatPanel", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._panel = panel
-        self.setObjectName("ProfileSidebar")
+        self.setObjectName("MainPanel")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
-        self.setMinimumWidth(320)
-        self.setMaximumWidth(460)
+        self.setMinimumWidth(720)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 14)
-        outer.setSpacing(12)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(18)
 
         title = QLabel("Тикеты")
-        title.setObjectName("ProfileSidebarTitle")
+        title.setObjectName("MainTitle")
         outer.addWidget(title)
 
         hint = QLabel("Список тикетов этого агента. Двойной клик открывает чат справа.")
-        hint.setObjectName("ProfileHint")
+        hint.setObjectName("MainSubtitle")
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
@@ -1744,20 +1743,51 @@ class TicketsSidebarWidget(QFrame):
         self.create_ticket_btn = QPushButton("Создать тикет")
         self.create_ticket_btn.hide()
 
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(20)
         self.ticket_search_input = QLineEdit()
+        self.ticket_search_input.setObjectName("SearchInput")
         self.ticket_search_input.setPlaceholderText("Поиск по коду, названию, статусу")
+        self.ticket_search_input.setMinimumHeight(52)
+        self.ticket_search_input.addAction(QIcon(theme.icon_path("search")), QLineEdit.ActionPosition.LeadingPosition)
         self.ticket_search_input.textChanged.connect(panel._on_ticket_search_changed)
-        outer.addWidget(self.ticket_search_input)
+        search_row.addWidget(self.ticket_search_input, 1)
+
+        self.filters_btn = QPushButton("Фильтры")
+        self.filters_btn.setObjectName("SecondaryButton")
+        self.filters_btn.setIcon(QIcon(theme.icon_path("filters")))
+        self.filters_btn.setIconSize(QSize(20, 20))
+        self.filters_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.filters_btn.setToolTip("Фильтры списка тикетов")
+        self.filters_btn.clicked.connect(self._show_filters_menu)
+        search_row.addWidget(self.filters_btn, 0)
+        outer.addLayout(search_row)
 
         filters_row = QHBoxLayout()
-        filters_row.setSpacing(8)
-        self.filter_open_checkbox = QCheckBox("Открытые")
+        filters_row.setSpacing(10)
+        self.filter_all_button = QPushButton("Все 0")
+        self.filter_all_button.setObjectName("TicketFilterChipActive")
+        self.filter_all_button.setCheckable(True)
+        self.filter_all_button.setChecked(True)
+        self.filter_all_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.filter_all_button.clicked.connect(lambda _checked=False: self._select_filter("all"))
+        filters_row.addWidget(self.filter_all_button)
+
+        self.filter_open_checkbox = QPushButton("Открытые 0")
+        self.filter_open_checkbox.setObjectName("TicketFilterChip")
+        self.filter_open_checkbox.setCheckable(True)
         self.filter_open_checkbox.setChecked(True)
-        self.filter_open_checkbox.toggled.connect(panel._on_ticket_filter_changed)
+        self.filter_open_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.filter_open_checkbox.clicked.connect(lambda _checked=False: self._select_filter("open"))
         filters_row.addWidget(self.filter_open_checkbox)
-        self.filter_closed_checkbox = QCheckBox("Закрытые")
-        self.filter_closed_checkbox.setChecked(False)
-        self.filter_closed_checkbox.toggled.connect(panel._on_ticket_filter_changed)
+
+        self.filter_closed_checkbox = QPushButton("Закрытые 0")
+        self.filter_closed_checkbox.setObjectName("TicketFilterChip")
+        self.filter_closed_checkbox.setCheckable(True)
+        self.filter_closed_checkbox.setChecked(True)
+        self.filter_closed_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.filter_closed_checkbox.clicked.connect(lambda _checked=False: self._select_filter("closed"))
         filters_row.addWidget(self.filter_closed_checkbox)
         filters_row.addStretch(1)
         outer.addLayout(filters_row)
@@ -1775,9 +1805,10 @@ class TicketsSidebarWidget(QFrame):
         self.tickets_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tickets_list.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tickets_list.setUniformItemSizes(True)
-        self.tickets_list.setSpacing(6)
+        self.tickets_list.setSpacing(10)
         self.tickets_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tickets_list.setMouseTracking(True)
+        self.tickets_list.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tickets_list.setAutoFillBackground(True)
         self.tickets_model = TicketsListModel(self.tickets_list)
         self.tickets_list.setModel(self.tickets_model)
@@ -1789,16 +1820,88 @@ class TicketsSidebarWidget(QFrame):
         open_row.addStretch(1)
         self.open_ticket_btn = QPushButton("Открыть чат")
         self.open_ticket_btn.setObjectName("PrimaryButton")
+        self.open_ticket_btn.setIcon(QIcon(theme.icon_path("message")))
+        self.open_ticket_btn.setIconSize(QSize(20, 20))
+        self.open_ticket_btn.setMinimumHeight(56)
+        self.open_ticket_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_ticket_btn.clicked.connect(panel._on_open_ticket)
         open_row.addWidget(self.open_ticket_btn)
         outer.addLayout(open_row)
         self.refresh_theme()
+
+    def _show_filters_menu(self) -> None:
+        menu = QMenu(self)
+        theme.apply_agent_dialog_theme(menu)
+
+        all_action = menu.addAction("Все тикеты")
+        all_action.setCheckable(True)
+        all_action.setChecked(self.filter_open_checkbox.isChecked() and self.filter_closed_checkbox.isChecked())
+        all_action.triggered.connect(lambda _checked=False: self._select_filter("all"))
+
+        open_action = menu.addAction("Только открытые")
+        open_action.setCheckable(True)
+        open_action.setChecked(self.filter_open_checkbox.isChecked() and not self.filter_closed_checkbox.isChecked())
+        open_action.triggered.connect(lambda _checked=False: self._select_filter("open"))
+
+        closed_action = menu.addAction("Только закрытые")
+        closed_action.setCheckable(True)
+        closed_action.setChecked(self.filter_closed_checkbox.isChecked() and not self.filter_open_checkbox.isChecked())
+        closed_action.triggered.connect(lambda _checked=False: self._select_filter("closed"))
+
+        menu.addSeparator()
+        clear_search_action = menu.addAction("Очистить поиск")
+        clear_search_action.setEnabled(bool(self.ticket_search_input.text().strip()))
+        clear_search_action.triggered.connect(self.ticket_search_input.clear)
+
+        menu.exec(self.filters_btn.mapToGlobal(self.filters_btn.rect().bottomLeft()))
+
+    def _select_filter(self, mode: str) -> None:
+        self.filter_all_button.blockSignals(True)
+        self.filter_open_checkbox.blockSignals(True)
+        self.filter_closed_checkbox.blockSignals(True)
+        try:
+            if mode == "all":
+                self.filter_all_button.setChecked(True)
+                self.filter_open_checkbox.setChecked(True)
+                self.filter_closed_checkbox.setChecked(True)
+            elif mode == "closed":
+                self.filter_all_button.setChecked(False)
+                self.filter_open_checkbox.setChecked(False)
+                self.filter_closed_checkbox.setChecked(True)
+            else:
+                self.filter_all_button.setChecked(False)
+                self.filter_open_checkbox.setChecked(True)
+                self.filter_closed_checkbox.setChecked(False)
+        finally:
+            self.filter_all_button.blockSignals(False)
+            self.filter_open_checkbox.blockSignals(False)
+            self.filter_closed_checkbox.blockSignals(False)
+        self._panel._on_ticket_filter_changed()
+
+    def update_filter_counts(self, total: int, open_count: int, closed_count: int) -> None:
+        self.filter_all_button.setText(f"Все  {total}")
+        self.filter_open_checkbox.setText(f"Открытые  {open_count}")
+        self.filter_closed_checkbox.setText(f"Закрытые  {closed_count}")
+        all_active = self.filter_open_checkbox.isChecked() and self.filter_closed_checkbox.isChecked()
+        self.filter_all_button.setChecked(all_active)
+        self.filter_all_button.setObjectName("TicketFilterChipActive" if all_active else "TicketFilterChip")
+        self.filter_open_checkbox.setObjectName(
+            "TicketFilterChipActive" if self.filter_open_checkbox.isChecked() and not all_active else "TicketFilterChip"
+        )
+        self.filter_closed_checkbox.setObjectName(
+            "TicketFilterChipActive" if self.filter_closed_checkbox.isChecked() and not all_active else "TicketFilterChip"
+        )
+        for button in (self.filter_all_button, self.filter_open_checkbox, self.filter_closed_checkbox):
+            button.style().unpolish(button)
+            button.style().polish(button)
 
     def refresh_theme(self) -> None:
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
         self.tickets_empty_label.setStyleSheet(
             f"color: {theme.TEXT_MUTED}; font-weight: 600; padding: 8px 4px; background: transparent;"
         )
+        if hasattr(self, "ticket_search_input"):
+            self.ticket_search_input.setStyleSheet("")
 
 
 class ChatPanel(QWidget):
@@ -1807,6 +1910,7 @@ class ChatPanel(QWidget):
     chatSessionChanged = Signal(str)
     requesterProfileChanged = Signal()
     listNavigationVisibilityChanged = Signal(bool)
+    ticketsListChanged = Signal()
 
     def __init__(
         self,
@@ -1852,7 +1956,7 @@ class ChatPanel(QWidget):
         self.local_action_buffer: Dict[str, List[dict]] = {}
         self._ticket_search_query = ""
         self._show_open_tickets = True
-        self._show_closed_tickets = False
+        self._show_closed_tickets = True
         self._pinned_messages: Dict[str, List[dict]] = {}
         self._reply_target: Optional[dict] = None
         self._last_timeline_html: Optional[str] = None
@@ -2189,7 +2293,7 @@ class ChatPanel(QWidget):
         self.setFont(base)
         if hasattr(self, "tickets_list"):
             self.tickets_list.setFont(base)
-            _list_bg = QColor(theme.BG_CARD_ALT)
+            _list_bg = QColor(theme.BG_CARD)
             list_pal = QPalette(self.tickets_list.palette())
             list_pal.setColor(QPalette.ColorRole.Window, _list_bg)
             list_pal.setColor(QPalette.ColorRole.Base, _list_bg)
@@ -2200,7 +2304,7 @@ class ChatPanel(QWidget):
             # Не ставить WA_OpaquePaintEvent: иначе Qt не заливает фон viewport, а делегат рисует
             # только строки — на Windows остаётся «чёрная дыра».
             t_vp.setAutoFillBackground(True)
-            t_vp.setStyleSheet(f"background-color: {theme.BG_CARD_ALT};")
+            t_vp.setStyleSheet(f"background-color: {theme.BG_CARD};")
             vp_pal = QPalette(t_vp.palette())
             vp_pal.setColor(QPalette.ColorRole.Window, _list_bg)
             vp_pal.setColor(QPalette.ColorRole.Base, _list_bg)
@@ -2340,6 +2444,20 @@ class ChatPanel(QWidget):
     @staticmethod
     def _fingerprint_visible_tickets(filtered: List[dict]) -> str:
         return "\n".join(ticket_row_fingerprint(t) for t in filtered)
+
+    def _ticket_counts_for_current_query(self) -> tuple[int, int, int]:
+        open_count = 0
+        closed_count = 0
+        for row in self.tickets_cache:
+            ticket = row.get("ticket", row)
+            if not ticket_matches_query(ticket, self._ticket_search_query):
+                continue
+            status = str(ticket.get("status") or "").strip().lower()
+            if status == "closed":
+                closed_count += 1
+            else:
+                open_count += 1
+        return open_count + closed_count, open_count, closed_count
 
     def _on_ticket_search_changed(self, text: str) -> None:
         self._ticket_search_query = text or ""
@@ -2664,6 +2782,8 @@ class ChatPanel(QWidget):
             return
         filtered_tickets = self._filtered_tickets_for_list()
         self._last_tickets_list_fingerprint = self._fingerprint_visible_tickets(filtered_tickets)
+        if hasattr(self._tickets_sidebar, "update_filter_counts"):
+            self._tickets_sidebar.update_filter_counts(*self._ticket_counts_for_current_query())
 
         sm = self.tickets_list.selectionModel()
         prev_tid: Optional[str] = None
@@ -2694,6 +2814,7 @@ class ChatPanel(QWidget):
                 QTimer.singleShot(0, lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())))
         finally:
             self.tickets_list.setUpdatesEnabled(True)
+        self.ticketsListChanged.emit()
 
     def _latest_requester_read_event_id(self, ticket: dict, messages: List[dict], events: List[dict]) -> int:
         counters = ticket.get("chat_counters") or {}

@@ -10,7 +10,9 @@ from . import theme
 
 STATUS_LABELS = {
     "new": "Новый",
+    "queued": "queued",
     "triaged": "Разобран",
+    "assigned": "Назначен",
     "in_progress": "В работе",
     "waiting_on_user": "Ждёт пользователя",
     "waiting_on_vendor": "Ждёт подрядчика",

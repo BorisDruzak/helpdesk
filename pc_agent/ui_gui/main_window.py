@@ -13,14 +13,16 @@ from PySide6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QLineEdit, QFormLayout,
     QCheckBox, QSpinBox, QSplitter, QScrollArea, QFrame,
     QComboBox, QPlainTextEdit, QStackedWidget, QToolButton,
+    QGraphicsDropShadowEffect,
 )
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPixmap
 from loguru import logger
 
 from .consent_dialog import ConsentDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
 from . import theme
+from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.version import AGENT_VERSION
 
 
@@ -64,12 +66,16 @@ class MainWindow(QMainWindow):
         self._update_status_snapshot: Dict[str, Any] = {}
         self._runtime_status_refresh_in_flight: bool = False
         self._sidebar_expanded: bool = True
-        self._sidebar_content_width: int = 272
+        self._sidebar_content_width: int = 296
         self._active_sidebar_view: str = "tickets"
         self._theme_combo_sync_in_progress: bool = False
         self._settings_sections: list[QFrame] = []
         self._settings_section_titles: list[QLabel] = []
         self._settings_section_subtitles: list[QLabel] = []
+
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowType.Window, True)
+        self._resize_handler: Optional[FramelessResizeHandler] = None
         
         self.setWindowTitle(f"Maria Agent v{AGENT_VERSION}")
         self.setMinimumSize(1200, 760)
@@ -109,28 +115,42 @@ class MainWindow(QMainWindow):
                 w.setText(self._repair_text(w.text()))
             if isinstance(w, QLineEdit):
                 w.setPlaceholderText(self._repair_text(w.placeholderText()))
+
+    def _apply_soft_shadow(self, widget: QWidget, *, blur: int = 24, alpha: int = 28, y: int = 8) -> None:
+        effect = QGraphicsDropShadowEffect(widget)
+        effect.setBlurRadius(blur)
+        effect.setOffset(0, y)
+        effect.setColor(QColor(0, 0, 0, alpha))
+        widget.setGraphicsEffect(effect)
     
     def _setup_ui(self):
         """Настройка UI главного окна."""
         central_widget = QWidget()
+        central_widget.setObjectName("AgentRoot")
         self.setCentralWidget(central_widget)
-        central_widget.setStyleSheet(f"background: {theme.BG_PAGE};")
+        central_widget.setStyleSheet(theme.main_window_stylesheet())
 
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        top_bar = QHBoxLayout()
-        top_bar.setContentsMargins(0, 0, 0, 0)
-        top_bar.setSpacing(8)
+        self.title_bar = CustomTitleBar(self)
+        self.title_bar.minimizeRequested.connect(self.showMinimized)
+        self.title_bar.maximizeRestoreRequested.connect(self._toggle_window_maximized)
+        self.title_bar.closeRequested.connect(self.close)
+        layout.addWidget(self.title_bar, 0)
 
-        self.title_label = QLabel("Maria Agent")
+        content_widget = QWidget()
+        content_widget.setObjectName("AgentContent")
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(0)
+
+        self.title_label = QLabel(f"Maria Agent v{AGENT_VERSION}")
         self.title_label.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+            f"font-size: 13px; font-weight: 700; color: {theme.TEXT_SECONDARY}; background: transparent;"
         )
-        top_bar.addWidget(self.title_label)
-        top_bar.addStretch()
-        layout.addLayout(top_bar)
+        self.title_label.hide()
 
         self.chat_panel = ChatPanel(base_url=None, auth_token=self.auth_token)
         self.profile_sidebar = ProfileSidebarWidget(self.chat_panel)
@@ -149,115 +169,119 @@ class MainWindow(QMainWindow):
         self.body_splitter.setChildrenCollapsible(False)
 
         self.sidebar_shell = QFrame()
-        self.sidebar_shell.setObjectName("AgentSidebarShell")
-        self.sidebar_shell.setStyleSheet(
-            "QFrame#AgentSidebarShell {"
-            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {theme.current_palette().sidebar_shell_bg}, stop:1 {theme.current_palette().sidebar_shell_bg_alt});"
-            " border-radius: 24px;"
-            f" border: 1px solid {theme.current_palette().sidebar_border};"
-            "}"
-            "QLabel#SidebarTitle {"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-size: 13px;"
-            " font-weight: 700;"
-            " background: transparent;"
-            "}"
-            "QLabel#SidebarCaption {"
-            f" color: {theme.current_palette().sidebar_text_muted};"
-            " font-size: 10px;"
-            " font-weight: 600;"
-            " letter-spacing: 0.08em;"
-            " background: transparent;"
-            "}"
-            "QToolButton#SidebarToggleButton {"
-            f" background: {theme.current_palette().sidebar_nav_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
-            " border-radius: 14px;"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-size: 18px;"
-            " font-weight: 700;"
-            " min-width: 42px;"
-            " min-height: 42px;"
-            "}"
-            f"QToolButton#SidebarToggleButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
-            "QPushButton#SidebarActionButton {"
-            " text-align: left;"
-            " padding: 12px 14px;"
-            " border-radius: 16px;"
-            f" background: {theme.current_palette().sidebar_action_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_action_border};"
-            f" color: {theme.current_palette().sidebar_action_text};"
-            " font-weight: 800;"
-            "}"
-            f"QPushButton#SidebarActionButton:hover {{ background: {theme.current_palette().primary_btn_hover}; }}"
-            "QPushButton#SidebarNavButton {"
-            " text-align: left;"
-            " padding: 12px 14px;"
-            " border-radius: 16px;"
-            f" background: {theme.current_palette().sidebar_nav_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-weight: 700;"
-            "}"
-            f"QPushButton#SidebarNavButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
-            "QPushButton#SidebarNavButton:checked {"
-            f" background: {theme.current_palette().sidebar_nav_bg_selected};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border_selected};"
-            "}"
-        )
+        self.sidebar_shell.setObjectName("Sidebar")
+        self.sidebar_shell.setStyleSheet(theme.main_window_stylesheet())
         sidebar_shell_layout = QVBoxLayout(self.sidebar_shell)
-        sidebar_shell_layout.setContentsMargins(12, 14, 12, 14)
+        sidebar_shell_layout.setContentsMargins(16, 18, 16, 18)
         sidebar_shell_layout.setSpacing(12)
         self.sidebar_shell_layout = sidebar_shell_layout
 
         sidebar_header = QHBoxLayout()
         sidebar_header.setContentsMargins(0, 0, 0, 0)
-        sidebar_header.setSpacing(8)
+        sidebar_header.setSpacing(12)
+        self.sidebar_logo_label = QLabel()
+        self.sidebar_logo_label.setFixedSize(44, 44)
+        self.sidebar_logo_label.setScaledContents(True)
+        if theme.LOGO_PATH.exists():
+            self.sidebar_logo_label.setPixmap(
+                QPixmap(str(theme.LOGO_PATH)).scaled(
+                    44,
+                    44,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        self.sidebar_logo_label.setStyleSheet("background: transparent; border: none;")
+        sidebar_header.addWidget(self.sidebar_logo_label, 0, Qt.AlignmentFlag.AlignTop)
         self.sidebar_toggle_btn = QToolButton()
-        self.sidebar_toggle_btn.setObjectName("SidebarToggleButton")
-        self.sidebar_toggle_btn.setText("☰")
-        self.sidebar_toggle_btn.setToolTip("Свернуть или развернуть меню")
-        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar_expanded)
-        sidebar_header.addWidget(self.sidebar_toggle_btn, 0, Qt.AlignmentFlag.AlignTop)
+        self.sidebar_toggle_btn.setObjectName("SecondaryButton")
+        self.sidebar_toggle_btn.setText("")
+        self.sidebar_toggle_btn.hide()
 
-        sidebar_header_labels = QVBoxLayout()
-        sidebar_header_labels.setContentsMargins(0, 2, 0, 0)
-        sidebar_header_labels.setSpacing(1)
-        self.sidebar_title_label = QLabel("Меню")
-        self.sidebar_title_label.setObjectName("SidebarTitle")
-        sidebar_header_labels.addWidget(self.sidebar_title_label)
-        self.sidebar_subtitle_label = QLabel("Рабочие разделы агента")
-        self.sidebar_subtitle_label.setObjectName("SidebarCaption")
-        sidebar_header_labels.addWidget(self.sidebar_subtitle_label)
-        sidebar_header.addLayout(sidebar_header_labels, 1)
+        self.sidebar_title_label = QLabel("")
+        self.sidebar_title_label.hide()
+        self.sidebar_subtitle_label = QLabel("")
+        self.sidebar_subtitle_label.hide()
+        sidebar_header.addStretch(1)
         sidebar_shell_layout.addLayout(sidebar_header)
 
+        self.sidebar_nav_label = QLabel("Навигация")
+        self.sidebar_nav_label.setObjectName("SidebarSectionLabel")
+        sidebar_shell_layout.addSpacing(18)
+        sidebar_shell_layout.addWidget(self.sidebar_nav_label)
+
+        self.sidebar_dashboard_btn = QPushButton()
+        self.sidebar_dashboard_btn.setObjectName("SidebarButton")
+        self.sidebar_dashboard_btn.setCheckable(True)
+        self.sidebar_dashboard_btn.setIcon(QIcon(theme.icon_path("dashboard")))
+        self.sidebar_dashboard_btn.setIconSize(QSize(22, 22))
+        self.sidebar_dashboard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_dashboard_btn.clicked.connect(lambda: self._select_sidebar_view("dashboard", expand=True))
+        sidebar_shell_layout.addWidget(self.sidebar_dashboard_btn)
+
         self.sidebar_create_ticket_btn = QPushButton()
-        self.sidebar_create_ticket_btn.setObjectName("SidebarActionButton")
+        self.sidebar_create_ticket_btn.setObjectName("SidebarCreateButton")
+        self.sidebar_create_ticket_btn.setIcon(QIcon(theme.icon_path("plus")))
+        self.sidebar_create_ticket_btn.setIconSize(QSize(22, 22))
+        self.sidebar_create_ticket_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_create_ticket_btn.clicked.connect(self._on_create_ticket_from_menu)
         sidebar_shell_layout.addWidget(self.sidebar_create_ticket_btn)
 
         self.sidebar_tickets_btn = QPushButton()
-        self.sidebar_tickets_btn.setObjectName("SidebarNavButton")
+        self.sidebar_tickets_btn.setObjectName("SidebarButton")
         self.sidebar_tickets_btn.setCheckable(True)
+        self.sidebar_tickets_btn.setIcon(QIcon(theme.icon_path("ticket")))
+        self.sidebar_tickets_btn.setIconSize(QSize(22, 22))
+        self.sidebar_tickets_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_tickets_btn.clicked.connect(lambda: self._select_sidebar_view("tickets", expand=True))
         sidebar_shell_layout.addWidget(self.sidebar_tickets_btn)
 
         self.sidebar_settings_btn = QPushButton()
-        self.sidebar_settings_btn.setObjectName("SidebarNavButton")
+        self.sidebar_settings_btn.setObjectName("SidebarButton")
         self.sidebar_settings_btn.setCheckable(True)
+        self.sidebar_settings_btn.setIcon(QIcon(theme.icon_path("settings")))
+        self.sidebar_settings_btn.setIconSize(QSize(22, 22))
+        self.sidebar_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_settings_btn.clicked.connect(self._show_settings_dialog)
         sidebar_shell_layout.addWidget(self.sidebar_settings_btn)
         sidebar_shell_layout.addStretch(1)
 
-        self.sidebar_profile_btn = QPushButton()
-        self.sidebar_profile_btn.setObjectName("SidebarNavButton")
-        self.sidebar_profile_btn.setCheckable(True)
-        self.sidebar_profile_btn.clicked.connect(lambda: self._select_sidebar_view("profile", expand=True))
-        sidebar_shell_layout.addWidget(self.sidebar_profile_btn)
+        self.sidebar_profile_card = QFrame()
+        self.sidebar_profile_card.setObjectName("ProfileCard")
+        self.sidebar_profile_card.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_profile_card.mousePressEvent = lambda _event: self._select_sidebar_view("profile", expand=True)
+        profile_card_layout = QHBoxLayout(self.sidebar_profile_card)
+        profile_card_layout.setContentsMargins(14, 14, 12, 14)
+        profile_card_layout.setSpacing(12)
+        self.sidebar_avatar_label = QLabel("AD")
+        self.sidebar_avatar_label.setObjectName("Avatar")
+        self.sidebar_avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sidebar_avatar_label.setFixedSize(48, 48)
+        profile_card_layout.addWidget(self.sidebar_avatar_label)
+        profile_text_layout = QVBoxLayout()
+        profile_text_layout.setContentsMargins(0, 0, 0, 0)
+        profile_text_layout.setSpacing(2)
+        self.sidebar_profile_kicker = QLabel("Профиль инициатора")
+        self.sidebar_profile_kicker.setObjectName("CardKicker")
+        self.sidebar_profile_name_label = QLabel("Без профиля")
+        self.sidebar_profile_name_label.setObjectName("CardTitle")
+        self.sidebar_profile_meta_label = QLabel(self.chat_panel.user_display_name)
+        self.sidebar_profile_meta_label.setObjectName("CardMeta")
+        profile_text_layout.addWidget(self.sidebar_profile_kicker)
+        profile_text_layout.addWidget(self.sidebar_profile_name_label)
+        profile_text_layout.addWidget(self.sidebar_profile_meta_label)
+        profile_card_layout.addLayout(profile_text_layout, 1)
+        self.sidebar_profile_chevron = QLabel("›")
+        self.sidebar_profile_chevron.setObjectName("CardMeta")
+        self.sidebar_profile_chevron.setStyleSheet("font-size: 24px; background: transparent;")
+        profile_card_layout.addWidget(self.sidebar_profile_chevron)
+        sidebar_shell_layout.addWidget(self.sidebar_profile_card)
+
+        self.dashboard_page = self._build_dashboard_page()
 
         self.main_content_stack = QStackedWidget()
         self.main_content_stack.setStyleSheet("QStackedWidget { background: transparent; border: none; }")
+        self.main_content_stack.addWidget(self.dashboard_page)
         self.main_content_stack.addWidget(self.tickets_sidebar)
         self.main_content_stack.addWidget(self.chat_panel)
         self.main_content_stack.addWidget(self.profile_sidebar)
@@ -269,11 +293,15 @@ class MainWindow(QMainWindow):
         self.body_splitter.setStretchFactor(1, 1)
         self.body_splitter.setSizes([300, 1000])
 
-        layout.addWidget(self.body_splitter, 1)
+        content_layout.addWidget(self.body_splitter, 1)
+        layout.addWidget(content_widget, 1)
+        self._resize_handler = FramelessResizeHandler(self)
         self.chat_panel.chatSessionChanged.connect(self._on_chat_session_changed)
         self.chat_panel.requesterProfileChanged.connect(self._render_profile_status)
         self.chat_panel.listNavigationVisibilityChanged.connect(self._on_list_navigation_visibility_changed)
+        self.chat_panel.ticketsListChanged.connect(self._refresh_dashboard)
         self._render_profile_status()
+        self._refresh_dashboard()
         self._select_sidebar_view("tickets", expand=True)
 
         self.settings_page = QWidget()
@@ -591,18 +619,23 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self.status_bar.hide()
         self.footer_status_block = QFrame()
-        self.footer_status_block.setObjectName("FooterStatusBlock")
+        self.footer_status_block.setObjectName("AgentStatusCard")
         self.footer_status_block.setStyleSheet(
-            f"QFrame#FooterStatusBlock {{ background: {theme.current_palette().footer_block_bg}; "
+            f"QFrame#AgentStatusCard {{ background: {theme.current_palette().footer_block_bg}; "
             f"border: 1px solid {theme.current_palette().footer_block_border}; border-radius: 16px; }}"
         )
         footer_layout = QHBoxLayout(self.footer_status_block)
-        footer_layout.setContentsMargins(10, 6, 10, 6)
+        footer_layout.setContentsMargins(14, 12, 10, 12)
         footer_layout.setSpacing(10)
+        self.connection_status_dot = QLabel()
+        self.connection_status_dot.setObjectName("StatusDot")
+        footer_layout.addWidget(self.connection_status_dot, 0, Qt.AlignmentFlag.AlignVCenter)
         self.connection_status_btn = QPushButton("Офлайн")
         self.connection_status_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connection_status_btn.clicked.connect(self._show_settings_dialog)
+        self.connection_status_btn.hide()
         self.agent_footer_label = QLabel(f"Агент v{AGENT_VERSION}")
         self.agent_footer_label.setStyleSheet(
             f"color: {theme.current_palette().footer_label}; font-weight: 700; background: transparent;"
@@ -618,12 +651,17 @@ class MainWindow(QMainWindow):
         footer_texts.addWidget(self.agent_footer_meta)
         self.update_agent_btn = QPushButton("")
         self.update_agent_btn.setObjectName("SecondaryButton")
+        self.update_agent_btn.setIcon(QIcon(theme.icon_path("download")))
+        self.update_agent_btn.setIconSize(QSize(18, 18))
+        self.update_agent_btn.setFixedSize(42, 42)
+        self.update_agent_btn.setToolTip("Обновить агент")
         self.update_agent_btn.clicked.connect(self._on_trigger_update_clicked)
         self.update_agent_btn.hide()
-        footer_layout.addWidget(self.connection_status_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         footer_layout.addLayout(footer_texts, 1)
         footer_layout.addWidget(self.update_agent_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.status_bar.addWidget(self.footer_status_block, 1)
+        self.sidebar_shell_layout.addWidget(self.footer_status_block)
+        self._apply_soft_shadow(self.sidebar_shell, blur=30, alpha=34, y=10)
+        self._apply_soft_shadow(self.tickets_sidebar, blur=28, alpha=24, y=8)
 
         self._repair_widget_texts(self)
         self._repair_widget_texts(self.settings_page)
@@ -646,50 +684,166 @@ class MainWindow(QMainWindow):
             self.main_content_stack.setCurrentWidget(self.chat_panel)
 
     def _set_sidebar_expanded(self, expanded: bool) -> None:
-        self._sidebar_expanded = bool(expanded)
-        target_width = self._sidebar_content_width if self._sidebar_expanded else 84
+        self._sidebar_expanded = True
+        target_width = self._sidebar_content_width
         self.sidebar_shell.setMinimumWidth(target_width)
         self.sidebar_shell.setMaximumWidth(target_width)
         sizes = self.body_splitter.sizes()
         total = sum(sizes) if sizes else self.width()
         chat_width = max(640, total - target_width - 12)
         self.body_splitter.setSizes([target_width, chat_width])
-        self.sidebar_toggle_btn.setToolTip(
-            "Свернуть функции" if self._sidebar_expanded else "Развернуть функции"
-        )
-        self.sidebar_title_label.setVisible(self._sidebar_expanded)
-        self.sidebar_subtitle_label.setVisible(self._sidebar_expanded)
+        self.sidebar_title_label.setVisible(True)
+        self.sidebar_subtitle_label.setVisible(True)
         self._refresh_sidebar_labels()
 
     def _toggle_sidebar_expanded(self) -> None:
         self._set_sidebar_expanded(not self._sidebar_expanded)
 
-    def _refresh_sidebar_labels(self) -> None:
-        profile_summary = self.chat_panel.current_requester_profile_summary().strip()
-        profile_line = profile_summary if profile_summary else "Профиль не выбран"
-        if self._sidebar_expanded:
-            self.sidebar_create_ticket_btn.setText("+  Создать тикет")
-            self.sidebar_tickets_btn.setText("🗂  Тикеты")
-            self.sidebar_profile_btn.setText(f"👤  Профиль инициатора\n{profile_line}")
-            self.sidebar_settings_btn.setText("⚙  Настройки")
-            self.sidebar_profile_btn.setMinimumHeight(72)
+    def _toggle_window_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
         else:
-            self.sidebar_create_ticket_btn.setText("+")
-            self.sidebar_tickets_btn.setText("🗂")
-            self.sidebar_profile_btn.setText("👤")
-            self.sidebar_settings_btn.setText("⚙")
-            self.sidebar_profile_btn.setMinimumHeight(48)
+            self.showMaximized()
+        self._sync_title_bar_window_state()
+
+    def _sync_title_bar_window_state(self) -> None:
+        if hasattr(self, "title_bar"):
+            self.title_bar.set_maximized(self.isMaximized())
+
+    def changeEvent(self, event):  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._sync_title_bar_window_state()
+
+    def _build_dashboard_page(self) -> QFrame:
+        page = QFrame()
+        page.setObjectName("MainPanel")
+        page.setStyleSheet(theme.main_window_stylesheet())
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(18)
+
+        title = QLabel("Рабочий стол")
+        title.setObjectName("MainTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel("Краткая сводка агента по текущим тикетам и профилю.")
+        subtitle.setObjectName("MainSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        metrics_row = QHBoxLayout()
+        metrics_row.setSpacing(14)
+        total_card, self.dashboard_total_value = self._make_dashboard_metric("Все тикеты", "0")
+        open_card, self.dashboard_open_value = self._make_dashboard_metric("Открытые", "0")
+        closed_card, self.dashboard_closed_value = self._make_dashboard_metric("Закрытые", "0")
+        metrics_row.addWidget(total_card)
+        metrics_row.addWidget(open_card)
+        metrics_row.addWidget(closed_card)
+        layout.addLayout(metrics_row)
+
+        detail_row = QHBoxLayout()
+        detail_row.setSpacing(14)
+        profile_card, self.dashboard_profile_value = self._make_dashboard_metric("Профиль инициатора", "Без профиля")
+        status_card, self.dashboard_status_value = self._make_dashboard_metric("Статус агента", "Релиз актуален")
+        detail_row.addWidget(profile_card)
+        detail_row.addWidget(status_card)
+        layout.addLayout(detail_row)
+
+        actions_row = QHBoxLayout()
+        actions_row.addStretch(1)
+        dashboard_tickets_btn = QPushButton("  Перейти к тикетам")
+        dashboard_tickets_btn.setObjectName("SecondaryButton")
+        dashboard_tickets_btn.setIcon(QIcon(theme.icon_path("ticket")))
+        dashboard_tickets_btn.setIconSize(QSize(20, 20))
+        dashboard_tickets_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dashboard_tickets_btn.clicked.connect(lambda: self._select_sidebar_view("tickets", expand=True))
+        actions_row.addWidget(dashboard_tickets_btn)
+
+        dashboard_create_btn = QPushButton("  Создать тикет")
+        dashboard_create_btn.setObjectName("PrimaryButton")
+        dashboard_create_btn.setIcon(QIcon(theme.icon_path("plus")))
+        dashboard_create_btn.setIconSize(QSize(20, 20))
+        dashboard_create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dashboard_create_btn.clicked.connect(self._on_create_ticket_from_menu)
+        actions_row.addWidget(dashboard_create_btn)
+        layout.addLayout(actions_row)
+        layout.addStretch(1)
+        return page
+
+    def _make_dashboard_metric(self, title: str, value: str) -> tuple[QFrame, QLabel]:
+        card = QFrame()
+        card.setObjectName("ProfileCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setObjectName("CardKicker")
+        value_label = QLabel(value)
+        value_label.setObjectName("CardTitle")
+        value_label.setWordWrap(True)
+        card_layout.addWidget(title_label)
+        card_layout.addWidget(value_label)
+        return card, value_label
+
+    def _refresh_dashboard(self) -> None:
+        if not hasattr(self, "dashboard_total_value"):
+            return
+        tickets = [row.get("ticket", row) for row in self.chat_panel.tickets_cache]
+        closed_count = sum(1 for ticket in tickets if str(ticket.get("status") or "").strip().lower() == "closed")
+        total_count = len(tickets)
+        open_count = total_count - closed_count
+        self.dashboard_total_value.setText(str(total_count))
+        self.dashboard_open_value.setText(str(open_count))
+        self.dashboard_closed_value.setText(str(closed_count))
+        self.dashboard_profile_value.setText(self.chat_panel.current_requester_profile_summary())
+        status_text = self.agent_footer_meta.text() if hasattr(self, "agent_footer_meta") else "Релиз актуален"
+        self.dashboard_status_value.setText(status_text)
+
+    def _refresh_sidebar_labels(self) -> None:
+        self.sidebar_dashboard_btn.setText("  Рабочий стол")
+        self.sidebar_create_ticket_btn.setText("  Создать тикет")
+        self.sidebar_tickets_btn.setText("  Тикеты")
+        self.sidebar_settings_btn.setText("  Настройки")
+        profile = self.chat_panel._active_profile()
+        if profile:
+            full_name = str(profile.get("full_name") or profile.get("display_name") or "Без имени")
+            display = str(profile.get("display_name") or full_name)
+            self.sidebar_profile_name_label.setText(display)
+            self.sidebar_profile_meta_label.setText(
+                " ".join(filter(None, [str(profile.get("building") or ""), str(profile.get("room") or "")]))
+                or profile.get("department")
+                or self.chat_panel.user_display_name
+            )
+            initials_src = display or full_name
+        else:
+            self.sidebar_profile_name_label.setText("Без профиля")
+            self.sidebar_profile_meta_label.setText(self.chat_panel.user_display_name)
+            initials_src = self.chat_panel.user_display_name
+        initials = "".join(part[:1] for part in str(initials_src or "AD").replace("-", " ").split()[:2]).upper()
+        self.sidebar_avatar_label.setText(initials or "AD")
 
     def _set_sidebar_selection_state(
         self,
         *,
+        dashboard: bool = False,
         settings: bool = False,
         tickets: bool = False,
         profile: bool = False,
     ) -> None:
+        self.sidebar_dashboard_btn.setChecked(dashboard)
         self.sidebar_settings_btn.setChecked(settings)
         self.sidebar_tickets_btn.setChecked(tickets)
-        self.sidebar_profile_btn.setChecked(profile)
+        self.sidebar_profile_card.setProperty("active", profile)
+        border = theme.current_palette().border_active if profile else theme.current_palette().border
+        self.sidebar_profile_card.setStyleSheet(
+            f"QFrame#ProfileCard {{ background: {theme.current_palette().bg_card_alt if theme.current_theme_mode() == 'dark' else theme.current_palette().bg_card}; "
+            f"border: 1px solid {border}; border-radius: 16px; }}"
+        )
+        for button in (self.sidebar_dashboard_btn, self.sidebar_settings_btn, self.sidebar_tickets_btn):
+            button.setObjectName("SidebarButtonActive" if button.isChecked() else "SidebarButton")
+            button.style().unpolish(button)
+            button.style().polish(button)
 
     def _on_create_ticket_from_menu(self) -> None:
         self._select_sidebar_view("create", expand=True)
@@ -702,6 +856,11 @@ class MainWindow(QMainWindow):
         if view_name == "tickets":
             self._set_sidebar_selection_state(tickets=True)
             self.main_content_stack.setCurrentWidget(self.tickets_sidebar)
+            self.chat_panel._refresh_ticket_list_async()
+        elif view_name == "dashboard":
+            self._set_sidebar_selection_state(dashboard=True)
+            self.main_content_stack.setCurrentWidget(self.dashboard_page)
+            self._refresh_dashboard()
             self.chat_panel._refresh_ticket_list_async()
         elif view_name == "profile":
             self._set_sidebar_selection_state(profile=True)
@@ -744,6 +903,7 @@ class MainWindow(QMainWindow):
 
     def _render_profile_status(self) -> None:
         self._refresh_sidebar_labels()
+        self._refresh_dashboard()
 
     def _ui_bridge_host_port(self) -> tuple[str, int]:
         """Адрес локального UiApiServer — из актуального get_config().ui (как при bind в ws_agent)."""
@@ -825,67 +985,17 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             theme.apply_application_theme(app, mode)
-        self.centralWidget().setStyleSheet(f"background: {theme.BG_PAGE};")
+        self.centralWidget().setStyleSheet(theme.main_window_stylesheet())
+        if hasattr(self, "title_bar"):
+            self.title_bar.refresh_theme()
         self.title_label.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent;"
+            f"font-size: 13px; font-weight: 700; color: {theme.TEXT_SECONDARY}; background: transparent;"
         )
-        self.sidebar_shell.setStyleSheet(
-            "QFrame#AgentSidebarShell {"
-            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {theme.current_palette().sidebar_shell_bg}, stop:1 {theme.current_palette().sidebar_shell_bg_alt});"
-            " border-radius: 24px;"
-            f" border: 1px solid {theme.current_palette().sidebar_border};"
-            "}"
-            "QLabel#SidebarTitle {"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-size: 13px;"
-            " font-weight: 700;"
-            " background: transparent;"
-            "}"
-            "QLabel#SidebarCaption {"
-            f" color: {theme.current_palette().sidebar_text_muted};"
-            " font-size: 10px;"
-            " font-weight: 600;"
-            " letter-spacing: 0.08em;"
-            " background: transparent;"
-            "}"
-            "QToolButton#SidebarToggleButton {"
-            f" background: {theme.current_palette().sidebar_nav_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
-            " border-radius: 14px;"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-size: 18px;"
-            " font-weight: 700;"
-            " min-width: 42px;"
-            " min-height: 42px;"
-            "}"
-            f"QToolButton#SidebarToggleButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
-            "QPushButton#SidebarActionButton {"
-            " text-align: left;"
-            " padding: 12px 14px;"
-            " border-radius: 16px;"
-            f" background: {theme.current_palette().sidebar_action_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_action_border};"
-            f" color: {theme.current_palette().sidebar_action_text};"
-            " font-weight: 800;"
-            "}"
-            f"QPushButton#SidebarActionButton:hover {{ background: {theme.current_palette().primary_btn_hover}; }}"
-            "QPushButton#SidebarNavButton {"
-            " text-align: left;"
-            " padding: 12px 14px;"
-            " border-radius: 16px;"
-            f" background: {theme.current_palette().sidebar_nav_bg};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border};"
-            f" color: {theme.current_palette().sidebar_text};"
-            " font-weight: 700;"
-            "}"
-            f"QPushButton#SidebarNavButton:hover {{ background: {theme.current_palette().sidebar_nav_bg_hover}; }}"
-            "QPushButton#SidebarNavButton:checked {"
-            f" background: {theme.current_palette().sidebar_nav_bg_selected};"
-            f" border: 1px solid {theme.current_palette().sidebar_nav_border_selected};"
-            "}"
-        )
+        self.sidebar_shell.setStyleSheet(theme.main_window_stylesheet())
+        if hasattr(self, "dashboard_page"):
+            self.dashboard_page.setStyleSheet(theme.main_window_stylesheet())
         self.footer_status_block.setStyleSheet(
-            f"QFrame#FooterStatusBlock {{ background: {theme.current_palette().footer_block_bg}; "
+            f"QFrame#AgentStatusCard {{ background: {theme.current_palette().footer_block_bg}; "
             f"border: 1px solid {theme.current_palette().footer_block_border}; border-radius: 16px; }}"
         )
         self.agent_footer_label.setStyleSheet(
@@ -893,10 +1003,6 @@ class MainWindow(QMainWindow):
         )
         self.agent_footer_meta.setStyleSheet(
             f"color: {theme.current_palette().footer_label_muted}; background: transparent;"
-        )
-        self.update_agent_btn.setStyleSheet(
-            f"border: 1px solid {theme.BORDER}; border-radius: 12px; background: {theme.BG_INPUT}; "
-            f"color: {theme.TEXT_PRIMARY}; padding: 8px 14px; font-weight: 700;"
         )
         self.chat_panel.setStyleSheet(theme.chat_panel_stylesheet())
         if hasattr(self.chat_panel, "refresh_theme"):
@@ -913,6 +1019,12 @@ class MainWindow(QMainWindow):
         self._render_connection_status()
         self._render_update_status()
         self._refresh_sidebar_labels()
+        self._set_sidebar_selection_state(
+            dashboard=self._active_sidebar_view == "dashboard",
+            tickets=self._active_sidebar_view == "tickets",
+            settings=self._active_sidebar_view == "settings",
+            profile=self._active_sidebar_view == "profile",
+        )
 
     def _show_nonblocking_message(
         self,
@@ -1101,23 +1213,23 @@ class MainWindow(QMainWindow):
         self.agent_footer_label.setText(self._repair_text(version_text))
         button_text = ""
         button_enabled = False
-        meta_text = "Р РµР»РёР· Р°РєС‚СѓР°Р»РµРЅ" if is_release else "РџРѕРґРєР»СЋС‡С‘РЅ С‚РµСЃС‚РѕРІС‹Р№ Р±РёР»Рґ"
+        meta_text = "Релиз актуален" if is_release else "Подключён тестовый билд"
         if request_state == "pending_restart" and request_version:
-            button_text = f"Р“РѕС‚РѕРІРёРј {request_version}"
-            meta_text = f"РџР°РєРµС‚ {request_version} СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅ, РѕР¶РёРґР°РµС‚СЃСЏ РїРµСЂРµР·Р°РїСѓСЃРє Р°РіРµРЅС‚Р°"
+            button_text = f"Готовим {request_version}"
+            meta_text = f"Пакет {request_version} уже загружен, ожидается перезапуск агента"
         elif request_state == "requested" and request_version:
-            button_text = f"Р–РґС‘Рј {request_version}"
-            meta_text = f"РћР¶РёРґР°РµРј РґРѕСЃС‚Р°РІРєСѓ РєРѕРјР°РЅРґС‹ РѕР±РЅРѕРІР»РµРЅРёСЏ РґРѕ {request_version}"
+            button_text = f"Ждём {request_version}"
+            meta_text = f"Ожидаем доставку команды обновления до {request_version}"
         elif request_state == "requesting" and request_version:
-            button_text = f"Р—Р°РїСЂР°С€РёРІР°РµРј {request_version}"
-            meta_text = f"РћС‚РїСЂР°РІР»СЏРµРј Р·Р°РїСЂРѕСЃ РЅР° РѕР±РЅРѕРІР»РµРЅРёРµ РґРѕ {request_version}"
+            button_text = f"Запрашиваем {request_version}"
+            meta_text = f"Отправляем запрос на обновление до {request_version}"
         elif update_available and recommended_version:
             if comparison == "recommended_release_is_older":
-                button_text = f"РћС‚РєР°С‚РёС‚СЊ РґРѕ {recommended_version}"
+                button_text = f"Откатить до {recommended_version}"
             elif recommendation_source == "assigned_rollout":
-                button_text = f"РџСЂРёРІРµСЃС‚Рё Рє {recommended_version}"
+                button_text = f"Привести к {recommended_version}"
             else:
-                button_text = f"РћР±РЅРѕРІРёС‚СЊ РґРѕ {recommended_version}"
+                button_text = f"Обновить до {recommended_version}"
             button_enabled = True
             target_version = assigned_version or recommended_version
             meta_text = f"Р”РѕСЃС‚СѓРїРЅРѕ РґРµР№СЃС‚РІРёРµ РґР»СЏ РІРµСЂСЃРёРё {target_version or version}"
@@ -1281,8 +1393,8 @@ class MainWindow(QMainWindow):
                 recommended = response.get("recommendation") or {}
                 server_response = response.get("server_response") if isinstance(response.get("server_response"), dict) else {}
                 resolved_version = str(recommended.get("recommended_version") or "").strip()
-                version = resolved_version or "РЅРѕРІРѕР№ РІРµСЂСЃРёРё"
-                if version != "РЅРѕРІРѕР№ РІРµСЂСЃРёРё":
+                version = resolved_version or "новой версии"
+                if version != "новой версии":
                     self._update_status_snapshot["update_available"] = False
                     self._update_status_snapshot["update_request_state"] = "requested"
                     self._update_status_snapshot["update_request_version"] = version
@@ -1600,31 +1712,37 @@ class MainWindow(QMainWindow):
             meta = "Локальный мост недоступен"
             bg = theme.current_palette().status_offline_bg
             fg = theme.current_palette().status_offline_fg
+            dot_name = "StatusDot"
         elif self._server_connection_state == "connected":
             text = "Онлайн"
             meta = "Сервер доступен"
             bg = theme.current_palette().status_online_bg
             fg = theme.current_palette().status_online_fg
+            dot_name = "StatusDotOnline"
         elif self._server_connection_state in {"connecting", "authorizing", "starting"}:
             text = "Онлайн"
             meta = "Идёт подключение"
             bg = theme.current_palette().status_busy_bg
             fg = theme.current_palette().status_busy_fg
+            dot_name = "StatusDotBusy"
         elif self._server_connection_state == "auth_required":
             text = "Офлайн"
             meta = "Нужен токен"
             bg = theme.current_palette().status_offline_bg
             fg = theme.current_palette().status_offline_fg
+            dot_name = "StatusDot"
         elif self._server_connection_state == "rejected":
             text = "Офлайн"
             meta = "Доступ отклонён"
             bg = theme.current_palette().status_offline_bg
             fg = theme.current_palette().status_offline_fg
+            dot_name = "StatusDot"
         else:
             text = "Офлайн"
             meta = "Нет соединения с сервером"
             bg = theme.current_palette().status_offline_bg
             fg = theme.current_palette().status_offline_fg
+            dot_name = "StatusDot"
 
         if self._server_connection_detail:
             meta = f"{meta}: {self._server_connection_detail}"
@@ -1635,8 +1753,15 @@ class MainWindow(QMainWindow):
             f"font-weight: 800; border: 1px solid {bg};"
         )
         self.connection_status_btn.setToolTip(self._repair_text("Открыть настройки подключения"))
+        if hasattr(self, "connection_status_dot"):
+            self.connection_status_dot.setObjectName(dot_name)
+            self.connection_status_dot.setStyleSheet(
+                f"min-width: 12px; max-width: 12px; min-height: 12px; max-height: 12px; "
+                f"border-radius: 6px; background: {fg};"
+            )
         if not self.update_agent_btn.isVisible():
             self.agent_footer_meta.setText(self._repair_text(meta))
+        self._refresh_dashboard()
 
     def set_bridge_connected(self, connected: bool) -> None:
         self._bridge_connected = connected

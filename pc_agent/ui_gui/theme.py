@@ -9,6 +9,7 @@ currently selected light or dark palette without large rewrites.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -85,153 +86,205 @@ class ThemePalette:
     footer_label: str
     footer_label_muted: str
 
+    @property
+    def window_bg(self) -> str:
+        return self.bg_page
+
+    @property
+    def panel_bg(self) -> str:
+        return self.bg_card
+
+    @property
+    def panel_bg_alt(self) -> str:
+        return self.bg_card_alt
+
+    @property
+    def card_bg(self) -> str:
+        return self.list_item_bg
+
+    @property
+    def card_hover_bg(self) -> str:
+        return self.list_item_hover
+
+    @property
+    def card_active_bg(self) -> str:
+        return self.list_item_selected_bg
+
+    @property
+    def border_active(self) -> str:
+        return self.list_item_selected_border
+
+    @property
+    def success(self) -> str:
+        return self.status_online_fg
+
+    @property
+    def warning(self) -> str:
+        return "#F59E0B" if self.mode == "dark" else "#D97706"
+
+    @property
+    def danger(self) -> str:
+        return "#EF4444" if self.mode == "dark" else "#DC2626"
+
+    @property
+    def input_bg(self) -> str:
+        return self.bg_input
+
+    @property
+    def button_bg(self) -> str:
+        return self.primary_btn
+
+    @property
+    def button_text(self) -> str:
+        return self.primary_btn_text
+
 
 LIGHT_THEME = ThemePalette(
     mode="light",
-    bg_page="#f3f7fb",
+    bg_page="#F6F8FC",
     bg_card="#ffffff",
-    bg_card_alt="#eef3f8",
+    bg_card_alt="#F8FAFF",
     bg_input="#ffffff",
-    border="#d6e0ea",
-    border_soft="#e7eef5",
-    text_primary="#17212b",
-    text_secondary="#4c5d70",
-    text_muted="#76879a",
-    accent="#2f6fed",
-    accent_soft="#8ab2ff",
-    primary_btn="#2f6fed",
-    primary_btn_hover="#245ed0",
-    primary_btn_text="#f8fbff",
-    danger_bg="#feeaec",
-    danger_fg="#a53b46",
-    danger_border="#f4c5cb",
-    info_bg="#ebf3ff",
-    info_fg="#264f84",
-    link="#2f6fed",
-    selection="#cbdfff",
+    border="#E5EAF3",
+    border_soft="#EEF2F8",
+    text_primary="#111827",
+    text_secondary="#64748B",
+    text_muted="#94A3B8",
+    accent="#4F63F6",
+    accent_soft="#DDE4FF",
+    primary_btn="#4F63F6",
+    primary_btn_hover="#3F51E8",
+    primary_btn_text="#FFFFFF",
+    danger_bg="#FEE2E2",
+    danger_fg="#DC2626",
+    danger_border="#FECACA",
+    info_bg="#F4F6FF",
+    info_fg="#3F51E8",
+    link="#4F63F6",
+    selection="#DDE4FF",
     list_item_bg="#ffffff",
-    list_item_border="#dee8f1",
-    list_item_hover="#f2f7fd",
-    list_item_hover_border="#bdd2ea",
-    list_item_selected_bg="#e5f0ff",
-    list_item_selected_border="#2f6fed",
-    bubble_self_bg="#e8f0ff",
-    bubble_self_border="#c2d7ff",
-    bubble_self_fg="#17212b",
-    bubble_support_bg="#eaf5ef",
-    bubble_support_border="#c4dfcf",
-    bubble_support_fg="#1c3f2d",
-    bubble_event_bg="#f1f5f9",
-    bubble_event_border="#dde6ef",
-    bubble_event_fg="#4c5d70",
-    bubble_event_muted="#76879a",
-    timeline_scroll_bg="#edf2f7",
-    chat_screen_solid_open="#f5f8fc",
-    chat_screen_solid_resolved="#eef7f1",
-    chat_screen_solid_closed="#f1f4f8",
-    chat_send_bg="#2f6fed",
-    chat_send_bg_hover="#245ed0",
-    chat_send_border="#1f54be",
-    chat_send_text="#f8fbff",
-    sidebar_shell_bg="#244c82",
-    sidebar_shell_bg_alt="#1a3963",
-    sidebar_border="rgba(255, 255, 255, 0.12)",
-    sidebar_text="#f7fbff",
-    sidebar_text_muted="rgba(247, 251, 255, 0.74)",
-    sidebar_action_bg="#2f6fed",
-    sidebar_action_border="#79a5ff",
-    sidebar_action_text="#f8fbff",
-    sidebar_nav_bg="rgba(255, 255, 255, 0.08)",
-    sidebar_nav_bg_hover="rgba(255, 255, 255, 0.16)",
-    sidebar_nav_bg_selected="rgba(255, 255, 255, 0.24)",
-    sidebar_nav_border="rgba(255, 255, 255, 0.12)",
-    sidebar_nav_border_selected="rgba(255, 255, 255, 0.28)",
-    sidebar_profile_badge_bg="rgba(255, 255, 255, 0.12)",
-    sidebar_profile_badge_fg="#dfefff",
-    status_online_bg="#dcf4e6",
-    status_online_fg="#1d6c45",
-    status_busy_bg="#e9f1ff",
-    status_busy_fg="#295aa0",
-    status_offline_bg="#ecf1f6",
-    status_offline_fg="#5d6b7a",
+    list_item_border="#E5EAF3",
+    list_item_hover="#F8FAFF",
+    list_item_hover_border="#D7E0F0",
+    list_item_selected_bg="#F4F6FF",
+    list_item_selected_border="#5B6CFF",
+    bubble_self_bg="#EEF3FF",
+    bubble_self_border="#CFDAFF",
+    bubble_self_fg="#111827",
+    bubble_support_bg="#ECFDF3",
+    bubble_support_border="#BBF7D0",
+    bubble_support_fg="#14532D",
+    bubble_event_bg="#F8FAFC",
+    bubble_event_border="#E5EAF3",
+    bubble_event_fg="#64748B",
+    bubble_event_muted="#94A3B8",
+    timeline_scroll_bg="#F8FAFF",
+    chat_screen_solid_open="#F6F8FC",
+    chat_screen_solid_resolved="#F0FDF4",
+    chat_screen_solid_closed="#F1F5F9",
+    chat_send_bg="#4F63F6",
+    chat_send_bg_hover="#3F51E8",
+    chat_send_border="#4F63F6",
+    chat_send_text="#FFFFFF",
+    sidebar_shell_bg="#FFFFFF",
+    sidebar_shell_bg_alt="#FFFFFF",
+    sidebar_border="#E5EAF3",
+    sidebar_text="#111827",
+    sidebar_text_muted="#64748B",
+    sidebar_action_bg="#4F63F6",
+    sidebar_action_border="#4F63F6",
+    sidebar_action_text="#FFFFFF",
+    sidebar_nav_bg="transparent",
+    sidebar_nav_bg_hover="#F8FAFF",
+    sidebar_nav_bg_selected="#EEF2FF",
+    sidebar_nav_border="transparent",
+    sidebar_nav_border_selected="#E0E7FF",
+    sidebar_profile_badge_bg="#EEF2FF",
+    sidebar_profile_badge_fg="#4F63F6",
+    status_online_bg="#DCFCE7",
+    status_online_fg="#16A34A",
+    status_busy_bg="#FEF3C7",
+    status_busy_fg="#D97706",
+    status_offline_bg="#F1F5F9",
+    status_offline_fg="#64748B",
     footer_block_bg="#ffffff",
-    footer_block_border="#d6e0ea",
-    footer_label="#17212b",
-    footer_label_muted="#76879a",
+    footer_block_border="#E5EAF3",
+    footer_label="#111827",
+    footer_label_muted="#64748B",
 )
 
 DARK_THEME = ThemePalette(
     mode="dark",
-    bg_page="#0f141b",
-    bg_card="#161d26",
-    bg_card_alt="#1d2632",
-    bg_input="#0c1117",
-    border="#2b3a4d",
-    border_soft="#213041",
-    text_primary="#eaf1f8",
-    text_secondary="#b4c3d5",
-    text_muted="#7f90a4",
-    accent="#5d9bff",
-    accent_soft="#8fbcff",
-    primary_btn="#5d9bff",
-    primary_btn_hover="#78adff",
-    primary_btn_text="#0f141b",
-    danger_bg="#40262c",
-    danger_fg="#ffbec8",
-    danger_border="#7a4e58",
-    info_bg="#1d2f47",
-    info_fg="#d9e7ff",
-    link="#8fbcff",
-    selection="#234a86",
-    list_item_bg="#141b24",
-    list_item_border="#273547",
-    list_item_hover="#1d2a3a",
-    list_item_hover_border="#3d5878",
-    list_item_selected_bg="#203b61",
-    list_item_selected_border="#5d9bff",
-    bubble_self_bg="#20334d",
-    bubble_self_border="#36557d",
-    bubble_self_fg="#eaf1f8",
-    bubble_support_bg="#18342a",
-    bubble_support_border="#315a49",
-    bubble_support_fg="#d9f3e5",
-    bubble_event_bg="#1a2430",
-    bubble_event_border="#28394d",
-    bubble_event_fg="#b4c3d5",
-    bubble_event_muted="#7f90a4",
-    timeline_scroll_bg="#121922",
-    chat_screen_solid_open="#101720",
-    chat_screen_solid_resolved="#101c16",
-    chat_screen_solid_closed="#161d26",
-    chat_send_bg="#5d9bff",
-    chat_send_bg_hover="#78adff",
-    chat_send_border="#8fbcff",
-    chat_send_text="#0f141b",
-    sidebar_shell_bg="#152333",
-    sidebar_shell_bg_alt="#1b2d43",
-    sidebar_border="rgba(255, 255, 255, 0.10)",
-    sidebar_text="#eef5fb",
-    sidebar_text_muted="rgba(238, 245, 251, 0.70)",
-    sidebar_action_bg="#5d9bff",
-    sidebar_action_border="#8fbcff",
-    sidebar_action_text="#0f141b",
-    sidebar_nav_bg="rgba(255, 255, 255, 0.06)",
-    sidebar_nav_bg_hover="rgba(255, 255, 255, 0.12)",
-    sidebar_nav_bg_selected="rgba(255, 255, 255, 0.18)",
-    sidebar_nav_border="rgba(255, 255, 255, 0.10)",
-    sidebar_nav_border_selected="rgba(255, 255, 255, 0.22)",
-    sidebar_profile_badge_bg="rgba(255, 255, 255, 0.08)",
-    sidebar_profile_badge_fg="#d3e6ff",
-    status_online_bg="#17392b",
-    status_online_fg="#9de0b9",
-    status_busy_bg="#1d2f47",
-    status_busy_fg="#bcd6ff",
-    status_offline_bg="#202a36",
-    status_offline_fg="#bcc8d6",
-    footer_block_bg="#161d26",
-    footer_block_border="#2b3a4d",
-    footer_label="#eaf1f8",
-    footer_label_muted="#7f90a4",
+    bg_page="#070B18",
+    bg_card="#0D1426",
+    bg_card_alt="#101A30",
+    bg_input="#0A1020",
+    border="#24324A",
+    border_soft="#1C2940",
+    text_primary="#F8FAFC",
+    text_secondary="#94A3B8",
+    text_muted="#64748B",
+    accent="#5B6CFF",
+    accent_soft="#273168",
+    primary_btn="#5B6CFF",
+    primary_btn_hover="#6F7DFF",
+    primary_btn_text="#FFFFFF",
+    danger_bg="#421D27",
+    danger_fg="#FCA5A5",
+    danger_border="#7F1D1D",
+    info_bg="#132450",
+    info_fg="#DDE4FF",
+    link="#AAB6FF",
+    selection="#273168",
+    list_item_bg="#121D33",
+    list_item_border="#24324A",
+    list_item_hover="#17243D",
+    list_item_hover_border="#334462",
+    list_item_selected_bg="#132450",
+    list_item_selected_border="#5368FF",
+    bubble_self_bg="#172B58",
+    bubble_self_border="#334B8F",
+    bubble_self_fg="#F8FAFC",
+    bubble_support_bg="#123323",
+    bubble_support_border="#1D6F43",
+    bubble_support_fg="#DCFCE7",
+    bubble_event_bg="#101A30",
+    bubble_event_border="#24324A",
+    bubble_event_fg="#94A3B8",
+    bubble_event_muted="#64748B",
+    timeline_scroll_bg="#0A1020",
+    chat_screen_solid_open="#070B18",
+    chat_screen_solid_resolved="#07130E",
+    chat_screen_solid_closed="#0D1426",
+    chat_send_bg="#5B6CFF",
+    chat_send_bg_hover="#6F7DFF",
+    chat_send_border="#5B6CFF",
+    chat_send_text="#FFFFFF",
+    sidebar_shell_bg="#0D1426",
+    sidebar_shell_bg_alt="#0D1426",
+    sidebar_border="#1C2940",
+    sidebar_text="#F8FAFC",
+    sidebar_text_muted="#94A3B8",
+    sidebar_action_bg="#5B6CFF",
+    sidebar_action_border="#5B6CFF",
+    sidebar_action_text="#FFFFFF",
+    sidebar_nav_bg="transparent",
+    sidebar_nav_bg_hover="#17243D",
+    sidebar_nav_bg_selected="#1D2A58",
+    sidebar_nav_border="transparent",
+    sidebar_nav_border_selected="#2D3C78",
+    sidebar_profile_badge_bg="#273168",
+    sidebar_profile_badge_fg="#DDE4FF",
+    status_online_bg="#123323",
+    status_online_fg="#22C55E",
+    status_busy_bg="#3A2A0C",
+    status_busy_fg="#F59E0B",
+    status_offline_bg="#17243D",
+    status_offline_fg="#94A3B8",
+    footer_block_bg="#101A30",
+    footer_block_border="#24324A",
+    footer_label="#F8FAFC",
+    footer_label_muted="#94A3B8",
 )
 
 PALETTES = {
@@ -289,24 +342,28 @@ TOKEN_MAP = {
 
 STATUS_COLOR_TEMPLATES = {
     "light": {
-        "new": ("#1f5da6", "#d9e8fb"),
-        "triaged": ("#6a4392", "#eaddf7"),
-        "in_progress": ("#1f715d", "#d7efe7"),
-        "waiting_on_user": ("#9a6618", "#f8e8c2"),
-        "waiting_on_vendor": ("#83501b", "#f0debc"),
-        "resolved": ("#255f46", "#d4eadc"),
-        "closed": ("#60594f", "#e7e1d9"),
-        "unknown": ("#60594f", "#e7e1d9"),
+        "new": ("#4F63F6", "#EEF2FF"),
+        "queued": ("#D97706", "#FEF3C7"),
+        "triaged": ("#7C3AED", "#F3E8FF"),
+        "assigned": ("#2563EB", "#DBEAFE"),
+        "in_progress": ("#16A34A", "#DCFCE7"),
+        "waiting_on_user": ("#D97706", "#FEF3C7"),
+        "waiting_on_vendor": ("#B45309", "#FFEDD5"),
+        "resolved": ("#15803D", "#DCFCE7"),
+        "closed": ("#64748B", "#F1F5F9"),
+        "unknown": ("#64748B", "#F1F5F9"),
     },
     "dark": {
-        "new": ("#abd0ff", "#1a3858"),
-        "triaged": ("#d4b6ff", "#37244d"),
-        "in_progress": ("#a9ebd2", "#173b32"),
-        "waiting_on_user": ("#ffd89a", "#49381a"),
-        "waiting_on_vendor": ("#efc998", "#423116"),
-        "resolved": ("#b6e8cb", "#1c3a2b"),
-        "closed": ("#d2d7df", "#2b313a"),
-        "unknown": ("#d2d7df", "#2b313a"),
+        "new": ("#AAB6FF", "#1D2A58"),
+        "queued": ("#F59E0B", "#3A2A0C"),
+        "triaged": ("#C4B5FD", "#31204F"),
+        "assigned": ("#93C5FD", "#172B58"),
+        "in_progress": ("#22C55E", "#123323"),
+        "waiting_on_user": ("#F59E0B", "#3A2A0C"),
+        "waiting_on_vendor": ("#FBBF24", "#3B2F0F"),
+        "resolved": ("#86EFAC", "#123323"),
+        "closed": ("#94A3B8", "#17243D"),
+        "unknown": ("#94A3B8", "#17243D"),
     },
 }
 
@@ -315,6 +372,8 @@ UI_FONT_PT = 10
 BODY_PT = 11
 TITLE_PT = 12
 BUBBLE_BODY_PT = 14
+LOGO_PATH = Path(r"C:\Users\admin-2\Desktop\лого\512-512.png")
+ICONS_DIR = Path(__file__).resolve().parent / "assets" / "icons"
 
 _current_mode = "light"
 
@@ -338,6 +397,10 @@ def set_theme_mode(mode: str | None) -> str:
 
 def current_palette() -> ThemePalette:
     return PALETTES[_current_mode]
+
+
+def icon_path(name: str) -> str:
+    return str((ICONS_DIR / f"{name}.svg").resolve())
 
 
 def status_colors() -> dict[str, tuple[str, str]]:
@@ -417,6 +480,208 @@ def application_stylesheet() -> str:
             selection-background-color: {p.selection};
             selection-color: {p.text_primary};
         }}
+        QSplitter::handle {{
+            background: transparent;
+        }}
+        QToolTip {{
+            background: {p.bg_card};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 8px;
+            padding: 6px 8px;
+        }}
+    """
+
+
+def main_window_stylesheet() -> str:
+    p = current_palette()
+    return f"""
+        QWidget#AgentRoot {{
+            background: {p.bg_page};
+        }}
+        QFrame#Sidebar {{
+            background: {p.sidebar_shell_bg};
+            border: 1px solid {p.sidebar_border};
+            border-radius: 20px;
+        }}
+        QLabel#BrandTitle {{
+            color: {p.sidebar_text};
+            font-size: 18px;
+            font-weight: 800;
+            background: transparent;
+        }}
+        QLabel#SidebarSectionLabel {{
+            color: {p.sidebar_text_muted};
+            font-size: 12px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        QPushButton#SidebarButton,
+        QPushButton#SidebarButtonActive {{
+            min-height: 50px;
+            padding: 0px 14px;
+            border-radius: 14px;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 700;
+            color: {p.sidebar_text};
+            background: {p.sidebar_nav_bg};
+            border: 1px solid {p.sidebar_nav_border};
+        }}
+        QPushButton#SidebarButton:hover {{
+            background: {p.sidebar_nav_bg_hover};
+            border-color: {p.sidebar_nav_border_selected};
+        }}
+        QPushButton#SidebarButtonActive,
+        QPushButton#SidebarButton:checked {{
+            background: {p.sidebar_nav_bg_selected};
+            border-color: {p.sidebar_nav_border_selected};
+            color: {p.accent if p.mode == "light" else p.text_primary};
+        }}
+        QPushButton#PrimaryButton,
+        QPushButton#SidebarCreateButton {{
+            min-height: 50px;
+            padding: 0px 16px;
+            border-radius: 14px;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 800;
+            color: {p.primary_btn_text};
+            background: {p.primary_btn};
+            border: 1px solid {p.primary_btn};
+        }}
+        QPushButton#PrimaryButton:hover,
+        QPushButton#SidebarCreateButton:hover {{
+            background: {p.primary_btn_hover};
+            border-color: {p.primary_btn_hover};
+        }}
+        QPushButton#SecondaryButton,
+        QToolButton#SecondaryButton {{
+            min-height: 42px;
+            padding: 0px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            color: {p.text_primary};
+            background: {p.bg_input};
+            border: 1px solid {p.border};
+        }}
+        QPushButton#SecondaryButton:hover,
+        QToolButton#SecondaryButton:hover {{
+            background: {p.list_item_hover};
+            border-color: {p.list_item_hover_border};
+        }}
+        QFrame#ProfileCard,
+        QFrame#AgentStatusCard {{
+            background: {p.bg_card_alt if p.mode == "dark" else p.bg_card};
+            border: 1px solid {p.border_soft if p.mode == "dark" else p.border};
+            border-radius: 16px;
+        }}
+        QLabel#Avatar {{
+            color: #FFFFFF;
+            background: {p.primary_btn};
+            border-radius: 24px;
+            font-size: 17px;
+            font-weight: 800;
+        }}
+        QLabel#CardKicker {{
+            color: {p.text_secondary if p.mode == "light" else p.sidebar_text_muted};
+            font-size: 12px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        QLabel#CardTitle {{
+            color: {p.text_primary};
+            font-size: 14px;
+            font-weight: 800;
+            background: transparent;
+        }}
+        QLabel#CardMeta {{
+            color: {p.text_secondary};
+            font-size: 12px;
+            font-weight: 600;
+            background: transparent;
+        }}
+        QLabel#StatusDot {{
+            min-width: 12px;
+            max-width: 12px;
+            min-height: 12px;
+            max-height: 12px;
+            border-radius: 6px;
+            background: {p.status_offline_fg};
+        }}
+        QLabel#StatusDotOnline {{
+            min-width: 12px;
+            max-width: 12px;
+            min-height: 12px;
+            max-height: 12px;
+            border-radius: 6px;
+            background: {p.status_online_fg};
+        }}
+        QLabel#StatusDotBusy {{
+            min-width: 12px;
+            max-width: 12px;
+            min-height: 12px;
+            max-height: 12px;
+            border-radius: 6px;
+            background: {p.status_busy_fg};
+        }}
+        QLabel#MainTitle {{
+            color: {p.text_primary};
+            font-size: 28px;
+            font-weight: 800;
+            background: transparent;
+        }}
+        QLabel#MainSubtitle {{
+            color: {p.text_secondary};
+            font-size: 14px;
+            font-weight: 600;
+            background: transparent;
+        }}
+        QFrame#MainPanel {{
+            background: {p.bg_card if p.mode == "light" else p.bg_card};
+            border: 1px solid {p.border};
+            border-radius: 20px;
+        }}
+    """
+
+
+def window_chrome_stylesheet() -> str:
+    p = current_palette()
+    close_hover = "#DC2626" if p.mode == "light" else "#EF4444"
+    return f"""
+        QFrame#CustomTitleBar {{
+            background: {p.bg_page};
+            border: none;
+            border-bottom: 1px solid {p.border_soft};
+        }}
+        QLabel#TitleBarIcon {{
+            background: transparent;
+            border: none;
+        }}
+        QLabel#TitleBarText {{
+            color: {p.text_primary};
+            font-size: 13px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        QToolButton#TitleBarButton,
+        QToolButton#TitleBarCloseButton {{
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: {p.text_primary};
+            font-size: 15px;
+            font-weight: 700;
+            padding: 0px;
+        }}
+        QToolButton#TitleBarButton:hover {{
+            background: {p.list_item_hover};
+        }}
+        QToolButton#TitleBarCloseButton:hover {{
+            background: {close_hover};
+            color: #FFFFFF;
+        }}
     """
 
 
@@ -445,6 +710,23 @@ def chat_panel_stylesheet() -> str:
         QWidget#TicketListScreen, QWidget#ChatScreenRoot {{
             background-color: {p.bg_page};
         }}
+        QFrame#MainPanel {{
+            background: {p.bg_card};
+            border: 1px solid {p.border};
+            border-radius: 20px;
+        }}
+        QLabel#MainTitle {{
+            font-size: 28px;
+            font-weight: 800;
+            color: {p.text_primary};
+            background: transparent;
+        }}
+        QLabel#MainSubtitle {{
+            font-size: 14px;
+            font-weight: 600;
+            color: {p.text_secondary};
+            background: transparent;
+        }}
         QWidget {{
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
@@ -472,13 +754,13 @@ def chat_panel_stylesheet() -> str:
             font-family: {UI_FONT_FAMILY};
             font-size: {UI_FONT_PT}pt;
             border: none;
-            background: {p.bg_card_alt};
+            background: transparent;
             outline: none;
-            padding: 4px;
-            border-radius: 16px;
+            padding: 0px;
+            border-radius: 0px;
         }}
         QListView#TicketsListView > QWidget {{
-            background-color: {p.bg_card_alt};
+            background-color: transparent;
         }}
         QListView::item {{
             border: none;
@@ -545,6 +827,27 @@ def chat_panel_stylesheet() -> str:
             min-height: 24px;
         }}
         QPushButton#PrimaryButton:hover {{ background: {p.primary_btn_hover}; }}
+        QPushButton#TicketFilterChip,
+        QPushButton#TicketFilterChipActive {{
+            min-height: 38px;
+            padding: 0px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            color: {p.text_secondary};
+            background: transparent;
+            border: 1px solid transparent;
+            text-align: center;
+        }}
+        QPushButton#TicketFilterChip:hover {{
+            background: {p.list_item_hover};
+            border-color: {p.border_soft};
+        }}
+        QPushButton#TicketFilterChipActive {{
+            color: {p.accent if p.mode == "light" else p.text_primary};
+            background: {p.info_bg};
+            border-color: {p.list_item_selected_border};
+        }}
         QPushButton#ChatSendButton {{
             background-color: {p.chat_send_bg};
             color: {p.chat_send_text};
@@ -582,6 +885,18 @@ def chat_panel_stylesheet() -> str:
             selection-background-color: {p.selection};
             selection-color: {p.text_primary};
             color: {p.text_primary};
+        }}
+        QLineEdit#SearchInput {{
+            border-radius: 14px;
+            background: {p.bg_input};
+            border: 1px solid {p.border};
+            padding: 0px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: {p.text_primary};
+        }}
+        QLineEdit#SearchInput:focus {{
+            border-color: {p.accent};
         }}
         QLineEdit#ChatInputLine {{
             border: 2px solid {p.border};

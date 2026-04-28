@@ -1,5 +1,55 @@
 # PLANS.md
 
+## 2026-04-28 Agent Qt GUI SaaS Redesign
+
+Status: completed locally; Windows build `3.1.24` uploaded to server and assigned as preferred `windows_amd64/stable` rollout on 2026-04-28.
+
+### Goal
+
+Redesign the local PySide6/Qt Widgets agent GUI into a modern SaaS-style desktop interface while preserving ticket, chat, profile, settings, runtime status and update behavior.
+
+### Constraints
+
+- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
+- Keep the existing PySide6/Qt Widgets architecture; do not migrate to QML or web UI.
+- Do not change websocket/API/protocol logic or ticket/chat business handlers unless a UI integration requires a narrow adapter.
+- Keep real ticket/profile/runtime/update data from existing models and `ui_bridge`; do not introduce mock ticket data.
+- Centralize visual tokens and QSS in `pc_agent/ui_gui/theme.py`.
+
+### Implementation Tracks
+
+1. Refresh theme tokens for light/dark palettes and add centralized QSS for the main shell, sidebar, controls and ticket list.
+2. Add reusable GUI affordances around the current widgets:
+   - logo support from `C:\Users\admin-2\Desktop\лого\512-512.png`;
+   - icon assets under `pc_agent/ui_gui/assets/icons`;
+   - custom cross-platform frameless window chrome in `pc_agent/ui_gui/window_chrome.py`;
+   - helper styling for shadows and status dots.
+3. Redesign `MainWindow` shell:
+   - custom Maria Agent title bar with minimize/maximize/close, drag and edge resize;
+   - active desktop/dashboard screen backed by current ticket/profile/runtime state;
+   - fixed 280-300 px left sidebar;
+   - Maria Agent brand block;
+   - navigation buttons for desktop, create ticket, tickets and settings;
+   - bottom profile and agent status cards backed by current profile/runtime state.
+4. Redesign `TicketsSidebarWidget` and `TicketCardDelegate`:
+   - search + filters row;
+   - minimal Filters menu wired to the existing open/closed/search filters;
+   - tab/chip-style all/open/closed filters with counts;
+   - card rendering with type icon, code, status, priority, title, source/time, unread badge and chevron;
+   - active/hover visual states without changing the list model.
+5. Keep settings theme switch connected to existing `ui.theme_mode`, with no restart needed for theme-only changes.
+6. Verify:
+   - Python compile/import checks for touched modules;
+   - `python scripts/verify_workspace.py`;
+   - focused agent runtime tests where feasible;
+   - manual GUI scenarios: create ticket, search/filter, select ticket, double-click/open chat, settings, theme switch, status/update footer.
+
+### Release Notes
+
+- Windows release artifact: `pc_agent-windows_amd64-3.1.24.zip`.
+- Server rollout assignment: `windows_amd64 / stable / 3.1.24`.
+- Launcher note: the release script compiles `launcher.exe` into the install layout, but the uploaded self-update ZIP contains the versioned `pc_agent.exe` payload only; launcher self-update remains a separate future mechanism.
+
 ## 2026-04-28 Admin Support SaaS Redesign And Playbook Module Entry
 
 Status: in progress.
