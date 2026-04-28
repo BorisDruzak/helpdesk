@@ -214,6 +214,53 @@ function normalizeSchemaOptions(rawSchema: Record<string, unknown>): SchemaParam
   return undefined;
 }
 
+function normalizeSchemaField(
+  name: string,
+  rawField: unknown,
+  required: Set<string>,
+  params: Record<string, unknown>,
+): SchemaParamField {
+  const rawSchema = typeof rawField === "object" && rawField && !Array.isArray(rawField)
+    ? rawField as Record<string, unknown>
+    : {};
+  const defaultValue = rawSchema.default ?? params[name];
+  const fieldRequired = required.has(name) || Boolean(rawSchema.required);
+  const propertyRequired = new Set(
+    Array.isArray(rawSchema.required)
+      ? rawSchema.required.map((item) => String(item ?? "")).filter(Boolean)
+      : [],
+  );
+  const childProperties =
+    typeof rawSchema.properties === "object" && rawSchema.properties && !Array.isArray(rawSchema.properties)
+      ? rawSchema.properties as Record<string, unknown>
+      : null;
+  const itemSchema =
+    typeof rawSchema.items === "object" && rawSchema.items && !Array.isArray(rawSchema.items)
+      ? rawSchema.items as Record<string, unknown>
+      : null;
+  const childParams = defaultValue && typeof defaultValue === "object" && !Array.isArray(defaultValue)
+    ? defaultValue as Record<string, unknown>
+    : {};
+
+  return {
+    name,
+    label: String(rawSchema.title ?? rawSchema.label ?? name),
+    description: rawSchema.description ? String(rawSchema.description) : null,
+    type: String(rawSchema.type ?? inferParamType(defaultValue)),
+    required: fieldRequired,
+    default: defaultValue,
+    options: normalizeSchemaOptions(rawSchema),
+    properties: childProperties
+      ? Object.entries(childProperties).map(([childName, childSchema]) =>
+          normalizeSchemaField(childName, childSchema, propertyRequired, childParams),
+        )
+      : undefined,
+    items: itemSchema
+      ? normalizeSchemaField("item", itemSchema, new Set(), {})
+      : undefined,
+  };
+}
+
 function normalizeParamSchema(
   paramsSchema: Record<string, unknown> | undefined,
   params: Record<string, unknown>
@@ -230,21 +277,7 @@ function normalizeParamSchema(
 
   const fields = Object.entries(properties ?? {})
     .filter(([name, rawField]) => name !== "required" && name !== "properties" && Boolean(rawField))
-    .map(([name, rawField]) => {
-      const rawSchema = typeof rawField === "object" && rawField && !Array.isArray(rawField)
-        ? rawField as Record<string, unknown>
-        : {};
-      const defaultValue = rawSchema.default ?? params[name];
-      return {
-        name,
-        label: String(rawSchema.title ?? rawSchema.label ?? name),
-        description: rawSchema.description ? String(rawSchema.description) : null,
-        type: String(rawSchema.type ?? inferParamType(defaultValue)),
-        required: required.has(name) || Boolean(rawSchema.required),
-        default: defaultValue,
-        options: normalizeSchemaOptions(rawSchema),
-      };
-    });
+    .map(([name, rawField]) => normalizeSchemaField(name, rawField, required, params));
 
   if (fields.length) {
     return fields;

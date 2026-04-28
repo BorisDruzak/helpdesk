@@ -36,26 +36,74 @@ describe("SchemaParamEditor", () => {
     });
   });
 
-  it("keeps object params in a bounded advanced field when no safer shape is available", () => {
+  it("edits object params through bounded nested fields instead of JSON", () => {
     const onChange = vi.fn();
-    const fields: SchemaParamField[] = [
+    const fields = [
       {
         name: "filters",
         label: "Filters",
         type: "object",
-        default: { severity: "error" },
+        properties: [
+          {
+            name: "severity",
+            label: "Severity",
+            type: "string",
+            default: "error",
+            options: [
+              { value: "error", label: "Error" },
+              { value: "warning", label: "Warning" },
+            ],
+          },
+          {
+            name: "include_archived",
+            label: "Include archived",
+            type: "boolean",
+            default: false,
+          },
+        ],
       },
-    ];
+    ] as unknown as SchemaParamField[];
 
     render(<SchemaParamEditor fields={fields} onChange={onChange} value={{}} />);
 
-    const advancedField = screen.getByLabelText("Filters JSON");
-    expect(advancedField).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filters JSON")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Severity")).toBeInTheDocument();
+    expect(screen.getByLabelText("Include archived")).toBeInTheDocument();
 
-    fireEvent.change(advancedField, { target: { value: "{\"severity\":\"warning\"}" } });
+    fireEvent.change(screen.getByLabelText("Severity"), { target: { value: "warning" } });
+    fireEvent.click(screen.getByLabelText("Include archived"));
 
     expect(onChange).toHaveBeenLastCalledWith({
-      filters: { severity: "warning" },
+      filters: { severity: "warning", include_archived: true },
+    });
+  });
+
+  it("edits array params as explicit rows instead of JSON", () => {
+    const onChange = vi.fn();
+    const fields = [
+      {
+        name: "hosts",
+        label: "Hosts",
+        type: "array",
+        default: ["localhost"],
+        items: {
+          type: "string",
+          label: "Host",
+        },
+      },
+    ] as unknown as SchemaParamField[];
+
+    render(<SchemaParamEditor fields={fields} onChange={onChange} value={{}} />);
+
+    expect(screen.queryByLabelText("Hosts JSON")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Host 1")).toHaveValue("localhost");
+
+    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "192.168.100.17" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить Host" }));
+    fireEvent.change(screen.getByLabelText("Host 2"), { target: { value: "gateway.local" } });
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      hosts: ["192.168.100.17", "gateway.local"],
     });
   });
 });

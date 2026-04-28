@@ -203,6 +203,32 @@ Completed:
 - Module tool editor uses the builder for Params schema and Output schema.
 - Focused regression covers builder output and module UI absence of schema JSON textareas.
 
+### 2026-04-28 Ninth Wave: Runtime Params Without JSON
+
+Current focus:
+
+1. Remove the remaining normal JSON fallback from runtime parameter editing:
+   - `SchemaParamEditor` must render object params as bounded nested field groups.
+   - Array params must render as explicit item rows with add/remove controls.
+   - JSON preview/debug can remain read-only elsewhere, but launch/config flows must not ask operators to hand-write JSON.
+2. Preserve one shared behavior across:
+   - playbook block command params in `/app/admin/playbooks`;
+   - support ticket tool launch in `/app/tickets/:ticketId`;
+   - support workspace tool launch panels.
+3. Carry nested schema metadata from playbook catalog normalization into the shared editor so module-defined `properties` and `items` become real controls.
+4. Verify in TDD order:
+   - focused `SchemaParamEditor` red/green tests;
+   - playbook builder regression for object/array params;
+   - webapp test/build;
+   - workspace verification;
+   - live browser check on `http://192.168.100.17:8666/admin`, then stop the remote server.
+
+Completed:
+
+- `SchemaParamEditor` now renders object params as nested controls and array params as explicit rows with add/remove controls.
+- Playbook catalog normalization preserves nested `properties` and `items` so module command params are editable without JSON.
+- Focused regressions cover object/array runtime params and playbook save payload generation without `... JSON` textareas.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

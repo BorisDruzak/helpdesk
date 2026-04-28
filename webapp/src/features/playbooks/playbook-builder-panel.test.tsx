@@ -273,6 +273,27 @@ describe("PlaybookBuilderPanel", () => {
                         title: "Include journal",
                         default: false,
                       },
+                      filters: {
+                        type: "object",
+                        title: "Filters",
+                        properties: {
+                          severity: {
+                            type: "string",
+                            title: "Severity",
+                            enum: ["error", "warning"],
+                            default: "error",
+                          },
+                        },
+                      },
+                      hosts: {
+                        type: "array",
+                        title: "Hosts",
+                        items: {
+                          type: "string",
+                          title: "Host",
+                        },
+                        default: ["localhost"],
+                      },
                     },
                     required: ["preset"],
                   },
@@ -331,10 +352,16 @@ describe("PlaybookBuilderPanel", () => {
     expect(screen.getByLabelText("Preset")).toBeInTheDocument();
     expect(screen.getByLabelText("Tail lines")).toBeInTheDocument();
     expect(screen.getByLabelText("Include journal")).toBeInTheDocument();
+    expect(screen.getByLabelText("Severity")).toBeInTheDocument();
+    expect(screen.getByLabelText("Host 1")).toBeInTheDocument();
     expect(screen.queryByLabelText("Params JSON")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Filters JSON")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Hosts JSON")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Tail lines"), { target: { value: "900" } });
     fireEvent.click(screen.getByLabelText("Include journal"));
+    fireEvent.change(screen.getByLabelText("Severity"), { target: { value: "warning" } });
+    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "192.168.100.17" } });
     fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
 
     await waitFor(() => {
@@ -348,6 +375,8 @@ describe("PlaybookBuilderPanel", () => {
             preset: "system",
             tail_lines: 900,
             include_journal: true,
+            filters: { severity: "warning" },
+            hosts: ["192.168.100.17"],
           },
         },
       ],
