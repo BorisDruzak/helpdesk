@@ -266,6 +266,66 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_web_support_detail_timeline_exposes_form_playbook_autostart(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-auto-playbook",
+            title="Не печатает принтер",
+            description="Заявка пришла из формы и должна показать автодиагностику.",
+            status="new",
+            requester_id="user-auto-playbook",
+            queue_id=queue.id,
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.flush()
+
+        await TicketEventsRepo(session).add_event(
+            ticket_id=ticket_id,
+            device_id="device-auto-playbook",
+            agent_seq=None,
+            event_type="playbook_started",
+            payload={
+                "playbook_key": "printer.quick_diag",
+                "playbook_run_id": 77,
+                "trigger": "ticket_created",
+                "facts_package": {
+                    "request_form_key": "printer",
+                    "request_form_summary": [
+                        {"key": "room", "label": "Кабинет", "value": "214"},
+                        {"key": "symptom", "label": "Симптом", "value": "Не печатает"},
+                    ],
+                    "request_form_data": {"room": "214", "symptom": "Не печатает"},
+                },
+            },
+            trace_id="trace-playbook-autostart",
+            event_id="playbook-started-77",
+        )
+        await session.commit()
+
+    response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    playbook_event = next(
+        (entry for entry in payload["data"]["timeline"] if entry["event_type"] == "playbook_started"),
+        None,
+    )
+    assert playbook_event is not None
+    assert playbook_event["sender_display_name"] == "Автодиагностика"
+    assert playbook_event["text"] == "Автодиагностика запущена: printer.quick_diag"
+    assert playbook_event["tool_name"] == "printer.quick_diag"
+    assert playbook_event["tool_status"] == "running"
+    assert "Run #77" in playbook_event["result_summary"]
+    assert "Кабинет: 214" in playbook_event["result_summary"]
+
+
+@pytest.mark.asyncio
 async def test_web_support_message_action_returns_typed_result_and_persists_event(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 

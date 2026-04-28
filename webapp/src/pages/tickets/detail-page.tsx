@@ -101,6 +101,9 @@ function getRoleLabel(entry: SupportTicketDetailPayload["timeline"][number]) {
   if (entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result") {
     return "Инструмент";
   }
+  if (entry.event_type === "playbook_started") {
+    return "Автодиагностика";
+  }
   if (entry.from_role === "support" || entry.from_role === "agent") {
     return "Агент";
   }
@@ -115,6 +118,9 @@ function getRoleBadgeTone(entry: SupportTicketDetailPayload["timeline"][number])
     return "warning" as const;
   }
   if (entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result") {
+    return "info" as const;
+  }
+  if (entry.event_type === "playbook_started") {
     return "info" as const;
   }
   if (entry.from_role === "support" || entry.from_role === "agent") {
@@ -801,6 +807,7 @@ export function TicketStatusActionPanel({
 type TicketAutomationPlaybook = SupportTicketPlaybooksPayload["playbooks"][number];
 
 export function TicketAutomationPanel({
+  autoPlaybookEvents,
   latestOperations,
   onRunPlaybook,
   playbookErrorMessage,
@@ -812,6 +819,7 @@ export function TicketAutomationPanel({
   selectedPlaybookVersionId,
   setSelectedPlaybookVersionId,
 }: {
+  autoPlaybookEvents: SupportTicketDetailPayload["timeline"];
   latestOperations: SupportTicketDetailPayload["snapshot"]["latest_operations"];
   onRunPlaybook: (playbookVersionId: number) => void;
   playbookErrorMessage: string | null;
@@ -824,6 +832,7 @@ export function TicketAutomationPanel({
   setSelectedPlaybookVersionId: (playbookVersionId: number | null) => void;
 }) {
   const selectedPlaybook = playbooks.find((item) => item.playbook_version_id === selectedPlaybookVersionId) ?? null;
+  const latestAutoPlaybook = autoPlaybookEvents[0] ?? null;
 
   return (
     <Card>
@@ -851,6 +860,19 @@ export function TicketAutomationPanel({
 
         {playbooksLoading ? <p className="text-sm text-slate-500">Загружаем опубликованные плейбуки...</p> : null}
         {playbooksErrorMessage ? <p className="text-sm text-rose-700">{playbooksErrorMessage}</p> : null}
+
+        {latestAutoPlaybook ? (
+          <div className="rounded-[1rem] border border-blue-100 bg-blue-50/60 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-semibold text-slate-950">Автодиагностика формы</p>
+              <Badge tone="info">{latestAutoPlaybook.tool_status ?? "запущена"}</Badge>
+            </div>
+            <p className="mt-2 text-sm font-medium text-slate-900">{latestAutoPlaybook.text}</p>
+            {latestAutoPlaybook.result_summary ? (
+              <p className="mt-1 text-xs leading-5 text-slate-600">{latestAutoPlaybook.result_summary}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         {playbooks.length ? (
           <label className="space-y-2 text-sm font-medium text-slate-800">
@@ -1284,6 +1306,7 @@ export function TicketDetailPage() {
   const passport = passportQuery.data;
   const attachments = detail ? flattenAttachments(ticketId, detail.timeline) : [];
   const historyItems = detail?.timeline.filter((entry) => entry.event_type !== "chat_message") ?? [];
+  const autoPlaybookEvents = detail?.timeline.filter((entry) => entry.event_type === "playbook_started") ?? [];
   const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
   const canSendInternal = detail?.actions.can_send_internal_note ?? false;
   const latestOperations = detail?.snapshot.latest_operations ?? [];
@@ -1979,6 +2002,7 @@ export function TicketDetailPage() {
           </Card>
 
           <TicketAutomationPanel
+            autoPlaybookEvents={autoPlaybookEvents}
             latestOperations={latestOperations}
             onRunPlaybook={(playbookVersionId) => {
               void playbookMutation.mutateAsync(playbookVersionId);

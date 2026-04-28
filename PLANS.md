@@ -124,6 +124,20 @@ Current focus:
    - playbook/module trigger readiness is visible;
    - no raw JSON as the normal operator path.
 5. Align `/app/settings` ticket lifecycle display with the same status model and labels.
+
+### 2026-04-28 Third Wave: Form Playbook Runtime Proof
+
+Current focus:
+
+1. Prove the form-triggered playbook path end to end:
+   - published playbook;
+   - request form trigger;
+   - ticket creation;
+   - real `playbook_run`;
+   - `playbook_started` event in the support detail timeline.
+2. Make support ticket automation panel show form-triggered autodiagnostics as an explicit operator signal.
+3. Re-check lazy module install behavior and stale toolset snapshot handling through existing playbook engine tests.
+4. Verify on the Linux stand with two active agents through smoke, observer-aware checks and browser signoff.
 6. Verify with focused Vitest, webapp build, workspace verification and live browser checks on `http://192.168.100.17:8666/admin`.
 
 Completed:

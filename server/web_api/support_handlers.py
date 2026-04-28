@@ -295,6 +295,25 @@ def _event_timestamp_iso(event: object, payload: dict) -> str | None:
     return str(raw_ts) if raw_ts else None
 
 
+def _summarize_playbook_facts(facts_package: object) -> str | None:
+    if not isinstance(facts_package, dict):
+        return None
+    raw_rows = facts_package.get("request_form_summary")
+    if not isinstance(raw_rows, list):
+        return None
+    rows: list[str] = []
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, dict):
+            continue
+        label = str(raw_row.get("label") or raw_row.get("key") or "").strip()
+        value = str(raw_row.get("value") or "").strip()
+        if label and value:
+            rows.append(f"{label}: {value}")
+    if not rows:
+        return None
+    return ", ".join(rows[:3])
+
+
 def _build_timeline_message(event: object, ticket: object | None = None) -> SupportTicketMessage:
     raw_message = _serialize_message(event, ticket=ticket)
     metadata = raw_message.get("metadata") or {}
@@ -330,6 +349,36 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
 
     if event_type == "chat_message":
         return _build_timeline_message(event, ticket=ticket)
+
+    if event_type == "playbook_started":
+        playbook_key = str(payload.get("playbook_key") or "diagnostic.playbook")
+        run_id = payload.get("playbook_run_id")
+        trigger = str(payload.get("trigger") or "ticket_created")
+        summary_parts: list[str] = []
+        if run_id is not None:
+            summary_parts.append(f"Run #{run_id}")
+        if trigger:
+            summary_parts.append(f"Событие: {trigger}")
+        facts_summary = _summarize_playbook_facts(payload.get("facts_package"))
+        if facts_summary:
+            summary_parts.append(f"Факты формы: {facts_summary}")
+        return SupportTicketMessage(
+            message_id=None,
+            event_id=getattr(event, "id", None),
+            event_type=event_type,
+            from_role="system",
+            sender_display_name="Автодиагностика",
+            text=f"Автодиагностика запущена: {playbook_key}",
+            ts=_event_timestamp_iso(event, payload),
+            visibility="system",
+            direction="system",
+            attachments=[],
+            reply_to=None,
+            tool_name=playbook_key,
+            tool_status="running",
+            result_summary=" • ".join(summary_parts) if summary_parts else None,
+            result_preview=None,
+        )
 
     if event_type == "tool_call_started":
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "Инструмент")
@@ -708,7 +757,8 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             [
                 item
                 for item in events
-                if getattr(item, "event_type", None) in {"chat_message", "tool_call_started", "tool_call_result"}
+                if getattr(item, "event_type", None)
+                in {"chat_message", "tool_call_started", "tool_call_result", "playbook_started"}
             ]
         )
     ]

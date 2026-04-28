@@ -325,6 +325,7 @@ describe("TicketAutomationPanel", () => {
 
     render(
       <TicketAutomationPanel
+        autoPlaybookEvents={[]}
         latestOperations={[
           {
             operation_id: "operation-1",
@@ -373,5 +374,45 @@ describe("TicketAutomationPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить плейбук" }));
     expect(onRunPlaybook).toHaveBeenCalledWith(7);
+  });
+
+  it("shows form-triggered playbook autostart evidence", () => {
+    render(
+      <TicketAutomationPanel
+        autoPlaybookEvents={[
+          {
+            message_id: null,
+            event_id: 77,
+            event_type: "playbook_started",
+            from_role: "system",
+            sender_display_name: "Автодиагностика",
+            text: "Автодиагностика запущена: printer.quick_diag",
+            ts: "2026-04-28T08:01:00Z",
+            visibility: "system",
+            direction: "system",
+            attachments: [],
+            reply_to: null,
+            tool_name: "printer.quick_diag",
+            tool_status: "running",
+            result_summary: "Run #77 • Событие: ticket_created • Факты формы: Кабинет: 214",
+            result_preview: null,
+          },
+        ]}
+        latestOperations={[]}
+        onRunPlaybook={() => undefined}
+        playbookErrorMessage={null}
+        playbookPending={false}
+        playbookResultMessage={null}
+        playbooks={[]}
+        playbooksErrorMessage={null}
+        playbooksLoading={false}
+        selectedPlaybookVersionId={null}
+        setSelectedPlaybookVersionId={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("Автодиагностика формы")).toBeInTheDocument();
+    expect(screen.getByText("Автодиагностика запущена: printer.quick_diag")).toBeInTheDocument();
+    expect(screen.getByText(/Run #77/)).toBeInTheDocument();
   });
 });
