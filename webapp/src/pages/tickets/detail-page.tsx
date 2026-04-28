@@ -366,13 +366,59 @@ function getTransitionGroupLabel(status: string): string {
   return getTicketStatusPresentation({ status }).stageLabel;
 }
 
-function groupStatusOptions(statusOptions: Array<{ value: string; label: string }>) {
-  const groups = new Map<string, Array<{ value: string; label: string }>>();
+type StatusTransitionOption = {
+  value: string;
+  label: string;
+  available: boolean;
+  blockedReason?: string;
+};
+
+const COMMON_STATUS_TRANSITIONS: Array<{ value: string; label: string }> = [
+  { value: "queued", label: "В очередь" },
+  { value: "assigned", label: "Назначить" },
+  { value: "in_progress", label: "Взять в работу" },
+  { value: "waiting_on_user", label: "Ждём пользователя" },
+  { value: "waiting_on_internal", label: "Ждём внутреннюю группу" },
+  { value: "waiting_on_vendor", label: "Ждём внешнюю сторону" },
+  { value: "waiting_on_approval", label: "Ждём согласование" },
+  { value: "scheduled", label: "Запланировать" },
+  { value: "resolved", label: "Решить" },
+  { value: "closed", label: "Закрыть" },
+  { value: "canceled", label: "Отменить" },
+];
+
+function groupStatusOptions(statusOptions: StatusTransitionOption[]) {
+  const groups = new Map<string, StatusTransitionOption[]>();
   statusOptions.forEach((option) => {
     const groupLabel = getTransitionGroupLabel(option.value);
     groups.set(groupLabel, [...(groups.get(groupLabel) ?? []), option]);
   });
   return Array.from(groups.entries()).map(([label, options]) => ({ label, options }));
+}
+
+function buildTransitionOptions(
+  statusOptions: Array<{ value: string; label: string }>,
+  currentStatus: string,
+): { allowed: StatusTransitionOption[]; blocked: StatusTransitionOption[] } {
+  const allowedValues = new Set(statusOptions.map((option) => option.value));
+  const allowed = statusOptions
+    .filter((option) => option.value !== currentStatus)
+    .map((option) => ({
+      ...option,
+      available: true,
+    }));
+  const blocked = COMMON_STATUS_TRANSITIONS.filter(
+    (option) => option.value !== currentStatus && !allowedValues.has(option.value),
+  ).map((option) => ({
+    ...option,
+    available: false,
+    blockedReason: "Сервер не разрешил этот переход из текущего этапа.",
+  }));
+
+  return {
+    allowed,
+    blocked,
+  };
 }
 
 export function TicketRequestFormCard({
@@ -565,19 +611,30 @@ export function TicketStatusActionPanel({
     evidenceRef: ticket.evidence_ref,
   });
   const selectedOption = statusOptions.find((option) => option.value === selectedStatus) ?? null;
-  const preview = selectedOption
+  const selectedBlockedOption =
+    selectedStatus && !selectedOption
+      ? COMMON_STATUS_TRANSITIONS.find((option) => option.value === selectedStatus) ?? {
+          value: selectedStatus,
+          label: getTicketStatusPresentation({ status: selectedStatus }).statusLabel,
+        }
+      : null;
+  const previewTarget = selectedOption ?? selectedBlockedOption;
+  const preview = previewTarget
     ? getTicketStatusPresentation({
-        status: selectedOption.value,
-        statusLabel: selectedOption.label,
+        status: previewTarget.value,
+        statusLabel: previewTarget.label,
         requesterStatusLabel: ticket.requester_status_label,
-        nextActionOwner: getNextActionOwnerForStatus(selectedOption.value),
+        nextActionOwner: getNextActionOwnerForStatus(previewTarget.value),
         evidenceRequired: ticket.evidence_required,
         evidenceRef: ticket.evidence_ref,
       })
     : null;
   const evidenceBlocked =
     selectedStatus === "resolved" && Boolean(ticket.evidence_required) && !ticket.evidence_ref;
-  const transitionGroups = groupStatusOptions(statusOptions);
+  const transitionOptions = buildTransitionOptions(statusOptions, ticket.status);
+  const transitionGroups = groupStatusOptions(transitionOptions.allowed);
+  const blockedTransitionGroups = groupStatusOptions(transitionOptions.blocked);
+  const applyDisabled = disabled || pending || !selectedStatus || !selectedOption;
 
   return (
     <div className="min-w-[320px] rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
@@ -608,7 +665,7 @@ export function TicketStatusActionPanel({
         </label>
         <div className="flex items-end">
           <Button
-            disabled={disabled || pending || !selectedStatus}
+            disabled={applyDisabled}
             onClick={() => onApply(selectedStatus)}
             size="md"
           >
@@ -617,49 +674,89 @@ export function TicketStatusActionPanel({
         </div>
       </div>
 
-      {transitionGroups.length ? (
+      {transitionGroups.length || blockedTransitionGroups.length ? (
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold text-slate-900">Быстрые переходы</p>
             <p className="text-xs text-slate-500">Выбор не меняет статус до подтверждения.</p>
           </div>
-          {transitionGroups.map((group) => (
-            <div key={group.label} className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{group.label}</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {group.options.map((option) => {
-                  const optionPresentation = getTicketStatusPresentation({
-                    status: option.value,
-                    statusLabel: option.label,
-                    requesterStatusLabel: ticket.requester_status_label,
-                    nextActionOwner: getNextActionOwnerForStatus(option.value),
-                    evidenceRequired: ticket.evidence_required,
-                    evidenceRef: ticket.evidence_ref,
-                  });
-                  const active = selectedStatus === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      className={cn(
-                        "rounded-[0.9rem] border px-3 py-3 text-left transition-colors",
-                        active
-                          ? "border-brand-200 bg-brand-50 text-brand-900"
-                          : "border-border bg-white text-slate-700 hover:border-brand-100 hover:bg-surface-subtle",
-                      )}
-                      disabled={disabled || pending}
-                      onClick={() => onValueChange(option.value)}
-                      type="button"
-                    >
-                      <span className="block text-sm font-semibold">{option.label}</span>
-                      <span className="mt-1 block text-xs text-slate-500">
-                        {optionPresentation.ownerLabel} · {optionPresentation.evidenceLabel}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+          {transitionGroups.length ? (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Доступно сейчас</p>
+              {transitionGroups.map((group) => (
+                <div key={group.label} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{group.label}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {group.options.map((option) => {
+                      const optionPresentation = getTicketStatusPresentation({
+                        status: option.value,
+                        statusLabel: option.label,
+                        requesterStatusLabel: ticket.requester_status_label,
+                        nextActionOwner: getNextActionOwnerForStatus(option.value),
+                        evidenceRequired: ticket.evidence_required,
+                        evidenceRef: ticket.evidence_ref,
+                      });
+                      const active = selectedStatus === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          className={cn(
+                            "rounded-[0.9rem] border px-3 py-3 text-left transition-colors",
+                            active
+                              ? "border-brand-200 bg-brand-50 text-brand-900"
+                              : "border-border bg-white text-slate-700 hover:border-brand-100 hover:bg-surface-subtle",
+                          )}
+                          disabled={disabled || pending}
+                          onClick={() => onValueChange(option.value)}
+                          type="button"
+                        >
+                          <span className="block text-sm font-semibold">{option.label}</span>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            {optionPresentation.ownerLabel} · {optionPresentation.evidenceLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
+          {blockedTransitionGroups.length ? (
+            <div className="space-y-3 rounded-[0.95rem] border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Недоступно сейчас</p>
+              {blockedTransitionGroups.map((group) => (
+                <div key={group.label} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{group.label}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {group.options.map((option) => {
+                      const optionPresentation = getTicketStatusPresentation({
+                        status: option.value,
+                        statusLabel: option.label,
+                        requesterStatusLabel: ticket.requester_status_label,
+                        nextActionOwner: getNextActionOwnerForStatus(option.value),
+                        evidenceRequired: ticket.evidence_required,
+                        evidenceRef: ticket.evidence_ref,
+                      });
+                      return (
+                        <button
+                          key={option.value}
+                          className="rounded-[0.9rem] border border-slate-200 bg-white px-3 py-3 text-left text-slate-400"
+                          disabled
+                          type="button"
+                        >
+                          <span className="block text-sm font-semibold">{option.label}</span>
+                          <span className="mt-1 block text-xs">
+                            {optionPresentation.ownerLabel} · {option.blockedReason}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -681,6 +778,10 @@ export function TicketStatusActionPanel({
             {evidenceBlocked ? (
               <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
                 Перед решением нужен evidence или паспорт решения.
+              </p>
+            ) : selectedBlockedOption ? (
+              <p className="rounded-[0.8rem] border border-slate-200 bg-white px-3 py-2 text-slate-600">
+                Этот переход недоступен для текущего статуса.
               </p>
             ) : (
               <p className="text-slate-500">Сервер всё равно проверит FSM, evidence gate и права роли перед записью.</p>

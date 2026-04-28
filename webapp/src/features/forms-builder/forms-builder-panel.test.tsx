@@ -358,6 +358,177 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("показывает проверку публикации и блокирует hard-invalid форму", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              title: "Каталог заявок",
+              description: "Рабочий каталог",
+              forms_count: 1,
+              fields_count: 2,
+              required_fields_count: 1,
+              created_at: "2026-04-21T10:00:00+05:00",
+              created_by: "admin1",
+              is_preferred: true
+            },
+            preferred: {
+              pack_key: "request_forms",
+              version: "1.0.3",
+              updated_at: "2026-04-21T10:00:00+05:00",
+              updated_by: "admin1"
+            },
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await waitFor(() => {
+      expect(screen.getAllByText("Печать / принтер").length).toBeGreaterThan(0);
+    });
+    fireEvent.change(screen.getByLabelText("Тип поля"), {
+      target: { value: "select" }
+    });
+    fireEvent.change(screen.getByLabelText("Ключ поля"), {
+      target: { value: "" }
+    });
+    fireEvent.click(screen.getByLabelText("Включить"));
+
+    expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
+    expect(screen.getByText("У поля «Кабинет» нужен ключ.")).toBeInTheDocument();
+    expect(screen.getByText("Укажите ключ плейбука или выключите автозапуск.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить изменения" })).toBeDisabled();
+  });
+
+  it("показывает end-to-end preview запуска плейбука вместе с маршрутом", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          const payload = createFormsPayload();
+          payload.forms[0].playbook_triggers = [
+            {
+              event: "ticket_created",
+              playbook_key: "printer.quick_diag",
+              module_kind: "diagnostic",
+              enabled: true
+            }
+          ];
+          return jsonResponse({
+            status: "success",
+            data: payload
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/route-preview" && method === "POST") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_type: "printer",
+              request_kind: "printer",
+              target_queue_id: 17,
+              target_queue_name: "Printer 214",
+              fallback_applied: false,
+              matched_rule: null,
+              summary_rows: [{ key: "room", label: "Кабинет", value: "214" }]
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    fireEvent.change(await screen.findByLabelText("Кабинет"), {
+      target: { value: "214" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
+
+    expect(await screen.findByText("Printer 214")).toBeInTheDocument();
+    expect(screen.getByText("Автозапуск плейбука")).toBeInTheDocument();
+    expect(screen.getAllByText("printer.quick_diag").length).toBeGreaterThan(0);
+    expect(screen.getByText("Факты формы будут приложены к запуску после создания тикета.")).toBeInTheDocument();
+  });
+
+  it("не отправляет route preview, если обязательные preview-поля пустые", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({
+          status: "success",
+          data: createFormsPayload()
+        });
+      }
+
+      if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack_key: "request_forms",
+          current: null,
+          preferred: null,
+          packs: []
+        });
+      }
+
+      if (url === "/api/web/admin/forms/route-preview" && init?.method === "POST") {
+        throw new Error("route preview should not be called with invalid sample data");
+      }
+
+      throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await screen.findByLabelText("Кабинет");
+    fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
+
+    expect(await screen.findByText("Заполните обязательные поля preview.")).toBeInTheDocument();
+    expect(screen.getByText("Заполните поле «Кабинет».")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => String(input) === "/api/web/admin/forms/route-preview" && init?.method === "POST")
+    ).toBe(false);
+  });
+
   it("обновляет и очищает visible_when ссылки при rename/delete поля", async () => {
     const saveCalls: unknown[] = [];
 

@@ -134,7 +134,7 @@ describe("TicketWorkVisibilityCard", () => {
 
     expect(screen.getByText("Ход работы")).toBeInTheDocument();
     expect(screen.getByText("Этап")).toBeInTheDocument();
-    expect(screen.getByText("Ожидание")).toBeInTheDocument();
+    expect(screen.getAllByText("Ожидание").length).toBeGreaterThan(0);
     expect(screen.getByText("Внутренний статус")).toBeInTheDocument();
     expect(screen.getByText("Ожидает внешнюю сторону")).toBeInTheDocument();
     expect(screen.getByText("Статус для пользователя")).toBeInTheDocument();
@@ -243,7 +243,7 @@ describe("TicketStatusActionPanel", () => {
 
     expect(screen.getByText("Быстрые переходы")).toBeInTheDocument();
     expect(screen.getByText("В работе")).toBeInTheDocument();
-    expect(screen.getByText("Ожидание")).toBeInTheDocument();
+    expect(screen.getAllByText("Ожидание").length).toBeGreaterThan(0);
     expect(screen.getByText("Решение")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Ждём внешнюю сторону/ }));
@@ -276,6 +276,46 @@ describe("TicketStatusActionPanel", () => {
     expect(screen.getByText("Следующий ответственный: Внешняя сторона")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
     expect(onApply).toHaveBeenCalledWith("waiting_on_vendor");
+  });
+});
+
+describe("TicketStatusActionPanel FSM visibility", () => {
+  it("separates allowed and blocked transitions and blocks invalid apply", () => {
+    const onValueChange = vi.fn();
+    const onApply = vi.fn();
+
+    render(
+      <TicketStatusActionPanel
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus="closed"
+        statusOptions={[{ value: "in_progress", label: "Р’Р·СЏС‚СЊ РІ СЂР°Р±РѕС‚Сѓ" }]}
+        ticket={{
+          status: "assigned",
+          status_label: "РќР°Р·РЅР°С‡РµРЅР°",
+          requester_status_label: "Р—Р°СЏРІРєР° РїСЂРёРЅСЏС‚Р°",
+          next_action_owner: "support",
+          evidence_required: false,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Доступно сейчас")).toBeInTheDocument();
+    expect(screen.getByText("Недоступно сейчас")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Р’Р·СЏС‚СЊ РІ СЂР°Р±РѕС‚Сѓ/ })).toBeEnabled();
+
+    const blockedClose = screen.getByRole("button", { name: /Закрыть/ });
+    expect(blockedClose).toBeDisabled();
+    expect(
+      screen.getAllByText(/Сервер не разрешил этот переход/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("Этот переход недоступен для текущего статуса.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
+    expect(onApply).not.toHaveBeenCalled();
   });
 });
 
