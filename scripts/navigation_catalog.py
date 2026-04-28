@@ -503,6 +503,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         exact_paths=(
             "server/websocket/modules_sync.py",
+            "server/websocket/outbox_ingest_components.py",
             "server/app/services/module_reconcile_scheduler.py",
             "server/utils/module_manifest.py",
             "server/utils/module_preflight.py",

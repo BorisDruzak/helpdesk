@@ -263,6 +263,72 @@ class OutboxPersistenceService:
 
 
 class OutboxEventPublishService:
+    async def _enqueue_toolset_refresh(
+        self,
+        *,
+        ctx: Any,
+        outcome: OutboxPersistenceOutcome,
+        reason: str,
+    ) -> None:
+        device_id = getattr(ctx, "agent_id", None)
+        if not device_id:
+            return
+        payload = outcome.payload_event if isinstance(outcome.payload_event, dict) else {}
+        reported_hash_raw = payload.get("toolset_hash")
+        reported_hash = str(reported_hash_raw).strip() if reported_hash_raw else None
+        try:
+            from app.db import get_session
+            from app.repos import DevicesRepo, OperationsRepo
+
+            async with get_session() as session:
+                devices_repo = DevicesRepo(session)
+                device = await devices_repo.get_by_device_id(device_id)
+                if not device:
+                    return
+                if (
+                    reported_hash
+                    and device.current_toolset_hash == reported_hash
+                    and device.current_toolset_snapshot_id
+                ):
+                    logger.debug(
+                        "[outbox_pipeline] skip list_tools after toolset event: "
+                        f"device_id={device_id} hash={reported_hash} already current"
+                    )
+                    return
+                op_repo = OperationsRepo(session)
+                if await op_repo.has_pending_list_tools(device_id):
+                    logger.debug(
+                        "[outbox_pipeline] skip list_tools after toolset event: "
+                        f"device_id={device_id} already has pending list_tools"
+                    )
+                    return
+
+            from websocket.protocol import enqueue_command_async
+
+            command_id = await enqueue_command_async(
+                state=ctx.state,
+                device_id=device_id,
+                command="list_tools",
+                params={},
+                actor_role="server",
+                trace_id=outcome.trace_id,
+                require_online=False,
+            )
+            async with get_session() as session:
+                devices_repo = DevicesRepo(session)
+                await devices_repo.update_toolset_refresh_time(device_id)
+                await session.commit()
+            logger.info(
+                "[outbox_pipeline] enqueued list_tools after toolset event: "
+                f"device_id={device_id} reason={reason} command_id={command_id} "
+                f"reported_hash={reported_hash}"
+            )
+        except Exception as exc:
+            logger.warning(
+                "[outbox_pipeline] list_tools refresh after toolset event failed: "
+                f"device_id={device_id} reason={reason} error={exc}"
+            )
+
     async def publish_after_commit(self, *, ctx: Any, outcome: OutboxPersistenceOutcome) -> None:
         if not outcome.outbox_id:
             return
@@ -332,6 +398,17 @@ class OutboxEventPublishService:
                 )
             except Exception as exc:
                 logger.warning(f"[outbox_pipeline] reconcile after module_state_changed failed: {exc}")
+            await self._enqueue_toolset_refresh(
+                ctx=ctx,
+                outcome=outcome,
+                reason="module_state_changed",
+            )
+        if outcome.event_type == "tools_changed" and getattr(ctx, "agent_id", None):
+            await self._enqueue_toolset_refresh(
+                ctx=ctx,
+                outcome=outcome,
+                reason="tools_changed",
+            )
         logger.debug(
             f"[outbox_pipeline] processed outbox_id={outcome.outbox_id} trace_id={outcome.trace_id}"
         )

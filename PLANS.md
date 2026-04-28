@@ -117,6 +117,23 @@ Completed:
 
 - Ticket-bound playbook launch is available from `/app/tickets/:ticketId` through typed support endpoints.
 - Live staging check exposed a real lazy module install edge case: `network_basic@1.0.0` installed successfully, but the playbook failed before `run_tool` because the strict capability gate read a stale/no toolset snapshot.
+- The lazy-install playbook gate now allows the immediate `run_tool` after successful DB-backed module install, and live observer signoff confirmed `network.ping` completed successfully.
+
+### 2026-04-28 Fifth Wave: Module Launch Convergence
+
+Current focus:
+
+1. Verify whether `device_toolset_snapshots` converge after module install/auto-install without a reconnect or manual Sync Modules.
+2. Check the full server-agent path:
+   - agent `install_module_package` rebuilds registry and emits `tools_changed` / `module_state_changed`;
+   - server outbox pipeline syncs inventory and refreshes toolset snapshots;
+   - playbook/run_tool uses observer traces for the install and tool call.
+3. Add a regression test before any fix and verify the live path on `http://192.168.100.17:8666/admin`.
+
+Findings:
+
+- Root cause found: server processed `module_state_changed` into `device_modules`, but ignored `tools_changed`, so `list_tools` was not queued after agent-side registry rebuild. Snapshot could stay stale until reconnect or manual sync even though the module was already usable.
+- Fix in progress: outbox publish now debounces and queues `list_tools` after `tools_changed`; `module_state_changed` also requests the same refresh as a fallback.
 
 ### 2026-04-28 Fifth Wave: Live Playbook Run And Auto-Install Fix
 

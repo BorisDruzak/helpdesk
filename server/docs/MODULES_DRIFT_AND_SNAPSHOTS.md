@@ -84,6 +84,15 @@ const modulesWithDrift = modulesData.modules.map(m => {
      2. **Enqueue `list_tools`** (для обновления `device_toolset_snapshots`) ← **ИСПРАВЛЕНО**
      3. Когда `list_tools` выполнится → snapshot обновится (см. пункт 1)
 
+4. **После agent-side lifecycle events** (автоматически)
+   - Файл: `server/websocket/outbox_ingest_components.py`
+   - Триггер: агент после install/activate/remove/rollback пересобирает runtime registry и отправляет `tools_changed`; `module_state_changed` работает как fallback-сигнал convergence.
+   - Процесс:
+     1. `module_state_changed` обновляет `device_modules` из embedded snapshot.
+     2. `tools_changed` или `module_state_changed` ставит `list_tools` с debounce по pending operation.
+     3. Когда `list_tools` выполнится → `device_toolset_snapshots` обновится (см. пункт 1).
+   - Ожидаемый результат: auto-install/reconcile install обновляет toolset snapshot без reconnect и без ручного Sync Modules.
+
 ### КРИТИЧНО: Commit транзакции
 
 После обновления snapshot **обязательно** вызывается `await session.commit()` внутри post-process слоя `command_result`.

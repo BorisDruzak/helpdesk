@@ -78,6 +78,7 @@
 - New playbook-ready modules should use the module workbench `Playbook decision contract` controls or send `output_contract` through the headless API so the playbook builder can branch on explicit status values instead of raw command text.
 - In the typed React UI, the active module constructor is `webapp/src/features/modules/modules-panel.tsx`; keep its payload builder and API preview aligned with the typed `/api/web/admin/modules/workbench/*` endpoints.
 - Preferred-version rollout settings now live in `server/app/repos/module_rollout_repo.py` and are exposed via `GET/PATCH /api/modules/rollout_settings`; in `installed_devices` mode a preferred-version change rewrites desired state, triggers reconcile for matching devices, and then refreshes inventory/toolset so the admin UI converges.
+- After agent-side module lifecycle changes, `server/websocket/outbox_ingest_components.py` now treats `tools_changed` and `module_state_changed` as convergence signals and queues a debounced `list_tools`, so auto-install/reconcile updates `device_toolset_snapshots` without waiting for reconnect or manual Sync Modules.
 
 # QUICK_LOOKUP
 
