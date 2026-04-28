@@ -34,6 +34,7 @@ import {
   upsertWebSettingsQueueMember,
   type WebSettingsPayload,
 } from "../../features/settings/api";
+import { getTicketStageLabel, getTicketStageTone } from "../../features/tickets/status-presentation";
 
 
 type SettingsTab =
@@ -512,40 +513,6 @@ function SettingsField({
       {children}
     </label>
   );
-}
-
-
-function getTicketStageLabel(stage: string): string {
-  switch (stage) {
-    case "intake":
-      return "Приём";
-    case "work":
-      return "Работа";
-    case "waiting":
-      return "Ожидание";
-    case "review":
-      return "Проверка";
-    case "terminal":
-      return "Финал";
-    default:
-      return stage;
-  }
-}
-
-
-function getTicketStageTone(stage: string) {
-  switch (stage) {
-    case "waiting":
-      return "warning" as const;
-    case "terminal":
-      return "neutral" as const;
-    case "review":
-      return "info" as const;
-    case "work":
-      return "success" as const;
-    default:
-      return "brand" as const;
-  }
 }
 
 

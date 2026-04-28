@@ -342,6 +342,9 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
 
     expect(await screen.findByText("Printer 214")).toBeInTheDocument();
+    expect(screen.getByText("Условие правила")).toBeInTheDocument();
+    expect(screen.getByText("request_form_data.room = 214")).toBeInTheDocument();
+    expect(screen.queryByText(/Condition JSON/)).not.toBeInTheDocument();
     expect(previewCalls).toHaveLength(1);
     expect(previewCalls[0]).toMatchObject({
       form: {
@@ -463,5 +466,49 @@ describe("FormsBuilderPanel", () => {
     expect((saveCalls[0] as { forms: Array<{ fields: Array<{ visible_when?: unknown }> }> }).forms[0].fields[0]).not.toHaveProperty(
       "visible_when"
     );
+  });
+
+  it("показывает readiness запуска плейбука без ручного JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await screen.findByText("Плейбук при создании тикета");
+    expect(screen.getByText("Запуск выключен")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Включить"));
+    expect(screen.getByText("Нужен ключ плейбука")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Ключ плейбука"), {
+      target: { value: "printer_diagnostic" }
+    });
+    expect(screen.getByText("Готов к запуску после создания тикета")).toBeInTheDocument();
+    expect(screen.getByText("ticket_created")).toBeInTheDocument();
+    expect(screen.getByText("diagnostic")).toBeInTheDocument();
   });
 });

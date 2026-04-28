@@ -39,6 +39,10 @@ import {
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
 import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
+import {
+  getTicketStatusPresentation,
+  getTicketStatusTone,
+} from "../../features/tickets/status-presentation";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import { cn } from "../../shared/ui/cn";
 
@@ -73,57 +77,6 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-function getStatusTone(status: string) {
-  switch (status) {
-    case "accepted":
-    case "queued":
-    case "assigned":
-    case "sent":
-    case "running":
-    case "new":
-    case "triaged":
-      return "brand" as const;
-    case "in_progress":
-    case "scheduled":
-      return "success" as const;
-    case "waiting_on_user":
-    case "waiting_on_internal_team":
-    case "waiting_on_vendor":
-    case "waiting_on_approval":
-      return "warning" as const;
-    case "success":
-    case "succeeded":
-    case "resolved":
-    case "closed":
-      return "success" as const;
-    case "failed":
-    case "timed_out":
-    case "canceled":
-      return "danger" as const;
-    default:
-      return "neutral" as const;
-  }
-}
-
-function formatNextActionOwner(owner: string | null | undefined) {
-  switch (owner) {
-    case "support":
-      return "Поддержка";
-    case "requester":
-      return "Пользователь";
-    case "internal_team":
-      return "Внутренняя группа";
-    case "vendor":
-      return "Внешняя сторона";
-    case "approver":
-      return "Согласующий";
-    case "system":
-      return "Система";
-    default:
-      return owner || "Не указан";
-  }
 }
 
 function getRoleTone(entry: SupportTicketDetailPayload["timeline"][number]) {
@@ -457,6 +410,16 @@ export function TicketWorkVisibilityCard({
     | "evidence_ref"
   >;
 }) {
+  const presentation = getTicketStatusPresentation({
+    status: ticket.status,
+    statusLabel: ticket.status_label,
+    requesterStatusLabel: ticket.requester_status_label,
+    nextActionOwner: ticket.next_action_owner,
+    statusReason: ticket.status_reason,
+    evidenceRequired: ticket.evidence_required,
+    evidenceRef: ticket.evidence_ref,
+  });
+
   return (
     <Card>
       <CardHeader>
@@ -464,17 +427,37 @@ export function TicketWorkVisibilityCard({
         <CardDescription>Внутреннее состояние, пользовательский статус и следующий ответственный.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[1rem] border border-border bg-white px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Этап</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <Badge tone={presentation.tone}>{presentation.stageLabel}</Badge>
+              {presentation.waits ? <Badge tone="warning">Wait ledger</Badge> : null}
+              {presentation.terminal ? <Badge tone="neutral">Terminal</Badge> : null}
+            </div>
+          </div>
+          <div className="rounded-[1rem] border border-border bg-white px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Evidence gate</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <Badge tone={presentation.evidenceTone}>{presentation.evidenceLabel}</Badge>
+            </div>
+          </div>
+        </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-500">Внутренний статус</span>
-          <Badge tone={getStatusTone(ticket.status)}>{ticket.status_label}</Badge>
+          <Badge tone={presentation.tone}>{presentation.statusLabel}</Badge>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-500">Статус для пользователя</span>
-          <span className="font-medium text-slate-900">{ticket.requester_status_label || "Не указан"}</span>
+          <span className="font-medium text-slate-900">{presentation.requesterStatusLabel}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-500">Чей ход</span>
-          <span className="font-medium text-slate-900">{formatNextActionOwner(ticket.next_action_owner)}</span>
+          <span className="font-medium text-slate-900">{presentation.ownerLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-500">Что делать</span>
+          <span className="max-w-[60%] text-right font-medium text-slate-900">{presentation.operatorActionLabel}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-500">Следующий срок</span>
@@ -482,7 +465,7 @@ export function TicketWorkVisibilityCard({
         </div>
         <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
           <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Причина ожидания</p>
-          <p className="mt-2 font-semibold text-slate-950">{ticket.status_reason || "Не указана"}</p>
+          <p className="mt-2 font-semibold text-slate-950">{presentation.statusReasonLabel}</p>
         </div>
         {ticket.resolution_code ||
         ticket.resolution_summary ||
@@ -507,7 +490,7 @@ export function TicketWorkVisibilityCard({
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Доказательство</dt>
                 <dd className="max-w-[60%] text-right font-medium text-slate-900">
-                  {ticket.evidence_ref || (ticket.evidence_required ? "Требуется" : "Не требуется")}
+                  {ticket.evidence_ref || presentation.evidenceLabel}
                 </dd>
               </div>
             </dl>
@@ -873,11 +856,11 @@ export function TicketDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Badge tone={getStatusTone(detail?.ticket.status ?? "")} withDot>
+          <Badge tone={getTicketStatusTone(detail?.ticket.status ?? "")} withDot>
             {detail?.ticket.status_label ?? "Загружаем"}
           </Badge>
           {detail?.ticket.requester_status_label ? (
-            <Badge tone={getStatusTone(detail.ticket.status)}>{detail.ticket.requester_status_label}</Badge>
+            <Badge tone={getTicketStatusTone(detail.ticket.status)}>{detail.ticket.requester_status_label}</Badge>
           ) : null}
           <Select
             className="min-w-[230px]"
@@ -998,6 +981,13 @@ export function TicketDetailPage() {
 
               {queue?.tickets.map((queueTicket) => {
                 const active = queueTicket.ticket_id === ticketId;
+                const presentation = getTicketStatusPresentation({
+                  status: queueTicket.status,
+                  statusLabel: queueTicket.status_label,
+                  requesterStatusLabel: queueTicket.requester_status_label,
+                  nextActionOwner: queueTicket.next_action_owner,
+                  statusReason: queueTicket.status_reason,
+                });
 
                 return (
                   <button
@@ -1018,7 +1008,7 @@ export function TicketDetailPage() {
                         </p>
                         <p className="mt-2 text-base font-semibold text-slate-950">{queueTicket.title}</p>
                       </div>
-                      <Badge tone={getStatusTone(queueTicket.status)}>{queueTicket.status_label}</Badge>
+                      <Badge tone={presentation.tone}>{presentation.statusLabel}</Badge>
                     </div>
                     <p className="mt-3 text-sm text-slate-500">
                       {queueTicket.requester_display_name ?? "Инициатор не указан"}
@@ -1030,8 +1020,8 @@ export function TicketDetailPage() {
                         : ""}
                     </p>
                     <p className="mt-2 text-xs font-medium text-slate-500">
-                      Ход: {formatNextActionOwner(queueTicket.next_action_owner)}
-                      {queueTicket.requester_status_label ? ` • ${queueTicket.requester_status_label}` : ""}
+                      {presentation.stageLabel} • Ход: {presentation.ownerLabel}
+                      {presentation.requesterStatusLabel !== "Не указан" ? ` • ${presentation.requesterStatusLabel}` : ""}
                     </p>
                   </button>
                 );
@@ -1252,7 +1242,7 @@ export function TicketDetailPage() {
                                 {operation.result_summary ?? operation.error_message ?? "Без краткого результата"}
                               </p>
                             </div>
-                            <Badge tone={getStatusTone(operation.status)}>{operation.status}</Badge>
+                            <Badge tone={getTicketStatusTone(operation.status)}>{operation.status}</Badge>
                           </div>
                           <p className="mt-3 text-xs text-slate-400">
                             queued {formatDateTime(operation.queued_at)} • finished {formatDateTime(operation.finished_at)}
@@ -1403,7 +1393,7 @@ export function TicketDetailPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-slate-500">Статус</span>
-                <Badge tone={getStatusTone(detail?.ticket.status ?? "")}>
+                <Badge tone={getTicketStatusTone(detail?.ticket.status ?? "")}>
                   {detail?.ticket.status_label ?? "Загружаем"}
                 </Badge>
               </div>
@@ -1592,7 +1582,7 @@ export function TicketDetailPage() {
                           <Badge tone={selectedTool.source === "server" ? "brand" : "info"}>
                             {selectedTool.source}
                           </Badge>
-                          <Badge tone={getStatusTone(selectedTool.risk_level)}>
+                          <Badge tone={getTicketStatusTone(selectedTool.risk_level)}>
                             {describeToolRiskLevel(selectedTool.risk_level)}
                           </Badge>
                         </div>

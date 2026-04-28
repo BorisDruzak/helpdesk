@@ -93,6 +93,59 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
+function getPlaybookTriggerReadiness(trigger: AdminFormsPlaybookTrigger | undefined) {
+  if (!trigger?.enabled) {
+    return {
+      tone: "neutral" as const,
+      label: "Запуск выключен",
+      detail: "Форма только создаёт тикет и передаёт данные в маршрутизацию.",
+    };
+  }
+
+  if (!trigger.playbook_key.trim()) {
+    return {
+      tone: "warning" as const,
+      label: "Нужен ключ плейбука",
+      detail: "Укажите опубликованный playbook key, иначе автодиагностика не стартует.",
+    };
+  }
+
+  return {
+    tone: "success" as const,
+    label: "Готов к запуску после создания тикета",
+    detail: "После intake форма создаст тикет, routing выберет очередь, затем запустится диагностический сценарий.",
+  };
+}
+
+function describeRouteCondition(condition: Record<string, unknown> | null): string {
+  if (!condition) {
+    return "Условие не задано";
+  }
+
+  const field = typeof condition.field === "string" ? condition.field : "";
+  const op = typeof condition.op === "string" ? condition.op : "";
+  const value = condition.value;
+  const values = Array.isArray(condition.values) ? condition.values : null;
+  const displayValue = values
+    ? values.map((item) => String(item)).join(", ")
+    : typeof value === "boolean"
+      ? (value ? "true" : "false")
+      : value === null || value === undefined
+        ? ""
+        : String(value);
+
+  if (field && op) {
+    const operatorLabel = op === "eq" ? "=" : op === "neq" ? "!=" : op === "in" ? "в списке" : op;
+    return `${field} ${operatorLabel} ${displayValue}`.trim();
+  }
+
+  if (Array.isArray(condition.all) || Array.isArray(condition.any)) {
+    return "Составное условие из нескольких правил";
+  }
+
+  return "Сложное условие правила";
+}
+
 function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): DraftCatalog {
   return {
     title: payload.summary.title,
@@ -624,6 +677,7 @@ export function FormsBuilderPanel() {
 
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
   const routePreview: AdminFormsRoutePreviewResult | undefined = previewMutation.data;
+  const playbookTriggerReadiness = getPlaybookTriggerReadiness(selectedForm?.playbook_triggers[0]);
 
   const visibleVersions = useMemo(
     () => (versionsQuery.data?.packs ?? []).filter((item) => versionMatchesSearch(item, versionSearch)),
@@ -1159,37 +1213,52 @@ export function FormsBuilderPanel() {
                                 Форма может запускать диагностический сценарий и прикладывать пакет фактов к тикету.
                               </p>
                             </div>
-                            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                              <input
-                                checked={Boolean(selectedForm.playbook_triggers[0]?.enabled)}
-                                onChange={(event) => {
-                                  const checked = event.currentTarget.checked;
-                                  setDraft((current) =>
-                                    current
-                                      ? updateFormInCatalog(current, selectedForm.key, (form) => {
-                                          const currentTrigger = form.playbook_triggers[0] ?? {
-                                            event: "ticket_created" as const,
-                                            playbook_key: "",
-                                            module_kind: "diagnostic" as const,
-                                            enabled: false,
-                                          };
-                                          return {
-                                            ...form,
-                                            playbook_triggers: [
-                                              {
-                                                ...currentTrigger,
-                                                enabled: checked,
-                                              },
-                                            ],
-                                          };
-                                        })
-                                      : current
-                                  );
-                                }}
-                                type="checkbox"
-                              />
-                              Включить
-                            </label>
+                            <div className="flex flex-col items-start gap-2 sm:items-end">
+                              <Badge tone={playbookTriggerReadiness.tone}>{playbookTriggerReadiness.label}</Badge>
+                              <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                <input
+                                  checked={Boolean(selectedForm.playbook_triggers[0]?.enabled)}
+                                  onChange={(event) => {
+                                    const checked = event.currentTarget.checked;
+                                    setDraft((current) =>
+                                      current
+                                        ? updateFormInCatalog(current, selectedForm.key, (form) => {
+                                            const currentTrigger = form.playbook_triggers[0] ?? {
+                                              event: "ticket_created" as const,
+                                              playbook_key: "",
+                                              module_kind: "diagnostic" as const,
+                                              enabled: false,
+                                            };
+                                            return {
+                                              ...form,
+                                              playbook_triggers: [
+                                                {
+                                                  ...currentTrigger,
+                                                  enabled: checked,
+                                                },
+                                              ],
+                                            };
+                                          })
+                                        : current
+                                    );
+                                  }}
+                                  type="checkbox"
+                                />
+                                Включить
+                              </label>
+                            </div>
+                          </div>
+                          <div className="mt-4 rounded-[0.9rem] border border-border bg-white px-3 py-3">
+                            <p className="text-sm font-medium text-slate-900">{playbookTriggerReadiness.detail}</p>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                              <span className="rounded-pill bg-slate-100 px-3 py-1">ticket_created</span>
+                              <span className="rounded-pill bg-slate-100 px-3 py-1">diagnostic</span>
+                              {selectedForm.playbook_triggers[0]?.playbook_key ? (
+                                <span className="rounded-pill bg-brand-50 px-3 py-1 text-brand-800">
+                                  {selectedForm.playbook_triggers[0]?.playbook_key}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="mt-4 grid gap-4 md:grid-cols-2">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
@@ -1810,10 +1879,10 @@ export function FormsBuilderPanel() {
                     </div>
                     {routePreview.matched_rule ? (
                       <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
-                        <p className="font-medium text-slate-900">Condition JSON совпавшего правила</p>
-                        <code className="mt-2 block whitespace-pre-wrap text-xs text-slate-600">
-                          {JSON.stringify(routePreview.matched_rule.condition_json, null, 2)}
-                        </code>
+                        <p className="font-medium text-slate-900">Условие правила</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-800">
+                          {describeRouteCondition(routePreview.matched_rule.condition_json)}
+                        </p>
                       </div>
                     ) : null}
                   </div>

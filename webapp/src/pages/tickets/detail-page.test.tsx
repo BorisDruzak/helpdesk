@@ -127,14 +127,19 @@ describe("TicketWorkVisibilityCard", () => {
     );
 
     expect(screen.getByText("Ход работы")).toBeInTheDocument();
+    expect(screen.getByText("Этап")).toBeInTheDocument();
+    expect(screen.getByText("Ожидание")).toBeInTheDocument();
     expect(screen.getByText("Внутренний статус")).toBeInTheDocument();
     expect(screen.getByText("Ожидает внешнюю сторону")).toBeInTheDocument();
     expect(screen.getByText("Статус для пользователя")).toBeInTheDocument();
     expect(screen.getByText("В работе")).toBeInTheDocument();
     expect(screen.getByText("Чей ход")).toBeInTheDocument();
     expect(screen.getByText("Внешняя сторона")).toBeInTheDocument();
+    expect(screen.getByText("Что делать")).toBeInTheDocument();
+    expect(screen.getByText("Контролировать внешний ответ")).toBeInTheDocument();
     expect(screen.getByText("Причина ожидания")).toBeInTheDocument();
     expect(screen.getByText("Провайдер")).toBeInTheDocument();
-    expect(screen.getByText("Требуется")).toBeInTheDocument();
+    expect(screen.getByText("Evidence gate")).toBeInTheDocument();
+    expect(screen.getAllByText("Нужно доказательство").length).toBeGreaterThan(0);
   });
 });

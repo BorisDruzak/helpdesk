@@ -10,6 +10,7 @@ import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import { StatTile } from "../../components/ui/stat-tile";
 import { fetchSupportQueue, type SupportCountItem, type SupportQueueScope } from "../../features/queues/api";
+import { getTicketStatusPresentation } from "../../features/tickets/status-presentation";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 
@@ -33,22 +34,6 @@ function formatDateTime(value: string | null | undefined) {
 
 function getCount(items: SupportCountItem[] | undefined, value: string) {
   return items?.find((item) => item.value === value)?.count ?? 0;
-}
-
-function getStatusTone(status: string) {
-  switch (status) {
-    case "in_progress":
-      return "success" as const;
-    case "waiting_on_user":
-      return "warning" as const;
-    case "resolved":
-    case "closed":
-      return "info" as const;
-    case "new":
-      return "brand" as const;
-    default:
-      return "neutral" as const;
-  }
 }
 
 export function TicketListPage() {
@@ -232,34 +217,53 @@ export function TicketListPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border bg-white [content-visibility:auto]">
-                    {queue.tickets.map((ticket) => (
-                      <tr
-                        key={ticket.ticket_id}
-                        className="cursor-pointer transition-colors hover:bg-brand-50/60"
-                        onClick={() => navigate(`/app/tickets/${ticket.ticket_id}`)}
-                      >
-                        <td className="px-5 py-4 font-semibold text-slate-900">
-                          {ticket.ticket_code ?? ticket.ticket_id}
-                        </td>
-                        <td className="px-5 py-4">
-                          <div>
-                            <p className="font-semibold text-slate-900">{ticket.title}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {ticket.device_id ?? "Без привязки к устройству"}
-                              {ticket.unread_user_messages > 0 ? ` • ${ticket.unread_user_messages} непрочит.` : ""}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-slate-600">
-                          {ticket.requester_display_name ?? "Инициатор не указан"}
-                        </td>
-                        <td className="px-5 py-4">
-                          <Badge tone={getStatusTone(ticket.status)}>{ticket.status_label}</Badge>
-                        </td>
-                        <td className="px-5 py-4 text-slate-500">{ticket.queue_code ?? "Без очереди"}</td>
-                        <td className="px-5 py-4 text-slate-500">{formatDateTime(ticket.updated_at ?? ticket.created_at)}</td>
-                      </tr>
-                    ))}
+                    {queue.tickets.map((ticket) => {
+                      const presentation = getTicketStatusPresentation({
+                        status: ticket.status,
+                        statusLabel: ticket.status_label,
+                        requesterStatusLabel: ticket.requester_status_label,
+                        nextActionOwner: ticket.next_action_owner,
+                        statusReason: ticket.status_reason,
+                      });
+
+                      return (
+                        <tr
+                          key={ticket.ticket_id}
+                          className="cursor-pointer transition-colors hover:bg-brand-50/60"
+                          onClick={() => navigate(`/app/tickets/${ticket.ticket_id}`)}
+                        >
+                          <td className="px-5 py-4 font-semibold text-slate-900">
+                            {ticket.ticket_code ?? ticket.ticket_id}
+                          </td>
+                          <td className="px-5 py-4">
+                            <div>
+                              <p className="font-semibold text-slate-900">{ticket.title}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {ticket.device_id ?? "Без привязки к устройству"}
+                                {ticket.unread_user_messages > 0 ? ` • ${ticket.unread_user_messages} непрочит.` : ""}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-slate-600">
+                            {ticket.requester_display_name ?? "Инициатор не указан"}
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="space-y-2">
+                              <Badge tone={presentation.tone}>{presentation.statusLabel}</Badge>
+                              <div className="text-xs leading-5 text-slate-500">
+                                <span>{presentation.stageLabel}</span>
+                                <span> • {presentation.ownerLabel}</span>
+                                {presentation.requesterStatusLabel !== "Не указан" ? (
+                                  <span> • {presentation.requesterStatusLabel}</span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-slate-500">{ticket.queue_code ?? "Без очереди"}</td>
+                          <td className="px-5 py-4 text-slate-500">{formatDateTime(ticket.updated_at ?? ticket.created_at)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

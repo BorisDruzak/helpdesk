@@ -15,6 +15,7 @@ import {
   type SupportTicketToolsPayload,
 } from "./api";
 import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
+import { getTicketStatusPresentation } from "../tickets/status-presentation";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import { supportToolParamFields, validateSupportToolParams } from "./tool-param-fields";
 
@@ -164,29 +165,40 @@ function SupportQueuePanel({
 
       {queueStatus === "ready" && queue && queue.tickets.length > 0 ? (
         <div className="support-ticket-list">
-          {queue.tickets.map((ticket) => (
-            <button
-              aria-pressed={selectedTicketId === ticket.ticket_id}
-              className={`support-ticket-card${selectedTicketId === ticket.ticket_id ? " active" : ""}`}
-              key={ticket.ticket_id}
-              onClick={() => onSelectTicket(ticket.ticket_id)}
-              type="button"
-            >
-              <div className="support-ticket-card__head">
-                <span className="support-ticket-card__code">{ticket.ticket_code ?? ticket.ticket_id}</span>
-                <span className="support-ticket-card__status">{ticket.status_label}</span>
-              </div>
-              <strong>{ticket.title}</strong>
-              <p>{ticket.requester_display_name ?? "Инициатор не указан"}</p>
-              <div className="support-ticket-card__meta">
-                <span>{ticket.queue_code ?? "Без очереди"}</span>
-                <span>Ход: {ticket.next_action_owner ?? "support"}</span>
-                <span>{ticket.requester_status_label}</span>
-                <span>{formatDateTime(ticket.updated_at ?? ticket.created_at)}</span>
-                <span>{ticket.unread_user_messages > 0 ? `${ticket.unread_user_messages} непрочит.` : "без новых"}</span>
-              </div>
-            </button>
-          ))}
+          {queue.tickets.map((ticket) => {
+            const presentation = getTicketStatusPresentation({
+              status: ticket.status,
+              statusLabel: ticket.status_label,
+              requesterStatusLabel: ticket.requester_status_label,
+              nextActionOwner: ticket.next_action_owner,
+              statusReason: ticket.status_reason,
+            });
+
+            return (
+              <button
+                aria-pressed={selectedTicketId === ticket.ticket_id}
+                className={`support-ticket-card${selectedTicketId === ticket.ticket_id ? " active" : ""}`}
+                key={ticket.ticket_id}
+                onClick={() => onSelectTicket(ticket.ticket_id)}
+                type="button"
+              >
+                <div className="support-ticket-card__head">
+                  <span className="support-ticket-card__code">{ticket.ticket_code ?? ticket.ticket_id}</span>
+                  <span className="support-ticket-card__status">{presentation.statusLabel}</span>
+                </div>
+                <strong>{ticket.title}</strong>
+                <p>{ticket.requester_display_name ?? "Инициатор не указан"}</p>
+                <div className="support-ticket-card__meta">
+                  <span>{ticket.queue_code ?? "Без очереди"}</span>
+                  <span>{presentation.stageLabel}</span>
+                  <span>Ход: {presentation.ownerLabel}</span>
+                  <span>{presentation.requesterStatusLabel}</span>
+                  <span>{formatDateTime(ticket.updated_at ?? ticket.created_at)}</span>
+                  <span>{ticket.unread_user_messages > 0 ? `${ticket.unread_user_messages} непрочит.` : "без новых"}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </section>
@@ -352,6 +364,16 @@ function SupportDetailPanel({
     return null;
   }
 
+  const statusPresentation = getTicketStatusPresentation({
+    status: ticketDetail.ticket.status,
+    statusLabel: ticketDetail.ticket.status_label,
+    requesterStatusLabel: ticketDetail.ticket.requester_status_label,
+    nextActionOwner: ticketDetail.ticket.next_action_owner,
+    statusReason: ticketDetail.ticket.status_reason,
+    evidenceRequired: ticketDetail.ticket.evidence_required,
+    evidenceRef: ticketDetail.ticket.evidence_ref,
+  });
+
   return (
     <aside className="support-workspace__panel support-workspace__panel--detail">
       <div className="support-ticket-layout">
@@ -367,8 +389,8 @@ function SupportDetailPanel({
           </div>
 
           <div className="support-ticket-layout__actions">
-            <div className="support-ticket-layout__status-pill">{ticketDetail.ticket.status_label}</div>
-            <div className="support-ticket-layout__status-pill">{ticketDetail.ticket.requester_status_label}</div>
+            <div className="support-ticket-layout__status-pill">{statusPresentation.statusLabel}</div>
+            <div className="support-ticket-layout__status-pill">{statusPresentation.requesterStatusLabel}</div>
             {statusOptions.length ? (
               <div className="support-status-actions">
                 {statusOptions.map((option) => (
@@ -592,19 +614,31 @@ function SupportDetailPanel({
                 </div>
                 <div>
                   <dt>Статус</dt>
-                  <dd>{ticketDetail.ticket.status_label}</dd>
+                  <dd>{statusPresentation.statusLabel}</dd>
                 </div>
                 <div>
                   <dt>Статус для пользователя</dt>
-                  <dd>{ticketDetail.ticket.requester_status_label}</dd>
+                  <dd>{statusPresentation.requesterStatusLabel}</dd>
+                </div>
+                <div>
+                  <dt>Этап</dt>
+                  <dd>{statusPresentation.stageLabel}</dd>
                 </div>
                 <div>
                   <dt>Чей ход</dt>
-                  <dd>{ticketDetail.ticket.next_action_owner ?? "support"}</dd>
+                  <dd>{statusPresentation.ownerLabel}</dd>
+                </div>
+                <div>
+                  <dt>Что делать</dt>
+                  <dd>{statusPresentation.operatorActionLabel}</dd>
+                </div>
+                <div>
+                  <dt>Evidence gate</dt>
+                  <dd>{statusPresentation.evidenceLabel}</dd>
                 </div>
                 <div>
                   <dt>Причина ожидания</dt>
-                  <dd>{ticketDetail.ticket.status_reason ?? "не указана"}</dd>
+                  <dd>{statusPresentation.statusReasonLabel}</dd>
                 </div>
                 <div>
                   <dt>Следующий срок</dt>

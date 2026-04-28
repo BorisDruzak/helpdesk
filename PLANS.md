@@ -54,6 +54,28 @@ Redesign the React support and admin workspaces into one dense SaaS-style operat
   - `webapp/src/pages/settings/index.tsx`.
 - First implementation slice starts with playbook/module command params because it directly supports fast launch and configuration of concrete modules.
 
+### 2026-04-28 Second Wave: Ticket Control, Forms And Status Logic
+
+Current focus:
+
+1. Build one shared frontend presentation model for ticket statuses:
+   - internal status stage and tone;
+   - requester-facing status;
+   - next-action owner;
+   - waiting/evidence/terminal gates;
+   - Russian labels without mojibake.
+2. Apply that model in `/app/tickets`, ticket detail and compatibility support workspace so support sees the same status logic everywhere.
+3. Improve ticket management controls:
+   - make status transition intent clearer;
+   - show who is expected to act next;
+   - make evidence/resolution readiness visible before closure.
+4. Improve `/app/admin/forms` as the request entry builder:
+   - route preview stays functional;
+   - playbook/module trigger readiness is visible;
+   - no raw JSON as the normal operator path.
+5. Align `/app/settings` ticket lifecycle display with the same status model and labels.
+6. Verify with focused Vitest, webapp build, workspace verification and live browser checks on `http://192.168.100.17:8666/admin`.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.
