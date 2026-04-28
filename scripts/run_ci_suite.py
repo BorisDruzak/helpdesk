@@ -330,7 +330,12 @@ def main() -> None:
     steps = [
         (
             "verify_workspace",
-            [sys.executable, str(args.workspace / "scripts" / "verify_workspace.py")],
+            [
+                sys.executable,
+                str(args.workspace / "scripts" / "verify_workspace.py"),
+                "--workspace",
+                str(args.workspace),
+            ],
             logs_dir / "verify_workspace.log",
             float(args.verify_timeout),
             float(args.idle_timeout),
