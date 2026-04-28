@@ -150,6 +150,42 @@ Completed:
 - Added a regression test for successful lazy install with strict capability gate and stale/no snapshot.
 - Updated playbook engine preflight so successful DB-backed module install/registry preflight is authoritative for the immediate command enqueue.
 
+### 2026-04-28 Sixth Wave: Settings Calendar Editor
+
+Current focus:
+
+1. Continue removing operator-facing raw JSON from `/app/settings`.
+2. Replace calendar holiday textarea with controlled date rows:
+   - one row per holiday/exclusion;
+   - add/remove actions;
+   - API `holidays_json` generated automatically;
+   - JSON visible only as a read-only preview.
+3. Keep SLA/calendar setup dense and predictable for support/admin users.
+
+Completed:
+
+- Calendar holidays now use typed date inputs instead of a free-form textarea.
+- SettingsPage regression covers routing/SLA/calendar bounded editors and verifies no textarea is left on the settings page.
+
+### 2026-04-28 Seventh Wave: Module Policy Editor
+
+Current focus:
+
+1. Continue `/app/admin/modules` redesign around fast, predictable module publishing.
+2. Replace normal operator JSON editors in tool policy with bounded controls:
+   - lifecycle select;
+   - metadata risk/kind/domain/origin/platforms/roles/scopes/flags;
+   - dependencies and resources by named fields;
+   - redaction flags and redact-field list;
+   - presets as rows with id/label/description and `key=value` params;
+   - errors and artifact kinds as simple line lists.
+3. Keep schema JSON and validation/payload JSON as preview/advanced authoring surfaces until the schema-builder slice replaces them.
+
+Completed:
+
+- `modules-panel` no longer exposes metadata/presets/dependencies/resources/redaction/error/artifact policy as raw JSON textareas.
+- ModulesPanel regression now verifies bounded tool policy controls and absence of the removed JSON editors.
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

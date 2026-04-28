@@ -79,6 +79,25 @@ const MODULE_NAME_RE = /^[a-z0-9_]+$/;
 const TOOL_NAME_RE = /^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/;
 const METHOD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CONTRACT_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
+const PLATFORM_OPTIONS = ["any", "win32", "linux", "darwin"] as const;
+const ROLE_OPTIONS = ["admin", "support", "user", "agent", "llm"] as const;
+const RISK_LEVEL_OPTIONS = ["safe_read", "sensitive_read", "safe_write", "system_write", "code_exec"] as const;
+const TOOL_KIND_OPTIONS = ["diagnostic", "remediation"] as const;
+const LIFECYCLE_OPTIONS = ["experimental", "stable", "deprecated", "removed"] as const;
+const DEPENDENCY_LIST_FIELDS = [
+  "required_binaries",
+  "required_python_packages",
+  "required_services",
+  "required_permissions",
+] as const;
+const RESOURCE_NUMBER_FIELDS = [
+  "max_runtime_sec",
+  "max_stdout_bytes",
+  "max_stderr_bytes",
+  "max_artifact_count",
+  "max_artifact_bytes",
+  "max_subprocess_count",
+] as const;
 const OUTPUT_CONTRACT_DEFAULT = {
   schema_version: "1.0",
   status_path: "result.status",
@@ -244,6 +263,86 @@ function outputContractString(contract: Record<string, unknown>, key: string): s
 
 function outputContractList(contract: Record<string, unknown>, key: string): string[] {
   return stringListFromUnknown(contract[key]);
+}
+
+function recordString(record: Record<string, unknown> | null | undefined, key: string, fallback = ""): string {
+  const value = record?.[key];
+  return value == null ? fallback : String(value);
+}
+
+function recordBoolean(record: Record<string, unknown> | null | undefined, key: string, fallback = false): boolean {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function recordNumber(record: Record<string, unknown> | null | undefined, key: string, fallback = 0): number {
+  const value = record?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function recordList(record: Record<string, unknown> | null | undefined, key: string): string[] {
+  return stringListFromUnknown(record?.[key]);
+}
+
+function artifactKindList(items: ModuleWorkbenchToolDraft["artifact_types"]): string[] {
+  return (items ?? [])
+    .map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      if (item && typeof item === "object") {
+        return String((item as Record<string, unknown>).kind ?? "");
+      }
+      return "";
+    })
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function presetId(preset: Record<string, unknown>, index: number): string {
+  return String(preset.preset_id ?? preset.id ?? `preset_${index + 1}`);
+}
+
+function presetLabel(preset: Record<string, unknown>, index: number): string {
+  return String(preset.label ?? preset.name ?? `Preset ${index + 1}`);
+}
+
+function presetDescription(preset: Record<string, unknown>): string {
+  return String(preset.description ?? "");
+}
+
+function presetParamsText(preset: Record<string, unknown>): string {
+  const params = preset.params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return "";
+  }
+  return Object.entries(params as Record<string, unknown>)
+    .map(([key, value]) => `${key}=${String(value ?? "")}`)
+    .join("\n");
+}
+
+function paramsFromKeyValueLines(value: string): Record<string, string> {
+  return Object.fromEntries(
+    value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separatorIndex = line.indexOf("=");
+        if (separatorIndex < 0) {
+          return [line, ""];
+        }
+        return [line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim()];
+      })
+      .filter(([key]) => Boolean(key)),
+  );
 }
 
 function createEmptyTool(index: number): ModuleWorkbenchToolDraft {
@@ -917,6 +1016,114 @@ export function ModulesPanel() {
         ...(tool.output_contract ?? {}),
         [field]: list ? splitLines(value) : value,
       });
+      return current;
+    });
+  }
+
+  function updateToolMetadataField(field: string, value: unknown) {
+    mutateDraft((current) => {
+      const tool = current.tools[selectedToolIndex];
+      tool.metadata = {
+        ...(tool.metadata ?? {}),
+        [field]: value,
+      };
+      return current;
+    });
+  }
+
+  function updateToolDependenciesField(field: string, value: unknown) {
+    mutateDraft((current) => {
+      const tool = current.tools[selectedToolIndex];
+      tool.dependencies = {
+        ...(tool.dependencies ?? {}),
+        [field]: value,
+      };
+      return current;
+    });
+  }
+
+  function updateToolResourcesField(field: string, value: unknown) {
+    mutateDraft((current) => {
+      const tool = current.tools[selectedToolIndex];
+      tool.resources = {
+        ...(tool.resources ?? {}),
+        [field]: value,
+      };
+      return current;
+    });
+  }
+
+  function updateToolRedactionField(field: string, value: unknown) {
+    mutateDraft((current) => {
+      const tool = current.tools[selectedToolIndex];
+      tool.redaction = {
+        ...(tool.redaction ?? {}),
+        [field]: value,
+      };
+      return current;
+    });
+  }
+
+  function updateToolErrorCodes(value: string) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex].error_codes = splitLines(value);
+      return current;
+    });
+  }
+
+  function updateToolArtifactKinds(value: string) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex].artifact_types = splitLines(value).map((kind) => ({ kind }));
+      return current;
+    });
+  }
+
+  function addToolPreset() {
+    mutateDraft((current) => {
+      const presets = current.tools[selectedToolIndex].presets;
+      presets.push({
+        preset_id: `preset_${presets.length + 1}`,
+        label: `Preset ${presets.length + 1}`,
+        description: "",
+        params: {},
+      });
+      return current;
+    });
+  }
+
+  function removeToolPreset(index: number) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex].presets = current.tools[selectedToolIndex].presets.filter((_, itemIndex) => itemIndex !== index);
+      return current;
+    });
+  }
+
+  function updateToolPresetField(index: number, field: "preset_id" | "label" | "description", value: string) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex].presets = current.tools[selectedToolIndex].presets.map((preset, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...preset,
+              [field]: value,
+              ...(field === "preset_id" ? { id: value } : {}),
+              ...(field === "label" ? { name: value } : {}),
+            }
+          : preset,
+      );
+      return current;
+    });
+  }
+
+  function updateToolPresetParams(index: number, value: string) {
+    mutateDraft((current) => {
+      current.tools[selectedToolIndex].presets = current.tools[selectedToolIndex].presets.map((preset, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...preset,
+              params: paramsFromKeyValueLines(value),
+            }
+          : preset,
+      );
       return current;
     });
   }
@@ -2154,11 +2361,16 @@ export function ModulesPanel() {
                             </label>
                             <label className="space-y-2 text-sm font-medium text-slate-800">
                               <span>Lifecycle</span>
-                              <input
-                                className="field-base h-11 w-full px-4 text-sm"
+                              <Select
                                 onChange={(event) => updateToolStringField("lifecycle", event.target.value)}
                                 value={selectedTool.lifecycle}
-                              />
+                              >
+                                {LIFECYCLE_OPTIONS.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </Select>
                             </label>
                             <label className="space-y-2 text-sm font-medium text-slate-800">
                               <span>Contract version</span>
@@ -2342,105 +2554,305 @@ export function ModulesPanel() {
                               {selectedTool.tool_name}
                             </p>
                             <p className="mt-2 text-sm text-slate-500">
-                              Metadata, presets, resources и security envelopes редактируются без legacy wizard.
+                              Metadata, resources и security envelopes редактируются предсказуемыми полями; итоговый manifest виден в preview.
                             </p>
                           </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Metadata JSON</span>
-                            <textarea
-                              className="field-base min-h-[180px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.metadata)}
-                              key={`metadata-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField("metadata", event.target.value, "Metadata")
-                              }
-                            />
-                          </label>
+                          <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-semibold text-slate-900">Metadata</p>
+                              <Badge tone={recordBoolean(selectedTool.metadata, "requires_consent") ? "warning" : "success"}>
+                                {recordBoolean(selectedTool.metadata, "requires_consent") ? "consent" : "no consent"}
+                              </Badge>
+                            </div>
+                            <div className="mt-4 grid gap-3">
+                              <label className="space-y-2 text-sm font-medium text-slate-800">
+                                <span>Risk level</span>
+                                <Select
+                                  onChange={(event) => updateToolMetadataField("risk_level", event.target.value)}
+                                  value={recordString(selectedTool.metadata, "risk_level", "safe_read")}
+                                >
+                                  {RISK_LEVEL_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </label>
+                              <label className="space-y-2 text-sm font-medium text-slate-800">
+                                <span>Tool kind</span>
+                                <Select
+                                  onChange={(event) => updateToolMetadataField("tool_kind", event.target.value)}
+                                  value={recordString(selectedTool.metadata, "tool_kind", "diagnostic")}
+                                >
+                                  {TOOL_KIND_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </label>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Domain</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    onChange={(event) => updateToolMetadataField("domain", event.target.value)}
+                                    value={recordString(selectedTool.metadata, "domain", selectedTool.tool_name.split(".")[0] ?? "")}
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>Origin</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    onChange={(event) => updateToolMetadataField("origin", event.target.value)}
+                                    value={recordString(selectedTool.metadata, "origin", "managed")}
+                                  />
+                                </label>
+                              </div>
+                              <label className="space-y-2 text-sm font-medium text-slate-800">
+                                <span>Timeout, sec</span>
+                                <input
+                                  className="field-base h-11 w-full px-4 text-sm"
+                                  min={0}
+                                  onChange={(event) => updateToolMetadataField("timeout_sec", Number(event.target.value))}
+                                  type="number"
+                                  value={String(recordNumber(selectedTool.metadata, "timeout_sec", 30))}
+                                />
+                              </label>
+                              <div className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 text-sm">
+                                <span className="font-medium text-slate-800">Platforms</span>
+                                {PLATFORM_OPTIONS.map((platform) => {
+                                  const currentPlatforms = recordList(selectedTool.metadata, "platforms");
+                                  const checked = currentPlatforms.includes(platform);
+                                  return (
+                                    <label key={platform} className="flex items-center gap-2 text-slate-700">
+                                      <input
+                                        checked={checked}
+                                        onChange={(event) => {
+                                          const next = event.target.checked
+                                            ? Array.from(new Set([...currentPlatforms, platform]))
+                                            : currentPlatforms.filter((item) => item !== platform);
+                                          updateToolMetadataField("platforms", next.length ? next : ["any"]);
+                                        }}
+                                        type="checkbox"
+                                      />
+                                      <span>{platform}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <div className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 text-sm">
+                                <span className="font-medium text-slate-800">Allow roles</span>
+                                {ROLE_OPTIONS.map((role) => {
+                                  const roles = recordList(selectedTool.metadata, "allow_roles");
+                                  return (
+                                    <label key={role} className="flex items-center gap-2 text-slate-700">
+                                      <input
+                                        checked={roles.includes(role)}
+                                        onChange={(event) => {
+                                          const next = event.target.checked
+                                            ? Array.from(new Set([...roles, role]))
+                                            : roles.filter((item) => item !== role);
+                                          updateToolMetadataField("allow_roles", next);
+                                        }}
+                                        type="checkbox"
+                                      />
+                                      <span>{role}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <div className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 text-sm">
+                                {(["requires_consent", "idempotent", "side_effects"] as const).map((field) => (
+                                  <label key={field} className="flex items-center gap-2 text-slate-700">
+                                    <input
+                                      checked={recordBoolean(selectedTool.metadata, field)}
+                                      onChange={(event) => updateToolMetadataField(field, event.target.checked)}
+                                      type="checkbox"
+                                    />
+                                    <span>{field}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <label className="space-y-2 text-sm font-medium text-slate-800">
+                                <span>Scopes, one per line</span>
+                                <textarea
+                                  className="field-base min-h-[88px] w-full resize-y px-4 py-4 text-sm"
+                                  onChange={(event) => updateToolMetadataField("scopes", splitLines(event.target.value))}
+                                  value={joinLines(recordList(selectedTool.metadata, "scopes"))}
+                                />
+                              </label>
+                            </div>
+                          </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Presets JSON</span>
-                            <textarea
-                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.presets)}
-                              key={`presets-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField("presets", event.target.value, "Presets")
-                              }
-                            />
-                          </label>
+                          <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-semibold text-slate-900">Presets</p>
+                              <Button
+                                leadingIcon={<PackagePlus className="h-4 w-4" />}
+                                onClick={addToolPreset}
+                                size="sm"
+                                variant="outline"
+                              >
+                                Добавить preset
+                              </Button>
+                            </div>
+                            <div className="mt-4 grid gap-3">
+                              {selectedTool.presets.length ? (
+                                selectedTool.presets.map((preset, index) => (
+                                  <div key={`${presetId(preset, index)}:${index}`} className="rounded-[0.9rem] bg-surface-subtle px-3 py-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <p className="text-sm font-semibold text-slate-900">{presetLabel(preset, index)}</p>
+                                      <Button
+                                        leadingIcon={<Trash2 className="h-4 w-4" />}
+                                        onClick={() => removeToolPreset(index)}
+                                        size="sm"
+                                        variant="outline"
+                                      >
+                                        Удалить
+                                      </Button>
+                                    </div>
+                                    <div className="mt-3 grid gap-3">
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Preset id</span>
+                                        <input
+                                          className="field-base h-11 w-full px-4 text-sm"
+                                          onChange={(event) => updateToolPresetField(index, "preset_id", event.target.value)}
+                                          value={presetId(preset, index)}
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Label</span>
+                                        <input
+                                          className="field-base h-11 w-full px-4 text-sm"
+                                          onChange={(event) => updateToolPresetField(index, "label", event.target.value)}
+                                          value={presetLabel(preset, index)}
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Description</span>
+                                        <textarea
+                                          className="field-base min-h-[72px] w-full resize-y px-4 py-4 text-sm"
+                                          onChange={(event) => updateToolPresetField(index, "description", event.target.value)}
+                                          value={presetDescription(preset)}
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-sm font-medium text-slate-800">
+                                        <span>Params, key=value per line</span>
+                                        <textarea
+                                          className="field-base min-h-[88px] w-full resize-y px-4 py-4 text-sm"
+                                          onChange={(event) => updateToolPresetParams(index, event.target.value)}
+                                          value={presetParamsText(preset)}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="rounded-[0.9rem] border border-dashed border-border bg-surface-subtle px-4 py-5 text-sm text-slate-500">
+                                  Presets не настроены. Добавьте готовый набор параметров для быстрого запуска tool.
+                                </div>
+                              )}
+                            </div>
+                          </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Dependencies JSON</span>
-                            <textarea
-                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.dependencies)}
-                              key={`dependencies-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField(
-                                  "dependencies",
-                                  event.target.value,
-                                  "Dependencies"
-                                )
-                              }
-                            />
-                          </label>
+                          <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                            <p className="font-semibold text-slate-900">Dependencies</p>
+                            <label className="mt-4 block space-y-2 text-sm font-medium text-slate-800">
+                              <span>Min agent version</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => updateToolDependenciesField("min_agent_version", event.target.value.trim() || undefined)}
+                                value={recordString(selectedTool.dependencies, "min_agent_version")}
+                              />
+                            </label>
+                            <div className="mt-4 grid gap-3">
+                              {DEPENDENCY_LIST_FIELDS.map((field) => (
+                                <label key={field} className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>{field}</span>
+                                  <textarea
+                                    className="field-base min-h-[76px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) => updateToolDependenciesField(field, splitLines(event.target.value))}
+                                    value={joinLines(recordList(selectedTool.dependencies, field))}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Resources JSON</span>
-                            <textarea
-                              className="field-base min-h-[180px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.resources)}
-                              key={`resources-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField("resources", event.target.value, "Resources")
-                              }
-                            />
-                          </label>
+                          <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                            <p className="font-semibold text-slate-900">Resources</p>
+                            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                              {RESOURCE_NUMBER_FIELDS.map((field) => (
+                                <label key={field} className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>{field}</span>
+                                  <input
+                                    className="field-base h-11 w-full px-4 text-sm"
+                                    min={0}
+                                    onChange={(event) => updateToolResourcesField(field, Number(event.target.value))}
+                                    type="number"
+                                    value={String(recordNumber(selectedTool.resources, field))}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            <div className="mt-4 grid gap-3">
+                              {(["allowed_filesystem_scope", "allowed_external_hosts"] as const).map((field) => (
+                                <label key={field} className="space-y-2 text-sm font-medium text-slate-800">
+                                  <span>{field}</span>
+                                  <textarea
+                                    className="field-base min-h-[76px] w-full resize-y px-4 py-4 text-sm"
+                                    onChange={(event) => updateToolResourcesField(field, splitLines(event.target.value))}
+                                    value={joinLines(recordList(selectedTool.resources, field))}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Redaction JSON</span>
-                            <textarea
-                              className="field-base min-h-[140px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.redaction)}
-                              key={`redaction-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField("redaction", event.target.value, "Redaction")
-                              }
-                            />
-                          </label>
+                          <div className="rounded-[1.2rem] border border-border bg-white px-4 py-4">
+                            <p className="font-semibold text-slate-900">Redaction</p>
+                            <div className="mt-4 grid gap-2 text-sm">
+                              {(["enabled", "allow_raw_sensitive_data", "redact_headers", "redact_env"] as const).map((field) => (
+                                <label key={field} className="flex items-center gap-2 text-slate-700">
+                                  <input
+                                    checked={recordBoolean(selectedTool.redaction, field, field === "enabled" || field === "redact_headers" || field === "redact_env")}
+                                    onChange={(event) => updateToolRedactionField(field, event.target.checked)}
+                                    type="checkbox"
+                                  />
+                                  <span>{field}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <label className="mt-4 block space-y-2 text-sm font-medium text-slate-800">
+                              <span>Redact fields, one per line</span>
+                              <textarea
+                                className="field-base min-h-[76px] w-full resize-y px-4 py-4 text-sm"
+                                onChange={(event) => updateToolRedactionField("redact_fields", splitLines(event.target.value))}
+                                value={joinLines(recordList(selectedTool.redaction, "redact_fields"))}
+                              />
+                            </label>
+                          </div>
 
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Artifact types JSON</span>
-                            <textarea
-                              className="field-base min-h-[110px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.artifact_types)}
-                              key={`artifacts-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField(
-                                  "artifact_types",
-                                  event.target.value,
-                                  "Artifact types"
-                                )
-                              }
-                            />
-                          </label>
-
-                          <label className="space-y-2 text-sm font-medium text-slate-800">
-                            <span>Error codes JSON</span>
-                            <textarea
-                              className="field-base min-h-[110px] w-full resize-y px-4 py-4 font-mono text-xs"
-                              defaultValue={prettyJson(selectedTool.error_codes)}
-                              key={`errors-${selectedToolIndex}-${selectedTool.tool_name}`}
-                              onBlur={(event) =>
-                                updateToolJsonField(
-                                  "error_codes",
-                                  event.target.value,
-                                  "Error codes"
-                                )
-                              }
-                            />
-                          </label>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Error codes</span>
+                              <textarea
+                                className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                                onChange={(event) => updateToolErrorCodes(event.target.value)}
+                                value={joinLines(selectedTool.error_codes.map((item) => String(item)))}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>Artifact kinds</span>
+                              <textarea
+                                className="field-base min-h-[110px] w-full resize-y px-4 py-4 text-sm"
+                                onChange={(event) => updateToolArtifactKinds(event.target.value)}
+                                value={joinLines(artifactKindList(selectedTool.artifact_types))}
+                              />
+                            </label>
+                          </div>
                         </div>
                       </div>
                     ) : null}

@@ -97,13 +97,18 @@ type CalendarDayDraft = {
   end: string;
 };
 
+type CalendarHolidayDraft = {
+  id: string;
+  date: string;
+};
+
 type CalendarDraft = {
   code: string;
   name: string;
   timezone: string;
   is_active: boolean;
   weekly_hours: CalendarDayDraft[];
-  holidays_text: string;
+  holidays: CalendarHolidayDraft[];
 };
 
 type ResolutionDraft = {
@@ -301,25 +306,38 @@ function buildCalendarHoursJson(rows: CalendarDayDraft[]): Record<string, unknow
 }
 
 
-function readHolidayText(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item)).join("\n");
-  }
-  if (value && typeof value === "object") {
-    const dates = (value as Record<string, unknown>).dates;
-    if (Array.isArray(dates)) {
-      return dates.map((item) => String(item)).join("\n");
-    }
-  }
-  return "";
+function createHolidayDraft(date = "", index = 0): CalendarHolidayDraft {
+  return {
+    id: `${date || "new"}:${index}:${Math.random().toString(16).slice(2)}`,
+    date,
+  };
 }
 
 
-function buildHolidaysJson(text: string): Record<string, unknown> {
+function readHolidayRows(value: unknown): CalendarHolidayDraft[] {
+  const fromDates = (dates: unknown[]) =>
+    dates
+      .map((item, index) => createHolidayDraft(String(item ?? "").trim(), index))
+      .filter((item) => item.date);
+
+  if (Array.isArray(value)) {
+    return fromDates(value);
+  }
+  if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const dates = source.dates ?? source.holidays ?? source.items;
+    if (Array.isArray(dates)) {
+      return fromDates(dates.map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>).date : item)));
+    }
+  }
+  return [];
+}
+
+
+function buildHolidaysJson(rows: CalendarHolidayDraft[]): Record<string, unknown> {
   return {
-    dates: text
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
+    dates: rows
+      .map((item) => item.date.trim())
       .filter(Boolean),
   };
 }
@@ -447,7 +465,7 @@ function buildCalendarDraft(calendar: CalendarItem | null): CalendarDraft {
     timezone: calendar?.timezone ?? "UTC",
     is_active: calendar?.is_active ?? true,
     weekly_hours: readCalendarHours(calendar?.weekly_hours_json),
-    holidays_text: readHolidayText(calendar?.holidays_json),
+    holidays: readHolidayRows(calendar?.holidays_json),
   };
 }
 
@@ -887,7 +905,7 @@ export function SettingsPage() {
         name: calendarDraft.name.trim(),
         timezone: calendarDraft.timezone.trim() || "UTC",
         weekly_hours_json: buildCalendarHoursJson(calendarDraft.weekly_hours),
-        holidays_json: buildHolidaysJson(calendarDraft.holidays_text),
+        holidays_json: buildHolidaysJson(calendarDraft.holidays),
         ...(selectedCalendar ? { is_active: calendarDraft.is_active } : {}),
       };
       if (selectedCalendar) {
@@ -2151,14 +2169,77 @@ export function SettingsPage() {
                       })}
                     </div>
                   </div>
-                  <SettingsField label="Праздники и исключения">
-                    <textarea
-                      className="field-base min-h-[120px] w-full resize-y px-4 py-4 text-sm"
-                      onChange={(event) => setCalendarDraft((current) => ({ ...current, holidays_text: event.target.value }))}
-                      placeholder="2026-01-01&#10;2026-01-07"
-                      value={calendarDraft.holidays_text}
-                    />
-                  </SettingsField>
+                  <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">Праздники и исключения</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Даты выбираются списком; JSON для API собирается автоматически.
+                        </p>
+                      </div>
+                      <Button
+                        disabled={!canWrite}
+                        leadingIcon={<Plus className="h-4 w-4" />}
+                        onClick={() =>
+                          setCalendarDraft((current) => ({
+                            ...current,
+                            holidays: [...current.holidays, createHolidayDraft("", current.holidays.length)],
+                          }))
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
+                        Добавить дату
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      {calendarDraft.holidays.length ? (
+                        calendarDraft.holidays.map((holiday, index) => (
+                          <div key={holiday.id} className="grid gap-3 rounded-[0.9rem] bg-white px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                            <Input
+                              aria-label="Дата праздника или исключения"
+                              disabled={!canWrite}
+                              onChange={(event) =>
+                                setCalendarDraft((current) => ({
+                                  ...current,
+                                  holidays: current.holidays.map((item) =>
+                                    item.id === holiday.id ? { ...item, date: event.target.value } : item,
+                                  ),
+                                }))
+                              }
+                              type="date"
+                              value={holiday.date}
+                            />
+                            <Button
+                              aria-label={`Удалить дату ${holiday.date || index + 1}`}
+                              disabled={!canWrite}
+                              leadingIcon={<Trash2 className="h-4 w-4" />}
+                              onClick={() =>
+                                setCalendarDraft((current) => ({
+                                  ...current,
+                                  holidays: current.holidays.filter((item) => item.id !== holiday.id),
+                                }))
+                              }
+                              size="sm"
+                              variant="outline"
+                            >
+                              Удалить
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-[0.9rem] border border-dashed border-border bg-white px-4 py-5 text-sm text-slate-500">
+                          Исключений нет. Добавьте дату, если SLA не должен считать этот день рабочим.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Собирается для API</p>
+                      <pre className="mt-2 overflow-x-auto text-xs text-slate-600">{prettyJson(buildHolidaysJson(calendarDraft.holidays))}</pre>
+                    </div>
+                  </div>
                   <Button disabled={!canWrite || calendarMutation.isPending} onClick={() => calendarMutation.mutate()} className="w-full">
                     Сохранить календарь
                   </Button>

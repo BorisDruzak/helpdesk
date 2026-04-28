@@ -1601,7 +1601,7 @@ describe("AdminWorkspacePage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Открыть trace" }))[0]);
     expect(await screen.findByText("Список traces")).toBeInTheDocument();
     expect(await screen.findByText("Span timeline")).toBeInTheDocument();
-    expect(await screen.findByText("Agent actions")).toBeInTheDocument();
+    expect((await screen.findAllByText("Agent actions")).length).toBeGreaterThan(0);
     expect(await screen.findByText("operation_id_bridge")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Режим preferred-rollout" }), {

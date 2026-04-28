@@ -132,7 +132,7 @@ function renderSettingsPage() {
     },
   });
 
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <SettingsPage />
     </QueryClientProvider>,
@@ -228,7 +228,7 @@ describe("SettingsPage", () => {
       }),
     );
 
-    renderSettingsPage();
+    const { container } = renderSettingsPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "Маршрутизация" }));
     expect(screen.getByText("Собранное условие")).toBeInTheDocument();
@@ -240,7 +240,10 @@ describe("SettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Календари" }));
     expect(screen.getByText("Рабочая неделя")).toBeInTheDocument();
-    expect(screen.getByLabelText("Праздники и исключения")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Добавить дату" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Дата праздника или исключения")).toHaveValue("2026-01-01");
+    expect(screen.getByText("Собирается для API")).toBeInTheDocument();
+    expect(container.querySelector("textarea")).not.toBeInTheDocument();
     expect(screen.queryByText("Weekly hours JSON")).not.toBeInTheDocument();
     expect(screen.queryByText("Holidays JSON")).not.toBeInTheDocument();
   });

@@ -412,6 +412,17 @@ describe("ModulesPanel", () => {
     });
 
     expect(await screen.findByText(/Не проверено на Windows agent/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Инструменты/i }));
+    expect(await screen.findByText("Metadata")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Risk level" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Tool kind" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Добавить preset" })).toBeInTheDocument();
+    expect(screen.queryByText("Metadata JSON")).not.toBeInTheDocument();
+    expect(screen.queryByText("Presets JSON")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dependencies JSON")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resources JSON")).not.toBeInTheDocument();
+    expect(screen.queryByText("Redaction JSON")).not.toBeInTheDocument();
   });
 
   it("lets support choose a Linux or Windows lab agent and run a module live test", async () => {
