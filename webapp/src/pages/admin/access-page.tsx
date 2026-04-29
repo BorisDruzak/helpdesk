@@ -193,6 +193,7 @@ function AccessGroupsPanel({
   const permissionDraftRef = useRef<string[]>([]);
   const memberDraftRef = useRef<string[]>([]);
   const queueDraftRef = useRef<Array<{ queue_id: number; role_in_queue: string | null }>>([]);
+  const syncedGroupIdRef = useRef<number | null>(null);
 
   const allPermissions = useMemo(
     () => catalogGroups.flatMap((group) => group.permissions.map((permission) => ({ ...permission, groupLabel: group.label }))),
@@ -200,13 +201,10 @@ function AccessGroupsPanel({
   );
   const selectedGroup = groups.find((group) => group.group_id === selectedGroupId) ?? groups[0] ?? null;
 
-  useEffect(() => {
-    if (!selectedGroup) {
-      return;
-    }
-    const nextPermissions = selectedGroup.permissions;
-    const nextMembers = selectedGroup.members;
-    const nextQueues = selectedGroup.queue_grants.map((queue) => ({
+  const syncDraftsFromGroup = (group: AccessGroupItem) => {
+    const nextPermissions = group.permissions;
+    const nextMembers = group.members;
+    const nextQueues = group.queue_grants.map((queue) => ({
       queue_id: queue.queue_id,
       role_in_queue: queue.role_in_queue,
     }));
@@ -216,6 +214,17 @@ function AccessGroupsPanel({
     setPermissionDraft(nextPermissions);
     setMemberDraft(nextMembers);
     setQueueDraft(nextQueues);
+  };
+
+  useEffect(() => {
+    if (!selectedGroup) {
+      return;
+    }
+    if (syncedGroupIdRef.current === selectedGroup.group_id) {
+      return;
+    }
+    syncedGroupIdRef.current = selectedGroup.group_id;
+    syncDraftsFromGroup(selectedGroup);
   }, [selectedGroup]);
 
   useEffect(() => {
@@ -237,17 +246,33 @@ function AccessGroupsPanel({
 
   const permissionsMutation = useMutation({
     mutationFn: () => saveAccessGroupPermissions(selectedGroup?.group_id ?? 0, permissionDraftRef.current),
-    onSuccess: onGroupChange,
+    onSuccess: (group) => {
+      permissionDraftRef.current = group.permissions;
+      setPermissionDraft(group.permissions);
+      onGroupChange(group);
+    },
   });
 
   const membersMutation = useMutation({
     mutationFn: () => saveAccessGroupMembers(selectedGroup?.group_id ?? 0, memberDraftRef.current),
-    onSuccess: onGroupChange,
+    onSuccess: (group) => {
+      memberDraftRef.current = group.members;
+      setMemberDraft(group.members);
+      onGroupChange(group);
+    },
   });
 
   const queuesMutation = useMutation({
     mutationFn: () => saveAccessGroupQueues(selectedGroup?.group_id ?? 0, queueDraftRef.current),
-    onSuccess: onGroupChange,
+    onSuccess: (group) => {
+      const nextQueues = group.queue_grants.map((queue) => ({
+        queue_id: queue.queue_id,
+        role_in_queue: queue.role_in_queue,
+      }));
+      queueDraftRef.current = nextQueues;
+      setQueueDraft(nextQueues);
+      onGroupChange(group);
+    },
   });
 
   const togglePermission = (permission: string) => {
