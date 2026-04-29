@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   UsersRound,
 } from "lucide-react";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -190,6 +190,9 @@ function AccessGroupsPanel({
   const [permissionDraft, setPermissionDraft] = useState<string[]>([]);
   const [memberDraft, setMemberDraft] = useState<string[]>([]);
   const [queueDraft, setQueueDraft] = useState<Array<{ queue_id: number; role_in_queue: string | null }>>([]);
+  const permissionDraftRef = useRef<string[]>([]);
+  const memberDraftRef = useRef<string[]>([]);
+  const queueDraftRef = useRef<Array<{ queue_id: number; role_in_queue: string | null }>>([]);
 
   const allPermissions = useMemo(
     () => catalogGroups.flatMap((group) => group.permissions.map((permission) => ({ ...permission, groupLabel: group.label }))),
@@ -201,14 +204,18 @@ function AccessGroupsPanel({
     if (!selectedGroup) {
       return;
     }
-    setPermissionDraft(selectedGroup.permissions);
-    setMemberDraft(selectedGroup.members);
-    setQueueDraft(
-      selectedGroup.queue_grants.map((queue) => ({
-        queue_id: queue.queue_id,
-        role_in_queue: queue.role_in_queue,
-      })),
-    );
+    const nextPermissions = selectedGroup.permissions;
+    const nextMembers = selectedGroup.members;
+    const nextQueues = selectedGroup.queue_grants.map((queue) => ({
+      queue_id: queue.queue_id,
+      role_in_queue: queue.role_in_queue,
+    }));
+    permissionDraftRef.current = nextPermissions;
+    memberDraftRef.current = nextMembers;
+    queueDraftRef.current = nextQueues;
+    setPermissionDraft(nextPermissions);
+    setMemberDraft(nextMembers);
+    setQueueDraft(nextQueues);
   }, [selectedGroup]);
 
   useEffect(() => {
@@ -229,50 +236,58 @@ function AccessGroupsPanel({
   });
 
   const permissionsMutation = useMutation({
-    mutationFn: () => saveAccessGroupPermissions(selectedGroup?.group_id ?? 0, permissionDraft),
+    mutationFn: () => saveAccessGroupPermissions(selectedGroup?.group_id ?? 0, permissionDraftRef.current),
     onSuccess: onGroupChange,
   });
 
   const membersMutation = useMutation({
-    mutationFn: () => saveAccessGroupMembers(selectedGroup?.group_id ?? 0, memberDraft),
+    mutationFn: () => saveAccessGroupMembers(selectedGroup?.group_id ?? 0, memberDraftRef.current),
     onSuccess: onGroupChange,
   });
 
   const queuesMutation = useMutation({
-    mutationFn: () => saveAccessGroupQueues(selectedGroup?.group_id ?? 0, queueDraft),
+    mutationFn: () => saveAccessGroupQueues(selectedGroup?.group_id ?? 0, queueDraftRef.current),
     onSuccess: onGroupChange,
   });
 
   const togglePermission = (permission: string) => {
-    setPermissionDraft((current) =>
-      current.includes(permission)
+    setPermissionDraft((current) => {
+      const next = current.includes(permission)
         ? current.filter((item) => item !== permission)
-        : [...current, permission].sort(),
-    );
+        : [...current, permission].sort();
+      permissionDraftRef.current = next;
+      return next;
+    });
   };
 
   const toggleMember = (actorId: string) => {
-    setMemberDraft((current) =>
-      current.includes(actorId)
+    setMemberDraft((current) => {
+      const next = current.includes(actorId)
         ? current.filter((item) => item !== actorId)
-        : [...current, actorId].sort(),
-    );
+        : [...current, actorId].sort();
+      memberDraftRef.current = next;
+      return next;
+    });
   };
 
   const toggleQueue = (queueId: number) => {
-    setQueueDraft((current) =>
-      current.some((item) => item.queue_id === queueId)
+    setQueueDraft((current) => {
+      const next = current.some((item) => item.queue_id === queueId)
         ? current.filter((item) => item.queue_id !== queueId)
-        : [...current, { queue_id: queueId, role_in_queue: null }],
-    );
+        : [...current, { queue_id: queueId, role_in_queue: null }];
+      queueDraftRef.current = next;
+      return next;
+    });
   };
 
   const setQueueRole = (queueId: number, roleInQueue: string) => {
-    setQueueDraft((current) =>
-      current.map((item) =>
+    setQueueDraft((current) => {
+      const next = current.map((item) =>
         item.queue_id === queueId ? { ...item, role_in_queue: roleInQueue.trim() || null } : item,
-      ),
-    );
+      );
+      queueDraftRef.current = next;
+      return next;
+    });
   };
 
   const queueRole = (queueId: number) => queueDraft.find((item) => item.queue_id === queueId)?.role_in_queue ?? "";
