@@ -234,6 +234,9 @@ async def test_create_ticket_routes_by_request_kind_from_form_submission(test_cl
             "form_payload": {
                 "system_name": "ERP",
                 "role_name": "accountant",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "access",
         },
@@ -323,6 +326,9 @@ async def test_create_ticket_routes_by_request_form_data_field(test_client, test
             "form_payload": {
                 "room": "214",
                 "printer_model": "HP LaserJet",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "printer",
         },

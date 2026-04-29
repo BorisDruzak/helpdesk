@@ -113,6 +113,84 @@ const WORKFLOW_PROFILE_OPTIONS = [
   { value: "consultation", label: "consultation" },
 ] as const;
 
+const FIELD_ROLE_OPTIONS = [
+  { value: "routing_field", label: "routing" },
+  { value: "priority_field", label: "priority" },
+  { value: "sla_field", label: "SLA" },
+  { value: "approval_field", label: "approval" },
+  { value: "diagnostic_input", label: "diagnostic" },
+  { value: "closure_evidence", label: "closure evidence" },
+  { value: "display_only", label: "display only" },
+] as const;
+
+const PRIORITY_QUESTION_FIELDS: DraftField[] = [
+  {
+    key: "impact_scope",
+    label: "Кого затронула проблема?",
+    type: "radio",
+    required: true,
+    placeholder: "",
+    help_text: "Пользователь отвечает фактами, система считает priority.",
+    options: [
+      { value: "single_user", label: "Только меня" },
+      { value: "group", label: "Несколько человек" },
+      { value: "department", label: "Весь отдел" },
+      { value: "building_or_org", label: "Здание / организация / критичная система" },
+    ],
+    visible_when: { field: "", equals: "", values: [] },
+  },
+  {
+    key: "work_continuity",
+    label: "Можно ли продолжать работу?",
+    type: "radio",
+    required: true,
+    placeholder: "",
+    help_text: "Это поле определяет urgency.",
+    options: [
+      { value: "work_stopped_no_workaround", label: "Нет, работа остановлена" },
+      { value: "partial_work", label: "Можно работать частично" },
+      { value: "workaround_available", label: "Есть обходной путь" },
+      { value: "inconvenience_only", label: "Неудобно, но не блокирует" },
+    ],
+    visible_when: { field: "", equals: "", values: [] },
+  },
+  {
+    key: "business_importance",
+    label: "Есть важный срок или критичный процесс?",
+    type: "radio",
+    required: false,
+    placeholder: "",
+    help_text: "Это поле определяет importance / criticality.",
+    options: [
+      { value: "normal", label: "Нет, обычная рабочая ситуация" },
+      { value: "deadline", label: "Есть важный срок" },
+      { value: "deadline_today", label: "Сегодня / завтра крайний срок" },
+      { value: "security", label: "ИБ / публичная услуга / критичный процесс" },
+    ],
+    visible_when: { field: "", equals: "", values: [] },
+  },
+  {
+    key: "critical_service",
+    label: "Затронута критичная система",
+    type: "checkbox",
+    required: false,
+    placeholder: "Да",
+    help_text: "Modifier: может повысить priority.",
+    options: [],
+    visible_when: { field: "", equals: "", values: [] },
+  },
+  {
+    key: "public_service",
+    label: "Затронут прием граждан / публичная услуга",
+    type: "checkbox",
+    required: false,
+    placeholder: "Да",
+    help_text: "Modifier: может повысить priority.",
+    options: [],
+    visible_when: { field: "", equals: "", values: [] },
+  },
+];
+
 const TICKET_TYPE_BY_FORM_KIND: Record<string, string> = {
   breakage: "incident",
   printer: "incident",
@@ -420,6 +498,10 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
         ...(form.priority_importance_field.trim()
           ? { importance_field: form.priority_importance_field.trim() }
           : {}),
+        modifier_fields: {
+          critical_service: "critical_service",
+          public_service: "public_service",
+        },
       },
       routing_policy: parseJsonDraft(form.routing_policy_json),
       approval_policy: parseJsonDraft(form.approval_policy_json),
@@ -536,6 +618,55 @@ function createEmptyForm(index: number): DraftForm {
     visibility_policy_json: "",
     playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
+  };
+}
+
+function getFieldRoles(form: DraftForm, fieldKey: string): string[] {
+  return parseFieldRolesDraft(form.field_roles_json)[fieldKey] ?? [];
+}
+
+function updateFieldRoles(form: DraftForm, fieldKey: string, role: string, enabled: boolean): DraftForm {
+  const roles = parseFieldRolesDraft(form.field_roles_json);
+  const current = new Set(roles[fieldKey] ?? []);
+  if (enabled) {
+    current.add(role);
+  } else {
+    current.delete(role);
+  }
+  if (current.size) {
+    roles[fieldKey] = Array.from(current);
+  } else {
+    delete roles[fieldKey];
+  }
+  return {
+    ...form,
+    field_roles_json: jsonDraft(roles),
+  };
+}
+
+function applyPriorityQuestionTemplate(form: DraftForm): DraftForm {
+  const existingKeys = new Set(form.fields.map((field) => field.key));
+  const fields = [
+    ...form.fields,
+    ...PRIORITY_QUESTION_FIELDS.filter((field) => !existingKeys.has(field.key)).map((field) => ({
+      ...field,
+      options: field.options.map((option) => ({ ...option })),
+      visible_when: { ...field.visible_when, values: [...field.visible_when.values] },
+    })),
+  ];
+  const roles = parseFieldRolesDraft(form.field_roles_json);
+  for (const field of PRIORITY_QUESTION_FIELDS) {
+    roles[field.key] = field.key === "critical_service" || field.key === "public_service"
+      ? ["priority_field", "sla_field"]
+      : ["priority_field"];
+  }
+  return {
+    ...form,
+    fields,
+    priority_impact_field: "impact_scope",
+    priority_urgency_field: "work_continuity",
+    priority_importance_field: "business_importance",
+    field_roles_json: jsonDraft(roles),
   };
 }
 
@@ -1700,6 +1831,27 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               />
                             </label>
                           </div>
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[0.9rem] border border-border bg-surface-subtle px-4 py-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Priority questions for agent/requester</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Adds editable impact, urgency, importance and modifier fields to this request template.
+                              </p>
+                            </div>
+                            <Button
+                              onClick={() => {
+                                setDraft((current) =>
+                                  current
+                                    ? updateFormInCatalog(current, selectedForm.key, applyPriorityQuestionTemplate)
+                                    : current
+                                );
+                              }}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Add priority questions
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
@@ -2029,6 +2181,42 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                       />
                                       <span className="text-sm font-medium text-slate-700">Поле обязательное</span>
                                     </label>
+                                  </div>
+
+                                  <div className="space-y-3 rounded-[1rem] border border-border bg-white px-4 py-4">
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900">Process roles</p>
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        Roles define whether this field participates in priority, routing, SLA, approval, diagnostics or closure.
+                                      </p>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                      {FIELD_ROLE_OPTIONS.map((role) => {
+                                        const roles = getFieldRoles(selectedForm, selectedField.key);
+                                        return (
+                                          <label
+                                            className="flex items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
+                                            key={role.value}
+                                          >
+                                            <input
+                                              checked={roles.includes(role.value)}
+                                              onChange={(event) => {
+                                                const checked = event.currentTarget.checked;
+                                                setDraft((current) =>
+                                                  current
+                                                    ? updateFormInCatalog(current, selectedForm.key, (form) =>
+                                                        updateFieldRoles(form, selectedField.key, role.value, checked)
+                                                      )
+                                                    : current
+                                                );
+                                              }}
+                                              type="checkbox"
+                                            />
+                                            <span>{role.label}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
 
                                   <label className="space-y-2 text-sm font-medium text-slate-800">

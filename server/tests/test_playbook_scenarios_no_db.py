@@ -266,7 +266,12 @@ def test_form_pack_preserves_ticket_created_diagnostic_playbook_trigger():
     submission = validate_form_submission(
         pack,
         form_key="site_system",
-        raw_values={"url": "https://intranet.example"},
+        raw_values={
+            "url": "https://intranet.example",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
     )
     custom_fields = build_form_custom_fields(submission)
 

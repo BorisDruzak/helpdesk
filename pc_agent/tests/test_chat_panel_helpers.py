@@ -9,10 +9,13 @@ from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
     build_default_ticket_form_pack,
     build_priority_facts_payload,
+    build_priority_facts_payload_from_form,
+    build_ticket_sla_user_summary,
     can_user_confirm_close,
     merge_ticket_stream,
     message_visual_role,
     prepend_ticket_stream,
+    ticket_form_priority_field_keys,
     ticket_request_form_summary_rows,
     ticket_matches_query,
     ticket_status_label,
@@ -73,6 +76,61 @@ def test_agent_default_forms_carry_process_type_and_priority_policy():
     assert forms["software_install"]["ticket_type"] == "service_request"
     assert forms["site_system"]["priority_policy"]["impact_field"] == "impact_scope"
     assert forms["site_system"]["priority_policy"]["urgency_field"] == "work_continuity"
+    assert {"impact_scope", "work_continuity", "business_importance"}.issubset(
+        {field["key"] for field in forms["site_system"]["fields"]}
+    )
+    assert "priority_field" in forms["site_system"]["field_roles"]["impact_scope"]
+
+
+def test_ticket_form_priority_field_keys_use_policy_modifiers_and_roles():
+    form = {
+        "fields": [
+            {"key": "who"},
+            {"key": "can_work"},
+            {"key": "deadline"},
+            {"key": "critical_service"},
+            {"key": "route_only"},
+        ],
+        "priority_policy": {
+            "impact_field": "who",
+            "urgency_field": "can_work",
+            "importance_field": "deadline",
+            "modifier_fields": {"critical_service": "critical_service"},
+        },
+        "field_roles": {
+            "route_only": ["routing_field"],
+            "deadline": ["priority_field"],
+        },
+    }
+
+    assert ticket_form_priority_field_keys(form) == ["who", "can_work", "deadline", "critical_service"]
+
+
+def test_build_priority_facts_payload_from_server_driven_form_policy():
+    form = {
+        "priority_policy": {
+            "impact_field": "affected_users",
+            "urgency_field": "continuity",
+            "importance_field": "deadline_pressure",
+        }
+    }
+
+    payload = build_priority_facts_payload_from_form(
+        form,
+        {
+            "affected_users": "department",
+            "continuity": "work_stopped_no_workaround",
+            "deadline_pressure": "deadline_today",
+        },
+    )
+
+    assert payload["urgency"] is True
+    assert payload["importance"] is True
+    assert payload["form_payload"] == {
+        "impact_scope": "department",
+        "work_continuity": "work_stopped_no_workaround",
+        "business_importance": "deadline_today",
+    }
 
 
 def test_build_priority_facts_payload_keeps_legacy_booleans_and_structured_facts():
@@ -115,6 +173,8 @@ def test_build_ticket_meta_html_includes_request_form_summary():
             "assignee_id": "op1",
             "created_at": "2026-04-16T14:57:09+00:00",
             "updated_at": "2026-04-16T14:58:09+00:00",
+            "first_response_due_at": "2026-04-16T15:12:09+00:00",
+            "resolution_due_at": "2026-04-16T18:57:09+00:00",
             "resolved_at": None,
             "closed_at": None,
             "description": "Сломался принтер",
@@ -132,6 +192,22 @@ def test_build_ticket_meta_html_includes_request_form_summary():
     assert "Поломка" in html
     assert "Что сломалось" in html
     assert "МФУ" in html
+    assert "SLA: first response" in html
+    assert "2026-04-16T15:12:09+00:00" in html
+
+
+def test_build_ticket_sla_user_summary_uses_dynamic_due_dates():
+    summary = build_ticket_sla_user_summary(
+        {
+            "priority_class": "P0",
+            "first_response_due_at": "2026-04-16T15:12:09+00:00",
+            "resolution_due_at": "2026-04-16T18:57:09+00:00",
+        }
+    )
+
+    assert "priority=P0" in summary
+    assert "first response due: 2026-04-16T15:12:09+00:00" in summary
+    assert "resolution/workaround due: 2026-04-16T18:57:09+00:00" in summary
 
 
 def test_ticket_status_label_is_localized():

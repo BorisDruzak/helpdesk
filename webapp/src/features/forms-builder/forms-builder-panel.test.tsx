@@ -256,6 +256,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(screen.getByLabelText("Ключ поля"), {
       target: { value: "issue_code" }
     });
+    fireEvent.click(screen.getByRole("button", { name: "Add priority questions" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
 
@@ -264,6 +265,23 @@ describe("FormsBuilderPanel", () => {
     });
 
     expect(saveCalls).toHaveLength(1);
+    const savedPrinterRepair = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          fields?: Array<{ key: string }>;
+          field_roles?: Record<string, string[]>;
+          priority_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer_repair");
+    expect(savedPrinterRepair?.fields?.some((field) => field.key === "impact_scope")).toBe(true);
+    expect(savedPrinterRepair?.field_roles?.impact_scope).toContain("priority_field");
+    expect(savedPrinterRepair?.priority_policy).toMatchObject({
+      impact_field: "impact_scope",
+      urgency_field: "work_continuity",
+      importance_field: "business_importance",
+    });
     expect(saveCalls[0]).toMatchObject({
       title: "Каталог заявок",
       forms: [
@@ -276,12 +294,12 @@ describe("FormsBuilderPanel", () => {
           key: "printer_repair",
           request_kind: "printer_repair",
           title: "Ремонт принтера",
-          fields: [
+          fields: expect.arrayContaining([
             expect.objectContaining({
               key: "issue_code",
               label: "Код поломки"
             })
-          ]
+          ])
         })
       ]
     });
@@ -842,6 +860,6 @@ describe("FormsBuilderPanel", () => {
     });
     expect(screen.getByText("Готов к запуску после создания тикета")).toBeInTheDocument();
     expect(screen.getByText("ticket_created")).toBeInTheDocument();
-    expect(screen.getByText("diagnostic")).toBeInTheDocument();
+    expect(screen.getAllByText("diagnostic").length).toBeGreaterThan(0);
   });
 });

@@ -36,6 +36,13 @@ DEFAULT_PRIORITY_POLICY = {
         "public_service": "public_service",
     },
 }
+DEFAULT_PRIORITY_FIELD_ROLES = {
+    "impact_scope": ["priority_field"],
+    "work_continuity": ["priority_field"],
+    "business_importance": ["priority_field"],
+    "critical_service": ["priority_field", "sla_field"],
+    "public_service": ["priority_field", "sla_field"],
+}
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
     "incident": "Инцидент",
@@ -101,6 +108,76 @@ _ALLOWED_FIELD_ROLES = {
     "closure_evidence",
     "display_only",
 }
+
+
+def build_default_priority_fields() -> list[dict[str, Any]]:
+    return [
+        {
+            "key": "impact_scope",
+            "label": "Кого затронула проблема?",
+            "type": "radio",
+            "required": True,
+            "options": [
+                {"value": "single_user", "label": "Только меня"},
+                {"value": "group", "label": "Несколько человек"},
+                {"value": "department", "label": "Весь отдел"},
+                {"value": "building_or_org", "label": "Здание / организация / критичная система"},
+            ],
+        },
+        {
+            "key": "work_continuity",
+            "label": "Можно ли продолжать работу?",
+            "type": "radio",
+            "required": True,
+            "options": [
+                {"value": "work_stopped_no_workaround", "label": "Нет, работа остановлена"},
+                {"value": "partial_work", "label": "Можно работать частично"},
+                {"value": "workaround_available", "label": "Есть обходной путь"},
+                {"value": "inconvenience_only", "label": "Неудобно, но не блокирует"},
+            ],
+        },
+        {
+            "key": "business_importance",
+            "label": "Есть важный срок или критичный процесс?",
+            "type": "radio",
+            "required": False,
+            "options": [
+                {"value": "normal", "label": "Нет, обычная рабочая ситуация"},
+                {"value": "deadline", "label": "Есть важный срок"},
+                {"value": "deadline_today", "label": "Сегодня / завтра крайний срок"},
+                {"value": "security", "label": "ИБ / публичная услуга / критичный процесс"},
+            ],
+        },
+        {
+            "key": "critical_service",
+            "label": "Затронута критичная система",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+        },
+        {
+            "key": "public_service",
+            "label": "Затронут прием граждан / публичная услуга",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+        },
+    ]
+
+
+def _attach_default_priority_context(form: dict[str, Any]) -> None:
+    existing_keys = {
+        str(field.get("key") or "").strip()
+        for field in form.get("fields") or []
+        if isinstance(field, dict)
+    }
+    for field in build_default_priority_fields():
+        if field["key"] not in existing_keys:
+            form.setdefault("fields", []).append(deepcopy(field))
+    form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+    roles = deepcopy(DEFAULT_PRIORITY_FIELD_ROLES)
+    roles.update(form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {})
+    form["field_roles"] = roles
 
 
 def infer_ticket_type_for_form(form_key: str | None, request_kind: str | None) -> str:
@@ -262,7 +339,7 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     ]
     for form in forms:
         form["ticket_type"] = infer_ticket_type_for_form(form.get("key"), form.get("request_kind"))
-        form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+        _attach_default_priority_context(form)
 
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
@@ -449,13 +526,51 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                     f"references unknown visible_when.field {dependency_key!r}"
                 )
 
+        priority_policy_for_fields = (
+            raw_form.get("priority_policy")
+            if isinstance(raw_form.get("priority_policy"), dict)
+            else DEFAULT_PRIORITY_POLICY
+        )
+        priority_policy_refs = {
+            str(priority_policy_for_fields.get(policy_key) or "").strip()
+            for policy_key in ("impact_field", "urgency_field", "importance_field")
+        }
+        modifier_fields_for_refs = (
+            priority_policy_for_fields.get("modifier_fields")
+            if isinstance(priority_policy_for_fields.get("modifier_fields"), dict)
+            else {}
+        )
+        priority_policy_refs.update(str(value or "").strip() for value in modifier_fields_for_refs.values())
+        priority_policy_refs.discard("")
+        existing_field_keys = {field["key"] for field in normalized_fields}
+        for priority_field in build_default_priority_fields():
+            priority_key = str(priority_field.get("key") or "").strip()
+            if priority_key not in priority_policy_refs:
+                continue
+            if priority_key in existing_field_keys:
+                continue
+            normalized_fields.append(deepcopy(priority_field))
+            existing_field_keys.add(priority_key)
+            seen_fields.add(priority_key)
+
         ticket_type = str(
             raw_form.get("ticket_type") or infer_ticket_type_for_form(form_key, request_kind)
         ).strip() or DEFAULT_WORKFLOW_PROFILE
         ticket_type = get_workflow_profile(ticket_type).ticket_type
+        raw_field_roles = raw_form.get("field_roles")
+        merged_field_roles = {
+            field_key: deepcopy(roles)
+            for field_key, roles in DEFAULT_PRIORITY_FIELD_ROLES.items()
+            if field_key in seen_fields
+        }
+        for policy_field_key in priority_policy_refs:
+            if policy_field_key in seen_fields:
+                merged_field_roles.setdefault(policy_field_key, ["priority_field"])
+        if isinstance(raw_field_roles, dict):
+            merged_field_roles.update(raw_field_roles)
         template_context: dict[str, Any] = {
             "ticket_type": ticket_type,
-            "field_roles": _normalize_field_roles(raw_form.get("field_roles"), seen_fields, form_key=form_key),
+            "field_roles": _normalize_field_roles(merged_field_roles, seen_fields, form_key=form_key),
         }
         for int_field in _TEMPLATE_INT_FIELDS:
             value = _normalize_optional_int(raw_form.get(int_field), int_field)

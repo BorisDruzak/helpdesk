@@ -40,6 +40,14 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
     assert pack["pack_key"] == "request_forms"
     form_keys = {form["key"] for form in pack.get("forms") or []}
     assert {"breakage", "access", "printer", "site_system"} <= form_keys
+    site_form = next(form for form in pack["forms"] if form["key"] == "site_system")
+    assert site_form["priority_policy"]["impact_field"] == "impact_scope"
+    assert site_form["priority_policy"]["urgency_field"] == "work_continuity"
+    assert site_form["priority_policy"]["importance_field"] == "business_importance"
+    assert {"impact_scope", "work_continuity", "business_importance"}.issubset(
+        {field["key"] for field in site_form["fields"]}
+    )
+    assert "priority_field" in site_form["field_roles"]["impact_scope"]
 
 
 @pytest.mark.asyncio
@@ -175,6 +183,9 @@ async def test_create_ticket_accepts_form_payload_and_sets_ticket_type(test_clie
                 "room": "214",
                 "printer_model": "HP LaserJet",
                 "printer_number": "PR-17",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "printer",
         },
@@ -269,6 +280,9 @@ async def test_create_ticket_from_form_starts_configured_playbook(test_client, t
             "form_payload": {
                 "room": "214",
                 "symptom": "Не печатает",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "printer",
         },
@@ -291,10 +305,10 @@ async def test_create_ticket_from_form_starts_configured_playbook(test_client, t
         ).scalar_one()
 
     assert run.trigger_type == "ticket_created"
-    assert run.context_json["facts_package"]["request_form_data"] == {
-        "room": "214",
-        "symptom": "Не печатает",
-    }
+    request_form_data = run.context_json["facts_package"]["request_form_data"]
+    assert request_form_data["room"] == "214"
+    assert request_form_data["symptom"] == "Не печатает"
+    assert request_form_data["impact_scope"] == "single_user"
     assert event.payload["playbook_key"] == playbook_key
     assert event.payload["playbook_run_id"] == run.id
     assert event.payload["facts_package"]["request_form_summary"][0] == {
@@ -374,6 +388,9 @@ async def test_public_create_ticket_from_form_starts_configured_playbook(test_cl
             "form_payload": {
                 "room": "214",
                 "symptom": "Не печатает",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "printer",
             "urgency": False,
@@ -400,10 +417,10 @@ async def test_public_create_ticket_from_form_starts_configured_playbook(test_cl
         ).scalar_one()
 
     assert run.trigger_type == "ticket_created"
-    assert run.context_json["facts_package"]["request_form_data"] == {
-        "room": "214",
-        "symptom": "Не печатает",
-    }
+    request_form_data = run.context_json["facts_package"]["request_form_data"]
+    assert request_form_data["room"] == "214"
+    assert request_form_data["symptom"] == "Не печатает"
+    assert request_form_data["impact_scope"] == "single_user"
     assert event.payload["playbook_key"] == playbook_key
     assert event.payload["playbook_run_id"] == run.id
 
@@ -479,18 +496,32 @@ def test_validate_form_submission_applies_visible_when_equals():
     visible = validate_form_submission(
         pack,
         form_key="site_system",
-        raw_values={"issue_kind": "site_down", "url": "https://helpdesk.local"},
+        raw_values={
+            "issue_kind": "site_down",
+            "url": "https://helpdesk.local",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
     )
     hidden = validate_form_submission(
         pack,
         form_key="site_system",
-        raw_values={"issue_kind": "auth", "url": "https://should-not-pass.local"},
+        raw_values={
+            "issue_kind": "auth",
+            "url": "https://should-not-pass.local",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
     )
 
     assert visible["submitted_values"]["url"] == "https://helpdesk.local"
-    assert [item["key"] for item in visible["summary_rows"]] == ["issue_kind", "url"]
+    assert ["issue_kind", "url"] == [item["key"] for item in visible["summary_rows"][:2]]
+    assert "impact_scope" in [item["key"] for item in visible["summary_rows"]]
     assert "url" not in hidden["submitted_values"]
-    assert [item["key"] for item in hidden["summary_rows"]] == ["issue_kind"]
+    assert [item["key"] for item in hidden["summary_rows"][:1]] == ["issue_kind"]
+    assert "impact_scope" in [item["key"] for item in hidden["summary_rows"]]
 
 
 def test_validate_form_pack_schema_preserves_request_template_process_context():
@@ -603,7 +634,12 @@ async def test_create_ticket_uses_template_ticket_type_over_request_body(test_cl
             "user_display_name": "Alice",
             "form_key": "website_unavailable",
             "form_pack_key": "request_forms",
-            "form_payload": {"url": "https://reports.example.local"},
+            "form_payload": {
+                "url": "https://reports.example.local",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
             "ticket_type": "consultation",
         },
         headers={"Authorization": "Bearer test-ui-user:alice"},
@@ -663,15 +699,29 @@ def test_validate_form_submission_applies_visible_when_in():
     visible = validate_form_submission(
         pack,
         form_key="hardware",
-        raw_values={"asset_type": "scanner", "inventory_number": "INV-17"},
+        raw_values={
+            "asset_type": "scanner",
+            "inventory_number": "INV-17",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
     )
     hidden = validate_form_submission(
         pack,
         form_key="hardware",
-        raw_values={"asset_type": "pc", "inventory_number": "INV-88"},
+        raw_values={
+            "asset_type": "pc",
+            "inventory_number": "INV-88",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
     )
 
     assert visible["submitted_values"]["inventory_number"] == "INV-17"
-    assert [item["key"] for item in visible["summary_rows"]] == ["asset_type", "inventory_number"]
+    assert ["asset_type", "inventory_number"] == [item["key"] for item in visible["summary_rows"][:2]]
+    assert "impact_scope" in [item["key"] for item in visible["summary_rows"]]
     assert "inventory_number" not in hidden["submitted_values"]
-    assert [item["key"] for item in hidden["summary_rows"]] == ["asset_type"]
+    assert [item["key"] for item in hidden["summary_rows"][:1]] == ["asset_type"]
+    assert "impact_scope" in [item["key"] for item in hidden["summary_rows"]]

@@ -146,3 +146,13 @@
 - HTTP API pack registry: `server/tickets/form_pack_handlers.py`, typed web boundary `server/web_api/admin_handlers.py`
 - Публичная форма: `server/help.html`, `server/help.js`
 - Агентский диалог создания тикета: `pc_agent/ui_gui/chat_panel.py`
+## 2026-04-29 priority question contract
+
+- Priority facts are normal request-template fields, not hardcoded priority selectors.
+- The standard field keys are `impact_scope`, `work_continuity`, `business_importance`, `critical_service` and `public_service`.
+- `priority_policy.impact_field`, `priority_policy.urgency_field`, `priority_policy.importance_field` map those fields into the deterministic priority engine.
+- `priority_policy.modifier_fields` maps boolean modifiers such as `critical_service` and `public_service`.
+- `field_roles` marks how fields participate in process execution. The supported roles in the React builder are `routing_field`, `priority_field`, `sla_field`, `approval_field`, `diagnostic_input`, `closure_evidence` and `display_only`.
+- `/app/admin/forms` can add the standard priority question set to any request template, after which every label, option, required flag and role remains editable in the server UI.
+- The local agent reads the same server form pack. If a template defines priority fields, the agent renders those fields in the priority step and sends their values in `form_payload`. Fixed local priority controls are only a fallback for old packs without priority fields.
+- SLA shown to the requester/agent is not local text. It is read from the created/refreshed ticket payload (`first_response_due_at`, `resolution_due_at`) after the server computes effective priority and SLA targets.
