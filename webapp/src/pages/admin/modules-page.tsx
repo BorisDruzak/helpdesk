@@ -1,8 +1,11 @@
 import { ModulesPanel } from "../../features/modules/modules-panel";
 import { PageHeading } from "../../components/ui/page-heading";
+import { useSession } from "../../features/auth/session-provider";
 
 
 export function AdminModulesPage() {
+  const { session } = useSession();
+
   return (
     <section className="space-y-6">
       <PageHeading
@@ -11,7 +14,7 @@ export function AdminModulesPage() {
         title="Модули"
       />
 
-      <ModulesPanel />
+      <ModulesPanel permissions={session?.permissions ?? []} />
     </section>
   );
 }

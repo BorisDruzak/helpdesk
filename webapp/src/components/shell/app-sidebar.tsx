@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 
 import { appNavigation } from "../../app/navigation";
+import { hasPermission } from "../../features/auth/permissions";
 import { cn } from "../../shared/ui/cn";
 
 type AppSidebarProps = {
@@ -59,9 +60,8 @@ export function AppSidebar({
   hasSupportAccess,
   permissions = []
 }: AppSidebarProps) {
-  const permissionSet = new Set(permissions);
   const canShowItem = (item: (typeof appNavigation)[number]) =>
-    !item.permission || permissionSet.has(item.permission);
+    !item.permission || hasPermission({ permissions }, item.permission);
   const supportItems = appNavigation.filter((item) => item.section === "support" && canShowItem(item));
   const adminItems = appNavigation.filter((item) => item.section === "admin" && canShowItem(item));
 

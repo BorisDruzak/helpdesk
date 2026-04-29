@@ -21,6 +21,7 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SchemaParamEditor, type SchemaParamField, type SchemaParamOption } from "../../components/forms/schema-param-editor";
+import { requirePermission, type PermissionDecision } from "../auth/permissions";
 import { cn } from "../../shared/ui/cn";
 import {
   type AdminPlaybookBlockCatalogItem,
@@ -495,7 +496,11 @@ function FieldLabel({ children }: { children: ReactNode }) {
   return <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{children}</span>;
 }
 
-export function PlaybookBuilderPanel() {
+function resolveOptionalAccess(permissions: string[] | undefined, permission: string): PermissionDecision {
+  return permissions === undefined ? { allowed: true, reason: null } : requirePermission({ permissions }, permission);
+}
+
+export function PlaybookBuilderPanel({ permissions }: { permissions?: string[] } = {}) {
   const queryClient = useQueryClient();
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState<AdminPlaybookDraftRequest | null>(null);
@@ -505,6 +510,7 @@ export function PlaybookBuilderPanel() {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [moduleSearch, setModuleSearch] = useState("");
   const [showGrid, setShowGrid] = useState(true);
+  const publishAccess = resolveOptionalAccess(permissions, "admin.playbooks.publish");
 
   const catalogQuery = useQuery({
     queryKey: ["admin-playbooks-catalog"],
@@ -561,7 +567,7 @@ export function PlaybookBuilderPanel() {
     () => draft?.blocks.find((block) => block.id === selectedBlockId) ?? draft?.blocks[0] ?? null,
     [draft?.blocks, selectedBlockId]
   );
-  const canSave = Boolean(draft?.key.trim() && draft?.name.trim() && draft.blocks.length);
+  const canSave = Boolean(publishAccess.allowed && draft?.key.trim() && draft?.name.trim() && draft.blocks.length);
   const orderedBlocks = useMemo(
     () => (draft ? sortedBlocks(draft.blocks, positions) : []),
     [draft, positions]
@@ -666,6 +672,10 @@ export function PlaybookBuilderPanel() {
   }
 
   function saveOrderedDraft() {
+    if (!publishAccess.allowed) {
+      setFeedback({ tone: "error", text: publishAccess.reason });
+      return;
+    }
     if (!draft) {
       return;
     }
@@ -788,6 +798,12 @@ export function PlaybookBuilderPanel() {
               </Button>
             </div>
           </header>
+
+          {!publishAccess.allowed ? (
+            <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {publishAccess.reason}
+            </div>
+          ) : null}
 
           {feedback ? (
             <div
@@ -1076,7 +1092,11 @@ export function PlaybookBuilderPanel() {
 
                   <Button
                     className="w-full border-rose-200 text-rose-600 hover:bg-rose-50"
+                    disabled={!publishAccess.allowed}
                     onClick={() => {
+                      if (!publishAccess.allowed) {
+                        return;
+                      }
                       setDraft((current) =>
                         current
                           ? { ...current, blocks: current.blocks.filter((block) => block.id !== selectedBlock.id) }

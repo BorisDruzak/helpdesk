@@ -605,7 +605,23 @@ Create a full RBAC management surface for the new admin/support workspaces: admi
 - Effective access now merges built-in role defaults with active access-group permission grants and group queue grants.
 - Web session permissions now include active group grants for the current user, with DB-unavailable fallback to role defaults.
 - `/app/admin/access` now includes controlled group creation and explicit save/apply buttons for permissions, members and queue grants.
-- Still pending for later waves: apply permission-based disabled reasons across ticket actions, modules, playbooks and settings.
+
+### 2026-04-29 Third Slice Completed Locally
+
+- Added shared React permission helper for session permission checks and consistent disabled reasons.
+- Sidebar navigation now uses concrete permission codes for support/admin pages instead of workspace-only visibility.
+- Ticket detail actions now show RBAC disabled reasons and block client-side execution for:
+  - status changes;
+  - public/internal comments;
+  - solution passport generation/refresh/knowledge draft;
+  - ticket playbook launch;
+  - module/tool launch, including low/high risk tool-run permissions.
+- Admin forms/playbooks/modules pages now pass session permissions into their workbenches.
+- Forms builder blocks publish/preferred actions without `admin.forms.publish`.
+- Playbook builder blocks publish/delete actions without `admin.playbooks.publish`.
+- Modules workbench blocks authoring, rollout, preferred, delete, validate, publish and live-test actions without `admin.modules.author`.
+- Focused Vitest coverage now includes permission helper, sidebar visibility, ticket disabled reasons and read-only admin workbench behavior.
+- Still pending for later waves: settings page permissions and broader backend permission checks for support ticket write endpoints.
 
 ### Handoff
 

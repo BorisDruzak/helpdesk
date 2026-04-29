@@ -77,7 +77,7 @@ function createFormsPayload(): AdminFormsPayload {
 }
 
 
-function renderFormsBuilder() {
+function renderFormsBuilder(props?: { permissions?: string[] }) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -89,7 +89,7 @@ function renderFormsBuilder() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <FormsBuilderPanel />
+      <FormsBuilderPanel {...props} />
     </QueryClientProvider>
   );
 }
@@ -101,6 +101,39 @@ afterEach(() => {
 
 
 describe("FormsBuilderPanel", () => {
+  it("shows a read-only reason and blocks publish without admin.forms.publish", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.view"] });
+
+    expect(await screen.findByText("Недостаточно прав: admin.forms.publish")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Опубликовать новую версию|Сохранить изменения/ })[0]).toBeDisabled();
+  });
+
   it("показывает каталог форм и публикует новую версию", async () => {
     const saveCalls: unknown[] = [];
 

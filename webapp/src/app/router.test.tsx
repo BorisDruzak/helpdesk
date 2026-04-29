@@ -39,7 +39,21 @@ function createSupportSession() {
     actor_role: "support",
     auth_type: "ui_token",
     default_workspace: "support",
-    available_workspaces: ["support"]
+    available_workspaces: ["support"],
+    permissions: [
+      "workspace.support.view",
+      "ticket.queue.view",
+      "ticket.detail.view",
+      "ticket.comment.public",
+      "ticket.comment.internal",
+      "ticket.status.change",
+      "ticket.playbook.run",
+      "ticket.tool.run",
+      "module.tool.run.low_risk",
+      "module.tool.run.high_risk",
+      "ticket.passport.manage",
+      "settings.view",
+    ]
   };
 }
 
@@ -49,7 +63,29 @@ function createAdminSession() {
     actor_role: "admin",
     auth_type: "ui_token",
     default_workspace: "admin",
-    available_workspaces: ["admin", "support"]
+    available_workspaces: ["admin", "support"],
+    permissions: [
+      "workspace.admin.view",
+      "workspace.support.view",
+      "ticket.queue.view",
+      "ticket.detail.view",
+      "ticket.comment.public",
+      "ticket.comment.internal",
+      "ticket.status.change",
+      "ticket.playbook.run",
+      "ticket.tool.run",
+      "module.tool.run.low_risk",
+      "module.tool.run.high_risk",
+      "ticket.passport.manage",
+      "admin.inventory.view",
+      "admin.registry.view",
+      "admin.modules.view",
+      "admin.forms.view",
+      "admin.playbooks.view",
+      "admin.observer.view",
+      "admin.access.view",
+      "settings.view",
+    ]
   };
 }
 

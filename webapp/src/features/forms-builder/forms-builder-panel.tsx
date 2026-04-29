@@ -18,6 +18,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
+import { requirePermission, type PermissionDecision } from "../auth/permissions";
 import { cn } from "../../shared/ui/cn";
 import {
   type AdminFormsFieldItem,
@@ -697,7 +698,11 @@ function versionMatchesSearch(item: TicketFormsPackSummary, query: string): bool
     .includes(normalized);
 }
 
-export function FormsBuilderPanel() {
+function resolveOptionalAccess(permissions: string[] | undefined, permission: string): PermissionDecision {
+  return permissions === undefined ? { allowed: true, reason: null } : requirePermission({ permissions }, permission);
+}
+
+export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = {}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftCatalog | null>(null);
   const [baselineFingerprint, setBaselineFingerprint] = useState<string>("null");
@@ -710,6 +715,7 @@ export function FormsBuilderPanel() {
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const [previewValues, setPreviewValues] = useState<PreviewFormValues>({});
   const [previewValidationIssues, setPreviewValidationIssues] = useState<PreviewValidationIssue[]>([]);
+  const publishAccess = resolveOptionalAccess(permissions, "admin.forms.publish");
 
   const formsQuery = useQuery({
     queryKey: ["admin-forms-builder-current"],
@@ -854,6 +860,7 @@ export function FormsBuilderPanel() {
   const validationIssues = useMemo(() => validateDraftCatalog(draft), [draft]);
   const validationErrors = validationIssues.filter((issue) => issue.severity === "error");
   const hasBlockingValidationIssues = validationErrors.length > 0;
+  const publishDisabled = !publishAccess.allowed;
   const dependencyFields =
     selectedForm && selectedField ? getDependencyFields(selectedForm, selectedField.key) : [];
   const dependencyField =
@@ -984,6 +991,12 @@ export function FormsBuilderPanel() {
         </div>
       ) : null}
 
+      {!publishAccess.allowed ? (
+        <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-soft">
+          {publishAccess.reason}
+        </div>
+      ) : null}
+
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <Card className="xl:sticky xl:top-[9.5rem] xl:self-start">
           <CardHeader className="gap-4">
@@ -1018,10 +1031,14 @@ export function FormsBuilderPanel() {
                 Загрузить текущую
               </Button>
               <Button
-                disabled={!draft || saveMutation.isPending || hasBlockingValidationIssues}
+                disabled={publishDisabled || !draft || saveMutation.isPending || hasBlockingValidationIssues}
                 leadingIcon={<Save className="h-4 w-4" />}
                 onClick={() => {
                   if (!draft) {
+                    return;
+                  }
+                  if (!publishAccess.allowed) {
+                    setActionFeedback({ tone: "error", text: publishAccess.reason });
                     return;
                   }
                   setActionFeedback(null);
@@ -1107,9 +1124,15 @@ export function FormsBuilderPanel() {
                         В редактор
                       </Button>
                       <Button
-                        disabled={isPreferred || preferredMutation.isPending}
+                        disabled={publishDisabled || isPreferred || preferredMutation.isPending}
                         leadingIcon={<Star className="h-4 w-4" />}
-                        onClick={() => preferredMutation.mutate(item.version)}
+                        onClick={() => {
+                          if (!publishAccess.allowed) {
+                            setActionFeedback({ tone: "error", text: publishAccess.reason });
+                            return;
+                          }
+                          preferredMutation.mutate(item.version);
+                        }}
                         size="sm"
                       >
                         {`Сделать preferred для ${item.version}`}
@@ -1142,10 +1165,14 @@ export function FormsBuilderPanel() {
                   {hasUnsavedChanges ? "Есть несохранённые изменения" : "Черновик синхронизирован"}
                 </Badge>
                 <Button
-                  disabled={!draft || saveMutation.isPending || hasBlockingValidationIssues}
+                  disabled={publishDisabled || !draft || saveMutation.isPending || hasBlockingValidationIssues}
                   leadingIcon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={() => {
                     if (!draft) {
+                      return;
+                    }
+                    if (!publishAccess.allowed) {
+                      setActionFeedback({ tone: "error", text: publishAccess.reason });
                       return;
                     }
                     setActionFeedback(null);

@@ -42,6 +42,8 @@ import {
   type SupportTicketPlaybooksPayload,
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
+import { requirePermission, requireToolRunPermission } from "../../features/auth/permissions";
+import { useSession } from "../../features/auth/session-provider";
 import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
 import {
   getNextActionOwnerForStatus,
@@ -585,6 +587,7 @@ export function TicketWorkVisibilityCard({
 
 export function TicketStatusActionPanel({
   disabled,
+  disabledReason = null,
   onApply,
   onValueChange,
   pending,
@@ -593,6 +596,7 @@ export function TicketStatusActionPanel({
   ticket,
 }: {
   disabled: boolean;
+  disabledReason?: string | null;
   onApply: (status: string) => void;
   onValueChange: (status: string) => void;
   pending: boolean;
@@ -640,7 +644,8 @@ export function TicketStatusActionPanel({
   const transitionOptions = buildTransitionOptions(statusOptions, ticket.status);
   const transitionGroups = groupStatusOptions(transitionOptions.allowed);
   const blockedTransitionGroups = groupStatusOptions(transitionOptions.blocked);
-  const applyDisabled = disabled || pending || !selectedStatus || !selectedOption;
+  const actionDisabled = disabled || Boolean(disabledReason);
+  const applyDisabled = actionDisabled || pending || !selectedStatus || !selectedOption;
 
   return (
     <div className="min-w-[320px] rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
@@ -657,7 +662,7 @@ export function TicketStatusActionPanel({
           <span>Целевой статус</span>
           <Select
             aria-label="Целевой статус"
-            disabled={disabled || pending || statusOptions.length === 0}
+            disabled={actionDisabled || pending || statusOptions.length === 0}
             onChange={(event) => onValueChange(event.target.value)}
             value={selectedStatus}
           >
@@ -712,7 +717,7 @@ export function TicketStatusActionPanel({
                               ? "border-brand-200 bg-brand-50 text-brand-900"
                               : "border-border bg-white text-slate-700 hover:border-brand-100 hover:bg-surface-subtle",
                           )}
-                          disabled={disabled || pending}
+                          disabled={actionDisabled || pending}
                           onClick={() => onValueChange(option.value)}
                           type="button"
                         >
@@ -767,6 +772,11 @@ export function TicketStatusActionPanel({
       ) : null}
 
       <div className="mt-4 rounded-[0.95rem] bg-surface-subtle px-3 py-3 text-sm">
+        {disabledReason ? (
+          <p className="mb-3 rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+            {disabledReason}
+          </p>
+        ) : null}
         {preview ? (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -808,6 +818,7 @@ type TicketAutomationPlaybook = SupportTicketPlaybooksPayload["playbooks"][numbe
 
 export function TicketAutomationPanel({
   autoPlaybookEvents,
+  disabledReason = null,
   latestOperations,
   onRunPlaybook,
   playbookErrorMessage,
@@ -820,6 +831,7 @@ export function TicketAutomationPanel({
   setSelectedPlaybookVersionId,
 }: {
   autoPlaybookEvents: SupportTicketDetailPayload["timeline"];
+  disabledReason?: string | null;
   latestOperations: SupportTicketDetailPayload["snapshot"]["latest_operations"];
   onRunPlaybook: (playbookVersionId: number) => void;
   playbookErrorMessage: string | null;
@@ -833,6 +845,7 @@ export function TicketAutomationPanel({
 }) {
   const selectedPlaybook = playbooks.find((item) => item.playbook_version_id === selectedPlaybookVersionId) ?? null;
   const latestAutoPlaybook = autoPlaybookEvents[0] ?? null;
+  const launchDisabled = Boolean(disabledReason) || playbookPending || !selectedPlaybook || !selectedPlaybook.can_run;
 
   return (
     <Card>
@@ -926,12 +939,17 @@ export function TicketAutomationPanel({
 
         {playbookResultMessage ? <p className="text-sm text-emerald-700">{playbookResultMessage}</p> : null}
         {playbookErrorMessage ? <p className="text-sm text-rose-700">{playbookErrorMessage}</p> : null}
+        {disabledReason ? (
+          <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+            {disabledReason}
+          </p>
+        ) : null}
 
         <Button
           className="w-full"
-          disabled={playbookPending || !selectedPlaybook || !selectedPlaybook.can_run}
+          disabled={launchDisabled}
           onClick={() => {
-            if (selectedPlaybook) {
+            if (!launchDisabled && selectedPlaybook) {
               onRunPlaybook(selectedPlaybook.playbook_version_id);
             }
           }}
@@ -983,6 +1001,7 @@ export const PASSPORT_SECTION_LABELS: Array<[string, string]> = [
 ];
 
 export function TicketPassportPanel({
+  disabledReason = null,
   isCreatingKnowledgeDraft = false,
   isGenerating,
   knowledgeDraftMessage = null,
@@ -992,6 +1011,7 @@ export function TicketPassportPanel({
   onRefresh,
   payload,
 }: {
+  disabledReason?: string | null;
   isCreatingKnowledgeDraft?: boolean;
   isGenerating: boolean;
   knowledgeDraftMessage?: string | null;
@@ -1008,7 +1028,12 @@ export function TicketPassportPanel({
         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
           Система соберёт черновик из полей заявки, истории, операций, доказательств и итогов решения.
         </p>
-        <Button className="mt-5" disabled={isGenerating} onClick={onGenerate}>
+        {disabledReason ? (
+          <p className="mx-auto mt-4 max-w-xl rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {disabledReason}
+          </p>
+        ) : null}
+        <Button className="mt-5" disabled={Boolean(disabledReason) || isGenerating} onClick={onGenerate}>
           {isGenerating ? "Собираем..." : "Собрать паспорт"}
         </Button>
       </div>
@@ -1028,17 +1053,23 @@ export function TicketPassportPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button disabled={isGenerating} onClick={onRefresh} size="sm" variant="outline">
+          <Button disabled={Boolean(disabledReason) || isGenerating} onClick={onRefresh} size="sm" variant="outline">
             Обновить по последним действиям
           </Button>
           <Button onClick={onPrint} size="sm" variant="outline">
             Печать / PDF
           </Button>
-          <Button disabled={isCreatingKnowledgeDraft} onClick={onKnowledgeDraft} size="sm" variant="outline">
+          <Button disabled={Boolean(disabledReason) || isCreatingKnowledgeDraft} onClick={onKnowledgeDraft} size="sm" variant="outline">
             {isCreatingKnowledgeDraft ? "Готовим черновик..." : "Сохранить как черновик знания"}
           </Button>
         </div>
       </div>
+
+      {disabledReason ? (
+        <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {disabledReason}
+        </p>
+      ) : null}
 
       {knowledgeDraftMessage ? (
         <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
@@ -1079,6 +1110,7 @@ export function TicketDetailPage() {
   const navigate = useNavigate();
   const { ticketId } = useParams();
   const queryClient = useQueryClient();
+  const { session } = useSession();
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [queueSearch, setQueueSearch] = useState("");
@@ -1206,6 +1238,13 @@ export function TicketDetailPage() {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
       }
+      const access = requirePermission(
+        session,
+        messageMode === "internal" ? "ticket.comment.internal" : "ticket.comment.public",
+      );
+      if (!access.allowed) {
+        throw new Error(access.reason);
+      }
       return postSupportTicketMessage(ticketId, messageDraft.trim(), messageMode);
     },
     onSuccess: async () => {
@@ -1221,6 +1260,10 @@ export function TicketDetailPage() {
     mutationFn: async (nextStatus: string) => {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
+      }
+      const access = requirePermission(session, "ticket.status.change");
+      if (!access.allowed) {
+        throw new Error(access.reason);
       }
       return postSupportTicketStatus(ticketId, nextStatus);
     },
@@ -1240,6 +1283,10 @@ export function TicketDetailPage() {
       }
       const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
       const parsed = parseToolParams(selectedTool, selectedPresetId, toolParams);
+      const access = requireToolRunPermission(session, selectedTool?.risk_level);
+      if (!access.allowed) {
+        throw new Error(access.reason);
+      }
       return postSupportTicketToolRun(ticketId, {
         toolName: selectedTool!.tool_name,
         presetId: parsed.presetId,
@@ -1259,6 +1306,10 @@ export function TicketDetailPage() {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
       }
+      const access = requirePermission(session, "ticket.playbook.run");
+      if (!access.allowed) {
+        throw new Error(access.reason);
+      }
       return postSupportTicketPlaybookRun(ticketId, { playbookVersionId });
     },
     onSuccess: async () => {
@@ -1273,6 +1324,10 @@ export function TicketDetailPage() {
     mutationFn: async (mode: "create" | "refresh") => {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
+      }
+      const access = requirePermission(session, "ticket.passport.manage");
+      if (!access.allowed) {
+        throw new Error(access.reason);
       }
       return generateSupportTicketPassport(ticketId, mode);
     },
@@ -1289,6 +1344,10 @@ export function TicketDetailPage() {
     mutationFn: async () => {
       if (!ticketId) {
         throw new Error("Карточка тикета не выбрана.");
+      }
+      const access = requirePermission(session, "ticket.passport.manage");
+      if (!access.allowed) {
+        throw new Error(access.reason);
       }
       return createSupportTicketKnowledgeDraft(ticketId);
     },
@@ -1308,7 +1367,14 @@ export function TicketDetailPage() {
   const historyItems = detail?.timeline.filter((entry) => entry.event_type !== "chat_message") ?? [];
   const autoPlaybookEvents = detail?.timeline.filter((entry) => entry.event_type === "playbook_started") ?? [];
   const selectedTool = toolList.find((tool) => tool.tool_name === selectedToolName) ?? null;
-  const canSendInternal = detail?.actions.can_send_internal_note ?? false;
+  const statusAccess = requirePermission(session, "ticket.status.change");
+  const publicCommentAccess = requirePermission(session, "ticket.comment.public");
+  const internalCommentAccess = requirePermission(session, "ticket.comment.internal");
+  const messageAccess = messageMode === "internal" ? internalCommentAccess : publicCommentAccess;
+  const playbookAccess = requirePermission(session, "ticket.playbook.run");
+  const passportAccess = requirePermission(session, "ticket.passport.manage");
+  const toolAccess = requireToolRunPermission(session, selectedTool?.risk_level);
+  const canSendInternal = Boolean(detail?.actions.can_send_internal_note) && internalCommentAccess.allowed;
   const latestOperations = detail?.snapshot.latest_operations ?? [];
 
   const tabItems = [
@@ -1364,6 +1430,7 @@ export function TicketDetailPage() {
           {detail ? (
             <TicketStatusActionPanel
               disabled={!detail}
+              disabledReason={statusAccess.allowed ? null : statusAccess.reason}
               onApply={(value) => {
                 if (!value) {
                   return;
@@ -1804,6 +1871,7 @@ export function TicketDetailPage() {
                   </div>
                 ) : (
                   <TicketPassportPanel
+                    disabledReason={passportAccess.allowed ? null : passportAccess.reason}
                     isCreatingKnowledgeDraft={knowledgeDraftMutation.isPending}
                     isGenerating={passportGenerateMutation.isPending}
                     knowledgeDraftMessage={knowledgeDraftMessage}
@@ -1826,6 +1894,7 @@ export function TicketDetailPage() {
                         "text-sm font-semibold",
                         messageMode === "public" ? "text-brand-700" : "text-slate-500",
                       )}
+                      disabled={!publicCommentAccess.allowed}
                       onClick={() => setMessageMode("public")}
                       type="button"
                     >
@@ -1854,8 +1923,15 @@ export function TicketDetailPage() {
                         ? "Напишите сообщение пользователю..."
                         : "Добавьте внутренний комментарий для команды..."
                     }
+                    disabled={!messageAccess.allowed}
                     value={messageDraft}
                   />
+
+                  {!messageAccess.allowed ? (
+                    <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {messageAccess.reason}
+                    </p>
+                  ) : null}
 
                   {sendMessageMutation.isError ? (
                     <p className="text-sm text-rose-700">
@@ -1870,7 +1946,7 @@ export function TicketDetailPage() {
                       Последнее событие: {formatDateTime(detail?.timeline[0]?.ts)}
                     </p>
                     <Button
-                      disabled={!messageDraft.trim() || sendMessageMutation.isPending}
+                      disabled={!messageAccess.allowed || !messageDraft.trim() || sendMessageMutation.isPending}
                       onClick={() => {
                         void sendMessageMutation.mutateAsync();
                       }}
@@ -2003,6 +2079,7 @@ export function TicketDetailPage() {
 
           <TicketAutomationPanel
             autoPlaybookEvents={autoPlaybookEvents}
+            disabledReason={playbookAccess.allowed ? null : playbookAccess.reason}
             latestOperations={latestOperations}
             onRunPlaybook={(playbookVersionId) => {
               void playbookMutation.mutateAsync(playbookVersionId);
@@ -2171,12 +2248,20 @@ export function TicketDetailPage() {
                         </p>
                       ) : null}
 
+                      {!toolAccess.allowed ? (
+                        <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                          {toolAccess.reason}
+                        </p>
+                      ) : null}
+
                       <Button
                         className="w-full"
-                        disabled={toolMutation.isPending}
+                        disabled={!toolAccess.allowed || toolMutation.isPending}
                         leadingIcon={<Wrench className="h-4 w-4" />}
                         onClick={() => {
-                          void toolMutation.mutateAsync();
+                          if (toolAccess.allowed) {
+                            void toolMutation.mutateAsync();
+                          }
                         }}
                       >
                         {toolMutation.isPending ? "Запускаем..." : "Запустить инструмент"}

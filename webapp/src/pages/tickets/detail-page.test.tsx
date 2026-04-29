@@ -214,6 +214,36 @@ describe("TicketStatusActionPanel", () => {
     expect(onApply).toHaveBeenCalledWith("resolved");
   });
 
+  it("shows a permission reason when status changes are disabled by RBAC", () => {
+    const onValueChange = vi.fn();
+    const onApply = vi.fn();
+
+    render(
+      <TicketStatusActionPanel
+        disabled={false}
+        disabledReason="Недостаточно прав: ticket.status.change"
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus="in_progress"
+        statusOptions={[{ value: "in_progress", label: "Взять в работу" }]}
+        ticket={{
+          status: "assigned",
+          status_label: "Назначена",
+          requester_status_label: "Заявка принята",
+          next_action_owner: "support",
+          evidence_required: false,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Недостаточно прав: ticket.status.change")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить статус" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
   it("groups quick transition actions without applying until confirmation", () => {
     const onValueChange = vi.fn();
     const onApply = vi.fn();
@@ -414,5 +444,44 @@ describe("TicketAutomationPanel", () => {
     expect(screen.getByText("Автодиагностика формы")).toBeInTheDocument();
     expect(screen.getByText("Автодиагностика запущена: printer.quick_diag")).toBeInTheDocument();
     expect(screen.getByText(/Run #77/)).toBeInTheDocument();
+  });
+
+  it("blocks playbook launch with an RBAC disabled reason", () => {
+    const onRunPlaybook = vi.fn();
+
+    render(
+      <TicketAutomationPanel
+        autoPlaybookEvents={[]}
+        disabledReason="Недостаточно прав: ticket.playbook.run"
+        latestOperations={[]}
+        onRunPlaybook={onRunPlaybook}
+        playbookErrorMessage={null}
+        playbookPending={false}
+        playbookResultMessage={null}
+        playbooks={[
+          {
+            playbook_version_id: 7,
+            key: "printer.quick_diag",
+            name: "Быстрая диагностика принтера",
+            domain: "diagnostics",
+            version: "1.0.0",
+            status: "published",
+            blocks_count: 3,
+            required_tools: ["system.collect"],
+            can_run: true,
+            readiness_label: "Готов к запуску",
+            updated_at: "2026-04-28T07:30:00Z",
+          },
+        ]}
+        playbooksErrorMessage={null}
+        playbooksLoading={false}
+        selectedPlaybookVersionId={7}
+        setSelectedPlaybookVersionId={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("Недостаточно прав: ticket.playbook.run")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Запустить плейбук" }));
+    expect(onRunPlaybook).not.toHaveBeenCalled();
   });
 });

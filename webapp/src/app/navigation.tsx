@@ -33,6 +33,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Ticket,
     section: "support",
     to: SUPPORT_HOME_PATH,
+    permission: "ticket.queue.view",
   },
   {
     label: "Отчеты",
@@ -40,6 +41,7 @@ export const appNavigation: AppNavItem[] = [
     icon: BarChart3,
     section: "support",
     to: "/app/reports",
+    permission: "workspace.support.view",
   },
   {
     label: "База знаний",
@@ -47,6 +49,7 @@ export const appNavigation: AppNavItem[] = [
     icon: BookOpen,
     section: "support",
     to: "/app/knowledge",
+    permission: "workspace.support.view",
   },
   {
     label: "Настройки",
@@ -54,6 +57,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Settings2,
     section: "support",
     to: "/app/settings",
+    permission: "settings.view",
   },
   {
     label: "Инвентарь устройств",
@@ -61,6 +65,7 @@ export const appNavigation: AppNavItem[] = [
     icon: MonitorCog,
     section: "admin",
     to: "/app/admin/inventory",
+    permission: "admin.inventory.view",
   },
   {
     label: "Реестры",
@@ -68,6 +73,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Building2,
     section: "admin",
     to: "/app/admin/registry",
+    permission: "admin.registry.view",
   },
   {
     label: "Карточка устройства",
@@ -75,6 +81,7 @@ export const appNavigation: AppNavItem[] = [
     icon: ShieldCheck,
     section: "admin",
     to: "/app/admin/device",
+    permission: "admin.inventory.view",
   },
   {
     label: "Access Control",
@@ -90,6 +97,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Layers3,
     section: "admin",
     to: "/app/admin/modules",
+    permission: "admin.modules.view",
   },
   {
     label: "Конструктор форм",
@@ -97,6 +105,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Workflow,
     section: "admin",
     to: "/app/admin/forms",
+    permission: "admin.forms.view",
   },
   {
     label: "Плейбуки",
@@ -104,6 +113,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Route,
     section: "admin",
     to: "/app/admin/playbooks",
+    permission: "admin.playbooks.view",
   },
   {
     label: "Observer",
@@ -111,6 +121,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Radar,
     section: "admin",
     to: "/app/admin/observer",
+    permission: "admin.observer.view",
   },
   {
     label: "Настройки",
@@ -118,6 +129,7 @@ export const appNavigation: AppNavItem[] = [
     icon: Settings2,
     section: "admin",
     to: "/app/admin/settings",
+    permission: "settings.view",
   },
 ];
 

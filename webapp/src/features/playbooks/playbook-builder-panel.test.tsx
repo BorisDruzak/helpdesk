@@ -13,7 +13,7 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
-function renderPanel() {
+function renderPanel(props?: { permissions?: string[] }) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -25,7 +25,7 @@ function renderPanel() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <PlaybookBuilderPanel />
+      <PlaybookBuilderPanel {...props} />
     </QueryClientProvider>,
   );
 }
@@ -45,6 +45,39 @@ afterEach(() => {
 });
 
 describe("PlaybookBuilderPanel", () => {
+  it("shows a read-only reason without admin.playbooks.publish", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/playbooks/catalog") {
+          return jsonResponse({
+            status: "success",
+            data: {
+              capabilities: {
+                catalog_endpoint: "/api/web/admin/playbooks/catalog",
+                save_endpoint: "/api/web/admin/playbooks/save",
+                block_types: [],
+                module_kind_options: [],
+              },
+              block_catalog: [],
+              scenario_templates: [],
+              playbooks: [],
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch ${url}`);
+      }),
+    );
+
+    renderPanel({ permissions: ["admin.playbooks.view"] });
+
+    expect(await screen.findByText("Недостаточно прав: admin.playbooks.publish")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Опубликовать/ })).toBeDisabled();
+  });
+
   it("builds a diagnostic playbook on a draggable low-code canvas", async () => {
     const saveCalls: unknown[] = [];
     vi.stubGlobal(

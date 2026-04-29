@@ -44,6 +44,7 @@ import {
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { Tabs } from "../../components/ui/tabs";
+import { requirePermission, type PermissionDecision } from "../auth/permissions";
 import { cn } from "../../shared/ui/cn";
 import {
   deleteModuleWorkbenchVersion,
@@ -592,7 +593,11 @@ function MetaRow({
   );
 }
 
-export function ModulesPanel() {
+function resolveOptionalAccess(permissions: string[] | undefined, permission: string): PermissionDecision {
+  return permissions === undefined ? { allowed: true, reason: null } : requirePermission({ permissions }, permission);
+}
+
+export function ModulesPanel({ permissions }: { permissions?: string[] } = {}) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("registry");
@@ -619,6 +624,7 @@ export function ModulesPanel() {
   const [selectedLabAgentId, setSelectedLabAgentId] = useState("");
   const [selectedLabToolName, setSelectedLabToolName] = useState("");
   const [labTestResult, setLabTestResult] = useState<ModuleLiveTestResult | null>(null);
+  const authorAccess = resolveOptionalAccess(permissions, "admin.modules.author");
   const deferredQuery = useDeferredValue(queryDraft);
 
   const modulesQuery = useQuery({
@@ -734,6 +740,7 @@ export function ModulesPanel() {
     activeSource?.files[0] ??
     null;
   const payloadPreview = draft ? buildDraftPayload(draft) : null;
+  const authorDisabled = !authorAccess.allowed;
 
   const rolloutMutation = useMutation({
     mutationFn: patchModuleWorkbenchRolloutSettings,
@@ -928,6 +935,10 @@ export function ModulesPanel() {
   }
 
   function startNewDraft() {
+    if (!authorAccess.allowed) {
+      setActionFeedback({ tone: "error", text: authorAccess.reason });
+      return;
+    }
     if (!ensureCanLeaveDraft()) {
       return;
     }
@@ -1355,6 +1366,12 @@ export function ModulesPanel() {
         </div>
       ) : null}
 
+      {!authorAccess.allowed ? (
+        <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-soft">
+          {authorAccess.reason}
+        </div>
+      ) : null}
+
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <div className="space-y-6">
           <Card className="xl:sticky xl:top-[9.5rem]">
@@ -1414,6 +1431,7 @@ export function ModulesPanel() {
                   </p>
                   <Button
                     leadingIcon={<PackagePlus className="h-4 w-4" />}
+                    disabled={authorDisabled}
                     onClick={startNewDraft}
                     size="sm"
                   >
@@ -1555,9 +1573,13 @@ export function ModulesPanel() {
                   </label>
 
                   <Button
-                    disabled={rolloutMutation.isPending || !rolloutSettings}
+                    disabled={authorDisabled || rolloutMutation.isPending || !rolloutSettings}
                     leadingIcon={<Save className="h-4 w-4" />}
                     onClick={() => {
+                      if (!authorAccess.allowed) {
+                        setActionFeedback({ tone: "error", text: authorAccess.reason });
+                        return;
+                      }
                       if (!rolloutSettings) {
                         return;
                       }
@@ -1689,14 +1711,18 @@ export function ModulesPanel() {
                                     Editor
                                   </Button>
                                   <Button
-                                    disabled={preferredMutation.isPending}
+                                    disabled={authorDisabled || preferredMutation.isPending}
                                     leadingIcon={<Sparkles className="h-4 w-4" />}
-                                    onClick={() =>
+                                    onClick={() => {
+                                      if (!authorAccess.allowed) {
+                                        setActionFeedback({ tone: "error", text: authorAccess.reason });
+                                        return;
+                                      }
                                       preferredMutation.mutate({
                                         moduleName: selectedFamily.module_name,
                                         version: version.is_preferred ? null : version.version,
                                       })
-                                    }
+                                    }}
                                     size="sm"
                                   >
                                     {version.is_preferred
@@ -1704,9 +1730,13 @@ export function ModulesPanel() {
                                       : `Сделать preferred для ${version.version}`}
                                   </Button>
                                   <Button
-                                    disabled={deleteMutation.isPending}
+                                    disabled={authorDisabled || deleteMutation.isPending}
                                     leadingIcon={<Trash2 className="h-4 w-4" />}
                                     onClick={() => {
+                                      if (!authorAccess.allowed) {
+                                        setActionFeedback({ tone: "error", text: authorAccess.reason });
+                                        return;
+                                      }
                                       if (
                                         window.confirm(
                                           `Удалить ${selectedFamily.module_name} ${version.version} из реестра?`
@@ -1896,6 +1926,7 @@ export function ModulesPanel() {
                             <Button
                               className="w-full"
                               disabled={
+                                authorDisabled ||
                                 liveTestMutation.isPending ||
                                 !selectedLabAgent ||
                                 !selectedLabAgent.compatible ||
@@ -1903,6 +1934,10 @@ export function ModulesPanel() {
                               }
                               leadingIcon={<PlayCircle className="h-4 w-4" />}
                               onClick={() => {
+                                if (!authorAccess.allowed) {
+                                  setActionFeedback({ tone: "error", text: authorAccess.reason });
+                                  return;
+                                }
                                 setLabTestResult(null);
                                 liveTestMutation.mutate();
                               }}
@@ -1996,9 +2031,13 @@ export function ModulesPanel() {
                       Сбросить
                     </Button>
                     <Button
-                      disabled={!draft || validateMutation.isPending || localIssues.length > 0}
+                      disabled={authorDisabled || !draft || validateMutation.isPending || localIssues.length > 0}
                       leadingIcon={<CheckCircle2 className="h-4 w-4" />}
                       onClick={() => {
+                        if (!authorAccess.allowed) {
+                          setActionFeedback({ tone: "error", text: authorAccess.reason });
+                          return;
+                        }
                         if (!draft) {
                           return;
                         }
@@ -2011,9 +2050,13 @@ export function ModulesPanel() {
                       {validateMutation.isPending ? "Проверяем..." : "Server validate"}
                     </Button>
                     <Button
-                      disabled={!draft || saveMutation.isPending || localIssues.length > 0}
+                      disabled={authorDisabled || !draft || saveMutation.isPending || localIssues.length > 0}
                       leadingIcon={<Save className="h-4 w-4" />}
                       onClick={() => {
+                        if (!authorAccess.allowed) {
+                          setActionFeedback({ tone: "error", text: authorAccess.reason });
+                          return;
+                        }
                         if (!draft) {
                           return;
                         }

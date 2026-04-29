@@ -1,8 +1,11 @@
 import { PageHeading } from "../../components/ui/page-heading";
+import { useSession } from "../../features/auth/session-provider";
 import { PlaybookBuilderPanel } from "../../features/playbooks/playbook-builder-panel";
 
 
 export function AdminPlaybooksPage() {
+  const { session } = useSession();
+
   return (
     <section className="space-y-6">
       <PageHeading
@@ -11,7 +14,7 @@ export function AdminPlaybooksPage() {
         title="Плейбуки диагностики"
       />
 
-      <PlaybookBuilderPanel />
+      <PlaybookBuilderPanel permissions={session?.permissions ?? []} />
     </section>
   );
 }

@@ -359,7 +359,7 @@ function createLiveTestCandidatesPayload(moduleName = "network_ping", version = 
   };
 }
 
-function renderModulesPanel() {
+function renderModulesPanel(props?: { permissions?: string[] }) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -371,7 +371,7 @@ function renderModulesPanel() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <ModulesPanel />
+      <ModulesPanel {...props} />
     </QueryClientProvider>
   );
 }
@@ -383,6 +383,32 @@ afterEach(() => {
 
 
 describe("ModulesPanel", () => {
+  it("shows a read-only reason and blocks author actions without admin.modules.author", async () => {
+    const state = createModulesState();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/modules/workbench" && method === "GET") {
+          return jsonResponse({
+            status: "ok",
+            ...cloneModulesPayload(state)
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderModulesPanel({ permissions: ["admin.modules.view"] });
+
+    expect(await screen.findByText("Недостаточно прав: admin.modules.author")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Новый модуль/ })).toBeDisabled();
+  });
+
   it("warns that Windows drafts need a lab-agent live test before preferred rollout", async () => {
     const state = createModulesState();
 

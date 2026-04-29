@@ -1,8 +1,11 @@
 import { PageHeading } from "../../components/ui/page-heading";
+import { useSession } from "../../features/auth/session-provider";
 import { FormsBuilderPanel } from "../../features/forms-builder/forms-builder-panel";
 
 
 export function AdminFormsPage() {
+  const { session } = useSession();
+
   return (
     <section className="space-y-6">
       <PageHeading
@@ -11,7 +14,7 @@ export function AdminFormsPage() {
         title="Конструктор форм"
       />
 
-      <FormsBuilderPanel />
+      <FormsBuilderPanel permissions={session?.permissions ?? []} />
     </section>
   );
 }
