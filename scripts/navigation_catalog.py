@@ -100,6 +100,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/websocket/agent_handshake.py",
             "server/websocket/agent_services.py",
+            "server/websocket/command_result_components.py",
             "server/app/repos/device_outbox_repo.py",
             "pc_agent/ws_agent.py",
             "pc_agent/core/sender.py",

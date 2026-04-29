@@ -208,6 +208,7 @@ elif status == "consent_required":
   сервер берёт `payload.data.observations.modules`, приводит в flattened inventory и обновляет `device_modules` через `sync_modules_inventory(..., source="command_result")`.
 - `list_tools` success:
   сервер берёт `payload.data.observations.tools`, канонически сортирует список, вычисляет `toolset_hash`, создаёт/переиспользует запись в `device_toolset_snapshots`, обновляет `devices.current_toolset_hash`, `current_toolset_snapshot_id` и `last_toolset_refresh_at`.
+  Implementation note: command-result post-processing snapshots ORM scalar fields from `Device` before later async DB writes, so `list_tools` side effects do not trigger SQLAlchemy async lazy-load/`greenlet_spawn` warnings after auto-install follow-up refreshes.
 
 Назначение:
 

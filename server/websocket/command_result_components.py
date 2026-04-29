@@ -163,6 +163,9 @@ class CommandResultArtifactHandler:
             device = await devices_repo.get_by_device_id(device_id)
             if not device:
                 return
+            device_agent_version = device.agent_version or "unknown"
+            current_toolset_hash = device.current_toolset_hash
+            current_toolset_snapshot_id = device.current_toolset_snapshot_id
 
             sorted_tools = sort_tools(tools_list)
             toolset_hash = compute_toolset_hash(sorted_tools)
@@ -170,20 +173,20 @@ class CommandResultArtifactHandler:
                 device_id=device_id,
                 toolset_hash=toolset_hash,
                 toolset_json={"tools": sorted_tools},
-                agent_version=device.agent_version or "unknown",
+                agent_version=device_agent_version,
                 tool_count=len(sorted_tools),
             )
             await devices_repo.update_toolset_refresh_time(device_id)
             if snapshot_id is not None and (
-                device.current_toolset_hash != toolset_hash
-                or device.current_toolset_snapshot_id != snapshot_id
+                current_toolset_hash != toolset_hash
+                or current_toolset_snapshot_id != snapshot_id
             ):
                 await devices_repo.update_toolset_snapshot_ref(
                     device_id=device_id,
                     toolset_hash=toolset_hash,
                     snapshot_id=snapshot_id,
                 )
-                if device.current_toolset_hash != toolset_hash:
+                if current_toolset_hash != toolset_hash:
                     await devices_repo.update_toolset_info(
                         device_id=device_id,
                         toolset_hash=toolset_hash,
