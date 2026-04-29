@@ -276,7 +276,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, SLA, chat, public access, queue behavior, form-aware routing over ticket/request-form context, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, SLA, chat, public access, queue behavior, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",

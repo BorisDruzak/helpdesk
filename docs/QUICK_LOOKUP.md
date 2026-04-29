@@ -64,6 +64,7 @@
 ## 2026-04-23 form-aware routing
 
 - Ticket routing now understands form-derived context from `server/tickets/routing_service.py`: `ticket_type`, `request_kind`, `custom_fields`, `request_form_data`, and normalized `request_form_*` metadata are available both for live ticket creation and for preview.
+- `tickets.ticket_type` is `varchar(64)` as of migration `061`, so form `request_kind` slugs used by routing preview and real ticket creation share the same practical length budget instead of failing during DB insert.
 - The typed settings payload `GET /api/web/settings` now includes a `routing_builder` catalog assembled from the current preferred form pack, so `/app/settings` can build routing rules against both base ticket fields and `request_form_data.<field>` keys without hand-written JSON.
 - The typed admin forms boundary now also exposes `POST /api/web/admin/forms/route-preview`; `/app/admin/forms` can submit a draft form plus sample answers and see which queue/rule would match before publishing.
 - The typed support detail payload `GET /api/web/support/tickets/{ticket_id}` now includes normalized `request_form` data for the `/app/support` sidebar block `Данные формы`.

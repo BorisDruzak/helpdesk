@@ -51,7 +51,7 @@ class Ticket(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     # Расширенная модель (миграция 018)
-    ticket_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="request")
+    ticket_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default="request")
     priority: Mapped[str] = mapped_column(String(5), nullable=False, server_default="P3")
     impact: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     urgency: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

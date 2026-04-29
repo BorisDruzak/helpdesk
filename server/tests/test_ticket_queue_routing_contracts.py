@@ -250,6 +250,49 @@ async def test_create_ticket_routes_by_request_kind_from_form_submission(test_cl
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_accepts_long_form_request_kind_for_routing(test_client, test_engine):
+    assert Ticket.__table__.c.ticket_type.type.length == 64
+    session_maker = async_sessionmaker(test_engine)
+    request_kind = "software_install_enterprise_package"
+
+    async with session_maker() as session:
+        fallback_queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1")
+        software_queue = await _seed_queue(session, code="software", name="Software Queue")
+        session.add(
+            TicketRoutingRule(
+                enabled=True,
+                priority_order=10,
+                condition_json={"field": "request_kind", "op": "eq", "value": request_kind},
+                target_queue_id=software_queue.id,
+            )
+        )
+        fallback_queue_id = fallback_queue.id
+        software_queue_id = software_queue.id
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Software install",
+            "description": "Install the enterprise client package",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alex",
+            "ticket_type": request_kind,
+        },
+        headers={**_support_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket is not None
+        assert ticket.ticket_type == request_kind
+        assert ticket.queue_id == software_queue_id
+        assert ticket.queue_id != fallback_queue_id
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_routes_by_request_form_data_field(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 
