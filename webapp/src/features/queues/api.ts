@@ -71,6 +71,18 @@ export type SupportTicketDetailPayload = {
     status_reason?: string | null;
     requester_display_name: string | null;
     device_id: string | null;
+    ticket_type?: string | null;
+    category_id?: number | null;
+    service_id?: number | null;
+    subcategory_id?: number | null;
+    priority?: string | null;
+    priority_class?: string | null;
+    impact?: number | null;
+    urgency?: number | null;
+    importance?: number | null;
+    priority_decision?: Record<string, unknown>;
+    first_response_due_at?: string | null;
+    resolution_due_at?: string | null;
     queue: {
       id: number | null;
       code: string | null;

@@ -64,8 +64,24 @@ type DraftField = {
 type DraftForm = {
   key: string;
   request_kind: string;
+  ticket_type: string;
   title: string;
   description: string;
+  category_id: string;
+  service_id: string;
+  subcategory_id: string;
+  default_queue_id: string;
+  sla_policy_id: string;
+  suggested_playbook_id: string;
+  priority_impact_field: string;
+  priority_urgency_field: string;
+  priority_importance_field: string;
+  field_roles_json: string;
+  routing_policy_json: string;
+  approval_policy_json: string;
+  ola_policy_json: string;
+  closure_policy_json: string;
+  visibility_policy_json: string;
   playbook_triggers: AdminFormsPlaybookTrigger[];
   fields: DraftField[];
 };
@@ -88,6 +104,80 @@ type PreviewValidationIssue = {
   key: string;
   message: string;
 };
+
+const WORKFLOW_PROFILE_OPTIONS = [
+  { value: "incident", label: "incident" },
+  { value: "service_request", label: "service_request" },
+  { value: "access_request", label: "access_request" },
+  { value: "change_request", label: "change_request" },
+  { value: "consultation", label: "consultation" },
+] as const;
+
+const TICKET_TYPE_BY_FORM_KIND: Record<string, string> = {
+  breakage: "incident",
+  printer: "incident",
+  network: "incident",
+  site_system: "incident",
+  mail_issue: "incident",
+  access: "access_request",
+  new_account: "access_request",
+  software_install: "service_request",
+  hardware_replacement: "service_request",
+};
+
+function inferTicketType(formKey: string, requestKind: string): string {
+  return TICKET_TYPE_BY_FORM_KIND[requestKind.trim().toLowerCase()]
+    ?? TICKET_TYPE_BY_FORM_KIND[formKey.trim().toLowerCase()]
+    ?? "service_request";
+}
+
+function normalizeTicketType(value: unknown, formKey: string, requestKind: string): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  return raw || inferTicketType(formKey, requestKind);
+}
+
+function jsonDraft(value: unknown): string {
+  if (!value || (typeof value === "object" && Object.keys(value as Record<string, unknown>).length === 0)) {
+    return "";
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function parseJsonDraft(value: string, fallback: Record<string, unknown> = {}): Record<string, unknown> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseFieldRolesDraft(value: string): Record<string, string[]> {
+  const parsed = parseJsonDraft(value);
+  return Object.fromEntries(
+    Object.entries(parsed)
+      .map(([key, roles]): [string, string[]] => [
+        key,
+        Array.isArray(roles) ? roles.map((role) => String(role ?? "").trim()).filter(Boolean) : [],
+      ])
+      .filter(([key, roles]) => key.trim() && roles.length)
+  );
+}
+
+function parseOptionalInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -165,8 +255,27 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
     forms: payload.forms.map((form) => ({
       key: form.key,
       request_kind: form.request_kind,
+      ticket_type: normalizeTicketType(form.ticket_type, form.key, form.request_kind),
       title: form.title,
       description: form.description ?? "",
+      category_id: form.category_id != null ? String(form.category_id) : "",
+      service_id: form.service_id != null ? String(form.service_id) : "",
+      subcategory_id: form.subcategory_id != null ? String(form.subcategory_id) : "",
+      default_queue_id: form.default_queue_id != null ? String(form.default_queue_id) : "",
+      sla_policy_id: form.sla_policy_id != null ? String(form.sla_policy_id) : "",
+      suggested_playbook_id: form.suggested_playbook_id ?? "",
+      priority_impact_field:
+        typeof form.priority_policy?.impact_field === "string" ? form.priority_policy.impact_field : "",
+      priority_urgency_field:
+        typeof form.priority_policy?.urgency_field === "string" ? form.priority_policy.urgency_field : "",
+      priority_importance_field:
+        typeof form.priority_policy?.importance_field === "string" ? form.priority_policy.importance_field : "",
+      field_roles_json: jsonDraft(form.field_roles),
+      routing_policy_json: jsonDraft(form.routing_policy),
+      approval_policy_json: jsonDraft(form.approval_policy),
+      ola_policy_json: jsonDraft(form.ola_policy),
+      closure_policy_json: jsonDraft(form.closure_policy),
+      visibility_policy_json: jsonDraft(form.visibility_policy),
       playbook_triggers: form.playbook_triggers ?? [],
       fields: form.fields.map((field) => ({
         key: field.key,
@@ -199,16 +308,36 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
       const fieldsRaw = Array.isArray((form as { fields?: unknown[] }).fields)
         ? ((form as { fields: unknown[] }).fields ?? [])
         : [];
+      const formKey = String((form as { key?: unknown }).key ?? `form_${formIndex + 1}`);
+      const requestKind = String((form as { request_kind?: unknown }).request_kind ?? formKey);
 
       return {
-        key: String((form as { key?: unknown }).key ?? `form_${formIndex + 1}`),
-        request_kind: String(
-          (form as { request_kind?: unknown }).request_kind ??
-            (form as { key?: unknown }).key ??
-            `form_${formIndex + 1}`
-        ),
+        key: formKey,
+        request_kind: requestKind,
         title: String((form as { title?: unknown }).title ?? "Новая форма"),
         description: String((form as { description?: unknown }).description ?? ""),
+        ticket_type: normalizeTicketType((form as { ticket_type?: unknown }).ticket_type, formKey, requestKind),
+        category_id: String((form as { category_id?: unknown }).category_id ?? ""),
+        service_id: String((form as { service_id?: unknown }).service_id ?? ""),
+        subcategory_id: String((form as { subcategory_id?: unknown }).subcategory_id ?? ""),
+        default_queue_id: String((form as { default_queue_id?: unknown }).default_queue_id ?? ""),
+        sla_policy_id: String((form as { sla_policy_id?: unknown }).sla_policy_id ?? ""),
+        suggested_playbook_id: String((form as { suggested_playbook_id?: unknown }).suggested_playbook_id ?? ""),
+        priority_impact_field: String(
+          ((form as { priority_policy?: Record<string, unknown> }).priority_policy ?? {}).impact_field ?? ""
+        ),
+        priority_urgency_field: String(
+          ((form as { priority_policy?: Record<string, unknown> }).priority_policy ?? {}).urgency_field ?? ""
+        ),
+        priority_importance_field: String(
+          ((form as { priority_policy?: Record<string, unknown> }).priority_policy ?? {}).importance_field ?? ""
+        ),
+        field_roles_json: jsonDraft((form as { field_roles?: unknown }).field_roles),
+        routing_policy_json: jsonDraft((form as { routing_policy?: unknown }).routing_policy),
+        approval_policy_json: jsonDraft((form as { approval_policy?: unknown }).approval_policy),
+        ola_policy_json: jsonDraft((form as { ola_policy?: unknown }).ola_policy),
+        closure_policy_json: jsonDraft((form as { closure_policy?: unknown }).closure_policy),
+        visibility_policy_json: jsonDraft((form as { visibility_policy?: unknown }).visibility_policy),
         playbook_triggers: Array.isArray((form as { playbook_triggers?: unknown[] }).playbook_triggers)
           ? ((form as { playbook_triggers: unknown[] }).playbook_triggers ?? [])
               .map((triggerRaw) => {
@@ -275,8 +404,28 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
     forms: catalog.forms.map((form) => ({
       key: form.key,
       request_kind: form.request_kind,
+      ticket_type: form.ticket_type,
       title: form.title,
       description: form.description,
+      category_id: parseOptionalInt(form.category_id),
+      service_id: parseOptionalInt(form.service_id),
+      subcategory_id: parseOptionalInt(form.subcategory_id),
+      default_queue_id: parseOptionalInt(form.default_queue_id),
+      sla_policy_id: parseOptionalInt(form.sla_policy_id),
+      suggested_playbook_id: form.suggested_playbook_id.trim() || undefined,
+      field_roles: parseFieldRolesDraft(form.field_roles_json),
+      priority_policy: {
+        ...(form.priority_impact_field.trim() ? { impact_field: form.priority_impact_field.trim() } : {}),
+        ...(form.priority_urgency_field.trim() ? { urgency_field: form.priority_urgency_field.trim() } : {}),
+        ...(form.priority_importance_field.trim()
+          ? { importance_field: form.priority_importance_field.trim() }
+          : {}),
+      },
+      routing_policy: parseJsonDraft(form.routing_policy_json),
+      approval_policy: parseJsonDraft(form.approval_policy_json),
+      ola_policy: parseJsonDraft(form.ola_policy_json),
+      closure_policy: parseJsonDraft(form.closure_policy_json),
+      visibility_policy: parseJsonDraft(form.visibility_policy_json),
       playbook_triggers: form.playbook_triggers,
       fields: form.fields.map((field) => {
         const options = field.options.filter((option) => option.value.trim() && option.label.trim());
@@ -369,6 +518,22 @@ function createEmptyForm(index: number): DraftForm {
     request_kind: key,
     title: "Новая форма",
     description: "",
+    ticket_type: "service_request",
+    category_id: "",
+    service_id: "",
+    subcategory_id: "",
+    default_queue_id: "",
+    sla_policy_id: "",
+    suggested_playbook_id: "",
+    priority_impact_field: "",
+    priority_urgency_field: "",
+    priority_importance_field: "",
+    field_roles_json: "",
+    routing_policy_json: "",
+    approval_policy_json: "",
+    ola_policy_json: "",
+    closure_policy_json: "",
+    visibility_policy_json: "",
     playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
   };
@@ -1412,6 +1577,129 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               value={selectedForm.description}
                             />
                           </label>
+                        </div>
+
+                        <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Процессный контекст</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Шаблон обращения задает ticket_type, классификацию, SLA и поля, из которых считается приоритет.
+                              </p>
+                            </div>
+                            <Badge tone="info">{selectedForm.ticket_type}</Badge>
+                          </div>
+                          <div className="mt-4 grid gap-4 md:grid-cols-3">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>ticket_type</span>
+                              <Select
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                          ...form,
+                                          ticket_type: value,
+                                        }))
+                                      : current
+                                  );
+                                }}
+                                value={selectedForm.ticket_type}
+                              >
+                                {WORKFLOW_PROFILE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                            </label>
+                            {[
+                              ["category_id", "category_id"],
+                              ["service_id", "service_id"],
+                              ["subcategory_id", "subcategory_id"],
+                              ["default_queue_id", "default_queue_id"],
+                              ["sla_policy_id", "sla_policy_id"],
+                              ["suggested_playbook_id", "suggested_playbook_id"],
+                            ].map(([key, label]) => (
+                              <label className="space-y-2 text-sm font-medium text-slate-800" key={key}>
+                                <span>{label}</span>
+                                <input
+                                  className="field-base h-11 w-full px-4 text-sm"
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+                                    setDraft((current) =>
+                                      current
+                                        ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                            ...form,
+                                            [key]: value,
+                                          }))
+                                        : current
+                                    );
+                                  }}
+                                  value={String(selectedForm[key as keyof DraftForm] ?? "")}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                          <div className="mt-4 grid gap-4 md:grid-cols-3">
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>impact field</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                          ...form,
+                                          priority_impact_field: value,
+                                        }))
+                                      : current
+                                  );
+                                }}
+                                placeholder="affected_scope"
+                                value={selectedForm.priority_impact_field}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>urgency field</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                          ...form,
+                                          priority_urgency_field: value,
+                                        }))
+                                      : current
+                                  );
+                                }}
+                                placeholder="work_continuity"
+                                value={selectedForm.priority_urgency_field}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm font-medium text-slate-800">
+                              <span>importance field</span>
+                              <input
+                                className="field-base h-11 w-full px-4 text-sm"
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setDraft((current) =>
+                                    current
+                                      ? updateFormInCatalog(current, selectedForm.key, (form) => ({
+                                          ...form,
+                                          priority_importance_field: value,
+                                        }))
+                                      : current
+                                  );
+                                }}
+                                placeholder="business_deadline"
+                                value={selectedForm.priority_importance_field}
+                              />
+                            </label>
+                          </div>
                         </div>
 
                         <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">

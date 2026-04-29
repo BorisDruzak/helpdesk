@@ -18,6 +18,7 @@ from tickets.statuses import (
     requester_status_for_internal,
     wait_type_for_status,
 )
+from tickets.workflow_profiles import get_workflow_profile
 
 
 SUPPORT_TRANSITIONS = {
@@ -114,6 +115,8 @@ class TicketWorkflowService:
         source: str = "api",
     ) -> dict:
         now = datetime.now(timezone.utc)
+        ticket = await self.ticket_repo.get_ticket(ticket_id)
+        workflow_profile = get_workflow_profile(getattr(ticket, "ticket_type", None) if ticket else None)
         updates = {
             "next_action_owner": next_action_owner_for_status(to_status),
             "requester_status": requester_status_for_internal(to_status),
@@ -131,6 +134,7 @@ class TicketWorkflowService:
             "reason": reason or "",
             "source": source,
             "normalized": True,
+            "workflow_profile": workflow_profile.ticket_type,
             "next_action_owner": updates["next_action_owner"],
             "requester_status": updates["requester_status"],
         }
@@ -142,7 +146,6 @@ class TicketWorkflowService:
             updates["root_cause"] = root_cause
 
         if to_status == "resolved":
-            ticket = await self.ticket_repo.get_ticket(ticket_id)
             if ticket and getattr(ticket, "evidence_required", False) and not getattr(ticket, "evidence_ref", None):
                 evidence_exists = await self.session.scalar(
                     select(TicketEvidenceItem.id)

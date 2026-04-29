@@ -318,8 +318,22 @@ class AdminFormsFormItem(BaseModel):
 
     key: str
     request_kind: str
+    ticket_type: str | None = None
     title: str
     description: str | None = None
+    category_id: int | None = None
+    service_id: int | None = None
+    subcategory_id: int | None = None
+    default_queue_id: int | None = None
+    sla_policy_id: int | None = None
+    suggested_playbook_id: str | None = None
+    field_roles: dict[str, list[str]] = Field(default_factory=dict)
+    priority_policy: dict[str, Any] = Field(default_factory=dict)
+    routing_policy: dict[str, Any] = Field(default_factory=dict)
+    approval_policy: dict[str, Any] = Field(default_factory=dict)
+    ola_policy: dict[str, Any] = Field(default_factory=dict)
+    closure_policy: dict[str, Any] = Field(default_factory=dict)
+    visibility_policy: dict[str, Any] = Field(default_factory=dict)
     fields: list[AdminFormsFieldItem] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
@@ -388,8 +402,22 @@ class AdminFormsSaveFormRequest(BaseModel):
 
     key: str
     request_kind: str
+    ticket_type: str | None = None
     title: str
     description: str | None = None
+    category_id: int | None = None
+    service_id: int | None = None
+    subcategory_id: int | None = None
+    default_queue_id: int | None = None
+    sla_policy_id: int | None = None
+    suggested_playbook_id: str | None = None
+    field_roles: dict[str, list[str]] = Field(default_factory=dict)
+    priority_policy: dict[str, Any] = Field(default_factory=dict)
+    routing_policy: dict[str, Any] = Field(default_factory=dict)
+    approval_policy: dict[str, Any] = Field(default_factory=dict)
+    ola_policy: dict[str, Any] = Field(default_factory=dict)
+    closure_policy: dict[str, Any] = Field(default_factory=dict)
+    visibility_policy: dict[str, Any] = Field(default_factory=dict)
     fields: list[AdminFormsSaveFieldRequest] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 

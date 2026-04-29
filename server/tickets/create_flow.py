@@ -173,6 +173,10 @@ async def create_ticket_with_side_effects(
     initial_message_from: Optional[str] = None,
     include_public_access: bool = True,
     ticket_type: str = "request",
+    category_id: Optional[int] = None,
+    service_id: Optional[int] = None,
+    subcategory_id: Optional[int] = None,
+    sla_policy_id: Optional[int] = None,
     extra_custom_fields: Optional[dict[str, Any]] = None,
     state: Any | None = None,
 ) -> Dict[str, Any]:
@@ -186,15 +190,37 @@ async def create_ticket_with_side_effects(
         status="new",
         requester_id=requester_id,
         ticket_type=ticket_type,
+        category_id=category_id,
+        service_id=service_id,
+        subcategory_id=subcategory_id,
+        sla_policy_id=sla_policy_id,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})
+    priority_class = normalized_priority.get("effective_priority") or normalized_priority.get("priority_class") or "P3"
+    priority_decision = {
+        "impact": normalized_priority.get("impact"),
+        "urgency": normalized_priority.get("urgency"),
+        "importance": normalized_priority.get("importance"),
+        "computed_priority": normalized_priority.get("computed_priority") or priority_class,
+        "manual_priority": normalized_priority.get("manual_priority"),
+        "effective_priority": priority_class,
+        "priority_class": priority_class,
+        "legacy_priority": normalized_priority.get("legacy_priority"),
+        "priority_source": normalized_priority.get("priority_source") or "system",
+        "priority_reason": normalized_priority.get("priority_reason")
+        or normalized_priority.get("urgency_reason")
+        or "Не указано при создании",
+        "manual_priority_reason": normalized_priority.get("manual_priority_reason"),
+        "applied_modifiers": normalized_priority.get("applied_modifiers") or [],
+    }
     custom_fields = merge_requester_custom_fields(
         getattr(ticket, "custom_fields", None),
         user_display_name=user_display_name,
         requester_profile=requester_profile or {},
-        priority_class=normalized_priority["priority_class"],
+        priority_class=priority_class,
     )
+    custom_fields["priority_decision"] = priority_decision
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
 
@@ -224,8 +250,9 @@ async def create_ticket_with_side_effects(
 
     await ticket_repo.update_ticket(
         ticket_id,
-        urgency=normalized_priority["urgency"],
-        importance=normalized_priority["importance"],
+        impact=normalized_priority.get("impact"),
+        urgency=normalized_priority.get("urgency"),
+        importance=normalized_priority.get("importance"),
         urgency_reason=normalized_priority["urgency_reason"],
         importance_reason=normalized_priority["importance_reason"],
         priority=normalized_priority["legacy_priority"],

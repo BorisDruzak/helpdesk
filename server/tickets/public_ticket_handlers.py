@@ -44,6 +44,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_submission,
 )
+from tickets.priority_policy import compute_priority_from_policy
 from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
 
@@ -128,6 +129,8 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
         async with get_session() as db_session:
             ticket_repo = TicketEventsRepo(db_session)
             extra_custom_fields: dict[str, Any] | None = None
+            template_context: dict[str, Any] = {}
+            ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
             if form_key:
                 try:
                     form_pack = await resolve_ticket_form_pack(
@@ -141,6 +144,19 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                         raw_values=form_payload or {},
                     )
                     extra_custom_fields = build_form_custom_fields(validated_submission)
+                    ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
+                    template_context = validated_submission.get("template_context") or {}
+                    priority_policy = template_context.get("priority_policy") or {}
+                    if priority_policy:
+                        normalized_priority = compute_priority_from_policy(
+                            priority_policy=priority_policy,
+                            submitted_values=validated_submission.get("submitted_values") or {},
+                            fallback={
+                                "impact": data.get("impact"),
+                                "urgency": urgency_input,
+                                "importance": importance_input,
+                            },
+                        )
                 except ValueError as exc:
                     details = exc.args[0] if exc.args else "invalid form payload"
                     return _validation_error({"form_payload": details})
@@ -156,8 +172,27 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 getattr(ticket, "custom_fields", None),
                 user_display_name=user_display_name,
                 requester_profile=requester_profile,
-                priority_class=(normalized_priority or {}).get("priority_class", "P3"),
+                priority_class=(normalized_priority or {}).get("effective_priority")
+                or (normalized_priority or {}).get("priority_class", "P3"),
             )
+            custom_fields["priority_decision"] = {
+                "impact": (normalized_priority or {}).get("impact"),
+                "urgency": (normalized_priority or {}).get("urgency"),
+                "importance": (normalized_priority or {}).get("importance"),
+                "computed_priority": (normalized_priority or {}).get("computed_priority")
+                or (normalized_priority or {}).get("priority_class", "P3"),
+                "manual_priority": (normalized_priority or {}).get("manual_priority"),
+                "effective_priority": (normalized_priority or {}).get("effective_priority")
+                or (normalized_priority or {}).get("priority_class", "P3"),
+                "priority_class": (normalized_priority or {}).get("effective_priority")
+                or (normalized_priority or {}).get("priority_class", "P3"),
+                "legacy_priority": (normalized_priority or {}).get("legacy_priority", "P4"),
+                "priority_source": (normalized_priority or {}).get("priority_source", "system"),
+                "priority_reason": (normalized_priority or {}).get("priority_reason")
+                or (normalized_priority or {}).get("urgency_reason", "Не указано при создании"),
+                "manual_priority_reason": (normalized_priority or {}).get("manual_priority_reason"),
+                "applied_modifiers": (normalized_priority or {}).get("applied_modifiers", []),
+            }
             if extra_custom_fields:
                 custom_fields.update(extra_custom_fields)
             custom_fields = set_public_access_code(custom_fields, public_access_code)
@@ -165,11 +200,16 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
             await ticket_repo.update_ticket(
                 ticket_id,
                 urgency=(normalized_priority or {}).get("urgency", 0),
+                impact=(normalized_priority or {}).get("impact"),
                 importance=(normalized_priority or {}).get("importance", 0),
                 urgency_reason=(normalized_priority or {}).get("urgency_reason", "Не указано при создании"),
                 importance_reason=(normalized_priority or {}).get("importance_reason", "Не указано при создании"),
                 priority=(normalized_priority or {}).get("legacy_priority", "P4"),
-                ticket_type=str(data.get("ticket_type") or "request").strip() or "request",
+                ticket_type=ticket_type,
+                category_id=template_context.get("category_id"),
+                service_id=template_context.get("service_id"),
+                subcategory_id=template_context.get("subcategory_id"),
+                sla_policy_id=template_context.get("sla_policy_id"),
                 custom_fields=custom_fields,
             )
             ticket = await ticket_repo.get_ticket(ticket_id)

@@ -114,6 +114,18 @@ class SupportTicketDetail(BaseModel):
     status_reason: str | None
     requester_display_name: str | None
     device_id: str | None
+    ticket_type: str | None = None
+    category_id: int | None = None
+    service_id: int | None = None
+    subcategory_id: int | None = None
+    priority: str | None = None
+    priority_class: str | None = None
+    impact: int | None = None
+    urgency: int | None = None
+    importance: int | None = None
+    priority_decision: dict[str, Any] = Field(default_factory=dict)
+    first_response_due_at: str | None = None
+    resolution_due_at: str | None = None
     queue: SupportTicketQueueInfo
     assignee_id: str | None
     updated_at: str | None

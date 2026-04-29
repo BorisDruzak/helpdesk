@@ -14,7 +14,7 @@ from typing import Optional
 from loguru import logger
 
 from app.db.models import Ticket
-from tickets.statuses import WAITING_STATUSES, TERMINAL_STATUSES
+from tickets.statuses import PRIORITY_CLASS_TO_LEGACY_PRIORITY, WAITING_STATUSES, TERMINAL_STATUSES, extract_priority_class
 
 
 class TicketSlaService:
@@ -42,6 +42,11 @@ class TicketSlaService:
         for t in targets:
             if t.priority == priority:
                 return t
+        legacy_priority = PRIORITY_CLASS_TO_LEGACY_PRIORITY.get(priority)
+        if legacy_priority:
+            for t in targets:
+                if t.priority == legacy_priority:
+                    return t
         for t in targets:
             if t.priority == "P3":
                 return t
@@ -55,7 +60,7 @@ class TicketSlaService:
         policy_id, targets = await self._get_policy_and_targets(ticket)
         if not policy_id or not targets:
             return False
-        target = self._target_for_priority(targets, ticket.priority)
+        target = self._target_for_priority(targets, extract_priority_class(ticket))
         if not target:
             return False
         now = datetime.now(timezone.utc)
@@ -119,7 +124,7 @@ class TicketSlaService:
         if not ticket:
             return False
         _, targets = await self._get_policy_and_targets(ticket)
-        target = self._target_for_priority(targets, ticket.priority)
+        target = self._target_for_priority(targets, extract_priority_class(ticket))
         if not target:
             return False
         now = datetime.now(timezone.utc)

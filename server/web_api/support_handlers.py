@@ -834,6 +834,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         is_staff=auth_context.actor_role in {"admin", "support"},
     )
     request_form = _build_support_request_form_payload(ticket_data)
+    custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
 
     return SupportTicketDetailPayload(
         ticket=SupportTicketDetail(
@@ -850,6 +851,18 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             status_reason=ticket_data.get("status_reason"),
             requester_display_name=ticket_data.get("requester_display_name"),
             device_id=ticket_data.get("device_id"),
+            ticket_type=ticket_data.get("ticket_type"),
+            category_id=ticket_data.get("category_id"),
+            service_id=ticket_data.get("service_id"),
+            subcategory_id=ticket_data.get("subcategory_id"),
+            priority=ticket_data.get("priority"),
+            priority_class=ticket_data.get("priority_class"),
+            impact=ticket_data.get("impact"),
+            urgency=ticket_data.get("urgency"),
+            importance=ticket_data.get("importance"),
+            priority_decision=custom_fields.get("priority_decision") if isinstance(custom_fields.get("priority_decision"), dict) else {},
+            first_response_due_at=ticket_data.get("first_response_due_at"),
+            resolution_due_at=ticket_data.get("resolution_due_at"),
             queue=SupportTicketQueueInfo(
                 id=ticket_queue_id,
                 code=ticket_data.get("queue_code"),

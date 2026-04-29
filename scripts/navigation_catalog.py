@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, SLA, chat, public access, queue behavior, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -290,6 +290,11 @@ TOPICS: tuple[Topic, ...] = (
             "routing rules",
             "request kind",
             "ticket type",
+            "ticket_type inference",
+            "workflow profile",
+            "priority policy",
+            "effective priority",
+            "request template",
             "request form",
             "request_form_data",
             "visible_when",
@@ -305,7 +310,10 @@ TOPICS: tuple[Topic, ...] = (
         ),
         first_files=(
             "server/tickets/handlers.py",
+            "server/tickets/create_flow.py",
             "server/tickets/workflow_service.py",
+            "server/tickets/workflow_profiles.py",
+            "server/tickets/priority_policy.py",
             "server/tickets/routing_service.py",
             "server/tickets/form_catalog.py",
             "server/chat/",
@@ -323,6 +331,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "chat" --dir server',
             'python scripts/agent_find.py "routing" --dir server',
             'python scripts/agent_find.py "request_form" --dir server',
+            'python scripts/agent_find.py "priority_policy" --dir server',
         ),
         mode="Tickets / chat / queue",
         skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
@@ -520,7 +529,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, lazy route chunks, typed `/api/web/*` contracts, role-aware `/app/*` routes, public requester `/app/help` and `/app/ticket/*`, server-driven `default_workspace`/`available_workspaces`/`permissions`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, typed notifications route/tab, typed access-control center with RBAC groups/grants/audit, typed support write guards through effective `can()` checks, split settings permissions (`settings.view`, `settings.manage_queues`, `settings.manage_routing`), typed module workbench and tech-alert aliases, honest knowledge placeholder, and typed admin slices for inventory, registry objects, RBAC effective access, device update actions, modules registry/actions, request-form builder, public/support ticket playbook autostart timeline events, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode, trace detail with compact agent actions, and explicit detail/bundle error states.",
+        summary="React/Vite `webapp`, lazy route chunks, typed `/api/web/*` contracts, role-aware `/app/*` routes, public requester `/app/help` and `/app/ticket/*`, server-driven `default_workspace`/`available_workspaces`/`permissions`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, typed notifications route/tab, typed access-control center with RBAC groups/grants/audit, typed support write guards through effective `can()` checks, split settings permissions (`settings.view`, `settings.manage_queues`, `settings.manage_routing`), typed module workbench and tech-alert aliases, honest knowledge placeholder, and typed admin slices for inventory, registry objects, RBAC effective access, device update actions, modules registry/actions, request-template builder with process context, public/support ticket playbook autostart timeline events, ticket detail operational seven-question card, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode, trace detail with compact agent actions, and explicit detail/bundle error states.",
         aliases=(
             "webapp",
             "react app",
@@ -586,6 +595,8 @@ TOPICS: tuple[Topic, ...] = (
             "forms builder",
             "ticket forms",
             "request forms",
+            "request template builder",
+            "operational ticket card",
             "playbook",
             "playbooks",
             "diagnostic playbooks",
