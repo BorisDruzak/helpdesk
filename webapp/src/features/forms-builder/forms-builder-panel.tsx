@@ -113,6 +113,29 @@ const WORKFLOW_PROFILE_OPTIONS = [
   { value: "consultation", label: "consultation" },
 ] as const;
 
+const TICKET_TYPE_BY_FORM_KIND: Record<string, string> = {
+  breakage: "incident",
+  printer: "incident",
+  network: "incident",
+  site_system: "incident",
+  mail_issue: "incident",
+  access: "access_request",
+  new_account: "access_request",
+  software_install: "service_request",
+  hardware_replacement: "service_request",
+};
+
+function inferTicketType(formKey: string, requestKind: string): string {
+  return TICKET_TYPE_BY_FORM_KIND[requestKind.trim().toLowerCase()]
+    ?? TICKET_TYPE_BY_FORM_KIND[formKey.trim().toLowerCase()]
+    ?? "service_request";
+}
+
+function normalizeTicketType(value: unknown, formKey: string, requestKind: string): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  return raw || inferTicketType(formKey, requestKind);
+}
+
 function jsonDraft(value: unknown): string {
   if (!value || (typeof value === "object" && Object.keys(value as Record<string, unknown>).length === 0)) {
     return "";
@@ -232,7 +255,7 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
     forms: payload.forms.map((form) => ({
       key: form.key,
       request_kind: form.request_kind,
-      ticket_type: form.ticket_type ?? "service_request",
+      ticket_type: normalizeTicketType(form.ticket_type, form.key, form.request_kind),
       title: form.title,
       description: form.description ?? "",
       category_id: form.category_id != null ? String(form.category_id) : "",
@@ -285,17 +308,15 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
       const fieldsRaw = Array.isArray((form as { fields?: unknown[] }).fields)
         ? ((form as { fields: unknown[] }).fields ?? [])
         : [];
+      const formKey = String((form as { key?: unknown }).key ?? `form_${formIndex + 1}`);
+      const requestKind = String((form as { request_kind?: unknown }).request_kind ?? formKey);
 
       return {
-        key: String((form as { key?: unknown }).key ?? `form_${formIndex + 1}`),
-        request_kind: String(
-          (form as { request_kind?: unknown }).request_kind ??
-            (form as { key?: unknown }).key ??
-            `form_${formIndex + 1}`
-        ),
+        key: formKey,
+        request_kind: requestKind,
         title: String((form as { title?: unknown }).title ?? "Новая форма"),
         description: String((form as { description?: unknown }).description ?? ""),
-        ticket_type: String((form as { ticket_type?: unknown }).ticket_type ?? "service_request"),
+        ticket_type: normalizeTicketType((form as { ticket_type?: unknown }).ticket_type, formKey, requestKind),
         category_id: String((form as { category_id?: unknown }).category_id ?? ""),
         service_id: String((form as { service_id?: unknown }).service_id ?? ""),
         subcategory_id: String((form as { subcategory_id?: unknown }).subcategory_id ?? ""),

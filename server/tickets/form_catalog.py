@@ -16,6 +16,17 @@ DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "radio", "checkbox"}
 OPTION_FIELD_TYPES = {"select", "radio"}
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
+_TICKET_TYPE_BY_FORM_KIND = {
+    "breakage": "incident",
+    "printer": "incident",
+    "network": "incident",
+    "site_system": "incident",
+    "mail_issue": "incident",
+    "access": "access_request",
+    "new_account": "access_request",
+    "software_install": "service_request",
+    "hardware_replacement": "service_request",
+}
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
     "incident": "Инцидент",
@@ -81,6 +92,17 @@ _ALLOWED_FIELD_ROLES = {
     "closure_evidence",
     "display_only",
 }
+
+
+def infer_ticket_type_for_form(form_key: str | None, request_kind: str | None) -> str:
+    """Backfill process type for old form packs that predate ticket_type."""
+    normalized_request_kind = str(request_kind or "").strip().lower()
+    normalized_form_key = str(form_key or "").strip().lower()
+    return (
+        _TICKET_TYPE_BY_FORM_KIND.get(normalized_request_kind)
+        or _TICKET_TYPE_BY_FORM_KIND.get(normalized_form_key)
+        or DEFAULT_WORKFLOW_PROFILE
+    )
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -229,19 +251,8 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
             ],
         },
     ]
-    ticket_type_by_key = {
-        "breakage": "incident",
-        "access": "access_request",
-        "software_install": "service_request",
-        "hardware_replacement": "service_request",
-        "printer": "incident",
-        "network": "incident",
-        "site_system": "incident",
-        "new_account": "access_request",
-        "mail_issue": "incident",
-    }
     for form in forms:
-        form["ticket_type"] = ticket_type_by_key.get(str(form.get("key") or ""), DEFAULT_WORKFLOW_PROFILE)
+        form["ticket_type"] = infer_ticket_type_for_form(form.get("key"), form.get("request_kind"))
 
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
@@ -428,7 +439,9 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                     f"references unknown visible_when.field {dependency_key!r}"
                 )
 
-        ticket_type = str(raw_form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE).strip() or DEFAULT_WORKFLOW_PROFILE
+        ticket_type = str(
+            raw_form.get("ticket_type") or infer_ticket_type_for_form(form_key, request_kind)
+        ).strip() or DEFAULT_WORKFLOW_PROFILE
         ticket_type = get_workflow_profile(ticket_type).ticket_type
         template_context: dict[str, Any] = {
             "ticket_type": ticket_type,

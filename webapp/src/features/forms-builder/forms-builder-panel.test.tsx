@@ -269,6 +269,7 @@ describe("FormsBuilderPanel", () => {
       forms: [
         expect.objectContaining({
           key: "printer",
+          ticket_type: "incident",
           title: "Печать / принтер"
         }),
         expect.objectContaining({

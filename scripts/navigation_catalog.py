@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA, chat, public access, queue behavior, request-template process context, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -290,6 +290,7 @@ TOPICS: tuple[Topic, ...] = (
             "routing rules",
             "request kind",
             "ticket type",
+            "ticket_type inference",
             "workflow profile",
             "priority policy",
             "effective priority",

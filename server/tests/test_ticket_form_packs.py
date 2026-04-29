@@ -83,6 +83,7 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
     assert current_data["status"] == "ok"
     assert current_data["pack"]["version"] == "1.0.1"
     assert current_data["pack"]["forms"][0]["fields"][0]["key"] == "room"
+    assert current_data["pack"]["forms"][0]["ticket_type"] == "incident"
 
 
 @pytest.mark.asyncio
