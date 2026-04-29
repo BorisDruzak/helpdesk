@@ -3,7 +3,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import TicketQueue, UiUser
+from app.db.models import TicketQueue, TicketQueueMember, UiUser
 from auth.context import AuthContext, AuthType
 from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
@@ -155,6 +155,8 @@ async def test_web_admin_access_group_crud_grants_effective_permissions(test_cli
         await session.commit()
         queue = (await session.execute(TicketQueue.__table__.select().where(TicketQueue.code == "network"))).first()
         queue_id = int(queue.id)
+        session.add(TicketQueueMember(queue_id=queue_id, actor_id="support-l2", role_in_queue=None))
+        await session.commit()
 
     create_response = await test_client.post(
         "/api/web/admin/access/groups",

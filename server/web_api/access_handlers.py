@@ -233,6 +233,10 @@ def _merge_queue_memberships(queues: list[AccessQueueMembershipItem]) -> list[Ac
     for queue in queues:
         if queue.queue_id not in merged:
             merged[queue.queue_id] = queue
+            continue
+        existing = merged[queue.queue_id]
+        if not existing.role_in_queue and queue.role_in_queue:
+            merged[queue.queue_id] = queue
     return sorted(merged.values(), key=lambda item: item.queue_code)
 
 
