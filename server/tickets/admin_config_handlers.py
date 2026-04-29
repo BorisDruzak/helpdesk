@@ -18,6 +18,7 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from tickets.admin_config_service import (
     AdminConfigService,
+    VALID_PRIORITIES,
     validate_condition_json,
     validate_sla_targets,
     validate_priority_matrix,
@@ -1390,9 +1391,9 @@ async def handle_admin_ola_targets_put(request: web.Request) -> web.Response:
         )
     targets = data.get("ola_targets") if isinstance(data.get("ola_targets"), list) else []
     for i, t in enumerate(targets):
-        if not isinstance(t, dict) or t.get("priority") not in ("P1", "P2", "P3", "P4"):
+        if not isinstance(t, dict) or t.get("priority") not in VALID_PRIORITIES:
             return web.json_response(
-                {"status": "error", "error": f"ola_targets[{i}]: priority required (P1-P4)", "error_code": "VALIDATION_ERROR"},
+                {"status": "error", "error": f"ola_targets[{i}]: priority required (P0-P4)", "error_code": "VALIDATION_ERROR"},
                 status=400,
             )
         if not isinstance(t.get("ack_min"), int) or t["ack_min"] < 0 or not isinstance(t.get("processing_min"), int) or t["processing_min"] < 0:

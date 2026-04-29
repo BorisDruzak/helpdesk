@@ -2924,7 +2924,7 @@
             return JSON.stringify(value == null ? null : value, null, 2);
         }
 
-        const SETTINGS_PRIORITY_OPTIONS = ['P1', 'P2', 'P3', 'P4'];
+        const SETTINGS_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
         const SETTINGS_WEEKDAYS = [
             { day: 0, label: 'Понедельник', short: 'Пн' },
             { day: 1, label: 'Вторник', short: 'Вт' },
@@ -2937,10 +2937,11 @@
 
         function settingsPriorityLabel(priority) {
             const map = {
-                P1: 'Критичный (P1)',
-                P2: 'Высокий (P2)',
-                P3: 'Средний (P3)',
-                P4: 'Низкий (P4)',
+                P0: 'Critical (P0)',
+                P1: 'High (P1)',
+                P2: 'Medium (P2)',
+                P3: 'Low (P3)',
+                P4: 'Legacy low (P4)',
             };
             return map[priority] || priority || '—';
         }

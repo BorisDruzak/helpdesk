@@ -339,3 +339,27 @@ async def test_web_settings_queue_alias_reuses_real_admin_config_handlers(test_c
 
     assert payload["status"] == "ok"
     assert payload["queue"]["code"] == "network"
+
+
+@pytest.mark.asyncio
+async def test_web_settings_ola_targets_accept_process_priority_p0(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="admin", password_hash="secret", actor_role="admin", is_active=True))
+        repo = TicketAdminConfigRepo(session)
+        queue = await repo.create_queue("p0_ola", "P0 OLA", is_triage=True, auto_assign_enabled=False)
+        queue_id = queue.id
+        await session.commit()
+
+    response = await test_client.put(
+        f"/api/web/settings/queues/{queue_id}/ola_targets",
+        headers=_admin_headers(),
+        json={"ola_targets": [{"priority": "P0", "ack_min": 5, "processing_min": 30}]},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "ok"
+    assert payload["ola_targets"] == [{"priority": "P0", "ack_min": 5, "processing_min": 30}]

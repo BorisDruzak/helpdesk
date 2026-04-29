@@ -2,7 +2,7 @@
 
 ## 2026-04-29 Help Desk Process Model Completion Slice
 
-Status: implemented locally, focused tests green, full/local/live verification pending.
+Status: deployed to Linux stand, live UI/API verification in progress.
 
 ### Goal
 
@@ -24,6 +24,7 @@ Close the gap called out after the first process-model slice:
   - priority model;
   - support lines.
 - Settings priority/SLA controls now use process priorities `P0`, `P1`, `P2`, `P3`.
+- OLA settings now accept process priority `P0` while retaining legacy `P4` compatibility.
 - `server/tickets/form_catalog.py` now preserves priority-policy fact keys from submitted payload even if they are helper facts not rendered as visible fields.
 - `server/tickets/routing_service.py` now applies `request_template.default_queue_id` after explicit routing rules and before `servicedesk_l1` fallback.
 - `pc_agent/ui_gui/chat_panel.py` now:
@@ -39,16 +40,15 @@ Close the gap called out after the first process-model slice:
 - `python -m pytest server\tests\test_web_settings_api.py server\tests\test_helpdesk_process_observer_route.py server\tests\test_ticket_form_packs.py server\tests\test_ticket_priority_policy.py -q` -> 22 passed.
 - `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q` -> 25 passed.
 - `pnpm --dir webapp run test -- src/pages/settings/index.test.tsx --run` -> 3 passed.
+- Live `/app/settings` check confirms the service desk schema, workflow profiles, priority model, support lines, statuses and `next_action_owner` are visible.
+- Live route check created ticket `T-000315`: request template `site_system` -> `ticket_type=incident` -> `effective_priority=P0` -> queue routing -> SLA -> observer summary -> trace detail.
+- Live OLA route found and fixed a backend validation gap: OLA target PUT still rejected `P0`.
 
 ### Remaining Verification
 
-- `python scripts/verify_workspace.py`
-- relevant broader server/agent/webapp tests;
-- `pnpm --dir webapp run build`;
-- commit;
-- deploy through `python scripts/release_server_to_remote.py --leave-running`;
-- live browser checks at `http://192.168.100.17:8666/admin`;
-- live API route check for the observer path;
+- re-run focused and full verification after the OLA validation fix;
+- commit/deploy the OLA validation fix;
+- live route check with non-null OLA;
 - stop remote server after checks.
 
 ## 2026-04-29 Help Desk Process Model, Request Templates, Priority And SLA
