@@ -2,7 +2,7 @@
 
 ## 2026-04-29 Help Desk Process Model Completion Slice
 
-Status: deployed to Linux stand, live UI/API verification in progress.
+Status: second slice in progress: server-driven priority questions, agent SLA display and ticket passport completeness added locally; live verification pending.
 
 ### Goal
 
@@ -31,8 +31,14 @@ Close the gap called out after the first process-model slice:
   - keeps `ticket_type` from form templates;
   - gives default local forms `ticket_type` and `priority_policy`;
   - collects `impact_scope`, `work_continuity`, `business_importance`;
+  - renders server-driven priority fields from the selected request template when the form builder defines them;
+  - keeps the old fixed priority questions only as a legacy fallback for old packs;
   - merges those facts into `form_payload`;
+  - shows server-calculated SLA first-response and resolution/workaround deadlines in ticket metadata and create-success text;
   - keeps legacy `urgency`/`importance` booleans for server compatibility.
+- `server/tickets/form_catalog.py` now attaches editable priority question fields and `field_roles` to the built-in request templates.
+- `/app/admin/forms` now lets admins add the standard priority question set to a request template and edit field roles (`routing_field`, `priority_field`, `sla_field`, `approval_field`, `diagnostic_input`, `closure_evidence`, `display_only`) in the field constructor.
+- `/app/tickets/:ticketId` operational card now derives the seven-question passport from richer request-form keys, SLA/deadline fields and timeline/operation evidence, and shows `Passport X/7` completeness.
 - Added acceptance test `server/tests/test_helpdesk_process_observer_route.py`.
 
 ### Verification So Far
@@ -40,6 +46,11 @@ Close the gap called out after the first process-model slice:
 - `python -m pytest server\tests\test_web_settings_api.py server\tests\test_helpdesk_process_observer_route.py server\tests\test_ticket_form_packs.py server\tests\test_ticket_priority_policy.py -q` -> 22 passed.
 - `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q` -> 25 passed.
 - `pnpm --dir webapp run test -- src/pages/settings/index.test.tsx --run` -> 3 passed.
+- 2026-04-29 second slice:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q` -> 28 passed.
+  - `python -m pytest server/tests/test_ticket_form_packs.py server/tests/test_helpdesk_process_observer_route.py -q` -> 13 passed.
+  - `pnpm --dir webapp test -- forms-builder-panel detail-page` -> 20 passed.
+  - `pnpm --dir webapp exec tsc --noEmit` -> passed.
 - Live `/app/settings` check confirms the service desk schema, workflow profiles, priority model, support lines, statuses and `next_action_owner` are visible.
 - Live route check created ticket `T-000315`: request template `site_system` -> `ticket_type=incident` -> `effective_priority=P0` -> queue routing -> SLA -> observer summary -> trace detail.
 - Live OLA route found and fixed a backend validation gap: OLA target PUT still rejected `P0`.

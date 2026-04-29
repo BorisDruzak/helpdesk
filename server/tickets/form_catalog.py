@@ -36,6 +36,13 @@ DEFAULT_PRIORITY_POLICY = {
         "public_service": "public_service",
     },
 }
+DEFAULT_PRIORITY_FIELD_ROLES = {
+    "impact_scope": ["priority_field"],
+    "work_continuity": ["priority_field"],
+    "business_importance": ["priority_field"],
+    "critical_service": ["priority_field", "sla_field"],
+    "public_service": ["priority_field", "sla_field"],
+}
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
     "incident": "Инцидент",
@@ -101,6 +108,76 @@ _ALLOWED_FIELD_ROLES = {
     "closure_evidence",
     "display_only",
 }
+
+
+def build_default_priority_fields() -> list[dict[str, Any]]:
+    return [
+        {
+            "key": "impact_scope",
+            "label": "Кого затронула проблема?",
+            "type": "radio",
+            "required": True,
+            "options": [
+                {"value": "single_user", "label": "Только меня"},
+                {"value": "group", "label": "Несколько человек"},
+                {"value": "department", "label": "Весь отдел"},
+                {"value": "building_or_org", "label": "Здание / организация / критичная система"},
+            ],
+        },
+        {
+            "key": "work_continuity",
+            "label": "Можно ли продолжать работу?",
+            "type": "radio",
+            "required": True,
+            "options": [
+                {"value": "work_stopped_no_workaround", "label": "Нет, работа остановлена"},
+                {"value": "partial_work", "label": "Можно работать частично"},
+                {"value": "workaround_available", "label": "Есть обходной путь"},
+                {"value": "inconvenience_only", "label": "Неудобно, но не блокирует"},
+            ],
+        },
+        {
+            "key": "business_importance",
+            "label": "Есть важный срок или критичный процесс?",
+            "type": "radio",
+            "required": False,
+            "options": [
+                {"value": "normal", "label": "Нет, обычная рабочая ситуация"},
+                {"value": "deadline", "label": "Есть важный срок"},
+                {"value": "deadline_today", "label": "Сегодня / завтра крайний срок"},
+                {"value": "security", "label": "ИБ / публичная услуга / критичный процесс"},
+            ],
+        },
+        {
+            "key": "critical_service",
+            "label": "Затронута критичная система",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+        },
+        {
+            "key": "public_service",
+            "label": "Затронут прием граждан / публичная услуга",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+        },
+    ]
+
+
+def _attach_default_priority_context(form: dict[str, Any]) -> None:
+    existing_keys = {
+        str(field.get("key") or "").strip()
+        for field in form.get("fields") or []
+        if isinstance(field, dict)
+    }
+    for field in build_default_priority_fields():
+        if field["key"] not in existing_keys:
+            form.setdefault("fields", []).append(deepcopy(field))
+    form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+    roles = deepcopy(DEFAULT_PRIORITY_FIELD_ROLES)
+    roles.update(form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {})
+    form["field_roles"] = roles
 
 
 def infer_ticket_type_for_form(form_key: str | None, request_kind: str | None) -> str:
@@ -262,7 +339,7 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     ]
     for form in forms:
         form["ticket_type"] = infer_ticket_type_for_form(form.get("key"), form.get("request_kind"))
-        form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+        _attach_default_priority_context(form)
 
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,

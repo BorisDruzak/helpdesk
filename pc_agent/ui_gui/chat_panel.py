@@ -78,8 +78,85 @@ DEFAULT_PRIORITY_POLICY = {
         "public_service": "public_service",
     },
 }
+DEFAULT_PRIORITY_FIELD_ROLES = {
+    "impact_scope": ["priority_field"],
+    "work_continuity": ["priority_field"],
+    "business_importance": ["priority_field"],
+    "critical_service": ["priority_field", "sla_field"],
+    "public_service": ["priority_field", "sla_field"],
+}
 HIGH_URGENCY_FACTS = {"work_stopped_no_workaround", "work_stopped", "no_workaround"}
 HIGH_IMPORTANCE_FACTS = {"deadline_today", "deadline_tomorrow", "critical", "security", "public_service"}
+
+
+def build_default_priority_fields() -> list[dict[str, Any]]:
+    return [
+        {
+            "key": "impact_scope",
+            "label": "Кого затронула проблема?",
+            "type": "radio",
+            "required": True,
+            "placeholder": "",
+            "help_text": "",
+            "options": [
+                {"value": "single_user", "label": "Только меня"},
+                {"value": "group", "label": "Несколько человек"},
+                {"value": "department", "label": "Весь отдел"},
+                {"value": "building_or_org", "label": "Здание / организация / критичная система"},
+            ],
+            "visible_when": None,
+        },
+        {
+            "key": "work_continuity",
+            "label": "Можно ли продолжать работу?",
+            "type": "radio",
+            "required": True,
+            "placeholder": "",
+            "help_text": "",
+            "options": [
+                {"value": "work_stopped_no_workaround", "label": "Нет, работа остановлена"},
+                {"value": "partial_work", "label": "Можно работать частично"},
+                {"value": "workaround_available", "label": "Есть обходной путь"},
+                {"value": "inconvenience_only", "label": "Неудобно, но не блокирует"},
+            ],
+            "visible_when": None,
+        },
+        {
+            "key": "business_importance",
+            "label": "Есть важный срок или критичный процесс?",
+            "type": "radio",
+            "required": False,
+            "placeholder": "",
+            "help_text": "",
+            "options": [
+                {"value": "normal", "label": "Нет, обычная рабочая ситуация"},
+                {"value": "deadline", "label": "Есть важный срок"},
+                {"value": "deadline_today", "label": "Сегодня / завтра крайний срок"},
+                {"value": "security", "label": "ИБ / публичная услуга / критичный процесс"},
+            ],
+            "visible_when": None,
+        },
+        {
+            "key": "critical_service",
+            "label": "Затронута критичная система",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+            "help_text": "",
+            "options": [],
+            "visible_when": None,
+        },
+        {
+            "key": "public_service",
+            "label": "Затронут прием граждан / публичная услуга",
+            "type": "checkbox",
+            "required": False,
+            "placeholder": "Да",
+            "help_text": "",
+            "options": [],
+            "visible_when": None,
+        },
+    ]
 
 
 def build_priority_facts_payload(
@@ -106,6 +183,58 @@ def build_priority_facts_payload(
             "business_importance": business_importance,
         },
     }
+
+
+def ticket_form_priority_field_keys(form_def: Optional[dict[str, Any]]) -> list[str]:
+    if not isinstance(form_def, dict):
+        return []
+    ordered: list[str] = []
+    policy = form_def.get("priority_policy") if isinstance(form_def.get("priority_policy"), dict) else {}
+    for policy_key in ("impact_field", "urgency_field", "importance_field"):
+        field_key = str(policy.get(policy_key) or "").strip()
+        if field_key and field_key not in ordered:
+            ordered.append(field_key)
+    modifier_fields = policy.get("modifier_fields") if isinstance(policy.get("modifier_fields"), dict) else {}
+    for raw_field_key in modifier_fields.values():
+        field_key = str(raw_field_key or "").strip()
+        if field_key and field_key not in ordered:
+            ordered.append(field_key)
+    field_roles = form_def.get("field_roles") if isinstance(form_def.get("field_roles"), dict) else {}
+    for raw_field_key, roles in field_roles.items():
+        field_key = str(raw_field_key or "").strip()
+        if field_key and isinstance(roles, list) and "priority_field" in roles and field_key not in ordered:
+            ordered.append(field_key)
+    form_field_keys = {
+        str(field.get("key") or "").strip()
+        for field in form_def.get("fields") or []
+        if isinstance(field, dict)
+    }
+    return [field_key for field_key in ordered if field_key in form_field_keys]
+
+
+def build_priority_facts_payload_from_form(
+    form_def: Optional[dict[str, Any]],
+    form_payload: dict[str, Any],
+    *,
+    fallback: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    fallback = fallback or build_priority_facts_payload(
+        impact_scope="single_user",
+        work_continuity="workaround_available",
+        business_importance="normal",
+    )
+    policy = form_def.get("priority_policy") if isinstance(form_def, dict) and isinstance(form_def.get("priority_policy"), dict) else {}
+    impact_key = str(policy.get("impact_field") or "impact_scope").strip()
+    urgency_key = str(policy.get("urgency_field") or "work_continuity").strip()
+    importance_key = str(policy.get("importance_field") or "business_importance").strip()
+    fallback_values = fallback.get("form_payload") if isinstance(fallback.get("form_payload"), dict) else {}
+    return build_priority_facts_payload(
+        impact_scope=str(form_payload.get(impact_key) or fallback_values.get("impact_scope") or "single_user"),
+        work_continuity=str(form_payload.get(urgency_key) or fallback_values.get("work_continuity") or "workaround_available"),
+        business_importance=str(form_payload.get(importance_key) or fallback_values.get("business_importance") or "normal"),
+        urgency_reason=str(fallback.get("urgency_reason") or ""),
+        importance_reason=str(fallback.get("importance_reason") or ""),
+    )
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -284,6 +413,17 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     for form in pack["forms"]:
         form.setdefault("ticket_type", ticket_type_by_key.get(str(form.get("key") or ""), "service_request"))
         form.setdefault("priority_policy", dict(DEFAULT_PRIORITY_POLICY))
+        existing_keys = {
+            str(field.get("key") or "").strip()
+            for field in form.get("fields") or []
+            if isinstance(field, dict)
+        }
+        for field in build_default_priority_fields():
+            if field["key"] not in existing_keys:
+                form.setdefault("fields", []).append(dict(field))
+        roles = dict(DEFAULT_PRIORITY_FIELD_ROLES)
+        roles.update(form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {})
+        form["field_roles"] = roles
     return pack
 
 
@@ -310,6 +450,7 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
             "title": str(form.get("title") or form_key).strip() or form_key,
             "description": str(form.get("description") or "").strip(),
             "priority_policy": form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {},
+            "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
             "fields": [],
         }
         raw_fields = form.get("fields") if isinstance(form.get("fields"), list) else []
@@ -374,6 +515,20 @@ def ticket_request_form_summary_rows(ticket: dict) -> List[tuple[str, str]]:
 
 def can_user_confirm_close(ticket: dict) -> bool:
     return str(ticket.get("status") or "").strip().lower() == "resolved"
+
+
+def build_ticket_sla_user_summary(ticket: dict) -> str:
+    priority = str(ticket.get("priority_class") or ticket.get("priority") or "").strip()
+    first_response = str(ticket.get("first_response_due_at") or "").strip()
+    resolution = str(ticket.get("resolution_due_at") or "").strip()
+    parts: list[str] = []
+    if priority:
+        parts.append(f"priority={priority}")
+    if first_response:
+        parts.append(f"first response due: {first_response}")
+    if resolution:
+        parts.append(f"resolution/workaround due: {resolution}")
+    return "; ".join(parts)
 
 
 def ticket_matches_query(ticket: dict, query: str) -> bool:
@@ -677,12 +832,27 @@ class TicketDynamicFieldsWidget(QWidget):
         self._help_labels = {}
         self._show_validation_feedback = False
 
-    def set_form(self, form_def: Optional[dict[str, Any]], values: Optional[dict[str, Any]] = None) -> None:
+    def set_form(
+        self,
+        form_def: Optional[dict[str, Any]],
+        values: Optional[dict[str, Any]] = None,
+        *,
+        include_keys: Optional[set[str]] = None,
+        exclude_keys: Optional[set[str]] = None,
+    ) -> None:
         self.clear_form()
         values = values or {}
         if not isinstance(form_def, dict):
             return
-        self._field_defs = list(form_def.get("fields") or [])
+        include_keys = {str(key) for key in include_keys or set()}
+        exclude_keys = {str(key) for key in exclude_keys or set()}
+        self._field_defs = [
+            field
+            for field in list(form_def.get("fields") or [])
+            if isinstance(field, dict)
+            and (not include_keys or str(field.get("key") or "").strip() in include_keys)
+            and str(field.get("key") or "").strip() not in exclude_keys
+        ]
         for field_def in self._field_defs:
             field_key = str(field_def.get("key") or "").strip()
             if not field_key:
@@ -939,6 +1109,9 @@ class TicketCreateDialog(QDialog):
         priority_form.addRow("Факт срочности", self.urgency_reason_input)
         priority_form.addRow("Факт важности", self.importance_reason_input)
         layout.addLayout(priority_form)
+        self.priority_dynamic_fields_widget = TicketDynamicFieldsWidget(self)
+        self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
+        layout.addWidget(self.priority_dynamic_fields_widget)
 
         buttons = QHBoxLayout()
         self.create_btn = QPushButton("Создать")
@@ -1008,9 +1181,13 @@ class TicketCreateDialog(QDialog):
         if not form:
             self.form_summary.setText("Каталог форм не загружен.")
             self.dynamic_fields_widget.clear_form()
+            self.priority_dynamic_fields_widget.clear_form()
             return
         self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы тикет сразу попал в нужную очередь.")
-        self.dynamic_fields_widget.set_form(form)
+        priority_keys = set(ticket_form_priority_field_keys(form))
+        self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
+        self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
+        self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
 
     def _on_form_fields_changed(self) -> None:
         self.form_summary.setText((self._selected_form() or {}).get("description") or "")
@@ -1027,6 +1204,7 @@ class TicketCreateDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Опишите проблему")
             return
         missing_fields = self.dynamic_fields_widget.missing_required_labels()
+        missing_fields.extend(self.priority_dynamic_fields_widget.missing_required_labels())
         if missing_fields:
             QMessageBox.warning(
                 self,
@@ -1048,7 +1226,14 @@ class TicketCreateDialog(QDialog):
         form_pack = self.panel.ticket_form_pack()
         selected_form = self._selected_form() or {}
         form_payload = self.dynamic_fields_widget.values()
-        form_payload.update(priority_facts["form_payload"])
+        form_payload.update(self.priority_dynamic_fields_widget.values())
+        priority_facts = build_priority_facts_payload_from_form(
+            selected_form,
+            form_payload,
+            fallback=priority_facts,
+        )
+        for key, value in (priority_facts.get("form_payload") or {}).items():
+            form_payload.setdefault(key, value)
         return {
             "title": f"Request: {selected_form.get('title') or 'Support Request'}",
             "description": description,
@@ -1279,6 +1464,10 @@ class TicketCreateWizardWidget(QFrame):
         form.addRow("Факт срочности", self.urgency_reason_input)
         form.addRow("Факт важности", self.importance_reason_input)
         layout.addWidget(group)
+        self.priority_fallback_group = group
+        self.priority_dynamic_fields_widget = TicketDynamicFieldsWidget(self)
+        self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
+        layout.addWidget(self.priority_dynamic_fields_widget)
 
         summary = QLabel(
             "После подтверждения заявка создастся с выбранным профилем, типом, описанием и материалами."
@@ -1315,6 +1504,7 @@ class TicketCreateWizardWidget(QFrame):
         self.urgency_reason_input.clear()
         self.importance_reason_input.clear()
         self.dynamic_fields_widget.clear_validation_feedback()
+        self.priority_dynamic_fields_widget.clear_validation_feedback()
         self._cleanup_temporary_attachments()
         self._attachment_paths.clear()
         self._sync_attachments_list()
@@ -1383,15 +1573,22 @@ class TicketCreateWizardWidget(QFrame):
         if not form:
             self.form_summary.setText("Каталог форм пока недоступен.")
             self.dynamic_fields_widget.clear_form()
+            self.priority_dynamic_fields_widget.clear_form()
+            self.priority_fallback_group.setVisible(True)
         else:
             self.form_summary.setText(
                 form.get("description") or "Уточните детали, чтобы тикет сразу попал в нужный поток."
             )
-            self.dynamic_fields_widget.set_form(form)
+            priority_keys = set(ticket_form_priority_field_keys(form))
+            self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
+            self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
+            self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
+            self.priority_fallback_group.setVisible(not bool(priority_keys))
         self._update_navigation_state()
 
     def _on_form_fields_changed(self) -> None:
         self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
+        self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
         self._update_navigation_state()
 
     def _on_manage_profiles(self) -> None:
@@ -1535,10 +1732,12 @@ class TicketCreateWizardWidget(QFrame):
             return bool(self._selected_form()) and not self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
         if step == 2:
             return bool(self.description_input.toPlainText().strip())
+        if step == 3:
+            return not self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
         return True
 
     def _all_required_steps_ready(self) -> bool:
-        return all(self._step_ready(step) for step in range(3))
+        return all(self._step_ready(step) for step in range(4))
 
     def _go_to_step(self, step: int, *, force: bool = False) -> None:
         if not force:
@@ -1580,6 +1779,10 @@ class TicketCreateWizardWidget(QFrame):
             return "Выберите тип заявки."
         if step == 2:
             return "Опишите проблему, чтобы можно было создать заявку."
+        if step == 3:
+            missing_fields = self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=True)
+            if missing_fields:
+                return "Заполните поля для расчета приоритета: " + ", ".join(missing_fields)
         return ""
 
     def _on_back_clicked(self) -> None:
@@ -1610,7 +1813,14 @@ class TicketCreateWizardWidget(QFrame):
         form_pack = self._panel.ticket_form_pack()
         selected_form = self._selected_form() or {}
         form_payload = self.dynamic_fields_widget.values()
-        form_payload.update(priority_facts["form_payload"])
+        form_payload.update(self.priority_dynamic_fields_widget.values())
+        priority_facts = build_priority_facts_payload_from_form(
+            selected_form,
+            form_payload,
+            fallback=priority_facts,
+        )
+        for key, value in (priority_facts.get("form_payload") or {}).items():
+            form_payload.setdefault(key, value)
         return {
             "title": f"Request: {selected_form.get('title') or 'Support Request'}",
             "description": description,
@@ -1628,7 +1838,7 @@ class TicketCreateWizardWidget(QFrame):
 
     def _on_submit_clicked(self) -> None:
         if not self._all_required_steps_ready():
-            for step in range(3):
+            for step in range(4):
                 if not self._step_ready(step):
                     self._go_to_step(step, force=True)
                     self._set_status(self._step_validation_error(step), error=True)
@@ -3390,6 +3600,8 @@ class ChatPanel(QWidget):
             ("Закрыт", self._format_ts(ticket.get("closed_at")) or "—"),
             ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
+        rows.insert(5, ("SLA: first response", self._format_ts(ticket.get("first_response_due_at")) or "-"))
+        rows.insert(6, ("SLA: resolution / workaround", self._format_ts(ticket.get("resolution_due_at")) or "-"))
         rows.extend(ticket_request_form_summary_rows(ticket))
         return "".join(
             f"<div style='margin-bottom:8px; font-size:{theme.BODY_PT}pt; line-height:1.5;'>"
@@ -3957,6 +4169,9 @@ class ChatPanel(QWidget):
 
             code = result.get("public_access_code") or "—"
             url = result.get("public_access_url") or ""
+            sla_summary = build_ticket_sla_user_summary(ticket)
+            if sla_summary:
+                url = f"{url}\n{sla_summary}" if url else sla_summary
             if show_success_dialog:
                 QMessageBox.information(self, "Тикет создан", f"Код: {code}\n{url}")
             return result

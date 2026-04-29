@@ -40,6 +40,14 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
     assert pack["pack_key"] == "request_forms"
     form_keys = {form["key"] for form in pack.get("forms") or []}
     assert {"breakage", "access", "printer", "site_system"} <= form_keys
+    site_form = next(form for form in pack["forms"] if form["key"] == "site_system")
+    assert site_form["priority_policy"]["impact_field"] == "impact_scope"
+    assert site_form["priority_policy"]["urgency_field"] == "work_continuity"
+    assert site_form["priority_policy"]["importance_field"] == "business_importance"
+    assert {"impact_scope", "work_continuity", "business_importance"}.issubset(
+        {field["key"] for field in site_form["fields"]}
+    )
+    assert "priority_field" in site_form["field_roles"]["impact_scope"]
 
 
 @pytest.mark.asyncio
@@ -175,6 +183,9 @@ async def test_create_ticket_accepts_form_payload_and_sets_ticket_type(test_clie
                 "room": "214",
                 "printer_model": "HP LaserJet",
                 "printer_number": "PR-17",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
             },
             "ticket_type": "printer",
         },

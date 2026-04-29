@@ -1378,12 +1378,28 @@ export function TicketDetailPage() {
   const latestOperations = detail?.snapshot.latest_operations ?? [];
   const priorityDecision = detail?.ticket.priority_decision ?? {};
   const requestRows = detail?.request_form?.rows ?? [];
+  const findRequestValue = (keys: string[]): string => {
+    for (const key of keys) {
+      const value = requestRows.find((row) => row.key === key)?.value;
+      if (value) {
+        return value;
+      }
+    }
+    return "";
+  };
   const diagnosticsDone = detail
     ? [
         ...detail.timeline
-          .filter((entry) => entry.event_type === "tool_call_result" || entry.event_type === "playbook_started")
-          .slice(0, 3)
+          .filter((entry) =>
+            ["tool_call_result", "playbook_started", "status_changed", "passport_generated", "ticket_routed"].includes(
+              entry.event_type
+            )
+          )
+          .slice(0, 5)
           .map((entry) => entry.text),
+        ...latestOperations
+          .slice(0, 3)
+          .map((operation) => operation.result_summary || operation.tool_name || operation.operation_id),
         ...(detail.ticket.resolution_summary ? [detail.ticket.resolution_summary] : []),
       ].filter(Boolean)
     : [];
@@ -1400,14 +1416,26 @@ export function TicketDetailPage() {
         {
           question: "Где случилось?",
           answer:
-            requestRows.find((row) => ["location", "room", "cabinet", "building"].includes(row.key))?.value ||
+            findRequestValue(["location", "room", "cabinet", "building", "office", "pc_name", "device_location"]) ||
             detail.ticket.device_id ||
             "Не указано",
         },
         {
           question: "Что затронуто?",
           answer:
-            requestRows.find((row) => ["service", "system", "url", "device", "printer"].includes(row.key))?.value ||
+            findRequestValue([
+              "service",
+              "service_id",
+              "system",
+              "system_name",
+              "url",
+              "device",
+              "asset_name",
+              "printer",
+              "printer_model",
+              "software_name",
+              "replace_what",
+            ]) ||
             detail.ticket.ticket_type ||
             "Не указано",
         },
@@ -1428,6 +1456,10 @@ export function TicketDetailPage() {
         },
       ]
     : [];
+  const operationalCompleteness = operationalRows.filter((row) => {
+    const value = String(row.answer ?? "").trim();
+    return value && !/РќРµ СѓРєР°Р·Р°РЅ|РџРѕРєР° РЅРµС‚|Не указан|Пока нет/i.test(value);
+  }).length;
 
   const tabItems = [
     { value: "dialog", label: "Диалог", count: detail?.timeline.length ?? 0 },
@@ -1537,6 +1569,7 @@ export function TicketDetailPage() {
                 <CardDescription>Сводка по 7 вопросам для принятия заявки в работу.</CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
+                <Badge tone={operationalCompleteness >= 7 ? "success" : "warning"}>Passport {operationalCompleteness}/7</Badge>
                 <Badge tone="info">{detail.ticket.ticket_type ?? "request"}</Badge>
                 <Badge tone="warning">{detail.ticket.priority_class ?? detail.ticket.priority ?? "P3"}</Badge>
               </div>
