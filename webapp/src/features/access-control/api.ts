@@ -40,11 +40,29 @@ export type AccessQueueItem = {
   members_count: number;
 };
 
+export type AccessQueueGrant = {
+  queue_id: number;
+  queue_code: string;
+  queue_name: string;
+  role_in_queue: string | null;
+};
+
+export type AccessGroupItem = {
+  group_id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  permissions: string[];
+  members: string[];
+  queue_grants: AccessQueueGrant[];
+};
+
 export type AccessSummaryPayload = {
   version: string;
   users: AccessUserItem[];
   queues: AccessQueueItem[];
-  access_groups: Array<Record<string, unknown>>;
+  access_groups: AccessGroupItem[];
   notes: string[];
 };
 
@@ -55,12 +73,7 @@ export type AccessEffectivePayload = {
   permissions: string[];
   workspaces: string[];
   groups: string[];
-  queues: Array<{
-    queue_id: number;
-    queue_code: string;
-    queue_name: string;
-    role_in_queue: string | null;
-  }>;
+  queues: AccessQueueGrant[];
   sources: Record<string, string | string[]>;
 };
 
@@ -134,4 +147,65 @@ export async function fetchEffectiveAccess(user: {
     credentials: "same-origin",
   });
   return readSuccessResponse(response, "Не удалось рассчитать effective access");
+}
+
+async function sendJson<T>(url: string, method: string, body: unknown, fallbackMessage: string): Promise<T> {
+  const response = await fetch(url, {
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method,
+  });
+  return readSuccessResponse(response, fallbackMessage);
+}
+
+export async function createAccessGroup(input: {
+  code: string;
+  description?: string | null;
+  is_active?: boolean;
+  name: string;
+}): Promise<AccessGroupItem> {
+  return sendJson<AccessGroupItem>(
+    "/api/web/admin/access/groups",
+    "POST",
+    {
+      code: input.code,
+      description: input.description ?? null,
+      is_active: input.is_active ?? true,
+      name: input.name,
+    },
+    "Не удалось создать группу доступа",
+  );
+}
+
+export async function saveAccessGroupPermissions(groupId: number, permissions: string[]): Promise<AccessGroupItem> {
+  return sendJson<AccessGroupItem>(
+    `/api/web/admin/access/groups/${groupId}/permissions`,
+    "PUT",
+    { permissions },
+    "Не удалось сохранить permissions группы",
+  );
+}
+
+export async function saveAccessGroupMembers(groupId: number, actorIds: string[]): Promise<AccessGroupItem> {
+  return sendJson<AccessGroupItem>(
+    `/api/web/admin/access/groups/${groupId}/members`,
+    "PUT",
+    { actor_ids: actorIds },
+    "Не удалось сохранить участников группы",
+  );
+}
+
+export async function saveAccessGroupQueues(
+  groupId: number,
+  queues: Array<{ queue_id: number; role_in_queue: string | null }>,
+): Promise<AccessGroupItem> {
+  return sendJson<AccessGroupItem>(
+    `/api/web/admin/access/groups/${groupId}/queues`,
+    "PUT",
+    { queues },
+    "Не удалось сохранить очереди группы",
+  );
 }

@@ -30,14 +30,16 @@ def resolve_effective_access(
     actor_role: str | None,
     queues: list[dict] | None = None,
     groups: list[str] | None = None,
+    group_permissions: list[str] | None = None,
 ) -> EffectiveAccess:
     role = normalize_role(actor_role)
+    permissions = sorted(set(get_role_permission_codes(role)) | set(group_permissions or []))
     return EffectiveAccess(
         actor_id=str(actor_id or "").strip(),
         actor_role=role,
         role_label=get_role_label(role),
-        permissions=get_role_permission_codes(role),
-        workspaces=get_available_workspaces(role),
+        permissions=permissions,
+        workspaces=_workspaces_from_permissions(permissions),
         groups=list(groups or []),
         queues=list(queues or []),
     )
@@ -55,6 +57,16 @@ def resolve_session_access(actor_role: str | None) -> tuple[str | None, list[str
 
 def can_role(actor_role: str | None, permission_code: str) -> bool:
     return permission_code in set(get_role_permission_codes(actor_role))
+
+
+def _workspaces_from_permissions(permissions: list[str]) -> list[str]:
+    permission_set = set(permissions)
+    workspaces: list[str] = []
+    if "workspace.admin.view" in permission_set:
+        workspaces.append("admin")
+    if "workspace.support.view" in permission_set:
+        workspaces.append("support")
+    return workspaces
 
 
 def grouped_permissions() -> list[dict]:

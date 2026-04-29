@@ -36,6 +36,13 @@ class AccessCatalogPayload(BaseModel):
     groups: list[AccessPermissionGroup] = Field(default_factory=list)
 
 
+class AccessQueueGrantInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    queue_id: int
+    role_in_queue: str | None = None
+
+
 class AccessQueueMembershipItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -43,6 +50,54 @@ class AccessQueueMembershipItem(BaseModel):
     queue_code: str
     queue_name: str
     role_in_queue: str | None = None
+
+
+class AccessGroupItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: int
+    code: str
+    name: str
+    description: str | None = None
+    is_active: bool
+    permissions: list[str] = Field(default_factory=list)
+    members: list[str] = Field(default_factory=list)
+    queue_grants: list[AccessQueueMembershipItem] = Field(default_factory=list)
+
+
+class AccessGroupCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    name: str
+    description: str | None = None
+    is_active: bool = True
+
+
+class AccessGroupUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+
+
+class AccessGroupPermissionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    permissions: list[str] = Field(default_factory=list)
+
+
+class AccessGroupMembersRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_ids: list[str] = Field(default_factory=list)
+
+
+class AccessGroupQueuesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    queues: list[AccessQueueGrantInput] = Field(default_factory=list)
 
 
 class AccessEffectivePayload(BaseModel):
@@ -85,5 +140,25 @@ class AccessSummaryPayload(BaseModel):
     version: str
     users: list[AccessUserItem] = Field(default_factory=list)
     queues: list[AccessQueueItem] = Field(default_factory=list)
-    access_groups: list[dict] = Field(default_factory=list)
+    access_groups: list[AccessGroupItem] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+
+
+class AccessAuditItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    entity_type: str
+    entity_id: str
+    action: str
+    actor_id: str
+    actor_role: str
+    before_json: dict | None = None
+    after_json: dict | None = None
+    created_at: str
+
+
+class AccessAuditPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AccessAuditItem] = Field(default_factory=list)

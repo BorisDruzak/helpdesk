@@ -121,6 +121,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 **agent_tokens:** `token_hash` (PK), `token_prefix`, `device_id`, `created_at`, `expires_at`, `revoked_at`, `replaced_by_token_hash`, `rotated_at`, `last_used_at`.  
 **ui_tokens:** `token_hash` (PK), `token_prefix`, `user_login`, `actor_role`, `created_at`, `expires_at`, `revoked_at`, `replaced_by_token_hash`, `rotated_at`, `last_used_at`.  
 **ui_users:** `user_login`, `actor_role`, `is_active`, `failed_attempts`, `locked_until`, `last_login_at`, `last_ticket_assigned_at`, `created_at`, `updated_at` — `last_ticket_assigned_at` используется для tie-break при автоназначении.  
+**access_groups / access_group_members / access_group_permissions / access_group_queue_members / access_audit:** RBAC-группы для нового `/app/admin/access`: group code/name, активность, участники по `actor_id`, grants из server-owned permission catalog, grants на очереди и append-only audit изменений.  
 **auth_sessions:** `session_id` (PK), `user_login`, `actor_role`, `created_at`, `expires_at`, `last_used_at`, `ip_address`, `user_agent`.  
 **download_audit:** `id` (PK), `token_hash`, `token_prefix`, `module_name`, `version`, `downloaded_at`, `ip_address`, `user_agent`.
 
@@ -220,6 +221,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 - `032_ticket_manual_rank.py` — tickets.manual_rank, manual_rank_updated_at, manual_rank_updated_by; индексы ix_tickets_queue_manual_rank, ix_tickets_queue_open_sort (Stage 10.2)
 - `038_ticket_queue_rework.py` — snake_case статусы, importance/reasons, ui_users.last_ticket_assigned_at (Stage 10.6)
 - `039_add_servicedesk_test_queue.py` — upsert очереди `servicedesk_test` (active) для публичной ссылки `/queue/test`
+- `062_access_control_groups.py` — access groups, group permissions, group queue grants and access_audit для `/app/admin/access`
 
 Команды: из каталога `server` — `alembic upgrade head`, `alembic revision --autogenerate`.
 

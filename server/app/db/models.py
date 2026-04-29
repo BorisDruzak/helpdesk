@@ -1819,6 +1819,95 @@ class UiUserAudit(Base):
     )
 
 
+class AccessGroup(Base):
+    """Admin-defined RBAC access group."""
+    __tablename__ = "access_groups"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_access_groups_is_active", "is_active"),
+        Index("ix_access_groups_code", "code"),
+    )
+
+
+class AccessGroupMember(Base):
+    """User membership in an RBAC access group."""
+    __tablename__ = "access_group_members"
+
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    actor_id: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    __table_args__ = (Index("ix_access_group_members_actor_id", "actor_id"),)
+
+
+class AccessGroupPermission(Base):
+    """Permission grant assigned to an RBAC access group."""
+    __tablename__ = "access_group_permissions"
+
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    permission_code: Mapped[str] = mapped_column(String(120), primary_key=True)
+
+    __table_args__ = (Index("ix_access_group_permissions_permission", "permission_code"),)
+
+
+class AccessGroupQueueMember(Base):
+    """Queue visibility grant assigned through an RBAC access group."""
+    __tablename__ = "access_group_queue_members"
+
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    queue_id: Mapped[int] = mapped_column(
+        BigInteger, sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"), primary_key=True
+    )
+    role_in_queue: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+
+class AccessAudit(Base):
+    """Append-only RBAC audit trail for access groups and grants."""
+    __tablename__ = "access_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    before_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    after_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_access_audit_entity_created", "entity_type", "entity_id", "created_at"),
+        Index("ix_access_audit_actor_created", "actor_id", "created_at"),
+        Index("ix_access_audit_created_at", "created_at"),
+    )
+
+
 class AgentRuntimeAudit(Base):
     """Append-only audit trail for agent auth/update/runtime lifecycle."""
     __tablename__ = "agent_runtime_audit"

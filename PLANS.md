@@ -311,7 +311,7 @@ Completed:
 
 ## 2026-04-29 RBAC Access Control Center
 
-Status: in progress; first read-only access-control slice implemented locally.
+Status: in progress; access groups/grants/audit slice implemented locally.
 
 ### Goal
 
@@ -585,6 +585,27 @@ Create a full RBAC management surface for the new admin/support workspaces: admi
 - Added `/app/admin/access` with a dense read-only Access Control Center: users, queues, built-in roles, grouped permission catalog and effective access inspector.
 - Wired the admin sidebar to hide `Access Control` unless the session has `admin.access.view`.
 - Deferred CRUD groups/memberships/audit writes to the next slice; current effective access is role defaults plus direct queue membership.
+
+### 2026-04-29 Second Slice Completed Locally
+
+- Added persistent RBAC group schema through migration `062`:
+  - `access_groups`;
+  - `access_group_members`;
+  - `access_group_permissions`;
+  - `access_group_queue_members`;
+  - `access_audit`.
+- Added `AccessControlRepo` for CRUD groups, permission grants, member assignments, queue grants and audit listing.
+- Added admin-only write API:
+  - `POST /api/web/admin/access/groups`;
+  - `PATCH /api/web/admin/access/groups/{group_id}`;
+  - `PUT /api/web/admin/access/groups/{group_id}/permissions`;
+  - `PUT /api/web/admin/access/groups/{group_id}/members`;
+  - `PUT /api/web/admin/access/groups/{group_id}/queues`;
+  - `GET /api/web/admin/access/audit`.
+- Effective access now merges built-in role defaults with active access-group permission grants and group queue grants.
+- Web session permissions now include active group grants for the current user, with DB-unavailable fallback to role defaults.
+- `/app/admin/access` now includes controlled group creation and explicit save/apply buttons for permissions, members and queue grants.
+- Still pending for later waves: apply permission-based disabled reasons across ticket actions, modules, playbooks and settings.
 
 ### Handoff
 

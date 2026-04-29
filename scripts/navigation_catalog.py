@@ -520,7 +520,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="web_platform",
         title="New web workspaces / typed web boundary",
-        summary="React/Vite `webapp`, lazy route chunks, typed `/api/web/*` contracts, role-aware `/app/*` routes, public requester `/app/help` and `/app/ticket/*`, server-driven `default_workspace`/`available_workspaces`/`permissions`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, typed notifications route/tab, typed access-control center, typed module workbench and tech-alert aliases, honest knowledge placeholder, and typed admin slices for inventory, registry objects, RBAC effective access, device update actions, modules registry/actions, request-form builder, public/support ticket playbook autostart timeline events, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode, trace detail with compact agent actions, and explicit detail/bundle error states.",
+        summary="React/Vite `webapp`, lazy route chunks, typed `/api/web/*` contracts, role-aware `/app/*` routes, public requester `/app/help` and `/app/ticket/*`, server-driven `default_workspace`/`available_workspaces`/`permissions`, operational legacy-shell cutover guardrails, bundle serving from aiohttp, shared realtime bridge over `/api/web/realtime/bootstrap` -> `/ws_ui`, real-data support/admin/reports/settings surfaces, typed notifications route/tab, typed access-control center with RBAC groups/grants/audit, typed module workbench and tech-alert aliases, honest knowledge placeholder, and typed admin slices for inventory, registry objects, RBAC effective access, device update actions, modules registry/actions, request-form builder, public/support ticket playbook autostart timeline events, plus a full observer workbench with quick/traces/signatures/degradations/runtime tabs, global mode, trace detail with compact agent actions, and explicit detail/bundle error states.",
         aliases=(
             "webapp",
             "react app",
@@ -546,6 +546,10 @@ TOPICS: tuple[Topic, ...] = (
             "access-control",
             "rbac",
             "effective access",
+            "access group",
+            "access groups",
+            "group grants",
+            "access audit",
             "api/web/admin/access",
             "cutover",
             "legacy shell",
@@ -667,6 +671,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/session_handlers.py",
             "server/access_control/catalog.py",
             "server/access_control/service.py",
+            "server/app/repos/access_control_repo.py",
             "server/web_api/access_handlers.py",
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",

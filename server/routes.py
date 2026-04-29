@@ -210,9 +210,15 @@ from web_api.session_handlers import (
     handle_web_session_me,
 )
 from web_api.access_handlers import (
+    handle_web_admin_access_audit,
     handle_web_admin_access_catalog,
+    handle_web_admin_access_create_group,
     handle_web_admin_access_effective,
+    handle_web_admin_access_group_members,
+    handle_web_admin_access_group_permissions,
+    handle_web_admin_access_group_queues,
     handle_web_admin_access_summary,
+    handle_web_admin_access_update_group,
 )
 from web_api.support_handlers import (
     handle_web_support_bootstrap,
@@ -430,6 +436,12 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/access/catalog', handle_web_admin_access_catalog),
         web.get('/api/web/admin/access/summary', handle_web_admin_access_summary),
         web.get('/api/web/admin/access/effective', handle_web_admin_access_effective),
+        web.get('/api/web/admin/access/audit', handle_web_admin_access_audit),
+        web.post('/api/web/admin/access/groups', handle_web_admin_access_create_group),
+        web.patch('/api/web/admin/access/groups/{group_id}', handle_web_admin_access_update_group),
+        web.put('/api/web/admin/access/groups/{group_id}/permissions', handle_web_admin_access_group_permissions),
+        web.put('/api/web/admin/access/groups/{group_id}/members', handle_web_admin_access_group_members),
+        web.put('/api/web/admin/access/groups/{group_id}/queues', handle_web_admin_access_group_queues),
         web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),
         web.get('/api/web/admin/observer/trace-detail/{trace_id}', handle_tech_trace_detail),

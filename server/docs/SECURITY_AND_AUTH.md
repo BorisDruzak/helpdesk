@@ -217,12 +217,16 @@
 
 - Доступ к access-control endpoints требует роли `admin`; UI-видимость не является security boundary.
 - `server/access_control/catalog.py` содержит серверный каталог permission codes, русские operator labels, risk labels, role defaults и `permissions_version`.
-- Первый read-only срез API:
+- Access-control API:
   - `GET /api/web/admin/access/catalog` — роли и grouped permission catalog;
-  - `GET /api/web/admin/access/summary` — пользователи из `ui_users`, очереди и прямые queue-membership counts;
-  - `GET /api/web/admin/access/effective?actor_id=...&actor_role=...` — effective permissions, workspaces, direct queue memberships и источники прав.
-- Текущая модель effective access: built-in role defaults + direct queue memberships. Access groups, group grants and audit-write endpoints запланированы следующим срезом; до их появления backend-deny правила и существующие queue checks остаются обязательными.
-- React `/app/admin/access` использует controlled tables/inspectors; raw JSON authoring для RBAC не допускается.
+  - `GET /api/web/admin/access/summary` — пользователи из `ui_users`, очереди, access groups и membership counts;
+  - `GET /api/web/admin/access/effective?actor_id=...&actor_role=...` — effective permissions, workspaces, direct/group queue memberships и источники прав;
+  - `POST/PATCH /api/web/admin/access/groups*` — controlled CRUD группы доступа;
+  - `PUT /api/web/admin/access/groups/{group_id}/permissions|members|queues` — explicit apply для permission grants, group members и queue grants;
+  - `GET /api/web/admin/access/audit` — последние RBAC mutations.
+- Текущая модель effective access: built-in role defaults + active access-group permission grants + direct queue memberships + group queue grants. Backend-deny правила и существующие queue checks остаются обязательными.
+- Группы хранятся в таблицах `access_groups`, `access_group_members`, `access_group_permissions`, `access_group_queue_members`, аудит — в `access_audit`.
+- React `/app/admin/access` использует controlled tables, checkboxes and explicit save buttons; raw JSON authoring для RBAC не допускается.
 
 ---
 

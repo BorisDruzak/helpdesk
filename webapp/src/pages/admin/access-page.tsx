@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   KeyRound,
+  Plus,
+  Save,
   Search,
   ShieldCheck,
   UsersRound,
@@ -11,15 +13,23 @@ import {
 import { startTransition, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import {
+  createAccessGroup,
   fetchAccessCatalog,
   fetchAccessSummary,
   fetchEffectiveAccess,
+  saveAccessGroupMembers,
+  saveAccessGroupPermissions,
+  saveAccessGroupQueues,
+  type AccessGroupItem,
   type AccessPermissionGroup,
   type AccessRoleItem,
+  type AccessQueueItem,
   type AccessUserItem,
 } from "../../features/access-control/api";
 import { cn } from "../../shared/ui/cn";
@@ -152,8 +162,310 @@ function PermissionCatalog({ groups }: { groups: AccessPermissionGroup[] }) {
   );
 }
 
+function updateGroupList(groups: AccessGroupItem[], nextGroup: AccessGroupItem) {
+  const exists = groups.some((group) => group.group_id === nextGroup.group_id);
+  const nextGroups = exists
+    ? groups.map((group) => (group.group_id === nextGroup.group_id ? nextGroup : group))
+    : [...groups, nextGroup];
+  return nextGroups.sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function AccessGroupsPanel({
+  catalogGroups,
+  groups,
+  onGroupChange,
+  queues,
+  users,
+}: {
+  catalogGroups: AccessPermissionGroup[];
+  groups: AccessGroupItem[];
+  onGroupChange: (group: AccessGroupItem) => void;
+  queues: AccessQueueItem[];
+  users: AccessUserItem[];
+}) {
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(groups[0]?.group_id ?? null);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [permissionDraft, setPermissionDraft] = useState<string[]>([]);
+  const [memberDraft, setMemberDraft] = useState<string[]>([]);
+  const [queueDraft, setQueueDraft] = useState<Array<{ queue_id: number; role_in_queue: string | null }>>([]);
+
+  const allPermissions = useMemo(
+    () => catalogGroups.flatMap((group) => group.permissions.map((permission) => ({ ...permission, groupLabel: group.label }))),
+    [catalogGroups],
+  );
+  const selectedGroup = groups.find((group) => group.group_id === selectedGroupId) ?? groups[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedGroup) {
+      return;
+    }
+    setPermissionDraft(selectedGroup.permissions);
+    setMemberDraft(selectedGroup.members);
+    setQueueDraft(
+      selectedGroup.queue_grants.map((queue) => ({
+        queue_id: queue.queue_id,
+        role_in_queue: queue.role_in_queue,
+      })),
+    );
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    if (selectedGroupId === null && groups.length > 0) {
+      setSelectedGroupId(groups[0].group_id);
+    }
+  }, [groups, selectedGroupId]);
+
+  const createMutation = useMutation({
+    mutationFn: createAccessGroup,
+    onSuccess: (group) => {
+      onGroupChange(group);
+      setSelectedGroupId(group.group_id);
+      setCode("");
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const permissionsMutation = useMutation({
+    mutationFn: () => saveAccessGroupPermissions(selectedGroup?.group_id ?? 0, permissionDraft),
+    onSuccess: onGroupChange,
+  });
+
+  const membersMutation = useMutation({
+    mutationFn: () => saveAccessGroupMembers(selectedGroup?.group_id ?? 0, memberDraft),
+    onSuccess: onGroupChange,
+  });
+
+  const queuesMutation = useMutation({
+    mutationFn: () => saveAccessGroupQueues(selectedGroup?.group_id ?? 0, queueDraft),
+    onSuccess: onGroupChange,
+  });
+
+  const togglePermission = (permission: string) => {
+    setPermissionDraft((current) =>
+      current.includes(permission)
+        ? current.filter((item) => item !== permission)
+        : [...current, permission].sort(),
+    );
+  };
+
+  const toggleMember = (actorId: string) => {
+    setMemberDraft((current) =>
+      current.includes(actorId)
+        ? current.filter((item) => item !== actorId)
+        : [...current, actorId].sort(),
+    );
+  };
+
+  const toggleQueue = (queueId: number) => {
+    setQueueDraft((current) =>
+      current.some((item) => item.queue_id === queueId)
+        ? current.filter((item) => item.queue_id !== queueId)
+        : [...current, { queue_id: queueId, role_in_queue: null }],
+    );
+  };
+
+  const setQueueRole = (queueId: number, roleInQueue: string) => {
+    setQueueDraft((current) =>
+      current.map((item) =>
+        item.queue_id === queueId ? { ...item, role_in_queue: roleInQueue.trim() || null } : item,
+      ),
+    );
+  };
+
+  const queueRole = (queueId: number) => queueDraft.find((item) => item.queue_id === queueId)?.role_in_queue ?? "";
+  const queueSelected = (queueId: number) => queueDraft.some((item) => item.queue_id === queueId);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b border-border">
+        <CardTitle>Группы доступа</CardTitle>
+        <p className="text-sm text-slate-500">Группа добавляет permissions и queue grants поверх базовой роли.</p>
+      </CardHeader>
+      <CardContent className="space-y-5 p-5">
+        <form
+          className="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createMutation.mutate({ code, description, name });
+          }}
+        >
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Код группы
+            <Input onChange={(event) => setCode(event.target.value)} required value={code} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Название группы
+            <Input onChange={(event) => setName(event.target.value)} required value={name} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Описание группы
+            <Input onChange={(event) => setDescription(event.target.value)} value={description} />
+          </label>
+          <Button className="self-end" disabled={createMutation.isPending} leadingIcon={<Plus className="h-4 w-4" />} type="submit">
+            Создать группу
+          </Button>
+        </form>
+
+        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="overflow-hidden rounded-lg border border-border">
+            {groups.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-500">Групп пока нет.</div>
+            ) : (
+              groups.map((group) => (
+                <button
+                  className={cn(
+                    "block w-full border-b border-border px-4 py-3 text-left last:border-b-0",
+                    selectedGroup?.group_id === group.group_id ? "bg-brand-50" : "hover:bg-slate-50",
+                  )}
+                  key={group.group_id}
+                  onClick={() => setSelectedGroupId(group.group_id)}
+                  type="button"
+                >
+                  <p className="font-semibold text-slate-950">{group.name}</p>
+                  <p className="mt-1 font-mono text-xs text-slate-500">{group.code}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {group.permissions.length} permissions / {group.members.length} members / {group.queue_grants.length} queues
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+
+          {selectedGroup ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-slate-50 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-950">{selectedGroup.name}</p>
+                <p className="mt-1 font-mono text-xs text-slate-500">{selectedGroup.code}</p>
+              </div>
+
+              <section className="rounded-lg border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">Permissions</p>
+                    <p className="text-xs text-slate-500">Выбираются только из server catalog.</p>
+                  </div>
+                  <Button
+                    disabled={permissionsMutation.isPending}
+                    leadingIcon={<Save className="h-4 w-4" />}
+                    onClick={() => permissionsMutation.mutate()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Сохранить permissions
+                  </Button>
+                </div>
+                <div className="grid max-h-[260px] gap-2 overflow-y-auto p-4 xl:grid-cols-2">
+                  {allPermissions.map((permission) => (
+                    <label className="flex gap-2 rounded-lg border border-border bg-white px-3 py-3 text-sm" key={permission.code}>
+                      <input
+                        checked={permissionDraft.includes(permission.code)}
+                        className="mt-1 h-4 w-4"
+                        onChange={() => togglePermission(permission.code)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="font-semibold text-slate-950">{permission.label}</span>
+                        <span className="mt-1 block font-mono text-xs text-slate-500">{permission.code}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">Участники</p>
+                    <p className="text-xs text-slate-500">Группа применяется к выбранным UI users.</p>
+                  </div>
+                  <Button
+                    disabled={membersMutation.isPending}
+                    leadingIcon={<Save className="h-4 w-4" />}
+                    onClick={() => membersMutation.mutate()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Сохранить участников
+                  </Button>
+                </div>
+                <div className="grid gap-2 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {users.map((user) => (
+                    <label className="flex gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm" key={user.user_login}>
+                      <input
+                        checked={memberDraft.includes(user.user_login)}
+                        className="mt-1 h-4 w-4"
+                        onChange={() => toggleMember(user.user_login)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="font-semibold text-slate-950">{user.user_login}</span>
+                        <span className="block text-xs text-slate-500">{user.role_label}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">Очереди</p>
+                    <p className="text-xs text-slate-500">Group queue grants дополняют прямое членство в очередях.</p>
+                  </div>
+                  <Button
+                    disabled={queuesMutation.isPending}
+                    leadingIcon={<Save className="h-4 w-4" />}
+                    onClick={() => queuesMutation.mutate()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Сохранить очереди
+                  </Button>
+                </div>
+                <div className="grid gap-3 p-4 xl:grid-cols-2">
+                  {queues.map((queue) => (
+                    <div className="rounded-lg border border-border bg-white px-3 py-3" key={queue.queue_id}>
+                      <label className="flex gap-2 text-sm">
+                        <input
+                          checked={queueSelected(queue.queue_id)}
+                          className="mt-1 h-4 w-4"
+                          onChange={() => toggleQueue(queue.queue_id)}
+                          type="checkbox"
+                        />
+                        <span>
+                          <span className="font-semibold text-slate-950">{queue.queue_name}</span>
+                          <span className="block text-xs text-slate-500">{queue.queue_code}</span>
+                        </span>
+                      </label>
+                      <label className="mt-3 grid gap-1 text-xs font-medium text-slate-500">
+                        {`Роль в очереди ${queue.queue_name}`}
+                        <Input
+                          disabled={!queueSelected(queue.queue_id)}
+                          onChange={(event) => setQueueRole(queue.queue_id, event.target.value)}
+                          value={queueRole(queue.queue_id)}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          ) : (
+            <EmptyState title="Группа не выбрана" description="Создайте или выберите группу доступа." />
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function AdminAccessPage() {
+  const queryClient = useQueryClient();
   const [selectedUser, setSelectedUser] = useState<AccessUserItem | null>(null);
+  const [accessGroups, setAccessGroups] = useState<AccessGroupItem[]>([]);
   const [query, setQuery] = useState("");
 
   const catalogQuery = useQuery({
@@ -169,6 +481,17 @@ export function AdminAccessPage() {
   });
 
   const users = summaryQuery.data?.users ?? [];
+  useEffect(() => {
+    if (summaryQuery.data) {
+      setAccessGroups(summaryQuery.data.access_groups);
+    }
+  }, [summaryQuery.data]);
+
+  const handleGroupChange = (group: AccessGroupItem) => {
+    setAccessGroups((current) => updateGroupList(current, group));
+    void queryClient.invalidateQueries({ queryKey: ["admin-access-effective"] });
+  };
+
   const filteredUsers = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
@@ -245,7 +568,7 @@ export function AdminAccessPage() {
         </div>
         <div className="surface-panel px-4 py-3">
           <p className="text-xs font-semibold uppercase text-slate-400">Группы доступа</p>
-          <p className="mt-1 font-semibold text-slate-950">{summary.access_groups.length}</p>
+          <p className="mt-1 font-semibold text-slate-950">{accessGroups.length}</p>
         </div>
       </div>
 
@@ -298,12 +621,20 @@ export function AdminAccessPage() {
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border">
               <CardTitle>Permissions Matrix</CardTitle>
-              <p className="text-sm text-slate-500">Built-in роли пока являются базовым слоем прав; группы будут additive-слоем.</p>
+              <p className="text-sm text-slate-500">Built-in роли являются базовым слоем; группы добавляют grants управляемо.</p>
             </CardHeader>
             <CardContent className="p-0">
               <RoleMatrix roles={catalog.roles} />
             </CardContent>
           </Card>
+
+          <AccessGroupsPanel
+            catalogGroups={catalog.groups}
+            groups={accessGroups}
+            onGroupChange={handleGroupChange}
+            queues={summary.queues}
+            users={summary.users}
+          />
 
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border">

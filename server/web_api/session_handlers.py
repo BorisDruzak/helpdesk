@@ -1,7 +1,10 @@
 from aiohttp import web
 from pydantic import ValidationError
 
+from access_control.service import resolve_effective_access
 from access_control.service import resolve_session_access
+from app.db import get_session
+from app.repos.access_control_repo import AccessControlRepo
 from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
 from auth.service import AuthService
 from web_api.dto.common import SuccessResponse, json_model_response
@@ -28,6 +31,31 @@ def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str) 
         permissions=permissions,
         permissions_version=permissions_version,
     )
+
+
+async def _build_effective_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
+    try:
+        async with get_session() as session:
+            repo = AccessControlRepo(session)
+            group_permissions = await repo.get_actor_group_permissions(user_login)
+            groups = await repo.get_actor_group_codes(user_login)
+        effective = resolve_effective_access(
+            actor_id=user_login,
+            actor_role=actor_role,
+            groups=groups,
+            group_permissions=group_permissions,
+        )
+        return WebSessionPayload(
+            user_login=user_login,
+            actor_role=actor_role,
+            auth_type=auth_type,
+            default_workspace=effective.workspaces[0] if effective.workspaces else None,
+            available_workspaces=effective.workspaces,
+            permissions=effective.permissions,
+            permissions_version=resolve_session_access(actor_role)[3],
+        )
+    except Exception:
+        return _build_session_payload(user_login=user_login, actor_role=actor_role, auth_type=auth_type)
 
 
 async def handle_web_session_login(request):
@@ -62,7 +90,7 @@ async def handle_web_session_login(request):
     )
     response = json_model_response(
         SuccessResponse[WebSessionPayload](
-            data=_build_session_payload(
+            data=await _build_effective_session_payload(
                 user_login=payload.login,
                 actor_role=actor_role,
                 auth_type="ui_token",
@@ -99,7 +127,7 @@ async def handle_web_session_me(request):
     if not auth_context:
         return json_model_response(SuccessResponse[WebSessionPayload | None](data=None))
 
-    payload = _build_session_payload(
+    payload = await _build_effective_session_payload(
         user_login=auth_context.actor_id,
         actor_role=auth_context.actor_role,
         auth_type=auth_context.auth_type.value,
