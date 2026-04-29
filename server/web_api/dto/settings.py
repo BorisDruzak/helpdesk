@@ -139,6 +139,22 @@ class WebSettingsNextActionOwnerItem(BaseModel):
     internal_statuses: list[str] = Field(default_factory=list)
 
 
+class WebSettingsWorkflowProfileItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: str
+    label: str
+    purpose: str
+    suggested_path: list[str] = Field(default_factory=list)
+    allowed_statuses: list[str] = Field(default_factory=list)
+    required_create_fields: list[str] = Field(default_factory=list)
+    required_resolve_fields: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
+    requires_change_plan: bool = False
+    requires_action_log: bool = False
+    evidence_required_for_priorities: list[str] = Field(default_factory=list)
+
+
 class WebSettingsTicketGovernancePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -175,6 +191,7 @@ class WebSettingsTicketSettingsPayload(BaseModel):
     internal_statuses: list[WebSettingsTicketStatusItem] = Field(default_factory=list)
     requester_statuses: list[WebSettingsRequesterStatusItem] = Field(default_factory=list)
     next_action_owners: list[WebSettingsNextActionOwnerItem] = Field(default_factory=list)
+    workflow_profiles: list[WebSettingsWorkflowProfileItem] = Field(default_factory=list)
     governance: WebSettingsTicketGovernancePayload
     operational_flags: WebSettingsTicketOperationalFlags
 

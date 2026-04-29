@@ -86,6 +86,7 @@ def ticket_to_dict(ticket: Any, queue_code: Optional[str] = None) -> Dict[str, A
         "queue_code": _queue_code_from_ticket(ticket, queue_code=queue_code),
         "assignee_id": getattr(ticket, "assignee_id", None),
         "requester_id": getattr(ticket, "requester_id", None),
+        "ticket_type": getattr(ticket, "ticket_type", None),
         "priority": getattr(ticket, "priority", None),
         "priority_class": priority_class,
         "effective_priority": compute_effective_priority(priority_class, getattr(ticket, "status", None), created_at),

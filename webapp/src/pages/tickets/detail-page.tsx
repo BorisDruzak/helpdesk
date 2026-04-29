@@ -1376,6 +1376,58 @@ export function TicketDetailPage() {
   const toolAccess = requireToolRunPermission(session, selectedTool?.risk_level);
   const canSendInternal = Boolean(detail?.actions.can_send_internal_note) && internalCommentAccess.allowed;
   const latestOperations = detail?.snapshot.latest_operations ?? [];
+  const priorityDecision = detail?.ticket.priority_decision ?? {};
+  const requestRows = detail?.request_form?.rows ?? [];
+  const diagnosticsDone = detail
+    ? [
+        ...detail.timeline
+          .filter((entry) => entry.event_type === "tool_call_result" || entry.event_type === "playbook_started")
+          .slice(0, 3)
+          .map((entry) => entry.text),
+        ...(detail.ticket.resolution_summary ? [detail.ticket.resolution_summary] : []),
+      ].filter(Boolean)
+    : [];
+  const operationalRows = detail
+    ? [
+        {
+          question: "Что случилось?",
+          answer: detail.ticket.description || detail.ticket.title,
+        },
+        {
+          question: "С кем случилось?",
+          answer: detail.ticket.requester_display_name || "Не указано",
+        },
+        {
+          question: "Где случилось?",
+          answer:
+            requestRows.find((row) => ["location", "room", "cabinet", "building"].includes(row.key))?.value ||
+            detail.ticket.device_id ||
+            "Не указано",
+        },
+        {
+          question: "Что затронуто?",
+          answer:
+            requestRows.find((row) => ["service", "system", "url", "device", "printer"].includes(row.key))?.value ||
+            detail.ticket.ticket_type ||
+            "Не указано",
+        },
+        {
+          question: "Кто сейчас должен действовать?",
+          answer: detail.ticket.next_action_owner || getNextActionOwnerForStatus(detail.ticket.status),
+        },
+        {
+          question: "Когда крайний срок?",
+          answer:
+            formatDateTime(detail.ticket.resolution_due_at) ||
+            formatDateTime(detail.ticket.next_action_due_at) ||
+            "Не указан",
+        },
+        {
+          question: "Что уже проверили и сделали?",
+          answer: diagnosticsDone.length ? diagnosticsDone.join(" / ") : "Пока нет зафиксированных действий",
+        },
+      ]
+    : [];
 
   const tabItems = [
     { value: "dialog", label: "Диалог", count: detail?.timeline.length ?? 0 },
@@ -1474,6 +1526,53 @@ export function TicketDetailPage() {
             ? detailQuery.error.message
             : "Не удалось открыть карточку тикета."}
         </div>
+      ) : null}
+
+      {detail ? (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Операционная карточка</CardTitle>
+                <CardDescription>Сводка по 7 вопросам для принятия заявки в работу.</CardDescription>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge tone="info">{detail.ticket.ticket_type ?? "request"}</Badge>
+                <Badge tone="warning">{detail.ticket.priority_class ?? detail.ticket.priority ?? "P3"}</Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {operationalRows.map((row) => (
+                <div className="rounded-[0.9rem] border border-border bg-surface-subtle px-4 py-3" key={row.question}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{row.question}</p>
+                  <p className="mt-2 text-sm font-medium text-slate-900">{row.answer}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
+                <p className="text-xs text-slate-500">Impact</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.impact ?? "Не указан"}</p>
+              </div>
+              <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
+                <p className="text-xs text-slate-500">Urgency</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.urgency ?? "Не указана"}</p>
+              </div>
+              <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
+                <p className="text-xs text-slate-500">Importance</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.importance ?? "Не указана"}</p>
+              </div>
+              <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
+                <p className="text-xs text-slate-500">Почему такой приоритет</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">
+                  {String(priorityDecision.priority_reason ?? "Нет обоснования")}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px]">

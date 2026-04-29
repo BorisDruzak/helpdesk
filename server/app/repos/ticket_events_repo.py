@@ -839,6 +839,10 @@ class TicketEventsRepo:
         status: str = "in_progress",
         requester_id: Optional[str] = None,
         ticket_type: str = "request",
+        category_id: Optional[int] = None,
+        service_id: Optional[int] = None,
+        subcategory_id: Optional[int] = None,
+        sla_policy_id: Optional[int] = None,
     ) -> Ticket:
         """
         Create a new ticket.
@@ -864,6 +868,10 @@ class TicketEventsRepo:
             description=description,
             status=status,
             ticket_type=ticket_type,
+            category_id=category_id,
+            service_id=service_id,
+            subcategory_id=subcategory_id,
+            sla_policy_id=sla_policy_id,
             created_at=now,
             updated_at=now,
             requester_id=requester_id,

@@ -442,8 +442,22 @@ def _map_admin_form_item(raw_form: dict | None) -> AdminFormsFormItem:
     return AdminFormsFormItem(
         key=str(form.get("key") or ""),
         request_kind=str(form.get("request_kind") or form.get("key") or ""),
+        ticket_type=str(form.get("ticket_type") or "").strip() or None,
         title=str(form.get("title") or ""),
         description=str(form.get("description") or "").strip() or None,
+        category_id=form.get("category_id") if form.get("category_id") is not None else None,
+        service_id=form.get("service_id") if form.get("service_id") is not None else None,
+        subcategory_id=form.get("subcategory_id") if form.get("subcategory_id") is not None else None,
+        default_queue_id=form.get("default_queue_id") if form.get("default_queue_id") is not None else None,
+        sla_policy_id=form.get("sla_policy_id") if form.get("sla_policy_id") is not None else None,
+        suggested_playbook_id=str(form.get("suggested_playbook_id") or "").strip() or None,
+        field_roles=form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
+        priority_policy=form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {},
+        routing_policy=form.get("routing_policy") if isinstance(form.get("routing_policy"), dict) else {},
+        approval_policy=form.get("approval_policy") if isinstance(form.get("approval_policy"), dict) else {},
+        ola_policy=form.get("ola_policy") if isinstance(form.get("ola_policy"), dict) else {},
+        closure_policy=form.get("closure_policy") if isinstance(form.get("closure_policy"), dict) else {},
+        visibility_policy=form.get("visibility_policy") if isinstance(form.get("visibility_policy"), dict) else {},
         fields=[
             _map_admin_form_field(field)
             for field in (form.get("fields") or [])
@@ -574,7 +588,7 @@ def _serialize_admin_form_field_request(payload: AdminFormsSaveFieldRequest) -> 
 
 
 def _serialize_admin_form_request(payload) -> dict[str, object]:
-    return {
+    form_payload: dict[str, object] = {
         "key": str(payload.key or "").strip(),
         "request_kind": str(payload.request_kind or payload.key or "").strip(),
         "title": str(payload.title or "").strip(),
@@ -591,6 +605,30 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
             if str(trigger.playbook_key or "").strip()
         ],
     }
+    for key in (
+        "ticket_type",
+        "suggested_playbook_id",
+    ):
+        value = str(getattr(payload, key, None) or "").strip()
+        if value:
+            form_payload[key] = value
+    for key in ("category_id", "service_id", "subcategory_id", "default_queue_id", "sla_policy_id"):
+        value = getattr(payload, key, None)
+        if value is not None:
+            form_payload[key] = value
+    for key in (
+        "field_roles",
+        "priority_policy",
+        "routing_policy",
+        "approval_policy",
+        "ola_policy",
+        "closure_policy",
+        "visibility_policy",
+    ):
+        value = getattr(payload, key, None)
+        if isinstance(value, dict) and value:
+            form_payload[key] = value
+    return form_payload
 
 
 def _serialize_admin_forms_save_request(payload: AdminFormsSaveRequest) -> dict[str, object]:

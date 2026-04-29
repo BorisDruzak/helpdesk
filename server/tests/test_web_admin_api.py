@@ -847,6 +847,113 @@ async def test_web_admin_forms_save_returns_typed_payload(web_admin_client, monk
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_admin_forms_save_accepts_request_template_process_context(web_admin_client, monkeypatch):
+    async def fake_save_pack(*, auth_context, payload):
+        form = payload.forms[0]
+        assert form.ticket_type == "incident"
+        assert form.category_id == 10
+        assert form.service_id == 20
+        assert form.subcategory_id == 30
+        assert form.default_queue_id == 40
+        assert form.sla_policy_id == 50
+        assert form.suggested_playbook_id == "diagnose.website"
+        assert form.field_roles == {"url": ["routing_field", "diagnostic_input"]}
+        assert form.priority_policy == {"impact_field": "affected_scope", "urgency_field": "work_continuity"}
+        assert form.routing_policy == {"default_queue_id": 40}
+        assert form.approval_policy == {"required": False}
+        assert form.closure_policy == {"require_resolution_code": True}
+        assert form.visibility_policy == {"operator_fields": ["url"]}
+        assert form.ola_policy == {"use_queue_targets": True}
+        return AdminFormsSaveResult(
+            summary=AdminFormsSummary(
+                pack_key="request_forms",
+                version="1.0.5",
+                title="Каталог заявок",
+                description="Process template catalog",
+                forms_count=1,
+                fields_count=1,
+                required_fields_count=1,
+                last_published_at="2026-04-29T10:15:00+05:00",
+                last_published_by="admin1",
+            ),
+            forms=[
+                AdminFormsFormItem(
+                    key="website_unavailable",
+                    request_kind="website_unavailable",
+                    ticket_type="incident",
+                    title="Не открывается сайт",
+                    description="Website incident",
+                    category_id=10,
+                    service_id=20,
+                    subcategory_id=30,
+                    default_queue_id=40,
+                    sla_policy_id=50,
+                    suggested_playbook_id="diagnose.website",
+                    field_roles={"url": ["routing_field", "diagnostic_input"]},
+                    priority_policy={"impact_field": "affected_scope", "urgency_field": "work_continuity"},
+                    routing_policy={"default_queue_id": 40},
+                    approval_policy={"required": False},
+                    closure_policy={"require_resolution_code": True},
+                    visibility_policy={"operator_fields": ["url"]},
+                    ola_policy={"use_queue_targets": True},
+                    fields=[
+                        AdminFormsFieldItem(
+                            key="url",
+                            label="URL",
+                            type="text",
+                            type_label="Текст",
+                            required=True,
+                        )
+                    ],
+                )
+            ],
+            message="ok",
+        )
+
+    monkeypatch.setattr(admin_handlers, "_save_admin_forms_pack", fake_save_pack)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/save",
+        json={
+            "title": "Каталог заявок",
+            "description": "Process template catalog",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "ticket_type": "incident",
+                    "title": "Не открывается сайт",
+                    "description": "Website incident",
+                    "category_id": 10,
+                    "service_id": 20,
+                    "subcategory_id": 30,
+                    "default_queue_id": 40,
+                    "sla_policy_id": 50,
+                    "suggested_playbook_id": "diagnose.website",
+                    "field_roles": {"url": ["routing_field", "diagnostic_input"]},
+                    "priority_policy": {"impact_field": "affected_scope", "urgency_field": "work_continuity"},
+                    "routing_policy": {"default_queue_id": 40},
+                    "approval_policy": {"required": False},
+                    "closure_policy": {"require_resolution_code": True},
+                    "visibility_policy": {"operator_fields": ["url"]},
+                    "ola_policy": {"use_queue_targets": True},
+                    "fields": [
+                        {"key": "url", "label": "URL", "type": "text", "required": True, "options": []},
+                    ],
+                }
+            ],
+        },
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    form = payload["data"]["forms"][0]
+    assert form["ticket_type"] == "incident"
+    assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
+    assert form["priority_policy"]["impact_field"] == "affected_scope"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_admin_forms_route_preview_returns_typed_payload(web_admin_client, monkeypatch):
     async def fake_preview(*, payload):
         assert payload.form.key == "printer"

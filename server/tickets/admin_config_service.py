@@ -10,7 +10,7 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 
 
-VALID_PRIORITIES = ("P1", "P2", "P3", "P4")
+VALID_PRIORITIES = ("P0", "P1", "P2", "P3", "P4")
 VALID_IMPACT_URGENCY = (1, 2, 3)
 
 

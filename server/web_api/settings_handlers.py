@@ -42,6 +42,7 @@ from tickets.statuses import (
     next_action_owner_for_status,
     requester_status_for_internal,
 )
+from tickets.workflow_profiles import list_workflow_profiles
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.settings import (
     WebSettingsAuditItem,
@@ -68,6 +69,7 @@ from web_api.dto.settings import (
     WebSettingsTicketOperationalFlags,
     WebSettingsTicketSettingsPayload,
     WebSettingsTicketStatusItem,
+    WebSettingsWorkflowProfileItem,
 )
 
 
@@ -141,6 +143,10 @@ def _build_ticket_settings_payload() -> WebSettingsTicketSettingsPayload:
                 internal_statuses=owner_map.get(value, []),
             )
             for value, label in NEXT_ACTION_OWNER_LABELS.items()
+        ],
+        workflow_profiles=[
+            WebSettingsWorkflowProfileItem(**profile.to_dict())
+            for profile in list_workflow_profiles()
         ],
         governance=WebSettingsTicketGovernancePayload(
             fsm_mode=TICKET_FSM_MODE,

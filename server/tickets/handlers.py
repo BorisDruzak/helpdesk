@@ -37,6 +37,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_submission,
 )
+from tickets.priority_policy import compute_priority_from_policy
 from tickets.ola_service import build_ola_block, close_ola_processing, start_ola_for_ticket
 from tickets.public_access import (
     mark_public_ticket_unbound,
@@ -813,6 +814,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         extra_custom_fields: dict[str, Any] | None = None
+        template_process_fields: dict[str, Any] = {}
         ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
         if form_key:
             try:
@@ -827,6 +829,22 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
                     raw_values=form_payload or {},
                 )
                 extra_custom_fields = build_form_custom_fields(validated_submission)
+                ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
+                template_context = validated_submission.get("template_context") or {}
+                for key in ("category_id", "service_id", "subcategory_id", "sla_policy_id"):
+                    if template_context.get(key) is not None:
+                        template_process_fields[key] = template_context.get(key)
+                priority_policy = template_context.get("priority_policy") or {}
+                if priority_policy:
+                    normalized_priority = compute_priority_from_policy(
+                        priority_policy=priority_policy,
+                        submitted_values=validated_submission.get("submitted_values") or {},
+                        fallback={
+                            "impact": data.get("impact"),
+                            "urgency": data.get("urgency"),
+                            "importance": data.get("importance"),
+                        },
+                    )
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
@@ -844,6 +862,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             initial_message_from="user",
             include_public_access=True,
             ticket_type=ticket_type,
+            **template_process_fields,
             extra_custom_fields=extra_custom_fields,
             state=request.app.get("state"),
         )

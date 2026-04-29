@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from playbooks.form_triggers import normalize_form_playbook_triggers
+from tickets.workflow_profiles import DEFAULT_WORKFLOW_PROFILE, get_workflow_profile
 
 
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
@@ -56,6 +57,30 @@ _ROUTING_OPERATOR_OPTIONS = (
     {"value": "contains", "label": "Содержит"},
     {"value": "is_null", "label": "Пусто / не пусто"},
 )
+_TEMPLATE_DICT_FIELDS = (
+    "priority_policy",
+    "routing_policy",
+    "approval_policy",
+    "ola_policy",
+    "closure_policy",
+    "visibility_policy",
+)
+_TEMPLATE_INT_FIELDS = (
+    "category_id",
+    "service_id",
+    "subcategory_id",
+    "default_queue_id",
+    "sla_policy_id",
+)
+_ALLOWED_FIELD_ROLES = {
+    "routing_field",
+    "priority_field",
+    "sla_field",
+    "approval_field",
+    "diagnostic_input",
+    "closure_evidence",
+    "display_only",
+}
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -204,6 +229,20 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
             ],
         },
     ]
+    ticket_type_by_key = {
+        "breakage": "incident",
+        "access": "access_request",
+        "software_install": "service_request",
+        "hardware_replacement": "service_request",
+        "printer": "incident",
+        "network": "incident",
+        "site_system": "incident",
+        "new_account": "access_request",
+        "mail_issue": "incident",
+    }
+    for form in forms:
+        form["ticket_type"] = ticket_type_by_key.get(str(form.get("key") or ""), DEFAULT_WORKFLOW_PROFILE)
+
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
         "version": DEFAULT_TICKET_FORM_PACK_VERSION,
@@ -239,6 +278,51 @@ def _normalize_visible_when(raw_rule: Any) -> Optional[dict[str, Any]]:
     if isinstance(values, list) and values:
         return {"field": field, "in": [str(item or "").strip() for item in values if str(item or "").strip()]}
     raise ValueError("visible_when requires equals or in")
+
+
+def _normalize_optional_int(raw_value: Any, field_name: str) -> int | None:
+    if raw_value in (None, ""):
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be integer") from exc
+
+
+def _normalize_optional_dict(raw_value: Any, field_name: str) -> dict[str, Any]:
+    if raw_value in (None, ""):
+        return {}
+    if not isinstance(raw_value, dict):
+        raise ValueError(f"{field_name} must be an object")
+    return deepcopy(raw_value)
+
+
+def _normalize_field_roles(raw_value: Any, field_keys: set[str], *, form_key: str) -> dict[str, list[str]]:
+    if raw_value in (None, ""):
+        return {}
+    if not isinstance(raw_value, dict):
+        raise ValueError(f"form {form_key!r} field_roles must be an object")
+    normalized: dict[str, list[str]] = {}
+    for raw_field_key, raw_roles in raw_value.items():
+        field_key = str(raw_field_key or "").strip()
+        if not field_key:
+            continue
+        if field_key not in field_keys:
+            raise ValueError(f"form {form_key!r} field_roles references unknown field {field_key!r}")
+        if not isinstance(raw_roles, list):
+            raise ValueError(f"form {form_key!r} field_roles.{field_key} must be an array")
+        roles: list[str] = []
+        for raw_role in raw_roles:
+            role = str(raw_role or "").strip()
+            if not role:
+                continue
+            if role not in _ALLOWED_FIELD_ROLES:
+                raise ValueError(f"form {form_key!r} field_roles.{field_key} has unsupported role {role!r}")
+            if role not in roles:
+                roles.append(role)
+        if roles:
+            normalized[field_key] = roles
+    return normalized
 
 
 def next_form_pack_version(current_version: Optional[str]) -> str:
@@ -344,6 +428,24 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                     f"references unknown visible_when.field {dependency_key!r}"
                 )
 
+        ticket_type = str(raw_form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE).strip() or DEFAULT_WORKFLOW_PROFILE
+        ticket_type = get_workflow_profile(ticket_type).ticket_type
+        template_context: dict[str, Any] = {
+            "ticket_type": ticket_type,
+            "field_roles": _normalize_field_roles(raw_form.get("field_roles"), seen_fields, form_key=form_key),
+        }
+        for int_field in _TEMPLATE_INT_FIELDS:
+            value = _normalize_optional_int(raw_form.get(int_field), int_field)
+            if value is not None:
+                template_context[int_field] = value
+        suggested_playbook_id = str(raw_form.get("suggested_playbook_id") or "").strip()
+        if suggested_playbook_id:
+            template_context["suggested_playbook_id"] = suggested_playbook_id
+        for dict_field in _TEMPLATE_DICT_FIELDS:
+            value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)
+            if value:
+                template_context[dict_field] = value
+
         normalized_forms.append(
             {
                 "key": form_key,
@@ -352,6 +454,7 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                 "description": str(raw_form.get("description") or "").strip(),
                 "fields": normalized_fields,
                 "playbook_triggers": normalize_form_playbook_triggers(raw_form.get("playbook_triggers")),
+                **template_context,
             }
         )
 
@@ -455,10 +558,30 @@ def validate_form_submission(
         "pack_version": pack.get("version"),
         "form_key": form.get("key"),
         "request_kind": form.get("request_kind"),
+        "ticket_type": form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE,
         "form_title": form.get("title"),
         "submitted_values": submitted_values,
         "summary_rows": summary_rows,
         "playbook_triggers": deepcopy(form.get("playbook_triggers") or []),
+        "template_context": {
+            "key": form.get("key"),
+            "title": form.get("title"),
+            "request_kind": form.get("request_kind"),
+            "ticket_type": form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE,
+            "category_id": form.get("category_id"),
+            "service_id": form.get("service_id"),
+            "subcategory_id": form.get("subcategory_id"),
+            "default_queue_id": form.get("default_queue_id"),
+            "sla_policy_id": form.get("sla_policy_id"),
+            "suggested_playbook_id": form.get("suggested_playbook_id"),
+            "field_roles": deepcopy(form.get("field_roles") or {}),
+            "priority_policy": deepcopy(form.get("priority_policy") or {}),
+            "routing_policy": deepcopy(form.get("routing_policy") or {}),
+            "approval_policy": deepcopy(form.get("approval_policy") or {}),
+            "ola_policy": deepcopy(form.get("ola_policy") or {}),
+            "closure_policy": deepcopy(form.get("closure_policy") or {}),
+            "visibility_policy": deepcopy(form.get("visibility_policy") or {}),
+        },
     }
 
 
@@ -472,6 +595,7 @@ def build_form_custom_fields(validated_submission: dict[str, Any]) -> dict[str, 
         "request_form_data": deepcopy(validated_submission.get("submitted_values") or {}),
         "request_form_summary": deepcopy(validated_submission.get("summary_rows") or []),
         "request_form_playbook_triggers": deepcopy(validated_submission.get("playbook_triggers") or []),
+        "request_template": deepcopy(validated_submission.get("template_context") or {}),
     }
 
 

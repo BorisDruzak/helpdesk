@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Playbook, PlaybookRun, PlaybookVersion, ServerConfig, Ticket, TicketEvent, TicketFormPack
+from app.db.models import Playbook, PlaybookRun, PlaybookVersion, ServerConfig, Ticket, TicketCategory, TicketEvent, TicketFormPack
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
@@ -188,7 +188,7 @@ async def test_create_ticket_accepts_form_payload_and_sets_ticket_type(test_clie
             await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
         ).scalar_one()
 
-    assert ticket.ticket_type == "printer"
+    assert ticket.ticket_type == "incident"
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["request_kind"] == "printer"
     assert custom_fields["request_form_key"] == "printer"
@@ -490,6 +490,137 @@ def test_validate_form_submission_applies_visible_when_equals():
     assert [item["key"] for item in visible["summary_rows"]] == ["issue_kind", "url"]
     assert "url" not in hidden["submitted_values"]
     assert [item["key"] for item in hidden["summary_rows"]] == ["issue_kind"]
+
+
+def test_validate_form_pack_schema_preserves_request_template_process_context():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Каталог заявок",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "ticket_type": "incident",
+                    "title": "Не открывается сайт",
+                    "category_id": 10,
+                    "service_id": 20,
+                    "subcategory_id": 30,
+                    "default_queue_id": 40,
+                    "sla_policy_id": 50,
+                    "suggested_playbook_id": "diagnose.website",
+                    "field_roles": {
+                        "url": ["routing_field", "diagnostic_input"],
+                        "affected_scope": ["priority_field"],
+                    },
+                    "priority_policy": {
+                        "impact_field": "affected_scope",
+                        "urgency_field": "work_continuity",
+                    },
+                    "approval_policy": {"required": False},
+                    "closure_policy": {"require_resolution_code": True},
+                    "fields": [
+                        {"key": "url", "label": "URL", "type": "text", "required": True},
+                        {"key": "affected_scope", "label": "Кого затронуло", "type": "text"},
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    form = pack["forms"][0]
+    assert form["ticket_type"] == "incident"
+    assert form["category_id"] == 10
+    assert form["service_id"] == 20
+    assert form["subcategory_id"] == 30
+    assert form["default_queue_id"] == 40
+    assert form["sla_policy_id"] == 50
+    assert form["suggested_playbook_id"] == "diagnose.website"
+    assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
+    assert form["priority_policy"]["impact_field"] == "affected_scope"
+    assert form["closure_policy"]["require_resolution_code"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_uses_template_ticket_type_over_request_body(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    category_id = 700_000 + int(uuid.uuid4().hex[:6], 16)
+    service_id = category_id + 1
+    subcategory_id = category_id + 2
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                TicketCategory(id=category_id, code=f"web-{category_id}", name="Web", level=1),
+                TicketCategory(id=service_id, code=f"reports-{service_id}", name="Reports", parent_id=category_id, level=2),
+                TicketCategory(
+                    id=subcategory_id,
+                    code=f"unavailable-{subcategory_id}",
+                    name="Website unavailable",
+                    parent_id=service_id,
+                    level=3,
+                ),
+            ]
+        )
+        await session.commit()
+
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                        {
+                            "key": "website_unavailable",
+                            "request_kind": "website_unavailable",
+                            "ticket_type": "incident",
+                            "title": "Не открывается сайт",
+                            "category_id": category_id,
+                            "service_id": service_id,
+                            "subcategory_id": subcategory_id,
+                        "suggested_playbook_id": "diagnose.website",
+                        "field_roles": {"url": ["routing_field", "diagnostic_input"]},
+                        "fields": [
+                            {"key": "url", "label": "URL", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Website issue",
+            "description": "Cannot open reporting site",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": "website_unavailable",
+            "form_pack_key": "request_forms",
+            "form_payload": {"url": "https://reports.example.local"},
+            "ticket_type": "consultation",
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    assert ticket.ticket_type == "incident"
+    assert ticket.category_id == category_id
+    assert ticket.service_id == service_id
+    assert ticket.subcategory_id == subcategory_id
+    assert ticket.custom_fields["request_kind"] == "website_unavailable"
+    assert ticket.custom_fields["request_template"]["key"] == "website_unavailable"
+    assert ticket.custom_fields["request_template"]["ticket_type"] == "incident"
+    assert ticket.custom_fields["request_template"]["suggested_playbook_id"] == "diagnose.website"
 
 
 def test_validate_form_submission_applies_visible_when_in():

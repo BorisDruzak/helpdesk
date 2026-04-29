@@ -33,8 +33,22 @@ export type AdminFormsPlaybookTrigger = {
 export type AdminFormsFormItem = {
   key: string;
   request_kind: string;
+  ticket_type?: string | null;
   title: string;
   description: string | null;
+  category_id?: number | null;
+  service_id?: number | null;
+  subcategory_id?: number | null;
+  default_queue_id?: number | null;
+  sla_policy_id?: number | null;
+  suggested_playbook_id?: string | null;
+  field_roles?: Record<string, string[]>;
+  priority_policy?: Record<string, unknown>;
+  routing_policy?: Record<string, unknown>;
+  approval_policy?: Record<string, unknown>;
+  ola_policy?: Record<string, unknown>;
+  closure_policy?: Record<string, unknown>;
+  visibility_policy?: Record<string, unknown>;
   fields: AdminFormsFieldItem[];
   playbook_triggers?: AdminFormsPlaybookTrigger[];
 };
@@ -71,8 +85,22 @@ export type AdminFormsSaveRequest = {
   forms: Array<{
     key: string;
     request_kind: string;
+    ticket_type?: string | null;
     title: string;
     description: string;
+    category_id?: number | null;
+    service_id?: number | null;
+    subcategory_id?: number | null;
+    default_queue_id?: number | null;
+    sla_policy_id?: number | null;
+    suggested_playbook_id?: string | null;
+    field_roles?: Record<string, string[]>;
+    priority_policy?: Record<string, unknown>;
+    routing_policy?: Record<string, unknown>;
+    approval_policy?: Record<string, unknown>;
+    ola_policy?: Record<string, unknown>;
+    closure_policy?: Record<string, unknown>;
+    visibility_policy?: Record<string, unknown>;
     playbook_triggers?: AdminFormsPlaybookTrigger[];
     fields: Array<{
       key: string;
