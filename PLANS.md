@@ -1,5 +1,56 @@
 # PLANS.md
 
+## 2026-04-29 Help Desk Process Model Completion Slice
+
+Status: implemented locally, focused tests green, full/local/live verification pending.
+
+### Goal
+
+Close the gap called out after the first process-model slice:
+
+- expose the full future service-desk model in server UI settings;
+- run and lock an acceptance route for `request_template -> ticket_type/workflow_profile -> priority -> routing -> SLA/OLA -> ticket observer summary -> observer trace/detail`;
+- update the local agent ticket creation path so it sends structured priority facts, not only the old `urgency`/`importance` booleans.
+
+### Implemented Changes
+
+- `GET /api/web/settings.ticket_settings` now exposes:
+  - `process_schema` for the complete service-desk chain;
+  - read-only planned support lines `L1`, `L2`, `L3`;
+  - `priority_model` showing impact/urgency/importance/modifiers and that users do not directly pick P0/P1/P2/P3.
+- `/app/settings` → `Тикеты` renders:
+  - `Схема service desk`;
+  - workflow profiles;
+  - priority model;
+  - support lines.
+- Settings priority/SLA controls now use process priorities `P0`, `P1`, `P2`, `P3`.
+- `server/tickets/form_catalog.py` now preserves priority-policy fact keys from submitted payload even if they are helper facts not rendered as visible fields.
+- `server/tickets/routing_service.py` now applies `request_template.default_queue_id` after explicit routing rules and before `servicedesk_l1` fallback.
+- `pc_agent/ui_gui/chat_panel.py` now:
+  - keeps `ticket_type` from form templates;
+  - gives default local forms `ticket_type` and `priority_policy`;
+  - collects `impact_scope`, `work_continuity`, `business_importance`;
+  - merges those facts into `form_payload`;
+  - keeps legacy `urgency`/`importance` booleans for server compatibility.
+- Added acceptance test `server/tests/test_helpdesk_process_observer_route.py`.
+
+### Verification So Far
+
+- `python -m pytest server\tests\test_web_settings_api.py server\tests\test_helpdesk_process_observer_route.py server\tests\test_ticket_form_packs.py server\tests\test_ticket_priority_policy.py -q` -> 22 passed.
+- `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q` -> 25 passed.
+- `pnpm --dir webapp run test -- src/pages/settings/index.test.tsx --run` -> 3 passed.
+
+### Remaining Verification
+
+- `python scripts/verify_workspace.py`
+- relevant broader server/agent/webapp tests;
+- `pnpm --dir webapp run build`;
+- commit;
+- deploy through `python scripts/release_server_to_remote.py --leave-running`;
+- live browser checks at `http://192.168.100.17:8666/admin`;
+- live API route check for the observer path;
+- stop remote server after checks.
+
 ## 2026-04-29 Help Desk Process Model, Request Templates, Priority And SLA
 
 Status: in progress. Core backend/UI slice implemented and under verification.

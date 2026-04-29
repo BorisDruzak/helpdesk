@@ -270,6 +270,17 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert workflow_profiles["access_request"]["requires_approval"] is True
     assert "waiting_on_approval" in workflow_profiles["access_request"]["suggested_path"]
     assert payload["data"]["ticket_settings"]["operational_flags"]["take_queue_mode"]
+    process_schema = {item["key"]: item for item in payload["data"]["ticket_settings"]["process_schema"]}
+    assert process_schema["request_template"]["meaning"] == "Каталог обращений собирает факты и порождает процессный контекст"
+    assert process_schema["ticket_type_workflow_profile"]["meaning"] == "Тип заявки выбирает профиль workflow"
+    assert process_schema["routing"]["meaning"] == "Роутинг выбирает очередь"
+    assert process_schema["queue"]["meaning"] == "Очередь определяет группу ответственных"
+    assert process_schema["sla"]["meaning"] == "SLA задаёт срок перед пользователем"
+    assert process_schema["ola"]["meaning"] == "OLA задаёт внутренние сроки между группами"
+    assert process_schema["support_line"]["status"] == "planned"
+    assert {item["code"] for item in payload["data"]["ticket_settings"]["support_lines"]} == {"L1", "L2", "L3"}
+    assert payload["data"]["ticket_settings"]["priority_model"]["direct_user_priority_choice"] is False
+    assert "deadline_today" in payload["data"]["ticket_settings"]["priority_model"]["modifiers"]
     routing_fields = {item["field"] for item in payload["data"]["routing_builder"]["fields"]}
     assert "ticket_type" in routing_fields
     assert "request_kind" in routing_fields

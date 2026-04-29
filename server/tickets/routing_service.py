@@ -281,6 +281,20 @@ class TicketRoutingService:
                 f"-> queue_id={matched_rule.target_queue_id}"
             )
             return matched_rule.target_queue_id
+        request_template = (ticket.custom_fields or {}).get("request_template") if isinstance(ticket.custom_fields, dict) else None
+        if isinstance(request_template, dict):
+            default_queue_id = request_template.get("default_queue_id")
+            if default_queue_id is not None:
+                try:
+                    queue_id = int(default_queue_id)
+                except (TypeError, ValueError):
+                    queue_id = None
+                if queue_id is not None:
+                    logger.debug(
+                        f"[Routing] Template default_queue_id matched ticket_id={ticket.ticket_id} "
+                        f"-> queue_id={queue_id}"
+                    )
+                    return queue_id
         queue = await self.ticket_repo.get_queue_by_code(FALLBACK_QUEUE_CODE)
         if queue:
             logger.debug(f"[Routing] Fallback to {FALLBACK_QUEUE_CODE} queue_id={queue.id}")

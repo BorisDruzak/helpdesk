@@ -69,9 +69,47 @@ DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 OPTION_FIELD_TYPES = {"select", "radio"}
 
+DEFAULT_PRIORITY_POLICY = {
+    "impact_field": "impact_scope",
+    "urgency_field": "work_continuity",
+    "importance_field": "business_importance",
+    "modifier_fields": {
+        "critical_service": "critical_service",
+        "public_service": "public_service",
+    },
+}
+HIGH_URGENCY_FACTS = {"work_stopped_no_workaround", "work_stopped", "no_workaround"}
+HIGH_IMPORTANCE_FACTS = {"deadline_today", "deadline_tomorrow", "critical", "security", "public_service"}
+
+
+def build_priority_facts_payload(
+    *,
+    impact_scope: str,
+    work_continuity: str,
+    business_importance: str,
+    urgency_reason: str = "",
+    importance_reason: str = "",
+) -> dict[str, Any]:
+    impact_scope = str(impact_scope or "single_user").strip() or "single_user"
+    work_continuity = str(work_continuity or "workaround_available").strip() or "workaround_available"
+    business_importance = str(business_importance or "normal").strip() or "normal"
+    urgency = work_continuity in HIGH_URGENCY_FACTS
+    importance = business_importance in HIGH_IMPORTANCE_FACTS or impact_scope in {"organization", "building_or_org", "critical_system"}
+    return {
+        "urgency": urgency,
+        "importance": importance,
+        "urgency_reason": urgency_reason.strip() or f"work_continuity={work_continuity}",
+        "importance_reason": importance_reason.strip() or f"business_importance={business_importance}",
+        "form_payload": {
+            "impact_scope": impact_scope,
+            "work_continuity": work_continuity,
+            "business_importance": business_importance,
+        },
+    }
+
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
-    return {
+    pack = {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
         "version": DEFAULT_TICKET_FORM_PACK_VERSION,
         "title": "Каталог заявок",
@@ -232,6 +270,21 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
             },
         ],
     }
+    ticket_type_by_key = {
+        "breakage": "incident",
+        "printer": "incident",
+        "network": "incident",
+        "site_system": "incident",
+        "mail_issue": "incident",
+        "access": "access_request",
+        "new_account": "access_request",
+        "software_install": "service_request",
+        "hardware_replacement": "service_request",
+    }
+    for form in pack["forms"]:
+        form.setdefault("ticket_type", ticket_type_by_key.get(str(form.get("key") or ""), "service_request"))
+        form.setdefault("priority_policy", dict(DEFAULT_PRIORITY_POLICY))
+    return pack
 
 
 def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
@@ -253,8 +306,10 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
         normalized_form = {
             "key": form_key,
             "request_kind": str(form.get("request_kind") or form_key).strip() or form_key,
+            "ticket_type": str(form.get("ticket_type") or form.get("request_kind") or form_key).strip() or form_key,
             "title": str(form.get("title") or form_key).strip() or form_key,
             "description": str(form.get("description") or "").strip(),
+            "priority_policy": form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {},
             "fields": [],
         }
         raw_fields = form.get("fields") if isinstance(form.get("fields"), list) else []
@@ -860,20 +915,29 @@ class TicketCreateDialog(QDialog):
         layout.addWidget(self.description_input)
 
         priority_form = QFormLayout()
-        self.urgency_select = QComboBox()
-        self.urgency_select.addItem("Несрочно", False)
-        self.urgency_select.addItem("Срочно", True)
-        self.importance_select = QComboBox()
-        self.importance_select.addItem("Неважно", False)
-        self.importance_select.addItem("Важно", True)
+        self.impact_scope_select = QComboBox()
+        self.impact_scope_select.addItem("Только я", "single_user")
+        self.impact_scope_select.addItem("Несколько человек", "group")
+        self.impact_scope_select.addItem("Весь отдел", "department")
+        self.impact_scope_select.addItem("Здание / организация / критичная система", "building_or_org")
+        self.work_continuity_select = QComboBox()
+        self.work_continuity_select.addItem("Есть обходной путь", "workaround_available")
+        self.work_continuity_select.addItem("Можно работать частично", "partial_work")
+        self.work_continuity_select.addItem("Работа остановлена, обходного пути нет", "work_stopped_no_workaround")
+        self.business_importance_select = QComboBox()
+        self.business_importance_select.addItem("Обычная рабочая ситуация", "normal")
+        self.business_importance_select.addItem("Есть важный срок", "deadline")
+        self.business_importance_select.addItem("Сегодня / завтра крайний срок", "deadline_today")
+        self.business_importance_select.addItem("ИБ / публичная услуга / критичный процесс", "security")
         self.urgency_reason_input = QLineEdit()
-        self.urgency_reason_input.setPlaceholderText("Обоснование срочности")
+        self.urgency_reason_input.setPlaceholderText("Что именно остановлено или затруднено")
         self.importance_reason_input = QLineEdit()
-        self.importance_reason_input.setPlaceholderText("Обоснование важности")
-        priority_form.addRow("Срочность", self.urgency_select)
-        priority_form.addRow("Важность", self.importance_select)
-        priority_form.addRow("Причина срочности", self.urgency_reason_input)
-        priority_form.addRow("Причина важности", self.importance_reason_input)
+        self.importance_reason_input.setPlaceholderText("Срок, критичный процесс или регламент")
+        priority_form.addRow("Кого затронуло", self.impact_scope_select)
+        priority_form.addRow("Можно ли работать", self.work_continuity_select)
+        priority_form.addRow("Важность процесса", self.business_importance_select)
+        priority_form.addRow("Факт срочности", self.urgency_reason_input)
+        priority_form.addRow("Факт важности", self.importance_reason_input)
         layout.addLayout(priority_form)
 
         buttons = QHBoxLayout()
@@ -974,24 +1038,29 @@ class TicketCreateDialog(QDialog):
 
     def payload(self) -> dict:
         description = self.description_input.toPlainText().strip()
-        urgency = bool(self.urgency_select.currentData())
-        importance = bool(self.importance_select.currentData())
-        urgency_reason = self.urgency_reason_input.text().strip() or ("Срочно" if urgency else "Несрочно")
-        importance_reason = self.importance_reason_input.text().strip() or ("Важно" if importance else "Неважно")
+        priority_facts = build_priority_facts_payload(
+            impact_scope=str(self.impact_scope_select.currentData() or "single_user"),
+            work_continuity=str(self.work_continuity_select.currentData() or "workaround_available"),
+            business_importance=str(self.business_importance_select.currentData() or "normal"),
+            urgency_reason=self.urgency_reason_input.text().strip(),
+            importance_reason=self.importance_reason_input.text().strip(),
+        )
         form_pack = self.panel.ticket_form_pack()
         selected_form = self._selected_form() or {}
+        form_payload = self.dynamic_fields_widget.values()
+        form_payload.update(priority_facts["form_payload"])
         return {
             "title": f"Request: {selected_form.get('title') or 'Support Request'}",
             "description": description,
-            "urgency": urgency,
-            "importance": importance,
-            "urgency_reason": urgency_reason,
-            "importance_reason": importance_reason,
+            "urgency": priority_facts["urgency"],
+            "importance": priority_facts["importance"],
+            "urgency_reason": priority_facts["urgency_reason"],
+            "importance_reason": priority_facts["importance_reason"],
             "form_key": selected_form.get("key"),
             "form_pack_key": form_pack.get("pack_key"),
             "form_pack_version": form_pack.get("version"),
-            "form_payload": self.dynamic_fields_widget.values(),
-            "ticket_type": selected_form.get("request_kind") or selected_form.get("key") or "request",
+            "form_payload": form_payload,
+            "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
         }
 
 
@@ -1183,23 +1252,32 @@ class TicketCreateWizardWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
-        group = QGroupBox("Шаг 4. Срочность и важность")
+        group = QGroupBox("Шаг 4. Влияние, срочность и важность")
         form = QFormLayout(group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.urgency_select = QComboBox()
-        self.urgency_select.addItem("Несрочно", False)
-        self.urgency_select.addItem("Срочно", True)
-        self.importance_select = QComboBox()
-        self.importance_select.addItem("Неважно", False)
-        self.importance_select.addItem("Важно", True)
+        self.impact_scope_select = QComboBox()
+        self.impact_scope_select.addItem("Только я", "single_user")
+        self.impact_scope_select.addItem("Несколько человек", "group")
+        self.impact_scope_select.addItem("Весь отдел", "department")
+        self.impact_scope_select.addItem("Здание / организация / критичная система", "building_or_org")
+        self.work_continuity_select = QComboBox()
+        self.work_continuity_select.addItem("Есть обходной путь", "workaround_available")
+        self.work_continuity_select.addItem("Можно работать частично", "partial_work")
+        self.work_continuity_select.addItem("Работа остановлена, обходного пути нет", "work_stopped_no_workaround")
+        self.business_importance_select = QComboBox()
+        self.business_importance_select.addItem("Обычная рабочая ситуация", "normal")
+        self.business_importance_select.addItem("Есть важный срок", "deadline")
+        self.business_importance_select.addItem("Сегодня / завтра крайний срок", "deadline_today")
+        self.business_importance_select.addItem("ИБ / публичная услуга / критичный процесс", "security")
         self.urgency_reason_input = QLineEdit()
-        self.urgency_reason_input.setPlaceholderText("Почему это срочно")
+        self.urgency_reason_input.setPlaceholderText("Что именно остановлено или затруднено")
         self.importance_reason_input = QLineEdit()
-        self.importance_reason_input.setPlaceholderText("Почему это важно")
-        form.addRow("Срочность", self.urgency_select)
-        form.addRow("Важность", self.importance_select)
-        form.addRow("Причина срочности", self.urgency_reason_input)
-        form.addRow("Причина важности", self.importance_reason_input)
+        self.importance_reason_input.setPlaceholderText("Срок, критичный процесс или регламент")
+        form.addRow("Кого затронуло", self.impact_scope_select)
+        form.addRow("Можно ли работать", self.work_continuity_select)
+        form.addRow("Важность процесса", self.business_importance_select)
+        form.addRow("Факт срочности", self.urgency_reason_input)
+        form.addRow("Факт важности", self.importance_reason_input)
         layout.addWidget(group)
 
         summary = QLabel(
@@ -1231,8 +1309,9 @@ class TicketCreateWizardWidget(QFrame):
     def reset_wizard(self) -> None:
         self._current_step = 0
         self.description_input.clear()
-        self.urgency_select.setCurrentIndex(0)
-        self.importance_select.setCurrentIndex(0)
+        self.impact_scope_select.setCurrentIndex(0)
+        self.work_continuity_select.setCurrentIndex(0)
+        self.business_importance_select.setCurrentIndex(0)
         self.urgency_reason_input.clear()
         self.importance_reason_input.clear()
         self.dynamic_fields_widget.clear_validation_feedback()
@@ -1521,24 +1600,29 @@ class TicketCreateWizardWidget(QFrame):
 
     def _payload(self) -> dict[str, Any]:
         description = self.description_input.toPlainText().strip()
-        urgency = bool(self.urgency_select.currentData())
-        importance = bool(self.importance_select.currentData())
-        urgency_reason = self.urgency_reason_input.text().strip() or ("Срочно" if urgency else "Несрочно")
-        importance_reason = self.importance_reason_input.text().strip() or ("Важно" if importance else "Неважно")
+        priority_facts = build_priority_facts_payload(
+            impact_scope=str(self.impact_scope_select.currentData() or "single_user"),
+            work_continuity=str(self.work_continuity_select.currentData() or "workaround_available"),
+            business_importance=str(self.business_importance_select.currentData() or "normal"),
+            urgency_reason=self.urgency_reason_input.text().strip(),
+            importance_reason=self.importance_reason_input.text().strip(),
+        )
         form_pack = self._panel.ticket_form_pack()
         selected_form = self._selected_form() or {}
+        form_payload = self.dynamic_fields_widget.values()
+        form_payload.update(priority_facts["form_payload"])
         return {
             "title": f"Request: {selected_form.get('title') or 'Support Request'}",
             "description": description,
-            "urgency": urgency,
-            "importance": importance,
-            "urgency_reason": urgency_reason,
-            "importance_reason": importance_reason,
+            "urgency": priority_facts["urgency"],
+            "importance": priority_facts["importance"],
+            "urgency_reason": priority_facts["urgency_reason"],
+            "importance_reason": priority_facts["importance_reason"],
             "form_key": selected_form.get("key"),
             "form_pack_key": form_pack.get("pack_key"),
             "form_pack_version": form_pack.get("version"),
-            "form_payload": self.dynamic_fields_widget.values(),
-            "ticket_type": selected_form.get("request_kind") or selected_form.get("key") or "request",
+            "form_payload": form_payload,
+            "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
             "attachment_paths": list(self._attachment_paths),
         }
 

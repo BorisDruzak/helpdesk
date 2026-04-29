@@ -148,9 +148,9 @@ const TAB_ITEMS = [
   { value: "audit", label: "Аудит" },
 ] as const;
 
-const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
-const PRIORITY_OPTIONS = ["P1", "P2", "P3", "P4"] as const;
-const IMPACT_VALUES = [1, 2, 3] as const;
+const PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
+const PRIORITY_OPTIONS = ["P0", "P1", "P2", "P3"] as const;
+const IMPACT_VALUES = [0, 1, 2, 3] as const;
 const CALENDAR_DAYS = [
   { day: 0, key: "mon", label: "Пн" },
   { day: 1, key: "tue", label: "Вт" },
@@ -1198,6 +1198,109 @@ export function SettingsPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Схема service desk</CardTitle>
+                  <CardDescription>
+                    request_template → ticket_type/workflow_profile → priority → routing → SLA/OLA → observer
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {payload.ticket_settings.process_schema.map((item) => (
+                      <div key={item.key} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-950">{item.label}</p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">{item.meaning}</p>
+                          </div>
+                          <Badge tone={item.status === "active" ? "success" : "warning"}>{item.status}</Badge>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">{item.source}</p>
+                        <code className="mt-2 block text-xs text-slate-400">{item.ui_surface}</code>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]">
+                    <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">Модель приоритета</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Пользователь не выбирает P0/P1/P2/P3 напрямую
+                          </p>
+                        </div>
+                        <Badge tone={payload.ticket_settings.priority_model.direct_user_priority_choice ? "warning" : "success"}>
+                          {payload.ticket_settings.priority_model.direct_user_priority_choice ? "Ручной выбор" : "Факты → priority"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Impact</p>
+                          <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.impact_levels.join(", ")}</p>
+                        </div>
+                        <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Urgency</p>
+                          <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.urgency_levels.join(", ")}</p>
+                        </div>
+                        <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Importance</p>
+                          <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.importance_sources.join(", ")}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {payload.ticket_settings.priority_model.modifiers.map((modifier) => (
+                          <Badge key={modifier} tone="info">{modifier}</Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.1rem] bg-surface-subtle px-4 py-4">
+                      <p className="font-semibold text-slate-950">Линии поддержки</p>
+                      <div className="mt-3 space-y-3">
+                        {payload.ticket_settings.support_lines.map((line) => (
+                          <div key={line.code} className="rounded-[0.9rem] bg-white px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-semibold text-slate-900">{line.label}</p>
+                              <Badge tone={line.status === "active" ? "success" : "warning"}>{line.status}</Badge>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-600">{line.competence_depth}</p>
+                            <code className="mt-2 block text-xs text-slate-400">{line.routing_role}</code>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Workflow profiles</CardTitle>
+                  <CardDescription>ticket_type управляет процессным профилем. Сейчас профили серверные, позже их можно вынести в редактор.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 xl:grid-cols-5">
+                    {payload.ticket_settings.workflow_profiles.map((profile) => (
+                      <div key={profile.ticket_type} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-950">{profile.label}</p>
+                          <code className="text-xs text-slate-400">{profile.ticket_type}</code>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">{profile.purpose}</p>
+                        <p className="mt-3 text-xs leading-5 text-slate-500">{profile.suggested_path.join(" → ")}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {profile.requires_approval ? <Badge tone="warning">approval</Badge> : null}
+                          {profile.requires_change_plan ? <Badge tone="warning">change plan</Badge> : null}
+                          {profile.requires_action_log ? <Badge tone="info">action log</Badge> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
 
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
                 <Card>

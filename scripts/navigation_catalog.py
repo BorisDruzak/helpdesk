@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, hidden/agent-collected priority facts, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -294,6 +294,11 @@ TOPICS: tuple[Topic, ...] = (
             "workflow profile",
             "priority policy",
             "effective priority",
+            "process schema",
+            "support lines",
+            "template default queue",
+            "impact_scope",
+            "work_continuity",
             "request template",
             "request form",
             "request_form_data",
@@ -868,7 +873,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, dashboard/ticket stack, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, dashboard/ticket stack, request-template ticket creation with structured priority facts, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -879,6 +884,10 @@ TOPICS: tuple[Topic, ...] = (
             "custom title bar",
             "frameless window",
             "initiator profile",
+            "request template",
+            "impact_scope",
+            "work_continuity",
+            "business_importance",
             "connection_state",
             "connection_rejected",
             "tray notification",

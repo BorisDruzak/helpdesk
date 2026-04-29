@@ -76,6 +76,75 @@ function createSettingsPayload(): WebSettingsPayload {
         { value: "support", label: "Поддержка", internal_statuses: ["new"] },
         { value: "requester", label: "Пользователь", internal_statuses: ["waiting_on_user", "resolved"] },
       ],
+      workflow_profiles: [
+        {
+          ticket_type: "incident",
+          label: "Инцидент",
+          purpose: "restore_service",
+          suggested_path: ["new", "queued", "in_progress", "resolved", "closed"],
+          allowed_statuses: ["new", "queued", "in_progress", "resolved", "closed"],
+          required_create_fields: [],
+          required_resolve_fields: ["resolution_code"],
+          requires_approval: false,
+          requires_change_plan: false,
+          requires_action_log: false,
+          evidence_required_for_priorities: ["P0", "P1"],
+        },
+      ],
+      process_schema: [
+        {
+          key: "request_template",
+          label: "request_template",
+          meaning: "Каталог обращений собирает факты и порождает процессный контекст",
+          source: "request_forms",
+          ui_surface: "/app/admin/forms",
+          status: "active",
+        },
+        {
+          key: "ticket_type_workflow_profile",
+          label: "ticket_type / workflow_profile",
+          meaning: "Тип заявки выбирает профиль workflow",
+          source: "workflow_profiles",
+          ui_surface: "/app/settings",
+          status: "active",
+        },
+        {
+          key: "priority",
+          label: "priority",
+          meaning: "Приоритет рассчитывается из impact, urgency и importance",
+          source: "priority_policy",
+          ui_surface: "/app/settings",
+          status: "active",
+        },
+        {
+          key: "routing",
+          label: "routing",
+          meaning: "Роутинг выбирает очередь",
+          source: "routing_rules",
+          ui_surface: "/app/settings",
+          status: "active",
+        },
+        {
+          key: "sla",
+          label: "SLA",
+          meaning: "SLA задаёт срок перед пользователем",
+          source: "sla_policies",
+          ui_surface: "/app/settings",
+          status: "active",
+        },
+      ],
+      support_lines: [
+        { code: "L1", label: "L1", competence_depth: "Первичная диагностика", routing_role: "triage", status: "planned" },
+        { code: "L2", label: "L2", competence_depth: "Профильная диагностика", routing_role: "specialist", status: "planned" },
+        { code: "L3", label: "L3", competence_depth: "Глубокая экспертиза", routing_role: "engineering", status: "planned" },
+      ],
+      priority_model: {
+        direct_user_priority_choice: false,
+        impact_levels: ["minimal", "low", "medium", "high"],
+        urgency_levels: ["minimal", "low", "medium", "high"],
+        importance_sources: ["service_criticality", "deadline", "security", "public_service"],
+        modifiers: ["critical_service", "deadline_today", "security"],
+      },
       governance: {
         fsm_mode: "soft",
         legacy_role_fields: true,
@@ -171,6 +240,15 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Evidence gate: Включено")).toBeInTheDocument();
     expect(screen.getByText("Правила закрытия")).toBeInTheDocument();
     expect(screen.getByText("Take-self queue mode")).toBeInTheDocument();
+    expect(screen.getByText("Схема service desk")).toBeInTheDocument();
+    expect(screen.getByText("request_template → ticket_type/workflow_profile → priority → routing → SLA/OLA → observer")).toBeInTheDocument();
+    expect(screen.getByText("Тип заявки выбирает профиль workflow")).toBeInTheDocument();
+    expect(screen.getByText("Роутинг выбирает очередь")).toBeInTheDocument();
+    expect(screen.getByText("SLA задаёт срок перед пользователем")).toBeInTheDocument();
+    expect(screen.getByText("Модель приоритета")).toBeInTheDocument();
+    expect(screen.getByText("Пользователь не выбирает P0/P1/P2/P3 напрямую")).toBeInTheDocument();
+    expect(screen.getByText("Линии поддержки")).toBeInTheDocument();
+    expect(screen.getByText("Первичная диагностика")).toBeInTheDocument();
   });
 
   it("uses bounded settings editors instead of raw JSON textareas", async () => {

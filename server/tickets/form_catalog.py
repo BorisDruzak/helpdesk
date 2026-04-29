@@ -27,6 +27,15 @@ _TICKET_TYPE_BY_FORM_KIND = {
     "software_install": "service_request",
     "hardware_replacement": "service_request",
 }
+DEFAULT_PRIORITY_POLICY = {
+    "impact_field": "impact_scope",
+    "urgency_field": "work_continuity",
+    "importance_field": "business_importance",
+    "modifier_fields": {
+        "critical_service": "critical_service",
+        "public_service": "public_service",
+    },
+}
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
     "incident": "Инцидент",
@@ -253,6 +262,7 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     ]
     for form in forms:
         form["ticket_type"] = infer_ticket_type_for_form(form.get("key"), form.get("request_kind"))
+        form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
 
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
@@ -454,6 +464,9 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
         suggested_playbook_id = str(raw_form.get("suggested_playbook_id") or "").strip()
         if suggested_playbook_id:
             template_context["suggested_playbook_id"] = suggested_playbook_id
+        if "priority_policy" not in raw_form:
+            raw_form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+
         for dict_field in _TEMPLATE_DICT_FIELDS:
             value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)
             if value:
@@ -565,6 +578,25 @@ def validate_form_submission(
 
     if errors:
         raise ValueError(errors)
+
+    priority_policy = form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {}
+    priority_field_keys = {
+        str(priority_policy.get("impact_field") or "").strip(),
+        str(priority_policy.get("urgency_field") or "").strip(),
+        str(priority_policy.get("importance_field") or "").strip(),
+    }
+    modifier_fields = priority_policy.get("modifier_fields") if isinstance(priority_policy.get("modifier_fields"), dict) else {}
+    priority_field_keys.update(str(value or "").strip() for value in modifier_fields.values())
+    for key in sorted(item for item in priority_field_keys if item):
+        if key in submitted_values or key not in raw_values:
+            continue
+        value = raw_values.get(key)
+        if isinstance(value, bool):
+            submitted_values[key] = value
+        else:
+            text_value = str(value or "").strip()
+            if text_value:
+                submitted_values[key] = text_value
 
     return {
         "pack_key": pack.get("pack_key"),

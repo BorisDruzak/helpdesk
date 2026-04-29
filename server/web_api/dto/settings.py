@@ -155,6 +155,37 @@ class WebSettingsWorkflowProfileItem(BaseModel):
     evidence_required_for_priorities: list[str] = Field(default_factory=list)
 
 
+class WebSettingsProcessSchemaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    meaning: str
+    source: str
+    ui_surface: str
+    status: str
+
+
+class WebSettingsSupportLineItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    label: str
+    competence_depth: str
+    routing_role: str
+    status: str
+
+
+class WebSettingsPriorityModelPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    direct_user_priority_choice: bool
+    impact_levels: list[str] = Field(default_factory=list)
+    urgency_levels: list[str] = Field(default_factory=list)
+    importance_sources: list[str] = Field(default_factory=list)
+    modifiers: list[str] = Field(default_factory=list)
+
+
 class WebSettingsTicketGovernancePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -192,6 +223,9 @@ class WebSettingsTicketSettingsPayload(BaseModel):
     requester_statuses: list[WebSettingsRequesterStatusItem] = Field(default_factory=list)
     next_action_owners: list[WebSettingsNextActionOwnerItem] = Field(default_factory=list)
     workflow_profiles: list[WebSettingsWorkflowProfileItem] = Field(default_factory=list)
+    process_schema: list[WebSettingsProcessSchemaItem] = Field(default_factory=list)
+    support_lines: list[WebSettingsSupportLineItem] = Field(default_factory=list)
+    priority_model: WebSettingsPriorityModelPayload
     governance: WebSettingsTicketGovernancePayload
     operational_flags: WebSettingsTicketOperationalFlags
 

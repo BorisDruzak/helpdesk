@@ -7,6 +7,8 @@ import ui_gui.chat_panel as chat_panel_module
 
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
+    build_default_ticket_form_pack,
+    build_priority_facts_payload,
     can_user_confirm_close,
     merge_ticket_stream,
     message_visual_role,
@@ -60,6 +62,37 @@ def test_ticket_request_form_summary_rows_extracts_form_title_and_fields():
         ("Что сломалось", "МФУ"),
         ("Кабинет", "4"),
     ]
+
+
+def test_agent_default_forms_carry_process_type_and_priority_policy():
+    pack = build_default_ticket_form_pack()
+    forms = {item["key"]: item for item in pack["forms"]}
+
+    assert forms["breakage"]["ticket_type"] == "incident"
+    assert forms["access"]["ticket_type"] == "access_request"
+    assert forms["software_install"]["ticket_type"] == "service_request"
+    assert forms["site_system"]["priority_policy"]["impact_field"] == "impact_scope"
+    assert forms["site_system"]["priority_policy"]["urgency_field"] == "work_continuity"
+
+
+def test_build_priority_facts_payload_keeps_legacy_booleans_and_structured_facts():
+    payload = build_priority_facts_payload(
+        impact_scope="department",
+        work_continuity="work_stopped_no_workaround",
+        business_importance="deadline_today",
+        urgency_reason="Отдел не может работать",
+        importance_reason="Сегодня крайний срок",
+    )
+
+    assert payload["urgency"] is True
+    assert payload["importance"] is True
+    assert payload["form_payload"] == {
+        "impact_scope": "department",
+        "work_continuity": "work_stopped_no_workaround",
+        "business_importance": "deadline_today",
+    }
+    assert payload["urgency_reason"] == "Отдел не может работать"
+    assert payload["importance_reason"] == "Сегодня крайний срок"
 
 
 def test_build_ticket_meta_html_includes_request_form_summary():

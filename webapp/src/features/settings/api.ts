@@ -63,6 +63,41 @@ export type WebSettingsPayload = {
       label: string;
       internal_statuses: string[];
     }>;
+    workflow_profiles: Array<{
+      ticket_type: string;
+      label: string;
+      purpose: string;
+      suggested_path: string[];
+      allowed_statuses: string[];
+      required_create_fields: string[];
+      required_resolve_fields: string[];
+      requires_approval: boolean;
+      requires_change_plan: boolean;
+      requires_action_log: boolean;
+      evidence_required_for_priorities: string[];
+    }>;
+    process_schema: Array<{
+      key: string;
+      label: string;
+      meaning: string;
+      source: string;
+      ui_surface: string;
+      status: string;
+    }>;
+    support_lines: Array<{
+      code: string;
+      label: string;
+      competence_depth: string;
+      routing_role: string;
+      status: string;
+    }>;
+    priority_model: {
+      direct_user_priority_choice: boolean;
+      impact_levels: string[];
+      urgency_levels: string[];
+      importance_sources: string[];
+      modifiers: string[];
+    };
     governance: {
       fsm_mode: string;
       legacy_role_fields: boolean;

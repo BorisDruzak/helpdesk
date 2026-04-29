@@ -51,6 +51,8 @@ from web_api.dto.settings import (
     WebSettingsOlaTargetItem,
     WebSettingsOverview,
     WebSettingsPayload,
+    WebSettingsPriorityModelPayload,
+    WebSettingsProcessSchemaItem,
     WebSettingsPriorityMatrixItem,
     WebSettingsQueueItem,
     WebSettingsQueueMemberItem,
@@ -69,6 +71,7 @@ from web_api.dto.settings import (
     WebSettingsTicketOperationalFlags,
     WebSettingsTicketSettingsPayload,
     WebSettingsTicketStatusItem,
+    WebSettingsSupportLineItem,
     WebSettingsWorkflowProfileItem,
 )
 
@@ -81,6 +84,151 @@ NEXT_ACTION_OWNER_LABELS = {
     "approver": "Согласующий",
     "system": "Система",
 }
+
+
+def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
+    return [
+        WebSettingsProcessSchemaItem(
+            key="request_template",
+            label="request_template",
+            meaning="Каталог обращений собирает факты и порождает процессный контекст",
+            source="request_forms",
+            ui_surface="/app/admin/forms",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="ticket_type_workflow_profile",
+            label="ticket_type / workflow_profile",
+            meaning="Тип заявки выбирает профиль workflow",
+            source="workflow_profiles",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="category",
+            label="category / service / subcategory",
+            meaning="Категория определяет профильную область",
+            source="request_template.category_id",
+            ui_surface="/app/admin/forms",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="priority",
+            label="priority",
+            meaning="Приоритет рассчитывается из impact, urgency и importance",
+            source="priority_policy",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="routing",
+            label="routing",
+            meaning="Роутинг выбирает очередь",
+            source="routing_rules",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="queue",
+            label="queue",
+            meaning="Очередь определяет группу ответственных",
+            source="ticket_queues.members",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="sla",
+            label="SLA",
+            meaning="SLA задаёт срок перед пользователем",
+            source="sla_policies.targets",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="ola",
+            label="OLA",
+            meaning="OLA задаёт внутренние сроки между группами",
+            source="queue.ola_targets",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="support_line",
+            label="support_line",
+            meaning="Линия поддержки отражает глубину компетенции",
+            source="queue role / future support line catalog",
+            ui_surface="/app/settings",
+            status="planned",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="status_next_action_owner",
+            label="status / next_action_owner",
+            meaning="Статус показывает этап, next_action_owner показывает чей ход",
+            source="ticket status registry",
+            ui_surface="/app/settings",
+            status="active",
+        ),
+        WebSettingsProcessSchemaItem(
+            key="observer",
+            label="ticket observer summary / trace detail",
+            meaning="Observer показывает трассу обработки тикета и детали событий",
+            source="observer traces",
+            ui_surface="/app/admin/observer",
+            status="active",
+        ),
+    ]
+
+
+def _build_support_line_items() -> list[WebSettingsSupportLineItem]:
+    return [
+        WebSettingsSupportLineItem(
+            code="L1",
+            label="L1",
+            competence_depth="Первичная диагностика, уточнение фактов, базовое восстановление",
+            routing_role="triage",
+            status="planned",
+        ),
+        WebSettingsSupportLineItem(
+            code="L2",
+            label="L2",
+            competence_depth="Профильная диагностика и выполнение работ в очереди",
+            routing_role="specialist",
+            status="planned",
+        ),
+        WebSettingsSupportLineItem(
+            code="L3",
+            label="L3",
+            competence_depth="Глубокая экспертиза, изменения, нестандартные аварии",
+            routing_role="engineering",
+            status="planned",
+        ),
+    ]
+
+
+def _build_priority_model_payload() -> WebSettingsPriorityModelPayload:
+    return WebSettingsPriorityModelPayload(
+        direct_user_priority_choice=False,
+        impact_levels=["minimal", "low", "medium", "high"],
+        urgency_levels=["minimal", "low", "medium", "high"],
+        importance_sources=[
+            "service_criticality",
+            "deadline",
+            "security",
+            "public_service",
+            "reporting_period",
+        ],
+        modifiers=[
+            "critical_service",
+            "deadline_today",
+            "deadline_tomorrow",
+            "reporting_period",
+            "public_service",
+            "citizen_reception",
+            "confirmed_outage",
+            "similar_tickets",
+            "security",
+        ],
+    )
 
 
 def _status_stage(status: str) -> str:
@@ -148,6 +296,9 @@ def _build_ticket_settings_payload() -> WebSettingsTicketSettingsPayload:
             WebSettingsWorkflowProfileItem(**profile.to_dict())
             for profile in list_workflow_profiles()
         ],
+        process_schema=_build_process_schema_items(),
+        support_lines=_build_support_line_items(),
+        priority_model=_build_priority_model_payload(),
         governance=WebSettingsTicketGovernancePayload(
             fsm_mode=TICKET_FSM_MODE,
             legacy_role_fields=TICKET_LEGACY_ROLE_FIELDS,
