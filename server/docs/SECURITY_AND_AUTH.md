@@ -99,7 +99,7 @@
 
 ### 4.1 Middleware
 
-- New React code should prefer typed cookie-session routes under `/api/web/*`. The current React-only bridges include `/api/web/admin/observer/*`, `/api/web/admin/modules/*`, `/api/web/notifications*` and `/api/web/admin/tech/alerts`.
+- New React code should prefer typed cookie-session routes under `/api/web/*`. The current React-only bridges include `/api/web/admin/observer/*`, `/api/web/admin/modules/*`, `/api/web/admin/access/*`, `/api/web/notifications*` and `/api/web/admin/tech/alerts`.
 - Legacy `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/notifications*` and `/api/ticket_forms/*` remain authenticated compatibility endpoints; do not add new React callers to them unless the endpoint is intentionally public/requester-facing.
 
 - Применяется ко всем запросам с путём, начинающимся с `/api/`.
@@ -207,11 +207,22 @@
 ### 5.4 Web session: `/api/web/session/*`
 
 - `POST /api/web/session/login` принимает `{"login": "...", "password": "..."}` и при успехе выставляет httpOnly cookie `pc_client_web_session` с `SameSite=Lax`.
-- `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type", "default_workspace", "available_workspaces"}}`.
-- `default_workspace` и `available_workspaces` формируются сервером по `actor_role` и считаются каноничным источником истины для redirect/access-gate логики нового `/app/*`; React-клиент не должен заново вычислять эти права из произвольных role-switch веток.
+- `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type", "default_workspace", "available_workspaces", "permissions", "permissions_version"}}`.
+- `default_workspace`, `available_workspaces`, `permissions` и `permissions_version` формируются сервером по effective access и считаются каноничным источником истины для redirect/access-gate и element-visibility логики нового `/app/*`; React-клиент не должен заново вычислять эти права из произвольных role-switch веток.
 - `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
 - Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.
 - `GET /api/web/realtime/bootstrap` возвращает typed transport contract для нового `webapp` (`transport`, `auth_mode`, `socket_url`, `hello_message_type`, channel contracts). Реальное websocket-подключение идёт в `/ws_ui` и использует ту же cookie-session без раскрытия raw token в JS.
+
+### 5.5 Web access-control catalog: `/api/web/admin/access/*`
+
+- Доступ к access-control endpoints требует роли `admin`; UI-видимость не является security boundary.
+- `server/access_control/catalog.py` содержит серверный каталог permission codes, русские operator labels, risk labels, role defaults и `permissions_version`.
+- Первый read-only срез API:
+  - `GET /api/web/admin/access/catalog` — роли и grouped permission catalog;
+  - `GET /api/web/admin/access/summary` — пользователи из `ui_users`, очереди и прямые queue-membership counts;
+  - `GET /api/web/admin/access/effective?actor_id=...&actor_role=...` — effective permissions, workspaces, direct queue memberships и источники прав.
+- Текущая модель effective access: built-in role defaults + direct queue memberships. Access groups, group grants and audit-write endpoints запланированы следующим срезом; до их появления backend-deny правила и существующие queue checks остаются обязательными.
+- React `/app/admin/access` использует controlled tables/inspectors; raw JSON authoring для RBAC не допускается.
 
 ---
 

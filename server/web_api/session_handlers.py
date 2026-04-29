@@ -1,6 +1,7 @@
 from aiohttp import web
 from pydantic import ValidationError
 
+from access_control.service import resolve_session_access
 from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
 from auth.service import AuthService
 from web_api.dto.common import SuccessResponse, json_model_response
@@ -12,22 +13,20 @@ from web_api.dto.session import (
 
 
 def _resolve_workspace_access(actor_role: str) -> tuple[str | None, list[str]]:
-    normalized_role = str(actor_role or "").strip().lower()
-    if normalized_role == "admin":
-        return "admin", ["admin", "support"]
-    if normalized_role == "support":
-        return "support", ["support"]
-    return None, []
+    default_workspace, available_workspaces, _permissions, _permissions_version = resolve_session_access(actor_role)
+    return default_workspace, available_workspaces
 
 
 def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
-    default_workspace, available_workspaces = _resolve_workspace_access(actor_role)
+    default_workspace, available_workspaces, permissions, permissions_version = resolve_session_access(actor_role)
     return WebSessionPayload(
         user_login=user_login,
         actor_role=actor_role,
         auth_type=auth_type,
         default_workspace=default_workspace,
         available_workspaces=available_workspaces,
+        permissions=permissions,
+        permissions_version=permissions_version,
     )
 
 

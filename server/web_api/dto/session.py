@@ -9,6 +9,8 @@ class WebSessionPayload(BaseModel):
     auth_type: str
     default_workspace: str | None = None
     available_workspaces: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    permissions_version: str = ""
 
 
 class WebSessionLoginRequest(BaseModel):

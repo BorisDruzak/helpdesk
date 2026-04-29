@@ -38,6 +38,10 @@ export const AdminDevicePage = lazy(() =>
   import("../../pages/admin/device-page").then((module) => ({ default: module.AdminDevicePage })),
 );
 
+export const AdminAccessPage = lazy(() =>
+  import("../../pages/admin/access-page").then((module) => ({ default: module.AdminAccessPage })),
+);
+
 export const AdminFormsPage = lazy(() =>
   import("../../pages/admin/forms-page").then((module) => ({ default: module.AdminFormsPage })),
 );

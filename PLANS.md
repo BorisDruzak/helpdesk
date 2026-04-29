@@ -309,6 +309,306 @@ Completed:
 - Playbook catalog normalization preserves nested `properties` and `items` so module command params are editable without JSON.
 - Focused regressions cover object/array runtime params and playbook save payload generation without `... JSON` textareas.
 
+## 2026-04-29 RBAC Access Control Center
+
+Status: in progress; first read-only access-control slice implemented locally.
+
+### Goal
+
+Create a full RBAC management surface for the new admin/support workspaces: admins should be able to manage users, access groups, queue membership, workspace visibility, module/tool launch rights and ticket actions from one predictable SaaS-style panel, while the server remains the source of truth for every permission check.
+
+### Constraints
+
+- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
+- Do not add a new UI library; use the existing React/Tailwind primitives.
+- Keep `AuthContext` as the only source of actor identity and actor role.
+- Keep existing role behavior compatible: `admin`, `support`, `auditor`, `user`, `agent`, `system`.
+- Do not replace queue membership with generic groups; queue membership remains the authoritative visibility boundary for support ticket work.
+- Do not trust frontend visibility for security. UI hides/disables elements for clarity, backend enforces all mutations.
+- Avoid raw JSON authoring. Permission sets, groups, queue memberships and module access must be controlled fields/toggles/selects with generated payloads.
+- Preserve legacy admin users endpoints until the React replacement has parity.
+
+### Current Baseline
+
+- Backend role checks exist through `server/auth/context.py` and `server/auth/middleware.py`.
+- DB-backed UI users already exist through `server/auth/admin_users_handlers.py` and `server/app/repos/ui_users_repo.py`.
+- React workspace access currently comes from `GET /api/web/session/me` via `default_workspace` and `available_workspaces`.
+- Support ticket visibility is already constrained by queue membership and assignee logic in the ticket/support backend.
+- Module/tool policy has `metadata.allow_roles`, but it is not part of one central RBAC panel.
+- There is no unified React panel for groups, permission matrix, element visibility or effective access preview.
+
+### Target Model
+
+1. **Users**
+   - Existing `ui_users` stay the login/account source.
+   - User row shows login, role, active state, actor id, group memberships, queue memberships, last audit facts where available.
+   - Admin can create/deactivate users, change role, reset password and assign groups/queues from one page.
+
+2. **Roles**
+   - Built-in roles stay stable and not user-editable as arbitrary strings.
+   - Role permissions are presented as a readable matrix:
+     - workspace access;
+     - admin pages;
+     - support pages;
+     - ticket read/write actions;
+     - queue settings;
+     - module authoring;
+     - module/tool launch;
+     - observer access;
+     - runtime/control actions.
+   - The first implementation can keep built-in role defaults server-defined, then allow additive group grants where safe.
+
+3. **Access Groups**
+   - Add explicit admin-defined groups such as `support_l1`, `support_l2`, `ops_admin`, `auditors`.
+   - Groups can grant permission codes and queue memberships.
+   - A user can have multiple groups.
+   - Effective permissions are the union of role defaults, group grants and direct queue memberships, with backend-deny rules still taking precedence.
+
+4. **Permission Catalog**
+   - Introduce a typed permission catalog instead of free-form JSON:
+     - `workspace.admin.view`
+     - `workspace.support.view`
+     - `admin.inventory.view`
+     - `admin.inventory.manage_tokens`
+     - `admin.modules.view`
+     - `admin.modules.author`
+     - `admin.playbooks.view`
+     - `admin.playbooks.publish`
+     - `admin.forms.view`
+     - `admin.forms.publish`
+     - `admin.observer.view`
+     - `settings.view`
+     - `settings.manage_queues`
+     - `settings.manage_routing`
+     - `ticket.queue.view`
+     - `ticket.detail.view`
+     - `ticket.status.change`
+     - `ticket.queue.change`
+     - `ticket.assign`
+     - `ticket.comment.public`
+     - `ticket.comment.internal`
+     - `ticket.passport.manage`
+     - `ticket.playbook.run`
+     - `ticket.tool.run`
+     - `module.tool.run.low_risk`
+     - `module.tool.run.high_risk`
+     - `observer.trace.view`
+     - `control.server.view`
+     - `control.server.action`
+   - Catalog labels must be human-readable and grouped by page/domain.
+
+5. **Queues**
+   - Keep `ticket_queue_members` and `role_in_queue`.
+   - New RBAC UI should show queue access as a first-class tab:
+     - queue list;
+     - members;
+     - role in queue: primary/backup/lead/observer;
+     - effective ticket visibility preview for selected support user.
+   - Group-to-queue membership can be added as a separate mapping if direct per-user queue management becomes too noisy.
+
+6. **UI Visibility**
+   - Server session payload should expose typed capabilities/effective permissions for the current user.
+   - React shell uses those capabilities to hide or disable navigation entries, page actions, dangerous buttons and ticket controls.
+   - Page-level gates stay route-based; element-level visibility uses a shared helper instead of scattered role comparisons.
+   - Hidden/disabled UI is convenience only; backend still checks permission on every write.
+
+7. **Audit And Explainability**
+   - Every RBAC mutation writes audit:
+     - who changed;
+     - target user/group/permission/queue;
+     - before/after;
+     - reason if provided.
+   - Access Center includes an “Effective access” inspector:
+     - selected user;
+     - role defaults;
+     - groups;
+     - queues;
+     - module/tool grants;
+     - final permissions.
+
+### Backend Implementation Plan
+
+1. Inventory existing access checks:
+   - map all `require_auth(...)` usage;
+   - map queue-membership ticket visibility checks;
+   - map React route/workspace gates;
+   - map module/tool `allow_roles` checks.
+2. Add a permission catalog module:
+   - server-owned list of known permission codes;
+   - labels, descriptions, domain/page grouping;
+   - built-in role defaults.
+3. Add DB schema if needed:
+   - `access_groups`;
+   - `access_group_members`;
+   - `access_group_permissions`;
+   - optional `access_group_queue_members`;
+   - `access_audit` or reuse existing audit table if it fits.
+4. Add `AccessControlService`:
+   - resolve role defaults;
+   - resolve user groups;
+   - resolve direct/group queue memberships;
+   - calculate effective permissions;
+   - answer `can(actor, permission, resource)` for typed server handlers.
+5. Add typed web API under `/api/web/admin/access/*`:
+   - `GET /catalog`;
+   - `GET /summary`;
+   - `GET /users`;
+   - `POST/PATCH /users`;
+   - `GET/POST/PATCH/DELETE /groups`;
+   - `POST/DELETE /groups/{group_id}/members`;
+   - `PUT /groups/{group_id}/permissions`;
+   - `PUT /groups/{group_id}/queues`;
+   - `GET /effective-access?actor_id=...`;
+   - all write endpoints admin-only.
+6. Extend session payload:
+   - keep `default_workspace` and `available_workspaces`;
+   - add `capabilities` or `permissions` as a typed list;
+   - add a version/hash so the UI can refresh when permissions change.
+7. Gradually replace direct role checks in new web handlers with permission checks where the permission model is ready:
+   - start with admin/support page gates and high-risk actions;
+   - keep legacy role checks as a hard floor during transition.
+8. Add server tests:
+   - permission catalog defaults;
+   - group membership effective permissions;
+   - admin-only RBAC mutations;
+   - support without permission cannot access admin APIs;
+   - queue membership still limits ticket visibility;
+   - module/tool run permission does not bypass existing tool policy.
+
+### Frontend Implementation Plan
+
+1. Add typed access API client and DTOs in `webapp/src/features/access-control/`.
+2. Add shared permission helpers:
+   - `hasPermission(session, code)`;
+   - `hasAnyPermission(session, codes)`;
+   - `canShowNavItem(session, navItem)`;
+   - `canUseTicketAction(session, action)`.
+3. Add `/app/admin/access` route and navigation entry visible to admins with access-control permission.
+4. Build the Access Control Center with tabs:
+   - **Users**: account list, role, active state, groups, queue badges, quick actions.
+   - **Groups**: group CRUD, member management, permission assignments.
+   - **Permissions Matrix**: grouped matrix by domain/page/action with role defaults and group grants.
+   - **Queues**: queue membership management and group/direct membership preview.
+   - **Modules & Tools**: map module/tool `allow_roles` and future permission requirements into a readable launch policy view.
+   - **Effective Access**: select user and inspect final workspace/pages/actions/queues/modules.
+   - **Audit**: recent RBAC changes.
+5. Apply capability-based visibility to the shell:
+   - workspace switcher;
+   - sidebar navigation;
+   - admin route cards;
+   - settings/ticket/admin action buttons.
+6. Apply capability hints in ticket detail:
+   - disabled state with reason for status change, queue switch, assign, internal comment, passport edit, playbook/tool launch.
+7. Apply capability hints in admin modules/playbooks/forms:
+   - view-only mode when a user can view but not publish/run/change.
+8. Add frontend tests:
+   - access page renders catalog/groups/users;
+   - permission toggles generate typed payloads;
+   - support user cannot see admin nav;
+   - admin can see Access Control;
+   - disabled ticket actions show reasons;
+   - no raw JSON textareas in the Access Control Center.
+
+### UX Requirements
+
+- Dense SaaS admin style, closer to inventory/playbook builder than to a marketing page.
+- No decorative cards inside cards.
+- Tables must be scannable with filters/search and compact side inspector.
+- Use controlled toggles, checkboxes, selects and segmented tabs.
+- Permission names must be Russian operator labels with stable technical codes shown only as secondary detail or tooltip.
+- “Effective access” is mandatory so admins can verify why a support user sees or cannot see a queue/action.
+- Dangerous changes require explicit save/apply action, not instant mutation on toggle.
+
+### Documentation Plan
+
+- Update `server/docs/SECURITY_AND_AUTH.md` with:
+  - permission catalog;
+  - groups;
+  - effective permission resolution;
+  - UI visibility vs backend enforcement.
+- Update `server/docs/CODEMAP.md` with new access-control service/API and React route.
+- Update `docs/QUICK_LOOKUP.md` if `/app/admin/access` becomes the canonical RBAC start point.
+- Update `scripts/navigation_catalog.py` if new access-control files become primary navigation targets.
+- Keep `PLANS.md` current after each implementation slice.
+
+### Verification Plan
+
+1. Local setup:
+   - `python scripts/bootstrap_web_toolchain.py`
+2. Backend:
+   - focused pytest for access-control service/API;
+   - focused ticket queue RBAC regression;
+   - focused module/tool permission regression;
+   - `python scripts/verify_workspace.py`
+3. Frontend:
+   - focused Vitest for Access Control Center and permission-gated shell/ticket controls;
+   - `pnpm --dir webapp run test`;
+   - `pnpm --dir webapp run build`.
+4. Deploy/live:
+   - `python scripts/deploy_workspace_to_remote.py`;
+   - `python scripts/release_server_to_remote.py`;
+   - `python scripts/manage_remote_stack.py restart server`;
+   - browser check only on `http://192.168.100.17:8666/admin`.
+5. Live scenarios:
+   - admin opens `/app/admin/access`;
+   - admin creates group and assigns support user;
+   - support user sees only support workspace;
+   - support user sees only allowed queues;
+   - queue switch from one queue to another is allowed only when membership permits it;
+   - support user without admin permission cannot open `/app/admin/*`;
+   - auditor/read-only user sees disabled mutations;
+   - module/tool/playbook launch visibility follows permissions and existing backend policy;
+   - backend returns 403 when UI-hidden action is called directly.
+6. After live check:
+   - save screenshots/JSON artifacts under `artifacts/browser_checks/` or `artifacts/live_checks/`;
+   - stop the remote server unless the user explicitly asks to leave it running.
+
+### Efficient Execution Order
+
+1. Build backend permission catalog and effective-access resolver first.
+2. Add API and tests around effective access before frontend work.
+3. Extend session payload with permissions and wire shell visibility.
+4. Build Access Control Center read-only view.
+5. Add group/user/permission/queue mutations with explicit save actions.
+6. Apply permissions to ticket/admin/module/playbook controls.
+7. Run full local verification.
+8. Deploy and perform live RBAC, queue-routing and module-launch checks.
+
+### 2026-04-29 First Slice Completed Locally
+
+- Added server-owned permission catalog, role defaults and `permissions_version`.
+- Added typed read-only admin access endpoints:
+  - `GET /api/web/admin/access/catalog`;
+  - `GET /api/web/admin/access/summary`;
+  - `GET /api/web/admin/access/effective`.
+- Extended `GET /api/web/session/me` with effective role permissions so the React shell can hide permission-gated navigation.
+- Added `/app/admin/access` with a dense read-only Access Control Center: users, queues, built-in roles, grouped permission catalog and effective access inspector.
+- Wired the admin sidebar to hide `Access Control` unless the session has `admin.access.view`.
+- Deferred CRUD groups/memberships/audit writes to the next slice; current effective access is role defaults plus direct queue membership.
+
+### Handoff
+
+Start from:
+
+- `server/auth/context.py`
+- `server/auth/middleware.py`
+- `server/auth/admin_users_handlers.py`
+- `server/app/repos/ui_users_repo.py`
+- `server/web_api/session_handlers.py`
+- `server/web_api/settings_handlers.py`
+- `server/web_api/support_handlers.py`
+- `server/tickets/admin_config_handlers.py`
+- `server/app/repos/ticket_admin_config_repo.py`
+- `server/app/repos/ticket_events_repo.py`
+- `webapp/src/features/auth/workspace-access.ts`
+- `webapp/src/app/router.tsx`
+- `webapp/src/app/layouts/app-shell.tsx`
+- `webapp/src/app/navigation.tsx`
+- `webapp/src/pages/tickets/detail-page.tsx`
+- `webapp/src/features/modules/modules-panel.tsx`
+- `webapp/src/features/playbooks/playbook-builder-panel.tsx`
+- `webapp/src/pages/settings/index.tsx`
+
 ## 2026-04-27 Webapp Unification And API Boundary
 
 Status: local implementation verified; remote/live signoff pending.

@@ -58,7 +58,11 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-app text-slate-950">
       <div className="flex min-h-screen">
-        <AppSidebar hasAdminAccess={hasAdmin} hasSupportAccess={hasSupport} />
+        <AppSidebar
+          hasAdminAccess={hasAdmin}
+          hasSupportAccess={hasSupport}
+          permissions={session?.permissions ?? []}
+        />
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <AppTopbar

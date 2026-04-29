@@ -209,6 +209,11 @@ from web_api.session_handlers import (
     handle_web_session_logout,
     handle_web_session_me,
 )
+from web_api.access_handlers import (
+    handle_web_admin_access_catalog,
+    handle_web_admin_access_effective,
+    handle_web_admin_access_summary,
+)
 from web_api.support_handlers import (
     handle_web_support_bootstrap,
     handle_web_support_change_status,
@@ -422,6 +427,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
+        web.get('/api/web/admin/access/catalog', handle_web_admin_access_catalog),
+        web.get('/api/web/admin/access/summary', handle_web_admin_access_summary),
+        web.get('/api/web/admin/access/effective', handle_web_admin_access_effective),
         web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),
         web.get('/api/web/admin/observer/trace-detail/{trace_id}', handle_tech_trace_detail),

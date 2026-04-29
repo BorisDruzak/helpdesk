@@ -6,6 +6,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from auth.context import AuthContext, AuthType
 from auth.middleware import WEB_SESSION_COOKIE_NAME, auth_middleware
+from access_control.catalog import CATALOG_VERSION
 from routes import setup_routes
 import auth.middleware as auth_middleware_module
 import web_api.session_handlers as session_handlers_module
@@ -37,16 +38,16 @@ async def test_web_session_me_returns_typed_actor_payload(web_api_client):
     assert response.status == 200
     payload = await response.json()
 
-    assert payload == {
-        "status": "success",
-        "data": {
-            "user_login": "support1",
-            "actor_role": "support",
-            "auth_type": "ui_token",
-            "default_workspace": "support",
-            "available_workspaces": ["support"],
-        },
-    }
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert data["user_login"] == "support1"
+    assert data["actor_role"] == "support"
+    assert data["auth_type"] == "ui_token"
+    assert data["default_workspace"] == "support"
+    assert data["available_workspaces"] == ["support"]
+    assert data["permissions_version"] == CATALOG_VERSION
+    assert "workspace.support.view" in data["permissions"]
+    assert "workspace.admin.view" not in data["permissions"]
 
 
 @pytest.mark.asyncio
@@ -98,16 +99,15 @@ async def test_web_session_login_sets_http_only_cookie(monkeypatch):
 
     assert response.status == 200
 
-    assert payload == {
-        "status": "success",
-        "data": {
-            "user_login": "support",
-            "actor_role": "support",
-            "auth_type": "ui_token",
-            "default_workspace": "support",
-            "available_workspaces": ["support"],
-        },
-    }
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert data["user_login"] == "support"
+    assert data["actor_role"] == "support"
+    assert data["auth_type"] == "ui_token"
+    assert data["default_workspace"] == "support"
+    assert data["available_workspaces"] == ["support"]
+    assert data["permissions_version"] == CATALOG_VERSION
+    assert "ticket.queue.view" in data["permissions"]
     assert response.cookies[WEB_SESSION_COOKIE_NAME].value == "issued-ui-token"
     assert "HttpOnly" in set_cookie
     assert "SameSite=Lax" in set_cookie
@@ -180,16 +180,15 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
         payload = await response.json()
 
     assert response.status == 200
-    assert payload == {
-        "status": "success",
-        "data": {
-            "user_login": "support-cookie",
-            "actor_role": "support",
-            "auth_type": "ui_token",
-            "default_workspace": "support",
-            "available_workspaces": ["support"],
-        },
-    }
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert data["user_login"] == "support-cookie"
+    assert data["actor_role"] == "support"
+    assert data["auth_type"] == "ui_token"
+    assert data["default_workspace"] == "support"
+    assert data["available_workspaces"] == ["support"]
+    assert data["permissions_version"] == CATALOG_VERSION
+    assert "ticket.detail.view" in data["permissions"]
 
 
 @pytest.mark.asyncio
@@ -273,13 +272,13 @@ async def test_web_session_me_exposes_admin_default_workspace():
         payload = await response.json()
 
     assert response.status == 200
-    assert payload == {
-        "status": "success",
-        "data": {
-            "user_login": "admin1",
-            "actor_role": "admin",
-            "auth_type": "ui_token",
-            "default_workspace": "admin",
-            "available_workspaces": ["admin", "support"],
-        },
-    }
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert data["user_login"] == "admin1"
+    assert data["actor_role"] == "admin"
+    assert data["auth_type"] == "ui_token"
+    assert data["default_workspace"] == "admin"
+    assert data["available_workspaces"] == ["admin", "support"]
+    assert data["permissions_version"] == CATALOG_VERSION
+    assert "admin.access.view" in data["permissions"]
+    assert "workspace.admin.view" in data["permissions"]

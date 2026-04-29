@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Building2,
+  KeyRound,
   Layers3,
   MonitorCog,
   Radar,
@@ -10,7 +11,7 @@ import {
   Settings2,
   ShieldCheck,
   Ticket,
-  Workflow
+  Workflow,
 } from "lucide-react";
 
 export const SUPPORT_HOME_PATH = "/app/tickets";
@@ -22,6 +23,7 @@ export type AppNavItem = {
   label: string;
   section: "admin" | "support";
   to: string;
+  permission?: string;
 };
 
 export const appNavigation: AppNavItem[] = [
@@ -30,85 +32,93 @@ export const appNavigation: AppNavItem[] = [
     description: "Очередь и карточка тикета",
     icon: Ticket,
     section: "support",
-    to: SUPPORT_HOME_PATH
+    to: SUPPORT_HOME_PATH,
   },
   {
     label: "Отчеты",
     description: "KPI, SLA и динамика",
     icon: BarChart3,
     section: "support",
-    to: "/app/reports"
+    to: "/app/reports",
   },
   {
     label: "База знаний",
     description: "Статьи и категории",
     icon: BookOpen,
     section: "support",
-    to: "/app/knowledge"
+    to: "/app/knowledge",
   },
   {
     label: "Настройки",
     description: "Политики и интеграции",
     icon: Settings2,
     section: "support",
-    to: "/app/settings"
+    to: "/app/settings",
   },
   {
     label: "Инвентарь устройств",
     description: "Список устройств и статус",
     icon: MonitorCog,
     section: "admin",
-    to: "/app/admin/inventory"
+    to: "/app/admin/inventory",
   },
   {
     label: "Реестры",
     description: "Люди, здания, кабинеты и сервисы",
     icon: Building2,
     section: "admin",
-    to: "/app/admin/registry"
+    to: "/app/admin/registry",
   },
   {
     label: "Карточка устройства",
     description: "Единая device card",
     icon: ShieldCheck,
     section: "admin",
-    to: "/app/admin/device"
+    to: "/app/admin/device",
+  },
+  {
+    label: "Access Control",
+    description: "Роли, permissions и видимость",
+    icon: KeyRound,
+    section: "admin",
+    to: "/app/admin/access",
+    permission: "admin.access.view",
   },
   {
     label: "Модули",
     description: "Preferred версии и rollout",
     icon: Layers3,
     section: "admin",
-    to: "/app/admin/modules"
+    to: "/app/admin/modules",
   },
   {
     label: "Конструктор форм",
     description: "Каталог intake-форм",
     icon: Workflow,
     section: "admin",
-    to: "/app/admin/forms"
+    to: "/app/admin/forms",
   },
   {
     label: "Плейбуки",
     description: "Диагностика и действия",
     icon: Route,
     section: "admin",
-    to: "/app/admin/playbooks"
+    to: "/app/admin/playbooks",
   },
   {
     label: "Observer",
     description: "Трассы и деградации",
     icon: Radar,
     section: "admin",
-    to: "/app/admin/observer"
+    to: "/app/admin/observer",
   },
   {
     label: "Настройки",
     description: "Уведомления и политики",
     icon: Settings2,
     section: "admin",
-    to: "/app/admin/settings"
-  }
+    to: "/app/admin/settings",
+  },
 ];
 
 export function getWorkspaceLabel(pathname: string) {

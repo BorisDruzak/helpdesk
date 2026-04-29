@@ -4,6 +4,8 @@ export type WebSession = {
   auth_type: string;
   default_workspace: string | null;
   available_workspaces: string[];
+  permissions?: string[];
+  permissions_version?: string;
 };
 
 type SuccessResponse<T> = {

@@ -1,0 +1,330 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from hashlib import sha256
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionDefinition:
+    code: str
+    label: str
+    description: str
+    group: str
+    group_label: str
+    risk: str = "normal"
+
+
+ROLE_LABELS: dict[str, str] = {
+    "admin": "Администратор",
+    "support": "Поддержка",
+    "auditor": "Аудитор",
+    "user": "Пользователь",
+    "agent": "Агент",
+    "system": "Система",
+}
+
+PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
+    PermissionDefinition(
+        "workspace.admin.view",
+        "Видеть admin workspace",
+        "Доступ к административной рабочей области /app/admin.",
+        "workspaces",
+        "Рабочие области",
+    ),
+    PermissionDefinition(
+        "workspace.support.view",
+        "Видеть support workspace",
+        "Доступ к операторской рабочей области поддержки.",
+        "workspaces",
+        "Рабочие области",
+    ),
+    PermissionDefinition(
+        "admin.access.view",
+        "Открывать Access Control",
+        "Просмотр панели пользователей, ролей, прав и effective access.",
+        "admin",
+        "Администрирование",
+    ),
+    PermissionDefinition(
+        "admin.inventory.view",
+        "Смотреть inventory",
+        "Просмотр устройств, токенов и состояния агентов.",
+        "admin",
+        "Администрирование",
+    ),
+    PermissionDefinition(
+        "admin.inventory.manage_tokens",
+        "Управлять токенами устройств",
+        "Отзыв и просмотр agent tokens.",
+        "admin",
+        "Администрирование",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "admin.registry.view",
+        "Смотреть реестры",
+        "Просмотр людей, локаций, сервисов и активов.",
+        "admin",
+        "Администрирование",
+    ),
+    PermissionDefinition(
+        "admin.modules.view",
+        "Смотреть модули",
+        "Просмотр реестра модулей и статуса rollout.",
+        "modules",
+        "Модули и инструменты",
+    ),
+    PermissionDefinition(
+        "admin.modules.author",
+        "Публиковать модули",
+        "Создание, проверка и публикация новых версий модулей.",
+        "modules",
+        "Модули и инструменты",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "admin.playbooks.view",
+        "Смотреть плейбуки",
+        "Просмотр конструктора диагностических плейбуков.",
+        "automation",
+        "Автоматизация",
+    ),
+    PermissionDefinition(
+        "admin.playbooks.publish",
+        "Публиковать плейбуки",
+        "Сохранение и публикация диагностических playbook-сценариев.",
+        "automation",
+        "Автоматизация",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "admin.forms.view",
+        "Смотреть конструктор форм",
+        "Просмотр каталога request forms и route preview.",
+        "automation",
+        "Автоматизация",
+    ),
+    PermissionDefinition(
+        "admin.forms.publish",
+        "Публиковать формы",
+        "Сохранение каталога форм заявок и playbook triggers.",
+        "automation",
+        "Автоматизация",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "settings.view",
+        "Смотреть настройки",
+        "Просмотр очередей, SLA, routing и ticket lifecycle.",
+        "settings",
+        "Настройки",
+    ),
+    PermissionDefinition(
+        "settings.manage_queues",
+        "Управлять очередями",
+        "Изменение очередей и участников очередей.",
+        "settings",
+        "Настройки",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "settings.manage_routing",
+        "Управлять routing",
+        "Изменение routing rules, SLA, календарей и resolution codes.",
+        "settings",
+        "Настройки",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "ticket.queue.view",
+        "Видеть очередь тикетов",
+        "Просмотр доступной оператору очереди заявок.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.detail.view",
+        "Открывать тикет",
+        "Просмотр карточки тикета, timeline и формы заявки.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.status.change",
+        "Менять статус тикета",
+        "Запуск разрешённых FSM-переходов статуса.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.queue.change",
+        "Переключать очередь",
+        "Ручной перевод тикета между доступными очередями.",
+        "tickets",
+        "Тикеты",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "ticket.assign",
+        "Назначать исполнителя",
+        "Назначение support/admin исполнителей внутри правил очереди.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.comment.public",
+        "Писать публичные комментарии",
+        "Ответы, которые видит requester.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.comment.internal",
+        "Писать внутренние заметки",
+        "Комментарии только для support/admin.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.passport.manage",
+        "Вести паспорт решения",
+        "Создание evidence, action log и official resolution dossier.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
+        "ticket.playbook.run",
+        "Запускать плейбуки из тикета",
+        "Запуск опубликованных диагностических playbooks против устройства тикета.",
+        "automation",
+        "Автоматизация",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "ticket.tool.run",
+        "Запускать инструменты из тикета",
+        "Запуск module/tool команд из support-карточки.",
+        "modules",
+        "Модули и инструменты",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "module.tool.run.low_risk",
+        "Запускать low-risk tools",
+        "Запуск безопасных диагностических команд.",
+        "modules",
+        "Модули и инструменты",
+    ),
+    PermissionDefinition(
+        "module.tool.run.high_risk",
+        "Запускать high-risk tools",
+        "Запуск команд с повышенным риском, где требуется server policy/consent.",
+        "modules",
+        "Модули и инструменты",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "observer.trace.view",
+        "Смотреть observer traces",
+        "Просмотр trace detail, signatures и degradation groups.",
+        "observer",
+        "Observer",
+    ),
+    PermissionDefinition(
+        "admin.observer.view",
+        "Открывать admin observer",
+        "Доступ к /app/admin/observer.",
+        "observer",
+        "Observer",
+    ),
+    PermissionDefinition(
+        "control.server.view",
+        "Смотреть runtime сервера",
+        "Просмотр health/status/logs control-plane.",
+        "runtime",
+        "Runtime",
+    ),
+    PermissionDefinition(
+        "control.server.action",
+        "Управлять runtime сервера",
+        "Start/stop/restart/smoke действия control-plane.",
+        "runtime",
+        "Runtime",
+        risk="high",
+    ),
+)
+
+
+ROLE_DEFAULTS: dict[str, frozenset[str]] = {
+    "admin": frozenset(permission.code for permission in PERMISSION_CATALOG),
+    "support": frozenset(
+        {
+            "workspace.support.view",
+            "settings.view",
+            "ticket.queue.view",
+            "ticket.detail.view",
+            "ticket.status.change",
+            "ticket.queue.change",
+            "ticket.assign",
+            "ticket.comment.public",
+            "ticket.comment.internal",
+            "ticket.passport.manage",
+            "ticket.playbook.run",
+            "ticket.tool.run",
+            "module.tool.run.low_risk",
+            "module.tool.run.high_risk",
+            "observer.trace.view",
+            "control.server.view",
+        }
+    ),
+    "auditor": frozenset(
+        {
+            "settings.view",
+            "ticket.queue.view",
+            "ticket.detail.view",
+            "observer.trace.view",
+            "control.server.view",
+        }
+    ),
+    "user": frozenset({"ticket.detail.view", "ticket.comment.public"}),
+    "agent": frozenset(),
+    "system": frozenset(),
+}
+
+CATALOG_VERSION = "rbac-" + sha256(
+    "|".join(permission.code for permission in PERMISSION_CATALOG).encode("utf-8")
+).hexdigest()[:12]
+
+
+def normalize_role(actor_role: str | None) -> str:
+    return str(actor_role or "").strip().lower() or "user"
+
+
+def get_permission_catalog() -> tuple[PermissionDefinition, ...]:
+    return PERMISSION_CATALOG
+
+
+def get_role_permission_codes(actor_role: str | None) -> list[str]:
+    role = normalize_role(actor_role)
+    return sorted(ROLE_DEFAULTS.get(role, ROLE_DEFAULTS["user"]))
+
+
+def get_role_label(actor_role: str | None) -> str:
+    role = normalize_role(actor_role)
+    return ROLE_LABELS.get(role, role)
+
+
+def get_available_workspaces(actor_role: str | None) -> list[str]:
+    permissions = set(get_role_permission_codes(actor_role))
+    workspaces: list[str] = []
+    if "workspace.admin.view" in permissions:
+        workspaces.append("admin")
+    if "workspace.support.view" in permissions:
+        workspaces.append("support")
+    return workspaces
+
+
+def get_default_workspace(actor_role: str | None) -> str | None:
+    workspaces = get_available_workspaces(actor_role)
+    return workspaces[0] if workspaces else None
+

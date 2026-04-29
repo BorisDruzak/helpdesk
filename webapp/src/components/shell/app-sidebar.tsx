@@ -6,6 +6,7 @@ import { cn } from "../../shared/ui/cn";
 type AppSidebarProps = {
   hasAdminAccess: boolean;
   hasSupportAccess: boolean;
+  permissions?: string[];
 };
 
 function SidebarGroup({
@@ -55,10 +56,14 @@ function SidebarGroup({
 
 export function AppSidebar({
   hasAdminAccess,
-  hasSupportAccess
+  hasSupportAccess,
+  permissions = []
 }: AppSidebarProps) {
-  const supportItems = appNavigation.filter((item) => item.section === "support");
-  const adminItems = appNavigation.filter((item) => item.section === "admin");
+  const permissionSet = new Set(permissions);
+  const canShowItem = (item: (typeof appNavigation)[number]) =>
+    !item.permission || permissionSet.has(item.permission);
+  const supportItems = appNavigation.filter((item) => item.section === "support" && canShowItem(item));
+  const adminItems = appNavigation.filter((item) => item.section === "admin" && canShowItem(item));
 
   return (
     <aside className="hidden w-[236px] shrink-0 border-r border-white/10 bg-brand-700 px-3 py-4 text-white lg:flex lg:flex-col">
