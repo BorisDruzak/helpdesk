@@ -8,13 +8,24 @@ from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, UiUser
+from app.db.models import (
+    AccessGroup,
+    AccessGroupMember,
+    AccessGroupPermission,
+    Device,
+    Operation,
+    Playbook,
+    PlaybookStep,
+    PlaybookVersion,
+    Ticket,
+    UiUser,
+)
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.service import RegistryIngestionService
 from routes import setup_routes
 import web_api.support_handlers as support_handlers_module
-from tests.conftest import TEST_UI_SUPPORT_TOKEN
+from tests.conftest import TEST_UI_AUDITOR_TOKEN, TEST_UI_SUPPORT_TOKEN
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
@@ -74,6 +85,234 @@ async def test_web_support_queue_returns_empty_payload_when_db_is_unavailable(we
 
 def _support_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}
+
+
+def _auditor_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {TEST_UI_AUDITOR_TOKEN}"}
+
+
+async def _seed_support_ticket(
+    test_engine,
+    *,
+    device_id: str = "device-rbac",
+    status: str = "in_progress",
+) -> str:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add_all([
+            UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="auditor-test", password_hash="test", actor_role="auditor", is_active=True),
+        ])
+        queue = await _seed_queue(session, code=f"rbac_{uuid.uuid4().hex[:8]}", name="RBAC queue", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=device_id,
+            title="RBAC protected ticket action",
+            description="Ticket write endpoint must check effective permissions.",
+            status=status,
+            requester_id="user-rbac",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+        return ticket_id
+
+
+async def _grant_auditor_permissions(test_engine, permissions: list[str]) -> None:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        group = AccessGroup(
+            code=f"rbac_grant_{uuid.uuid4().hex[:8]}",
+            name="RBAC test grant",
+            description=None,
+            is_active=True,
+        )
+        session.add(group)
+        await session.flush()
+        session.add(AccessGroupMember(group_id=group.id, actor_id="auditor-test"))
+        for permission in permissions:
+            session.add(AccessGroupPermission(group_id=group.id, permission_code=permission))
+        await session.commit()
+
+
+async def _assert_forbidden_permission(response, permission: str) -> dict:
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "FORBIDDEN"
+    assert payload["required_permission"] == permission
+    assert permission in payload["error"]
+    return payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("visibility", "permission"),
+    [
+        ("public", "ticket.comment.public"),
+        ("internal", "ticket.comment.internal"),
+    ],
+)
+async def test_web_support_message_action_requires_comment_permission(
+    test_client,
+    test_engine,
+    visibility,
+    permission,
+):
+    ticket_id = await _seed_support_ticket(test_engine)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_auditor_headers(),
+        json={"text": "permission probe", "visibility": visibility},
+    )
+
+    await _assert_forbidden_permission(response, permission)
+
+
+@pytest.mark.asyncio
+async def test_web_support_status_action_requires_status_permission(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, status="new")
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/status",
+        headers=_auditor_headers(),
+        json={"to_status": "in_progress", "reason": "permission probe"},
+    )
+
+    await _assert_forbidden_permission(response, "ticket.status.change")
+
+
+@pytest.mark.asyncio
+async def test_web_support_passport_mutations_require_manage_permission(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/passport/generate",
+        headers=_auditor_headers(),
+        json={"mode": "create"},
+    )
+
+    await _assert_forbidden_permission(response, "ticket.passport.manage")
+
+
+@pytest.mark.asyncio
+async def test_web_support_playbook_action_requires_run_permission(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        playbook = Playbook(key="rbac.playbook", name="RBAC playbook", domain="diagnostics")
+        session.add(playbook)
+        await session.flush()
+        version = PlaybookVersion(
+            playbook_id=playbook.id,
+            version="1.0.0",
+            status="published",
+            manifest_json={},
+            published_at=datetime.now(timezone.utc),
+        )
+        session.add(version)
+        await session.flush()
+        version_id = version.id
+        await session.commit()
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-rbac-playbook")
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/playbooks/run",
+        headers=_auditor_headers(),
+        json={"playbook_version_id": version_id},
+    )
+
+    await _assert_forbidden_permission(response, "ticket.playbook.run")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("risk_level", "permission"),
+    [
+        ("safe_read", "ticket.tool.run"),
+        ("system_write", "ticket.tool.run"),
+    ],
+)
+async def test_web_support_tool_action_requires_base_run_permission(
+    test_client,
+    test_engine,
+    monkeypatch,
+    risk_level,
+    permission,
+):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-rbac-tool")
+
+    class FakeToolExecutionService:
+        def __init__(self, _state):
+            pass
+
+        async def get_tools_list(self, device_id):
+            return [{"tool": "rbac.probe", "spec": {"risk_level": risk_level}}]
+
+        async def get_tools_from_server(self, device_id):
+            return []
+
+        async def run_tool(self, **_kwargs):
+            raise AssertionError("run_tool must not be dispatched without permission")
+
+    monkeypatch.setattr(support_handlers_module, "ToolExecutionService", FakeToolExecutionService)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/tools/run",
+        headers=_auditor_headers(),
+        json={"tool_name": "rbac.probe", "params": {}},
+    )
+
+    await _assert_forbidden_permission(response, permission)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("risk_level", "granted_permissions", "required_permission"),
+    [
+        ("safe_read", ["ticket.tool.run"], "module.tool.run.low_risk"),
+        (
+            "system_write",
+            ["ticket.tool.run", "module.tool.run.low_risk"],
+            "module.tool.run.high_risk",
+        ),
+    ],
+)
+async def test_web_support_tool_action_requires_risk_permission(
+    test_client,
+    test_engine,
+    monkeypatch,
+    risk_level,
+    granted_permissions,
+    required_permission,
+):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-rbac-tool-risk")
+    await _grant_auditor_permissions(test_engine, granted_permissions)
+
+    class FakeToolExecutionService:
+        def __init__(self, _state):
+            pass
+
+        async def get_tools_list(self, device_id):
+            return [{"tool": "rbac.probe", "spec": {"risk_level": risk_level}}]
+
+        async def get_tools_from_server(self, device_id):
+            return []
+
+        async def run_tool(self, **_kwargs):
+            raise AssertionError("run_tool must not be dispatched without risk permission")
+
+    monkeypatch.setattr(support_handlers_module, "ToolExecutionService", FakeToolExecutionService)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/tools/run",
+        headers=_auditor_headers(),
+        json={"tool_name": "rbac.probe", "params": {}},
+    )
+
+    await _assert_forbidden_permission(response, required_permission)
 
 
 @pytest.mark.asyncio

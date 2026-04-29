@@ -51,6 +51,7 @@ WINDOWS_TEST_DB_SSH_KEY = os.getenv(
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
+TEST_UI_AUDITOR_TOKEN = "test-ui-auditor-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
 
 _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
@@ -726,6 +727,13 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
                 "created_at": "2026-01-01T00:00:00+00:00",
                 "type": "ui",
             }
+        if token == TEST_UI_AUDITOR_TOKEN:
+            return {
+                "user_login": "auditor-test",
+                "actor_role": "auditor",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
         if token.startswith(TEST_UI_USER_PREFIX):
             return {
                 "user_login": token.split(":", 1)[1],
@@ -753,6 +761,13 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
             return AuthContext(
                 actor_id="admin-test",
                 actor_role="admin",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token == TEST_UI_AUDITOR_TOKEN:
+            return AuthContext(
+                actor_id="auditor-test",
+                actor_role="auditor",
                 auth_type=AuthType.UI_TOKEN,
                 token=token,
             )

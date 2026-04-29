@@ -7,12 +7,12 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, UiUser
+from app.db.models import AccessGroup, AccessGroupMember, AccessGroupPermission, Ticket, UiUser
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from auth.context import AuthContext, AuthType
 from routes import setup_routes
-from tests.conftest import TEST_UI_ADMIN_TOKEN
+from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 import web_api.settings_handlers as settings_handlers_module
 
 
@@ -36,6 +36,97 @@ async def web_settings_client():
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
+
+
+def _support_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}
+
+
+async def _grant_support_permissions(test_engine, permissions: list[str]) -> None:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="secret", actor_role="support", is_active=True))
+        group = AccessGroup(
+            code="settings_grant",
+            name="Settings grant",
+            description=None,
+            is_active=True,
+        )
+        session.add(group)
+        await session.flush()
+        session.add(AccessGroupMember(group_id=group.id, actor_id="support-test"))
+        for permission in permissions:
+            session.add(AccessGroupPermission(group_id=group.id, permission_code=permission))
+        await session.commit()
+
+
+async def _assert_settings_forbidden(response, permission: str) -> None:
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "FORBIDDEN"
+    assert payload["required_permission"] == permission
+    assert permission in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_settings_queue_write_requires_manage_queues_permission(test_client):
+    response = await test_client.post(
+        "/api/web/settings/queues",
+        headers=_support_headers(),
+        json={
+            "code": "rbac_queue_denied",
+            "name": "RBAC denied queue",
+            "is_triage": False,
+            "auto_assign_enabled": True,
+        },
+    )
+
+    await _assert_settings_forbidden(response, "settings.manage_queues")
+
+
+@pytest.mark.asyncio
+async def test_web_settings_queue_write_allows_manage_queues_group_permission(test_client, test_engine):
+    await _grant_support_permissions(test_engine, ["settings.manage_queues"])
+
+    response = await test_client.post(
+        "/api/web/settings/queues",
+        headers=_support_headers(),
+        json={
+            "code": "rbac_queue_allowed",
+            "name": "RBAC allowed queue",
+            "is_triage": False,
+            "auto_assign_enabled": True,
+        },
+    )
+
+    assert response.status == 201, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["queue"]["code"] == "rbac_queue_allowed"
+
+
+@pytest.mark.asyncio
+async def test_web_settings_routing_write_requires_manage_routing_permission(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        repo = TicketAdminConfigRepo(session)
+        queue = await repo.create_queue("rbac_routing_target", "RBAC routing target")
+        queue_id = queue.id
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/settings/routing_rules",
+        headers=_support_headers(),
+        json={
+            "enabled": True,
+            "priority_order": 20,
+            "target_queue_id": queue_id,
+            "condition_json": {"field": "request_kind", "op": "eq", "value": "access"},
+        },
+    )
+
+    await _assert_settings_forbidden(response, "settings.manage_routing")
 
 
 @pytest.mark.asyncio

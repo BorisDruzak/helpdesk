@@ -247,4 +247,51 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Weekly hours JSON")).not.toBeInTheDocument();
     expect(screen.queryByText("Holidays JSON")).not.toBeInTheDocument();
   });
+
+  it("shows split permission reasons for read-only queue and routing actions", async () => {
+    const payload = createSettingsPayload();
+    Object.assign(payload.capabilities as Record<string, unknown>, {
+      can_write: true,
+      can_manage_queues: false,
+      can_manage_routing: false,
+      manage_queues_denial_reason: "Недостаточно прав: settings.manage_queues",
+      manage_routing_denial_reason: "Недостаточно прав: settings.manage_routing",
+    });
+    payload.routing_rules = [
+      {
+        id: 10,
+        enabled: true,
+        priority_order: 10,
+        target_queue_id: 1,
+        target_queue_name: "ServiceDesk L1",
+        condition_json: { field: "request_kind", op: "eq", value: "access" },
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/web/settings") {
+          return jsonResponse({
+            status: "success",
+            data: payload,
+          });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    renderSettingsPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Очереди" }));
+    expect(screen.getByText("Недостаточно прав: settings.manage_queues")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить очередь" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Добавить / обновить участника" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Сохранить OLA" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Маршрутизация" }));
+    expect(screen.getByText("Недостаточно прав: settings.manage_routing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить правило" })).toBeDisabled();
+  });
 });

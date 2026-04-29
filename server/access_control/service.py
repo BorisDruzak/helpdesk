@@ -11,6 +11,7 @@ from access_control.catalog import (
     get_role_permission_codes,
     normalize_role,
 )
+from app.repos.access_control_repo import AccessControlRepo
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,15 @@ def resolve_session_access(actor_role: str | None) -> tuple[str | None, list[str
 
 def can_role(actor_role: str | None, permission_code: str) -> bool:
     return permission_code in set(get_role_permission_codes(actor_role))
+
+
+async def can(session, auth_context, permission_code: str) -> bool:
+    actor_role = getattr(auth_context, "actor_role", None)
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    permissions = set(get_role_permission_codes(actor_role))
+    if actor_id:
+        permissions.update(await AccessControlRepo(session).get_actor_group_permissions(actor_id))
+    return permission_code in permissions
 
 
 def _workspaces_from_permissions(permissions: list[str]) -> list[str]:

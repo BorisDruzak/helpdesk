@@ -5,6 +5,7 @@ from aiohttp import web
 from loguru import logger
 from sqlalchemy import func, select
 
+from access_control.service import can
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketResolutionPassport
@@ -104,6 +105,8 @@ QUICK_STATUS_ACTIONS = [
     ("canceled", "Отменить"),
 ]
 
+HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
+
 
 def _normalize_scope(raw_scope: str | None) -> str:
     return "mine" if raw_scope == "mine" else "all"
@@ -146,6 +149,61 @@ def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str) ->
         ),
         tickets=[],
     )
+
+
+def _permission_denied(permission_code: str) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": f"Недостаточно прав: {permission_code}",
+            "error_code": "FORBIDDEN",
+            "required_permission": permission_code,
+        },
+        status=403,
+    )
+
+
+async def _require_permission(session, auth_context, permission_code: str) -> web.Response | None:
+    if await can(session, auth_context, permission_code):
+        return None
+    return _permission_denied(permission_code)
+
+
+def _tool_risk_permission(risk_level: str | None) -> str:
+    normalized = str(risk_level or "").strip().lower()
+    if normalized in HIGH_RISK_TOOL_LEVELS:
+        return "module.tool.run.high_risk"
+    return "module.tool.run.low_risk"
+
+
+async def _resolve_tool_risk_level(
+    *,
+    tool_service: ToolExecutionService,
+    device_id: str,
+    tool_name: str,
+) -> str:
+    raw_sources: list[tuple[str, list[object]]] = []
+    for source, method_name in (("device", "get_tools_list"), ("server", "get_tools_from_server")):
+        method = getattr(tool_service, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            raw_items = await method(device_id) or []
+        except Exception as exc:
+            logger.debug(
+                f"[web_support_run_tool] risk lookup skipped: device_id={device_id}, "
+                f"tool={tool_name}, source={source}, error={exc}"
+            )
+            raw_items = []
+        raw_sources.append((source, raw_items))
+    for source, raw_items in raw_sources:
+        raw_tool = _find_raw_tool_entry(raw_items, tool_name)
+        if raw_tool is None:
+            continue
+        normalized = _normalize_support_tool_entry(raw_tool, source=source)
+        if normalized is not None:
+            return normalized.risk_level
+    return "safe_read"
 
 
 def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
@@ -1033,7 +1091,7 @@ async def handle_web_support_ticket_passport(request: web.Request):
     return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_generate(request: web.Request):
     try:
         raw = await request.json()
@@ -1048,9 +1106,12 @@ async def handle_web_support_ticket_passport_generate(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
             payload = await TicketPassportService(session).generate(
                 ticket.ticket_id,
                 actor_id=auth_context.actor_id,
@@ -1074,7 +1135,7 @@ async def handle_web_support_ticket_passport_generate(request: web.Request):
     return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_patch(request: web.Request):
     try:
         raw = await request.json()
@@ -1086,9 +1147,12 @@ async def handle_web_support_ticket_passport_patch(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
             repo = TicketPassportRepo(session)
             passport = await repo.get_latest_passport(ticket.ticket_id)
             if passport is None:
@@ -1122,7 +1186,7 @@ async def handle_web_support_ticket_passport_patch(request: web.Request):
     return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_evidence(request: web.Request):
     try:
         raw = await request.json()
@@ -1135,9 +1199,12 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, ticket_repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, ticket_repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
             repo = TicketPassportRepo(session)
             passport = await repo.get_latest_passport(ticket.ticket_id)
             item = await repo.add_evidence(
@@ -1184,13 +1251,16 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
     return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_knowledge_draft(request: web.Request):
     try:
         async with get_session() as session:
-            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
             payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
             passport = payload.get("passport")
             if not passport:
@@ -1219,7 +1289,7 @@ async def handle_web_support_ticket_passport_knowledge_draft(request: web.Reques
     return json_model_response(SuccessResponse[SupportTicketKnowledgeDraftPayload](data=draft))
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_send_message(request: web.Request):
     try:
         data = await request.json()
@@ -1247,9 +1317,13 @@ async def handle_web_support_send_message(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            permission = "ticket.comment.internal" if visibility == "internal" else "ticket.comment.public"
+            denied = await _require_permission(session, auth_context, permission)
+            if denied:
+                return denied
 
             sender_role = _message_role_from_auth(auth_context)
             message_id = str(uuid.uuid4())
@@ -1310,7 +1384,7 @@ async def handle_web_support_send_message(request: web.Request):
         )
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_change_status(request: web.Request):
     try:
         data = await request.json()
@@ -1335,9 +1409,12 @@ async def handle_web_support_change_status(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.status.change")
+            if denied:
+                return denied
 
             is_staff = auth_context.actor_role in {"admin", "support"}
             if not validate_transition(ticket.status, to_status, is_staff):
@@ -1434,7 +1511,7 @@ async def handle_web_support_change_status(request: web.Request):
         )
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_run_tool(request: web.Request):
     try:
         data = await request.json()
@@ -1462,9 +1539,12 @@ async def handle_web_support_run_tool(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.tool.run")
+            if denied:
+                return denied
 
             device_id = str(getattr(ticket, "device_id", "") or "").strip()
             if not device_id:
@@ -1479,6 +1559,14 @@ async def handle_web_support_run_tool(request: web.Request):
 
             operation_id = str(uuid.uuid4())
             tool_service = ToolExecutionService(request.app["state"])
+            risk_level = await _resolve_tool_risk_level(
+                tool_service=tool_service,
+                device_id=device_id,
+                tool_name=tool_name,
+            )
+            denied = await _require_permission(session, auth_context, _tool_risk_permission(risk_level))
+            if denied:
+                return denied
             params_with_operation = await _build_tool_params_for_dispatch(
                 tool_service=tool_service,
                 device_id=device_id,
@@ -1542,7 +1630,7 @@ async def handle_web_support_run_tool(request: web.Request):
     )
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_run_playbook(request: web.Request):
     try:
         data = await request.json()
@@ -1570,9 +1658,12 @@ async def handle_web_support_run_playbook(request: web.Request):
 
     try:
         async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            denied = await _require_permission(session, auth_context, "ticket.playbook.run")
+            if denied:
+                return denied
             device_id = str(getattr(ticket, "device_id", "") or "").strip()
             if not device_id:
                 return web.json_response(

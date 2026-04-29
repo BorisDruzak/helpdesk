@@ -11,6 +11,7 @@ from config import (
     TICKET_ADMIN_CONFIG_WRITE_ENABLED,
     TICKET_AUDITOR_ROLE_ENABLED,
 )
+from access_control.service import can
 from auth.middleware import require_auth
 from app.db import get_session
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
@@ -43,6 +44,31 @@ def _check_write_enabled() -> Optional[web.Response]:
             status=403,
         )
     return None
+
+
+def _permission_denied(permission_code: str) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": f"Недостаточно прав: {permission_code}",
+            "error_code": "FORBIDDEN",
+            "required_permission": permission_code,
+        },
+        status=403,
+    )
+
+
+async def _check_permission(session, request: web.Request, permission_code: str) -> Optional[web.Response]:
+    if await can(session, request["auth_context"], permission_code):
+        return None
+    return _permission_denied(permission_code)
+
+
+async def _check_request_permission(request: web.Request, permission_code: str) -> Optional[web.Response]:
+    async with get_session() as session:
+        denied = await _check_permission(session, request, permission_code)
+        await session.commit()
+        return denied
 
 
 def _allowed_read_roles() -> tuple:
@@ -85,9 +111,12 @@ async def handle_admin_queues_list(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "queues": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_queues_post(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_queues")
     if r:
         return r
     try:
@@ -185,9 +214,12 @@ async def handle_admin_queues_get(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_queues_patch(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_queues")
     if r:
         return r
     queue_id = int(request.match_info["queue_id"])
@@ -282,9 +314,12 @@ async def handle_admin_queue_members_list(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "members": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_queue_members_put(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_queues")
     if r:
         return r
     queue_id = int(request.match_info["queue_id"])
@@ -325,9 +360,12 @@ async def handle_admin_queue_members_put(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_queue_members_delete(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_queues")
     if r:
         return r
     queue_id = int(request.match_info["queue_id"])
@@ -397,9 +435,12 @@ async def handle_admin_resolution_codes_list(request: web.Request) -> web.Respon
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_resolution_codes_post(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     try:
@@ -462,9 +503,12 @@ async def handle_admin_resolution_codes_post(request: web.Request) -> web.Respon
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_resolution_codes_patch(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     code = request.match_info["code"]
@@ -526,9 +570,12 @@ async def handle_admin_resolution_codes_patch(request: web.Request) -> web.Respo
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_resolution_codes_delete(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     code = request.match_info["code"]
@@ -605,9 +652,12 @@ async def handle_admin_routing_rules_list(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "routing_rules": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_routing_rules_post(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     try:
@@ -676,9 +726,12 @@ async def handle_admin_routing_rules_post(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_routing_rules_patch(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     rule_id = int(request.match_info["rule_id"])
@@ -776,9 +829,12 @@ async def handle_admin_sla_policies_list(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "sla_policies": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_sla_policies_post(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     try:
@@ -841,9 +897,12 @@ async def handle_admin_sla_policies_post(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_sla_policies_patch(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     policy_id = int(request.match_info["policy_id"])
@@ -916,9 +975,12 @@ async def handle_admin_sla_policies_patch(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_sla_policies_set_default(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     policy_id = int(request.match_info["policy_id"])
@@ -958,9 +1020,12 @@ async def handle_admin_sla_policies_set_default(request: web.Request) -> web.Res
     return web.json_response({"status": "ok", "sla_policy": {"id": p.id, "is_default": True}})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_sla_targets_put(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     policy_id = int(request.match_info["policy_id"])
@@ -1039,9 +1104,12 @@ async def handle_admin_sla_targets_get(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "targets": payload})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_priority_matrix_put(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     policy_id = int(request.match_info["policy_id"])
@@ -1147,9 +1215,12 @@ async def handle_admin_calendars_list(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "calendars": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_calendars_post(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     try:
@@ -1214,9 +1285,12 @@ async def handle_admin_calendars_post(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_calendars_patch(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_routing")
     if r:
         return r
     calendar_id = int(request.match_info["calendar_id"])
@@ -1298,9 +1372,12 @@ async def handle_admin_ola_targets_get(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "queue_id": queue_id, "ola_targets": items})
 
 
-@require_auth("admin")
+@require_auth("admin", "support", "auditor")
 async def handle_admin_ola_targets_put(request: web.Request) -> web.Response:
     r = _check_api_enabled() or _check_write_enabled()
+    if r:
+        return r
+    r = await _check_request_permission(request, "settings.manage_queues")
     if r:
         return r
     queue_id = int(request.match_info["queue_id"])

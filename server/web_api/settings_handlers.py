@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiohttp import web
 from loguru import logger
 
+from access_control.service import can, can_role
 from app.db import get_session
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
@@ -214,10 +215,16 @@ def _build_routing_builder_payload(pack: dict | None = None) -> WebSettingsRouti
 
 
 def _empty_settings_payload(*, actor_role: str) -> WebSettingsPayload:
+    can_manage_queues = can_role(actor_role, "settings.manage_queues")
+    can_manage_routing = can_role(actor_role, "settings.manage_routing")
     return WebSettingsPayload(
         capabilities=WebSettingsCapabilities(
-            can_write=actor_role == "admin",
+            can_write=can_manage_queues or can_manage_routing,
             actor_role=actor_role,
+            can_manage_queues=can_manage_queues,
+            can_manage_routing=can_manage_routing,
+            manage_queues_denial_reason=None if can_manage_queues else "Недостаточно прав: settings.manage_queues",
+            manage_routing_denial_reason=None if can_manage_routing else "Недостаточно прав: settings.manage_routing",
         ),
         overview=WebSettingsOverview(
             queues_count=0,
@@ -250,6 +257,8 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
 
     try:
         async with get_session() as session:
+            can_manage_queues = await can(session, auth_context, "settings.manage_queues")
+            can_manage_routing = await can(session, auth_context, "settings.manage_routing")
             repo = TicketAdminConfigRepo(session)
             audit_repo = TicketAdminAuditRepo(session)
             form_pack = await resolve_ticket_form_pack(
@@ -337,8 +346,16 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
 
             payload = WebSettingsPayload(
                 capabilities=WebSettingsCapabilities(
-                    can_write=actor_role == "admin",
+                    can_write=can_manage_queues or can_manage_routing,
                     actor_role=actor_role,
+                    can_manage_queues=can_manage_queues,
+                    can_manage_routing=can_manage_routing,
+                    manage_queues_denial_reason=(
+                        None if can_manage_queues else "Недостаточно прав: settings.manage_queues"
+                    ),
+                    manage_routing_denial_reason=(
+                        None if can_manage_routing else "Недостаточно прав: settings.manage_routing"
+                    ),
                 ),
                 overview=WebSettingsOverview(
                     queues_count=len(queues),

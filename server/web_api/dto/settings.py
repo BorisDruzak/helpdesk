@@ -6,6 +6,10 @@ class WebSettingsCapabilities(BaseModel):
 
     can_write: bool
     actor_role: str
+    can_manage_queues: bool = False
+    can_manage_routing: bool = False
+    manage_queues_denial_reason: str | None = None
+    manage_routing_denial_reason: str | None = None
 
 
 class WebSettingsOverview(BaseModel):

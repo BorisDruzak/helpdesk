@@ -534,6 +534,18 @@ function SettingsField({
 }
 
 
+function PermissionNotice({ text }: { text: string | null }) {
+  if (!text) {
+    return null;
+  }
+  return (
+    <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+      {text}
+    </div>
+  );
+}
+
+
 function formatBooleanFlag(value: boolean): string {
   return value ? "Включено" : "Выключено";
 }
@@ -576,6 +588,12 @@ export function SettingsPage() {
 
   const payload = settingsQuery.data;
   const canWrite = payload?.capabilities.can_write ?? false;
+  const canManageQueues = payload?.capabilities.can_manage_queues ?? canWrite;
+  const canManageRouting = payload?.capabilities.can_manage_routing ?? canWrite;
+  const queueDeniedReason =
+    canManageQueues ? null : payload?.capabilities.manage_queues_denial_reason ?? "Недостаточно прав: settings.manage_queues";
+  const routingDeniedReason =
+    canManageRouting ? null : payload?.capabilities.manage_routing_denial_reason ?? "Недостаточно прав: settings.manage_routing";
 
   const [selectedQueueId, setSelectedQueueId] = useState<number | null>(null);
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
@@ -739,6 +757,9 @@ export function SettingsPage() {
 
   const queueMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageQueues) {
+        throw new Error(queueDeniedReason ?? "Недостаточно прав: settings.manage_queues");
+      }
       if (!queueDraft.code.trim() || !queueDraft.name.trim()) {
         throw new Error("Для очереди нужны code и name.");
       }
@@ -765,6 +786,9 @@ export function SettingsPage() {
 
   const memberMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageQueues) {
+        throw new Error(queueDeniedReason ?? "Недостаточно прав: settings.manage_queues");
+      }
       if (!selectedQueue) {
         throw new Error("Сначала выберите очередь.");
       }
@@ -785,6 +809,9 @@ export function SettingsPage() {
 
   const removeMemberMutation = useMutation({
     mutationFn: async (actorId: string) => {
+      if (!canManageQueues) {
+        throw new Error(queueDeniedReason ?? "Недостаточно прав: settings.manage_queues");
+      }
       if (!selectedQueue) {
         throw new Error("Сначала выберите очередь.");
       }
@@ -798,6 +825,9 @@ export function SettingsPage() {
 
   const olaMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageQueues) {
+        throw new Error(queueDeniedReason ?? "Недостаточно прав: settings.manage_queues");
+      }
       if (!selectedQueue) {
         throw new Error("Сначала выберите очередь.");
       }
@@ -811,6 +841,9 @@ export function SettingsPage() {
 
   const routingMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!routingDraft.target_queue_id) {
         throw new Error("Для правила нужно выбрать целевую очередь.");
       }
@@ -839,6 +872,9 @@ export function SettingsPage() {
 
   const policyMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!policyDraft.name.trim()) {
         throw new Error("У SLA-политики должно быть имя.");
       }
@@ -871,6 +907,9 @@ export function SettingsPage() {
 
   const slaTargetsMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!selectedPolicy) {
         throw new Error("Сначала выберите SLA-политику.");
       }
@@ -884,6 +923,9 @@ export function SettingsPage() {
 
   const priorityMatrixMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!selectedPolicy) {
         throw new Error("Сначала выберите SLA-политику.");
       }
@@ -897,6 +939,9 @@ export function SettingsPage() {
 
   const calendarMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!calendarDraft.code.trim() || !calendarDraft.name.trim()) {
         throw new Error("Для календаря нужны code и name.");
       }
@@ -926,6 +971,9 @@ export function SettingsPage() {
 
   const resolutionMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!resolutionDraft.code.trim() || !resolutionDraft.name.trim()) {
         throw new Error("Для кода решения нужны code и name.");
       }
@@ -955,6 +1003,9 @@ export function SettingsPage() {
 
   const deleteResolutionMutation = useMutation({
     mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
       if (!selectedResolution) {
         throw new Error("Сначала выберите код решения.");
       }
@@ -1456,7 +1507,7 @@ export function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Button
-                    disabled={!canWrite}
+                    disabled={!canManageQueues}
                     leadingIcon={<Plus className="h-4 w-4" />}
                     onClick={() => {
                       setSelectedQueueId(null);
@@ -1489,6 +1540,7 @@ export function SettingsPage() {
               </Card>
 
               <div className="space-y-6">
+                <PermissionNotice text={queueDeniedReason} />
                 <Card>
                   <CardHeader>
                     <CardTitle>{selectedQueue ? "Настройки очереди" : "Новая очередь"}</CardTitle>
@@ -1536,7 +1588,7 @@ export function SettingsPage() {
                         <span>Auto-assign</span>
                       </label>
                     </div>
-                    <Button disabled={!canWrite || queueMutation.isPending} onClick={() => queueMutation.mutate()} className="w-full">
+                    <Button disabled={!canManageQueues || queueMutation.isPending} onClick={() => queueMutation.mutate()} className="w-full">
                       {queueMutation.isPending ? "Сохраняем…" : "Сохранить очередь"}
                     </Button>
                   </CardContent>
@@ -1556,7 +1608,7 @@ export function SettingsPage() {
                               <p className="text-slate-500">{member.role_in_queue ?? "role_in_queue не задан"}</p>
                             </div>
                             <Button
-                              disabled={!canWrite || removeMemberMutation.isPending}
+                              disabled={!canManageQueues || removeMemberMutation.isPending}
                               onClick={() => removeMemberMutation.mutate(member.actor_id)}
                               size="sm"
                               variant="ghost"
@@ -1580,7 +1632,7 @@ export function SettingsPage() {
                           placeholder="role_in_queue"
                           value={newMemberRole}
                         />
-                        <Button disabled={!canWrite || memberMutation.isPending} onClick={() => memberMutation.mutate()}>
+                        <Button disabled={!canManageQueues || memberMutation.isPending} onClick={() => memberMutation.mutate()}>
                           Добавить / обновить участника
                         </Button>
                       </div>
@@ -1621,7 +1673,7 @@ export function SettingsPage() {
                           />
                         </div>
                       ))}
-                      <Button disabled={!canWrite || olaMutation.isPending || !selectedQueue} onClick={() => olaMutation.mutate()} className="w-full">
+                      <Button disabled={!canManageQueues || olaMutation.isPending || !selectedQueue} onClick={() => olaMutation.mutate()} className="w-full">
                         Сохранить OLA
                       </Button>
                     </CardContent>
@@ -1639,7 +1691,7 @@ export function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                     <Button
-                      disabled={!canWrite}
+                      disabled={!canManageRouting}
                       leadingIcon={<Plus className="h-4 w-4" />}
                       onClick={() => {
                         setSelectedRuleId(-1);
@@ -1683,6 +1735,7 @@ export function SettingsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  <PermissionNotice text={routingDeniedReason} />
                   <div className="grid gap-4 md:grid-cols-3">
                     <SettingsField label="Priority order">
                       <Input
@@ -1828,7 +1881,7 @@ export function SettingsPage() {
                     </code>
                   </div>
 
-                  <Button disabled={!canWrite || routingMutation.isPending} onClick={() => routingMutation.mutate()} className="w-full">
+                  <Button disabled={!canManageRouting || routingMutation.isPending} onClick={() => routingMutation.mutate()} className="w-full">
                     {routingMutation.isPending ? "Сохраняем…" : "Сохранить правило"}
                   </Button>
                 </CardContent>
@@ -1843,8 +1896,9 @@ export function SettingsPage() {
                   <CardTitle>SLA-политики</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <PermissionNotice text={routingDeniedReason} />
                   <Button
-                    disabled={!canWrite}
+                    disabled={!canManageRouting}
                     leadingIcon={<Plus className="h-4 w-4" />}
                     onClick={() => {
                       setSelectedPolicyId(null);
@@ -1878,6 +1932,7 @@ export function SettingsPage() {
               </Card>
 
               <div className="space-y-6">
+                <PermissionNotice text={routingDeniedReason} />
                 <Card>
                   <CardHeader>
                     <CardTitle>{selectedPolicy ? selectedPolicy.name : "Новая SLA-политика"}</CardTitle>
@@ -1942,7 +1997,7 @@ export function SettingsPage() {
                         <option value="always_on">24×7 без календаря</option>
                       </Select>
                     </SettingsField>
-                    <Button disabled={!canWrite || policyMutation.isPending} onClick={() => policyMutation.mutate()} className="w-full">
+                    <Button disabled={!canManageRouting || policyMutation.isPending} onClick={() => policyMutation.mutate()} className="w-full">
                       Сохранить SLA-политику
                     </Button>
                   </CardContent>
@@ -1987,7 +2042,7 @@ export function SettingsPage() {
                           />
                         </div>
                       ))}
-                      <Button disabled={!canWrite || slaTargetsMutation.isPending || !selectedPolicy} onClick={() => slaTargetsMutation.mutate()} className="w-full">
+                      <Button disabled={!canManageRouting || slaTargetsMutation.isPending || !selectedPolicy} onClick={() => slaTargetsMutation.mutate()} className="w-full">
                         Сохранить SLA targets
                       </Button>
                     </CardContent>
@@ -2024,7 +2079,7 @@ export function SettingsPage() {
                           <span className="text-sm text-slate-500">Приоритет для этого сочетания</span>
                         </div>
                       ))}
-                      <Button disabled={!canWrite || priorityMatrixMutation.isPending || !selectedPolicy} onClick={() => priorityMatrixMutation.mutate()} className="w-full">
+                      <Button disabled={!canManageRouting || priorityMatrixMutation.isPending || !selectedPolicy} onClick={() => priorityMatrixMutation.mutate()} className="w-full">
                         Сохранить матрицу
                       </Button>
                     </CardContent>
@@ -2042,7 +2097,7 @@ export function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Button
-                    disabled={!canWrite}
+                    disabled={!canManageRouting}
                     leadingIcon={<Plus className="h-4 w-4" />}
                     onClick={() => {
                       setSelectedCalendarId(null);
@@ -2076,6 +2131,7 @@ export function SettingsPage() {
                   <CardTitle>{selectedCalendar ? selectedCalendar.name : "Новый календарь"}</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  <PermissionNotice text={routingDeniedReason} />
                   <div className="grid gap-4 md:grid-cols-2">
                     <SettingsField label="Code">
                       <Input
@@ -2178,7 +2234,7 @@ export function SettingsPage() {
                         </p>
                       </div>
                       <Button
-                        disabled={!canWrite}
+                        disabled={!canManageRouting}
                         leadingIcon={<Plus className="h-4 w-4" />}
                         onClick={() =>
                           setCalendarDraft((current) => ({
@@ -2199,7 +2255,7 @@ export function SettingsPage() {
                           <div key={holiday.id} className="grid gap-3 rounded-[0.9rem] bg-white px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto]">
                             <Input
                               aria-label="Дата праздника или исключения"
-                              disabled={!canWrite}
+                              disabled={!canManageRouting}
                               onChange={(event) =>
                                 setCalendarDraft((current) => ({
                                   ...current,
@@ -2213,7 +2269,7 @@ export function SettingsPage() {
                             />
                             <Button
                               aria-label={`Удалить дату ${holiday.date || index + 1}`}
-                              disabled={!canWrite}
+                              disabled={!canManageRouting}
                               leadingIcon={<Trash2 className="h-4 w-4" />}
                               onClick={() =>
                                 setCalendarDraft((current) => ({
@@ -2240,7 +2296,7 @@ export function SettingsPage() {
                       <pre className="mt-2 overflow-x-auto text-xs text-slate-600">{prettyJson(buildHolidaysJson(calendarDraft.holidays))}</pre>
                     </div>
                   </div>
-                  <Button disabled={!canWrite || calendarMutation.isPending} onClick={() => calendarMutation.mutate()} className="w-full">
+                  <Button disabled={!canManageRouting || calendarMutation.isPending} onClick={() => calendarMutation.mutate()} className="w-full">
                     Сохранить календарь
                   </Button>
                 </CardContent>
@@ -2255,8 +2311,9 @@ export function SettingsPage() {
                   <CardTitle>Коды решения</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <PermissionNotice text={routingDeniedReason} />
                   <Button
-                    disabled={!canWrite}
+                    disabled={!canManageRouting}
                     leadingIcon={<Plus className="h-4 w-4" />}
                     onClick={() => {
                       setSelectedResolutionCode(null);
@@ -2290,6 +2347,7 @@ export function SettingsPage() {
                   <CardTitle>{selectedResolution ? selectedResolution.name : "Новый код решения"}</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  <PermissionNotice text={routingDeniedReason} />
                   <div className="grid gap-4 md:grid-cols-2">
                     <SettingsField label="Code">
                       <Input
@@ -2323,11 +2381,11 @@ export function SettingsPage() {
                     </label>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button disabled={!canWrite || resolutionMutation.isPending} onClick={() => resolutionMutation.mutate()}>
+                    <Button disabled={!canManageRouting || resolutionMutation.isPending} onClick={() => resolutionMutation.mutate()}>
                       Сохранить код
                     </Button>
                     <Button
-                      disabled={!canWrite || deleteResolutionMutation.isPending || !selectedResolution || selectedResolution.usage_count > 0}
+                      disabled={!canManageRouting || deleteResolutionMutation.isPending || !selectedResolution || selectedResolution.usage_count > 0}
                       leadingIcon={<Trash2 className="h-4 w-4" />}
                       onClick={() => deleteResolutionMutation.mutate()}
                       variant="outline"

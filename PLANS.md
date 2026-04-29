@@ -621,7 +621,20 @@ Create a full RBAC management surface for the new admin/support workspaces: admi
 - Playbook builder blocks publish/delete actions without `admin.playbooks.publish`.
 - Modules workbench blocks authoring, rollout, preferred, delete, validate, publish and live-test actions without `admin.modules.author`.
 - Focused Vitest coverage now includes permission helper, sidebar visibility, ticket disabled reasons and read-only admin workbench behavior.
-- Still pending for later waves: settings page permissions and broader backend permission checks for support ticket write endpoints.
+- Completed in the next local slice: settings page permissions and broader backend permission checks for support ticket write endpoints.
+
+### 2026-04-29 Fourth Slice Completed Locally
+
+- Added effective RBAC `can()` checks on typed support write endpoints:
+  - `ticket.status.change` for status changes;
+  - `ticket.comment.public` and `ticket.comment.internal` for comments;
+  - `ticket.passport.manage` for passport generate/patch/evidence/knowledge-draft actions;
+  - `ticket.playbook.run` for ticket playbook starts;
+  - `ticket.tool.run` plus `module.tool.run.low_risk` / `module.tool.run.high_risk` for tool starts.
+- Split settings capabilities into `settings.view`, `settings.manage_queues` and `settings.manage_routing`.
+- Settings write aliases now return typed forbidden payloads with `required_permission` instead of relying on React-only disabled states.
+- `/app/settings` now disables queue/member/OLA save actions separately from routing/SLA/calendar/resolution save actions and shows the relevant denial reason.
+- Focused pytest and Vitest coverage now covers denied/granted settings mutations and ticket write permission failures.
 
 ### Handoff
 

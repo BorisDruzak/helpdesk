@@ -2,6 +2,10 @@ export type WebSettingsPayload = {
   capabilities: {
     can_write: boolean;
     actor_role: string;
+    can_manage_queues?: boolean;
+    can_manage_routing?: boolean;
+    manage_queues_denial_reason?: string | null;
+    manage_routing_denial_reason?: string | null;
   };
   overview: {
     queues_count: number;
