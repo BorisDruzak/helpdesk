@@ -79,6 +79,21 @@ ALLOWED_WORKFLOW_STATUSES = set(CANONICAL_STATUSES) | {"triaged"}
 
 
 @dataclass(frozen=True)
+class WorkflowTransitionGate:
+    to_status: str
+    allowed_roles: tuple[str, ...] = ()
+    required_fields: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict:
+        payload: dict[str, Any] = {"to": self.to_status}
+        if self.allowed_roles:
+            payload["allowed_roles"] = list(self.allowed_roles)
+        if self.required_fields:
+            payload["required_fields"] = list(self.required_fields)
+        return payload
+
+
+@dataclass(frozen=True)
 class WorkflowProfile:
     ticket_type: str
     label: str
@@ -92,6 +107,7 @@ class WorkflowProfile:
     requires_action_log: bool = False
     evidence_required_for_priorities: tuple[str, ...] = ()
     transitions: dict[str, tuple[str, ...]] | None = None
+    transition_gates: dict[str, dict[str, WorkflowTransitionGate]] | None = None
 
     def to_dict(self) -> dict:
         payload = asdict(self)
@@ -103,6 +119,18 @@ class WorkflowProfile:
                     str(inner_key): list(inner_value) if isinstance(inner_value, tuple) else inner_value
                     for inner_key, inner_value in value.items()
                 }
+        gates = self.transition_gates or {}
+        if gates:
+            payload["transition_gates"] = {
+                str(from_status): {
+                    str(to_status): gate.to_dict() if isinstance(gate, WorkflowTransitionGate) else gate
+                    for to_status, gate in by_target.items()
+                }
+                for from_status, by_target in gates.items()
+                if by_target
+            }
+        else:
+            payload["transition_gates"] = {}
         return payload
 
 
@@ -223,22 +251,80 @@ def _normalize_string_list(value: Any, *, field_name: str, allow_statuses: bool 
     return tuple(normalized)
 
 
-def _normalize_transitions(value: Any, *, allowed_statuses: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str) -> WorkflowTransitionGate:
+    if raw_gate is None or isinstance(raw_gate, str):
+        return WorkflowTransitionGate(to_status=to_status)
+    if not isinstance(raw_gate, dict):
+        raise ValueError(f"{field_name} must be an object")
+    return WorkflowTransitionGate(
+        to_status=to_status,
+        allowed_roles=_normalize_string_list(
+            raw_gate.get("allowed_roles") or raw_gate.get("roles"),
+            field_name=f"{field_name}.allowed_roles",
+        ),
+        required_fields=_normalize_string_list(
+            raw_gate.get("required_fields"),
+            field_name=f"{field_name}.required_fields",
+        ),
+    )
+
+
+def _normalize_transitions(
+    value: Any,
+    *,
+    allowed_statuses: tuple[str, ...],
+) -> tuple[dict[str, tuple[str, ...]], dict[str, dict[str, WorkflowTransitionGate]]]:
     if value is None:
-        return dict(DEFAULT_SUPPORT_TRANSITIONS)
+        return dict(DEFAULT_SUPPORT_TRANSITIONS), {}
     if not isinstance(value, dict):
         raise ValueError("transitions must be an object")
     allowed = set(allowed_statuses) | {"triaged"}
     normalized: dict[str, tuple[str, ...]] = {}
+    gates: dict[str, dict[str, WorkflowTransitionGate]] = {}
     for raw_from, raw_targets in value.items():
         from_status = str(raw_from or "").strip()
         if from_status not in allowed:
             raise ValueError(f"transitions contains unknown source status {from_status!r}")
-        targets = _normalize_string_list(
-            raw_targets,
-            field_name=f"transitions.{from_status}",
-            allow_statuses=True,
-        )
+        targets_list: list[str] = []
+        target_gates: dict[str, WorkflowTransitionGate] = {}
+        if isinstance(raw_targets, dict):
+            iterable_targets = [
+                {"to": raw_to, **(raw_gate or {})} if isinstance(raw_gate, dict) else {"to": raw_to}
+                for raw_to, raw_gate in raw_targets.items()
+            ]
+        elif isinstance(raw_targets, list | tuple):
+            iterable_targets = list(raw_targets)
+        else:
+            raise ValueError(f"transitions.{from_status} must be a list or object")
+
+        for index, raw_target in enumerate(iterable_targets):
+            if isinstance(raw_target, dict):
+                target = str(
+                    raw_target.get("to")
+                    or raw_target.get("to_status")
+                    or raw_target.get("target")
+                    or ""
+                ).strip()
+                if not target:
+                    raise ValueError(f"transitions.{from_status}[{index}].to is required")
+                if target not in ALLOWED_WORKFLOW_STATUSES:
+                    raise ValueError(f"transitions.{from_status} contains unknown status {target!r}")
+                gate = _normalize_transition_gate(
+                    raw_target,
+                    to_status=target,
+                    field_name=f"transitions.{from_status}.{target}",
+                )
+                if gate.allowed_roles or gate.required_fields:
+                    target_gates[target] = gate
+            else:
+                target = str(raw_target or "").strip()
+                if not target:
+                    continue
+                if target not in ALLOWED_WORKFLOW_STATUSES:
+                    raise ValueError(f"transitions.{from_status} contains unknown status {target!r}")
+            if target not in targets_list:
+                targets_list.append(target)
+        targets = tuple(targets_list)
         invalid_targets = [target for target in targets if target not in allowed]
         if invalid_targets:
             raise ValueError(
@@ -246,7 +332,45 @@ def _normalize_transitions(value: Any, *, allowed_statuses: tuple[str, ...]) -> 
                 + ", ".join(invalid_targets)
             )
         normalized[from_status] = targets
-    return normalized
+        if target_gates:
+            gates[from_status] = target_gates
+    return normalized, gates
+
+
+def _normalize_transition_gates(
+    value: Any,
+    *,
+    transitions: dict[str, tuple[str, ...]],
+    allowed_statuses: tuple[str, ...],
+) -> dict[str, dict[str, WorkflowTransitionGate]]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("transition_gates must be an object")
+    allowed = set(allowed_statuses) | {"triaged"}
+    gates: dict[str, dict[str, WorkflowTransitionGate]] = {}
+    for raw_from, raw_targets in value.items():
+        from_status = str(raw_from or "").strip()
+        if from_status not in allowed:
+            raise ValueError(f"transition_gates contains unknown source status {from_status!r}")
+        if not isinstance(raw_targets, dict):
+            raise ValueError(f"transition_gates.{from_status} must be an object")
+        for raw_to, raw_gate in raw_targets.items():
+            to_status = str(raw_to or "").strip()
+            if to_status not in allowed:
+                raise ValueError(f"transition_gates.{from_status} contains unknown status {to_status!r}")
+            if to_status not in transitions.get(from_status, ()):
+                raise ValueError(
+                    f"transition_gates.{from_status}.{to_status} is not present in transitions"
+                )
+            gate = _normalize_transition_gate(
+                raw_gate,
+                to_status=to_status,
+                field_name=f"transition_gates.{from_status}.{to_status}",
+            )
+            if gate.allowed_roles or gate.required_fields:
+                gates.setdefault(from_status, {})[to_status] = gate
+    return gates
 
 
 def normalize_workflow_profile(raw_profile: Any) -> WorkflowProfile:
@@ -272,6 +396,17 @@ def normalize_workflow_profile(raw_profile: Any) -> WorkflowProfile:
     for status in suggested_path:
         if status not in allowed_statuses:
             raise ValueError(f"{ticket_type}.suggested_path contains status outside allowed_statuses: {status}")
+    transitions, transition_gates = _normalize_transitions(
+        raw_profile.get("transitions"),
+        allowed_statuses=allowed_statuses,
+    )
+    explicit_transition_gates = _normalize_transition_gates(
+        raw_profile.get("transition_gates"),
+        transitions=transitions,
+        allowed_statuses=allowed_statuses,
+    )
+    for from_status, by_target in explicit_transition_gates.items():
+        transition_gates.setdefault(from_status, {}).update(by_target)
     return WorkflowProfile(
         ticket_type=ticket_type,
         label=label,
@@ -293,7 +428,8 @@ def normalize_workflow_profile(raw_profile: Any) -> WorkflowProfile:
             raw_profile.get("evidence_required_for_priorities"),
             field_name=f"{ticket_type}.evidence_required_for_priorities",
         ),
-        transitions=_normalize_transitions(raw_profile.get("transitions"), allowed_statuses=allowed_statuses),
+        transitions=transitions,
+        transition_gates=transition_gates,
     )
 
 

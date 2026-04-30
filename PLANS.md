@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 4 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 5 implemented and verified locally; deploy/live check pending. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -41,7 +41,7 @@ Missing or weak:
 
 - No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
 - `closure_policy`, `approval_policy` and `routing_policy` are executable; `visibility_policy` is still mostly saved as template metadata.
-- Workflow transitions do not yet enforce per-transition roles, required fields, guards and actions beyond the profile transition map.
+- Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
 - SLA does not yet use the business calendar engine for due date calculation.
 - Notification rules are not policy-driven.
 - Smart views are not first-class saved settings.
@@ -73,15 +73,15 @@ Missing or weak:
    - Preserve current SLA target configuration and event semantics.
    - Add tests for working hours, pauses, resume and stop conditions.
 
-4. Workflow transition gates.
-   - Add required fields per transition.
-   - Add role checks beyond support/requester split where profile data provides them.
-   - Return blocked transition reasons for API/UI consumers.
-
-5. Routing policy actions.
+4. Routing policy actions.
    - Execute template-level routing rules in addition to global routing rules.
    - Support queue, assignee, priority boost, SLA/OLA override, tags/watchers and playbook suggestion where existing models allow it.
    - Add loop/lock protections.
+
+5. Workflow transition gates.
+   - Add required fields per transition.
+   - Add role checks beyond support/requester split where profile data provides them.
+   - Return blocked transition reasons for API/UI consumers.
 
 6. Diagnostic policy and evidence/passport binding.
    - Make diagnostic policy decide suggested playbooks, consent, attach-to-passport and evidence behavior.
@@ -105,6 +105,28 @@ Missing or weak:
    - Stop remote server after checks unless the user explicitly asks to leave it running.
 
 ### Current Step
+
+Slice 5 implemented locally: workflow transition gates.
+
+Implemented behavior:
+
+- Workflow profile `transitions` remain backward-compatible with the existing `{from_status: [to_status]}` shape.
+- Saved profiles can also define structured transition entries such as `{to, allowed_roles, required_fields}`.
+- The normalized profile keeps the transition map for existing UI/API consumers and stores gate metadata under `transition_gates`.
+- `TicketWorkflowService.apply_status_transition(...)` enforces gate `required_fields` against the prospective ticket update plus existing ticket fields/custom fields.
+- `allowed_roles` supports direct actor roles and semantic `assignee`, `requester`, `queue_lead`, `system`.
+- Blocked typed support status actions return `WORKFLOW_POLICY_BLOCKED`; successful transitions record `workflow_transition_gate` in the `status_changed` event payload.
+
+Changed files for slice 5:
+
+- `server/tickets/workflow_profiles.py`
+- `server/tickets/workflow_service.py`
+- `server/web_api/dto/settings.py`
+- `server/web_api/support_handlers.py`
+- `server/tests/test_ticket_workflow_profiles.py`
+- `server/tests/test_web_support_api.py`
+
+Previous current step:
 
 Slice 4 implemented locally: executable request-template `routing_policy`.
 
@@ -189,6 +211,8 @@ Local:
 - `python -m pytest server/tests/test_ticket_routing_policy.py -q` -> passed, 5 tests.
 - `python -m pytest server/tests/test_ticket_routing_policy.py server/tests/test_ticket_queue_routing_contracts.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 28 tests.
 - `python -m pytest server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_route_preview_returns_typed_payload server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context -q` -> passed, 4 tests.
+- `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_web_support_api.py::test_web_support_status_action_reports_workflow_gate_block server/tests/test_web_settings_api.py::test_web_settings_can_save_workflow_profiles -q` -> passed, 12 tests.
+- `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_web_support_api.py::test_web_support_status_action_reports_workflow_gate_block server/tests/test_web_settings_api.py::test_web_settings_can_save_workflow_profiles server/tests/test_ticket_routing_policy.py server/tests/test_ticket_queue_routing_contracts.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 40 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:
@@ -235,6 +259,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Continue with workflow transition gates: required fields and role checks beyond the current transition map.
-2. Start with failing tests around `workflow_profile.transitions[*].required_fields` and `allowed_roles`.
-3. Keep routing/priority/SLA/approval/closure regression tests in the verification set.
+1. Commit verified workflow-gates slice.
+2. Deploy to Linux, run remote smoke and live transition-gate check, then stop the remote server.
+3. Continue with diagnostic policy and evidence/passport binding after live verification.

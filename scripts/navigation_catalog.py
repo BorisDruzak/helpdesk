@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, workflow profiles, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, executable request-template routing/approval/closure policies, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles with executable per-transition role/required-field gates, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, executable request-template routing/approval/closure policies, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",

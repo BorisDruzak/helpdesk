@@ -24,6 +24,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.service import RegistryIngestionService
 from routes import setup_routes
+from tickets.workflow_profiles import save_workflow_profiles
 import web_api.support_handlers as support_handlers_module
 from tests.conftest import TEST_UI_AUDITOR_TOKEN, TEST_UI_SUPPORT_TOKEN
 from tests.test_ticket_queue_routing_contracts import _seed_queue
@@ -649,6 +650,71 @@ async def test_web_support_status_action_returns_typed_result_and_updates_ticket
     detail_payload = await detail_response.json()
     assert detail_response.status == 200, await detail_response.text()
     assert detail_payload["data"]["ticket"]["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_web_support_status_action_reports_workflow_gate_block(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident gated",
+                        "purpose": "restore_service",
+                        "suggested_path": ["new", "in_progress", "resolved", "closed"],
+                        "allowed_statuses": ["new", "in_progress", "resolved", "closed", "canceled"],
+                        "transitions": {
+                            "new": ["in_progress", "canceled"],
+                            "in_progress": [
+                                {
+                                    "to": "resolved",
+                                    "allowed_roles": ["admin"],
+                                    "required_fields": ["resolution_code"],
+                                },
+                                "canceled",
+                            ],
+                            "resolved": ["closed"],
+                            "closed": [],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-status-gate",
+            title="РџСЂРѕРІРµСЂРєР° workflow gate",
+            description="РџРµСЂРµС…РѕРґ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РїРѕ СЂРѕР»Рё.",
+            status="in_progress",
+            requester_id="user-status",
+            queue_id=queue.id,
+            ticket_type="incident",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/status",
+        headers=_support_headers(),
+        json={
+            "to_status": "resolved",
+            "resolution_code": "fixed_remote",
+        },
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "WORKFLOW_POLICY_BLOCKED"
+    assert "allowed_roles" in payload["error"]
 
 
 @pytest.mark.asyncio

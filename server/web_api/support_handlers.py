@@ -1459,11 +1459,14 @@ async def handle_web_support_change_status(request: web.Request):
                 )
             except ValueError as exc:
                 message = str(exc)
-                error_code = (
-                    "APPROVAL_POLICY_BLOCKED"
-                    if message.startswith("approval_policy")
-                    else "CLOSURE_POLICY_BLOCKED"
-                )
+                if message.startswith("approval_policy"):
+                    error_code = "APPROVAL_POLICY_BLOCKED"
+                elif message.startswith("closure_policy"):
+                    error_code = "CLOSURE_POLICY_BLOCKED"
+                elif message.startswith("workflow_profile"):
+                    error_code = "WORKFLOW_POLICY_BLOCKED"
+                else:
+                    error_code = "WORKFLOW_POLICY_BLOCKED"
                 return web.json_response(
                     {
                         "status": "error",

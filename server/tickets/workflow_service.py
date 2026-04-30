@@ -24,6 +24,7 @@ from tickets.workflow_profiles import (
     DEFAULT_REQUESTER_TRANSITIONS,
     DEFAULT_SUPPORT_TRANSITIONS,
     WorkflowProfile,
+    WorkflowTransitionGate,
     load_workflow_profiles,
     workflow_profile_by_type,
 )
@@ -60,6 +61,108 @@ def validate_transition_for_profile(
         return False
     transitions = profile.transitions or DEFAULT_SUPPORT_TRANSITIONS
     return to_status_canonical in transitions.get(from_status, ())
+
+
+def _transition_gate_for_profile(
+    profile: WorkflowProfile,
+    from_status: str,
+    to_status_canonical: str,
+) -> WorkflowTransitionGate | None:
+    return ((profile.transition_gates or {}).get(from_status) or {}).get(to_status_canonical)
+
+
+def _field_value(ticket, updates: dict, field_name: str):
+    field = str(field_name or "").strip()
+    if not field:
+        return None
+    if field in updates:
+        return updates[field]
+    aliases = {
+        "public_summary": ("resolution_summary", "requester_resolution_summary"),
+        "resolution_public_summary": ("resolution_summary", "requester_resolution_summary"),
+    }
+    for alias in aliases.get(field, ()):
+        if alias in updates:
+            return updates[alias]
+        if ticket is not None and hasattr(ticket, alias):
+            value = getattr(ticket, alias)
+            if value not in (None, ""):
+                return value
+    if ticket is not None and hasattr(ticket, field):
+        return getattr(ticket, field)
+    current = getattr(ticket, "custom_fields", None) or {}
+    for part in field.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _is_missing_required_value(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, list | tuple | set | dict):
+        return len(value) == 0
+    return False
+
+
+def _actor_matches_allowed_role(ticket, *, actor_id: str, actor_role: str, allowed_role: str) -> bool:
+    role = str(allowed_role or "").strip()
+    if not role:
+        return False
+    actor_id = str(actor_id or "").strip()
+    actor_role = str(actor_role or "").strip()
+    if role == actor_role:
+        return True
+    if role == "assignee":
+        return bool(ticket is not None and actor_id and actor_id == str(getattr(ticket, "assignee_id", "") or ""))
+    if role == "requester":
+        return actor_role in {"requester", "user"} or bool(
+            ticket is not None and actor_id and actor_id == str(getattr(ticket, "requester_id", "") or "")
+        )
+    if role == "queue_lead":
+        return actor_role == "queue_lead"
+    if role == "system":
+        return actor_role == "system"
+    return False
+
+
+def _validate_transition_gate(
+    *,
+    gate: WorkflowTransitionGate | None,
+    ticket,
+    updates: dict,
+    actor_id: str,
+    actor_role: str,
+) -> dict | None:
+    if gate is None:
+        return None
+    missing_fields = [
+        field
+        for field in gate.required_fields
+        if _is_missing_required_value(_field_value(ticket, updates, field))
+    ]
+    if missing_fields:
+        raise ValueError(
+            "workflow_profile transition gate missing required_fields: "
+            + ", ".join(missing_fields)
+        )
+    if gate.allowed_roles and not any(
+        _actor_matches_allowed_role(ticket, actor_id=actor_id, actor_role=actor_role, allowed_role=role)
+        for role in gate.allowed_roles
+    ):
+        raise ValueError(
+            "workflow_profile transition gate blocked by allowed_roles: "
+            f"{actor_role} is not allowed for {gate.to_status}; allowed_roles="
+            + ", ".join(gate.allowed_roles)
+        )
+    return {
+        "to": gate.to_status,
+        "allowed_roles": list(gate.allowed_roles),
+        "required_fields": list(gate.required_fields),
+    }
 
 
 async def load_ticket_workflow_profile(session, ticket) -> WorkflowProfile:
@@ -140,6 +243,16 @@ class TicketWorkflowService:
         if root_cause is not None:
             event_payload["root_cause"] = root_cause
             updates["root_cause"] = root_cause
+
+        gate_payload = _validate_transition_gate(
+            gate=_transition_gate_for_profile(workflow_profile, from_status, to_status),
+            ticket=ticket,
+            updates=updates,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        if gate_payload:
+            event_payload["workflow_transition_gate"] = gate_payload
 
         approval_decision = await validate_approval_policy(
             self.session,
