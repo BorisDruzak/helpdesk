@@ -44,6 +44,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_submission,
 )
+from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
@@ -143,6 +144,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                         form_key=form_key,
                         raw_values=form_payload or {},
                     )
+                    validated_submission = await apply_effective_registry_policies(db_session, validated_submission)
                     extra_custom_fields = build_form_custom_fields(validated_submission)
                     ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
                     template_context = validated_submission.get("template_context") or {}

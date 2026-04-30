@@ -43,6 +43,7 @@ import {
   fetchHelpdeskModelRegistry,
   fetchAdminFormsCatalog,
   publishHelpdeskPolicy,
+  publishHelpdeskSmartView,
   publishHelpdeskTemplateFromForm,
   previewAdminFormRoute,
   saveAdminFormsCatalog,
@@ -1169,6 +1170,43 @@ function buildRoutingPreset(form: DraftForm): string {
   });
 }
 
+function buildPriorityPreset(form: DraftForm): string {
+  return prettyJson({
+    impact_field: form.priority_impact_field.trim() || "impact_scope",
+    urgency_field: form.priority_urgency_field.trim() || "work_continuity",
+    importance_field: form.priority_importance_field.trim() || "business_importance",
+    modifier_fields: {
+      critical_service: "critical_service",
+      public_service: "public_service",
+    },
+    manual_override: {
+      allowed_roles: ["support", "queue_lead", "admin"],
+      require_reason: true,
+      log_event: true,
+    },
+  });
+}
+
+function buildSlaPreset(form: DraftForm): string {
+  return prettyJson({
+    sla_policy_id: form.sla_policy_id.trim() ? Number(form.sla_policy_id.trim()) : null,
+    calendar_id: "work_hours_5x8",
+    targets: {
+      first_response: { P0: "15m", P1: "1h", P2: "4h", P3: "1d" },
+      resolution: { P0: "4h", P1: "1d", P2: "3d", P3: "5d" },
+    },
+    pause_conditions: ["waiting_user", "waiting_approval"],
+    stop_conditions: {
+      first_response: ["first_public_support_reply_sent"],
+      resolution: ["resolved", "closed"],
+    },
+    breach_actions: {
+      notify: ["assignee", "queue_lead"],
+      warning_before: { first_response: "30m", resolution: "4h" },
+    },
+  });
+}
+
 function buildOlaPreset(): string {
   return prettyJson({
     targets: {
@@ -1307,7 +1345,16 @@ function PolicyJsonEditor({
   );
 }
 
-type PolicyEditorKind = "routing" | "approval" | "closure" | "diagnostic" | "notification" | "visibility";
+type PolicyEditorKind =
+  | "priority"
+  | "sla"
+  | "ola"
+  | "routing"
+  | "approval"
+  | "closure"
+  | "diagnostic"
+  | "notification"
+  | "visibility";
 
 type PolicyEditorDraft = {
   kind: PolicyEditorKind;
@@ -1320,6 +1367,9 @@ type PolicyEditorDraft = {
 };
 
 const POLICY_EDITOR_ITEMS: Array<{ kind: PolicyEditorKind; label: string; description: string }> = [
+  { kind: "priority", label: "Приоритет", description: "Поля влияния, срочности и override" },
+  { kind: "sla", label: "Срок ответа", description: "Когда вам должны ответить и решить" },
+  { kind: "ola", label: "Внутренний срок", description: "Срок принятия и обработки очередью" },
   { kind: "routing", label: "Роутинг", description: "Очереди, fallback и защита от перекидывания" },
   { kind: "approval", label: "Согласования", description: "Кто согласует, сроки и отказ" },
   { kind: "closure", label: "Закрытие", description: "Коды решения, итог и доказательства" },
@@ -1337,7 +1387,19 @@ function parseEditorJson(text: string): Record<string, unknown> {
 }
 
 function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<string, unknown> {
-  const fieldByKind: Record<PolicyEditorKind, PolicyJsonField> = {
+  if (kind === "priority") {
+    const existing = {
+      ...(form.priority_impact_field.trim() ? { impact_field: form.priority_impact_field.trim() } : {}),
+      ...(form.priority_urgency_field.trim() ? { urgency_field: form.priority_urgency_field.trim() } : {}),
+      ...(form.priority_importance_field.trim() ? { importance_field: form.priority_importance_field.trim() } : {}),
+    };
+    return Object.keys(existing).length ? existing : parseJsonDraft(buildPriorityPreset(form));
+  }
+  if (kind === "sla") {
+    return parseJsonDraft(buildSlaPreset(form));
+  }
+  const fieldByKind: Record<Exclude<PolicyEditorKind, "priority" | "sla">, PolicyJsonField> = {
+    ola: "ola_policy_json",
     routing: "routing_policy_json",
     approval: "approval_policy_json",
     closure: "closure_policy_json",
@@ -1350,7 +1412,9 @@ function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<str
     return existing;
   }
   const presetText =
-    kind === "routing"
+    kind === "ola"
+      ? buildOlaPreset()
+      : kind === "routing"
       ? buildRoutingPreset(form)
       : kind === "approval"
         ? buildApprovalPreset()
@@ -1432,6 +1496,129 @@ function PolicyKindControls({
   kind: PolicyEditorKind;
   onChange: (config: Record<string, unknown>) => void;
 }) {
+  if (kind === "priority") {
+    const manual = typeof config.manual_override === "object" && config.manual_override ? (config.manual_override as Record<string, unknown>) : {};
+    const modifierFields =
+      typeof config.modifier_fields === "object" && config.modifier_fields ? (config.modifier_fields as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        {[
+          ["impact_field", "Поле влияния", form?.priority_impact_field || "impact_scope"],
+          ["urgency_field", "Поле срочности", form?.priority_urgency_field || "work_continuity"],
+          ["importance_field", "Поле важности", form?.priority_importance_field || "business_importance"],
+        ].map(([field, label, fallback]) => (
+          <label className="space-y-2 text-sm font-medium text-slate-800" key={field}>
+            <span>{label}</span>
+            <input
+              className="field-base h-11 w-full px-4 text-sm"
+              onChange={(event) => onChange({ ...config, [field]: event.currentTarget.value })}
+              placeholder={fallback}
+              value={String(config[field] ?? "")}
+            />
+          </label>
+        ))}
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Флаг критичной системы</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, modifier_fields: { ...modifierFields, critical_service: event.currentTarget.value } })}
+            value={String(modifierFields.critical_service ?? "critical_service")}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Флаг публичной услуги</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, modifier_fields: { ...modifierFields, public_service: event.currentTarget.value } })}
+            value={String(modifierFields.public_service ?? "public_service")}
+          />
+        </label>
+        <JsonLinkedCheckbox
+          checked={Boolean(manual.require_reason ?? true)}
+          label="Причина обязательна при ручном изменении"
+          onChange={(checked) => onChange({ ...config, manual_override: { ...manual, require_reason: checked } })}
+        />
+      </div>
+    );
+  }
+
+  if (kind === "sla") {
+    const targets = typeof config.targets === "object" && config.targets ? (config.targets as Record<string, unknown>) : {};
+    const firstResponse =
+      typeof targets.first_response === "object" && targets.first_response ? (targets.first_response as Record<string, unknown>) : {};
+    const resolution = typeof targets.resolution === "object" && targets.resolution ? (targets.resolution as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-4">
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>ID действующей политики сроков</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, sla_policy_id: Number(event.currentTarget.value || 0) || null })}
+            placeholder={form?.sla_policy_id || "1"}
+            type="number"
+            value={Number(config.sla_policy_id ?? 0) || ""}
+          />
+        </label>
+        {["P0", "P1", "P2", "P3"].map((priority) => (
+          <label className="space-y-2 text-sm font-medium text-slate-800" key={`fr-${priority}`}>
+            <span>Ответ {priority}</span>
+            <input
+              className="field-base h-11 w-full px-4 text-sm"
+              onChange={(event) =>
+                onChange({ ...config, targets: { ...targets, first_response: { ...firstResponse, [priority]: event.currentTarget.value } } })
+              }
+              value={String(firstResponse[priority] ?? "")}
+            />
+          </label>
+        ))}
+        {["P0", "P1", "P2", "P3"].map((priority) => (
+          <label className="space-y-2 text-sm font-medium text-slate-800" key={`res-${priority}`}>
+            <span>Решение {priority}</span>
+            <input
+              className="field-base h-11 w-full px-4 text-sm"
+              onChange={(event) =>
+                onChange({ ...config, targets: { ...targets, resolution: { ...resolution, [priority]: event.currentTarget.value } } })
+              }
+              value={String(resolution[priority] ?? "")}
+            />
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (kind === "ola") {
+    const targets = typeof config.targets === "object" && config.targets ? (config.targets as Record<string, unknown>) : {};
+    const ack = typeof targets.ack === "object" && targets.ack ? (targets.ack as Record<string, unknown>) : {};
+    const processing = typeof targets.processing === "object" && targets.processing ? (targets.processing as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-4">
+        {["P0", "P1", "P2", "P3"].map((priority) => (
+          <label className="space-y-2 text-sm font-medium text-slate-800" key={`ack-${priority}`}>
+            <span>Принять {priority}</span>
+            <input
+              className="field-base h-11 w-full px-4 text-sm"
+              onChange={(event) => onChange({ ...config, targets: { ...targets, ack: { ...ack, [priority]: event.currentTarget.value } } })}
+              value={String(ack[priority] ?? "")}
+            />
+          </label>
+        ))}
+        {["P0", "P1", "P2", "P3"].map((priority) => (
+          <label className="space-y-2 text-sm font-medium text-slate-800" key={`processing-${priority}`}>
+            <span>Обработать {priority}</span>
+            <input
+              className="field-base h-11 w-full px-4 text-sm"
+              onChange={(event) =>
+                onChange({ ...config, targets: { ...targets, processing: { ...processing, [priority]: event.currentTarget.value } } })
+              }
+              value={String(processing[priority] ?? "")}
+            />
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   if (kind === "routing") {
     const rule = getFirstRule(config);
     const when = typeof rule.when === "object" && rule.when ? (rule.when as Record<string, unknown>) : {};
@@ -1882,6 +2069,117 @@ function PolicyRegistryEditors({
                 <p>Пока нет опубликованных политик.</p>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SmartViewsRegistryEditor({
+  data,
+  disabled,
+  onFeedback,
+}: {
+  data?: AdminHelpdeskModelPayload;
+  disabled: boolean;
+  onFeedback: (feedback: ActionFeedback) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [code, setCode] = useState("sla_risk_custom");
+  const [title, setTitle] = useState("Риск по сроку ответа");
+  const [description, setDescription] = useState("Сохранённый рабочий срез для контроля сроков.");
+  const [filterText, setFilterText] = useState(() =>
+    prettyJson({
+      status_not_in: ["closed", "canceled"],
+      due_before_hours: 2,
+      due_fields: ["first_response_due_at", "resolution_due_at"],
+    })
+  );
+  const [sortText, setSortText] = useState(() => JSON.stringify([{ field: "resolution_due_at", direction: "asc" }], null, 2));
+  const [columnsText, setColumnsText] = useState("ticket_id,title,status,assignee_id,resolution_due_at");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const filter = parseEditorJson(filterText);
+      const sort = JSON.parse(sortText || "[]") as unknown;
+      if (!Array.isArray(sort)) {
+        throw new Error("Сортировка должна быть JSON-массивом.");
+      }
+      return publishHelpdeskSmartView({
+        code: code.trim(),
+        title: title.trim(),
+        description: description.trim() || null,
+        scope_level: "system",
+        scope_ref: null,
+        filter,
+        sort: sort as Array<Record<string, unknown>>,
+        columns: columnsText.split(",").map((item) => item.trim()).filter(Boolean),
+      });
+    },
+    onSuccess: async (result) => {
+      onFeedback({ tone: "success", text: result.message });
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      onFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось опубликовать smart view." });
+    },
+  });
+
+  const activeViews = data?.smart_views.filter((item) => item.is_active) ?? [];
+
+  return (
+    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Редактор smart views</p>
+          <p className="mt-1 max-w-3xl text-xs leading-6 text-slate-600">
+            Сохранённые рабочие срезы не являются очередями ответственности. Это фильтры для контроля риска, ожиданий, согласований и диагностики.
+          </p>
+        </div>
+        <Button disabled={disabled || mutation.isPending} onClick={() => mutation.mutate()} size="sm" variant="primary">
+          {mutation.isPending ? "Публикуем..." : "Опубликовать smart view"}
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <label className="space-y-2 text-sm font-medium text-slate-800">
+            <span>Код</span>
+            <input className="field-base h-11 w-full px-4 text-sm" onChange={(event) => setCode(event.currentTarget.value)} value={code} />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-800">
+            <span>Название</span>
+            <input className="field-base h-11 w-full px-4 text-sm" onChange={(event) => setTitle(event.currentTarget.value)} value={title} />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-800">
+            <span>Колонки</span>
+            <input className="field-base h-11 w-full px-4 text-sm" onChange={(event) => setColumnsText(event.currentTarget.value)} value={columnsText} />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-3">
+            <span>Описание</span>
+            <input className="field-base h-11 w-full px-4 text-sm" onChange={(event) => setDescription(event.currentTarget.value)} value={description} />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+            <span>Фильтр</span>
+            <textarea className="field-base min-h-[180px] w-full resize-y px-4 py-3 font-mono text-xs leading-5" onChange={(event) => setFilterText(event.currentTarget.value)} value={filterText} />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-800">
+            <span>Сортировка</span>
+            <textarea className="field-base min-h-[180px] w-full resize-y px-4 py-3 font-mono text-xs leading-5" onChange={(event) => setSortText(event.currentTarget.value)} value={sortText} />
+          </label>
+        </div>
+        <div className="max-h-72 overflow-y-auto rounded-[0.9rem] border border-border bg-surface-subtle px-3 py-3">
+          <p className="text-xs font-semibold text-slate-950">Активные smart views</p>
+          <div className="mt-2 space-y-1 text-xs text-slate-600">
+            {activeViews.length ? (
+              activeViews.slice(0, 10).map((view) => (
+                <p className="truncate" key={`${view.code}-${view.version}`}>
+                  {view.code} · {view.version} · {view.scope_level}
+                </p>
+              ))
+            ) : (
+              <p>Пока нет опубликованных smart views.</p>
+            )}
           </div>
         </div>
       </div>
@@ -2611,6 +2909,12 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
         disabled={publishDisabled || hasBlockingValidationIssues}
         onFeedback={setActionFeedback}
         selectedForm={selectedForm}
+      />
+
+      <SmartViewsRegistryEditor
+        data={helpdeskModelQuery.data}
+        disabled={publishDisabled || hasBlockingValidationIssues}
+        onFeedback={setActionFeedback}
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">

@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ServerConfig, Ticket, TicketFormPack, TicketSlaPolicy, TicketSlaTarget
+from app.db.models import HelpdeskPolicyAudit, PriorityPolicy, ServerConfig, Ticket, TicketFormPack, TicketSlaPolicy, TicketSlaTarget
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.priority_policy import compute_priority_from_facts
 
@@ -25,6 +25,14 @@ async def _clear_request_form_packs(test_engine) -> None:
                 ServerConfig.key == f"{TICKET_FORM_PREFERRED_KEY_PREFIX}request_forms"
             )
         )
+        await session.commit()
+
+
+async def _clear_priority_registry(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(HelpdeskPolicyAudit.__table__.delete())
+        await session.execute(PriorityPolicy.__table__.delete())
         await session.commit()
 
 
@@ -147,3 +155,84 @@ async def test_form_priority_policy_sets_effective_priority_and_sla_target(test_
     assert ticket.first_response_due_at is not None
     resolution_delta = ticket.resolution_due_at.astimezone(timezone.utc) - ticket.created_at.astimezone(timezone.utc)
     assert 0 < resolution_delta.total_seconds() <= 70 * 60
+
+
+@pytest.mark.asyncio
+async def test_ticket_creation_overlays_priority_policy_from_standalone_registry(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _clear_priority_registry(test_engine)
+    form_key = f"registry_priority_{uuid.uuid4().hex[:8]}"
+
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_kind": form_key,
+                        "ticket_type": "incident",
+                        "title": "Registry priority",
+                        "priority_policy": {
+                            "impact_field": "affected_scope",
+                            "urgency_field": "work_continuity",
+                            "importance_field": "business_deadline",
+                        },
+                        "fields": [
+                            {"key": "affected_scope", "label": "Scope", "type": "text", "required": True},
+                            {"key": "work_continuity", "label": "Continuity", "type": "text", "required": True},
+                            {"key": "business_deadline", "label": "Deadline", "type": "text", "required": False},
+                            {"key": "critical_service", "label": "Critical", "type": "checkbox", "required": False},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    policy_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "priority",
+            "code": f"{form_key}_priority_policy",
+            "title": "Registry priority policy",
+            "scope_level": "request_template",
+            "scope_ref": form_key,
+            "config": {"modifier_fields": {"critical_service": "critical_service"}},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert policy_response.status == 200, await policy_response.text()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Low impact but critical service",
+            "description": "Registry modifier should raise priority",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "affected_scope": "only_me",
+                "work_continuity": "workaround_available",
+                "business_deadline": "normal",
+                "critical_service": True,
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    assert ticket.custom_fields["priority_decision"]["computed_priority"] == "P3"
+    assert ticket.custom_fields["priority_decision"]["effective_priority"] == "P2"
+    assert ticket.custom_fields["request_template"]["effective_policy_sources"]["priority"][0]["scope_level"] == "request_template"

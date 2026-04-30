@@ -10,9 +10,12 @@ from app.db.models import (
     DiagnosticPolicy,
     HelpdeskPolicyAudit,
     NotificationPolicy,
+    OlaPolicy,
     PriorityPolicy,
     RequestTemplate,
     RoutingPolicy,
+    SlaPolicy,
+    SmartView,
     VisibilityPolicy,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
@@ -27,8 +30,11 @@ async def _clear_policy_registry(test_engine) -> None:
     async with session_maker() as session:
         for model in (
             HelpdeskPolicyAudit,
+            SmartView,
             RequestTemplate,
             PriorityPolicy,
+            SlaPolicy,
+            OlaPolicy,
             RoutingPolicy,
             ApprovalPolicy,
             ClosurePolicy,
@@ -237,3 +243,65 @@ async def test_web_admin_publish_policy_creates_version_and_audit(test_client, t
     assert len(rows) == 2
     assert sum(1 for row in rows if row.is_active) == 1
     assert audit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "sla",
+            "code": "incident_sla_policy",
+            "title": "Incident answer deadline",
+            "scope_level": "ticket_type",
+            "scope_ref": "incident",
+            "config": {"sla_policy_id": 101, "targets": {"first_response": {"P1": "1h"}}},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    sla = (await response.json())["data"]["policy"]
+    assert sla["kind"] == "sla"
+    assert sla["table"] == "sla_policies"
+
+    ola_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "ola",
+            "code": "incident_ola_policy",
+            "title": "Incident internal deadline",
+            "scope_level": "ticket_type",
+            "scope_ref": "incident",
+            "config": {"targets": {"ack": {"P1": "15m"}, "processing": {"P1": "2h"}}},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert ola_response.status == 200, await ola_response.text()
+    assert (await ola_response.json())["data"]["policy"]["kind"] == "ola"
+
+    smart_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/smart-views/publish",
+        json={
+            "code": "answer_deadline_risk",
+            "title": "Риск по сроку ответа",
+            "filter": {"status_not_in": ["closed", "canceled"], "due_before_hours": 2},
+            "sort": [{"field": "resolution_due_at", "direction": "asc"}],
+            "columns": ["ticket_id", "title", "resolution_due_at"],
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert smart_response.status == 200, await smart_response.text()
+    smart_view = (await smart_response.json())["data"]["smart_view"]
+    assert smart_view["code"] == "answer_deadline_risk"
+    assert smart_view["version"] == "1.0.1"
+
+    registry_response = await test_client.get(
+        "/api/web/admin/helpdesk-model/policies",
+        headers=_admin_headers(),
+    )
+    registry = (await registry_response.json())["data"]
+    assert registry["summary"]["active_policies_count"] == 2
+    assert registry["summary"]["active_smart_views_count"] == 1
+    assert "sla" in registry["capabilities"]["policy_kinds"]
+    assert "ola" in registry["capabilities"]["policy_kinds"]

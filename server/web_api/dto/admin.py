@@ -558,6 +558,7 @@ class AdminHelpdeskModelCapabilities(BaseModel):
     registry_endpoint: str
     publish_from_form_endpoint: str
     publish_policy_endpoint: str
+    publish_smart_view_endpoint: str
     inheritance_order: list[str]
     policy_kinds: list[str]
 
@@ -615,6 +616,27 @@ class AdminHelpdeskPublishPolicyResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     policy: AdminHelpdeskPolicyItem
+    message: str
+
+
+class AdminHelpdeskPublishSmartViewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    title: str
+    description: str | None = None
+    scope_level: str = "system"
+    scope_ref: str | None = None
+    filter: dict[str, Any] = Field(default_factory=dict)
+    sort: list[dict[str, Any]] = Field(default_factory=list)
+    columns: list[str] = Field(default_factory=list)
+    requested_version: str | None = None
+
+
+class AdminHelpdeskPublishSmartViewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    smart_view: AdminHelpdeskSmartViewItem
     message: str
 
 

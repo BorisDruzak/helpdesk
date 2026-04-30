@@ -229,6 +229,7 @@ export type AdminHelpdeskModelPayload = {
     registry_endpoint: string;
     publish_from_form_endpoint: string;
     publish_policy_endpoint: string;
+    publish_smart_view_endpoint: string;
     inheritance_order: string[];
     policy_kinds: string[];
   };
@@ -245,6 +246,11 @@ export type AdminHelpdeskPublishFromFormResult = {
 
 export type AdminHelpdeskPublishPolicyResult = {
   policy: AdminHelpdeskPolicyItem;
+  message: string;
+};
+
+export type AdminHelpdeskPublishSmartViewResult = {
+  smart_view: AdminHelpdeskSmartViewItem;
   message: string;
 };
 
@@ -312,6 +318,28 @@ export async function publishHelpdeskPolicy(payload: {
     body: JSON.stringify(payload)
   });
   return readSuccessResponse(response, "Не удалось опубликовать политику в реестр");
+}
+
+export async function publishHelpdeskSmartView(payload: {
+  code: string;
+  title: string;
+  description?: string | null;
+  scope_level: string;
+  scope_ref?: string | null;
+  filter: Record<string, unknown>;
+  sort: Array<Record<string, unknown>>;
+  columns: string[];
+  requested_version?: string | null;
+}): Promise<AdminHelpdeskPublishSmartViewResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/smart-views/publish", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось опубликовать smart view в реестр");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 11 in progress: standalone versioned helpdesk model registry. Scope expands from executable JSON inside `request_forms` to separately published `request_templates` and policy entities while keeping the current catalog builder compatible.
+Status: slice 13 in progress: close the gap between standalone registry publishing and runtime consumption. Current factual completion is about 78% of the target model after code-level audit.
 
 ### Goal
 
@@ -39,11 +39,11 @@ Already present:
 
 Missing or weak:
 
-- Standalone persisted entities are being introduced for `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`. Existing SLA/calendar tables remain the canonical SLA storage; OLA still uses current settings plus template-level OLA JSON until a dedicated OLA policy table is split out.
+- Standalone persisted entities exist for `request_templates`, `priority_policies`, `sla_policies`, `ola_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`. Existing `ticket_sla_policies` / calendars remain the canonical timer engine; standalone `sla_policies` can reference a valid legacy SLA policy id and carry versioned SLA config for the template model.
 - `closure_policy`, `approval_policy`, `routing_policy`, diagnostic attach-to-evidence behavior, `visibility_policy` public-status/redaction behavior and `notification_policy` recipient selection are executable.
 - Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
 - Notification delivery is policy-driven for in-app recipients; external channels remain future work.
-- Smart views exist as backend support queue filters; standalone smart-view persistence is part of slice 11, while the visual editor remains future work.
+- Smart views exist as backend support queue filters and as standalone versioned saved-view records with a visual publisher. Applying custom smart-view filters to the live support queue remains future work.
 
 ### Decisions
 
@@ -106,11 +106,11 @@ Missing or weak:
 
 ### Current Step
 
-Slice 12 in progress: standalone policy editors over the versioned helpdesk model registry.
+Slice 13 in progress: priority/SLA/OLA/smart-view editors plus first runtime use of standalone effective policies.
 
 Planned behavior:
 
-- Add separate versioned tables for `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
+- Add separate versioned tables for `request_templates`, `priority_policies`, `sla_policies`, `ola_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
 - Add generic audit rows for policy/template publication.
 - Add a repository that can publish new versions and resolve effective policy config through inheritance: `system` defaults, then `ticket_type`, then `category`, then `request_template` overrides.
 - Add typed admin API:
@@ -118,18 +118,20 @@ Planned behavior:
   - `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form` for publishing the currently edited visual constructor form into the standalone registry.
 - Extend `/app/admin/forms` so the visual constructor can publish the selected template and its policies into the standalone registry, while the existing catalog-save flow remains unchanged.
 - Add typed admin API `POST /api/web/admin/helpdesk-model/policies/publish` for publishing one standalone policy version from a dedicated editor.
-- Add dedicated editors for routing, approval, closure, diagnostic, notification and visibility policies over the standalone registry.
+- Add dedicated editors for priority, SLA, OLA, routing, approval, closure, diagnostic, notification, visibility policies and smart views over the standalone registry.
 - Add focused backend and frontend tests, then run local verification, release to Linux, browser-check the new registry controls and stop the remote server.
 
 Implemented locally:
 
-- Migration `063` adds standalone versioned tables: `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies`, `smart_views` and `helpdesk_policy_audit`.
+- Migration `063` adds standalone versioned tables: `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies`, `smart_views` and `helpdesk_policy_audit`. Migration `064` adds standalone `sla_policies` and `ola_policies`.
 - `server/app/repos/helpdesk_policy_repo.py` publishes policy/template versions, deactivates previous active versions for the same code, writes audit rows and resolves effective policy config through `system -> ticket_type -> category -> request_template`.
 - Typed admin API now exposes:
   - `GET /api/web/admin/helpdesk-model/policies`
   - `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form`
+  - `POST /api/web/admin/helpdesk-model/policies/publish`
+  - `POST /api/web/admin/helpdesk-model/smart-views/publish`
 - `/app/admin/forms` now shows a `Реестр целевой модели` block and can publish the selected visual constructor form into the standalone registry without replacing the existing form-pack publish flow.
-- Tests cover inheritance resolution, API publish-from-form, registry overview and the React publish action.
+- Tests cover inheritance resolution, API publish-from-form, policy publish/version/audit, SLA/OLA policy publication, smart-view publication, runtime priority overlay from the standalone registry and the React policy publish action.
 
 Local verification for slice 11 so far:
 
@@ -137,18 +139,26 @@ Local verification for slice 11 so far:
 - `pnpm --dir webapp exec tsc --noEmit` -> passed.
 - `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 11 tests.
 
-Non-goals for this slice:
+Remaining gaps after this slice:
 
-- Full standalone visual editors for priority/SLA/OLA policy types.
 - External email/Telegram/VK Teams delivery.
 - Workflow actions beyond the existing transition roles/required fields.
-- Replacing existing SLA/calendar storage.
+- Full runtime migration for every executable policy path to standalone effective resolution. Ticket creation now overlays effective registry policies into `custom_fields.request_template`; follow-up work should move workflow/status updates, notification dispatch, visibility serialization and support queue smart-view filtering to direct registry reads where appropriate.
+- Custom standalone smart-view filters are published and stored, but support queue filtering still primarily uses the built-in backend smart-view matcher.
 
 Slice 12 delta implemented locally:
 
 - Typed admin API now also exposes `POST /api/web/admin/helpdesk-model/policies/publish` for direct standalone policy publication.
 - `/app/admin/forms` has dedicated editors for routing, approval, closure, diagnostic, notification and visibility policies. They provide structured controls, JSON preview and active-version publication into the same registry/audit path.
 - Focused tests now cover direct policy publish/version/audit behavior and the React routing-policy editor action.
+
+Slice 13 delta implemented locally:
+
+- Added standalone versioned `sla_policies` and `ola_policies` registry tables and models.
+- Added direct smart-view publication endpoint `POST /api/web/admin/helpdesk-model/smart-views/publish`.
+- `/app/admin/forms` policy editors now include priority, SLA, OLA and smart views in addition to routing/approval/closure/diagnostic/notification/visibility.
+- Ticket creation overlays effective standalone registry policies through inheritance before computing priority, routing, SLA/OLA context and request-template custom fields.
+- SLA registry config only writes `ticket.sla_policy_id` when the referenced canonical `ticket_sla_policies` row exists, preventing FK failures from draft registry configs.
 
 Previous current step:
 

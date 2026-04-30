@@ -16,6 +16,67 @@ from config import TICKET_OLA_ENABLED
 from tickets.statuses import extract_priority_class
 
 
+def _get_request_template(custom_fields: object) -> dict:
+    if not isinstance(custom_fields, dict):
+        return {}
+    request_template = custom_fields.get("request_template") or {}
+    return request_template if isinstance(request_template, dict) else {}
+
+
+def _duration_to_minutes(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw.isdigit():
+            return int(raw)
+        multiplier = 1
+        if raw.endswith("m"):
+            raw = raw[:-1]
+        elif raw.endswith("h"):
+            raw = raw[:-1]
+            multiplier = 60
+        elif raw.endswith("d"):
+            raw = raw[:-1]
+            multiplier = 60 * 24
+        try:
+            return int(float(raw) * multiplier)
+        except ValueError:
+            return None
+    return None
+
+
+def _target_from_policy_map(target_map: object, priority: str) -> int | None:
+    if not isinstance(target_map, dict):
+        return None
+    candidates = [priority]
+    if priority != "P3":
+        candidates.append("P3")
+    for key in candidates:
+        value = target_map.get(key)
+        minutes = _duration_to_minutes(value)
+        if minutes is not None:
+            return minutes
+    return None
+
+
+def _get_template_ola_targets(ticket: Ticket, priority: str) -> Optional[tuple[int, int]]:
+    request_template = _get_request_template(getattr(ticket, "custom_fields", None))
+    policy = request_template.get("ola_policy") or {}
+    if not isinstance(policy, dict):
+        return None
+    targets = policy.get("targets") if isinstance(policy.get("targets"), dict) else policy
+    if not isinstance(targets, dict):
+        return None
+    ack_min = _target_from_policy_map(targets.get("ack"), priority)
+    processing_min = _target_from_policy_map(targets.get("processing"), priority)
+    if ack_min is None or processing_min is None:
+        return None
+    return ack_min, processing_min
+
+
 async def get_ola_targets_for_queue(
     session: AsyncSession,
     queue_id: int,
@@ -56,11 +117,14 @@ async def start_ola_for_ticket(
     if not TICKET_OLA_ENABLED or not ticket.queue_id:
         return
     now = started_at or datetime.now(timezone.utc)
-    targets = await get_ola_targets_for_queue(
-        session,
-        ticket.queue_id,
-        extract_priority_class(ticket) or "P3",
-    )
+    priority = extract_priority_class(ticket) or "P3"
+    targets = _get_template_ola_targets(ticket, priority)
+    if not targets:
+        targets = await get_ola_targets_for_queue(
+            session,
+            ticket.queue_id,
+            priority,
+        )
     if not targets:
         return
     ack_min, processing_min = targets

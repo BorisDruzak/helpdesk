@@ -122,6 +122,8 @@ from web_api.dto.admin import (
     AdminHelpdeskPolicyItem,
     AdminHelpdeskPublishPolicyRequest,
     AdminHelpdeskPublishPolicyResult,
+    AdminHelpdeskPublishSmartViewRequest,
+    AdminHelpdeskPublishSmartViewResult,
     AdminHelpdeskPublishFromFormRequest,
     AdminHelpdeskPublishFromFormResult,
     AdminHelpdeskRequestTemplateItem,
@@ -277,6 +279,7 @@ _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
 _HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
 _HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
 _HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT = "/api/web/admin/helpdesk-model/policies/publish"
+_HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT = "/api/web/admin/helpdesk-model/smart-views/publish"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
 _FORM_FIELD_TYPE_LABELS = {
@@ -2005,6 +2008,7 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             registry_endpoint=_HELPDESK_MODEL_REGISTRY_ENDPOINT,
             publish_from_form_endpoint=_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT,
             publish_policy_endpoint=_HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT,
+            publish_smart_view_endpoint=_HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT,
             inheritance_order=["system", "ticket_type", "category", "request_template"],
             policy_kinds=sorted(POLICY_MODELS.keys()),
         ),
@@ -2142,6 +2146,37 @@ async def _publish_helpdesk_policy(
     return AdminHelpdeskPublishPolicyResult(
         policy=policy,
         message=f"Политика {policy.code} опубликована в реестр как версия {policy.version}.",
+    )
+
+
+async def _publish_helpdesk_smart_view(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishSmartViewRequest,
+) -> AdminHelpdeskPublishSmartViewResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.publish_smart_view(
+            code=payload.code,
+            title=payload.title,
+            description=payload.description,
+            filter_config=payload.filter,
+            sort=payload.sort,
+            columns=payload.columns,
+            scope_level=payload.scope_level,
+            scope_ref=payload.scope_ref,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            requested_version=payload.requested_version,
+        )
+        await session.commit()
+
+    smart_view = AdminHelpdeskSmartViewItem.model_validate(item)
+    return AdminHelpdeskPublishSmartViewResult(
+        smart_view=smart_view,
+        message=f"Smart view {smart_view.code} опубликован в реестр как версия {smart_view.version}.",
     )
 
 
@@ -2916,6 +2951,48 @@ async def handle_web_admin_helpdesk_model_publish_policy(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPublishPolicyResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_publish_smart_view(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPublishSmartViewRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру smart view",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_helpdesk_smart_view(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру smart view",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_publish_smart_view] Failed to publish smart view: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать smart view в реестр",
+                "error_code": "HELPDESK_SMART_VIEW_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPublishSmartViewResult](data=result))
 
 
 @require_auth("admin")

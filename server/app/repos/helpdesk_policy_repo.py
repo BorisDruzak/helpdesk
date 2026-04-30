@@ -15,9 +15,11 @@ from app.db.models import (
     DiagnosticPolicy,
     HelpdeskPolicyAudit,
     NotificationPolicy,
+    OlaPolicy,
     PriorityPolicy,
     RequestTemplate,
     RoutingPolicy,
+    SlaPolicy,
     SmartView,
     VisibilityPolicy,
 )
@@ -27,6 +29,8 @@ from utils.versioning import version_key
 
 POLICY_MODELS = {
     "priority": PriorityPolicy,
+    "sla": SlaPolicy,
+    "ola": OlaPolicy,
     "routing": RoutingPolicy,
     "approval": ApprovalPolicy,
     "closure": ClosurePolicy,
@@ -37,6 +41,8 @@ POLICY_MODELS = {
 
 POLICY_TABLE_NAMES = {
     "priority": "priority_policies",
+    "sla": "sla_policies",
+    "ola": "ola_policies",
     "routing": "routing_policies",
     "approval": "approval_policies",
     "closure": "closure_policies",
@@ -232,6 +238,78 @@ class HelpdeskPolicyRepo:
         stmt = stmt.order_by(SmartView.code.asc(), SmartView.created_at.desc())
         rows = list((await self.session.execute(stmt)).scalars().all())
         return [serialize_smart_view(row) for row in rows]
+
+    async def publish_smart_view(
+        self,
+        *,
+        code: str,
+        title: str,
+        filter_config: dict[str, Any],
+        sort: list[dict[str, Any]] | None = None,
+        columns: list[str] | None = None,
+        description: str | None = None,
+        scope_level: str = "system",
+        scope_ref: str | None = None,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        requested_version: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_code = normalize_template_code(code)
+        if not normalized_code:
+            raise ValueError("smart view code is required")
+        if not isinstance(filter_config, dict):
+            raise ValueError("smart view filter must be object")
+        if sort is not None and not isinstance(sort, list):
+            raise ValueError("smart view sort must be list")
+        if columns is not None and not isinstance(columns, list):
+            raise ValueError("smart view columns must be list")
+
+        existing_rows = list(
+            (
+                await self.session.execute(
+                    select(SmartView).where(SmartView.code == normalized_code)
+                )
+            ).scalars().all()
+        )
+        latest = _latest_version(existing_rows)
+        version = str(requested_version or next_form_pack_version(latest)).strip()
+        now = datetime.now(timezone.utc)
+        await self.session.execute(
+            update(SmartView)
+            .where(SmartView.code == normalized_code, SmartView.is_active.is_(True))
+            .values(is_active=False, updated_at=now, updated_by=actor_id)
+        )
+        row = SmartView(
+            code=normalized_code,
+            version=version,
+            title=str(title or normalized_code),
+            description=description,
+            scope_level=str(scope_level or "system"),
+            scope_ref=str(scope_ref).strip() if scope_ref is not None and str(scope_ref).strip() else None,
+            filter_json=deepcopy(filter_config),
+            sort_json=deepcopy(sort or []),
+            columns_json=[str(item) for item in (columns or []) if str(item).strip()],
+            is_active=True,
+            published_at=now,
+            created_at=now,
+            created_by=actor_id,
+            updated_at=now,
+            updated_by=actor_id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        serialized = serialize_smart_view(row)
+        await self._audit(
+            entity_type="smart_views",
+            entity_code=normalized_code,
+            version=version,
+            action="published",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json=None,
+            after_json=serialized,
+        )
+        return serialized
 
     async def publish_policy(
         self,

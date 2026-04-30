@@ -1569,6 +1569,28 @@ class PriorityPolicy(_VersionedPolicyMixin, Base):
     )
 
 
+class SlaPolicy(_VersionedPolicyMixin, Base):
+    """Versioned SLA policy profile for request templates."""
+
+    __tablename__ = "sla_policies"
+    __table_args__ = (
+        Index("ix_sla_policies_active", "code", "is_active"),
+        Index("ix_sla_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_sla_policies_published_at", "published_at"),
+    )
+
+
+class OlaPolicy(_VersionedPolicyMixin, Base):
+    """Versioned OLA policy profile for internal queue deadlines."""
+
+    __tablename__ = "ola_policies"
+    __table_args__ = (
+        Index("ix_ola_policies_active", "code", "is_active"),
+        Index("ix_ola_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_ola_policies_published_at", "published_at"),
+    )
+
+
 class RoutingPolicy(_VersionedPolicyMixin, Base):
     """Versioned routing policy."""
 
