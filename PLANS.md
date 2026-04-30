@@ -73,7 +73,7 @@ Progress:
 - [x] Add `resolve_effective_ticket_policy(...)` for existing-ticket lifecycle runtime.
 - [x] Apply effective registry resolution to approval guards, closure guards, notification recipients and async ticket visibility payloads.
 - [x] Run focused lifecycle/registry tests and workspace verification.
-- [ ] Commit, release/live-check lifecycle runtime and stop the remote server.
+- [x] Commit, release/live-check lifecycle runtime and stop the remote server.
 
 Local verification for slice 16:
 
@@ -82,6 +82,14 @@ Local verification for slice 16:
 - `python -m pytest server/tests/test_ticket_closure_policy.py server/tests/test_ticket_approval_policy.py server/tests/test_stage8.py server/tests/test_ticket_workflow_visibility.py server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> passed, 29 tests.
 - `python -m pytest server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q --tb=short` -> passed, 2 tests.
 - `python scripts/verify_workspace.py` -> passed.
+
+Live verification for slice 16:
+
+- Released commit `3427ed4` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran `verify_workspace.py`, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
+- Remote smoke passed: `GET /api/health` -> 200 after retry.
+- Live transaction published temporary registry-only closure/approval/notification/visibility policies for template `live_lifecycle_81be236adb` and created ticket `2e91a094-ec7f-4612-b4be-7e102d752afe` without policy snapshot blocks.
+- Runtime checks confirmed `closure_policy` blocked resolve without `resolution_code`, `approval_policy` blocked execution without approval, `notification_policy` produced no recipients for `status_changed`, and `visibility_policy` returned `public_status_label="Live registry public status"` while redacting `root_cause`; the transaction was rolled back after verification.
 
 ### Completion Metric
 
