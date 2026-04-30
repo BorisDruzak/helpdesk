@@ -84,7 +84,8 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
     importance_input = data.get("importance")
     urgency_reason_input = data.get("urgency_reason")
     importance_reason_input = data.get("importance_reason")
-    form_key = str(data.get("form_key") or "").strip()
+    request_template_key = str(data.get("request_template_key") or "").strip()
+    form_key = str(data.get("form_key") or request_template_key or "").strip()
     pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = str(data.get("form_pack_version") or "").strip() or None
     form_payload = data.get("form_payload")

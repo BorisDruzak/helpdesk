@@ -490,6 +490,7 @@ class TicketApiClient:
         urgency_reason: Optional[str] = None,
         importance_reason: Optional[str] = None,
         form_key: Optional[str] = None,
+        request_template_key: Optional[str] = None,
         form_pack_key: Optional[str] = None,
         form_pack_version: Optional[str] = None,
         form_payload: Optional[dict] = None,
@@ -530,6 +531,8 @@ class TicketApiClient:
             payload["importance_reason"] = importance_reason
         if form_key is not None:
             payload["form_key"] = form_key
+        if request_template_key is not None:
+            payload["request_template_key"] = request_template_key
         if form_pack_key is not None:
             payload["form_pack_key"] = form_pack_key
         if form_pack_version is not None:

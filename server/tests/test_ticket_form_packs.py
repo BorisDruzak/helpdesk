@@ -209,6 +209,44 @@ async def test_create_ticket_accepts_form_payload_and_sets_ticket_type(test_clie
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_accepts_request_template_key_as_form_alias(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Обращение: Печать / принтер",
+            "description": "Принтер не печатает",
+            "device_id": device_id,
+            "user_display_name": "Alice",
+            "request_template_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
+            "ticket_type": "service_request",
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
+        ).scalar_one()
+
+    assert ticket.ticket_type == "incident"
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["request_form_key"] == "printer"
+    assert custom_fields["request_template"]["key"] == "printer"
+    assert custom_fields["request_form_data"]["room"] == "214"
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_from_form_starts_configured_playbook(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

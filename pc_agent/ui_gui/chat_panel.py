@@ -411,6 +411,8 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
         "hardware_replacement": "service_request",
     }
     for form in pack["forms"]:
+        form.setdefault("request_template_key", str(form.get("key") or "").strip())
+        form.setdefault("request_template_title", str(form.get("title") or form.get("key") or "").strip())
         form.setdefault("ticket_type", ticket_type_by_key.get(str(form.get("key") or ""), "service_request"))
         form.setdefault("priority_policy", dict(DEFAULT_PRIORITY_POLICY))
         existing_keys = {
@@ -445,6 +447,8 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
             continue
         normalized_form = {
             "key": form_key,
+            "request_template_key": str(form.get("request_template_key") or form_key).strip() or form_key,
+            "request_template_title": str(form.get("request_template_title") or form.get("title") or form_key).strip() or form_key,
             "request_kind": str(form.get("request_kind") or form_key).strip() or form_key,
             "ticket_type": str(form.get("ticket_type") or form.get("request_kind") or form_key).strip() or form_key,
             "title": str(form.get("title") or form_key).strip() or form_key,
@@ -1235,13 +1239,14 @@ class TicketCreateDialog(QDialog):
         for key, value in (priority_facts.get("form_payload") or {}).items():
             form_payload.setdefault(key, value)
         return {
-            "title": f"Request: {selected_form.get('title') or 'Support Request'}",
+            "title": f"Обращение: {selected_form.get('request_template_title') or selected_form.get('title') or 'служба поддержки'}",
             "description": description,
             "urgency": priority_facts["urgency"],
             "importance": priority_facts["importance"],
             "urgency_reason": priority_facts["urgency_reason"],
             "importance_reason": priority_facts["importance_reason"],
             "form_key": selected_form.get("key"),
+            "request_template_key": selected_form.get("request_template_key") or selected_form.get("key"),
             "form_pack_key": form_pack.get("pack_key"),
             "form_pack_version": form_pack.get("version"),
             "form_payload": form_payload,
@@ -1822,13 +1827,14 @@ class TicketCreateWizardWidget(QFrame):
         for key, value in (priority_facts.get("form_payload") or {}).items():
             form_payload.setdefault(key, value)
         return {
-            "title": f"Request: {selected_form.get('title') or 'Support Request'}",
+            "title": f"Обращение: {selected_form.get('request_template_title') or selected_form.get('title') or 'служба поддержки'}",
             "description": description,
             "urgency": priority_facts["urgency"],
             "importance": priority_facts["importance"],
             "urgency_reason": priority_facts["urgency_reason"],
             "importance_reason": priority_facts["importance_reason"],
             "form_key": selected_form.get("key"),
+            "request_template_key": selected_form.get("request_template_key") or selected_form.get("key"),
             "form_pack_key": form_pack.get("pack_key"),
             "form_pack_version": form_pack.get("version"),
             "form_payload": form_payload,
@@ -4140,6 +4146,7 @@ class ChatPanel(QWidget):
                 urgency_reason=urgency_reason,
                 importance_reason=importance_reason,
                 form_key=payload.get("form_key"),
+                request_template_key=payload.get("request_template_key"),
                 form_pack_key=payload.get("form_pack_key"),
                 form_pack_version=payload.get("form_pack_version"),
                 form_payload=payload.get("form_payload"),

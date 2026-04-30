@@ -471,6 +471,10 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
             raise ValueError(f"form {form_key!r} title is required")
         if not KEY_PATTERN.match(request_kind):
             raise ValueError(f"form {form_key!r} request_kind must use latin snake_case")
+        request_template_key = str(raw_form.get("request_template_key") or form_key).strip() or form_key
+        if not KEY_PATTERN.match(request_template_key):
+            raise ValueError(f"form {form_key!r} request_template_key must use latin snake_case")
+        request_template_title = str(raw_form.get("request_template_title") or form_title).strip() or form_title
         if form_key in seen_forms:
             raise ValueError(f"duplicate form key: {form_key}")
         seen_forms.add(form_key)
@@ -591,6 +595,8 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
         normalized_forms.append(
             {
                 "key": form_key,
+                "request_template_key": request_template_key,
+                "request_template_title": request_template_title,
                 "request_kind": request_kind,
                 "title": form_title,
                 "description": str(raw_form.get("description") or "").strip(),
@@ -718,6 +724,7 @@ def validate_form_submission(
         "pack_key": pack.get("pack_key"),
         "pack_version": pack.get("version"),
         "form_key": form.get("key"),
+        "request_template_key": form.get("request_template_key") or form.get("key"),
         "request_kind": form.get("request_kind"),
         "ticket_type": form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE,
         "form_title": form.get("title"),
@@ -725,8 +732,9 @@ def validate_form_submission(
         "summary_rows": summary_rows,
         "playbook_triggers": deepcopy(form.get("playbook_triggers") or []),
         "template_context": {
-            "key": form.get("key"),
-            "title": form.get("title"),
+            "key": form.get("request_template_key") or form.get("key"),
+            "title": form.get("request_template_title") or form.get("title"),
+            "form_key": form.get("key"),
             "request_kind": form.get("request_kind"),
             "ticket_type": form.get("ticket_type") or DEFAULT_WORKFLOW_PROFILE,
             "category_id": form.get("category_id"),

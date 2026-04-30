@@ -221,6 +221,44 @@ async def test_get_ticket_rejects_conflicting_cursors():
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_sends_request_template_key(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            payload={"status": "ok", "ticket": {"ticket_id": "ticket-1"}},
+            text_payload='{"status":"ok","ticket":{"ticket_id":"ticket-1"}}',
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.create_ticket(
+        description="Сайт не открывается",
+        title="Обращение: Не открывается сайт",
+        form_key="website_form",
+        request_template_key="website_unavailable",
+        form_payload={"url": "https://example.test"},
+        ticket_type="incident",
+    )
+
+    assert result["ticket"]["ticket_id"] == "ticket-1"
+    call = fake_session.calls[0]
+    assert call["url"] == "http://localhost:8666/api/tickets/create"
+    assert call["json"]["request_template_key"] == "website_unavailable"
+    assert call["json"]["form_key"] == "website_form"
+
+
+@pytest.mark.asyncio
 async def test_upload_attachment_sends_expected_multipart(monkeypatch):
     client = TicketApiClient(
         base_url="http://localhost:8666/api",

@@ -14,6 +14,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     can_user_confirm_close,
     merge_ticket_stream,
     message_visual_role,
+    normalize_ticket_form_pack,
     prepend_ticket_stream,
     ticket_form_priority_field_keys,
     ticket_request_form_summary_rows,
@@ -71,6 +72,8 @@ def test_agent_default_forms_carry_process_type_and_priority_policy():
     pack = build_default_ticket_form_pack()
     forms = {item["key"]: item for item in pack["forms"]}
 
+    assert forms["breakage"]["request_template_key"] == "breakage"
+    assert forms["breakage"]["request_template_title"] == "Поломка"
     assert forms["breakage"]["ticket_type"] == "incident"
     assert forms["access"]["ticket_type"] == "access_request"
     assert forms["software_install"]["ticket_type"] == "service_request"
@@ -80,6 +83,35 @@ def test_agent_default_forms_carry_process_type_and_priority_policy():
         {field["key"] for field in forms["site_system"]["fields"]}
     )
     assert "priority_field" in forms["site_system"]["field_roles"]["impact_scope"]
+
+
+def test_agent_normalizes_request_template_identity_from_server_pack():
+    pack = normalize_ticket_form_pack(
+        {
+            "pack_key": "request_forms",
+            "version": "2.0.0",
+            "title": "Каталог обращений",
+            "forms": [
+                {
+                    "key": "website_form",
+                    "request_template_key": "website_unavailable",
+                    "request_template_title": "Не открывается сайт",
+                    "request_kind": "website_unavailable",
+                    "ticket_type": "incident",
+                    "title": "Не открывается сайт",
+                    "description": "Проверим адрес и симптомы.",
+                    "fields": [
+                        {"key": "url", "label": "Адрес сайта", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        }
+    )
+
+    form = pack["forms"][0]
+    assert form["key"] == "website_form"
+    assert form["request_template_key"] == "website_unavailable"
+    assert form["request_template_title"] == "Не открывается сайт"
 
 
 def test_ticket_form_priority_field_keys_use_policy_modifiers_and_roles():
