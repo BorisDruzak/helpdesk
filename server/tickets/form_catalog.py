@@ -661,6 +661,20 @@ def _normalize_field_value(field_def: dict[str, Any], raw_value: Any) -> Any:
     field_type = field_def.get("type")
     if field_type == "checkbox":
         return bool(raw_value)
+    if field_type == "file":
+        if raw_value in (None, ""):
+            return {}
+        if isinstance(raw_value, dict):
+            path = str(raw_value.get("path") or "").strip()
+            filename = str(raw_value.get("filename") or "").strip()
+        else:
+            path = str(raw_value or "").strip()
+            filename = ""
+        if not filename and path:
+            filename = path.replace("\\", "/").rstrip("/").split("/")[-1]
+        if not path and not filename:
+            return {}
+        return {"path": path, "filename": filename}
     if field_type in MULTI_SELECT_FIELD_TYPES:
         if raw_value in (None, ""):
             return []
@@ -718,6 +732,8 @@ def validate_form_submission(
                 is_empty = value is False
             elif isinstance(value, list):
                 is_empty = not value
+            elif isinstance(value, dict):
+                is_empty = not str(value.get("path") or value.get("filename") or "").strip()
             else:
                 is_empty = not str(value or "").strip()
             if is_empty:
@@ -726,6 +742,14 @@ def validate_form_submission(
         if field_def.get("type") == "checkbox":
             submitted_values[key] = bool(value)
             display_value = "Да" if value else "Нет"
+        elif field_def.get("type") == "file":
+            file_value = value if isinstance(value, dict) else {}
+            filename = str(file_value.get("filename") or "").strip()
+            path = str(file_value.get("path") or "").strip()
+            if not filename and not path:
+                continue
+            submitted_values[key] = {"path": path, "filename": filename}
+            display_value = filename or path
         elif field_def.get("type") in MULTI_SELECT_FIELD_TYPES:
             selected_values = value if isinstance(value, list) else []
             if not selected_values:

@@ -2,7 +2,7 @@
 
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
-Status: план срезов 1-7 выполнен и проверен. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после server-backed preview: функционально около 88-90%, GUI около 78-80%.
+Status: план срезов 1-8 выполнен и локально проверен; срез 8 по registry picker-полям и file-полям формы ждёт commit и live smoke. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после registry/file fields: функционально около 91-93%, GUI около 80-82%.
 
 ### Goal
 
@@ -144,6 +144,39 @@ Verification:
 - Broader focused:
   - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 42 tests.
   - `python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 17 tests.
+
+### Current Slice 8: registry picker fields and file fields.
+
+Goal: закрыть функциональный разрыв в "форме сбора данных": picker-поля должны выбирать реальные объекты из серверного registry, а `file`-поля должны быть связаны с конкретным полем формы и общим механизмом вложений.
+
+Scope:
+
+- `server/web_api/registry_handlers.py`, `server/routes.py`: добавить authenticated registry-options endpoint для `agent/user/support/admin` без admin-only доступа.
+- `pc_agent/ui_gui/server_api.py`: добавить `get_registry_options()`.
+- `pc_agent/ui_gui/chat_panel.py`: хранить registry options в `ChatPanel`, обновлять их рядом с form pack, передавать в `TicketDynamicFieldsWidget`, рендерить `*_picker` как `QComboBox` с id/key объекта, а `file` как выбираемое поле формы с metadata.
+- `pc_agent/tests/test_chat_panel_helpers.py`, `pc_agent/tests/test_ticket_api_client_attachments.py`, server registry tests: TDD-контракты на API, widget values and create payload attachment propagation.
+- Docs: обновить `docs/QUICK_LOOKUP.md`, `pc_agent/docs/CODEMAP.md`, `server/docs/CODEMAP.md`, `scripts/navigation_catalog.py` если меняется route/API surface.
+
+Steps:
+
+- [x] RED: тест server endpoint `/api/registry/options` for non-admin agent/user role.
+- [x] RED: тест `TicketApiClient.get_registry_options()`.
+- [x] RED: widget test: `department_picker`, `location_picker`, `device_picker`, `service_picker`, `user_picker` render as combo options and return selected object id.
+- [x] RED: widget/file payload test: `file` field returns `{path, filename}` metadata in `form_payload` and adds the selected path to `attachment_paths`.
+- [x] GREEN: implement endpoint/client/cache/widget/file propagation.
+- [x] Run focused agent/server tests.
+- [x] Run `python scripts/verify_workspace.py`.
+- [ ] Commit scoped files; if server route changed, deploy and live smoke `/api/registry/options` plus create-preview/create payload.
+
+Verification so far:
+
+- RED confirmed:
+  - `python -m pytest server/tests/test_registry_web_api.py::test_registry_options_available_to_agent_request_forms pc_agent/tests/test_ticket_api_client_attachments.py::test_get_registry_options_reads_picker_catalog pc_agent/tests/test_chat_panel_helpers.py::test_dynamic_fields_widget_uses_registry_options_for_picker_fields pc_agent/tests/test_chat_panel_helpers.py::test_dynamic_fields_widget_returns_file_metadata_for_file_field -q --tb=short` -> failed on missing endpoint/client/widget methods.
+- GREEN:
+  - Same command -> passed, 4 tests.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py server/tests/test_registry_web_api.py server/tests/test_registry_service.py server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 71 tests.
+  - `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
+  - `python scripts/verify_workspace.py` -> passed.
 
 ### Completed Slice 7: server-backed creation preview.
 

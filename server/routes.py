@@ -265,6 +265,7 @@ from web_api.admin_handlers import (
     handle_web_admin_set_module_preferred_version,
 )
 from web_api.registry_handlers import (
+    handle_registry_options,
     handle_registry_profile_upsert,
     handle_web_admin_registry,
 )
@@ -498,6 +499,7 @@ def setup_routes(app: web.Application) -> None:
         web.delete('/api/web/admin/modules/workbench/{module_name}/{version}', handle_delete_module),
         web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
+        web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.get('/api/web/reports/summary', handle_web_reports_summary),
         web.get('/api/web/settings', handle_web_settings_payload),

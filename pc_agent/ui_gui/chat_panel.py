@@ -69,6 +69,14 @@ DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 OPTION_FIELD_TYPES = {"select", "radio"}
 MULTI_SELECT_FIELD_TYPES = {"multi_select"}
+PICKER_FIELD_TYPES = {"user_picker", "department_picker", "location_picker", "device_picker", "service_picker"}
+PICKER_OPTION_KEYS = {
+    "user_picker": "users",
+    "department_picker": "departments",
+    "location_picker": "locations",
+    "device_picker": "devices",
+    "service_picker": "services",
+}
 
 DEFAULT_PRIORITY_POLICY = {
     "impact_field": "impact_scope",
@@ -943,6 +951,47 @@ class MessageBubbleWidget(QFrame):
         self._panel._open_message_context_menu(event.globalPos(), context)
         event.accept()
 
+class TicketFileFieldWidget(QWidget):
+    """Single file selector used by dynamic ticket forms."""
+
+    changed = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._path = ""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self.path_input = QLineEdit()
+        self.path_input.setReadOnly(True)
+        self.path_input.setPlaceholderText("Файл не выбран")
+        self.choose_button = QPushButton("Выбрать файл")
+        self.choose_button.setObjectName("SecondaryButton")
+        self.choose_button.clicked.connect(self._choose_file)
+        layout.addWidget(self.path_input, 1)
+        layout.addWidget(self.choose_button)
+
+    def _choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Выберите файл")
+        if path:
+            self.set_file_path(path)
+
+    def set_file_path(self, path: str) -> None:
+        normalized = str(path or "").strip()
+        if normalized == self._path:
+            return
+        self._path = normalized
+        self.path_input.setText(normalized)
+        self.changed.emit()
+
+    def value(self) -> dict[str, str]:
+        if not self._path:
+            return {}
+        return {"path": self._path, "filename": Path(self._path).name}
+
+    def file_path(self) -> str:
+        return self._path
+
 
 class TicketDynamicFieldsWidget(QWidget):
     """Dynamic form fields driven by the ticket form catalog."""
@@ -956,6 +1005,7 @@ class TicketDynamicFieldsWidget(QWidget):
         self._widgets: dict[str, QWidget] = {}
         self._labels: dict[str, QLabel] = {}
         self._help_labels: dict[str, QLabel] = {}
+        self._registry_options: dict[str, list[dict[str, Any]]] = {}
         self._show_validation_feedback = False
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -972,6 +1022,7 @@ class TicketDynamicFieldsWidget(QWidget):
         self._widgets = {}
         self._labels = {}
         self._help_labels = {}
+        self._registry_options = {}
         self._show_validation_feedback = False
 
     def set_form(
@@ -981,9 +1032,15 @@ class TicketDynamicFieldsWidget(QWidget):
         *,
         include_keys: Optional[set[str]] = None,
         exclude_keys: Optional[set[str]] = None,
+        registry_options: Optional[dict[str, Any]] = None,
     ) -> None:
         self.clear_form()
         values = values or {}
+        self._registry_options = {
+            str(key): [item for item in value if isinstance(item, dict)]
+            for key, value in (registry_options or {}).items()
+            if isinstance(value, list)
+        }
         if not isinstance(form_def, dict):
             return
         include_keys = {str(key) for key in include_keys or set()}
@@ -1030,6 +1087,41 @@ class TicketDynamicFieldsWidget(QWidget):
                     input_widget.setCurrentIndex(current_index)
                 input_widget.currentIndexChanged.connect(self._on_any_changed)
                 widget = input_widget
+            elif field_type in PICKER_FIELD_TYPES:
+                input_widget = QComboBox()
+                input_widget.addItem("Выберите...", "")
+                option_key = PICKER_OPTION_KEYS.get(field_type, "")
+                options = self._registry_options.get(option_key) or field_def.get("options") or []
+                for option in options:
+                    option_value = str(
+                        option.get("value")
+                        or option.get("id")
+                        or option.get("person_id")
+                        or option.get("department_id")
+                        or option.get("location_id")
+                        or option.get("device_id")
+                        or option.get("service_id")
+                        or ""
+                    ).strip()
+                    option_label = str(
+                        option.get("label")
+                        or option.get("display_name")
+                        or option.get("name")
+                        or option.get("hostname")
+                        or option_value
+                    ).strip()
+                    if option_value:
+                        input_widget.addItem(option_label, option_value)
+                current_value = str(values.get(field_key) or "").strip()
+                if current_value and input_widget.findData(current_value) < 0:
+                    input_widget.addItem(current_value, current_value)
+                current_index = input_widget.findData(current_value)
+                if current_index >= 0:
+                    input_widget.setCurrentIndex(current_index)
+                elif input_widget.count() == 2:
+                    input_widget.setCurrentIndex(1)
+                input_widget.currentIndexChanged.connect(self._on_any_changed)
+                widget = input_widget
             elif field_type in MULTI_SELECT_FIELD_TYPES:
                 input_widget = QListWidget()
                 input_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
@@ -1050,6 +1142,15 @@ class TicketDynamicFieldsWidget(QWidget):
                 input_widget = QCheckBox(field_def.get("placeholder") or "Подтверждаю")
                 input_widget.setChecked(bool(values.get(field_key)))
                 input_widget.stateChanged.connect(self._on_any_changed)
+                widget = input_widget
+            elif field_type == "file":
+                input_widget = TicketFileFieldWidget()
+                raw_value = values.get(field_key)
+                if isinstance(raw_value, dict):
+                    input_widget.set_file_path(str(raw_value.get("path") or ""))
+                else:
+                    input_widget.set_file_path(str(raw_value or ""))
+                input_widget.changed.connect(self._on_any_changed)
                 widget = input_widget
             else:
                 input_widget = QLineEdit()
@@ -1098,6 +1199,8 @@ class TicketDynamicFieldsWidget(QWidget):
             return [item for item in result if item]
         if isinstance(widget, QCheckBox):
             return widget.isChecked()
+        if isinstance(widget, TicketFileFieldWidget):
+            return widget.value()
         if isinstance(widget, QLineEdit):
             return widget.text().strip()
         return ""
@@ -1114,6 +1217,27 @@ class TicketDynamicFieldsWidget(QWidget):
             result[field_key] = current_values.get(field_key)
         return result
 
+    def set_file_field_path(self, field_key: str, path: str) -> None:
+        widget = self._widgets.get(str(field_key or "").strip())
+        if isinstance(widget, TicketFileFieldWidget):
+            widget.set_file_path(path)
+
+    def file_attachment_paths(self, *, visible_only: bool = True) -> list[str]:
+        paths: list[str] = []
+        current_values = {field_def.get("key"): self._field_value(str(field_def.get("key") or "")) for field_def in self._field_defs}
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            if not field_key or str(field_def.get("type") or "").strip().lower() != "file":
+                continue
+            if visible_only and not ticket_form_field_visible(field_def, current_values):
+                continue
+            widget = self._widgets.get(field_key)
+            if isinstance(widget, TicketFileFieldWidget):
+                path = widget.file_path()
+                if path:
+                    paths.append(path)
+        return paths
+
     def missing_required_labels(self) -> list[str]:
         values = self.values(visible_only=False)
         missing: list[str] = []
@@ -1129,6 +1253,9 @@ class TicketDynamicFieldsWidget(QWidget):
                     missing.append(str(field_def.get("label") or field_key))
             elif isinstance(value, list):
                 if not value:
+                    missing.append(str(field_def.get("label") or field_key))
+            elif isinstance(value, dict):
+                if not str(value.get("path") or value.get("filename") or "").strip():
                     missing.append(str(field_def.get("label") or field_key))
             elif not str(value or "").strip():
                 missing.append(str(field_def.get("label") or field_key))
@@ -1149,6 +1276,9 @@ class TicketDynamicFieldsWidget(QWidget):
                     missing.add(field_key)
             elif isinstance(value, list):
                 if not value:
+                    missing.add(field_key)
+            elif isinstance(value, dict):
+                if not str(value.get("path") or value.get("filename") or "").strip():
                     missing.add(field_key)
             elif not str(value or "").strip():
                 missing.add(field_key)
@@ -1363,8 +1493,9 @@ class TicketCreateDialog(QDialog):
             return
         self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы оно сразу попало в нужный поток.")
         priority_keys = set(ticket_form_priority_field_keys(form))
-        self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
-        self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
+        registry_options = self.panel.registry_options()
+        self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys, registry_options=registry_options)
+        self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys, registry_options=registry_options)
         self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
         consent_required = diagnostic_consent_required(form)
         self.diagnostic_consent_checkbox.setVisible(consent_required)
@@ -1408,6 +1539,10 @@ class TicketCreateDialog(QDialog):
         selected_form = self._selected_form() or {}
         form_payload = self.dynamic_fields_widget.values()
         form_payload.update(self.priority_dynamic_fields_widget.values())
+        attachment_paths = [
+            *self.dynamic_fields_widget.file_attachment_paths(),
+            *self.priority_dynamic_fields_widget.file_attachment_paths(),
+        ]
         priority_facts = build_priority_facts_payload_from_form(
             selected_form,
             form_payload,
@@ -1432,6 +1567,7 @@ class TicketCreateDialog(QDialog):
             "form_pack_version": form_pack.get("version"),
             "form_payload": form_payload,
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
+            "attachment_paths": list(dict.fromkeys(attachment_paths)),
         }
         if consent_payload is not None:
             payload["diagnostic_consent"] = consent_payload
@@ -1839,8 +1975,9 @@ class TicketCreateWizardWidget(QFrame):
                 form.get("description") or "Уточните детали, чтобы обращение сразу попало в нужный поток."
             )
             priority_keys = set(ticket_form_priority_field_keys(form))
-            self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
-            self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
+            registry_options = self._panel.registry_options()
+            self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys, registry_options=registry_options)
+            self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys, registry_options=registry_options)
             self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
             self.priority_fallback_group.setVisible(not bool(priority_keys))
             consent_required = diagnostic_consent_required(form)
@@ -2080,6 +2217,11 @@ class TicketCreateWizardWidget(QFrame):
         selected_form = self._selected_form() or {}
         form_payload = self.dynamic_fields_widget.values()
         form_payload.update(self.priority_dynamic_fields_widget.values())
+        attachment_paths = [
+            *self._attachment_paths,
+            *self.dynamic_fields_widget.file_attachment_paths(),
+            *self.priority_dynamic_fields_widget.file_attachment_paths(),
+        ]
         priority_facts = build_priority_facts_payload_from_form(
             selected_form,
             form_payload,
@@ -2104,7 +2246,7 @@ class TicketCreateWizardWidget(QFrame):
             "form_pack_version": form_pack.get("version"),
             "form_payload": form_payload,
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
-            "attachment_paths": list(self._attachment_paths),
+            "attachment_paths": list(dict.fromkeys(attachment_paths)),
         }
         if consent_payload is not None:
             payload["diagnostic_consent"] = consent_payload
@@ -2564,6 +2706,8 @@ class ChatPanel(QWidget):
         self._profiles_data = self._load_profiles()
         self._ticket_form_pack_path = resolve_data_root() / "ticket_form_pack.json"
         self._ticket_form_pack = self._load_ticket_form_pack()
+        self._registry_options_path = resolve_data_root() / "registry_options.json"
+        self._registry_options = self._load_registry_options()
 
         self._ticket_list_timer = QTimer(self)
         self._ticket_list_timer.timeout.connect(self._refresh_ticket_list_async)
@@ -2947,6 +3091,29 @@ class ChatPanel(QWidget):
     def ticket_form_pack(self) -> dict[str, Any]:
         return self._ticket_form_pack
 
+    def _load_registry_options(self) -> dict[str, Any]:
+        try:
+            if self._registry_options_path.exists():
+                raw = json.loads(self._registry_options_path.read_text(encoding="utf-8"))
+                return raw if isinstance(raw, dict) else {}
+        except Exception as exc:
+            logger.warning(f"Не удалось загрузить справочники формы: {exc}")
+        return {}
+
+    def _save_registry_options(self) -> None:
+        self._profiles_dir_ready()
+        self._registry_options_path.write_text(
+            json.dumps(self._registry_options, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def registry_options(self) -> dict[str, Any]:
+        return self._registry_options if isinstance(self._registry_options, dict) else {}
+
+    def _apply_registry_options(self, raw_options: Any) -> None:
+        self._registry_options = raw_options if isinstance(raw_options, dict) else {}
+        self._save_registry_options()
+
     def _apply_ticket_form_pack(self, raw_pack: Any) -> None:
         self._ticket_form_pack = normalize_ticket_form_pack(raw_pack)
         self._save_ticket_form_pack()
@@ -2970,6 +3137,10 @@ class ChatPanel(QWidget):
                 self._apply_ticket_form_pack(pack)
         except Exception as exc:
             logger.info(f"Каталог форм недоступен, используем кеш: {exc}")
+        try:
+            self._apply_registry_options(await self.ticket_client.get_registry_options())
+        except Exception as exc:
+            logger.info(f"Справочники форм недоступны, используем кеш: {exc}")
 
     def _profiles(self) -> List[dict]:
         profiles = self._profiles_data.get("profiles")

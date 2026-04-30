@@ -478,6 +478,24 @@ class TicketApiClient:
             logger.info("Registry profile sync network error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def get_registry_options(self) -> dict:
+        """Получает справочники для picker-полей формы обращения."""
+        url = f"{self.base_url}/registry/options"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    logger.info("Registry options sync skipped: HTTP %s", response.status)
+                    return {}
+                payload = json.loads(response_text) if response_text else await response.json()
+                data = payload.get("data") if isinstance(payload, dict) else {}
+                return data if isinstance(data, dict) else {}
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registry options sync error: %s", exc)
+            return {}
+
     async def create_ticket(
         self,
         description: str,

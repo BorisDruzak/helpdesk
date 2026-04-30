@@ -1877,11 +1877,12 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
     DriftRule(
         key="registry_objects",
         title="Registry object flow changed",
-        reason="Registry schema, auto-ingest, profile sync and typed registry UI must stay discoverable in navigation docs.",
+        reason="Registry schema, auto-ingest, profile sync, request-form picker options and typed registry UI must stay discoverable in navigation docs.",
         path_prefixes=("server/registry/",),
         exact_paths=(
             "server/app/repos/registry_repo.py",
             "server/web_api/registry_handlers.py",
+            "server/routes.py",
             "server/app/db/models.py",
             "server/tickets/create_flow.py",
             "server/websocket/agent_handshake.py",

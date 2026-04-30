@@ -12,6 +12,23 @@ def _success(data: dict) -> web.Response:
     return web.json_response({"status": "success", "data": data})
 
 
+def _option(value: object, label: object) -> dict[str, str]:
+    return {"value": str(value or "").strip(), "label": str(label or value or "").strip()}
+
+
+def _compact_options(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        value = str(item.get("value") or "").strip()
+        label = str(item.get("label") or value).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append({"value": value, "label": label})
+    return result
+
+
 @require_auth("admin")
 async def handle_web_admin_registry(_request: web.Request) -> web.Response:
     try:
@@ -39,6 +56,73 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
             "suggestions": [],
         }
     return _success(payload)
+
+
+@require_auth("admin", "support", "user", "agent")
+async def handle_registry_options(_request: web.Request) -> web.Response:
+    async with get_session() as session:
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+
+    assets = snapshot.get("assets") if isinstance(snapshot.get("assets"), list) else []
+    people = snapshot.get("people") if isinstance(snapshot.get("people"), list) else []
+    locations = snapshot.get("locations") if isinstance(snapshot.get("locations"), list) else []
+    departments = snapshot.get("departments") if isinstance(snapshot.get("departments"), list) else []
+    services = snapshot.get("services") if isinstance(snapshot.get("services"), list) else []
+
+    return _success(
+        {
+            "devices": _compact_options(
+                [
+                    _option(
+                        item.get("device_id") or item.get("asset_id") or item.get("id"),
+                        item.get("hostname") or item.get("name") or item.get("device_id") or item.get("asset_id"),
+                    )
+                    for item in assets
+                    if isinstance(item, dict)
+                ]
+            ),
+            "users": _compact_options(
+                [
+                    _option(
+                        item.get("person_id") or item.get("id"),
+                        item.get("display_name") or item.get("full_name") or item.get("person_id"),
+                    )
+                    for item in people
+                    if isinstance(item, dict)
+                ]
+            ),
+            "locations": _compact_options(
+                [
+                    _option(
+                        item.get("location_id") or item.get("id"),
+                        " / ".join(
+                            str(part).strip()
+                            for part in (item.get("building"), item.get("room"))
+                            if str(part or "").strip()
+                        )
+                        or item.get("display_name")
+                        or item.get("location_id"),
+                    )
+                    for item in locations
+                    if isinstance(item, dict)
+                ]
+            ),
+            "departments": _compact_options(
+                [
+                    _option(item.get("department_id") or item.get("id"), item.get("name") or item.get("code"))
+                    for item in departments
+                    if isinstance(item, dict)
+                ]
+            ),
+            "services": _compact_options(
+                [
+                    _option(item.get("service_id") or item.get("id"), item.get("name") or item.get("code"))
+                    for item in services
+                    if isinstance(item, dict)
+                ]
+            ),
+        }
+    )
 
 
 @require_auth("admin", "support", "user", "agent")

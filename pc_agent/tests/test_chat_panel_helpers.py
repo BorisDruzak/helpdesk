@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ui_gui.chat_panel as chat_panel_module
 import ui_gui.main_window as main_window_module
 
-from PySide6.QtWidgets import QApplication, QListWidget, QLineEdit  # noqa: E402
+from PySide6.QtWidgets import QApplication, QComboBox, QListWidget, QLineEdit  # noqa: E402
 
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
@@ -254,6 +254,66 @@ def test_dynamic_fields_widget_supports_extended_field_types():
         "owner": "ivan.petrov",
         "contact_phone": "+7 900 000-00-00",
     }
+    assert widget.missing_required_labels() == []
+
+
+def test_dynamic_fields_widget_uses_registry_options_for_picker_fields():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {"key": "department_id", "label": "Подразделение", "type": "department_picker", "required": True},
+                {"key": "location_id", "label": "Кабинет", "type": "location_picker", "required": True},
+                {"key": "device_id", "label": "Устройство", "type": "device_picker", "required": False},
+                {"key": "service_id", "label": "Сервис", "type": "service_picker", "required": False},
+                {"key": "owner_id", "label": "Пользователь", "type": "user_picker", "required": False},
+            ]
+        },
+        registry_options={
+            "departments": [{"value": "dep-1", "label": "ИТ"}],
+            "locations": [{"value": "loc-1", "label": "Здание 4 / 214"}],
+            "devices": [{"value": "dev-1", "label": "OPT-214"}],
+            "services": [{"value": "svc-1", "label": "Почта"}],
+            "users": [{"value": "person-1", "label": "Иван Иванов"}],
+        },
+    )
+
+    department_widget = widget._widgets["department_id"]
+    assert isinstance(department_widget, QComboBox)
+    department_widget.setCurrentIndex(department_widget.findData("dep-1"))
+    widget._widgets["location_id"].setCurrentIndex(widget._widgets["location_id"].findData("loc-1"))
+    widget._widgets["device_id"].setCurrentIndex(widget._widgets["device_id"].findData("dev-1"))
+    widget._widgets["service_id"].setCurrentIndex(widget._widgets["service_id"].findData("svc-1"))
+    widget._widgets["owner_id"].setCurrentIndex(widget._widgets["owner_id"].findData("person-1"))
+
+    assert widget.values() == {
+        "department_id": "dep-1",
+        "location_id": "loc-1",
+        "device_id": "dev-1",
+        "service_id": "svc-1",
+        "owner_id": "person-1",
+    }
+
+
+def test_dynamic_fields_widget_returns_file_metadata_for_file_field(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    file_path = tmp_path / "error.log"
+    file_path.write_text("trace", encoding="utf-8")
+
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form({"fields": [{"key": "evidence", "label": "Файл", "type": "file", "required": True}]})
+    widget.set_file_field_path("evidence", str(file_path))
+
+    assert widget.values() == {
+        "evidence": {
+            "path": str(file_path),
+            "filename": "error.log",
+        }
+    }
+    assert widget.file_attachment_paths() == [str(file_path)]
     assert widget.missing_required_labels() == []
 
 

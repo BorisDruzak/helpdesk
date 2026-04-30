@@ -339,6 +339,42 @@ async def test_preview_ticket_create_posts_request_template_payload(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_get_registry_options_reads_picker_catalog(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            payload={
+                "status": "success",
+                "data": {
+                    "departments": [{"value": "dep-1", "label": "ИТ"}],
+                    "locations": [{"value": "loc-1", "label": "Здание 4 / 214"}],
+                },
+            },
+            text_payload='{"status":"success","data":{"departments":[{"value":"dep-1","label":"ИТ"}],"locations":[{"value":"loc-1","label":"Здание 4 / 214"}]}}',
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_registry_options()
+
+    assert result["departments"][0]["value"] == "dep-1"
+    call = fake_session.calls[0]
+    assert call["url"] == "http://localhost:8666/api/registry/options"
+    assert call["headers"]["Authorization"] == "Bearer token-123"
+
+
+@pytest.mark.asyncio
 async def test_upload_attachment_sends_expected_multipart(monkeypatch):
     client = TicketApiClient(
         base_url="http://localhost:8666/api",
