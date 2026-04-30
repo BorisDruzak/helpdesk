@@ -141,6 +141,13 @@ def add_business_minutes(
                 break
             cur = nstart
             continue
+        if not _is_inside_work_interval(cur, calendar):
+            nstart = _next_work_start_after(cur, calendar, tz)
+            if nstart is None:
+                cur = cur + timedelta(minutes=remaining)
+                break
+            cur = nstart
+            continue
         nend = _next_work_end_after(cur, calendar, tz)
         if nend is None:
             cur = cur + timedelta(minutes=remaining)

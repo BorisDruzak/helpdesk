@@ -94,7 +94,7 @@
 
 **События ticket_events:** `routing_applied`, `queue_changed`, `sla_started`, `sla_paused`, `sla_resumed`, `sla_breached`, `sla_reminder_sent`, `sla_cleared`.
 
-**Терминальные статусы:** Resolved, Closed. Календарь SLA на этапе 2 только 24x7. Recipients эскалации: участники очереди (`ticket_queue_members`) + admins; доставка через `ticket_event_committed`.
+**Терминальные статусы:** Resolved, Closed. SLA due dates считаются через `calendar_engine.add_business_minutes`, если политика SLA связана с бизнес-календарём; без календаря остаётся 24x7. Recipients эскалации: участники очереди (`ticket_queue_members`) + admins; доставка через `ticket_event_committed`.
 
 ---
 
@@ -412,7 +412,7 @@ API: POST status, assign, queue, priority, reroute, close, worklogs, read; GET t
 
 ### Feature flags
 
-- `TICKET_SLA_CALENDAR_ENABLED` — расчёт due_at по календарю (если policy.calendar_id задан).
+- SLA due_at рассчитывается по календарю, если `ticket_sla_policies.calendar_id` задан; иначе используется 24x7 fallback.
 - `TICKET_OLA_ENABLED` — учёт OLA (старт при create/queue change, ack при assign, processing при handoff/Resolved/Closed).
 
 ### Calendar engine
@@ -465,7 +465,7 @@ alembic current   # ожидаемая ревизия 030 (или выше с у
 
 ### Stage 11
 
-- OLA: вызовы при create, queue change, assign (когда есть API назначения), Resolved/Closed. В TicketSlaService при TICKET_SLA_CALENDAR_ENABLED считать due_at и паузы через calendar_engine.
+- OLA: вызовы при create, queue change, assign (когда есть API назначения), Resolved/Closed. `TicketSlaService` считает due_at через `calendar_engine` для policy calendar/business hours и использует 24x7 fallback без календаря.
 
 ---
 
