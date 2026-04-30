@@ -6,7 +6,7 @@ Status: план срезов 1-8 выполнен, локально прове�
 
 ## 2026-05-01 ПК-агент: UX формы, post-create процесс и release
 
-Status: срезы 9-10 реализованы и проверены; агентская версия поднята до `3.1.25`, Windows release собран локально. Идёт публикация build-а и canary/release verification. Текущая готовность после локальной проверки: функционально 95-96%, GUI 88-90%.
+Status: срезы 9-11 выполнены: UX формы и post-create процесс реализованы, агентская версия поднята до `3.1.25`, Windows release собран, загружен на сервер, canary на launcher-managed Windows устройстве подтверждён handshake, stable rollout policy `windows_amd64` назначен на `3.1.25`. Текущая готовность: функционально 96%, GUI 90%.
 
 ### Goal
 
@@ -32,8 +32,8 @@ Status: срезы 9-10 реализованы и проверены; агент
 
 - [x] Обновить версию агента, если меняется распространяемый build.
 - [x] Собрать Windows release штатным `pc_agent/build_windows_release_v2.py`.
-- [ ] Загрузить build на сервер, назначить canary, проверить handshake/update diagnostics/UI.
-- [ ] Зафиксировать результаты и остаточные риски.
+- [x] Загрузить build на сервер, назначить canary, проверить handshake/update diagnostics/UI.
+- [x] Зафиксировать результаты и остаточные риски.
 
 Verification:
 
@@ -44,6 +44,11 @@ Verification:
 - Source GUI live: `python scripts/manage_local_agent.py start codex-agent-ux-3125 --gui --ui-port 8881` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; server connection was unavailable because remote server was stopped.
 - Built launcher live: `python scripts/manage_local_agent.py start codex-agent-build-3125 --launcher --build-root pc_agent\dist --ui-port 8882` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; instance stopped after smoke.
 - `python pc_agent/build_windows_release_v2.py` -> produced `pc_agent/dist/release/windows_amd64/stable/3.1.25/pc_agent-windows_amd64-3.1.25.zip`, size `98258789`, SHA256 `C7BB83C01B2672AB31A18E9D852310A5569610453E663BF9CC7582F817DFCC50`.
+- `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running` -> deployed commit `194b705`, ran migrations, started remote server and passed `/api/health` smoke.
+- `POST /api/agent_builds/upload` -> uploaded `windows_amd64/stable/3.1.25`, server SHA256 `c7bb83c01b2672ab31a18e9d852310a5569610453e663bf9cc7582f817dfcc50`, size `98258789`.
+- Canary on `AD-MAIN` (`15c8f029-bd7d-533b-a11e-dcd6c2ff48ab`) -> operation `5d93b4fa-e50d-4a49-a397-f680f8d21d8e`, confirmed by next handshake: `agent_version=3.1.25`, `last_update_operation_status=succeeded`, `last_update_result_summary=confirmed_by_handshake:3.1.25`.
+- `PATCH /api/agent_updates/rollout_policy` -> assigned `windows_amd64/stable/3.1.25`; `GET /api/agent_builds` shows `3.1.25` as `is_rollout_assigned=true`.
+- Residual note: the first local `ADMIN-2` canary command was accepted by a source-run agent without launcher install layout, so it downloaded the artifact and exited with code `42` but could not apply the ZIP by itself. The local source agent was restarted from the repo at `3.1.25` and is online; use launcher-managed devices for release canary evidence.
 
 ### Goal
 
