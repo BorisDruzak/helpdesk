@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 3 implemented locally: calendar-aware SLA due dates; live verification is next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 3 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -168,6 +168,16 @@ Local:
 
 Live:
 
+- Released commit `1ed5847` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live runtime SLA check created ticket `2c83384f-7eee-4b72-a4bd-21f5f6f830dd` with temporary calendar `live_sla_623631d545`.
+- Test calendar window was `2026-04-30 07:07-07:11 UTC`; `now_utc` was `2026-04-30T07:08:06.790452+00:00`.
+- `first_response_due_at` was `2026-04-30T07:09:06.859330+00:00`.
+- `resolution_due_at` was `2026-05-01T09:07:07+00:00`, later than naive 24x7 `2026-04-30T07:18:06.790452+00:00`, proving the SLA used the business calendar.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
+
+Previous approval-policy live check:
+
 - Released commit `e587d7c` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Remote smoke passed: `GET /api/health` -> 200.
 - Live API login as support `op1` succeeded.
@@ -190,6 +200,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Continue with slice 2: executable `approval_policy`.
-2. Continue with slice 3: calendar-aware SLA.
-3. Start with failing tests around `sla_service.py` due date calculation through the existing calendar engine.
+1. Continue with slice 4: `routing_policy` as an executable first-match condition/action engine for request templates.
+2. Start with tests around routing conditions over ticket/template/form facts, fallback queue, and reroute loop guards.
+3. Keep `workflow_profile`, `approval_policy`, `closure_policy`, priority/SLA/OLA and docs regression tests in the verification set.
