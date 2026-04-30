@@ -1443,17 +1443,29 @@ async def handle_web_support_change_status(request: web.Request):
                 )
 
             workflow = TicketWorkflowService(session, repo)
-            result = await workflow.apply_status_transition(
-                ticket_id=ticket.ticket_id,
-                from_status=ticket.status,
-                to_status=to_status,
-                actor_id=auth_context.actor_id,
-                actor_role=auth_context.actor_role,
-                reason=str(data.get("reason") or "").strip() or None,
-                resolution_code=data.get("resolution_code"),
-                root_cause=data.get("root_cause"),
-                source="web_support_api",
-            )
+            try:
+                result = await workflow.apply_status_transition(
+                    ticket_id=ticket.ticket_id,
+                    from_status=ticket.status,
+                    to_status=to_status,
+                    actor_id=auth_context.actor_id,
+                    actor_role=auth_context.actor_role,
+                    reason=str(data.get("reason") or "").strip() or None,
+                    resolution_code=data.get("resolution_code"),
+                    resolution_summary=data.get("resolution_summary"),
+                    requester_resolution_summary=data.get("requester_resolution_summary"),
+                    root_cause=data.get("root_cause"),
+                    source="web_support_api",
+                )
+            except ValueError as exc:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "error_code": "CLOSURE_POLICY_BLOCKED",
+                    },
+                    status=400,
+                )
             followup_result = None
             followup_payload = None
             ticket = await repo.get_ticket(ticket.ticket_id)

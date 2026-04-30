@@ -22,6 +22,7 @@
 - `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh и reverse pagination через `before_event_id` + `limit`; агентский GUI открывает тикет с tail-page и догружает старую историю вверх без полного reload всей ленты.
 - При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`; `closed` для таких тикетов разрешён только после подтверждения requester.
 - Для проверяемого закрытия в госсекторном контуре тикет может иметь `evidence_required=true`; переход в `resolved` тогда запрещён без `evidence_ref` или записи в `ticket_evidence_items`, а официальный `Паспорт решения` собирается из фактов тикета, событий, операций, worklog, согласований и доказательств.
+- Request-template `closure_policy` исполняется в `server/tickets/closure_policy.py` при переходе в `resolved`: политика может требовать `resolution_code`, публичный `resolution_summary` / `requester_resolution_summary` и evidence для указанных P0..P3 приоритетов.
 
 ---
 
@@ -111,7 +112,7 @@
 
 **statuses.py (tickets/):** канонические статусы: New, Queued, Assigned, In Progress, Waiting on User, Waiting on Internal Team, Waiting on Vendor, Waiting on Approval, Scheduled, Resolved, Closed, Canceled. `normalize_status(raw)` — soft-нормализация; неизвестный → 400 validation_error. Пользовательский mapping: accepted / in_work / needs_requester / review_solution / closed / canceled.
 
-**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — подтверждение/возврат решения). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (`resolved_at`, `closed_at`, `canceled_at`, reopen, SLA pause/resume, wait ledger, `next_action_owner`, `requester_status`). Событие `status_changed` несёт owner/status для UI.
+**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — подтверждение/возврат решения). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (`resolved_at`, `closed_at`, `canceled_at`, reopen, SLA pause/resume, wait ledger, `next_action_owner`, `requester_status`) и проверка `closure_policy` перед `resolved`. Событие `status_changed` несёт owner/status для UI.
 
 **RBAC:** support/admin — reroute, classify, queue, любые переходы; requester — только свои тикеты, только Resolved → New (reopen). POST /message, /close: роль только из AuthContext; from_role/closed_by_role в body — legacy, deprecation_warning.
 
@@ -119,7 +120,7 @@
 
 ### API
 
-- **POST** `/api/tickets/{ticket_id}/status` — body: `to_status`, `reason`, `resolution_code`, `root_cause`. 409 invalid_transition при невалидном переходе.
+- **POST** `/api/tickets/{ticket_id}/status` — body: `to_status`, `reason`, `resolution_code`, `resolution_summary`, `requester_resolution_summary`, `root_cause`. 409 invalid_transition при невалидном переходе; `closure_policy` возвращает validation/API error, если не хватает обязательных фактов закрытия.
 - **POST** `/api/tickets/{ticket_id}/close` — compatibility wrapper (переход в Closed).
 - **GET** /api/tickets, GET /api/tickets/{id}, GET /api/tickets/{id}/sla — для requester только свои тикеты.
 

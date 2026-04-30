@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.db.models import TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
+from tickets.closure_policy import validate_closure_policy
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
     WAITING_STATUSES,
@@ -97,6 +98,8 @@ class TicketWorkflowService:
         actor_role: str,
         reason: Optional[str] = None,
         resolution_code: Optional[str] = None,
+        resolution_summary: Optional[str] = None,
+        requester_resolution_summary: Optional[str] = None,
         root_cause: Optional[str] = None,
         source: str = "api",
     ) -> dict:
@@ -127,11 +130,26 @@ class TicketWorkflowService:
         if resolution_code is not None:
             event_payload["resolution_code"] = resolution_code
             updates["resolution_code"] = resolution_code
+        if resolution_summary is not None:
+            event_payload["resolution_summary"] = resolution_summary
+            updates["resolution_summary"] = resolution_summary
+        if requester_resolution_summary is not None:
+            event_payload["requester_resolution_summary"] = requester_resolution_summary
+            updates["requester_resolution_summary"] = requester_resolution_summary
         if root_cause is not None:
             event_payload["root_cause"] = root_cause
             updates["root_cause"] = root_cause
 
         if to_status == "resolved":
+            closure_decision = await validate_closure_policy(
+                self.session,
+                ticket,
+                to_status=to_status,
+                resolution_code=resolution_code,
+                resolution_summary=resolution_summary or requester_resolution_summary,
+            )
+            if closure_decision.get("applied"):
+                event_payload["closure_policy"] = closure_decision
             if ticket and getattr(ticket, "evidence_required", False) and not getattr(ticket, "evidence_ref", None):
                 evidence_exists = await self.session.scalar(
                     select(TicketEvidenceItem.id)

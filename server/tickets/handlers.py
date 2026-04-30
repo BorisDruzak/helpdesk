@@ -1359,17 +1359,22 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
                 to_status=to_status,
             )
         workflow = TicketWorkflowService(session, repo)
-        result = await workflow.apply_status_transition(
-            ticket_id=ticket.ticket_id,
-            from_status=ticket.status,
-            to_status=to_status,
-            actor_id=auth_context.actor_id,
-            actor_role=auth_context.actor_role,
-            reason=str(data.get("reason") or "").strip() or None,
-            resolution_code=data.get("resolution_code"),
-            root_cause=data.get("root_cause"),
-            source="api",
-        )
+        try:
+            result = await workflow.apply_status_transition(
+                ticket_id=ticket.ticket_id,
+                from_status=ticket.status,
+                to_status=to_status,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason=str(data.get("reason") or "").strip() or None,
+                resolution_code=data.get("resolution_code"),
+                resolution_summary=data.get("resolution_summary"),
+                requester_resolution_summary=data.get("requester_resolution_summary"),
+                root_cause=data.get("root_cause"),
+                source="api",
+            )
+        except ValueError as exc:
+            return _validation_error({"closure_policy": str(exc)})
         followup_result = None
         followup_payload = None
         ticket = await repo.get_ticket(ticket.ticket_id)
