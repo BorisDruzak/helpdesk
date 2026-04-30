@@ -1232,7 +1232,7 @@ class MainWindow(QMainWindow):
                 button_text = f"Обновить до {recommended_version}"
             button_enabled = True
             target_version = assigned_version or recommended_version
-            meta_text = f"Р”РѕСЃС‚СѓРїРЅРѕ РґРµР№СЃС‚РІРёРµ РґР»СЏ РІРµСЂСЃРёРё {target_version or version}"
+            meta_text = f"Доступно действие для версии {target_version or version}"
 
         if request_operation_id and request_state in {"requested", "pending_restart"}:
             meta_text = f"{meta_text} (op {request_operation_id})"

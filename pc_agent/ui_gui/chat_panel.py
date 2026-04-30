@@ -1208,8 +1208,8 @@ class TicketCreateDialog(QDialog):
         if missing_fields:
             QMessageBox.warning(
                 self,
-                "РќРµ С…РІР°С‚Р°РµС‚ РґР°РЅРЅС‹С…",
-                "Р—Р°РїРѕР»РЅРёС‚Рµ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРѕР»СЏ: " + ", ".join(missing_fields),
+                "Не хватает данных",
+                "Заполните обязательные поля: " + ", ".join(missing_fields),
             )
             return
         self.accept()

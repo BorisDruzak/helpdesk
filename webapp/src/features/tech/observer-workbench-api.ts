@@ -351,7 +351,7 @@ export async function fetchObserverWorkbenchTraceDetail(
   );
   const payload = await readLegacyOk<RawObserverTraceDetailPayload>(
     response,
-    "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґРµС‚Р°Р»Рё С‚СЂР°СЃСЃС‹."
+    "Не удалось загрузить детали трассы."
   );
   return normalizeObserverTraceDetailPayload(payload);
 }

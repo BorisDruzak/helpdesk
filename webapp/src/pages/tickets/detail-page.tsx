@@ -1458,7 +1458,7 @@ export function TicketDetailPage() {
     : [];
   const operationalCompleteness = operationalRows.filter((row) => {
     const value = String(row.answer ?? "").trim();
-    return value && !/РќРµ СѓРєР°Р·Р°РЅ|РџРѕРєР° РЅРµС‚|Не указан|Пока нет/i.test(value);
+    return value && !/Не указан|Пока нет/i.test(value);
   }).length;
 
   const tabItems = [

@@ -21,6 +21,7 @@
 - Main Qt Widgets shell lives in `pc_agent/ui_gui/main_window.py` + `pc_agent/ui_gui/window_chrome.py`: Maria Agent sidebar, dashboard summary, custom cross-platform frameless title bar, navigation, profile/status cards, runtime/update status and settings theme switch stay backed by existing `ui_bridge` state.
 - Ticket list visuals live in `pc_agent/ui_gui/chat_panel.py` + `pc_agent/ui_gui/tickets_list_model.py`: real `TicketsListModel` data, search/filter chips, card delegate, unread counters and double-click/open-chat flow.
 - GUI line-icons live in `pc_agent/ui_gui/assets/icons/`; keep new icons and theme object names reflected in `pc_agent/docs/CODEMAP.md` and `scripts/navigation_catalog.py`.
+- 2026-04-30 localization cleanup: user-visible agent GUI strings in ticket creation, update status and local lifecycle messages must stay Russian and mojibake-free; requester-facing deadline wording should say what will happen for the user ("вам должны ответить до", "решение ожидается до") instead of exposing raw SLA labels.
 
 ## 2026-04-24 inventory cleanup and notifications
 

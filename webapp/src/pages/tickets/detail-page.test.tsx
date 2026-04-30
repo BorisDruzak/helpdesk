@@ -321,11 +321,11 @@ describe("TicketStatusActionPanel FSM visibility", () => {
         onValueChange={onValueChange}
         pending={false}
         selectedStatus="closed"
-        statusOptions={[{ value: "in_progress", label: "Р’Р·СЏС‚СЊ РІ СЂР°Р±РѕС‚Сѓ" }]}
+        statusOptions={[{ value: "in_progress", label: "Взять в работу" }]}
         ticket={{
           status: "assigned",
-          status_label: "РќР°Р·РЅР°С‡РµРЅР°",
-          requester_status_label: "Р—Р°СЏРІРєР° РїСЂРёРЅСЏС‚Р°",
+          status_label: "Назначена",
+          requester_status_label: "Заявка принята",
           next_action_owner: "support",
           evidence_required: false,
           evidence_ref: null,
@@ -335,7 +335,7 @@ describe("TicketStatusActionPanel FSM visibility", () => {
 
     expect(screen.getByText("Доступно сейчас")).toBeInTheDocument();
     expect(screen.getByText("Недоступно сейчас")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Р’Р·СЏС‚СЊ РІ СЂР°Р±РѕС‚Сѓ/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Взять в работу/ })).toBeEnabled();
 
     const blockedClose = screen.getByRole("button", { name: /Закрыть/ });
     expect(blockedClose).toBeDisabled();

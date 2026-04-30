@@ -766,22 +766,22 @@ async def run_gui(
                 try:
                     await cp.ticket_client.close()
                 except Exception as e:
-                    logger.debug(f"Р—Р°РєСЂС‹С‚РёРµ ticket_client: {e}")
+                    logger.debug(f"Закрытие ticket_client: {e}")
             if getattr(cp, "client", None):
                 try:
                     await cp.client.close()
                 except Exception as e:
-                    logger.debug(f"Р—Р°РєСЂС‹С‚РёРµ client: {e}")
+                    logger.debug(f"Закрытие client: {e}")
         if sse_stop_task:
             try:
                 await asyncio.wait_for(sse_stop_task, timeout=1.5)
             except (asyncio.CancelledError, asyncio.TimeoutError):
-                logger.debug("РћСЃС‚Р°РЅРѕРІРєР° SSE РєР»РёРµРЅС‚Р° РїСЂРµРІС‹СЃРёР»Р° С‚Р°Р№РјР°СѓС‚")
+                logger.debug("Остановка SSE клиента превысила таймаут")
         if sse_task_obj is not None:
             try:
                 await asyncio.wait_for(sse_task_obj, timeout=2.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
-                logger.debug("РћР¶РёРґР°РЅРёРµ Р·Р°РІРµСЂС€РµРЅРёСЏ SSE Р·Р°РґР°С‡Рё РїСЂРµРІС‹СЃРёР»Рѕ С‚Р°Р№РјР°СѓС‚")
+                logger.debug("Ожидание завершения SSE задачи превысило таймаут")
         if tray_manager:
             tray_manager.cleanup()
     

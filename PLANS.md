@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 9 implemented locally and ready for release/live verification. Scope is functional backend/domain behavior first; current UI work is localization of existing labels and user-facing wording, not a visual redesign.
+Status: slice 9 implemented locally and live-verified on the remote server. Scope is functional backend/domain behavior first; current UI work is localization of existing labels and user-facing wording, not a visual redesign.
 
 ### Goal
 
@@ -137,6 +137,21 @@ Local verification for slice 9:
 - `python -m pytest server/tests/test_web_settings_api.py server/tests/test_web_support_api.py server/tests/test_ticket_form_packs.py server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_current_returns_typed_payload -q --tb=short` -> passed, 47 tests.
 - `pnpm --dir webapp run build` -> passed.
 - `python scripts/verify_workspace.py` -> passed.
+- After final localization cleanup:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q --tb=short` -> passed, 28 tests.
+  - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/settings/index.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 23 tests.
+  - `python -m pytest server/tests/test_web_settings_api.py server/tests/test_web_support_api.py::test_web_support_queue_applies_smart_view_sla_risk -q --tb=short` -> passed, 10 tests.
+  - `pnpm --dir webapp run build` -> passed.
+
+Live verification for slice 9:
+
+- Released commit `d0fdfba` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran `verify_workspace.py`, bootstrapped the web toolchain, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Browser signoff passed with `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666`; login, admin/support routing and webapp fallback routes loaded without page/console errors.
+- Live API settings check confirmed `ticket_settings.request_templates` count is `9`, first template has `form_schema_id=breakage_form`, `workflow_profile_id=incident`, and the process schema uses Russian deadline wording `Сроки ответа и решения`.
+- Live smart-view check confirmed queue filters expose `Риск по сроку ответа` and `Риск внутренней очереди`.
+- Artifact written to `artifacts/live_checks/request_template_settings_live_20260430.json`.
 
 Previous current step:
 
