@@ -1,8 +1,85 @@
 # PLANS.md
 
+## 2026-04-30 Help Desk Policy Runtime Completion Plan
+
+Status: rewritten execution plan for the remaining target-model gaps. Current factual completion after the previous committed slice is about 78%; after custom smart-view runtime lands, expected completion is about 80%.
+
+### Goal
+
+Finish the remaining gap between the standalone helpdesk policy registry and real runtime behavior. Every published policy must either be executable or clearly marked as stored metadata with a tracked implementation slice.
+
+### Scope and Order
+
+1. Custom smart views in support queue runtime.
+   - Files: `server/tickets/smart_views.py`, `server/web_api/support_handlers.py`, `server/tests/test_web_support_api.py`, docs/CODEMAP/navigation.
+   - Behavior: active published `smart_views` appear in `GET /api/web/support/queue` filter options; `smart_view=<custom_code>` applies the saved JSON filter to queue rows.
+   - Minimum filters: `status_in`, `status_not_in`, `open_only`, `queue_code`, `assignee_id`, `assignee_empty`, `assigned_to_me`, `next_action_owner`, `due_before_hours` + `due_fields`, `breached_fields`, `field_equals`, `field_in`, `tags_any`.
+   - Verification: focused pytest for published custom smart view, existing built-in smart-view test, then support queue browser/API smoke.
+
+2. Standalone SLA policy timer engine.
+   - Files: `server/tickets/sla_service.py`, `server/tickets/calendar_engine.py`, `server/tickets/helpdesk_policy_runtime.py`, `server/tests/test_ticket_sla_policy.py` or a focused new test file.
+   - Behavior: standalone `sla_policies.config.targets.first_response/resolution` can calculate due dates directly when no canonical `ticket_sla_policies` id is referenced.
+   - Calendar: keep existing business-calendar calculation; JSON durations such as `15m`, `1h`, `3d` must map to working-time aware deadlines.
+   - Compatibility: if `sla_policy_id` points to canonical `ticket_sla_policies`, keep existing engine path.
+   - Verification: tests for P0/P1/P2/P3 targets, calendar pauses, stop/pause conditions where currently supported.
+
+3. Effective policy resolution across lifecycle.
+   - Files: `server/tickets/workflow_service.py`, `server/tickets/notification_service.py`, `server/tickets/visibility_policy.py`, `server/web_api/support_handlers.py`, `server/tickets/helpdesk_policy_runtime.py`.
+   - Behavior: status changes, notification dispatch, requester/support serialization and reporting helpers resolve effective registry policy by ticket template/classification when ticket snapshot is missing or stale.
+   - Rule: ticket creation still snapshots effective sources into `custom_fields.request_template`; lifecycle runtime may refresh from registry but must not mutate historical ticket data silently.
+   - Verification: tests for notification/visibility/workflow using registry-only policy.
+
+4. Workflow guards/actions editor.
+   - Files: `webapp/src/features/forms-builder/forms-builder-panel.tsx`, `webapp/src/features/settings/*`, `server/web_api/settings_handlers.py`, `server/tickets/workflow_service.py`.
+   - Behavior: admin can edit transition guards/actions beyond roles/required fields: public/internal comment requirement, approval/evidence guard, notification action, SLA pause/resume marker.
+   - Verification: frontend test for editor payload, backend transition tests for guard/action execution.
+
+5. Policy rollback, diff and deactivate UI.
+   - Files: `server/app/repos/helpdesk_policy_repo.py`, `server/web_api/admin_handlers.py`, `webapp/src/features/forms-builder/*`.
+   - Behavior: list versions, compare JSON configs, deactivate active version, publish rollback as a new version, audit every action.
+   - Safety: never hard-delete policy versions.
+   - Verification: repo/API tests for deactivate/rollback/audit, React test for action calls.
+
+6. External notification channels.
+   - Files: `server/tickets/notification_service.py`, notification provider modules, admin settings UI.
+   - Behavior: policy channel blocks can route selected events to email and later Telegram/VK Teams through provider abstraction.
+   - Safety: in-app notification remains baseline; external delivery failures must be logged and non-blocking.
+   - Verification: provider fake tests and delivery audit tests.
+
+7. Reporting/passport policy editor as standalone entity.
+   - Files: `server/app/db/models.py`, migration, `server/app/repos/helpdesk_policy_repo.py`, `server/tickets/passport_service.py`, forms builder policy editor.
+   - Behavior: reporting/passport policy defines required passport sections, evidence package, export visibility and report tags separately from closure policy.
+   - Verification: passport generation tests and admin publish tests.
+
+### Current Slice
+
+Slice 14: implement custom published `smart_views` in support queue runtime.
+
+Progress:
+
+- [x] Write failing pytest proving `smart_view=<published_code>` currently falls back to `all`.
+- [x] Implement custom smart-view normalization, filter options and matcher.
+- [x] Run focused built-in + custom smart-view tests.
+- [x] Update CODEMAP/QUICK_LOOKUP/navigation docs.
+- [x] Run workspace verification and commit this slice.
+- [ ] Release/live-check support queue if web/API behavior changed.
+
+### Completion Metric
+
+- 78%: previous committed state, editors and ticket-create effective overlay done.
+- 80%: custom smart views executable in support queue.
+- 84%: standalone SLA JSON targets executable by timer engine.
+- 88%: lifecycle runtime uses effective registry resolution for workflow/visibility/notifications.
+- 92%: workflow guards/actions editor and execution.
+- 95%: rollback/diff/deactivate lifecycle.
+- 98%: external notification channels.
+- 100%: reporting/passport standalone policy editor and runtime.
+
+Historical slices remain below for audit context.
+
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 13 in progress: close the gap between standalone registry publishing and runtime consumption. Current factual completion is about 78% of the target model after code-level audit.
+Status: superseded by the runtime completion plan above. Historical context only.
 
 ### Goal
 

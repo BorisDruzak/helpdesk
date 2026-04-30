@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, workflow profiles with executable per-transition role/required-field gates, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, typed request-template catalog in web settings, standalone versioned helpdesk policy/request-template registry with direct policy publication API, visual request-template constructor in the forms builder, executable request-template routing/approval/closure/visibility/notification policies, backend smart views for support queue slices with Russian user-facing deadline labels, diagnostic policy evidence materialization for resolution passports, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles with executable per-transition role/required-field gates, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, typed request-template catalog in web settings, standalone versioned helpdesk policy/request-template registry with direct policy publication API, visual request-template constructor in the forms builder, executable request-template routing/approval/closure/visibility/notification policies, backend smart views for support queue slices plus active published custom smart-view filters, diagnostic policy evidence materialization for resolution passports, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -330,6 +330,8 @@ TOPICS: tuple[Topic, ...] = (
             "smart views",
             "smart_views",
             "smart_view",
+            "custom smart view",
+            "published smart view",
             "sla_risk",
             "ola_risk",
             "waiting_approval",

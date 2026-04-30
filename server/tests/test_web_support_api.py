@@ -20,6 +20,7 @@ from app.db.models import (
     Ticket,
     UiUser,
 )
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.service import RegistryIngestionService
@@ -432,6 +433,76 @@ async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_e
     assert [item["title"] for item in payload["data"]["tickets"]] == ["SLA risk visible"]
     smart_view_options = payload["data"]["filters"]["smart_view_options"]
     assert {"value": "sla_risk", "label": "Риск по сроку ответа"} in smart_view_options
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_applies_published_custom_smart_view(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="custom_deadline", name="Custom deadline", members=["support-test"])
+        session.add_all([
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-custom-risk",
+                title="Custom deadline visible",
+                description="Published smart view should include this ticket",
+                status="in_progress",
+                requester_id="user-custom-risk",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(minutes=45),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-custom-later",
+                title="Custom deadline hidden",
+                description="Far deadline should stay outside custom smart view",
+                status="in_progress",
+                requester_id="user-custom-later",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(days=1),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-custom-closed",
+                title="Custom closed hidden",
+                description="Terminal ticket should stay outside custom smart view",
+                status="closed",
+                requester_id="user-custom-closed",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(minutes=10),
+            ),
+        ])
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_smart_view(
+            code="custom_answer_deadline",
+            title="Проверка срока ответа",
+            filter_config={
+                "status_not_in": ["closed", "canceled"],
+                "due_before_hours": 2,
+                "due_fields": ["first_response_due_at"],
+            },
+            sort=[{"field": "first_response_due_at", "direction": "asc"}],
+            columns=["ticket_id", "title", "first_response_due_at"],
+            actor_id="admin",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/support/queue?scope=all&smart_view=custom_answer_deadline",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["smart_view"] == "custom_answer_deadline"
+    assert [item["title"] for item in payload["data"]["tickets"]] == ["Custom deadline visible"]
+    assert {"value": "custom_answer_deadline", "label": "Проверка срока ответа"} in payload["data"]["filters"]["smart_view_options"]
 
 
 @pytest.mark.asyncio

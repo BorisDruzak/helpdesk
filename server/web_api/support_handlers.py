@@ -10,6 +10,7 @@ from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketResolutionPassport
 from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
@@ -937,7 +938,8 @@ async def handle_web_support_queue(request: web.Request):
     auth_context = request["auth_context"]
     scope = _normalize_scope(request.query.get("scope"))
     status_filter = _normalize_status_filter(request.query.get("status"))
-    smart_view = normalize_smart_view_id(request.query.get("smart_view"))
+    requested_smart_view = request.query.get("smart_view")
+    smart_view = normalize_smart_view_id(requested_smart_view)
     query = str(request.query.get("query", "") or "").strip()
     limit = min(max(int(request.query.get("limit", "200")), 1), 300)
 
@@ -947,6 +949,17 @@ async def handle_web_support_queue(request: web.Request):
 
     try:
         async with get_session() as session:
+            helpdesk_policy_repo = HelpdeskPolicyRepo(session)
+            custom_smart_views = await helpdesk_policy_repo.list_smart_views(include_inactive=False)
+            custom_smart_view_map = {
+                str(view.get("code") or "").strip(): view
+                for view in custom_smart_views
+                if str(view.get("code") or "").strip()
+            }
+            smart_view = normalize_smart_view_id(
+                requested_smart_view,
+                custom_view_ids=set(custom_smart_view_map),
+            )
             repo = TicketEventsRepo(session)
             tickets = await repo.list_tickets(
                 order_by="updated_at",
@@ -975,7 +988,12 @@ async def handle_web_support_queue(request: web.Request):
                         "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
                     }
                 )
-                if not matches_smart_view(ticket_data, smart_view, actor_id=auth_context.actor_id):
+                if not matches_smart_view(
+                    ticket_data,
+                    smart_view,
+                    actor_id=auth_context.actor_id,
+                    custom_views=custom_smart_view_map,
+                ):
                     continue
                 accessible_items.append(_build_ticket_item(ticket_data))
 
@@ -1013,7 +1031,7 @@ async def handle_web_support_queue(request: web.Request):
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,
                 status_options=_build_status_options(status_values),
-                smart_view_options=[SupportFilterOption(**option) for option in smart_view_options()],
+                smart_view_options=[SupportFilterOption(**option) for option in smart_view_options(custom_smart_views)],
             ),
             tickets=typed_items,
         )
