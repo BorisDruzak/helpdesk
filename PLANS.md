@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 92%; slice 17 workflow guards/actions editor and execution is complete and live-checked.
+Status: executing the remaining target-model gaps. Current factual completion is about 94%; slice 18 implementation is complete locally and is in verification/release.
 
 ### Goal
 
@@ -53,7 +53,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 
 ### Current Slice
 
-Slice 17: workflow guards/actions editor and execution.
+Slice 18: policy rollback, diff and deactivate UI.
 
 Progress:
 
@@ -80,6 +80,20 @@ Progress:
 - [x] Add frontend tests for editor payload and backend tests for guard/action execution.
 - [x] Run focused workflow/settings tests, webapp type/test/build checks and workspace verification.
 - [x] Commit, release/live-check workflow guard/action runtime and stop the remote server.
+- [x] Add failing repo/API tests for policy deactivate, diff and rollback-as-new-version audit.
+- [x] Implement version lookup, JSON diff, soft deactivate and rollback publishing in `HelpdeskPolicyRepo`.
+- [x] Expose typed admin endpoints for `diff`, `deactivate` and `rollback`.
+- [x] Add frontend API methods and visual controls in the policy registry editor.
+- [x] Add React test for calling diff/deactivate/rollback actions.
+- [x] Run focused registry/API/UI tests, webapp build and workspace verification.
+- [ ] Commit, release/live-check policy lifecycle UI and stop the remote server.
+
+Local verification for slice 18:
+
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q` -> passed, 6 tests.
+- `pnpm --dir webapp test src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 13 tests.
+- `pnpm --dir webapp build` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
 
 Local verification for slice 17:
 

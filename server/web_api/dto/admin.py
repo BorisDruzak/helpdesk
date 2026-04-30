@@ -558,6 +558,9 @@ class AdminHelpdeskModelCapabilities(BaseModel):
     registry_endpoint: str
     publish_from_form_endpoint: str
     publish_policy_endpoint: str
+    policy_diff_endpoint: str | None = None
+    policy_deactivate_endpoint: str | None = None
+    policy_rollback_endpoint: str | None = None
     publish_smart_view_endpoint: str
     inheritance_order: list[str]
     policy_kinds: list[str]
@@ -613,6 +616,55 @@ class AdminHelpdeskPublishPolicyRequest(BaseModel):
 
 
 class AdminHelpdeskPublishPolicyResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy: AdminHelpdeskPolicyItem
+    message: str
+
+
+class AdminHelpdeskPolicyDiffRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    code: str
+    from_version: str
+    to_version: str
+
+
+class AdminHelpdeskPolicyDiffResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    code: str
+    from_policy: AdminHelpdeskPolicyItem = Field(alias="from")
+    to_policy: AdminHelpdeskPolicyItem = Field(alias="to")
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AdminHelpdeskPolicyDeactivateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    code: str
+    version: str
+
+
+class AdminHelpdeskPolicyDeactivateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy: AdminHelpdeskPolicyItem
+    message: str
+
+
+class AdminHelpdeskPolicyRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    code: str
+    target_version: str
+
+
+class AdminHelpdeskPolicyRollbackResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     policy: AdminHelpdeskPolicyItem

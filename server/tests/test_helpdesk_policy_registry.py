@@ -246,6 +246,142 @@ async def test_web_admin_publish_policy_creates_version_and_audit(test_client, t
 
 
 @pytest.mark.asyncio
+async def test_helpdesk_policy_repo_diffs_deactivates_and_rolls_back_policy_versions(test_engine):
+    await _clear_policy_registry(test_engine)
+    policy_code = f"closure_{uuid.uuid4().hex[:8]}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        first = await repo.publish_policy(
+            kind="closure",
+            code=policy_code,
+            title="Closure policy",
+            config={"require_resolution_code": True, "auto_close_after_days": 3},
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        second = await repo.publish_policy(
+            kind="closure",
+            code=policy_code,
+            title="Closure policy strict",
+            config={"require_resolution_code": True, "require_public_summary": True, "auto_close_after_days": 1},
+            actor_id="admin1",
+            actor_role="admin",
+        )
+
+        diff = await repo.diff_policy_versions(
+            kind="closure",
+            code=policy_code,
+            from_version=first["version"],
+            to_version=second["version"],
+        )
+        deactivated = await repo.deactivate_policy(
+            kind="closure",
+            code=policy_code,
+            version=second["version"],
+            actor_id="admin2",
+            actor_role="admin",
+        )
+        rollback = await repo.rollback_policy(
+            kind="closure",
+            code=policy_code,
+            target_version=first["version"],
+            actor_id="admin3",
+            actor_role="admin",
+        )
+        await session.commit()
+
+        rows = list((await session.execute(select(ClosurePolicy).where(ClosurePolicy.code == policy_code))).scalars().all())
+        audits = list(
+            (
+                await session.execute(
+                    select(HelpdeskPolicyAudit)
+                    .where(HelpdeskPolicyAudit.entity_code == policy_code)
+                    .order_by(HelpdeskPolicyAudit.id.asc())
+                )
+            ).scalars().all()
+        )
+
+    assert diff["from"]["version"] == first["version"]
+    assert diff["to"]["version"] == second["version"]
+    assert {"path": "config.require_public_summary", "from": None, "to": True} in diff["changes"]
+    assert {"path": "config.auto_close_after_days", "from": 3, "to": 1} in diff["changes"]
+    assert deactivated["is_active"] is False
+    assert rollback["version"] == "1.0.3"
+    assert rollback["config"] == first["config"]
+    assert rollback["is_active"] is True
+    assert len(rows) == 3
+    assert sum(1 for row in rows if row.is_active) == 1
+    assert [audit.action for audit in audits] == ["published", "published", "deactivated", "rollback_published"]
+
+
+@pytest.mark.asyncio
+async def test_web_admin_helpdesk_policy_lifecycle_endpoints(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    policy_code = f"routing_{uuid.uuid4().hex[:8]}"
+
+    first_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "routing",
+            "code": policy_code,
+            "title": "Routing policy",
+            "scope_level": "request_template",
+            "scope_ref": "printer",
+            "config": {"default_queue": "servicedesk_l1"},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert first_response.status == 200, await first_response.text()
+    first = (await first_response.json())["data"]["policy"]
+
+    second_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "routing",
+            "code": policy_code,
+            "title": "Routing policy v2",
+            "scope_level": "request_template",
+            "scope_ref": "printer",
+            "config": {"default_queue": "networks", "rules": [{"priority_order": 10}]},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert second_response.status == 200, await second_response.text()
+    second = (await second_response.json())["data"]["policy"]
+
+    diff_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/diff",
+        json={"kind": "routing", "code": policy_code, "from_version": first["version"], "to_version": second["version"]},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert diff_response.status == 200, await diff_response.text()
+    diff = (await diff_response.json())["data"]
+    assert {"path": "config.default_queue", "from": "servicedesk_l1", "to": "networks"} in diff["changes"]
+
+    deactivate_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/deactivate",
+        json={"kind": "routing", "code": policy_code, "version": second["version"]},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert deactivate_response.status == 200, await deactivate_response.text()
+    deactivated = (await deactivate_response.json())["data"]["policy"]
+    assert deactivated["is_active"] is False
+
+    rollback_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/rollback",
+        json={"kind": "routing", "code": policy_code, "target_version": first["version"]},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert rollback_response.status == 200, await rollback_response.text()
+    rollback = (await rollback_response.json())["data"]["policy"]
+    assert rollback["version"] == "1.0.3"
+    assert rollback["config"] == first["config"]
+    assert rollback["is_active"] is True
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     response = await test_client.post(

@@ -119,11 +119,17 @@ from web_api.dto.admin import (
     AdminHelpdeskModelCapabilities,
     AdminHelpdeskModelPayload,
     AdminHelpdeskModelSummary,
+    AdminHelpdeskPolicyDeactivateRequest,
+    AdminHelpdeskPolicyDeactivateResult,
+    AdminHelpdeskPolicyDiffRequest,
+    AdminHelpdeskPolicyDiffResult,
     AdminHelpdeskPolicyItem,
     AdminHelpdeskPublishPolicyRequest,
     AdminHelpdeskPublishPolicyResult,
     AdminHelpdeskPublishSmartViewRequest,
     AdminHelpdeskPublishSmartViewResult,
+    AdminHelpdeskPolicyRollbackRequest,
+    AdminHelpdeskPolicyRollbackResult,
     AdminHelpdeskPublishFromFormRequest,
     AdminHelpdeskPublishFromFormResult,
     AdminHelpdeskRequestTemplateItem,
@@ -279,6 +285,9 @@ _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
 _HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
 _HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
 _HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT = "/api/web/admin/helpdesk-model/policies/publish"
+_HELPDESK_MODEL_POLICY_DIFF_ENDPOINT = "/api/web/admin/helpdesk-model/policies/diff"
+_HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT = "/api/web/admin/helpdesk-model/policies/deactivate"
+_HELPDESK_MODEL_POLICY_ROLLBACK_ENDPOINT = "/api/web/admin/helpdesk-model/policies/rollback"
 _HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT = "/api/web/admin/helpdesk-model/smart-views/publish"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
@@ -2008,6 +2017,9 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             registry_endpoint=_HELPDESK_MODEL_REGISTRY_ENDPOINT,
             publish_from_form_endpoint=_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT,
             publish_policy_endpoint=_HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT,
+            policy_diff_endpoint=_HELPDESK_MODEL_POLICY_DIFF_ENDPOINT,
+            policy_deactivate_endpoint=_HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT,
+            policy_rollback_endpoint=_HELPDESK_MODEL_POLICY_ROLLBACK_ENDPOINT,
             publish_smart_view_endpoint=_HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT,
             inheritance_order=["system", "ticket_type", "category", "request_template"],
             policy_kinds=sorted(POLICY_MODELS.keys()),
@@ -2146,6 +2158,69 @@ async def _publish_helpdesk_policy(
     return AdminHelpdeskPublishPolicyResult(
         policy=policy,
         message=f"Политика {policy.code} опубликована в реестр как версия {policy.version}.",
+    )
+
+
+async def _diff_helpdesk_policy(
+    *,
+    payload: AdminHelpdeskPolicyDiffRequest,
+) -> AdminHelpdeskPolicyDiffResult:
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        diff = await repo.diff_policy_versions(
+            kind=payload.kind,
+            code=payload.code,
+            from_version=payload.from_version,
+            to_version=payload.to_version,
+        )
+    return AdminHelpdeskPolicyDiffResult.model_validate(diff)
+
+
+async def _deactivate_helpdesk_policy(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPolicyDeactivateRequest,
+) -> AdminHelpdeskPolicyDeactivateResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.deactivate_policy(
+            kind=payload.kind,
+            code=payload.code,
+            version=payload.version,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        await session.commit()
+    policy = AdminHelpdeskPolicyItem.model_validate(item)
+    return AdminHelpdeskPolicyDeactivateResult(
+        policy=policy,
+        message=f"Политика {policy.code} версии {policy.version} деактивирована.",
+    )
+
+
+async def _rollback_helpdesk_policy(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPolicyRollbackRequest,
+) -> AdminHelpdeskPolicyRollbackResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.rollback_policy(
+            kind=payload.kind,
+            code=payload.code,
+            target_version=payload.target_version,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        await session.commit()
+    policy = AdminHelpdeskPolicyItem.model_validate(item)
+    return AdminHelpdeskPolicyRollbackResult(
+        policy=policy,
+        message=f"Политика {policy.code} откатана к версии {payload.target_version}; новая активная версия {policy.version}.",
     )
 
 
@@ -2951,6 +3026,131 @@ async def handle_web_admin_helpdesk_model_publish_policy(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPublishPolicyResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_policy_diff(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPolicyDiffRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте параметры сравнения политик",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _diff_helpdesk_policy(payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Версия политики не найдена",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_policy_diff] Failed to diff policy: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось сравнить версии политики",
+                "error_code": "HELPDESK_POLICY_DIFF_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPolicyDiffResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_policy_deactivate(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPolicyDeactivateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте параметры деактивации политики",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _deactivate_helpdesk_policy(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Версия политики не найдена",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_policy_deactivate] Failed to deactivate policy: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось деактивировать версию политики",
+                "error_code": "HELPDESK_POLICY_DEACTIVATE_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPolicyDeactivateResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_policy_rollback(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPolicyRollbackRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте параметры отката политики",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _rollback_helpdesk_policy(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Версия политики не найдена",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_policy_rollback] Failed to rollback policy: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось откатить политику",
+                "error_code": "HELPDESK_POLICY_ROLLBACK_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPolicyRollbackResult](data=result))
 
 
 @require_auth("admin")

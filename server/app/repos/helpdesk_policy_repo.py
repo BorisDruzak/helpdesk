@@ -178,6 +178,18 @@ def serialize_smart_view(row: SmartView) -> dict[str, Any]:
     }
 
 
+def _json_diff(before: Any, after: Any, *, path: str) -> list[dict[str, Any]]:
+    if isinstance(before, dict) and isinstance(after, dict):
+        changes: list[dict[str, Any]] = []
+        for key in sorted(set(before) | set(after)):
+            child_path = f"{path}.{key}" if path else str(key)
+            changes.extend(_json_diff(before.get(key), after.get(key), path=child_path))
+        return changes
+    if before != after:
+        return [{"path": path, "from": deepcopy(before), "to": deepcopy(after)}]
+    return []
+
+
 class HelpdeskPolicyRepo:
     """Data access for versioned request templates, policies and smart views."""
 
@@ -375,6 +387,151 @@ class HelpdeskPolicyRepo:
             actor_id=actor_id,
             actor_role=actor_role,
             before_json=None,
+            after_json=serialized,
+        )
+        return serialized
+
+    async def _get_policy_row(self, *, kind: str, code: str, version: str):
+        normalized_kind = normalize_policy_kind(kind)
+        normalized_code = normalize_template_code(code)
+        row = await self.session.scalar(
+            select(POLICY_MODELS[normalized_kind]).where(
+                POLICY_MODELS[normalized_kind].code == normalized_code,
+                POLICY_MODELS[normalized_kind].version == str(version),
+            )
+        )
+        if row is None:
+            raise ValueError(f"policy version not found: {normalized_kind}/{normalized_code}/{version}")
+        return normalized_kind, normalized_code, row
+
+    async def diff_policy_versions(
+        self,
+        *,
+        kind: str,
+        code: str,
+        from_version: str,
+        to_version: str,
+    ) -> dict[str, Any]:
+        normalized_kind, normalized_code, from_row = await self._get_policy_row(
+            kind=kind,
+            code=code,
+            version=from_version,
+        )
+        _, _, to_row = await self._get_policy_row(
+            kind=normalized_kind,
+            code=normalized_code,
+            version=to_version,
+        )
+        before = serialize_policy_row(normalized_kind, from_row)
+        after = serialize_policy_row(normalized_kind, to_row)
+        return {
+            "kind": normalized_kind,
+            "code": normalized_code,
+            "from": before,
+            "to": after,
+            "changes": _json_diff(before.get("config") or {}, after.get("config") or {}, path="config"),
+        }
+
+    async def deactivate_policy(
+        self,
+        *,
+        kind: str,
+        code: str,
+        version: str,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_kind, normalized_code, row = await self._get_policy_row(
+            kind=kind,
+            code=code,
+            version=version,
+        )
+        before = serialize_policy_row(normalized_kind, row)
+        now = datetime.now(timezone.utc)
+        row.is_active = False
+        row.valid_to = now
+        row.updated_at = now
+        row.updated_by = actor_id
+        await self.session.flush()
+        after = serialize_policy_row(normalized_kind, row)
+        await self._audit(
+            entity_type=POLICY_TABLE_NAMES[normalized_kind],
+            entity_code=normalized_code,
+            version=str(version),
+            action="deactivated",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json=before,
+            after_json=after,
+        )
+        return after
+
+    async def rollback_policy(
+        self,
+        *,
+        kind: str,
+        code: str,
+        target_version: str,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_kind, normalized_code, target_row = await self._get_policy_row(
+            kind=kind,
+            code=code,
+            version=target_version,
+        )
+        existing_rows = list(
+            (
+                await self.session.execute(
+                    select(POLICY_MODELS[normalized_kind]).where(
+                        POLICY_MODELS[normalized_kind].code == normalized_code
+                    )
+                )
+            ).scalars().all()
+        )
+        latest = _latest_version(existing_rows)
+        version = next_form_pack_version(latest)
+        now = datetime.now(timezone.utc)
+        active_rows = [row for row in existing_rows if bool(row.is_active)]
+        active_before = [serialize_policy_row(normalized_kind, row) for row in active_rows]
+        await self.session.execute(
+            update(POLICY_MODELS[normalized_kind])
+            .where(
+                POLICY_MODELS[normalized_kind].code == normalized_code,
+                POLICY_MODELS[normalized_kind].is_active.is_(True),
+            )
+            .values(is_active=False, valid_to=now, updated_at=now, updated_by=actor_id)
+        )
+        row = POLICY_MODELS[normalized_kind](
+            code=normalized_code,
+            version=version,
+            title=str(target_row.title),
+            description=target_row.description,
+            scope_level=str(target_row.scope_level or "system"),
+            scope_ref=target_row.scope_ref,
+            config_json=deepcopy(target_row.config_json or {}),
+            is_active=True,
+            valid_from=now,
+            published_at=now,
+            created_at=now,
+            created_by=actor_id,
+            updated_at=now,
+            updated_by=actor_id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        serialized = serialize_policy_row(normalized_kind, row)
+        await self._audit(
+            entity_type=POLICY_TABLE_NAMES[normalized_kind],
+            entity_code=normalized_code,
+            version=version,
+            action="rollback_published",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json={
+                "target_version": str(target_version),
+                "active_versions": active_before,
+            },
             after_json=serialized,
         )
         return serialized

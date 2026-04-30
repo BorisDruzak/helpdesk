@@ -167,6 +167,20 @@ export type AdminHelpdeskPolicyItem = {
   updated_by: string | null;
 };
 
+export type AdminHelpdeskPolicyDiffChange = {
+  path: string;
+  from: unknown;
+  to: unknown;
+};
+
+export type AdminHelpdeskPolicyDiffResult = {
+  kind: string;
+  code: string;
+  from_policy: AdminHelpdeskPolicyItem;
+  to_policy: AdminHelpdeskPolicyItem;
+  changes: AdminHelpdeskPolicyDiffChange[];
+};
+
 export type AdminHelpdeskRequestTemplateItem = {
   template_code: string;
   version: string;
@@ -229,6 +243,9 @@ export type AdminHelpdeskModelPayload = {
     registry_endpoint: string;
     publish_from_form_endpoint: string;
     publish_policy_endpoint: string;
+    policy_diff_endpoint?: string | null;
+    policy_deactivate_endpoint?: string | null;
+    policy_rollback_endpoint?: string | null;
     publish_smart_view_endpoint: string;
     inheritance_order: string[];
     policy_kinds: string[];
@@ -245,6 +262,11 @@ export type AdminHelpdeskPublishFromFormResult = {
 };
 
 export type AdminHelpdeskPublishPolicyResult = {
+  policy: AdminHelpdeskPolicyItem;
+  message: string;
+};
+
+export type AdminHelpdeskPolicyLifecycleResult = {
   policy: AdminHelpdeskPolicyItem;
   message: string;
 };
@@ -318,6 +340,55 @@ export async function publishHelpdeskPolicy(payload: {
     body: JSON.stringify(payload)
   });
   return readSuccessResponse(response, "Не удалось опубликовать политику в реестр");
+}
+
+export async function diffHelpdeskPolicyVersions(payload: {
+  kind: string;
+  code: string;
+  from_version: string;
+  to_version: string;
+}): Promise<AdminHelpdeskPolicyDiffResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/policies/diff", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось сравнить версии политики");
+}
+
+export async function deactivateHelpdeskPolicyVersion(payload: {
+  kind: string;
+  code: string;
+  version: string;
+}): Promise<AdminHelpdeskPolicyLifecycleResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/policies/deactivate", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось деактивировать версию политики");
+}
+
+export async function rollbackHelpdeskPolicyVersion(payload: {
+  kind: string;
+  code: string;
+  target_version: string;
+}): Promise<AdminHelpdeskPolicyLifecycleResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/policies/rollback", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось откатить политику");
 }
 
 export async function publishHelpdeskSmartView(payload: {

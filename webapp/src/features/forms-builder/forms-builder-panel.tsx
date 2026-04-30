@@ -38,14 +38,18 @@ import {
   type AdminFormsPlaybookTrigger,
   type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
+  type AdminHelpdeskPolicyDiffResult,
   type AdminHelpdeskPolicyItem,
   type AdminHelpdeskModelPayload,
+  deactivateHelpdeskPolicyVersion,
+  diffHelpdeskPolicyVersions,
   fetchHelpdeskModelRegistry,
   fetchAdminFormsCatalog,
   publishHelpdeskPolicy,
   publishHelpdeskSmartView,
   publishHelpdeskTemplateFromForm,
   previewAdminFormRoute,
+  rollbackHelpdeskPolicyVersion,
   saveAdminFormsCatalog,
 } from "./api";
 import {
@@ -1898,6 +1902,11 @@ function PolicyRegistryEditors({
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<PolicyEditorKind>("routing");
   const [draft, setDraft] = useState<PolicyEditorDraft>(() => buildPolicyEditorDraft("routing", selectedForm));
+  const [diffFromVersion, setDiffFromVersion] = useState("");
+  const [diffToVersion, setDiffToVersion] = useState("");
+  const [deactivateVersion, setDeactivateVersion] = useState("");
+  const [rollbackVersion, setRollbackVersion] = useState("");
+  const [diffResult, setDiffResult] = useState<AdminHelpdeskPolicyDiffResult | null>(null);
 
   useEffect(() => {
     setDraft(buildPolicyEditorDraft(kind, selectedForm));
@@ -1939,8 +1948,102 @@ function PolicyRegistryEditors({
     },
   });
 
-  const activeKindPolicies = data?.policies[kind]?.filter((item) => item.is_active) ?? [];
-  const latestForCode = activeKindPolicies.find((item) => item.code === draft.code);
+  const allKindPolicies = useMemo(() => data?.policies[kind] ?? [], [data?.policies, kind]);
+  const activeKindPolicies = allKindPolicies.filter((item) => item.is_active);
+  const sameCodePolicies = useMemo(
+    () =>
+      allKindPolicies
+        .filter((item) => item.code === draft.code.trim())
+        .slice()
+        .sort((left, right) => left.version.localeCompare(right.version, undefined, { numeric: true })),
+    [allKindPolicies, draft.code]
+  );
+  const latestForCode = sameCodePolicies.find((item) => item.is_active) ?? sameCodePolicies[sameCodePolicies.length - 1] ?? null;
+  const lifecycleActionsEnabled = Boolean(
+    data?.capabilities.policy_diff_endpoint &&
+      data.capabilities.policy_deactivate_endpoint &&
+      data.capabilities.policy_rollback_endpoint
+  );
+
+  useEffect(() => {
+    if (!sameCodePolicies.length) {
+      setDiffFromVersion("");
+      setDiffToVersion("");
+      setDeactivateVersion("");
+      setRollbackVersion("");
+      setDiffResult(null);
+      return;
+    }
+    const versions = sameCodePolicies.map((item) => item.version);
+    const firstVersion = versions[0] ?? "";
+    const latestVersion = latestForCode?.version ?? versions[versions.length - 1] ?? "";
+    setDiffFromVersion((current) => (versions.includes(current) ? current : firstVersion));
+    setDiffToVersion((current) => (versions.includes(current) ? current : latestVersion));
+    setDeactivateVersion((current) => (versions.includes(current) ? current : latestVersion));
+    setRollbackVersion((current) => (versions.includes(current) ? current : firstVersion));
+    setDiffResult(null);
+  }, [latestForCode?.version, sameCodePolicies]);
+
+  const diffMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft.code.trim() || !diffFromVersion || !diffToVersion) {
+        throw new Error("Выберите код политики и две версии для сравнения.");
+      }
+      return diffHelpdeskPolicyVersions({
+        kind: draft.kind,
+        code: draft.code.trim(),
+        from_version: diffFromVersion,
+        to_version: diffToVersion,
+      });
+    },
+    onSuccess: (result) => {
+      setDiffResult(result);
+      onFeedback({ tone: "success", text: "Версии политики сравнены." });
+    },
+    onError: (error) => {
+      onFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось сравнить версии политики." });
+    },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft.code.trim() || !deactivateVersion) {
+        throw new Error("Выберите версию политики для деактивации.");
+      }
+      return deactivateHelpdeskPolicyVersion({
+        kind: draft.kind,
+        code: draft.code.trim(),
+        version: deactivateVersion,
+      });
+    },
+    onSuccess: async (result) => {
+      onFeedback({ tone: "success", text: result.message });
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      onFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось деактивировать версию политики." });
+    },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft.code.trim() || !rollbackVersion) {
+        throw new Error("Выберите версию политики для отката.");
+      }
+      return rollbackHelpdeskPolicyVersion({
+        kind: draft.kind,
+        code: draft.code.trim(),
+        target_version: rollbackVersion,
+      });
+    },
+    onSuccess: async (result) => {
+      onFeedback({ tone: "success", text: result.message });
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      onFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось откатить политику." });
+    },
+  });
 
   const updateConfig = (nextConfig: Record<string, unknown>) => {
     setDraft((current) => ({
@@ -2049,6 +2152,132 @@ function PolicyRegistryEditors({
             <p className="mt-1 text-sm text-slate-600">
               {latestForCode ? `${latestForCode.version} опубликована` : "Для этого кода ещё нет активной версии"}
             </p>
+          </div>
+          <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-950">Жизненный цикл версии</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Сравнение показывает отличия JSON-конфига. Откат публикует новую активную версию из выбранной старой версии.
+                </p>
+              </div>
+              <Badge tone={lifecycleActionsEnabled ? "success" : "neutral"}>
+                {lifecycleActionsEnabled ? "доступно" : "нет endpoint"}
+              </Badge>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>Сравнить от</span>
+                <Select
+                  className="field-base h-9 w-full px-3 text-xs"
+                  disabled={!sameCodePolicies.length}
+                  onChange={(event) => setDiffFromVersion(event.currentTarget.value)}
+                  value={diffFromVersion}
+                >
+                  {sameCodePolicies.map((policy) => (
+                    <option key={`diff-from-${policy.version}`} value={policy.version}>
+                      {policy.version}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>Сравнить с</span>
+                <Select
+                  className="field-base h-9 w-full px-3 text-xs"
+                  disabled={!sameCodePolicies.length}
+                  onChange={(event) => setDiffToVersion(event.currentTarget.value)}
+                  value={diffToVersion}
+                >
+                  {sameCodePolicies.map((policy) => (
+                    <option key={`diff-to-${policy.version}`} value={policy.version}>
+                      {policy.version}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+            <Button
+              className="mt-2 w-full"
+              disabled={disabled || !lifecycleActionsEnabled || !diffFromVersion || !diffToVersion || diffMutation.isPending}
+              onClick={() => diffMutation.mutate()}
+              size="sm"
+              variant="outline"
+            >
+              Сравнить версии
+            </Button>
+
+            {diffResult ? (
+              <div className="mt-3 max-h-36 overflow-y-auto rounded-[0.75rem] border border-border bg-surface-subtle px-3 py-2">
+                {diffResult.changes.length ? (
+                  <div className="space-y-2 text-xs text-slate-700">
+                    {diffResult.changes.map((change) => (
+                      <div className="grid gap-1" key={change.path}>
+                        <code className="font-mono text-[11px] text-slate-950">{change.path}</code>
+                        <span>
+                          {String(change.from ?? "пусто")} → {String(change.to ?? "пусто")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-600">Отличий в конфиге нет.</p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>Версия для деактивации</span>
+                <Select
+                  className="field-base h-9 w-full px-3 text-xs"
+                  disabled={!sameCodePolicies.length}
+                  onChange={(event) => setDeactivateVersion(event.currentTarget.value)}
+                  value={deactivateVersion}
+                >
+                  {sameCodePolicies.map((policy) => (
+                    <option key={`deactivate-${policy.version}`} value={policy.version}>
+                      {policy.version}
+                      {policy.is_active ? " · активна" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-slate-700">
+                <span>Версия для отката</span>
+                <Select
+                  className="field-base h-9 w-full px-3 text-xs"
+                  disabled={!sameCodePolicies.length}
+                  onChange={(event) => setRollbackVersion(event.currentTarget.value)}
+                  value={rollbackVersion}
+                >
+                  {sameCodePolicies.map((policy) => (
+                    <option key={`rollback-${policy.version}`} value={policy.version}>
+                      {policy.version}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <Button
+                disabled={disabled || !lifecycleActionsEnabled || !deactivateVersion || deactivateMutation.isPending}
+                onClick={() => deactivateMutation.mutate()}
+                size="sm"
+                variant="outline"
+              >
+                Деактивировать выбранную версию
+              </Button>
+              <Button
+                disabled={disabled || !lifecycleActionsEnabled || !rollbackVersion || rollbackMutation.isPending}
+                onClick={() => rollbackMutation.mutate()}
+                size="sm"
+                variant="secondary"
+              >
+                Откатить к выбранной версии
+              </Button>
+            </div>
           </div>
           <textarea
             className="field-base min-h-[300px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AdminFormsPayload } from "./api";
+import type { AdminFormsPayload, AdminHelpdeskModelPayload } from "./api";
 import { FormsBuilderPanel } from "./forms-builder-panel";
 
 
@@ -76,7 +76,7 @@ function createFormsPayload(): AdminFormsPayload {
   };
 }
 
-function createHelpdeskModelRegistryPayload() {
+function createHelpdeskModelRegistryPayload(): AdminHelpdeskModelPayload {
   return {
     summary: {
       request_templates_count: 0,
@@ -90,6 +90,9 @@ function createHelpdeskModelRegistryPayload() {
       registry_endpoint: "/api/web/admin/helpdesk-model/policies",
       publish_from_form_endpoint: "/api/web/admin/helpdesk-model/request-templates/publish-from-form",
       publish_policy_endpoint: "/api/web/admin/helpdesk-model/policies/publish",
+      policy_diff_endpoint: "/api/web/admin/helpdesk-model/policies/diff",
+      policy_deactivate_endpoint: "/api/web/admin/helpdesk-model/policies/deactivate",
+      policy_rollback_endpoint: "/api/web/admin/helpdesk-model/policies/rollback",
       publish_smart_view_endpoint: "/api/web/admin/helpdesk-model/smart-views/publish",
       inheritance_order: ["system", "ticket_type", "category", "request_template"],
       policy_kinds: ["approval", "closure", "diagnostic", "notification", "ola", "priority", "routing", "sla", "visibility"],
@@ -1208,5 +1211,133 @@ describe("FormsBuilderPanel", () => {
       }
     });
     expect(await screen.findByText(/Политика printer_routing_policy опубликована/)).toBeInTheDocument();
+  });
+
+  it("вызывает diff, deactivate и rollback для версий политики", async () => {
+    const lifecycleCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const registryPayload = createHelpdeskModelRegistryPayload();
+    registryPayload.policies.routing = [
+      {
+        kind: "routing",
+        table: "routing_policies",
+        code: "printer_routing_policy",
+        version: "1.0.1",
+        title: "Routing policy",
+        description: null,
+        scope_level: "request_template",
+        scope_ref: "printer",
+        config: { default_queue: "servicedesk_l1" },
+        is_active: false,
+        published_at: "2026-04-30T10:00:00+05:00",
+        created_at: "2026-04-30T10:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-04-30T10:00:00+05:00",
+        updated_by: "admin1"
+      },
+      {
+        kind: "routing",
+        table: "routing_policies",
+        code: "printer_routing_policy",
+        version: "1.0.2",
+        title: "Routing policy v2",
+        description: null,
+        scope_level: "request_template",
+        scope_ref: "printer",
+        config: { default_queue: "networks" },
+        is_active: true,
+        published_at: "2026-04-30T11:00:00+05:00",
+        created_at: "2026-04-30T11:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-04-30T11:00:00+05:00",
+        updated_by: "admin1"
+      }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: registryPayload });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies/diff" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          lifecycleCalls.push({ url, body });
+          return jsonResponse({
+            status: "success",
+            data: {
+              kind: "routing",
+              code: "printer_routing_policy",
+              from_policy: registryPayload.policies.routing[0],
+              to_policy: registryPayload.policies.routing[1],
+              changes: [{ path: "config.default_queue", from: "servicedesk_l1", to: "networks" }]
+            }
+          });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies/deactivate" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          lifecycleCalls.push({ url, body });
+          return jsonResponse({
+            status: "success",
+            data: {
+              policy: { ...registryPayload.policies.routing[1], is_active: false },
+              message: "Политика printer_routing_policy версии 1.0.2 деактивирована."
+            }
+          });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies/rollback" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          lifecycleCalls.push({ url, body });
+          return jsonResponse({
+            status: "success",
+            data: {
+              policy: { ...registryPayload.policies.routing[0], version: "1.0.3", is_active: true },
+              message: "Политика printer_routing_policy откатана к версии 1.0.1; новая активная версия 1.0.3."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редакторы политик");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Код политики")).toHaveValue("printer_routing_policy");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сравнить версии" }));
+    expect(await screen.findByText("config.default_queue")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Деактивировать выбранную версию" }));
+    expect(await screen.findByText(/деактивирована/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Откатить к выбранной версии" }));
+    expect(await screen.findByText(/откатана к версии 1.0.1/)).toBeInTheDocument();
+
+    expect(lifecycleCalls).toEqual([
+      {
+        url: "/api/web/admin/helpdesk-model/policies/diff",
+        body: { kind: "routing", code: "printer_routing_policy", from_version: "1.0.1", to_version: "1.0.2" }
+      },
+      {
+        url: "/api/web/admin/helpdesk-model/policies/deactivate",
+        body: { kind: "routing", code: "printer_routing_policy", version: "1.0.2" }
+      },
+      {
+        url: "/api/web/admin/helpdesk-model/policies/rollback",
+        body: { kind: "routing", code: "printer_routing_policy", target_version: "1.0.1" }
+      }
+    ]);
   });
 });
