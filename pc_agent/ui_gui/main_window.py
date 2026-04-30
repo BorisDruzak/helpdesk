@@ -727,14 +727,14 @@ class MainWindow(QMainWindow):
         title.setObjectName("MainTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Краткая сводка агента по текущим тикетам и профилю.")
+        subtitle = QLabel("Краткая сводка агента по текущим обращениям и профилю.")
         subtitle.setObjectName("MainSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         metrics_row = QHBoxLayout()
         metrics_row.setSpacing(14)
-        total_card, self.dashboard_total_value = self._make_dashboard_metric("Все тикеты", "0")
+        total_card, self.dashboard_total_value = self._make_dashboard_metric("Все обращения", "0")
         open_card, self.dashboard_open_value = self._make_dashboard_metric("Открытые", "0")
         closed_card, self.dashboard_closed_value = self._make_dashboard_metric("Закрытые", "0")
         metrics_row.addWidget(total_card)
@@ -752,7 +752,7 @@ class MainWindow(QMainWindow):
 
         actions_row = QHBoxLayout()
         actions_row.addStretch(1)
-        dashboard_tickets_btn = QPushButton("  Перейти к тикетам")
+        dashboard_tickets_btn = QPushButton("  Перейти к обращениям")
         dashboard_tickets_btn.setObjectName("SecondaryButton")
         dashboard_tickets_btn.setIcon(QIcon(theme.icon_path("ticket")))
         dashboard_tickets_btn.setIconSize(QSize(20, 20))
@@ -760,7 +760,7 @@ class MainWindow(QMainWindow):
         dashboard_tickets_btn.clicked.connect(lambda: self._select_sidebar_view("tickets", expand=True))
         actions_row.addWidget(dashboard_tickets_btn)
 
-        dashboard_create_btn = QPushButton("  Создать тикет")
+        dashboard_create_btn = QPushButton("  Создать обращение")
         dashboard_create_btn.setObjectName("PrimaryButton")
         dashboard_create_btn.setIcon(QIcon(theme.icon_path("plus")))
         dashboard_create_btn.setIconSize(QSize(20, 20))
@@ -802,8 +802,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_sidebar_labels(self) -> None:
         self.sidebar_dashboard_btn.setText("  Рабочий стол")
-        self.sidebar_create_ticket_btn.setText("  Создать тикет")
-        self.sidebar_tickets_btn.setText("  Тикеты")
+        self.sidebar_create_ticket_btn.setText("  Создать обращение")
+        self.sidebar_tickets_btn.setText("  Обращения")
         self.sidebar_settings_btn.setText("  Настройки")
         profile = self.chat_panel._active_profile()
         if profile:

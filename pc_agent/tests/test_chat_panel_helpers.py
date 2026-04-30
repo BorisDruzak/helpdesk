@@ -1,17 +1,27 @@
 import sys
+import inspect
+import os
 from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ui_gui.chat_panel as chat_panel_module
+import ui_gui.main_window as main_window_module
+
+from PySide6.QtWidgets import QApplication, QListWidget, QLineEdit  # noqa: E402
 
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
+    build_request_creation_preview,
+    build_diagnostic_consent_payload,
     build_default_ticket_form_pack,
     build_priority_facts_payload,
     build_priority_facts_payload_from_form,
     build_ticket_sla_user_summary,
     can_user_confirm_close,
+    diagnostic_consent_required,
     merge_ticket_stream,
     message_visual_role,
     normalize_ticket_form_pack,
@@ -66,6 +76,37 @@ def test_ticket_request_form_summary_rows_extracts_form_title_and_fields():
         ("Что сломалось", "МФУ"),
         ("Кабинет", "4"),
     ]
+
+
+def test_ticket_creation_user_microcopy_uses_request_wording():
+    creation_source = "\n".join(
+        [
+            inspect.getsource(chat_panel_module.TicketCreateDialog),
+            inspect.getsource(chat_panel_module.TicketCreateWizardWidget),
+            inspect.getsource(chat_panel_module.TicketsSidebarWidget),
+            inspect.getsource(chat_panel_module.ChatPanel._async_create_ticket),
+            inspect.getsource(main_window_module.MainWindow._build_dashboard_page),
+            inspect.getsource(main_window_module.MainWindow._refresh_sidebar_labels),
+        ]
+    )
+
+    forbidden_visible_fragments = [
+        "Создать тикет",
+        "Создание тикета",
+        "Тип заявки",
+        "Загружаю формы создания тикета",
+        "Создаю тикет",
+        "Тикет создан",
+        "После создания тикета",
+        "Нельзя создать тикет",
+        "Перейти к тикетам",
+    ]
+    for fragment in forbidden_visible_fragments:
+        assert fragment not in creation_source
+
+    assert "Создать обращение" in creation_source
+    assert "Шаблон обращения" in creation_source
+    assert "Обращение создано" in creation_source
 
 
 def test_agent_default_forms_carry_process_type_and_priority_policy():
@@ -163,6 +204,100 @@ def test_build_priority_facts_payload_from_server_driven_form_policy():
         "work_continuity": "work_stopped_no_workaround",
         "business_importance": "deadline_today",
     }
+
+
+def test_dynamic_fields_widget_supports_extended_field_types():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {
+                    "key": "symptoms",
+                    "label": "Симптомы",
+                    "type": "multi_select",
+                    "required": True,
+                    "options": [
+                        {"value": "dns", "label": "DNS"},
+                        {"value": "proxy", "label": "Прокси"},
+                    ],
+                },
+                {"key": "started_at", "label": "Когда началось", "type": "datetime", "required": True},
+                {"key": "target_url", "label": "Адрес", "type": "url", "required": True},
+                {"key": "owner", "label": "Владелец", "type": "user_picker", "required": False},
+                {"key": "contact_phone", "label": "Телефон", "type": "phone", "required": False},
+            ]
+        },
+        values={
+            "symptoms": ["dns", "proxy"],
+            "started_at": "2026-05-01T09:30",
+            "target_url": "https://example.test",
+            "owner": "ivan.petrov",
+            "contact_phone": "+7 900 000-00-00",
+        },
+    )
+
+    assert isinstance(widget._widgets["symptoms"], QListWidget)
+    assert isinstance(widget._widgets["started_at"], QLineEdit)
+    assert widget.values() == {
+        "symptoms": ["dns", "proxy"],
+        "started_at": "2026-05-01T09:30",
+        "target_url": "https://example.test",
+        "owner": "ivan.petrov",
+        "contact_phone": "+7 900 000-00-00",
+    }
+    assert widget.missing_required_labels() == []
+
+
+def test_build_request_creation_preview_uses_template_policies():
+    preview = build_request_creation_preview(
+        {
+            "request_template_title": "Не открывается сайт",
+            "routing_policy": {
+                "default_queue": "networks",
+            },
+            "approval_policy": {
+                "required": True,
+            },
+            "diagnostic_policy": {
+                "consent": {"required_for_requester_device": True},
+            },
+            "sla_policy": {
+                "targets": {
+                    "first_response": {"P1": "1h"},
+                    "resolution": {"P1": "4h"},
+                }
+            },
+        },
+        priority_class="P1",
+    )
+
+    assert "Шаблон: Не открывается сайт" in preview
+    assert "Предварительно попадёт в очередь: networks" in preview
+    assert "Потребуется согласование" in preview
+    assert "Перед диагностикой потребуется ваше согласие" in preview
+    assert "Вам должны ответить примерно за 1 ч" in preview
+    assert "Решение или обходной вариант ожидается примерно за 4 ч" in preview
+
+
+def test_diagnostic_consent_payload_marks_requester_device_decision():
+    form = {
+        "request_template_key": "website_unavailable",
+        "diagnostic_policy": {
+            "consent": {"required_for_requester_device": True},
+        },
+    }
+
+    assert diagnostic_consent_required(form) is True
+    assert build_diagnostic_consent_payload(form, granted=True) == {
+        "required": True,
+        "granted": True,
+        "scope": "requester_device",
+        "source": "pc_agent_create",
+        "request_template_key": "website_unavailable",
+    }
+    assert build_diagnostic_consent_payload({}, granted=True) is None
 
 
 def test_build_priority_facts_payload_keeps_legacy_booleans_and_structured_facts():

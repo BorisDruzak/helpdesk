@@ -44,6 +44,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_submission,
 )
+from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from playbooks.form_triggers import start_ticket_created_playbooks
@@ -147,6 +148,9 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                     )
                     validated_submission = await apply_effective_registry_policies(db_session, validated_submission)
                     extra_custom_fields = build_form_custom_fields(validated_submission)
+                    diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
+                    if diagnostic_consent:
+                        extra_custom_fields["diagnostic_consent"] = diagnostic_consent
                     ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
                     template_context = validated_submission.get("template_context") or {}
                     priority_policy = template_context.get("priority_policy") or {}

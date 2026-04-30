@@ -68,6 +68,7 @@ SUPPORT_MESSAGE_ROLES = {"support", "admin"}
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
 OPTION_FIELD_TYPES = {"select", "radio"}
+MULTI_SELECT_FIELD_TYPES = {"multi_select"}
 
 DEFAULT_PRIORITY_POLICY = {
     "impact_field": "impact_scope",
@@ -235,6 +236,91 @@ def build_priority_facts_payload_from_form(
         urgency_reason=str(fallback.get("urgency_reason") or ""),
         importance_reason=str(fallback.get("importance_reason") or ""),
     )
+
+
+def _duration_to_user_text(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    match = re.match(r"^(\d+)\s*([mhd])$", raw)
+    if not match:
+        return raw
+    amount = int(match.group(1))
+    unit = match.group(2)
+    if unit == "m":
+        return f"{amount} мин"
+    if unit == "h":
+        return f"{amount} ч"
+    return f"{amount} дн"
+
+
+def _target_for_priority(policy: dict[str, Any], target_key: str, priority_class: str) -> str:
+    targets = policy.get("targets") if isinstance(policy.get("targets"), dict) else {}
+    target_block = targets.get(target_key) if isinstance(targets.get(target_key), dict) else {}
+    return str(target_block.get(priority_class) or target_block.get("P3") or "").strip()
+
+
+def build_request_creation_preview(form_def: Optional[dict[str, Any]], *, priority_class: str = "P3") -> str:
+    if not isinstance(form_def, dict):
+        return "Шаблон обращения пока не выбран."
+    lines: list[str] = []
+    title = str(form_def.get("request_template_title") or form_def.get("title") or form_def.get("key") or "").strip()
+    if title:
+        lines.append(f"Шаблон: {title}")
+
+    routing_policy = form_def.get("routing_policy") if isinstance(form_def.get("routing_policy"), dict) else {}
+    fallback = routing_policy.get("fallback") if isinstance(routing_policy.get("fallback"), dict) else {}
+    queue = (
+        routing_policy.get("default_queue")
+        or routing_policy.get("default_queue_id")
+        or fallback.get("queue")
+        or form_def.get("default_queue_id")
+    )
+    if queue:
+        lines.append(f"Предварительно попадёт в очередь: {queue}")
+
+    approval_policy = form_def.get("approval_policy") if isinstance(form_def.get("approval_policy"), dict) else {}
+    if approval_policy.get("required"):
+        lines.append("Потребуется согласование.")
+
+    diagnostic_policy = form_def.get("diagnostic_policy") if isinstance(form_def.get("diagnostic_policy"), dict) else {}
+    consent = diagnostic_policy.get("consent") if isinstance(diagnostic_policy.get("consent"), dict) else {}
+    if diagnostic_policy.get("requires_user_consent") or consent.get("required_for_requester_device"):
+        lines.append("Перед диагностикой потребуется ваше согласие.")
+    elif diagnostic_policy.get("suggested_playbooks") or diagnostic_policy.get("suggested_playbook"):
+        lines.append("После создания можно будет запустить диагностику.")
+
+    sla_policy = form_def.get("sla_policy") if isinstance(form_def.get("sla_policy"), dict) else {}
+    first_response = _duration_to_user_text(_target_for_priority(sla_policy, "first_response", priority_class))
+    resolution = _duration_to_user_text(_target_for_priority(sla_policy, "resolution", priority_class))
+    if first_response:
+        lines.append(f"Вам должны ответить примерно за {first_response}.")
+    if resolution:
+        lines.append(f"Решение или обходной вариант ожидается примерно за {resolution}.")
+
+    if not lines:
+        return "После создания служба поддержки рассчитает очередь, сроки и дальнейшие действия."
+    return "\n".join(lines)
+
+
+def diagnostic_consent_required(form_def: Optional[dict[str, Any]]) -> bool:
+    if not isinstance(form_def, dict):
+        return False
+    diagnostic_policy = form_def.get("diagnostic_policy") if isinstance(form_def.get("diagnostic_policy"), dict) else {}
+    consent = diagnostic_policy.get("consent") if isinstance(diagnostic_policy.get("consent"), dict) else {}
+    return bool(diagnostic_policy.get("requires_user_consent") or consent.get("required_for_requester_device"))
+
+
+def build_diagnostic_consent_payload(form_def: Optional[dict[str, Any]], *, granted: bool) -> Optional[dict[str, Any]]:
+    if not diagnostic_consent_required(form_def):
+        return None
+    return {
+        "required": True,
+        "granted": bool(granted),
+        "scope": "requester_device",
+        "source": "pc_agent_create",
+        "request_template_key": str((form_def or {}).get("request_template_key") or (form_def or {}).get("key") or "").strip(),
+    }
 
 
 def build_default_ticket_form_pack() -> dict[str, Any]:
@@ -455,6 +541,11 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
             "description": str(form.get("description") or "").strip(),
             "priority_policy": form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {},
             "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
+            "routing_policy": form.get("routing_policy") if isinstance(form.get("routing_policy"), dict) else {},
+            "approval_policy": form.get("approval_policy") if isinstance(form.get("approval_policy"), dict) else {},
+            "diagnostic_policy": form.get("diagnostic_policy") if isinstance(form.get("diagnostic_policy"), dict) else {},
+            "sla_policy": form.get("sla_policy") if isinstance(form.get("sla_policy"), dict) else {},
+            "default_queue_id": form.get("default_queue_id"),
             "fields": [],
         }
         raw_fields = form.get("fields") if isinstance(form.get("fields"), list) else []
@@ -892,6 +983,22 @@ class TicketDynamicFieldsWidget(QWidget):
                     input_widget.setCurrentIndex(current_index)
                 input_widget.currentIndexChanged.connect(self._on_any_changed)
                 widget = input_widget
+            elif field_type in MULTI_SELECT_FIELD_TYPES:
+                input_widget = QListWidget()
+                input_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+                current_values = values.get(field_key)
+                if isinstance(current_values, list):
+                    selected_values = {str(item) for item in current_values}
+                else:
+                    selected_values = {item.strip() for item in str(current_values or "").split(",") if item.strip()}
+                for option in field_def.get("options") or []:
+                    option_value = str(option.get("value") or "").strip()
+                    item = QListWidgetItem(option.get("label") or option_value)
+                    item.setData(Qt.ItemDataRole.UserRole, option_value)
+                    input_widget.addItem(item)
+                    item.setSelected(option_value in selected_values)
+                input_widget.itemSelectionChanged.connect(self._on_any_changed)
+                widget = input_widget
             elif field_type == "checkbox":
                 input_widget = QCheckBox(field_def.get("placeholder") or "Подтверждаю")
                 input_widget.setChecked(bool(values.get(field_key)))
@@ -936,6 +1043,12 @@ class TicketDynamicFieldsWidget(QWidget):
             return widget.toPlainText().strip()
         if isinstance(widget, QComboBox):
             return str(widget.currentData() or "").strip()
+        if isinstance(widget, QListWidget):
+            result: list[str] = []
+            for item in widget.selectedItems():
+                value = item.data(Qt.ItemDataRole.UserRole)
+                result.append(str(value if value is not None else item.text()).strip())
+            return [item for item in result if item]
         if isinstance(widget, QCheckBox):
             return widget.isChecked()
         if isinstance(widget, QLineEdit):
@@ -967,6 +1080,9 @@ class TicketDynamicFieldsWidget(QWidget):
             if field_def.get("type") == "checkbox":
                 if value is not True:
                     missing.append(str(field_def.get("label") or field_key))
+            elif isinstance(value, list):
+                if not value:
+                    missing.append(str(field_def.get("label") or field_key))
             elif not str(value or "").strip():
                 missing.append(str(field_def.get("label") or field_key))
         return missing
@@ -983,6 +1099,9 @@ class TicketDynamicFieldsWidget(QWidget):
             value = values.get(field_key)
             if field_def.get("type") == "checkbox":
                 if value is not True:
+                    missing.add(field_key)
+            elif isinstance(value, list):
+                if not value:
                     missing.add(field_key)
             elif not str(value or "").strip():
                 missing.add(field_key)
@@ -1044,7 +1163,7 @@ class TicketCreateDialog(QDialog):
         super().__init__(panel)
         self.panel = panel
 
-        self.setWindowTitle("Создать тикет")
+        self.setWindowTitle("Создать обращение")
         self.setModal(True)
         self.setMinimumWidth(560)
 
@@ -1070,7 +1189,7 @@ class TicketCreateDialog(QDialog):
         profile_layout.addLayout(profile_buttons)
         layout.addWidget(profile_group)
 
-        forms_group = QGroupBox("Тип заявки")
+        forms_group = QGroupBox("Шаблон обращения")
         forms_layout = QVBoxLayout(forms_group)
         self.form_selector = QComboBox()
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
@@ -1094,15 +1213,18 @@ class TicketCreateDialog(QDialog):
         self.impact_scope_select.addItem("Несколько человек", "group")
         self.impact_scope_select.addItem("Весь отдел", "department")
         self.impact_scope_select.addItem("Здание / организация / критичная система", "building_or_org")
+        self.impact_scope_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.work_continuity_select = QComboBox()
         self.work_continuity_select.addItem("Есть обходной путь", "workaround_available")
         self.work_continuity_select.addItem("Можно работать частично", "partial_work")
         self.work_continuity_select.addItem("Работа остановлена, обходного пути нет", "work_stopped_no_workaround")
+        self.work_continuity_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.business_importance_select = QComboBox()
         self.business_importance_select.addItem("Обычная рабочая ситуация", "normal")
         self.business_importance_select.addItem("Есть важный срок", "deadline")
         self.business_importance_select.addItem("Сегодня / завтра крайний срок", "deadline_today")
         self.business_importance_select.addItem("ИБ / публичная услуга / критичный процесс", "security")
+        self.business_importance_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.urgency_reason_input = QLineEdit()
         self.urgency_reason_input.setPlaceholderText("Что именно остановлено или затруднено")
         self.importance_reason_input = QLineEdit()
@@ -1116,6 +1238,11 @@ class TicketCreateDialog(QDialog):
         self.priority_dynamic_fields_widget = TicketDynamicFieldsWidget(self)
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
+        self.diagnostic_consent_checkbox = QCheckBox(
+            "Разрешаю выполнить диагностику моего устройства для этого обращения"
+        )
+        self.diagnostic_consent_checkbox.setVisible(False)
+        layout.addWidget(self.diagnostic_consent_checkbox)
 
         buttons = QHBoxLayout()
         self.create_btn = QPushButton("Создать")
@@ -1187,11 +1314,14 @@ class TicketCreateDialog(QDialog):
             self.dynamic_fields_widget.clear_form()
             self.priority_dynamic_fields_widget.clear_form()
             return
-        self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы тикет сразу попал в нужную очередь.")
+        self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы оно сразу попало в нужный поток.")
         priority_keys = set(ticket_form_priority_field_keys(form))
         self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
         self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
         self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
+        consent_required = diagnostic_consent_required(form)
+        self.diagnostic_consent_checkbox.setVisible(consent_required)
+        self.diagnostic_consent_checkbox.setChecked(False)
 
     def _on_form_fields_changed(self) -> None:
         self.form_summary.setText((self._selected_form() or {}).get("description") or "")
@@ -1238,7 +1368,11 @@ class TicketCreateDialog(QDialog):
         )
         for key, value in (priority_facts.get("form_payload") or {}).items():
             form_payload.setdefault(key, value)
-        return {
+        consent_payload = build_diagnostic_consent_payload(
+            selected_form,
+            granted=self.diagnostic_consent_checkbox.isChecked(),
+        )
+        payload = {
             "title": f"Обращение: {selected_form.get('request_template_title') or selected_form.get('title') or 'служба поддержки'}",
             "description": description,
             "urgency": priority_facts["urgency"],
@@ -1252,6 +1386,9 @@ class TicketCreateDialog(QDialog):
             "form_payload": form_payload,
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
         }
+        if consent_payload is not None:
+            payload["diagnostic_consent"] = consent_payload
+        return payload
 
 
 class TicketCreateWizardWidget(QFrame):
@@ -1277,7 +1414,7 @@ class TicketCreateWizardWidget(QFrame):
         outer.setContentsMargins(14, 14, 14, 14)
         outer.setSpacing(12)
 
-        title = QLabel("Создание тикета")
+        title = QLabel("Создание обращения")
         title.setObjectName("ProfileSidebarTitle")
         outer.addWidget(title)
 
@@ -1324,7 +1461,7 @@ class TicketCreateWizardWidget(QFrame):
         self._next_btn = QPushButton("Далее")
         self._next_btn.setObjectName("PrimaryButton")
         self._next_btn.clicked.connect(self._on_next_clicked)
-        self._submit_btn = QPushButton("Создать тикет")
+        self._submit_btn = QPushButton("Создать обращение")
         self._submit_btn.setObjectName("PrimaryButton")
         self._submit_btn.clicked.connect(self._on_submit_clicked)
         footer.addWidget(self._cancel_btn)
@@ -1372,7 +1509,7 @@ class TicketCreateWizardWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
-        group = QGroupBox("Шаг 2. Тип заявки и уточнения")
+        group = QGroupBox("Шаг 2. Шаблон обращения и уточнения")
         group_layout = QVBoxLayout(group)
         self.form_selector = QComboBox()
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
@@ -1402,7 +1539,7 @@ class TicketCreateWizardWidget(QFrame):
         description_layout.addWidget(self.description_input)
 
         attachments_hint = QLabel(
-            "При необходимости сразу приложите скриншот или видео. После создания тикета они уйдут первым сообщением."
+            "При необходимости сразу приложите скриншот или видео. После создания обращения они уйдут первым сообщением."
         )
         attachments_hint.setWordWrap(True)
         attachments_hint.setObjectName("ProfileHint")
@@ -1450,15 +1587,18 @@ class TicketCreateWizardWidget(QFrame):
         self.impact_scope_select.addItem("Несколько человек", "group")
         self.impact_scope_select.addItem("Весь отдел", "department")
         self.impact_scope_select.addItem("Здание / организация / критичная система", "building_or_org")
+        self.impact_scope_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.work_continuity_select = QComboBox()
         self.work_continuity_select.addItem("Есть обходной путь", "workaround_available")
         self.work_continuity_select.addItem("Можно работать частично", "partial_work")
         self.work_continuity_select.addItem("Работа остановлена, обходного пути нет", "work_stopped_no_workaround")
+        self.work_continuity_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.business_importance_select = QComboBox()
         self.business_importance_select.addItem("Обычная рабочая ситуация", "normal")
         self.business_importance_select.addItem("Есть важный срок", "deadline")
         self.business_importance_select.addItem("Сегодня / завтра крайний срок", "deadline_today")
         self.business_importance_select.addItem("ИБ / публичная услуга / критичный процесс", "security")
+        self.business_importance_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.urgency_reason_input = QLineEdit()
         self.urgency_reason_input.setPlaceholderText("Что именно остановлено или затруднено")
         self.importance_reason_input = QLineEdit()
@@ -1473,18 +1613,27 @@ class TicketCreateWizardWidget(QFrame):
         self.priority_dynamic_fields_widget = TicketDynamicFieldsWidget(self)
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
+        self.diagnostic_consent_checkbox = QCheckBox(
+            "Разрешаю выполнить диагностику моего устройства для этого обращения"
+        )
+        self.diagnostic_consent_checkbox.stateChanged.connect(self._update_navigation_state)
+        layout.addWidget(self.diagnostic_consent_checkbox)
 
         summary = QLabel(
-            "После подтверждения заявка создастся с выбранным профилем, типом, описанием и материалами."
+            "После подтверждения обращение создастся с выбранным профилем, шаблоном, описанием и материалами."
         )
         summary.setWordWrap(True)
         summary.setObjectName("ProfileHint")
         layout.addWidget(summary)
+        self.preview_label = QLabel("")
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setObjectName("ProfileHint")
+        layout.addWidget(self.preview_label)
         layout.addStretch(1)
         self._stack.addWidget(page)
 
     async def async_prepare(self) -> None:
-        self._set_status("Загружаю формы создания тикета...", error=False)
+        self._set_status("Загружаю шаблоны обращений...", error=False)
         try:
             await self._panel._async_refresh_ticket_form_pack()
             self.refresh_from_panel()
@@ -1499,6 +1648,7 @@ class TicketCreateWizardWidget(QFrame):
         self._refresh_forms()
         self._sync_attachments_list()
         self._update_navigation_state()
+        self._update_creation_preview()
 
     def reset_wizard(self) -> None:
         self._current_step = 0
@@ -1550,6 +1700,28 @@ class TicketCreateWizardWidget(QFrame):
         self._panel._save_profiles()
         self.profile_summary.setText(self._panel.current_requester_profile_summary() or "Профиль не выбран.")
         self._update_navigation_state()
+        self._update_creation_preview()
+
+    def _current_priority_class_hint(self) -> str:
+        priority_facts = build_priority_facts_payload(
+            impact_scope=str(self.impact_scope_select.currentData() or "single_user"),
+            work_continuity=str(self.work_continuity_select.currentData() or "workaround_available"),
+            business_importance=str(self.business_importance_select.currentData() or "normal"),
+        )
+        if priority_facts["urgency"] and priority_facts["importance"]:
+            return "P1"
+        if priority_facts["urgency"] or priority_facts["importance"]:
+            return "P2"
+        return "P3"
+
+    def _update_creation_preview(self) -> None:
+        if hasattr(self, "preview_label"):
+            self.preview_label.setText(
+                build_request_creation_preview(
+                    self._selected_form(),
+                    priority_class=self._current_priority_class_hint(),
+                )
+            )
 
     def _refresh_forms(self) -> None:
         form_pack = self._panel.ticket_form_pack()
@@ -1582,19 +1754,24 @@ class TicketCreateWizardWidget(QFrame):
             self.priority_fallback_group.setVisible(True)
         else:
             self.form_summary.setText(
-                form.get("description") or "Уточните детали, чтобы тикет сразу попал в нужный поток."
+                form.get("description") or "Уточните детали, чтобы обращение сразу попало в нужный поток."
             )
             priority_keys = set(ticket_form_priority_field_keys(form))
             self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys)
             self.priority_dynamic_fields_widget.set_form(form, include_keys=priority_keys)
             self.priority_dynamic_fields_widget.setVisible(bool(priority_keys))
             self.priority_fallback_group.setVisible(not bool(priority_keys))
+            consent_required = diagnostic_consent_required(form)
+            self.diagnostic_consent_checkbox.setVisible(consent_required)
+            self.diagnostic_consent_checkbox.setChecked(False)
         self._update_navigation_state()
+        self._update_creation_preview()
 
     def _on_form_fields_changed(self) -> None:
         self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
         self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
         self._update_navigation_state()
+        self._update_creation_preview()
 
     def _on_manage_profiles(self) -> None:
         self._panel.open_profile_manager(start_new=True)
@@ -1781,7 +1958,7 @@ class TicketCreateWizardWidget(QFrame):
             missing_fields = self.dynamic_fields_widget.validate_required_fields(show_feedback=True)
             if missing_fields:
                 return "Заполните обязательные поля: " + ", ".join(missing_fields)
-            return "Выберите тип заявки."
+            return "Выберите шаблон обращения."
         if step == 2:
             return "Опишите проблему, чтобы можно было создать заявку."
         if step == 3:
@@ -1826,7 +2003,11 @@ class TicketCreateWizardWidget(QFrame):
         )
         for key, value in (priority_facts.get("form_payload") or {}).items():
             form_payload.setdefault(key, value)
-        return {
+        consent_payload = build_diagnostic_consent_payload(
+            selected_form,
+            granted=self.diagnostic_consent_checkbox.isChecked(),
+        )
+        payload = {
             "title": f"Обращение: {selected_form.get('request_template_title') or selected_form.get('title') or 'служба поддержки'}",
             "description": description,
             "urgency": priority_facts["urgency"],
@@ -1841,6 +2022,9 @@ class TicketCreateWizardWidget(QFrame):
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
             "attachment_paths": list(self._attachment_paths),
         }
+        if consent_payload is not None:
+            payload["diagnostic_consent"] = consent_payload
+        return payload
 
     def _on_submit_clicked(self) -> None:
         if not self._all_required_steps_ready():
@@ -1855,7 +2039,7 @@ class TicketCreateWizardWidget(QFrame):
     async def _async_submit(self) -> None:
         self._submitting = True
         self._update_navigation_state()
-        self._set_status("Создаю тикет и подготавливаю первое сообщение...", error=False)
+        self._set_status("Создаю обращение и подготавливаю первое сообщение...", error=False)
         try:
             result = await self._panel._async_create_ticket(
                 self._payload(),
@@ -1865,12 +2049,12 @@ class TicketCreateWizardWidget(QFrame):
             ticket = result.get("ticket", {}) if isinstance(result, dict) else {}
             ticket_id = str(ticket.get("ticket_id") or "")
             code = result.get("public_access_code") or "—"
-            self._set_status(f"Тикет создан. Код доступа: {code}.", error=False)
+            self._set_status(f"Обращение создано. Код доступа: {code}.", error=False)
             self.reset_wizard()
             self.ticketCreated.emit(ticket_id)
         except Exception as exc:
-            logger.error(f"Ошибка создания тикета из мастера: {exc}")
-            self._set_status(f"Не удалось создать тикет: {exc}", error=True)
+            logger.error(f"Ошибка создания обращения из мастера: {exc}")
+            self._set_status(f"Не удалось создать обращение: {exc}", error=True)
             QMessageBox.critical(self, "Ошибка", str(exc))
         finally:
             self._submitting = False
@@ -1973,7 +2157,7 @@ class ProfileSidebarWidget(QFrame):
     def refresh_from_panel(self) -> None:
         profile = self._panel._active_profile()
         if profile is None:
-            self._hint.setText("Профиль не выбран. Создайте или выберите профиль — без него нельзя создать тикет.")
+            self._hint.setText("Профиль не выбран. Создайте или выберите профиль — без него нельзя создать обращение.")
             self._fld_display.setText("—")
             self._fld_full.setText("—")
             self._fld_location.setText("—")
@@ -2029,18 +2213,18 @@ class TicketsSidebarWidget(QFrame):
         outer.setContentsMargins(24, 24, 24, 24)
         outer.setSpacing(18)
 
-        title = QLabel("Тикеты")
+        title = QLabel("Обращения")
         title.setObjectName("MainTitle")
         outer.addWidget(title)
 
-        hint = QLabel("Список тикетов этого агента. Двойной клик открывает чат справа.")
+        hint = QLabel("Список ваших обращений. Двойной клик открывает чат справа.")
         hint.setObjectName("MainSubtitle")
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
         # Hidden compatibility button: create flow is now triggered from the left app menu,
         # but ChatPanel still toggles this button while the create dialog is in progress.
-        self.create_ticket_btn = QPushButton("Создать тикет")
+        self.create_ticket_btn = QPushButton("Создать обращение")
         self.create_ticket_btn.hide()
 
         search_row = QHBoxLayout()
@@ -2059,7 +2243,7 @@ class TicketsSidebarWidget(QFrame):
         self.filters_btn.setIcon(QIcon(theme.icon_path("filters")))
         self.filters_btn.setIconSize(QSize(20, 20))
         self.filters_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.filters_btn.setToolTip("Фильтры списка тикетов")
+        self.filters_btn.setToolTip("Фильтры списка обращений")
         self.filters_btn.clicked.connect(self._show_filters_menu)
         search_row.addWidget(self.filters_btn, 0)
         outer.addLayout(search_row)
@@ -2133,7 +2317,7 @@ class TicketsSidebarWidget(QFrame):
         menu = QMenu(self)
         theme.apply_agent_dialog_theme(menu)
 
-        all_action = menu.addAction("Все тикеты")
+        all_action = menu.addAction("Все обращения")
         all_action.setCheckable(True)
         all_action.setChecked(self.filter_open_checkbox.isChecked() and self.filter_closed_checkbox.isChecked())
         all_action.triggered.connect(lambda _checked=False: self._select_filter("all"))
@@ -2338,12 +2522,12 @@ class ChatPanel(QWidget):
         left_layout = QVBoxLayout(self.left_panel)
         left_layout.setSpacing(10)
 
-        self.back_to_list_btn = QPushButton("← К тикетам")
+        self.back_to_list_btn = QPushButton("← К обращениям")
         self.back_to_list_btn.setObjectName("SecondaryButton")
         self.back_to_list_btn.clicked.connect(self._show_list_screen)
         left_layout.addWidget(self.back_to_list_btn)
 
-        self.ticket_info_label = QLabel("Тикет не выбран")
+        self.ticket_info_label = QLabel("Обращение не выбрано")
         self.ticket_info_label.setWordWrap(True)
         self.ticket_info_label.setTextFormat(Qt.TextFormat.RichText)
         self.ticket_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
@@ -2354,7 +2538,7 @@ class ChatPanel(QWidget):
         )
         left_layout.addWidget(self.ticket_info_label)
 
-        self.ticket_meta_label = QLabel("Откройте тикет в списке.")
+        self.ticket_meta_label = QLabel("Откройте обращение в списке.")
         self.ticket_meta_label.setWordWrap(True)
         self.ticket_meta_label.setTextFormat(Qt.TextFormat.RichText)
         self.ticket_meta_label.setTextInteractionFlags(
@@ -2384,7 +2568,7 @@ class ChatPanel(QWidget):
         )
         center_layout.addWidget(self.ticket_status_top)
 
-        self.top_pinned_info = QLabel("Код авторизации и ссылка тикета появятся здесь.")
+        self.top_pinned_info = QLabel("Код авторизации и ссылка обращения появятся здесь.")
         self.top_pinned_info.setWordWrap(True)
         self.top_pinned_info.setTextFormat(Qt.TextFormat.RichText)
         self.top_pinned_info.setTextInteractionFlags(
@@ -2466,7 +2650,7 @@ class ChatPanel(QWidget):
 
         self.input_line = QLineEdit()
         self.input_line.setObjectName("ChatInputLine")
-        self.input_line.setPlaceholderText("Сообщение в тикет")
+        self.input_line.setPlaceholderText("Сообщение по обращению")
         self.input_line.returnPressed.connect(self._on_send)
         center_layout.addWidget(self.input_line)
 
@@ -2474,7 +2658,7 @@ class ChatPanel(QWidget):
         resolution_layout = QHBoxLayout(self.resolution_message_widget)
         resolution_layout.setContentsMargins(10, 8, 10, 8)
         self.resolution_prompt_label = QLabel(
-            "Поддержка перевела тикет в статус 'Решён'. Подтвердить закрытие?"
+            "Поддержка перевела обращение в статус 'Решён'. Подтвердить закрытие?"
         )
         self.resolution_prompt_label.setStyleSheet(
             f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_PRIMARY}; background: transparent;"
@@ -3073,7 +3257,7 @@ class ChatPanel(QWidget):
         except Exception as exc:
             if not self._is_closing:
                 logger.exception(
-                    "Ошибка загрузки списка тикетов: "
+                    "Ошибка загрузки списка обращений: "
                     f"type={type(exc).__name__} detail={exc!r}"
                 )
 
@@ -3297,7 +3481,7 @@ class ChatPanel(QWidget):
         except Exception as exc:
             if not self._is_closing:
                 logger.exception(
-                    "Ошибка загрузки тикета "
+                    "Ошибка загрузки обращения "
                     f"{self.active_ticket_id}: type={type(exc).__name__} detail={exc!r}"
                 )
 
@@ -3394,8 +3578,8 @@ class ChatPanel(QWidget):
             status_suffix = " • Непрочитано " + ", ".join(status_suffix_parts)
         safe_code = self._escape_html(str(code))
         safe_title = self._escape_html(str(title))
-        info_html = f"Тикет <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}"
-        status_text = f"Статус тикета: {ticket_status_label(status)}{status_suffix}"
+        info_html = f"Обращение <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}"
+        status_text = f"Статус обращения: {ticket_status_label(status)}{status_suffix}"
         status_style = (
             f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
         )
@@ -4150,6 +4334,7 @@ class ChatPanel(QWidget):
                 form_pack_key=payload.get("form_pack_key"),
                 form_pack_version=payload.get("form_pack_version"),
                 form_payload=payload.get("form_payload"),
+                diagnostic_consent=payload.get("diagnostic_consent"),
                 ticket_type=payload.get("ticket_type"),
                 trace_parent_action_id=action_id,
             )
@@ -4180,10 +4365,10 @@ class ChatPanel(QWidget):
             if sla_summary:
                 url = f"{url}\n{sla_summary}" if url else sla_summary
             if show_success_dialog:
-                QMessageBox.information(self, "Тикет создан", f"Код: {code}\n{url}")
+                QMessageBox.information(self, "Обращение создано", f"Код: {code}\n{url}")
             return result
         except Exception as exc:
-            logger.error(f"Ошибка создания тикета: {exc}")
+            logger.error(f"Ошибка создания обращения: {exc}")
             if raise_errors:
                 raise
             QMessageBox.critical(self, "Ошибка", str(exc))
@@ -4260,7 +4445,7 @@ class ChatPanel(QWidget):
 
     def _on_attach_files(self) -> None:
         if not self.active_ticket_id:
-            QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
+            QMessageBox.information(self, "Обращение", "Сначала откройте обращение.")
             return
         files, _ = QFileDialog.getOpenFileNames(self, "Выберите вложения")
         if not files:
@@ -4281,7 +4466,7 @@ class ChatPanel(QWidget):
 
     def _pick_and_attach_files(self, title: str, file_filter: str) -> None:
         if not self.active_ticket_id:
-            QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
+            QMessageBox.information(self, "Обращение", "Сначала откройте обращение.")
             return
         files, _ = QFileDialog.getOpenFileNames(self, title, "", file_filter)
         if not files:
@@ -4358,13 +4543,13 @@ class ChatPanel(QWidget):
 
     def _on_send_screenshot(self) -> None:
         if not self.active_ticket_id:
-            QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
+            QMessageBox.information(self, "Обращение", "Сначала откройте обращение.")
             return
         self._spawn_task(self._async_run_tool("screen.collect", {}, "Запрос на скриншот отправлен"))
 
     def _on_send_video(self) -> None:
         if not self.active_ticket_id:
-            QMessageBox.information(self, "Тикет", "Сначала откройте тикет.")
+            QMessageBox.information(self, "Обращение", "Сначала откройте обращение.")
             return
         self._spawn_task(
             self._async_run_tool(
@@ -4407,7 +4592,7 @@ class ChatPanel(QWidget):
 
     def _on_reject_resolution(self) -> None:
         self.resolution_message_widget.hide()
-        QMessageBox.information(self, "Решение отклонено", "Вы можете продолжить переписку в тикете.")
+        QMessageBox.information(self, "Решение отклонено", "Вы можете продолжить переписку в обращении.")
 
     async def _async_close_ticket(self) -> None:
         try:
@@ -4570,7 +4755,7 @@ class ChatPanel(QWidget):
         if url:
             self.top_pinned_info.setText(
                 f"Код авторизации: <a href='copy_auth_code:{self._escape_html(str(full_code or shown_code))}'><b>{self._escape_html(str(shown_code))}</b></a><br>"
-                f"Ссылка на веб-тикет: <a href='{self._escape_html(str(url))}'>{self._escape_html(str(url))}</a>"
+                f"Ссылка на веб-обращение: <a href='{self._escape_html(str(url))}'>{self._escape_html(str(url))}</a>"
             )
         else:
             self.top_pinned_info.setText(
@@ -4610,7 +4795,7 @@ class ChatPanel(QWidget):
             return
         from PySide6.QtWidgets import QApplication
         QApplication.clipboard().setText(code)
-        QMessageBox.information(self, "Скопировано", f"Номер тикета скопирован: {code}")
+        QMessageBox.information(self, "Скопировано", f"Номер обращения скопирован: {code}")
 
     def _on_top_info_link_activated(self, link: str) -> None:
         prefix = "copy_auth_code:"

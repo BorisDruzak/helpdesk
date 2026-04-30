@@ -2,7 +2,7 @@
 
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
-Status: новый план активен. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели: функционально около 75-80%, GUI около 65-70%.
+Status: новый план активен. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после срезов 1-6: функционально около 85%, GUI около 75%.
 
 ### Goal
 
@@ -60,11 +60,7 @@ Status: новый план активен. Старый серверный help
    - Behavior: start local GUI agent through `scripts/manage_local_agent.py`, create an обращение through a published template, verify server ticket context, route/priority/deadlines and agent UI result.
    - Verification: local GUI smoke, focused tests, `verify_workspace.py`, commit/release if server/agent contract changed.
 
-### Current Slice
-
-Slice 1: request-template-aware payload contract.
-
-Steps:
+### Completed Slice 1: request-template-aware payload contract
 
 - [x] Write failing tests for agent form normalization and payload: selected form should expose `request_template_key`, payload should send it, title should be "Обращение: <template title>".
 - [x] Write failing server/API test: `/tickets/create` accepts `request_template_key` and stores matching `custom_fields.request_template.key`.
@@ -88,6 +84,86 @@ Steps:
   - `python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 14 tests.
 - Workspace:
   - `python scripts/verify_workspace.py` -> passed.
+
+### Completed Slice 2: agent creation microcopy cleanup
+
+- [x] Write failing helper test proving visible creation UI still says "Создать тикет", "Тип заявки" and "Тикет создан".
+- [x] Replace visible creation-flow labels/statuses/dialog titles with "обращение" and "шаблон обращения".
+- [x] Replace remaining user-facing PC-agent dashboard/sidebar/chat labels such as "Создать тикет", "Тикеты", "Тикет не найден" with requester-friendly "обращение" wording.
+- [x] Keep internal API/log vocabulary stable where it is not shown to the user.
+
+Verification:
+
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_creation_user_microcopy_uses_request_wording -q` -> failed on `Создать тикет`.
+- GREEN: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_creation_user_microcopy_uses_request_wording -q` -> passed, 1 test.
+
+### Completed Slice 3: extended field types
+
+- [x] Write failing agent widget test for `multi_select`, `datetime`, `url`, `user_picker` and `phone`.
+- [x] Write failing server form submission test for `url`, `datetime`, `multi_select`, `user_picker`, `email` and `file`.
+- [x] Implement `multi_select` as a multi-selection list in the agent and keep text/picker/date-like types as line-edit fallback.
+- [x] Extend server form schema/submission normalization for the new field types.
+
+Verification:
+
+- RED:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_dynamic_fields_widget_supports_extended_field_types -q --tb=short` -> failed because `multi_select` rendered as `QLineEdit`.
+  - `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_submission_accepts_extended_field_types -q --tb=short` -> failed because `url` was unsupported.
+- GREEN:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_dynamic_fields_widget_supports_extended_field_types -q --tb=short` -> passed, 1 test.
+  - `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_submission_accepts_extended_field_types -q --tb=short` -> passed, 1 test.
+
+### Completed Slice 4: creation preview before submit
+
+- [x] Write failing helper test for a template preview that includes template title, likely queue, approval, diagnostic consent and user-facing response/resolution targets.
+- [x] Implement `build_request_creation_preview(...)` with local template policy metadata.
+- [x] Preserve `routing_policy`, `approval_policy`, `diagnostic_policy`, `sla_policy` and `default_queue_id` during agent form-pack normalization for preview use.
+- [x] Render the preview on step 4 of the embedded creation wizard and refresh it when template/priority facts change.
+
+Verification:
+
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_build_request_creation_preview_uses_template_policies -q` -> failed because helper was missing.
+- GREEN: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_build_request_creation_preview_uses_template_policies -q --tb=short` -> passed, 1 test.
+- Broader: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 40 tests.
+
+### Completed Slice 5: diagnostic consent UX at creation time
+
+- [x] Write failing agent helper/API tests for a diagnostic consent payload when a template requires requester-device consent.
+- [x] Write failing server tests for authenticated and public create-flow persistence of normalized `diagnostic_consent`.
+- [x] Implement agent checkbox/payload support in dialog and embedded wizard.
+- [x] Send `diagnostic_consent` through `TicketApiClient.create_ticket(...)`.
+- [x] Normalize and persist diagnostic consent for both `/api/tickets/create` and `/public_api/tickets/create`.
+- [x] Update navigation docs for the new create-flow contract.
+
+Verification:
+
+- RED: `python -m pytest server/tests/test_ticket_form_packs.py::test_create_ticket_stores_diagnostic_consent server/tests/test_ticket_form_packs.py::test_public_create_ticket_stores_diagnostic_consent -q --tb=short` -> failed on public create missing `custom_fields.diagnostic_consent`.
+- GREEN:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_diagnostic_consent_payload_marks_requester_device_decision pc_agent/tests/test_ticket_api_client_attachments.py::test_create_ticket_sends_diagnostic_consent -q --tb=short` -> passed, 2 tests.
+  - `python -m pytest server/tests/test_ticket_form_packs.py::test_create_ticket_stores_diagnostic_consent server/tests/test_ticket_form_packs.py::test_public_create_ticket_stores_diagnostic_consent -q --tb=short` -> passed, 2 tests.
+- Broader focused:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 42 tests.
+  - `python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 17 tests.
+
+### Current Slice
+
+Slice 6: local live validation and release path.
+
+- [x] Run `python scripts/verify_workspace.py`.
+- [x] Run agent runtime baseline tests required for `pc_agent/ui_gui/*` changes.
+- [x] Run a local GUI agent smoke through `scripts/manage_local_agent.py`.
+- [x] Document local create-flow live blocker: local `run_server.py` uses PostgreSQL at `127.0.0.1:5432`; without that DB it can answer `/api/health` but create-flow returns 500/service_unavailable, so DB-backed live create must be done after release/deploy on the remote stack.
+- [ ] Review scoped diff and commit only files from this plan.
+- [ ] Deploy/release committed state to DB-backed remote stack, run smoke and live create-flow check, then stop server unless explicitly kept running.
+
+Verification:
+
+- `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> passed, 50 tests.
+- `python -m pytest server/tests/test_ticket_form_packs.py scripts/test_navigation_catalog.py -q --tb=short` -> passed, 27 tests.
+- `python scripts/verify_workspace.py` -> passed.
+- Local live:
+  - `python scripts/manage_local_agent.py start codex-helpdesk-agent --gui --ui-port 8875` -> started isolated GUI/source agent; `GET http://127.0.0.1:8875/ui/agent/status` returned `status=ok`, `ui_bridge_running=true`, `has_auth_token=true`.
+  - Local create-flow against `run_server.py` was not accepted as a valid live create check because server logs showed PostgreSQL connection refused and in-memory-only startup; authenticated/public create returned 500/service_unavailable in that environment.
 
 ### Handoff
 

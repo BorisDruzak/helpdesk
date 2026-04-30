@@ -247,6 +247,95 @@ async def test_create_ticket_accepts_request_template_key_as_form_alias(test_cli
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_stores_diagnostic_consent(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Обращение: Печать / принтер",
+            "description": "Принтер не печатает",
+            "device_id": device_id,
+            "user_display_name": "Alice",
+            "request_template_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
+            "diagnostic_consent": {
+                "required": True,
+                "granted": True,
+                "scope": "requester_device",
+                "source": "pc_agent_create",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
+        ).scalar_one()
+
+    assert ticket.custom_fields["diagnostic_consent"] == {
+        "required": True,
+        "granted": True,
+        "scope": "requester_device",
+        "source": "pc_agent_create",
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_create_ticket_stores_diagnostic_consent(test_client, test_engine):
+    response = await test_client.post(
+        "/public_api/tickets/create",
+        json={
+            "title": "Обращение: Печать / принтер",
+            "description": "Принтер не печатает",
+            "user_display_name": "Public Alice",
+            "request_template_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
+            "diagnostic_consent": {
+                "required": True,
+                "granted": False,
+                "scope": "requester_device",
+                "source": "public_request_create",
+            },
+            "urgency": False,
+            "importance": False,
+            "urgency_reason": "Публичное обращение",
+            "importance_reason": "Публичное обращение",
+        },
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
+        ).scalar_one()
+
+    assert ticket.custom_fields["diagnostic_consent"] == {
+        "required": True,
+        "granted": False,
+        "scope": "requester_device",
+        "source": "public_request_create",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_from_form_starts_configured_playbook(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -560,6 +649,62 @@ def test_validate_form_submission_applies_visible_when_equals():
     assert "url" not in hidden["submitted_values"]
     assert [item["key"] for item in hidden["summary_rows"][:1]] == ["issue_kind"]
     assert "impact_scope" in [item["key"] for item in hidden["summary_rows"]]
+
+
+def test_validate_form_submission_accepts_extended_field_types():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.0",
+            "title": "Каталог обращений",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "ticket_type": "incident",
+                    "title": "Не открывается сайт",
+                    "fields": [
+                        {"key": "target_url", "label": "Адрес", "type": "url", "required": True},
+                        {"key": "started_at", "label": "Когда началось", "type": "datetime", "required": True},
+                        {
+                            "key": "symptoms",
+                            "label": "Симптомы",
+                            "type": "multi_select",
+                            "required": True,
+                            "options": [
+                                {"value": "dns", "label": "DNS"},
+                                {"value": "proxy", "label": "Прокси"},
+                            ],
+                        },
+                        {"key": "owner", "label": "Владелец", "type": "user_picker", "required": False},
+                        {"key": "contact_email", "label": "Email", "type": "email", "required": False},
+                        {"key": "attachment", "label": "Файл", "type": "file", "required": False},
+                    ],
+                }
+            ],
+        }
+    )
+
+    submission = validate_form_submission(
+        pack,
+        form_key="website_unavailable",
+        raw_values={
+            "target_url": "https://example.test",
+            "started_at": "2026-05-01T09:30",
+            "symptoms": ["dns", "proxy"],
+            "owner": "ivan.petrov",
+            "contact_email": "ivan@example.test",
+            "attachment": "diagnostic.txt",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
+    )
+
+    assert submission["submitted_values"]["symptoms"] == ["dns", "proxy"]
+    assert submission["submitted_values"]["target_url"] == "https://example.test"
+    summary = {item["key"]: item["value"] for item in submission["summary_rows"]}
+    assert summary["symptoms"] == "DNS, Прокси"
 
 
 def test_validate_form_pack_schema_preserves_request_template_process_context():

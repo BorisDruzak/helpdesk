@@ -11,6 +11,23 @@ from app.db.models import Operation, TicketEvidenceItem
 TERMINAL_OPERATION_STATUSES = {"succeeded", "failed", "denied", "timed_out", "canceled"}
 
 
+def normalize_diagnostic_consent_payload(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    scope = str(raw.get("scope") or "requester_device").strip() or "requester_device"
+    source = str(raw.get("source") or "pc_agent_create").strip() or "pc_agent_create"
+    result: dict[str, Any] = {
+        "required": bool(raw.get("required")),
+        "granted": bool(raw.get("granted")),
+        "scope": scope,
+        "source": source,
+    }
+    request_template_key = str(raw.get("request_template_key") or "").strip()
+    if request_template_key:
+        result["request_template_key"] = request_template_key
+    return result
+
+
 def get_template_diagnostic_policy(ticket: Any) -> dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
     if not isinstance(custom_fields, dict):

@@ -13,8 +13,27 @@ from tickets.workflow_profiles import DEFAULT_WORKFLOW_PROFILE
 
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
-ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "radio", "checkbox"}
+ALLOWED_FIELD_TYPES = {
+    "text",
+    "textarea",
+    "select",
+    "multi_select",
+    "radio",
+    "checkbox",
+    "date",
+    "datetime",
+    "file",
+    "user_picker",
+    "department_picker",
+    "location_picker",
+    "device_picker",
+    "service_picker",
+    "url",
+    "phone",
+    "email",
+}
 OPTION_FIELD_TYPES = {"select", "radio"}
+MULTI_SELECT_FIELD_TYPES = {"multi_select"}
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _TICKET_TYPE_BY_FORM_KIND = {
     "breakage": "incident",
@@ -505,7 +524,7 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
 
             options = raw_field.get("options") or []
             normalized_options = [_normalize_option(option) for option in options] if options else []
-            if field_type in OPTION_FIELD_TYPES and not normalized_options:
+            if field_type in OPTION_FIELD_TYPES | MULTI_SELECT_FIELD_TYPES and not normalized_options:
                 raise ValueError(f"form {form_key!r} field {field_key!r} requires options")
 
             normalized_fields.append(
@@ -642,6 +661,19 @@ def _normalize_field_value(field_def: dict[str, Any], raw_value: Any) -> Any:
     field_type = field_def.get("type")
     if field_type == "checkbox":
         return bool(raw_value)
+    if field_type in MULTI_SELECT_FIELD_TYPES:
+        if raw_value in (None, ""):
+            return []
+        if isinstance(raw_value, list):
+            values = [str(item or "").strip() for item in raw_value]
+        else:
+            values = [item.strip() for item in str(raw_value or "").split(",")]
+        values = [item for item in values if item]
+        allowed_values = {str(option.get("value") or "") for option in field_def.get("options") or []}
+        invalid = [item for item in values if item not in allowed_values]
+        if invalid:
+            raise ValueError("invalid option")
+        return values
     text_value = str(raw_value or "").strip()
     if field_type in OPTION_FIELD_TYPES and text_value:
         allowed_values = {str(option.get("value") or "") for option in field_def.get("options") or []}
@@ -682,13 +714,25 @@ def validate_form_submission(
             continue
         value = normalized_values.get(key)
         if field_def.get("required"):
-            is_empty = value is False if field_def.get("type") == "checkbox" else not str(value or "").strip()
+            if field_def.get("type") == "checkbox":
+                is_empty = value is False
+            elif isinstance(value, list):
+                is_empty = not value
+            else:
+                is_empty = not str(value or "").strip()
             if is_empty:
                 errors[key] = "Поле обязательно"
                 continue
         if field_def.get("type") == "checkbox":
             submitted_values[key] = bool(value)
             display_value = "Да" if value else "Нет"
+        elif field_def.get("type") in MULTI_SELECT_FIELD_TYPES:
+            selected_values = value if isinstance(value, list) else []
+            if not selected_values:
+                continue
+            submitted_values[key] = list(selected_values)
+            option_map = {opt["value"]: opt["label"] for opt in field_def.get("options") or []}
+            display_value = ", ".join(option_map.get(item, item) for item in selected_values)
         else:
             text_value = str(value or "").strip()
             if not text_value:

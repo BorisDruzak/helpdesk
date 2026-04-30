@@ -347,12 +347,12 @@ class TicketApiClient:
     """
     Клиент для работы с Ticket API сервера.
     
-    Предоставляет методы для работы с новой моделью тикетов:
-    - Создание тикета
-    - Получение списка тикетов
-    - Получение конкретного тикета
-    - Отправка сообщения в тикет
-    - Закрытие тикета
+    Предоставляет методы для работы с новой моделью обращений:
+    - Создание обращения
+    - Получение списка обращений
+    - Получение конкретного обращения
+    - Отправка сообщения в обращение
+    - Закрытие обращения
     
     Использование:
         client = TicketApiClient(base_url="http://localhost:8666/api", device_id="test_pc_01")
@@ -494,15 +494,16 @@ class TicketApiClient:
         form_pack_key: Optional[str] = None,
         form_pack_version: Optional[str] = None,
         form_payload: Optional[dict] = None,
+        diagnostic_consent: Optional[dict] = None,
         ticket_type: Optional[str] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
-        Создает новый тикет.
+        Создает новое обращение.
         
         Args:
             description: Описание проблемы (обязательно)
-            title: Заголовок тикета (по умолчанию "Untitled")
+            title: Заголовок обращения (по умолчанию "Untitled")
             tags: Список тегов (опционально)
             
         Returns:
@@ -539,6 +540,8 @@ class TicketApiClient:
             payload["form_pack_version"] = form_pack_version
         if form_payload is not None:
             payload["form_payload"] = form_payload
+        if diagnostic_consent is not None:
+            payload["diagnostic_consent"] = diagnostic_consent
         if ticket_type is not None:
             payload["ticket_type"] = ticket_type
         trace = self._trace_context(
@@ -630,10 +633,10 @@ class TicketApiClient:
 
     async def list_tickets(self, *, trace_parent_action_id: Optional[str] = None) -> dict:
         """
-        Получает список тикетов. Для агента передаётся device_id — сервер возвращает только тикеты этого устройства.
+        Получает список обращений. Для агента передаётся device_id — сервер возвращает только обращения этого устройства.
         
         Returns:
-            dict: JSON ответ от сервера со списком тикетов
+            dict: JSON ответ от сервера со списком обращений
             
         Raises:
             Exception: Если HTTP статус != 200, содержит текст ответа для дебага
@@ -674,7 +677,7 @@ class TicketApiClient:
                     summary="ticket list loaded",
                     details={"http_status": response.status, "ticket_count": len(tickets)},
                 )
-                logger.debug(f"list_tickets успешно: получено {len(tickets)} тикетов (device_id={self.device_id[:8]}...)")
+                logger.debug(f"list_tickets успешно: получено {len(tickets)} обращений (device_id={self.device_id[:8]}...)")
                 return result
                 
         except aiohttp.ClientError as e:
@@ -698,10 +701,10 @@ class TicketApiClient:
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
-        Получает информацию о тикете, включая сообщения и события.
+        Получает информацию об обращении, включая сообщения и события.
         
         Args:
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             since_event_id: Если указан, вернуть только события с id больше этого значения
             before_event_id: Если указан, вернуть страницу событий с id меньше этого значения
             limit: Размер страницы истории
@@ -747,7 +750,7 @@ class TicketApiClient:
                 response_text = await response.text()
                 
                 if response.status == 404:
-                    error_msg = f"Тикет не найден: {ticket_id}"
+                    error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка get_ticket: {error_msg}")
                     raise Exception(error_msg)
                 
@@ -796,10 +799,10 @@ class TicketApiClient:
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
-        Отправляет сообщение в тикет.
+        Отправляет сообщение в обращение.
         
         Args:
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             text: Текст сообщения
             from_role: Роль отправителя (по умолчанию "user")
             message_id: Идентификатор сообщения (если None, будет сгенерирован)
@@ -810,7 +813,7 @@ class TicketApiClient:
             
         Raises:
             Exception: Если HTTP статус != 200, содержит текст ответа для дебага
-                       Если статус 409 - тикет закрыт (ticket_closed)
+                       Если статус 409 - обращение закрыто (ticket_closed)
         """
         url = f"{self.base_url}/tickets/{ticket_id}/message"
         
@@ -853,12 +856,12 @@ class TicketApiClient:
                 response_text = await response.text()
                 
                 if response.status == 404:
-                    error_msg = f"Тикет не найден: {ticket_id}"
+                    error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка send_message: {error_msg}")
                     raise Exception(error_msg)
                 
                 if response.status == 409:
-                    error_msg = "Тикет закрыт (ticket_closed)"
+                    error_msg = "Обращение закрыто (ticket_closed)"
                     logger.warning(f"Ошибка send_message: {error_msg}")
                     raise Exception(error_msg)
                 
@@ -894,7 +897,7 @@ class TicketApiClient:
         Отмечает последнее входящее сообщение как прочитанное пользователем.
 
         Args:
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             last_read_event_id: ID последнего прочитанного события chat_message
 
         Returns:
@@ -915,7 +918,7 @@ class TicketApiClient:
                 response_text = await response.text()
 
                 if response.status == 404:
-                    error_msg = f"Тикет не найден: {ticket_id}"
+                    error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка mark_ticket_read: {error_msg}")
                     raise Exception(error_msg)
 
@@ -947,7 +950,7 @@ class TicketApiClient:
         Загружает вложение в artifacts через multipart: POST /api/upload.
 
         Args:
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             file_path: Локальный путь до файла
             kind: Тип артефакта (для GUI вложений — "file")
 
@@ -1043,10 +1046,10 @@ class TicketApiClient:
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
-        Закрывает тикет.
+        Закрывает обращение.
         
         Args:
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             reason: Причина закрытия (по умолчанию "user_closed")
             closed_by_role: Роль закрывающего (по умолчанию "user")
             
@@ -1084,7 +1087,7 @@ class TicketApiClient:
                 response_text = await response.text()
                 
                 if response.status == 404:
-                    error_msg = f"Тикет не найден: {ticket_id}"
+                    error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка close_ticket: {error_msg}")
                     raise Exception(error_msg)
                 
@@ -1103,7 +1106,7 @@ class TicketApiClient:
                 )
                 already_closed = result.get("already_closed", False)
                 if already_closed:
-                    logger.info(f"close_ticket: тикет {ticket_id} уже был закрыт")
+                    logger.info(f"close_ticket: обращение {ticket_id} уже было закрыто")
                 else:
                     logger.debug(f"close_ticket успешно: ticket_id={ticket_id}")
                 return result
@@ -1129,12 +1132,12 @@ class TicketApiClient:
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
-        Запускает инструмент в контексте тикета: POST /api/tools/run.
+        Запускает инструмент в контексте обращения: POST /api/tools/run.
 
         Команда ставится в очередь и доставляется агенту через device_outbox → WebSocket.
-        Результат появится в ленте событий тикета (command_result).        Args:
+        Результат появится в ленте событий обращения (command_result).        Args:
             device_id: Идентификатор устройства (агента)
-            ticket_id: Идентификатор тикета
+            ticket_id: Идентификатор обращения
             tool_name: Имя инструмента (например "screen.collect", "screen.record")
             preset_id: Опциональный preset (например "primary_monitor")
             params: Опциональные параметры инструмента (например {"duration_sec": 300})        Returns:

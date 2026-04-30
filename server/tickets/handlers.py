@@ -31,6 +31,7 @@ from tickets.assignment_service import (
     TicketAssignmentService,
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
     build_form_custom_fields,
@@ -835,6 +836,9 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
                 )
                 validated_submission = await apply_effective_registry_policies(session, validated_submission)
                 extra_custom_fields = build_form_custom_fields(validated_submission)
+                diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
+                if diagnostic_consent:
+                    extra_custom_fields["diagnostic_consent"] = diagnostic_consent
                 ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
                 template_context = validated_submission.get("template_context") or {}
                 for key in ("category_id", "service_id", "subcategory_id", "sla_policy_id"):
