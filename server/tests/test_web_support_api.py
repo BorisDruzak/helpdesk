@@ -431,7 +431,7 @@ async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_e
     assert payload["data"]["smart_view"] == "sla_risk"
     assert [item["title"] for item in payload["data"]["tickets"]] == ["SLA risk visible"]
     smart_view_options = payload["data"]["filters"]["smart_view_options"]
-    assert {"value": "sla_risk", "label": "SLA риск"} in smart_view_options
+    assert {"value": "sla_risk", "label": "Риск по сроку ответа"} in smart_view_options
 
 
 @pytest.mark.asyncio

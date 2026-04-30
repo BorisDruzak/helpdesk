@@ -107,21 +107,21 @@ type PreviewValidationIssue = {
 };
 
 const WORKFLOW_PROFILE_OPTIONS = [
-  { value: "incident", label: "incident" },
-  { value: "service_request", label: "service_request" },
-  { value: "access_request", label: "access_request" },
-  { value: "change_request", label: "change_request" },
-  { value: "consultation", label: "consultation" },
+  { value: "incident", label: "Инцидент" },
+  { value: "service_request", label: "Запрос услуги" },
+  { value: "access_request", label: "Запрос доступа" },
+  { value: "change_request", label: "Запрос на изменение" },
+  { value: "consultation", label: "Консультация" },
 ] as const;
 
 const FIELD_ROLE_OPTIONS = [
-  { value: "routing_field", label: "routing" },
-  { value: "priority_field", label: "priority" },
-  { value: "sla_field", label: "SLA" },
-  { value: "approval_field", label: "approval" },
-  { value: "diagnostic_input", label: "diagnostic" },
-  { value: "closure_evidence", label: "closure evidence" },
-  { value: "display_only", label: "display only" },
+  { value: "routing_field", label: "Влияет на очередь" },
+  { value: "priority_field", label: "Влияет на приоритет" },
+  { value: "sla_field", label: "Влияет на срок ответа" },
+  { value: "approval_field", label: "Влияет на согласование" },
+  { value: "diagnostic_input", label: "Передаётся в диагностику" },
+  { value: "closure_evidence", label: "Нужно для закрытия" },
+  { value: "display_only", label: "Только отображается" },
 ] as const;
 
 const PRIORITY_QUESTION_FIELDS: DraftField[] = [
@@ -131,7 +131,7 @@ const PRIORITY_QUESTION_FIELDS: DraftField[] = [
     type: "radio",
     required: true,
     placeholder: "",
-    help_text: "Пользователь отвечает фактами, система считает priority.",
+    help_text: "Пользователь отвечает фактами, система считает приоритет.",
     options: [
       { value: "single_user", label: "Только меня" },
       { value: "group", label: "Несколько человек" },
@@ -176,7 +176,7 @@ const PRIORITY_QUESTION_FIELDS: DraftField[] = [
     type: "checkbox",
     required: false,
     placeholder: "Да",
-    help_text: "Modifier: может повысить priority.",
+    help_text: "Модификатор: может повысить приоритет.",
     options: [],
     visible_when: { field: "", equals: "", values: [] },
   },
@@ -186,7 +186,7 @@ const PRIORITY_QUESTION_FIELDS: DraftField[] = [
     type: "checkbox",
     required: false,
     placeholder: "Да",
-    help_text: "Modifier: может повысить priority.",
+    help_text: "Модификатор: может повысить приоритет.",
     options: [],
     visible_when: { field: "", equals: "", values: [] },
   },
@@ -294,7 +294,7 @@ function getPlaybookTriggerReadiness(trigger: AdminFormsPlaybookTrigger | undefi
   return {
     tone: "success" as const,
     label: "Готов к запуску после создания тикета",
-    detail: "После intake форма создаст тикет, routing выберет очередь, затем запустится диагностический сценарий.",
+    detail: "После сбора данных форма создаст тикет, маршрутизация выберет очередь, затем запустится диагностический сценарий.",
   };
 }
 
@@ -1739,14 +1739,14 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                             <div>
                               <p className="text-sm font-semibold text-slate-900">Процессный контекст</p>
                               <p className="mt-1 text-xs text-slate-500">
-                                Шаблон обращения задает ticket_type, классификацию, SLA и поля, из которых считается приоритет.
+                                Шаблон обращения задаёт тип процесса, классификацию, сроки ответа и поля, из которых считается приоритет.
                               </p>
                             </div>
                             <Badge tone="info">{selectedForm.ticket_type}</Badge>
                           </div>
                           <div className="mt-4 grid gap-4 md:grid-cols-3">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>ticket_type</span>
+                              <span>Тип процесса</span>
                               <Select
                                 onChange={(event) => {
                                   const value = event.currentTarget.value;
@@ -1773,8 +1773,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               ["service_id", "service_id"],
                               ["subcategory_id", "subcategory_id"],
                               ["default_queue_id", "default_queue_id"],
-                              ["sla_policy_id", "sla_policy_id"],
-                              ["suggested_playbook_id", "suggested_playbook_id"],
+                              ["sla_policy_id", "Политика сроков ответа"],
+                              ["suggested_playbook_id", "Предлагаемый плейбук"],
                             ].map(([key, label]) => (
                               <label className="space-y-2 text-sm font-medium text-slate-800" key={key}>
                                 <span>{label}</span>
@@ -1798,7 +1798,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                           </div>
                           <div className="mt-4 grid gap-4 md:grid-cols-3">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>impact field</span>
+                              <span>Поле влияния</span>
                               <input
                                 className="field-base h-11 w-full px-4 text-sm"
                                 onChange={(event) => {
@@ -1817,7 +1817,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               />
                             </label>
                             <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>urgency field</span>
+                              <span>Поле срочности</span>
                               <input
                                 className="field-base h-11 w-full px-4 text-sm"
                                 onChange={(event) => {
@@ -1836,7 +1836,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               />
                             </label>
                             <label className="space-y-2 text-sm font-medium text-slate-800">
-                              <span>importance field</span>
+                              <span>Поле важности</span>
                               <input
                                 className="field-base h-11 w-full px-4 text-sm"
                                 onChange={(event) => {
@@ -1857,9 +1857,9 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                           </div>
                           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[0.9rem] border border-border bg-surface-subtle px-4 py-3">
                             <div>
-                              <p className="text-sm font-semibold text-slate-900">Priority questions for agent/requester</p>
+                              <p className="text-sm font-semibold text-slate-900">Вопросы для расчёта приоритета</p>
                               <p className="mt-1 text-xs text-slate-500">
-                                Adds editable impact, urgency, importance and modifier fields to this request template.
+                                Добавляет поля влияния, срочности, важности и модификаторы в шаблон обращения.
                               </p>
                             </div>
                             <Button
@@ -1873,7 +1873,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               size="sm"
                               variant="outline"
                             >
-                              Add priority questions
+                              Добавить вопросы
                             </Button>
                           </div>
                         </div>
@@ -2209,9 +2209,9 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
 
                                   <div className="space-y-3 rounded-[1rem] border border-border bg-white px-4 py-4">
                                     <div>
-                                      <p className="text-sm font-semibold text-slate-900">Process roles</p>
+                                      <p className="text-sm font-semibold text-slate-900">Роли поля в процессе</p>
                                       <p className="mt-1 text-xs text-slate-500">
-                                        Roles define whether this field participates in priority, routing, SLA, approval, diagnostics or closure.
+                                        Роли определяют, участвует ли поле в приоритете, маршрутизации, сроках ответа, согласовании, диагностике или закрытии.
                                       </p>
                                     </div>
                                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

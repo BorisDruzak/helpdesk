@@ -37,7 +37,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Отчеты",
-    description: "KPI, SLA и динамика",
+    description: "KPI, сроки ответа и динамика",
     icon: BarChart3,
     section: "support",
     to: "/app/reports",

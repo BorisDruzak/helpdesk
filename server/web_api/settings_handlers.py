@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from aiohttp import web
 from loguru import logger
 
@@ -57,6 +59,7 @@ from web_api.dto.settings import (
     WebSettingsQueueItem,
     WebSettingsQueueMemberItem,
     WebSettingsResolutionCodeItem,
+    WebSettingsRequestTemplateItem,
     WebSettingsRoutingBuilderFieldItem,
     WebSettingsRoutingBuilderFormFieldItem,
     WebSettingsRoutingBuilderFormItem,
@@ -90,7 +93,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
     return [
         WebSettingsProcessSchemaItem(
             key="request_template",
-            label="request_template",
+            label="Шаблон обращения",
             meaning="Каталог обращений собирает факты и порождает процессный контекст",
             source="request_forms",
             ui_surface="/app/admin/forms",
@@ -98,7 +101,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="ticket_type_workflow_profile",
-            label="ticket_type / workflow_profile",
+            label="Тип процесса и маршрут",
             meaning="Тип заявки выбирает профиль workflow",
             source="workflow_profiles",
             ui_surface="/app/settings",
@@ -106,7 +109,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="category",
-            label="category / service / subcategory",
+            label="Категория / сервис / подкатегория",
             meaning="Категория определяет профильную область",
             source="request_template.category_id",
             ui_surface="/app/admin/forms",
@@ -114,7 +117,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="priority",
-            label="priority",
+            label="Приоритет",
             meaning="Приоритет рассчитывается из impact, urgency и importance",
             source="priority_policy",
             ui_surface="/app/settings",
@@ -122,7 +125,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="routing",
-            label="routing",
+            label="Маршрутизация",
             meaning="Роутинг выбирает очередь",
             source="routing_rules",
             ui_surface="/app/settings",
@@ -130,7 +133,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="queue",
-            label="queue",
+            label="Очередь",
             meaning="Очередь определяет группу ответственных",
             source="ticket_queues.members",
             ui_surface="/app/settings",
@@ -138,23 +141,23 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="sla",
-            label="SLA",
-            meaning="SLA задаёт срок перед пользователем",
+            label="Сроки ответа и решения",
+            meaning="Показывает, за какое время пользователю должны ответить и решить обращение",
             source="sla_policies.targets",
             ui_surface="/app/settings",
             status="active",
         ),
         WebSettingsProcessSchemaItem(
             key="ola",
-            label="OLA",
-            meaning="OLA задаёт внутренние сроки между группами",
+            label="Внутренние сроки очередей",
+            meaning="Задаёт сроки принятия и обработки внутри групп поддержки",
             source="queue.ola_targets",
             ui_surface="/app/settings",
             status="active",
         ),
         WebSettingsProcessSchemaItem(
             key="support_line",
-            label="support_line",
+            label="Линия поддержки",
             meaning="Линия поддержки отражает глубину компетенции",
             source="queue role / future support line catalog",
             ui_surface="/app/settings",
@@ -162,7 +165,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="status_next_action_owner",
-            label="status / next_action_owner",
+            label="Статус и чей следующий шаг",
             meaning="Статус показывает этап, next_action_owner показывает чей ход",
             source="ticket status registry",
             ui_surface="/app/settings",
@@ -170,7 +173,7 @@ def _build_process_schema_items() -> list[WebSettingsProcessSchemaItem]:
         ),
         WebSettingsProcessSchemaItem(
             key="observer",
-            label="ticket observer summary / trace detail",
+            label="Трасса обработки",
             meaning="Observer показывает трассу обработки тикета и детали событий",
             source="observer traces",
             ui_surface="/app/admin/observer",
@@ -245,7 +248,147 @@ def _status_stage(status: str) -> str:
     return "work"
 
 
-def _build_ticket_settings_payload(workflow_profiles=None) -> WebSettingsTicketSettingsPayload:
+def _inline_policy_id(template_id: str, policy_name: str, policy: Any) -> str | None:
+    if isinstance(policy, dict) and policy:
+        return f"inline:{template_id}:{policy_name}"
+    return None
+
+
+def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettingsRequestTemplateItem]:
+    if not isinstance(pack, dict):
+        pack = validate_form_pack_schema(build_default_ticket_form_pack())
+    pack_version = str(pack.get("version") or "draft")
+    items: list[WebSettingsRequestTemplateItem] = []
+    for form in pack.get("forms") or []:
+        if not isinstance(form, dict):
+            continue
+        template_id = str(form.get("key") or "").strip()
+        if not template_id:
+            continue
+        title = str(form.get("title") or template_id).strip() or template_id
+        ticket_type = str(form.get("ticket_type") or form.get("request_kind") or "service_request").strip()
+        fields = [field for field in (form.get("fields") or []) if isinstance(field, dict)]
+        field_roles = form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {}
+        priority_policy = form.get("priority_policy") if isinstance(form.get("priority_policy"), dict) else {}
+        routing_policy = form.get("routing_policy") if isinstance(form.get("routing_policy"), dict) else {}
+        ola_policy = form.get("ola_policy") if isinstance(form.get("ola_policy"), dict) else {}
+        approval_policy = form.get("approval_policy") if isinstance(form.get("approval_policy"), dict) else {}
+        diagnostic_policy = (
+            form.get("diagnostic_policy")
+            if isinstance(form.get("diagnostic_policy"), dict)
+            else form.get("diagnostics")
+            if isinstance(form.get("diagnostics"), dict)
+            else {}
+        )
+        closure_policy = form.get("closure_policy") if isinstance(form.get("closure_policy"), dict) else {}
+        visibility_policy = form.get("visibility_policy") if isinstance(form.get("visibility_policy"), dict) else {}
+        notification_policy = form.get("notification_policy") if isinstance(form.get("notification_policy"), dict) else {}
+        before_resolved = (
+            closure_policy.get("before_resolved")
+            if isinstance(closure_policy.get("before_resolved"), dict)
+            else {}
+        )
+        diagnostic_auto_run = diagnostic_policy.get("auto_run") if diagnostic_policy else None
+
+        policy_presence = {
+            "priority_policy": bool(priority_policy),
+            "routing_policy": bool(routing_policy),
+            "sla_policy": form.get("sla_policy_id") is not None,
+            "ola_policy": bool(ola_policy),
+            "approval_policy": bool(approval_policy),
+            "diagnostic_policy": bool(diagnostic_policy) or bool(form.get("suggested_playbook_id")),
+            "closure_policy": bool(closure_policy),
+            "visibility_policy": bool(visibility_policy),
+            "notification_policy": bool(notification_policy),
+        }
+        priority_fields = [
+            key
+            for key, roles in field_roles.items()
+            if isinstance(roles, list) and "priority_field" in roles
+        ]
+        playbook_triggers = [
+            trigger for trigger in (form.get("playbook_triggers") or []) if isinstance(trigger, dict)
+        ]
+
+        items.append(
+            WebSettingsRequestTemplateItem(
+                id=template_id,
+                public_title=title,
+                internal_name=f"{ticket_type} / {template_id}",
+                active=True,
+                version=pack_version,
+                classification={
+                    "ticket_type": ticket_type,
+                    "category_id": form.get("category_id"),
+                    "subcategory_id": form.get("subcategory_id"),
+                    "service_id": form.get("service_id"),
+                    "request_kind": form.get("request_kind") or template_id,
+                },
+                form={
+                    "form_schema_id": f"{template_id}_form",
+                    "form_key": template_id,
+                    "fields_count": len(fields),
+                    "required_fields_count": sum(1 for field in fields if bool(field.get("required"))),
+                    "priority_fields_count": len(priority_fields),
+                },
+                workflow={
+                    "workflow_profile_id": ticket_type,
+                    "source": "ticket_type",
+                },
+                priority={
+                    "policy_id": _inline_policy_id(template_id, "priority_policy", priority_policy),
+                    "impact_field": priority_policy.get("impact_field"),
+                    "urgency_field": priority_policy.get("urgency_field"),
+                    "importance_field": priority_policy.get("importance_field"),
+                },
+                routing={
+                    "policy_id": _inline_policy_id(template_id, "routing_policy", routing_policy),
+                    "default_queue_id": form.get("default_queue_id"),
+                    "rules_count": len(routing_policy.get("rules") or []) if routing_policy else 0,
+                },
+                sla={
+                    "policy_id": form.get("sla_policy_id"),
+                    "source": "request_template.sla_policy_id" if form.get("sla_policy_id") is not None else None,
+                },
+                ola={
+                    "policy_id": _inline_policy_id(template_id, "ola_policy", ola_policy),
+                    "inline": bool(ola_policy),
+                },
+                approvals={
+                    "policy_id": _inline_policy_id(template_id, "approval_policy", approval_policy),
+                    "required": bool(approval_policy.get("required")) if approval_policy else False,
+                },
+                diagnostics={
+                    "policy_id": _inline_policy_id(template_id, "diagnostic_policy", diagnostic_policy),
+                    "suggested_playbook_id": form.get("suggested_playbook_id"),
+                    "playbook_triggers_count": len(playbook_triggers),
+                    "auto_run": bool(diagnostic_auto_run.get("enabled"))
+                    if isinstance(diagnostic_auto_run, dict)
+                    else bool(diagnostic_auto_run),
+                },
+                closure={
+                    "policy_id": _inline_policy_id(template_id, "closure_policy", closure_policy),
+                    "requires_resolution_code": bool(closure_policy.get("require_resolution_code"))
+                    or bool(before_resolved.get("require_resolution_code")),
+                },
+                visibility={
+                    "policy_id": _inline_policy_id(template_id, "visibility_policy", visibility_policy),
+                    "public_status_mapping": bool(visibility_policy.get("public_status_mapping"))
+                    if visibility_policy
+                    else False,
+                },
+                notifications={
+                    "policy_id": _inline_policy_id(template_id, "notification_policy", notification_policy),
+                    "event_blocks": sorted(notification_policy.keys()) if notification_policy else [],
+                },
+                field_roles={str(key): list(value) for key, value in field_roles.items() if isinstance(value, list)},
+                policies_missing=[key for key, present in policy_presence.items() if not present],
+            )
+        )
+    return items
+
+
+def _build_ticket_settings_payload(workflow_profiles=None, form_pack: dict[str, Any] | None = None) -> WebSettingsTicketSettingsPayload:
     requester_map: dict[str, list[str]] = {}
     owner_map: dict[str, list[str]] = {}
     status_items: list[WebSettingsTicketStatusItem] = []
@@ -296,6 +439,7 @@ def _build_ticket_settings_payload(workflow_profiles=None) -> WebSettingsTicketS
             WebSettingsWorkflowProfileItem(**profile.to_dict())
             for profile in (workflow_profiles or list_workflow_profiles())
         ],
+        request_templates=_build_request_template_items(form_pack),
         process_schema=_build_process_schema_items(),
         support_lines=_build_support_line_items(),
         priority_model=_build_priority_model_payload(),
@@ -394,7 +538,9 @@ def _empty_settings_payload(*, actor_role: str) -> WebSettingsPayload:
             audit_records_count=0,
         ),
         routing_builder=_build_routing_builder_payload(),
-        ticket_settings=_build_ticket_settings_payload(),
+        ticket_settings=_build_ticket_settings_payload(
+            form_pack=validate_form_pack_schema(build_default_ticket_form_pack())
+        ),
         queues=[],
         routing_rules=[],
         sla_policies=[],
@@ -526,7 +672,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
                     audit_records_count=len(audit_records),
                 ),
                 routing_builder=_build_routing_builder_payload(form_pack),
-                ticket_settings=_build_ticket_settings_payload(workflow_profiles),
+                ticket_settings=_build_ticket_settings_payload(workflow_profiles, form_pack),
                 queues=queue_items,
                 routing_rules=[
                     WebSettingsRoutingRuleItem(
@@ -637,7 +783,7 @@ async def handle_web_settings_workflow_profiles_put(request: web.Request) -> web
         logger.error(f"[web_settings] failed to save workflow profiles: {exc}")
         logger.exception(exc)
         return web.json_response(
-            {"status": "error", "error": "Failed to save workflow profiles", "error_code": "SAVE_FAILED"},
+            {"status": "error", "error": "Не удалось сохранить профили процесса", "error_code": "SAVE_FAILED"},
             status=500,
         )
     return web.json_response(

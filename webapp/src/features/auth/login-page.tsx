@@ -74,7 +74,7 @@ export function LoginPage() {
               {
                 icon: Ticket,
                 title: "Support workspace",
-                description: "Список тикетов, карточка и быстрые SLA-инспекторы."
+                description: "Список тикетов, карточка и быстрые проверки сроков ответа."
               },
               {
                 icon: ShieldCheck,

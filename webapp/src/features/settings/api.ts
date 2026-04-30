@@ -77,6 +77,27 @@ export type WebSettingsPayload = {
       evidence_required_for_priorities: string[];
       transitions: Record<string, string[]>;
     }>;
+    request_templates: Array<{
+      id: string;
+      public_title: string;
+      internal_name: string;
+      active: boolean;
+      version: string;
+      classification: Record<string, unknown>;
+      form: Record<string, unknown>;
+      workflow: Record<string, unknown>;
+      priority: Record<string, unknown>;
+      routing: Record<string, unknown>;
+      sla: Record<string, unknown>;
+      ola: Record<string, unknown>;
+      approvals: Record<string, unknown>;
+      diagnostics: Record<string, unknown>;
+      closure: Record<string, unknown>;
+      visibility: Record<string, unknown>;
+      notifications: Record<string, unknown>;
+      field_roles: Record<string, string[]>;
+      policies_missing: string[];
+    }>;
     process_schema: Array<{
       key: string;
       label: string;
@@ -428,7 +449,7 @@ export async function saveWebSettingsOlaTargets(
       method: "PUT",
       body: JSON.stringify({ ola_targets: olaTargets })
     },
-    "Не удалось сохранить OLA-цели."
+    "Не удалось сохранить внутренние сроки очереди."
   );
 }
 
@@ -480,7 +501,7 @@ export async function createWebSettingsSlaPolicy(payload: {
       method: "POST",
       body: JSON.stringify(payload)
     },
-    "Не удалось создать SLA-политику."
+    "Не удалось создать политику сроков."
   );
 }
 
@@ -501,7 +522,7 @@ export async function updateWebSettingsSlaPolicy(
       method: "PATCH",
       body: JSON.stringify(payload)
     },
-    "Не удалось обновить SLA-политику."
+    "Не удалось обновить политику сроков."
   );
 }
 
@@ -525,7 +546,7 @@ export async function saveWebSettingsSlaTargets(
       method: "PUT",
       body: JSON.stringify({ targets })
     },
-    "Не удалось сохранить SLA-цели."
+    "Не удалось сохранить сроки ответа и решения."
   );
 }
 
@@ -554,7 +575,7 @@ export async function saveWebSettingsWorkflowProfiles(
       method: "PUT",
       body: JSON.stringify({ workflow_profiles: workflowProfiles })
     },
-    "Не удалось сохранить workflow profiles."
+    "Не удалось сохранить профили процесса."
   );
 }
 

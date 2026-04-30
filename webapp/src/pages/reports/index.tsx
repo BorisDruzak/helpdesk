@@ -124,7 +124,7 @@ export function ReportsPage() {
             </Button>
           </>
         }
-        description="Операционный отчёт на реальных ticket metrics: backlog, SLA, reopen rate, среднее время решения и живые срезы по очередям и типам обращений."
+        description="Операционный отчёт на реальных метриках тикетов: backlog, сроки ответа, reopen rate, среднее время решения и живые срезы по очередям и типам обращений."
         eyebrow="Analytics"
         title="Отчёты"
       />
@@ -156,7 +156,7 @@ export function ReportsPage() {
             />
             <StatTile
               helper={`FRT ${formatPercent(payload.summary.first_response_compliance_percent)}`}
-              label="SLA compliance"
+              label="Выполнение сроков"
               value={formatPercent(payload.summary.resolution_compliance_percent)}
             />
           </div>

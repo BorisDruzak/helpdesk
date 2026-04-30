@@ -523,11 +523,11 @@ def build_ticket_sla_user_summary(ticket: dict) -> str:
     resolution = str(ticket.get("resolution_due_at") or "").strip()
     parts: list[str] = []
     if priority:
-        parts.append(f"priority={priority}")
+        parts.append(f"Приоритет: {priority}")
     if first_response:
-        parts.append(f"first response due: {first_response}")
+        parts.append(f"Вам должны ответить до {first_response}")
     if resolution:
-        parts.append(f"resolution/workaround due: {resolution}")
+        parts.append(f"Решение или обходной вариант ожидается до {resolution}")
     return "; ".join(parts)
 
 
@@ -3600,8 +3600,8 @@ class ChatPanel(QWidget):
             ("Закрыт", self._format_ts(ticket.get("closed_at")) or "—"),
             ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
-        rows.insert(5, ("SLA: first response", self._format_ts(ticket.get("first_response_due_at")) or "-"))
-        rows.insert(6, ("SLA: resolution / workaround", self._format_ts(ticket.get("resolution_due_at")) or "-"))
+        rows.insert(5, ("Ответить должны до", self._format_ts(ticket.get("first_response_due_at")) or "-"))
+        rows.insert(6, ("Решение ожидается до", self._format_ts(ticket.get("resolution_due_at")) or "-"))
         rows.extend(ticket_request_form_summary_rows(ticket))
         return "".join(
             f"<div style='margin-bottom:8px; font-size:{theme.BODY_PT}pt; line-height:1.5;'>"

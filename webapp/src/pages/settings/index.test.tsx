@@ -98,10 +98,33 @@ function createSettingsPayload(): WebSettingsPayload {
           },
         },
       ],
+      request_templates: [
+        {
+          id: "breakage",
+          public_title: "Поломка",
+          internal_name: "incident / breakage",
+          active: true,
+          version: "1.0.0",
+          classification: { ticket_type: "incident", request_kind: "breakage" },
+          form: { form_schema_id: "breakage_form", fields_count: 6, required_fields_count: 2 },
+          workflow: { workflow_profile_id: "incident" },
+          priority: { policy_id: "inline:breakage:priority_policy" },
+          routing: { policy_id: null },
+          sla: { policy_id: null },
+          ola: { policy_id: null },
+          approvals: { policy_id: null },
+          diagnostics: { suggested_playbook_id: null },
+          closure: { policy_id: null },
+          visibility: { policy_id: null },
+          notifications: { policy_id: null },
+          field_roles: {},
+          policies_missing: ["routing_policy", "sla_policy", "closure_policy"],
+        },
+      ],
       process_schema: [
         {
           key: "request_template",
-          label: "request_template",
+          label: "Шаблон обращения",
           meaning: "Каталог обращений собирает факты и порождает процессный контекст",
           source: "request_forms",
           ui_surface: "/app/admin/forms",
@@ -109,7 +132,7 @@ function createSettingsPayload(): WebSettingsPayload {
         },
         {
           key: "ticket_type_workflow_profile",
-          label: "ticket_type / workflow_profile",
+          label: "Тип процесса и маршрут",
           meaning: "Тип заявки выбирает профиль workflow",
           source: "workflow_profiles",
           ui_surface: "/app/settings",
@@ -117,7 +140,7 @@ function createSettingsPayload(): WebSettingsPayload {
         },
         {
           key: "priority",
-          label: "priority",
+          label: "Приоритет",
           meaning: "Приоритет рассчитывается из impact, urgency и importance",
           source: "priority_policy",
           ui_surface: "/app/settings",
@@ -125,7 +148,7 @@ function createSettingsPayload(): WebSettingsPayload {
         },
         {
           key: "routing",
-          label: "routing",
+          label: "Маршрутизация",
           meaning: "Роутинг выбирает очередь",
           source: "routing_rules",
           ui_surface: "/app/settings",
@@ -133,8 +156,8 @@ function createSettingsPayload(): WebSettingsPayload {
         },
         {
           key: "sla",
-          label: "SLA",
-          meaning: "SLA задаёт срок перед пользователем",
+          label: "Сроки ответа и решения",
+          meaning: "Показывает, за какое время пользователю должны ответить и решить обращение",
           source: "sla_policies",
           ui_surface: "/app/settings",
           status: "active",
@@ -248,10 +271,10 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Правила закрытия")).toBeInTheDocument();
     expect(screen.getByText("Take-self queue mode")).toBeInTheDocument();
     expect(screen.getByText("Схема service desk")).toBeInTheDocument();
-    expect(screen.getByText("request_template → ticket_type/workflow_profile → priority → routing → SLA/OLA → observer")).toBeInTheDocument();
+    expect(screen.getByText("Шаблон обращения → форма → процесс → приоритет → сроки → очередь → паспорт")).toBeInTheDocument();
     expect(screen.getByText("Тип заявки выбирает профиль workflow")).toBeInTheDocument();
     expect(screen.getByText("Роутинг выбирает очередь")).toBeInTheDocument();
-    expect(screen.getByText("SLA задаёт срок перед пользователем")).toBeInTheDocument();
+    expect(screen.getByText("Показывает, за какое время пользователю должны ответить и решить обращение")).toBeInTheDocument();
     expect(screen.getByText("Модель приоритета")).toBeInTheDocument();
     expect(screen.getByText("Пользователь не выбирает P0/P1/P2/P3 напрямую")).toBeInTheDocument();
     expect(screen.getByText("Линии поддержки")).toBeInTheDocument();
@@ -319,7 +342,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Собранное условие")).toBeInTheDocument();
     expect(screen.queryByText("Condition JSON")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "SLA" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сроки" }));
     expect(screen.getByLabelText("Режим рабочих часов")).toBeInTheDocument();
     expect(screen.queryByText("Business hours JSON")).not.toBeInTheDocument();
 
@@ -373,7 +396,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Недостаточно прав: settings.manage_queues")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сохранить очередь" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Добавить / обновить участника" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Сохранить OLA" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Сохранить внутренние сроки" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Маршрутизация" }));
     expect(screen.getByText("Недостаточно прав: settings.manage_routing")).toBeInTheDocument();

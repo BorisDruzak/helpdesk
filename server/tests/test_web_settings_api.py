@@ -276,10 +276,21 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert process_schema["ticket_type_workflow_profile"]["meaning"] == "Тип заявки выбирает профиль workflow"
     assert process_schema["routing"]["meaning"] == "Роутинг выбирает очередь"
     assert process_schema["queue"]["meaning"] == "Очередь определяет группу ответственных"
-    assert process_schema["sla"]["meaning"] == "SLA задаёт срок перед пользователем"
-    assert process_schema["ola"]["meaning"] == "OLA задаёт внутренние сроки между группами"
+    assert process_schema["sla"]["label"] == "Сроки ответа и решения"
+    assert process_schema["sla"]["meaning"] == "Показывает, за какое время пользователю должны ответить и решить обращение"
+    assert process_schema["ola"]["label"] == "Внутренние сроки очередей"
+    assert process_schema["ola"]["meaning"] == "Задаёт сроки принятия и обработки внутри групп поддержки"
     assert process_schema["support_line"]["status"] == "planned"
     assert {item["code"] for item in payload["data"]["ticket_settings"]["support_lines"]} == {"L1", "L2", "L3"}
+    request_templates = {item["id"]: item for item in payload["data"]["ticket_settings"]["request_templates"]}
+    assert request_templates["breakage"]["public_title"] == "Поломка"
+    assert request_templates["breakage"]["classification"]["ticket_type"] == "incident"
+    assert request_templates["breakage"]["form"]["form_schema_id"] == "breakage_form"
+    assert request_templates["breakage"]["form"]["required_fields_count"] >= 1
+    assert request_templates["breakage"]["workflow"]["workflow_profile_id"] == "incident"
+    assert request_templates["breakage"]["priority"]["policy_id"] == "inline:breakage:priority_policy"
+    assert request_templates["breakage"]["sla"]["policy_id"] is None
+    assert "closure_policy" in request_templates["breakage"]["policies_missing"]
     assert payload["data"]["ticket_settings"]["priority_model"]["direct_user_priority_choice"] is False
     assert "deadline_today" in payload["data"]["ticket_settings"]["priority_model"]["modifiers"]
     routing_fields = {item["field"] for item in payload["data"]["routing_builder"]["fields"]}

@@ -46,6 +46,7 @@ export type AdminFormsFormItem = {
   priority_policy?: Record<string, unknown>;
   routing_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;
+  diagnostic_policy?: Record<string, unknown>;
   ola_policy?: Record<string, unknown>;
   closure_policy?: Record<string, unknown>;
   visibility_policy?: Record<string, unknown>;
@@ -98,6 +99,7 @@ export type AdminFormsSaveRequest = {
     priority_policy?: Record<string, unknown>;
     routing_policy?: Record<string, unknown>;
     approval_policy?: Record<string, unknown>;
+    diagnostic_policy?: Record<string, unknown>;
     ola_policy?: Record<string, unknown>;
     closure_policy?: Record<string, unknown>;
     visibility_policy?: Record<string, unknown>;

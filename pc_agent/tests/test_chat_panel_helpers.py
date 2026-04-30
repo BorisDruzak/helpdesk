@@ -192,7 +192,7 @@ def test_build_ticket_meta_html_includes_request_form_summary():
     assert "Поломка" in html
     assert "Что сломалось" in html
     assert "МФУ" in html
-    assert "SLA: first response" in html
+    assert "Ответить должны до" in html
     assert "2026-04-16T15:12:09+00:00" in html
 
 
@@ -205,9 +205,9 @@ def test_build_ticket_sla_user_summary_uses_dynamic_due_dates():
         }
     )
 
-    assert "priority=P0" in summary
-    assert "first response due: 2026-04-16T15:12:09+00:00" in summary
-    assert "resolution/workaround due: 2026-04-16T18:57:09+00:00" in summary
+    assert "Приоритет: P0" in summary
+    assert "Вам должны ответить до 2026-04-16T15:12:09+00:00" in summary
+    assert "Решение или обходной вариант ожидается до 2026-04-16T18:57:09+00:00" in summary
 
 
 def test_ticket_status_label_is_localized():

@@ -309,7 +309,7 @@ export const tickets: TicketRecord[] = [
     priority: "medium",
     status: "in_progress",
     tags: ["уведомления"],
-    summary: "Нужно настроить персональные email-уведомления по SLA и эскалациям.",
+    summary: "Нужно настроить персональные email-уведомления по срокам ответа и эскалациям.",
     messages: [],
     attachments: [],
     history: []
@@ -448,7 +448,7 @@ export const settingsTabs = [
   "Общие",
   "Почта",
   "Уведомления",
-  "SLA",
+  "Сроки ответа",
   "Поля тикетов",
   "Интеграции",
   "Безопасность"

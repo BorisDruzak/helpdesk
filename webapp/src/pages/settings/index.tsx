@@ -162,7 +162,7 @@ const TAB_ITEMS = [
   { value: "notifications", label: "Уведомления" },
   { value: "queues", label: "Очереди" },
   { value: "routing", label: "Маршрутизация" },
-  { value: "sla", label: "SLA" },
+  { value: "sla", label: "Сроки" },
   { value: "calendars", label: "Календари" },
   { value: "resolution", label: "Коды решения" },
   { value: "audit", label: "Аудит" },
@@ -203,7 +203,7 @@ const NOTIFICATION_CATALOG = [
   },
   {
     eventType: "sla_breached",
-    title: "SLA нарушен",
+    title: "Срок ответа или решения нарушен",
     description: "Watchdog создал уведомление о просрочке реакции или решения.",
   },
   {
@@ -885,8 +885,8 @@ export function SettingsPage() {
       }
       await saveWebSettingsWorkflowProfiles(profiles);
     },
-    onSuccess: async () => refreshSettings("Workflow profiles сохранены."),
-    onError: (error) => reportError(error, "Не удалось сохранить workflow profiles."),
+    onSuccess: async () => refreshSettings("Профили процесса сохранены."),
+    onError: (error) => reportError(error, "Не удалось сохранить профили процесса."),
   });
 
   const queueMutation = useMutation({
@@ -968,9 +968,9 @@ export function SettingsPage() {
       await saveWebSettingsOlaTargets(selectedQueue.id, olaDraft);
     },
     onSuccess: async () => {
-      await refreshSettings("OLA-цели сохранены.");
+      await refreshSettings("Внутренние сроки очереди сохранены.");
     },
-    onError: (error) => reportError(error, "Не удалось сохранить OLA-цели."),
+    onError: (error) => reportError(error, "Не удалось сохранить внутренние сроки очереди."),
   });
 
   const routingMutation = useMutation({
@@ -1010,7 +1010,7 @@ export function SettingsPage() {
         throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
       }
       if (!policyDraft.name.trim()) {
-        throw new Error("У SLA-политики должно быть имя.");
+        throw new Error("У политики сроков должно быть имя.");
       }
       const payloadToSave = {
         name: policyDraft.name.trim(),
@@ -1034,9 +1034,9 @@ export function SettingsPage() {
       if (result.created) {
         setSelectedPolicyId(result.id);
       }
-      await refreshSettings("SLA-политика сохранена.");
+      await refreshSettings("Политика сроков сохранена.");
     },
-    onError: (error) => reportError(error, "Не удалось сохранить SLA-политику."),
+    onError: (error) => reportError(error, "Не удалось сохранить политику сроков."),
   });
 
   const slaTargetsMutation = useMutation({
@@ -1045,14 +1045,14 @@ export function SettingsPage() {
         throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
       }
       if (!selectedPolicy) {
-        throw new Error("Сначала выберите SLA-политику.");
+        throw new Error("Сначала выберите политику сроков.");
       }
       await saveWebSettingsSlaTargets(selectedPolicy.id, slaTargetsDraft);
     },
     onSuccess: async () => {
-      await refreshSettings("SLA-цели сохранены.");
+      await refreshSettings("Сроки ответа и решения сохранены.");
     },
-    onError: (error) => reportError(error, "Не удалось сохранить SLA-цели."),
+    onError: (error) => reportError(error, "Не удалось сохранить сроки ответа и решения."),
   });
 
   const priorityMatrixMutation = useMutation({
@@ -1061,7 +1061,7 @@ export function SettingsPage() {
         throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
       }
       if (!selectedPolicy) {
-        throw new Error("Сначала выберите SLA-политику.");
+        throw new Error("Сначала выберите политику сроков.");
       }
       await saveWebSettingsPriorityMatrix(selectedPolicy.id, priorityMatrixDraft);
     },
@@ -1164,7 +1164,7 @@ export function SettingsPage() {
             Обновить
           </Button>
         }
-        description="Живые настройки ticket-системы поверх старого admin-config контура: очереди, маршрутизация, SLA, календари, OLA, коды решения и аудит."
+        description="Живые настройки ticket-системы поверх старого admin-config контура: очереди, маршрутизация, сроки ответа и решения, календари, внутренние сроки очередей, коды решения и аудит."
         eyebrow="Configuration"
         title="Настройки"
       />
@@ -1216,7 +1216,7 @@ export function SettingsPage() {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <p className="text-sm text-slate-500">SLA и календари</p>
+                    <p className="text-sm text-slate-500">Сроки и календари</p>
                     <p className="mt-2 text-3xl font-semibold text-slate-950">{payload.overview.sla_policies_count}</p>
                     <p className="mt-2 text-sm text-slate-500">Календарей: {payload.overview.calendars_count}</p>
                   </CardContent>
@@ -1321,13 +1321,13 @@ export function SettingsPage() {
                   <CardContent className="pt-6">
                     <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
                       <GitBranch className="h-4 w-4 text-brand-700" />
-                      SLA / OLA
+                      Сроки ответа и очередей
                     </div>
                     <p className="mt-2 text-3xl font-semibold text-slate-950">
                       {formatBooleanFlag(payload.ticket_settings.operational_flags.ola_enabled)}
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
-                      Calendar SLA: {formatBooleanFlag(payload.ticket_settings.operational_flags.sla_calendar_enabled)}
+                      Рабочий календарь для сроков: {formatBooleanFlag(payload.ticket_settings.operational_flags.sla_calendar_enabled)}
                     </p>
                   </CardContent>
                 </Card>
@@ -1337,7 +1337,7 @@ export function SettingsPage() {
                 <CardHeader>
                   <CardTitle>Схема service desk</CardTitle>
                   <CardDescription>
-                    request_template → ticket_type/workflow_profile → priority → routing → SLA/OLA → observer
+                    Шаблон обращения → форма → процесс → приоритет → сроки → очередь → паспорт
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -1367,20 +1367,20 @@ export function SettingsPage() {
                           </p>
                         </div>
                         <Badge tone={payload.ticket_settings.priority_model.direct_user_priority_choice ? "warning" : "success"}>
-                          {payload.ticket_settings.priority_model.direct_user_priority_choice ? "Ручной выбор" : "Факты → priority"}
+                          {payload.ticket_settings.priority_model.direct_user_priority_choice ? "Ручной выбор" : "Факты → приоритет"}
                         </Badge>
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-3">
                         <div className="rounded-[0.9rem] bg-white px-3 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Impact</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Влияние</p>
                           <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.impact_levels.join(", ")}</p>
                         </div>
                         <div className="rounded-[0.9rem] bg-white px-3 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Urgency</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Срочность</p>
                           <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.urgency_levels.join(", ")}</p>
                         </div>
                         <div className="rounded-[0.9rem] bg-white px-3 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Importance</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Важность</p>
                           <p className="mt-2 text-sm text-slate-700">{payload.ticket_settings.priority_model.importance_sources.join(", ")}</p>
                         </div>
                       </div>
@@ -1412,15 +1412,15 @@ export function SettingsPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Workflow profiles</CardTitle>
-                  <CardDescription>ticket_type controls the process profile and status transition map.</CardDescription>
+                  <CardTitle>Профили процесса</CardTitle>
+                  <CardDescription>Тип процесса выбирает жизненный цикл и разрешённые переходы статусов.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <PermissionNotice text={routingDeniedReason} />
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
-                      <Badge tone="info">{workflowProfileDrafts.length} profiles</Badge>
-                      <Badge tone="neutral">status transitions are JSON</Badge>
+                      <Badge tone="info">{workflowProfileDrafts.length} профилей</Badge>
+                      <Badge tone="neutral">переходы хранятся как JSON</Badge>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -1434,14 +1434,14 @@ export function SettingsPage() {
                         variant="secondary"
                       >
                         <Plus className="h-4 w-4" />
-                        New type
+                        Новый тип
                       </Button>
                       <Button
                         disabled={!canManageRouting || workflowProfilesMutation.isPending}
                         onClick={() => workflowProfilesMutation.mutate()}
                       >
                         <Workflow className="h-4 w-4" />
-                        Save workflow profiles
+                        Сохранить профили процесса
                       </Button>
                     </div>
                   </div>
@@ -1451,8 +1451,8 @@ export function SettingsPage() {
                       <div key={`${profile.ticket_type}-${index}`} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="font-semibold text-slate-950">{profile.label || profile.ticket_type || `Profile ${index + 1}`}</p>
-                            <p className="mt-1 text-xs text-slate-500">{profile.purpose || "purpose is not set"}</p>
+                            <p className="font-semibold text-slate-950">{profile.label || profile.ticket_type || `Профиль ${index + 1}`}</p>
+                            <p className="mt-1 text-xs text-slate-500">{profile.purpose || "назначение не указано"}</p>
                           </div>
                           <Button
                             disabled={!canManageRouting || workflowProfileDrafts.length <= 1}
@@ -1477,7 +1477,7 @@ export function SettingsPage() {
                               value={profile.ticket_type}
                             />
                           </SettingsField>
-                          <SettingsField label="Label">
+                          <SettingsField label="Название">
                             <Input
                               disabled={!canManageRouting}
                               onChange={(event) =>
@@ -1490,7 +1490,7 @@ export function SettingsPage() {
                               value={profile.label}
                             />
                           </SettingsField>
-                          <SettingsField label="Purpose">
+                          <SettingsField label="Назначение">
                             <Input
                               disabled={!canManageRouting}
                               onChange={(event) =>
@@ -1507,11 +1507,11 @@ export function SettingsPage() {
 
                         <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           {[
-                            ["suggested_path_text", "Suggested path"],
-                            ["allowed_statuses_text", "Allowed statuses"],
-                            ["required_create_fields_text", "Required create fields"],
-                            ["required_resolve_fields_text", "Required resolve fields"],
-                            ["evidence_required_for_priorities_text", "Evidence priorities"],
+                            ["suggested_path_text", "Рекомендуемый путь"],
+                            ["allowed_statuses_text", "Разрешённые статусы"],
+                            ["required_create_fields_text", "Поля при создании"],
+                            ["required_resolve_fields_text", "Поля при решении"],
+                            ["evidence_required_for_priorities_text", "Приоритеты с доказательствами"],
                           ].map(([key, label]) => (
                             <SettingsField key={key} label={label}>
                               <Input
@@ -1531,9 +1531,9 @@ export function SettingsPage() {
 
                         <div className="mt-4 grid gap-3 md:grid-cols-3">
                           {[
-                            ["requires_approval", "Requires approval"],
-                            ["requires_change_plan", "Requires change plan"],
-                            ["requires_action_log", "Requires action log"],
+                            ["requires_approval", "Требует согласование"],
+                            ["requires_change_plan", "Требует план изменений"],
+                            ["requires_action_log", "Требует журнал действий"],
                           ].map(([key, label]) => (
                             <label key={key} className="flex items-center gap-3 rounded-[1rem] bg-surface-subtle px-4 py-3 text-sm font-medium text-slate-800">
                               <input
@@ -1553,7 +1553,7 @@ export function SettingsPage() {
                           ))}
                         </div>
 
-                        <SettingsField label="Transitions JSON">
+                        <SettingsField label="Переходы статусов JSON">
                           <textarea
                             className="field-base mt-4 min-h-[220px] w-full px-4 py-3 font-mono text-xs"
                             disabled={!canManageRouting}
@@ -1724,9 +1724,9 @@ export function SettingsPage() {
                     <CardDescription>Редактируемые части тикетной системы уже вынесены в соседние вкладки.</CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-3">
-                    <Button onClick={() => setActiveTab("queues")} variant="outline">Очереди и OLA</Button>
+                    <Button onClick={() => setActiveTab("queues")} variant="outline">Очереди и внутренние сроки</Button>
                     <Button onClick={() => setActiveTab("routing")} variant="outline">Маршрутизация</Button>
-                    <Button onClick={() => setActiveTab("sla")} variant="outline">SLA и матрица приоритетов</Button>
+                    <Button onClick={() => setActiveTab("sla")} variant="outline">Сроки и матрица приоритетов</Button>
                     <Button onClick={() => setActiveTab("resolution")} variant="outline">Коды решения</Button>
                   </CardContent>
                 </Card>
@@ -1825,7 +1825,7 @@ export function SettingsPage() {
                       />
                       <span>
                         <span className="block font-medium text-slate-950">Глушить internal-note</span>
-                        <span className="mt-1 block text-sm text-slate-500">Оставляет публичные события и SLA, но убирает внутренние заметки.</span>
+                        <span className="mt-1 block text-sm text-slate-500">Оставляет публичные события и сроки ответа, но убирает внутренние заметки.</span>
                       </span>
                     </label>
                   </CardContent>
@@ -1877,7 +1877,7 @@ export function SettingsPage() {
               <Card className="h-fit">
                 <CardHeader>
                   <CardTitle>Очереди</CardTitle>
-                  <CardDescription>Выбор очереди, участники и OLA-цели.</CardDescription>
+                  <CardDescription>Выбор очереди, участники и внутренние сроки принятия и обработки.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Button
@@ -2015,7 +2015,7 @@ export function SettingsPage() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>OLA-цели</CardTitle>
+                      <CardTitle>Внутренние сроки очереди</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {olaDraft.map((row) => (
@@ -2048,7 +2048,7 @@ export function SettingsPage() {
                         </div>
                       ))}
                       <Button disabled={!canManageQueues || olaMutation.isPending || !selectedQueue} onClick={() => olaMutation.mutate()} className="w-full">
-                        Сохранить OLA
+                        Сохранить внутренние сроки
                       </Button>
                     </CardContent>
                   </Card>
@@ -2267,7 +2267,7 @@ export function SettingsPage() {
             <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
               <Card className="h-fit">
                 <CardHeader>
-                  <CardTitle>SLA-политики</CardTitle>
+                  <CardTitle>Политики сроков</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <PermissionNotice text={routingDeniedReason} />
@@ -2309,7 +2309,7 @@ export function SettingsPage() {
                 <PermissionNotice text={routingDeniedReason} />
                 <Card>
                   <CardHeader>
-                    <CardTitle>{selectedPolicy ? selectedPolicy.name : "Новая SLA-политика"}</CardTitle>
+                    <CardTitle>{selectedPolicy ? selectedPolicy.name : "Новая политика сроков"}</CardTitle>
                   </CardHeader>
                   <CardContent className="grid gap-4">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -2319,7 +2319,7 @@ export function SettingsPage() {
                           value={policyDraft.name}
                         />
                       </SettingsField>
-                      <SettingsField label="Timezone">
+                      <SettingsField label="Часовой пояс">
                         <Input
                           onChange={(event) => setPolicyDraft((current) => ({ ...current, timezone: event.target.value }))}
                           value={policyDraft.timezone}
@@ -2372,7 +2372,7 @@ export function SettingsPage() {
                       </Select>
                     </SettingsField>
                     <Button disabled={!canManageRouting || policyMutation.isPending} onClick={() => policyMutation.mutate()} className="w-full">
-                      Сохранить SLA-политику
+                      Сохранить политику сроков
                     </Button>
                   </CardContent>
                 </Card>
@@ -2380,7 +2380,7 @@ export function SettingsPage() {
                 <div className="grid gap-6 xl:grid-cols-2">
                   <Card>
                     <CardHeader>
-                      <CardTitle>SLA targets</CardTitle>
+                      <CardTitle>Сроки ответа и решения</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {slaTargetsDraft.map((row) => (
@@ -2417,20 +2417,20 @@ export function SettingsPage() {
                         </div>
                       ))}
                       <Button disabled={!canManageRouting || slaTargetsMutation.isPending || !selectedPolicy} onClick={() => slaTargetsMutation.mutate()} className="w-full">
-                        Сохранить SLA targets
+                        Сохранить сроки
                       </Button>
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Матрица impact × urgency</CardTitle>
+                      <CardTitle>Матрица влияния и срочности</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {priorityMatrixDraft.map((row) => (
                         <div key={`${row.impact}:${row.urgency}`} className="grid gap-3 rounded-[1.1rem] bg-surface-subtle px-4 py-4 md:grid-cols-[1fr_1fr_1fr]">
                           <div className="text-sm font-medium text-slate-900">
-                            Impact {row.impact} / Urgency {row.urgency}
+                            Влияние {row.impact} / срочность {row.urgency}
                           </div>
                           <Select
                             onChange={(event) =>
@@ -2660,7 +2660,7 @@ export function SettingsPage() {
                         ))
                       ) : (
                         <div className="rounded-[0.9rem] border border-dashed border-border bg-white px-4 py-5 text-sm text-slate-500">
-                          Исключений нет. Добавьте дату, если SLA не должен считать этот день рабочим.
+                          Исключений нет. Добавьте дату, если сроки ответа не должны считать этот день рабочим.
                         </div>
                       )}
                     </div>

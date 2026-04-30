@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 8 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 9 implemented locally and ready for release/live verification. Scope is functional backend/domain behavior first; current UI work is localization of existing labels and user-facing wording, not a visual redesign.
 
 ### Goal
 
@@ -104,6 +104,41 @@ Missing or weak:
    - Stop remote server after checks unless the user explicitly asks to leave it running.
 
 ### Current Step
+
+Slice 9 in progress: request-template catalog contract and Russian user-facing localization.
+
+Planned behavior:
+
+- `GET /api/web/settings` exposes a typed `ticket_settings.request_templates` catalog assembled from the current preferred request-form pack.
+- Each request template shows its public title, internal/process classification, form stats, workflow profile and policy bindings without requiring a separate DB migration yet.
+- User-facing web and agent strings avoid raw `SLA` where the user needs an understandable promise: "вам должны ответить до", "решение ожидается до", "сроки ответа и решения".
+- Admin/internal surfaces may keep technical keys in small code/source fields, but labels and descriptions should be Russian.
+
+Implemented behavior:
+
+- `GET /api/web/settings` now exposes `ticket_settings.request_templates`, assembled from the preferred request-form pack without adding a new storage migration.
+- Request-template rows include public title, internal name, classification, form stats, workflow binding, priority/routing/SLA/OLA/approval/diagnostic/closure/visibility/notification policy bindings, field roles and missing-policy markers.
+- Form-pack validation/admin DTOs preserve `diagnostic_policy` alongside the existing request-template policy JSON blocks.
+- Web UI labels in settings/forms/reports/ticket detail and local agent ticket metadata now use Russian wording such as "сроки ответа и решения", "вам должны ответить до" and "решение ожидается до" instead of exposing raw SLA/OLA wording to users.
+- Backend smart-view labels now describe deadline risks as "Риск по сроку ответа" and "Риск внутренней очереди".
+
+Initial failing tests:
+
+- `server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload` fails on old `SLA` process-schema wording and missing `request_templates`.
+- `pc_agent/tests/test_chat_panel_helpers.py::test_build_ticket_meta_html_includes_request_form_summary` fails on old `SLA: first response`.
+- `pc_agent/tests/test_chat_panel_helpers.py::test_build_ticket_sla_user_summary_uses_dynamic_due_dates` fails on old `first response due` / `resolution/workaround due`.
+
+Local verification for slice 9:
+
+- `python -m pytest server/tests/test_web_settings_api.py server/tests/test_web_support_api.py::test_web_support_queue_applies_smart_view_sla_risk server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context -q --tb=short` -> passed, 12 tests.
+- `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q --tb=short` -> passed, 28 tests.
+- `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx src/pages/tickets/detail-page.test.tsx` -> passed, 23 tests.
+- `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
+- `python -m pytest server/tests/test_web_settings_api.py server/tests/test_web_support_api.py server/tests/test_ticket_form_packs.py server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_current_returns_typed_payload -q --tb=short` -> passed, 47 tests.
+- `pnpm --dir webapp run build` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
+
+Previous current step:
 
 Slice 8 implemented and live-verified: executable notification policy and backend smart views.
 
@@ -375,6 +410,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Continue with diagnostic policy and evidence/passport binding.
-2. Start with tests for suggested playbooks, consent requirements, attach-to-passport/evidence flags and reroute-by-result metadata.
-3. Keep workflow/routing/priority/SLA/approval/closure regression tests in the verification set.
+1. Finish slice 9 implementation from the failing tests.
+2. Run focused backend, web and agent tests, then `python scripts/verify_workspace.py`.
+3. Build/release web assets, deploy through project scripts, perform live API/browser verification, then stop the remote server.

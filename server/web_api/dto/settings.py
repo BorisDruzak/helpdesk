@@ -157,6 +157,30 @@ class WebSettingsWorkflowProfileItem(BaseModel):
     transition_gates: dict[str, dict[str, dict]] = Field(default_factory=dict)
 
 
+class WebSettingsRequestTemplateItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    public_title: str
+    internal_name: str
+    active: bool = True
+    version: str
+    classification: dict
+    form: dict
+    workflow: dict
+    priority: dict
+    routing: dict
+    sla: dict
+    ola: dict
+    approvals: dict
+    diagnostics: dict
+    closure: dict
+    visibility: dict
+    notifications: dict
+    field_roles: dict[str, list[str]] = Field(default_factory=dict)
+    policies_missing: list[str] = Field(default_factory=list)
+
+
 class WebSettingsProcessSchemaItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -225,6 +249,7 @@ class WebSettingsTicketSettingsPayload(BaseModel):
     requester_statuses: list[WebSettingsRequesterStatusItem] = Field(default_factory=list)
     next_action_owners: list[WebSettingsNextActionOwnerItem] = Field(default_factory=list)
     workflow_profiles: list[WebSettingsWorkflowProfileItem] = Field(default_factory=list)
+    request_templates: list[WebSettingsRequestTemplateItem] = Field(default_factory=list)
     process_schema: list[WebSettingsProcessSchemaItem] = Field(default_factory=list)
     support_lines: list[WebSettingsSupportLineItem] = Field(default_factory=list)
     priority_model: WebSettingsPriorityModelPayload

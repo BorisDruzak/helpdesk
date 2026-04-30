@@ -256,7 +256,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(screen.getByLabelText("Ключ поля"), {
       target: { value: "issue_code" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add priority questions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Добавить вопросы" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
 

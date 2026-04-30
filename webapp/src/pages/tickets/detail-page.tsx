@@ -1586,15 +1586,15 @@ export function TicketDetailPage() {
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
-                <p className="text-xs text-slate-500">Impact</p>
+                <p className="text-xs text-slate-500">Влияние</p>
                 <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.impact ?? "Не указан"}</p>
               </div>
               <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
-                <p className="text-xs text-slate-500">Urgency</p>
+                <p className="text-xs text-slate-500">Срочность</p>
                 <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.urgency ?? "Не указана"}</p>
               </div>
               <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">
-                <p className="text-xs text-slate-500">Importance</p>
+                <p className="text-xs text-slate-500">Важность</p>
                 <p className="mt-1 text-sm font-semibold text-slate-950">{detail.ticket.importance ?? "Не указана"}</p>
               </div>
               <div className="rounded-[0.9rem] bg-white px-4 py-3 ring-1 ring-border">

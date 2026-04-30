@@ -88,6 +88,7 @@ _TEMPLATE_DICT_FIELDS = (
     "priority_policy",
     "routing_policy",
     "approval_policy",
+    "diagnostic_policy",
     "ola_policy",
     "closure_policy",
     "visibility_policy",
