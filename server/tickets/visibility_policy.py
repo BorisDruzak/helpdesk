@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.statuses import requester_status_for_internal, requester_status_label_ru
 
 DEFAULT_HIDE_FROM_REQUESTER = {
@@ -67,7 +68,7 @@ def _resolve_mapping_entry(entry: Any, requester_status: str) -> tuple[str, str]
     return None
 
 
-def resolve_public_status(ticket: Any) -> dict[str, str]:
+def _resolve_public_status_with_policy(ticket: Any, policy: dict[str, Any]) -> dict[str, str]:
     internal_status = str(getattr(ticket, "status", None) or "").strip()
     derived_requester_status = requester_status_for_internal(internal_status)
     stored_requester_status = str(getattr(ticket, "requester_status", None) or "").strip()
@@ -75,7 +76,6 @@ def resolve_public_status(ticket: Any) -> dict[str, str]:
         requester_status = stored_requester_status
     else:
         requester_status = derived_requester_status
-    policy = get_template_visibility_policy(ticket)
     mapping = _public_status_mapping(policy)
     mapped = None
     if mapping:
@@ -90,28 +90,45 @@ def resolve_public_status(ticket: Any) -> dict[str, str]:
     }
 
 
-def build_visibility_metadata(ticket: Any) -> dict[str, Any]:
-    policy = get_template_visibility_policy(ticket)
+def resolve_public_status(ticket: Any) -> dict[str, str]:
+    return _resolve_public_status_with_policy(ticket, get_template_visibility_policy(ticket))
+
+
+def _build_visibility_metadata_with_policy(
+    policy: dict[str, Any],
+    *,
+    source: str,
+) -> dict[str, Any]:
     hide = sorted(DEFAULT_HIDE_FROM_REQUESTER | set(_string_list(policy.get("hide_from_requester"))))
     show = _string_list(policy.get("show_to_requester"))
     support_fields = _string_list(policy.get("show_to_support") or policy.get("support_fields"))
     return {
-        "source": "request_template.visibility_policy" if policy else "default",
+        "source": source if policy else "default",
         "hidden_from_requester": hide,
         "requester_visible_fields": show,
         "support_visible_fields": support_fields,
     }
 
 
-def apply_ticket_visibility_payload(
+def build_visibility_metadata(ticket: Any) -> dict[str, Any]:
+    policy = get_template_visibility_policy(ticket)
+    return _build_visibility_metadata_with_policy(
+        policy,
+        source="request_template.visibility_policy",
+    )
+
+
+def _apply_visibility_payload_with_policy(
     ticket: Any,
     payload: dict[str, Any],
     *,
     visibility: str,
+    policy: dict[str, Any],
+    source: str,
 ) -> dict[str, Any]:
     result = deepcopy(payload)
-    public_status = resolve_public_status(ticket)
-    metadata = build_visibility_metadata(ticket)
+    public_status = _resolve_public_status_with_policy(ticket, policy)
+    metadata = _build_visibility_metadata_with_policy(policy, source=source)
     result.update(public_status)
     result["visibility"] = {
         "source": metadata["source"],
@@ -124,3 +141,41 @@ def apply_ticket_visibility_payload(
         for key in metadata["hidden_from_requester"]:
             result.pop(key, None)
     return result
+
+
+def apply_ticket_visibility_payload(
+    ticket: Any,
+    payload: dict[str, Any],
+    *,
+    visibility: str,
+) -> dict[str, Any]:
+    return _apply_visibility_payload_with_policy(
+        ticket,
+        payload,
+        visibility=visibility,
+        policy=get_template_visibility_policy(ticket),
+        source="request_template.visibility_policy",
+    )
+
+
+async def apply_ticket_visibility_payload_async(
+    session: Any,
+    ticket: Any,
+    payload: dict[str, Any],
+    *,
+    visibility: str,
+) -> dict[str, Any]:
+    snapshot_policy = get_template_visibility_policy(ticket)
+    policy = await resolve_effective_ticket_policy(session, ticket, "visibility")
+    source = (
+        "effective.visibility_policy"
+        if policy and policy != snapshot_policy
+        else "request_template.visibility_policy"
+    )
+    return _apply_visibility_payload_with_policy(
+        ticket,
+        payload,
+        visibility=visibility,
+        policy=policy,
+        source=source,
+    )

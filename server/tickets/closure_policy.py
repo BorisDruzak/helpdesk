@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.db.models import TicketEvidenceItem
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.statuses import extract_priority_class
 
 
@@ -59,7 +60,7 @@ async def validate_closure_policy(
     if ticket is None or to_status != "resolved":
         return {"applied": False}
 
-    policy = get_template_closure_policy(ticket)
+    policy = await resolve_effective_ticket_policy(session, ticket, "closure")
     if not policy:
         return {"applied": False}
 

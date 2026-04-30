@@ -56,7 +56,7 @@ from tickets.statuses import (
     resolve_status,
 )
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
-from tickets.visibility_policy import apply_ticket_visibility_payload
+from tickets.visibility_policy import apply_ticket_visibility_payload_async
 from utils import new_ticket_id
 from websocket.ui_handler import push_ticket_event_committed
 
@@ -518,7 +518,7 @@ async def _ticket_payload(
             for queue in available_queues
         ]
     ticket_data = _merge_ticket_with_chat_counters(ticket_data, chat_counters)
-    return apply_ticket_visibility_payload(ticket, ticket_data, visibility=visibility)
+    return await apply_ticket_visibility_payload_async(session, ticket, ticket_data, visibility=visibility)
 
 
 async def _chat_counters_by_ticket_ids(repo: TicketEventsRepo, ticket_ids: Iterable[Optional[str]]) -> Dict[str, Dict[str, Any]]:
@@ -1182,7 +1182,13 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             "provisioning_summary": provisioning_summary,
             "update_summary": update_summary,
         }
-        return web.json_response(apply_ticket_visibility_payload(ticket, response_payload, visibility=visibility))
+        payload = await apply_ticket_visibility_payload_async(
+            session,
+            ticket,
+            response_payload,
+            visibility=visibility,
+        )
+        return web.json_response(payload)
 
 
 async def handle_ticket_get_observer_summary(request: web.Request) -> web.Response:

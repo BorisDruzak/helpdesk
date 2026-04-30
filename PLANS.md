@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 84% after custom smart-view runtime and standalone SLA JSON target calculation.
+Status: executing the remaining target-model gaps. Current factual completion is about 88% after custom smart-view runtime, standalone SLA JSON target calculation and lifecycle effective policy resolution for workflow guards, notifications and runtime visibility.
 
 ### Goal
 
@@ -19,7 +19,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 2. Standalone SLA policy timer engine.
    - Files: `server/tickets/sla_service.py`, `server/tickets/calendar_engine.py`, `server/tickets/helpdesk_policy_runtime.py`, `server/tests/test_ticket_sla_policy.py` or a focused new test file.
    - Behavior: standalone `sla_policies.config.targets.first_response/resolution` can calculate due dates directly when no canonical `ticket_sla_policies` id is referenced.
-   - Calendar: keep existing business-calendar calculation; JSON durations such as `15m`, `1h`, `3d` must map to working-time aware deadlines.
+   - Calendar: keep existing business-calendar calculation; numeric JSON durations with `m`, `h` or `d` units such as `15m`, `90m`, `1h`, `8h`, `3d` must map to working-time aware deadlines. Raw numeric values remain minutes for backward compatibility.
    - Compatibility: if `sla_policy_id` points to canonical `ticket_sla_policies`, keep existing engine path.
    - Verification: tests for P0/P1/P2/P3 targets, calendar pauses, stop/pause conditions where currently supported.
 
@@ -53,7 +53,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 
 ### Current Slice
 
-Slice 15: implement standalone SLA JSON targets in timer runtime.
+Slice 16: effective registry policy resolution across lifecycle runtime.
 
 Progress:
 
@@ -69,6 +69,19 @@ Progress:
 - [x] Add ticket-create API regression proving published standalone `sla` policy sets due dates without `ticket.sla_policy_id`.
 - [x] Run focused SLA/priority/registry tests and workspace verification.
 - [x] Release/live-check standalone SLA runtime on the Linux stand.
+- [x] Write failing tests proving registry-only `closure`, `approval`, `notification` and `visibility` policies are ignored after ticket creation.
+- [x] Add `resolve_effective_ticket_policy(...)` for existing-ticket lifecycle runtime.
+- [x] Apply effective registry resolution to approval guards, closure guards, notification recipients and async ticket visibility payloads.
+- [x] Run focused lifecycle/registry tests and workspace verification.
+- [ ] Commit, release/live-check lifecycle runtime and stop the remote server.
+
+Local verification for slice 16:
+
+- `python -m pytest server/tests/test_ticket_closure_policy.py::test_closure_policy_resolves_from_registry_during_transition server/tests/test_ticket_approval_policy.py::test_approval_policy_resolves_from_registry_during_transition server/tests/test_stage8.py::test_notification_policy_resolves_from_registry_when_snapshot_missing -v --tb=short` -> passed, 3 tests.
+- `python -m pytest server/tests/test_ticket_workflow_visibility.py::test_runtime_visibility_policy_resolves_from_registry -v --tb=short` -> passed, 1 test.
+- `python -m pytest server/tests/test_ticket_closure_policy.py server/tests/test_ticket_approval_policy.py server/tests/test_stage8.py server/tests/test_ticket_workflow_visibility.py server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> passed, 29 tests.
+- `python -m pytest server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q --tb=short` -> passed, 2 tests.
+- `python scripts/verify_workspace.py` -> passed.
 
 ### Completion Metric
 

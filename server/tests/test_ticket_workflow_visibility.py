@@ -163,6 +163,65 @@ def test_ticket_serializer_applies_request_template_visibility_policy():
 
 
 @pytest.mark.asyncio
+async def test_runtime_visibility_policy_resolves_from_registry(test_engine):
+    import uuid
+
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db.models import HelpdeskPolicyAudit, VisibilityPolicy
+    from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+    from tickets.visibility_policy import apply_ticket_visibility_payload_async
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "visibility_policies"))
+        await session.execute(delete(VisibilityPolicy))
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="visibility",
+            code="website_visibility_runtime",
+            title="Website visibility runtime",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config={
+                "public_status_mapping": {
+                    "waiting_on_internal_team": "Work continues without user action"
+                },
+                "hide_from_requester": ["root_cause"],
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=str(uuid.uuid4()),
+            title="Registry visibility",
+            description="Registry visibility check",
+            status="waiting_on_internal_team",
+            requester_id="requester-1",
+            requester_status="in_work",
+            ticket_type="incident",
+            custom_fields={
+                "request_template": {
+                    "key": "website_unavailable",
+                    "ticket_type": "incident",
+                }
+            },
+        )
+        payload = await apply_ticket_visibility_payload_async(
+            session,
+            ticket,
+            {"root_cause": "Internal resolver failed"},
+            visibility="requester",
+        )
+
+    assert payload["public_status_label"] == "Work continues without user action"
+    assert "root_cause" not in payload
+    assert payload["visibility"]["source"] == "effective.visibility_policy"
+
+
+@pytest.mark.asyncio
 async def test_workflow_updates_next_owner_requester_status_and_wait_ledger(test_engine):
     session_maker = async_sessionmaker(test_engine)
     ticket_id = str(uuid.uuid4())

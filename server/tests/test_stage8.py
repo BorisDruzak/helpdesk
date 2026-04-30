@@ -137,3 +137,70 @@ async def test_notification_policy_limits_recipients_by_request_template():
 
     actor_ids = [call.kwargs["actor_id"] for call in notif_repo.create.call_args_list]
     assert actor_ids == ["assignee-1", "requester-1"]
+
+
+@pytest.mark.asyncio
+async def test_notification_policy_resolves_from_registry_when_snapshot_missing(test_engine):
+    """Published notification policy suppresses legacy recipients during lifecycle events."""
+    import uuid
+
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db.models import HelpdeskPolicyAudit, NotificationPolicy, Ticket
+    from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+    from app.repos.ticket_events_repo import TicketEventsRepo
+    from tickets.notification_service import get_recipients
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "notification_policies"))
+        await session.execute(delete(NotificationPolicy))
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="notification",
+            code="website_notification_runtime",
+            title="Website notification runtime",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config={
+                "on_status_changed": {
+                    "requester": False,
+                    "assignee": False,
+                    "queue": False,
+                    "watchers": False,
+                }
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        ticket_id = str(uuid.uuid4())
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=f"device-{ticket_id[:8]}",
+                title="Website unavailable",
+                description="Registry notification policy check",
+                status="in_progress",
+                requester_id="requester-1",
+                assignee_id="assignee-1",
+                ticket_type="incident",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                    }
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        recipients = await get_recipients(
+            TicketEventsRepo(session),
+            ticket_id,
+            "status_changed",
+            visibility="public",
+        )
+
+    assert recipients == []

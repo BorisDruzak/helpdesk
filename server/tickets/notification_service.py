@@ -9,6 +9,7 @@ from loguru import logger
 from app.repos.notification_prefs_repo import DEFAULT_SUPPRESS_SELF
 from app.repos.notification_repo import NotificationRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 
 if TYPE_CHECKING:
     from app.repos.notification_prefs_repo import NotificationPrefsRepo
@@ -71,7 +72,13 @@ async def get_recipients(
     recipient_ids: list[str] = []
     seen: set[str] = set()
     is_public_event = event_type in PUBLIC_EVENT_TYPES or visibility == "public"
-    event_policy = _event_policy(get_template_notification_policy(ticket), event_type)
+    notification_policy = await resolve_effective_ticket_policy(
+        getattr(ticket_repo, "session", None),
+        ticket,
+        "notification",
+        snapshot_fields=("notification_policy", "notifications"),
+    )
+    event_policy = _event_policy(notification_policy, event_type)
 
     def add(aid: str | None) -> None:
         if aid and str(aid) not in seen:

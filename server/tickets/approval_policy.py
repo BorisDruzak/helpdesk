@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.db.models import TicketApproval
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 
 
 DEFAULT_APPROVAL_PROTECTED_STATUSES = {"assigned", "in_progress", "scheduled", "resolved"}
@@ -94,7 +95,7 @@ async def validate_approval_policy(
     if ticket is None:
         return {"applied": False}
 
-    policy = get_template_approval_policy(ticket)
+    policy = await resolve_effective_ticket_policy(session, ticket, "approval")
     if not policy or not policy.get("required"):
         return {"applied": False}
 

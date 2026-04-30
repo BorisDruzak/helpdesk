@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.models import TicketSlaPolicy
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 
@@ -20,6 +22,10 @@ RUNTIME_POLICY_KINDS = (
     "notification",
     "visibility",
 )
+
+POLICY_SNAPSHOT_FIELDS = {
+    "notification": ("notification_policy", "notifications"),
+}
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -39,6 +45,80 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _request_template_context_from_ticket(ticket: Any) -> dict[str, Any]:
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    if not isinstance(custom_fields, dict):
+        return {}
+    request_template = custom_fields.get("request_template") or {}
+    return deepcopy(request_template) if isinstance(request_template, dict) else {}
+
+
+def _snapshot_policy_from_ticket(
+    ticket: Any,
+    kind: str,
+    *,
+    snapshot_fields: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    request_template = _request_template_context_from_ticket(ticket)
+    fields = snapshot_fields or POLICY_SNAPSHOT_FIELDS.get(kind, (f"{kind}_policy",))
+    policy: dict[str, Any] = {}
+    for field_name in fields:
+        value = request_template.get(field_name)
+        if isinstance(value, dict):
+            policy = _deep_merge(policy, value)
+    return policy
+
+
+async def resolve_effective_ticket_policy(
+    session: Any,
+    ticket: Any,
+    kind: str,
+    *,
+    snapshot_fields: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Resolve a policy for an existing ticket lifecycle action.
+
+    The ticket snapshot remains the fallback for old tickets and already
+    persisted forms. Active standalone registry policies override it so
+    published policy changes affect transitions, notifications and other
+    lifecycle runtime checks.
+    """
+    if ticket is None:
+        return {}
+
+    request_template = _request_template_context_from_ticket(ticket)
+    policy = _snapshot_policy_from_ticket(ticket, kind, snapshot_fields=snapshot_fields)
+    if not isinstance(session, AsyncSession):
+        return policy
+
+    template_code = str(
+        request_template.get("key")
+        or request_template.get("template_code")
+        or request_template.get("request_kind")
+        or request_template.get("form_key")
+        or ""
+    ).strip()
+    ticket_type = str(
+        request_template.get("ticket_type")
+        or getattr(ticket, "ticket_type", None)
+        or ""
+    ).strip()
+    category_id = request_template.get("category_id")
+    if category_id is None:
+        category_id = getattr(ticket, "category_id", None)
+
+    effective = await HelpdeskPolicyRepo(session).resolve_effective_policy(
+        kind=kind,
+        ticket_type=ticket_type or None,
+        category_id=category_id,
+        template_code=template_code or None,
+    )
+    config = effective.get("config") if isinstance(effective, dict) else {}
+    if isinstance(config, dict) and config:
+        policy = _deep_merge(policy, config)
+    return policy
 
 
 async def apply_effective_registry_policies(

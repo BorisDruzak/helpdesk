@@ -4,9 +4,11 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketApproval
+from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.workflow_service import TicketWorkflowService
 
@@ -76,6 +78,31 @@ async def _add_approval(test_engine, ticket_id: str, *, status: str) -> None:
         await session.commit()
 
 
+async def _clear_approval_registry(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "approval_policies"))
+        await session.execute(delete(ApprovalPolicy))
+        await session.commit()
+
+
+async def _publish_approval_policy(test_engine, config: dict) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="approval",
+            code="access_approval_runtime",
+            title="Access approval runtime",
+            scope_level="request_template",
+            scope_ref="access_request",
+            config=config,
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+
 async def _transition_ticket(test_engine, ticket_id: str, *, from_status: str, to_status: str) -> dict:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
@@ -112,6 +139,32 @@ async def test_approval_policy_allows_entering_waiting_status(test_engine) -> No
 @pytest.mark.asyncio
 async def test_approval_policy_blocks_execution_without_approval(test_engine) -> None:
     ticket_id = await _seed_ticket(test_engine)
+
+    with pytest.raises(ValueError, match="approval_policy"):
+        await _transition_ticket(
+            test_engine,
+            ticket_id,
+            from_status="waiting_on_approval",
+            to_status="in_progress",
+        )
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_resolves_from_registry_during_transition(test_engine) -> None:
+    await _clear_approval_registry(test_engine)
+    await _publish_approval_policy(
+        test_engine,
+        {
+            "required": True,
+            "approval_mode": "any_one",
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+    ticket_id = await _seed_ticket(test_engine, approval_policy={})
 
     with pytest.raises(ValueError, match="approval_policy"):
         await _transition_ticket(

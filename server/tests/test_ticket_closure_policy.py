@@ -3,9 +3,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketEvidenceItem
+from app.db.models import ClosurePolicy, HelpdeskPolicyAudit, Ticket, TicketEvidenceItem
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.workflow_service import TicketWorkflowService
 
@@ -45,6 +47,31 @@ async def _seed_ticket(test_engine, *, closure_policy: dict, priority_class: str
     return ticket_id
 
 
+async def _clear_closure_registry(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "closure_policies"))
+        await session.execute(delete(ClosurePolicy))
+        await session.commit()
+
+
+async def _publish_closure_policy(test_engine, config: dict) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="closure",
+            code="website_closure_runtime",
+            title="Website closure runtime",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config=config,
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+
 async def _resolve_ticket(
     test_engine,
     ticket_id: str,
@@ -77,6 +104,16 @@ async def test_closure_policy_requires_resolution_code(test_engine) -> None:
         test_engine,
         closure_policy={"require_resolution_code": True},
     )
+
+    with pytest.raises(ValueError, match="resolution_code"):
+        await _resolve_ticket(test_engine, ticket_id)
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_resolves_from_registry_during_transition(test_engine) -> None:
+    await _clear_closure_registry(test_engine)
+    await _publish_closure_policy(test_engine, {"require_resolution_code": True})
+    ticket_id = await _seed_ticket(test_engine, closure_policy={})
 
     with pytest.raises(ValueError, match="resolution_code"):
         await _resolve_ticket(test_engine, ticket_id)
