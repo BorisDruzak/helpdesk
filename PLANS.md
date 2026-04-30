@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 4 implemented locally: executable request-template `routing_policy`; deployment/live verification is next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 4 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -193,6 +193,16 @@ Local:
 
 Live:
 
+- Released commit `f7bdac3` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live routing-policy check created ticket `8fa40e76-20d3-4910-97c1-9e1c0a587205` through `create_ticket_with_side_effects` using a temporary request template.
+- Template `routing_policy.rules[0]` matched `request_form_data.affected_scope = whole_building` and routed the ticket to queue `25` (`live_route_c9df660c27`).
+- Ticket stored `custom_fields.routing_decision.source = request_template.routing_policy`, matched rule `priority_order = 10`, `suggested_playbook_id = diagnose.network.basic`, tag `live-routing-policy` and priority boost result `priority = P3`.
+- `ticket_events` included `routing_applied` and `queue_changed` for the live ticket.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
+
+Previous SLA-calendar live check:
+
 - Released commit `1ed5847` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Remote smoke passed: `GET /api/health` -> 200.
 - Live runtime SLA check created ticket `2c83384f-7eee-4b72-a4bd-21f5f6f830dd` with temporary calendar `live_sla_623631d545`.
@@ -225,6 +235,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Run final local `verify_workspace.py` for slice 4.
-2. Commit slice 4.
-3. Deploy to the Linux stand, run live routing-policy check and stop the server.
+1. Continue with workflow transition gates: required fields and role checks beyond the current transition map.
+2. Start with failing tests around `workflow_profile.transitions[*].required_fields` and `allowed_roles`.
+3. Keep routing/priority/SLA/approval/closure regression tests in the verification set.
