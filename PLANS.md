@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 1 implemented locally; workspace verification and live checks are next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 1 implemented, verified locally and checked live on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -126,6 +126,8 @@ Changed files:
 - `server/tests/test_ticket_closure_policy.py`
 - `server/docs/CODEMAP.md`
 - `docs/QUICK_LOOKUP.md`
+- `server/docs/TICKET_SYSTEM.md`
+- `scripts/navigation_catalog.py`
 
 ### Verification Plan
 
@@ -133,24 +135,22 @@ Local:
 
 - `python -m pytest server/tests/test_ticket_closure_policy.py -q` -> passed, 4 tests.
 - `python -m pytest server/tests/test_ticket_closure_policy.py server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_form_packs.py server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q` -> passed, 24 tests.
-- `python scripts/verify_workspace.py`
+- `python scripts/verify_workspace.py` -> passed.
 
 Live:
 
-- Deploy only after local verification and commit.
-- Use project scripts:
-  - `python scripts/deploy_workspace_to_remote.py`
-  - `python scripts/release_server_to_remote.py`
-  - `python scripts/manage_remote_stack.py start server`
-  - `python scripts/manage_remote_stack.py smoke server`
-- Exercise a ticket/template route that blocks resolution until closure requirements are satisfied.
-- Stop server after checks unless asked otherwise.
+- Released commit `248e276` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live API login as support `op1` succeeded.
+- Created live verification ticket `9bcc445d-3855-4167-a5f2-1e353df2b48a` with `request_template.closure_policy`.
+- Resolve without public summary returned HTTP 400 with `CLOSURE_POLICY_BLOCKED` and `closure_policy requires resolution_summary`.
+- After adding evidence and `resolution_summary`, resolve returned HTTP 200 and ticket status became `resolved`.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
 
 ### Handoff
 
 Next immediate action:
 
-1. Run `python scripts/verify_workspace.py`.
-2. Commit verified local state before deploy if verification passes.
-3. Deploy through project scripts.
-4. Run live smoke/status-change check for closure policy.
+1. Continue with slice 2: executable `approval_policy`.
+2. Start with failing tests that block access/change transitions without required approval evidence.
+3. Reuse the same workflow-policy pattern introduced in `server/tickets/closure_policy.py`.
