@@ -68,7 +68,7 @@ Progress:
 - [x] Support embedded standalone business calendar config through the existing calendar engine.
 - [x] Add ticket-create API regression proving published standalone `sla` policy sets due dates without `ticket.sla_policy_id`.
 - [x] Run focused SLA/priority/registry tests and workspace verification.
-- [ ] Release/live-check standalone SLA runtime on the Linux stand.
+- [x] Release/live-check standalone SLA runtime on the Linux stand.
 
 ### Completion Metric
 
