@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 94%; slice 18 implementation is complete locally and is in verification/release.
+Status: executing the remaining target-model gaps. Current factual completion is about 95%; slice 18 policy rollback, diff and deactivate UI is complete, committed, released and live-checked.
 
 ### Goal
 
@@ -86,7 +86,7 @@ Progress:
 - [x] Add frontend API methods and visual controls in the policy registry editor.
 - [x] Add React test for calling diff/deactivate/rollback actions.
 - [x] Run focused registry/API/UI tests, webapp build and workspace verification.
-- [ ] Commit, release/live-check policy lifecycle UI and stop the remote server.
+- [x] Commit, release/live-check policy lifecycle UI and stop the remote server.
 
 Local verification for slice 18:
 
@@ -94,6 +94,14 @@ Local verification for slice 18:
 - `pnpm --dir webapp test src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 13 tests.
 - `pnpm --dir webapp build` -> passed.
 - `python scripts/verify_workspace.py` -> passed.
+
+Live verification for slice 18:
+
+- Released commit `f6d0aeb` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran workspace verification, webapp build, Git deploy, migrations and server smoke; `GET /api/health` returned 200.
+- Browser-checked `http://192.168.100.17:8666/app/admin/forms`: the policy registry editor shows `Жизненный цикл версии`, `Сравнить версии`, `Деактивировать выбранную версию` and `Откатить к выбранной версии`.
+- Live-safe POST to `/api/web/admin/helpdesk-model/policies/diff` for `breakage_routing_policy` version `1.0.1 -> 1.0.1` returned HTTP 200 and `changes: []`.
+- Destructive live clicks for deactivate/rollback were intentionally not executed on stand data; API/repo/React tests cover those mutations.
 
 Local verification for slice 17:
 
