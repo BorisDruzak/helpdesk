@@ -329,7 +329,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "status": "ok",
-            "ticket": ticket_to_dict(ticket),
+            "ticket": ticket_to_dict(ticket, visibility="requester"),
             "initial_message_id": initial_message_id,
             "public_access_code": public_access_code,
             "public_token": public_token,

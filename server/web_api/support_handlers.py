@@ -220,6 +220,8 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         status_label=str(ticket_data.get("status_label") or status_label_ru(ticket_data.get("status"))),
         requester_status=str(ticket_data.get("requester_status") or "accepted"),
         requester_status_label=str(ticket_data.get("requester_status_label") or ""),
+        public_status=str(ticket_data.get("public_status") or ticket_data.get("requester_status") or "accepted"),
+        public_status_label=str(ticket_data.get("public_status_label") or ticket_data.get("requester_status_label") or ""),
         next_action_owner=ticket_data.get("next_action_owner"),
         next_action_due_at=ticket_data.get("next_action_due_at"),
         status_reason=ticket_data.get("status_reason"),
@@ -848,6 +850,8 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             status_label=str(ticket_data.get("status_label") or status_label_ru(ticket_data.get("status"))),
             requester_status=str(ticket_data.get("requester_status") or "accepted"),
             requester_status_label=str(ticket_data.get("requester_status_label") or ""),
+            public_status=str(ticket_data.get("public_status") or ticket_data.get("requester_status") or "accepted"),
+            public_status_label=str(ticket_data.get("public_status_label") or ticket_data.get("requester_status_label") or ""),
             next_action_owner=ticket_data.get("next_action_owner"),
             next_action_due_at=ticket_data.get("next_action_due_at"),
             status_reason=ticket_data.get("status_reason"),
@@ -879,6 +883,9 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             evidence_required=bool(ticket_data.get("evidence_required")),
             evidence_ref=ticket_data.get("evidence_ref"),
             closure_feedback=ticket_data.get("closure_feedback") or {},
+            visibility=ticket_data.get("visibility") if isinstance(ticket_data.get("visibility"), dict) else {},
+            requester_visible_fields=ticket_data.get("requester_visible_fields") if isinstance(ticket_data.get("requester_visible_fields"), list) else [],
+            support_visible_fields=ticket_data.get("support_visible_fields") if isinstance(ticket_data.get("support_visible_fields"), list) else [],
             queue_members=[
                 SupportTicketQueueMember(
                     actor_id=str(member.get("actor_id") or ""),

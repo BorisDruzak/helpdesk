@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 6 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 7 implemented locally, local verification passing; commit/deploy/live check are next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -40,7 +40,7 @@ Already present:
 Missing or weak:
 
 - No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
-- `closure_policy`, `approval_policy`, `routing_policy` and diagnostic attach-to-evidence behavior are executable; `visibility_policy` is still mostly saved as template metadata.
+- `closure_policy`, `approval_policy`, `routing_policy`, diagnostic attach-to-evidence behavior and `visibility_policy` public-status/redaction behavior are executable.
 - Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
 - Notification rules are not policy-driven.
 - Smart views are not first-class saved settings.
@@ -105,7 +105,34 @@ Missing or weak:
 
 ### Current Step
 
-Slice 6 implemented locally: diagnostic policy and evidence/passport binding.
+Slice 7 implemented locally: executable visibility policy for ticket payloads.
+
+Implemented behavior:
+
+- `server/tickets/visibility_policy.py` reads `custom_fields.request_template.visibility_policy`.
+- `public_status_mapping` maps internal workflow statuses to requester-facing labels without changing internal `ticket.status`.
+- `ticket_to_dict(..., visibility="requester")` and `_ticket_payload(..., visibility="requester")` redact configured/default requester-hidden fields such as `root_cause`, `ola`, `latest_operations`, raw diagnostics and assignment internals.
+- Support/internal payloads keep internal fields while exposing `public_status`, `public_status_label`, visibility source and requester/support-visible field metadata.
+- Typed support queue/detail payloads now include public status fields; detail includes visibility metadata for UI consumers.
+
+Changed files for slice 7:
+
+- `server/tickets/visibility_policy.py`
+- `server/app/api/serializers.py`
+- `server/tickets/handlers.py`
+- `server/tickets/public_ticket_handlers.py`
+- `server/web_api/dto/support.py`
+- `server/web_api/support_handlers.py`
+- `server/tests/test_ticket_workflow_visibility.py`
+- `server/tests/test_web_support_api.py`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+- `PLANS.md`
+
+Previous current step:
+
+Slice 6 implemented and live-verified: diagnostic policy and evidence/passport binding.
 
 Implemented behavior:
 
@@ -238,6 +265,8 @@ Local:
 - `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_web_support_api.py::test_web_support_status_action_reports_workflow_gate_block server/tests/test_web_settings_api.py::test_web_settings_can_save_workflow_profiles server/tests/test_ticket_routing_policy.py server/tests/test_ticket_queue_routing_contracts.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 40 tests.
 - `python -m pytest server/tests/test_ticket_passport_service.py -v --tb=short` -> passed, 6 tests.
 - `python -m pytest server/tests/test_ticket_passport_service.py server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_closure_policy.py -q --tb=short` -> passed, 14 tests.
+- `python -m pytest server/tests/test_ticket_workflow_visibility.py server/tests/test_web_support_api.py -q --tb=short` -> passed, 28 tests.
+- `python -m pytest server/tests/test_ticket_workflow_visibility.py server/tests/test_web_support_api.py server/tests/test_ticket_create_contracts.py -q --tb=short` -> passed, 38 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:

@@ -59,6 +59,8 @@ class SupportQueueTicketItem(BaseModel):
     status_label: str
     requester_status: str
     requester_status_label: str
+    public_status: str
+    public_status_label: str
     next_action_owner: str | None
     next_action_due_at: str | None
     status_reason: str | None
@@ -109,6 +111,8 @@ class SupportTicketDetail(BaseModel):
     status_label: str
     requester_status: str
     requester_status_label: str
+    public_status: str
+    public_status_label: str
     next_action_owner: str | None
     next_action_due_at: str | None
     status_reason: str | None
@@ -136,6 +140,9 @@ class SupportTicketDetail(BaseModel):
     evidence_required: bool = False
     evidence_ref: str | None = None
     closure_feedback: dict[str, Any] = Field(default_factory=dict)
+    visibility: dict[str, Any] = Field(default_factory=dict)
+    requester_visible_fields: list[str] = Field(default_factory=list)
+    support_visible_fields: list[str] = Field(default_factory=list)
     queue_members: list[SupportTicketQueueMember]
 
 

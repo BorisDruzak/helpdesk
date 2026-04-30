@@ -506,6 +506,52 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_detail_exposes_template_visibility_policy(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-visibility-policy",
+            title="Публичный статус по шаблону",
+            description="Внутренний workflow не должен быть единственным статусом для пользователя.",
+            status="waiting_on_internal_team",
+            requester_id="user-visibility",
+            queue_id=queue.id,
+            custom_fields={
+                "request_template": {
+                    "key": "website_unavailable",
+                    "ticket_type": "incident",
+                    "visibility_policy": {
+                        "public_status_mapping": {
+                            "waiting_on_internal_team": "Заявка в работе"
+                        },
+                        "hide_from_requester": ["ola", "raw_diagnostics"],
+                        "show_to_requester": ["public_messages", "public_status", "expected_due_at"],
+                    },
+                }
+            },
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    ticket_payload = payload["data"]["ticket"]
+
+    assert ticket_payload["status"] == "waiting_on_internal_team"
+    assert ticket_payload["public_status"] == "in_work"
+    assert ticket_payload["public_status_label"] == "Заявка в работе"
+    assert ticket_payload["visibility"]["source"] == "request_template.visibility_policy"
+    assert "ola" in ticket_payload["visibility"]["hidden_from_requester"]
+    assert "raw_diagnostics" in ticket_payload["visibility"]["hidden_from_requester"]
+    assert ticket_payload["requester_visible_fields"] == ["public_messages", "public_status", "expected_due_at"]
+
+
+@pytest.mark.asyncio
 async def test_web_support_detail_timeline_exposes_form_playbook_autostart(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 

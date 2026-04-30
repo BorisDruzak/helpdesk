@@ -55,6 +55,7 @@ from tickets.statuses import (
     resolve_status,
 )
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
+from tickets.visibility_policy import apply_ticket_visibility_payload
 from utils import new_ticket_id
 from websocket.ui_handler import push_ticket_event_committed
 
@@ -473,9 +474,10 @@ async def _ticket_payload(
     *,
     chat_counters: Optional[Dict[str, Any]] = None,
     include_assignment_context: bool = False,
+    visibility: str = "support",
 ) -> Dict[str, Any]:
     queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None)])
-    ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+    ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)), visibility=visibility)
     ticket_data["ola"] = build_ola_block(ticket)
     if getattr(ticket, "device_id", None):
         try:
@@ -514,7 +516,8 @@ async def _ticket_payload(
             }
             for queue in available_queues
         ]
-    return _merge_ticket_with_chat_counters(ticket_data, chat_counters)
+    ticket_data = _merge_ticket_with_chat_counters(ticket_data, chat_counters)
+    return apply_ticket_visibility_payload(ticket, ticket_data, visibility=visibility)
 
 
 async def _chat_counters_by_ticket_ids(repo: TicketEventsRepo, ticket_ids: Iterable[Optional[str]]) -> Dict[str, Dict[str, Any]]:
@@ -918,10 +921,15 @@ async def handle_tickets_list(request: web.Request) -> web.Response:
         tickets = await repo.list_tickets(limit=limit, offset=offset, filters=filters)
         queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None) for ticket in tickets])
         counters_map = await _chat_counters_by_ticket_ids(repo, [getattr(ticket, "ticket_id", None) for ticket in tickets])
+        visibility = _read_scope_from_auth(auth_context)
         payload = [
             {
                 "ticket": _merge_ticket_with_chat_counters(
-                    ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None))),
+                    ticket_to_dict(
+                        ticket,
+                        queue_map.get(getattr(ticket, "queue_id", None)),
+                        visibility=visibility,
+                    ),
                     counters_map.get(getattr(ticket, "ticket_id", None)),
                 ),
                 "session": {"ticket_id": ticket.ticket_id},
@@ -1003,8 +1011,9 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
                 has_older = False
                 page_oldest_event_id = getattr(raw_events[0], "id", 0) if raw_events else 0
                 next_before_event_id = None
+        visibility = _read_scope_from_auth(auth_context)
         visible_events = list(raw_events)
-        if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
+        if visibility == "requester":
             visible_events = [event for event in raw_events if _event_visible_to_requester(event)]
         messages = [event for event in visible_events if getattr(event, "event_type", None) == "chat_message"]
         counters_map = await _chat_counters_by_ticket_ids(repo, [ticket.ticket_id])
@@ -1013,6 +1022,7 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
             ticket,
             chat_counters=counters_map.get(ticket.ticket_id),
             include_assignment_context=True,
+            visibility=visibility,
         )
         presence = _ticket_presence_payload(request, ticket)
         ticket_data["presence"] = presence
@@ -1050,8 +1060,9 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
                 presence_key=f"http:{auth_context.actor_role}:{auth_context.actor_id}",
             )
         events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=2000)
+        visibility = _read_scope_from_auth(auth_context)
         visible_events = list(events)
-        if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
+        if visibility == "requester":
             visible_events = [event for event in events if _event_visible_to_requester(event)]
         raw_events = [_serialize_event_raw(event, ticket=ticket) for event in visible_events]
         history = [item for item in raw_events if item["event_type"] in HISTORY_EVENT_TYPES]
@@ -1061,6 +1072,7 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             ticket,
             chat_counters=counters_map.get(ticket.ticket_id),
             include_assignment_context=True,
+            visibility=visibility,
         )
         presence = _ticket_presence_payload(request, ticket)
         ticket_data["presence"] = presence
@@ -1123,53 +1135,52 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
 
         notification_repo = NotificationRepo(session)
         unread_count = await notification_repo.unread_count(auth_context.actor_id)
-        return web.json_response(
-            {
-                **ticket_data,
-                "actor_role": auth_context.actor_role,
-                "presence": presence,
-                "events": raw_events,
-                "history": history,
-                "last_event_id": last_event_id,
-                "requester_profile": get_requester_profile(ticket),
-                "requester_display_name": get_requester_display_name(ticket),
-                "relations": {
-                    "parent_ticket_id": parent_ticket_id,
-                    "child_ticket_ids": [t.ticket_id for t in child_tickets],
-                },
-                "watchers": serialize_datetime_recursive(watchers),
-                "links": serialize_datetime_recursive(links),
-                "kb_links": serialize_datetime_recursive(kb_links),
-                "worklogs": serialize_datetime_recursive(worklogs),
-                "worklog_totals": {"total_minutes": worklog_total},
-                "device_summary": {
-                    "device_id": ticket.device_id,
-                    "hostname": getattr(device, "hostname", None),
-                    "os": getattr(device, "os", None),
-                    "agent_version": getattr(device, "agent_version", None),
-                    "last_seen_at": device.last_seen_at.isoformat() if device and device.last_seen_at else None,
-                    "online": request.app["state"].is_agent_online(ticket.device_id),
-                },
-                "latest_operations": [
-                    {
-                        "operation_id": op.operation_id,
-                        "kind": op.kind,
-                        "status": op.status,
-                        "tool_name": op.tool_name,
-                        "command_name": op.command_name,
-                        "error_code": op.error_code,
-                        "error_message": op.error_message,
-                        "result_summary": op.result_summary,
-                        "queued_at": op.queued_at.isoformat() if op.queued_at else None,
-                        "finished_at": op.finished_at.isoformat() if op.finished_at else None,
-                    }
-                    for op in recent_operations
-                ],
-                "notification_counters": {"unread": unread_count},
-                "provisioning_summary": provisioning_summary,
-                "update_summary": update_summary,
-            }
-        )
+        response_payload = {
+            **ticket_data,
+            "actor_role": auth_context.actor_role,
+            "presence": presence,
+            "events": raw_events,
+            "history": history,
+            "last_event_id": last_event_id,
+            "requester_profile": get_requester_profile(ticket),
+            "requester_display_name": get_requester_display_name(ticket),
+            "relations": {
+                "parent_ticket_id": parent_ticket_id,
+                "child_ticket_ids": [t.ticket_id for t in child_tickets],
+            },
+            "watchers": serialize_datetime_recursive(watchers),
+            "links": serialize_datetime_recursive(links),
+            "kb_links": serialize_datetime_recursive(kb_links),
+            "worklogs": serialize_datetime_recursive(worklogs),
+            "worklog_totals": {"total_minutes": worklog_total},
+            "device_summary": {
+                "device_id": ticket.device_id,
+                "hostname": getattr(device, "hostname", None),
+                "os": getattr(device, "os", None),
+                "agent_version": getattr(device, "agent_version", None),
+                "last_seen_at": device.last_seen_at.isoformat() if device and device.last_seen_at else None,
+                "online": request.app["state"].is_agent_online(ticket.device_id),
+            },
+            "latest_operations": [
+                {
+                    "operation_id": op.operation_id,
+                    "kind": op.kind,
+                    "status": op.status,
+                    "tool_name": op.tool_name,
+                    "command_name": op.command_name,
+                    "error_code": op.error_code,
+                    "error_message": op.error_message,
+                    "result_summary": op.result_summary,
+                    "queued_at": op.queued_at.isoformat() if op.queued_at else None,
+                    "finished_at": op.finished_at.isoformat() if op.finished_at else None,
+                }
+                for op in recent_operations
+            ],
+            "notification_counters": {"unread": unread_count},
+            "provisioning_summary": provisioning_summary,
+            "update_summary": update_summary,
+        }
+        return web.json_response(apply_ticket_visibility_payload(ticket, response_payload, visibility=visibility))
 
 
 async def handle_ticket_get_observer_summary(request: web.Request) -> web.Response:

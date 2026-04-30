@@ -21,6 +21,7 @@ from tickets.statuses import (
     requires_operator_action,
     status_label_ru,
 )
+from tickets.visibility_policy import apply_ticket_visibility_payload
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -58,7 +59,12 @@ def _queue_code_from_ticket(ticket: Any, queue_code: Optional[str] = None) -> Op
     return None
 
 
-def ticket_to_dict(ticket: Any, queue_code: Optional[str] = None) -> Dict[str, Any]:
+def ticket_to_dict(
+    ticket: Any,
+    queue_code: Optional[str] = None,
+    *,
+    visibility: str = "support",
+) -> Dict[str, Any]:
     priority_class = extract_priority_class(ticket)
     created_at = getattr(ticket, "created_at", None)
     custom_fields = serialize_datetime_recursive(getattr(ticket, "custom_fields", None) or {})
@@ -131,4 +137,4 @@ def ticket_to_dict(ticket: Any, queue_code: Optional[str] = None) -> Dict[str, A
         "resolution_confirmation_pending": bool(custom_fields.get("resolution_confirmation_pending")),
         "tags": serialize_datetime_recursive(getattr(ticket, "tags", None) or []),
     }
-    return base
+    return apply_ticket_visibility_payload(ticket, base, visibility=visibility)

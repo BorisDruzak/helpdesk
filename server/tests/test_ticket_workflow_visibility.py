@@ -9,6 +9,7 @@ from app.db.engine import async_sessionmaker
 from app.db.models import Ticket, TicketEvidenceItem, TicketWait
 from app.api.serializers import ticket_to_dict
 from app.repos.ticket_events_repo import TicketEventsRepo
+from tickets.visibility_policy import apply_ticket_visibility_payload
 from tickets.statuses import (
     CANONICAL_STATUSES,
     next_action_owner_for_status,
@@ -98,6 +99,67 @@ def test_ticket_serializer_exposes_work_visibility_fields():
     assert payload["evidence_required"] is True
     assert payload["evidence_ref"] == "event:42"
     assert payload["closure_feedback"] == {"result": "partial"}
+
+
+def test_ticket_serializer_applies_request_template_visibility_policy():
+    ticket = Ticket(
+        ticket_id=str(uuid.uuid4()),
+        device_id=str(uuid.uuid4()),
+        title="Policy visibility",
+        description="Requester must see public process state",
+        status="waiting_on_internal_team",
+        requester_id="user-a",
+        next_action_owner="internal_team",
+        requester_status="in_work",
+        root_cause="Internal DNS resolver failed",
+        custom_fields={
+            "request_template": {
+                "key": "website_unavailable",
+                "ticket_type": "incident",
+                "visibility_policy": {
+                    "public_status_mapping": {
+                        "waiting_on_internal_team": "Заявка в работе у внутренней команды"
+                    },
+                    "hide_from_requester": ["root_cause", "ola", "latest_operations"],
+                    "show_to_requester": ["public_status", "public_status_label", "expected_due_at"],
+                },
+            }
+        },
+    )
+
+    support_payload = ticket_to_dict(ticket, visibility="support")
+    requester_payload = ticket_to_dict(ticket, visibility="requester")
+
+    assert support_payload["status"] == "waiting_on_internal_team"
+    assert support_payload["public_status"] == "in_work"
+    assert support_payload["public_status_label"] == "Заявка в работе у внутренней команды"
+    assert support_payload["root_cause"] == "Internal DNS resolver failed"
+    assert support_payload["visibility"]["source"] == "request_template.visibility_policy"
+    assert "root_cause" in support_payload["visibility"]["hidden_from_requester"]
+
+    assert requester_payload["status"] == "waiting_on_internal_team"
+    assert requester_payload["public_status"] == "in_work"
+    assert requester_payload["public_status_label"] == "Заявка в работе у внутренней команды"
+    assert "root_cause" not in requester_payload
+    assert requester_payload["requester_visible_fields"] == [
+        "public_status",
+        "public_status_label",
+        "expected_due_at",
+    ]
+
+    requester_runtime_payload = apply_ticket_visibility_payload(
+        ticket,
+        {
+            **support_payload,
+            "ola": {"ola_queue_id": 10},
+            "latest_operations": [{"operation_id": "op-1"}],
+            "worklogs": [{"note": "internal"}],
+        },
+        visibility="requester",
+    )
+    assert "ola" not in requester_runtime_payload
+    assert "latest_operations" not in requester_runtime_payload
+    assert "worklogs" not in requester_runtime_payload
 
 
 @pytest.mark.asyncio
