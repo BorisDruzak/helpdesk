@@ -21,6 +21,11 @@ from app.db.models import Playbook, PlaybookStep, PlaybookVersion
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
+from app.repos.helpdesk_policy_repo import (
+    POLICY_MODELS,
+    HelpdeskPolicyRepo,
+    normalize_template_code,
+)
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos import ModulesRepo, ModuleRolloutRepo
@@ -111,6 +116,14 @@ from web_api.dto.admin import (
     AdminFormsSaveResult,
     AdminFormsSummary,
     AdminFormsVisibleWhen,
+    AdminHelpdeskModelCapabilities,
+    AdminHelpdeskModelPayload,
+    AdminHelpdeskModelSummary,
+    AdminHelpdeskPolicyItem,
+    AdminHelpdeskPublishFromFormRequest,
+    AdminHelpdeskPublishFromFormResult,
+    AdminHelpdeskRequestTemplateItem,
+    AdminHelpdeskSmartViewItem,
     AdminObserverCapabilities,
     AdminPlaybookBlockCatalogItem,
     AdminPlaybookBuilderCapabilities,
@@ -259,6 +272,8 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS.extend(
 _FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
 _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
 _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
+_HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
+_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
 _FORM_FIELD_TYPE_LABELS = {
@@ -1938,6 +1953,165 @@ async def _save_admin_forms_pack(
     )
 
 
+def _policy_ref_code(template_code: str, kind: str) -> str:
+    return normalize_template_code(f"{template_code}_{kind}_policy")
+
+
+def _policy_title(form: dict[str, object], kind: str) -> str:
+    title = str(form.get("title") or form.get("key") or "").strip()
+    labels = {
+        "priority": "приоритет",
+        "routing": "роутинг",
+        "approval": "согласования",
+        "diagnostic": "диагностика",
+        "closure": "закрытие",
+        "visibility": "видимость",
+        "notification": "уведомления",
+    }
+    return f"{title}: {labels.get(kind, kind)}".strip(": ")
+
+
+async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        request_templates = [
+            AdminHelpdeskRequestTemplateItem.model_validate(item)
+            for item in await repo.list_request_templates(include_inactive=True)
+        ]
+        policies_raw = await repo.list_policies(include_inactive=True)
+        policies = {
+            kind: [AdminHelpdeskPolicyItem.model_validate(item) for item in items]
+            for kind, items in policies_raw.items()
+        }
+        smart_views = [
+            AdminHelpdeskSmartViewItem.model_validate(item)
+            for item in await repo.list_smart_views(include_inactive=True)
+        ]
+
+    all_policies = [item for items in policies.values() for item in items]
+    return AdminHelpdeskModelPayload(
+        summary=AdminHelpdeskModelSummary(
+            request_templates_count=len(request_templates),
+            active_request_templates_count=sum(1 for item in request_templates if item.is_active),
+            policies_count=len(all_policies),
+            active_policies_count=sum(1 for item in all_policies if item.is_active),
+            smart_views_count=len(smart_views),
+            active_smart_views_count=sum(1 for item in smart_views if item.is_active),
+        ),
+        capabilities=AdminHelpdeskModelCapabilities(
+            registry_endpoint=_HELPDESK_MODEL_REGISTRY_ENDPOINT,
+            publish_from_form_endpoint=_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT,
+            inheritance_order=["system", "ticket_type", "category", "request_template"],
+            policy_kinds=sorted(POLICY_MODELS.keys()),
+        ),
+        request_templates=request_templates,
+        policies=policies,
+        smart_views=smart_views,
+    )
+
+
+async def _publish_helpdesk_template_from_form(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishFromFormRequest,
+) -> AdminHelpdeskPublishFromFormResult:
+    form_payload = _serialize_admin_form_request(payload.form)
+    preview_pack = validate_form_pack_schema(
+        {
+            "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
+            "version": "registry-preview",
+            "title": "Registry preview",
+            "forms": [form_payload],
+        }
+    )
+    form = preview_pack["forms"][0]
+    template_code = normalize_template_code(form.get("key"))
+    if not template_code:
+        raise ValueError("form key is required")
+
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    policies: dict[str, AdminHelpdeskPolicyItem] = {}
+    policy_ref_by_kind: dict[str, str | None] = {}
+    policy_fields = {
+        "priority": "priority_policy",
+        "routing": "routing_policy",
+        "approval": "approval_policy",
+        "diagnostic": "diagnostic_policy",
+        "closure": "closure_policy",
+        "visibility": "visibility_policy",
+        "notification": "notification_policy",
+    }
+
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        if payload.publish_policies:
+            for kind, field_name in policy_fields.items():
+                config = form.get(field_name) if isinstance(form.get(field_name), dict) else {}
+                if not config:
+                    policy_ref_by_kind[kind] = None
+                    continue
+                policy_code = _policy_ref_code(template_code, kind)
+                item = await repo.publish_policy(
+                    kind=kind,
+                    code=policy_code,
+                    title=_policy_title(form, kind),
+                    description=f"Опубликовано из визуального конструктора шаблона {template_code}",
+                    config=config,
+                    scope_level="request_template",
+                    scope_ref=template_code,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                )
+                policies[kind] = AdminHelpdeskPolicyItem.model_validate(item)
+                policy_ref_by_kind[kind] = policy_code
+
+        request_template = await repo.publish_request_template(
+            template_code=template_code,
+            public_title=str(form.get("title") or template_code),
+            internal_name=f"{form.get('ticket_type') or 'process'} / {template_code}",
+            description=str(form.get("description") or "").strip() or None,
+            ticket_type=str(form.get("ticket_type") or "incident"),
+            category_id=form.get("category_id") if form.get("category_id") is not None else None,
+            service_id=form.get("service_id") if form.get("service_id") is not None else None,
+            subcategory_id=form.get("subcategory_id") if form.get("subcategory_id") is not None else None,
+            form_schema_id=f"{template_code}_form",
+            workflow_profile_id=str(form.get("ticket_type") or "incident"),
+            priority_policy_code=policy_ref_by_kind.get("priority"),
+            routing_policy_code=policy_ref_by_kind.get("routing"),
+            sla_policy_id=form.get("sla_policy_id") if form.get("sla_policy_id") is not None else None,
+            ola_policy_code=None,
+            approval_policy_code=policy_ref_by_kind.get("approval"),
+            diagnostic_policy_code=policy_ref_by_kind.get("diagnostic"),
+            closure_policy_code=policy_ref_by_kind.get("closure"),
+            visibility_policy_code=policy_ref_by_kind.get("visibility"),
+            notification_policy_code=policy_ref_by_kind.get("notification"),
+            config={
+                "form": form,
+                "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
+                "ola_policy": form.get("ola_policy") if isinstance(form.get("ola_policy"), dict) else {},
+                "suggested_playbook_id": form.get("suggested_playbook_id"),
+            },
+            overrides={
+                "source": "forms_builder_visual_constructor",
+                "publish_policies": bool(payload.publish_policies),
+            },
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        await session.commit()
+
+    typed_template = AdminHelpdeskRequestTemplateItem.model_validate(request_template)
+    return AdminHelpdeskPublishFromFormResult(
+        request_template=typed_template,
+        policies=policies,
+        message=(
+            f"Шаблон обращения {typed_template.template_code} опубликован в реестр как версия "
+            f"{typed_template.version}. Политик опубликовано: {len(policies)}."
+        ),
+    )
+
+
 def _next_playbook_version(existing_versions: list[str], requested: str | None) -> str:
     candidate = str(requested or "1.0.0").strip() or "1.0.0"
     existing = {str(item or "") for item in existing_versions}
@@ -2607,6 +2781,66 @@ async def handle_web_admin_forms_route_preview(request: web.Request):
 
     typed_result = AdminFormsRoutePreviewResult.model_validate(result)
     return json_model_response(SuccessResponse[AdminFormsRoutePreviewResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_policies(_request: web.Request):
+    try:
+        payload = await _build_helpdesk_model_payload()
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_policies] Failed to load registry: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить реестр шаблонов и политик",
+                "error_code": "HELPDESK_MODEL_REGISTRY_FAILED",
+            },
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminHelpdeskModelPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_publish_from_form(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPublishFromFormRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру шаблона обращения",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_helpdesk_template_from_form(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру шаблона обращения",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_publish_from_form] Failed to publish template: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать шаблон обращения в реестр",
+                "error_code": "HELPDESK_TEMPLATE_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPublishFromFormResult](data=result))
 
 
 @require_auth("admin")

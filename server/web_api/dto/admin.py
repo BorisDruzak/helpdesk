@@ -479,6 +479,124 @@ class AdminFormsRoutePreviewResult(BaseModel):
     summary_rows: list[AdminFormsRoutePreviewSummaryRow] = Field(default_factory=list)
 
 
+class AdminHelpdeskPolicyItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    table: str
+    code: str
+    version: str
+    title: str
+    description: str | None = None
+    scope_level: str
+    scope_ref: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminHelpdeskRequestTemplateItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_code: str
+    version: str
+    public_title: str
+    internal_name: str | None = None
+    description: str | None = None
+    ticket_type: str
+    category_id: int | None = None
+    service_id: int | None = None
+    subcategory_id: int | None = None
+    form_schema_id: str | None = None
+    workflow_profile_id: str | None = None
+    priority_policy_code: str | None = None
+    routing_policy_code: str | None = None
+    sla_policy_id: int | None = None
+    ola_policy_code: str | None = None
+    approval_policy_code: str | None = None
+    diagnostic_policy_code: str | None = None
+    closure_policy_code: str | None = None
+    visibility_policy_code: str | None = None
+    notification_policy_code: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminHelpdeskSmartViewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    version: str
+    title: str
+    description: str | None = None
+    scope_level: str
+    scope_ref: str | None = None
+    filter: dict[str, Any] = Field(default_factory=dict)
+    sort: list[dict[str, Any]] = Field(default_factory=list)
+    columns: list[str] = Field(default_factory=list)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminHelpdeskModelCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registry_endpoint: str
+    publish_from_form_endpoint: str
+    inheritance_order: list[str]
+    policy_kinds: list[str]
+
+
+class AdminHelpdeskModelSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_templates_count: int
+    active_request_templates_count: int
+    policies_count: int
+    active_policies_count: int
+    smart_views_count: int
+    active_smart_views_count: int
+
+
+class AdminHelpdeskModelPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminHelpdeskModelSummary
+    capabilities: AdminHelpdeskModelCapabilities
+    request_templates: list[AdminHelpdeskRequestTemplateItem] = Field(default_factory=list)
+    policies: dict[str, list[AdminHelpdeskPolicyItem]] = Field(default_factory=dict)
+    smart_views: list[AdminHelpdeskSmartViewItem] = Field(default_factory=list)
+
+
+class AdminHelpdeskPublishFromFormRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    form: AdminFormsSaveFormRequest
+    publish_policies: bool = True
+
+
+class AdminHelpdeskPublishFromFormResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_template: AdminHelpdeskRequestTemplateItem
+    policies: dict[str, AdminHelpdeskPolicyItem] = Field(default_factory=dict)
+    message: str
+
+
 class AdminPlaybookBlockCatalogItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

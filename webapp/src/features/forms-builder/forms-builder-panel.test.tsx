@@ -76,6 +76,36 @@ function createFormsPayload(): AdminFormsPayload {
   };
 }
 
+function createHelpdeskModelRegistryPayload() {
+  return {
+    summary: {
+      request_templates_count: 0,
+      active_request_templates_count: 0,
+      policies_count: 0,
+      active_policies_count: 0,
+      smart_views_count: 0,
+      active_smart_views_count: 0,
+    },
+    capabilities: {
+      registry_endpoint: "/api/web/admin/helpdesk-model/policies",
+      publish_from_form_endpoint: "/api/web/admin/helpdesk-model/request-templates/publish-from-form",
+      inheritance_order: ["system", "ticket_type", "category", "request_template"],
+      policy_kinds: ["approval", "closure", "diagnostic", "notification", "priority", "routing", "visibility"],
+    },
+    request_templates: [],
+    policies: {
+      approval: [],
+      closure: [],
+      diagnostic: [],
+      notification: [],
+      priority: [],
+      routing: [],
+      visibility: [],
+    },
+    smart_views: [],
+  };
+}
+
 
 function renderFormsBuilder(props?: { permissions?: string[] }) {
   const queryClient = new QueryClient({
@@ -954,5 +984,128 @@ describe("FormsBuilderPanel", () => {
         },
       },
     });
+  });
+
+  it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
+    const publishCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({
+            status: "success",
+            data: createHelpdeskModelRegistryPayload()
+          });
+        }
+
+        if (url === "/api/web/admin/helpdesk-model/request-templates/publish-from-form" && method === "POST") {
+          publishCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              request_template: {
+                template_code: "printer",
+                version: "1.0.1",
+                public_title: "Печать / принтер",
+                internal_name: "incident / printer",
+                description: "Проблемы печати",
+                ticket_type: "incident",
+                category_id: null,
+                service_id: null,
+                subcategory_id: null,
+                form_schema_id: "printer_form",
+                workflow_profile_id: "incident",
+                priority_policy_code: "printer_priority_policy",
+                routing_policy_code: null,
+                sla_policy_id: null,
+                ola_policy_code: null,
+                approval_policy_code: null,
+                diagnostic_policy_code: null,
+                closure_policy_code: null,
+                visibility_policy_code: null,
+                notification_policy_code: null,
+                config: {},
+                overrides: {},
+                is_active: true,
+                published_at: "2026-04-30T18:00:00+05:00",
+                created_at: "2026-04-30T18:00:00+05:00",
+                created_by: "admin1",
+                updated_at: "2026-04-30T18:00:00+05:00",
+                updated_by: "admin1"
+              },
+              policies: {
+                priority: {
+                  kind: "priority",
+                  table: "priority_policies",
+                  code: "printer_priority_policy",
+                  version: "1.0.1",
+                  title: "Печать / принтер: приоритет",
+                  description: null,
+                  scope_level: "request_template",
+                  scope_ref: "printer",
+                  config: { impact_field: "impact_scope" },
+                  is_active: true,
+                  published_at: "2026-04-30T18:00:00+05:00",
+                  created_at: "2026-04-30T18:00:00+05:00",
+                  created_by: "admin1",
+                  updated_at: "2026-04-30T18:00:00+05:00",
+                  updated_by: "admin1"
+                }
+              },
+              message: "Шаблон обращения printer опубликован в реестр как версия 1.0.1. Политик опубликовано: 1."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Реестр целевой модели");
+    const publishButton = screen.getByRole("button", { name: "Опубликовать в реестр" });
+    await waitFor(() => {
+      expect(publishButton).not.toBeDisabled();
+    });
+    fireEvent.click(publishButton);
+
+    await waitFor(() => {
+      expect(publishCalls).toHaveLength(1);
+    });
+
+    const payload = publishCalls[0] as {
+      form: {
+        key: string;
+        fields: Array<{ key: string }>;
+        priority_policy?: Record<string, unknown>;
+      };
+      publish_policies: boolean;
+    };
+    expect(payload.form.key).toBe("printer");
+    expect(payload.form.fields.map((field) => field.key)).toContain("room");
+    expect(payload.publish_policies).toBe(true);
+    expect(await screen.findByText(/Шаблон обращения printer опубликован/)).toBeInTheDocument();
   });
 });

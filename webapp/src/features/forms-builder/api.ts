@@ -149,6 +149,99 @@ export type AdminFormsRoutePreviewResult = {
   }>;
 };
 
+export type AdminHelpdeskPolicyItem = {
+  kind: string;
+  table: string;
+  code: string;
+  version: string;
+  title: string;
+  description: string | null;
+  scope_level: string;
+  scope_ref: string | null;
+  config: Record<string, unknown>;
+  is_active: boolean;
+  published_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminHelpdeskRequestTemplateItem = {
+  template_code: string;
+  version: string;
+  public_title: string;
+  internal_name: string | null;
+  description: string | null;
+  ticket_type: string;
+  category_id: number | null;
+  service_id: number | null;
+  subcategory_id: number | null;
+  form_schema_id: string | null;
+  workflow_profile_id: string | null;
+  priority_policy_code: string | null;
+  routing_policy_code: string | null;
+  sla_policy_id: number | null;
+  ola_policy_code: string | null;
+  approval_policy_code: string | null;
+  diagnostic_policy_code: string | null;
+  closure_policy_code: string | null;
+  visibility_policy_code: string | null;
+  notification_policy_code: string | null;
+  config: Record<string, unknown>;
+  overrides: Record<string, unknown>;
+  is_active: boolean;
+  published_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminHelpdeskSmartViewItem = {
+  code: string;
+  version: string;
+  title: string;
+  description: string | null;
+  scope_level: string;
+  scope_ref: string | null;
+  filter: Record<string, unknown>;
+  sort: Array<Record<string, unknown>>;
+  columns: string[];
+  is_active: boolean;
+  published_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminHelpdeskModelPayload = {
+  summary: {
+    request_templates_count: number;
+    active_request_templates_count: number;
+    policies_count: number;
+    active_policies_count: number;
+    smart_views_count: number;
+    active_smart_views_count: number;
+  };
+  capabilities: {
+    registry_endpoint: string;
+    publish_from_form_endpoint: string;
+    inheritance_order: string[];
+    policy_kinds: string[];
+  };
+  request_templates: AdminHelpdeskRequestTemplateItem[];
+  policies: Record<string, AdminHelpdeskPolicyItem[]>;
+  smart_views: AdminHelpdeskSmartViewItem[];
+};
+
+export type AdminHelpdeskPublishFromFormResult = {
+  request_template: AdminHelpdeskRequestTemplateItem;
+  policies: Record<string, AdminHelpdeskPolicyItem>;
+  message: string;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -170,6 +263,28 @@ export class AdminFormsApiError extends Error {
     this.status = status;
     this.errorCode = errorCode;
   }
+}
+
+export async function fetchHelpdeskModelRegistry(): Promise<AdminHelpdeskModelPayload> {
+  const response = await fetch("/api/web/admin/helpdesk-model/policies", {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить реестр шаблонов и политик");
+}
+
+export async function publishHelpdeskTemplateFromForm(payload: {
+  form: AdminFormsSaveRequest["forms"][number];
+  publish_policies?: boolean;
+}): Promise<AdminHelpdeskPublishFromFormResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/request-templates/publish-from-form", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ ...payload, publish_policies: payload.publish_policies ?? true })
+  });
+  return readSuccessResponse(response, "Не удалось опубликовать шаблон обращения в реестр");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

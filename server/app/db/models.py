@@ -1479,6 +1479,225 @@ class TicketFormPack(Base):
         )
 
 
+class RequestTemplate(Base):
+    """Versioned request template assembled from form, workflow and policy references."""
+
+    __tablename__ = "request_templates"
+
+    template_code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    public_title: Mapped[str] = mapped_column(Text, nullable=False)
+    internal_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ticket_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    service_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    subcategory_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    form_schema_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    workflow_profile_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    routing_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sla_policy_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ola_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    approval_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    diagnostic_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    closure_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    visibility_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notification_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    overrides_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_request_templates_active", "template_code", "is_active"),
+        Index("ix_request_templates_type_category", "ticket_type", "category_id"),
+        Index("ix_request_templates_published_at", "published_at"),
+    )
+
+
+class _VersionedPolicyMixin:
+    code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope_level: Mapped[str] = mapped_column(String(40), nullable=False, server_default="system")
+    scope_ref: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class PriorityPolicy(_VersionedPolicyMixin, Base):
+    """Versioned priority calculation policy."""
+
+    __tablename__ = "priority_policies"
+    __table_args__ = (
+        Index("ix_priority_policies_active", "code", "is_active"),
+        Index("ix_priority_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_priority_policies_published_at", "published_at"),
+    )
+
+
+class RoutingPolicy(_VersionedPolicyMixin, Base):
+    """Versioned routing policy."""
+
+    __tablename__ = "routing_policies"
+    __table_args__ = (
+        Index("ix_routing_policies_active", "code", "is_active"),
+        Index("ix_routing_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_routing_policies_published_at", "published_at"),
+    )
+
+
+class ApprovalPolicy(_VersionedPolicyMixin, Base):
+    """Versioned approval policy."""
+
+    __tablename__ = "approval_policies"
+    __table_args__ = (
+        Index("ix_approval_policies_active", "code", "is_active"),
+        Index("ix_approval_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_approval_policies_published_at", "published_at"),
+    )
+
+
+class ClosurePolicy(_VersionedPolicyMixin, Base):
+    """Versioned closure policy."""
+
+    __tablename__ = "closure_policies"
+    __table_args__ = (
+        Index("ix_closure_policies_active", "code", "is_active"),
+        Index("ix_closure_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_closure_policies_published_at", "published_at"),
+    )
+
+
+class DiagnosticPolicy(_VersionedPolicyMixin, Base):
+    """Versioned diagnostic policy."""
+
+    __tablename__ = "diagnostic_policies"
+    __table_args__ = (
+        Index("ix_diagnostic_policies_active", "code", "is_active"),
+        Index("ix_diagnostic_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_diagnostic_policies_published_at", "published_at"),
+    )
+
+
+class NotificationPolicy(_VersionedPolicyMixin, Base):
+    """Versioned notification recipient/channel policy."""
+
+    __tablename__ = "notification_policies"
+    __table_args__ = (
+        Index("ix_notification_policies_active", "code", "is_active"),
+        Index("ix_notification_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_notification_policies_published_at", "published_at"),
+    )
+
+
+class VisibilityPolicy(_VersionedPolicyMixin, Base):
+    """Versioned requester/support visibility policy."""
+
+    __tablename__ = "visibility_policies"
+    __table_args__ = (
+        Index("ix_visibility_policies_active", "code", "is_active"),
+        Index("ix_visibility_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_visibility_policies_published_at", "published_at"),
+    )
+
+
+class SmartView(Base):
+    """Versioned saved operational queue view."""
+
+    __tablename__ = "smart_views"
+
+    code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope_level: Mapped[str] = mapped_column(String(40), nullable=False, server_default="system")
+    scope_ref: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    filter_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    sort_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    columns_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_smart_views_active", "code", "is_active"),
+        Index("ix_smart_views_scope", "scope_level", "scope_ref"),
+        Index("ix_smart_views_published_at", "published_at"),
+    )
+
+
+class HelpdeskPolicyAudit(Base):
+    """Audit trail for request-template and policy publishing."""
+
+    __tablename__ = "helpdesk_policy_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    before_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    after_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_helpdesk_policy_audit_entity", "entity_type", "entity_code", "created_at"),
+        Index("ix_helpdesk_policy_audit_actor", "actor_id", "created_at"),
+    )
+
+
 class AgentBuild(Base):
     """
     Server-side registry of agent build artifacts (self-update packages).

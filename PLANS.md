@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 10 in progress: complex visual request-template constructor in the existing forms builder. Scope remains functional settings behavior first; the visual builder edits the current versioned request-form catalog rather than introducing separate policy tables yet.
+Status: slice 11 in progress: standalone versioned helpdesk model registry. Scope expands from executable JSON inside `request_forms` to separately published `request_templates` and policy entities while keeping the current catalog builder compatible.
 
 ### Goal
 
@@ -39,15 +39,16 @@ Already present:
 
 Missing or weak:
 
-- No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
+- Standalone persisted entities are being introduced for `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`. Existing SLA/calendar tables remain the canonical SLA storage; OLA still uses current settings plus template-level OLA JSON until a dedicated OLA policy table is split out.
 - `closure_policy`, `approval_policy`, `routing_policy`, diagnostic attach-to-evidence behavior, `visibility_policy` public-status/redaction behavior and `notification_policy` recipient selection are executable.
 - Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
 - Notification delivery is policy-driven for in-app recipients; external channels remain future work.
-- Smart views exist as backend support queue filters; admin persistence/editor remains future work.
+- Smart views exist as backend support queue filters; standalone smart-view persistence is part of slice 11, while the visual editor remains future work.
 
 ### Decisions
 
-- Keep the first storage layer on top of the existing `request_forms` / request-template metadata. Do not add migrations until behavior proves the split.
+- Keep backward compatibility with the existing `request_forms` / request-template metadata. New registry publishing must not break `/help`, local agent ticket creation or existing packs.
+- Add migrations only for the standalone registry layer, not for speculative UI-only data.
 - Make stored policies executable one by one, starting with the lowest-risk policy that is already in template metadata.
 - Use focused backend tests before implementation for each slice.
 - Do not start the request-template visual builder until backend contracts and enforcement are stable.
@@ -105,7 +106,45 @@ Missing or weak:
 
 ### Current Step
 
-Slice 10 in progress: visual request-template constructor.
+Slice 11 in progress: standalone versioned registry for full target model.
+
+Planned behavior:
+
+- Add separate versioned tables for `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
+- Add generic audit rows for policy/template publication.
+- Add a repository that can publish new versions and resolve effective policy config through inheritance: `system` defaults, then `ticket_type`, then `category`, then `request_template` overrides.
+- Add typed admin API:
+  - `GET /api/web/admin/helpdesk-model/policies` for registry overview.
+  - `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form` for publishing the currently edited visual constructor form into the standalone registry.
+- Extend `/app/admin/forms` so the visual constructor can publish the selected template and its policies into the standalone registry, while the existing catalog-save flow remains unchanged.
+- Add focused backend and frontend tests, then run local verification, release to Linux, browser-check the new registry controls and stop the remote server.
+
+Implemented locally:
+
+- Migration `063` adds standalone versioned tables: `request_templates`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies`, `smart_views` and `helpdesk_policy_audit`.
+- `server/app/repos/helpdesk_policy_repo.py` publishes policy/template versions, deactivates previous active versions for the same code, writes audit rows and resolves effective policy config through `system -> ticket_type -> category -> request_template`.
+- Typed admin API now exposes:
+  - `GET /api/web/admin/helpdesk-model/policies`
+  - `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form`
+- `/app/admin/forms` now shows a `Реестр целевой модели` block and can publish the selected visual constructor form into the standalone registry without replacing the existing form-pack publish flow.
+- Tests cover inheritance resolution, API publish-from-form, registry overview and the React publish action.
+
+Local verification for slice 11 so far:
+
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> passed, 2 tests.
+- `pnpm --dir webapp exec tsc --noEmit` -> passed.
+- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 11 tests.
+
+Non-goals for this slice:
+
+- Full standalone visual editors for every policy type.
+- External email/Telegram/VK Teams delivery.
+- Workflow actions beyond the existing transition roles/required fields.
+- Replacing existing SLA/calendar storage.
+
+Previous current step:
+
+Slice 10 completed: visual request-template constructor.
 
 Implemented locally:
 

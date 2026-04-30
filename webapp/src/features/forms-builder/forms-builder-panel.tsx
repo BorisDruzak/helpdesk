@@ -38,7 +38,10 @@ import {
   type AdminFormsPlaybookTrigger,
   type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
+  type AdminHelpdeskModelPayload,
+  fetchHelpdeskModelRegistry,
   fetchAdminFormsCatalog,
+  publishHelpdeskTemplateFromForm,
   previewAdminFormRoute,
   saveAdminFormsCatalog,
 } from "./api";
@@ -1578,6 +1581,73 @@ function TemplateConstructorPanel({
   );
 }
 
+function HelpdeskModelRegistryPanel({
+  data,
+  isLoading,
+  isError,
+  onPublish,
+  publishDisabled,
+  publishPending,
+  selectedForm,
+}: {
+  data?: AdminHelpdeskModelPayload;
+  isLoading: boolean;
+  isError: boolean;
+  onPublish: () => void;
+  publishDisabled: boolean;
+  publishPending: boolean;
+  selectedForm: DraftForm | null;
+}) {
+  const selectedTemplate = data?.request_templates.find((item) => item.template_code === selectedForm?.key);
+  const activePolicies = data?.summary.active_policies_count ?? 0;
+  const activeTemplates = data?.summary.active_request_templates_count ?? 0;
+  return (
+    <div className="rounded-[1.1rem] border border-emerald-200 bg-emerald-50/70 px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Реестр целевой модели</p>
+          <p className="mt-1 max-w-3xl text-xs leading-6 text-slate-600">
+            Отдельное versioned-хранилище для request templates, priority/routing/approval/closure/diagnostic/visibility/notification policies и smart views. Наследование применяется в порядке: system defaults &gt; ticket type &gt; category &gt; request template.
+          </p>
+        </div>
+        <Button
+          disabled={publishDisabled || publishPending || !selectedForm}
+          onClick={onPublish}
+          size="sm"
+          variant="primary"
+        >
+          {publishPending ? "Публикуем..." : "Опубликовать в реестр"}
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Шаблоны</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950">{isLoading ? "..." : activeTemplates}</p>
+        </div>
+        <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Политики</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950">{isLoading ? "..." : activePolicies}</p>
+        </div>
+        <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Smart views</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950">
+            {isLoading ? "..." : data?.summary.active_smart_views_count ?? 0}
+          </p>
+        </div>
+        <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Текущий шаблон</p>
+          <p className="mt-2 truncate text-sm font-semibold text-slate-950">
+            {selectedTemplate ? `${selectedTemplate.version} опубликован` : "ещё не в реестре"}
+          </p>
+        </div>
+      </div>
+      {isError ? (
+        <p className="mt-3 text-xs font-medium text-rose-700">Не удалось загрузить реестр целевой модели.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = {}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftCatalog | null>(null);
@@ -1603,6 +1673,12 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   const versionsQuery = useQuery({
     queryKey: ["admin-forms-builder-versions"],
     queryFn: fetchTicketFormsPackList,
+    retry: false,
+  });
+
+  const helpdeskModelQuery = useQuery({
+    queryKey: ["admin-helpdesk-model-registry"],
+    queryFn: fetchHelpdeskModelRegistry,
     retry: false,
   });
 
@@ -1669,6 +1745,31 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
       return previewAdminFormRoute({
         form: serializeDraftForm(selectedForm),
         form_payload: previewValues,
+      });
+    },
+  });
+
+  const registryPublishMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedForm) {
+        throw new Error("Сначала выберите шаблон обращения.");
+      }
+      return publishHelpdeskTemplateFromForm({
+        form: serializeDraftForm(selectedForm),
+        publish_policies: true,
+      });
+    },
+    onSuccess: async (result) => {
+      setActionFeedback({
+        tone: "success",
+        text: result.message,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось опубликовать шаблон обращения в реестр.",
       });
     },
   });
@@ -1910,6 +2011,16 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
           {publishAccess.reason}
         </div>
       ) : null}
+
+      <HelpdeskModelRegistryPanel
+        data={helpdeskModelQuery.data}
+        isError={helpdeskModelQuery.isError}
+        isLoading={helpdeskModelQuery.isLoading}
+        onPublish={() => registryPublishMutation.mutate()}
+        publishDisabled={publishDisabled || hasBlockingValidationIssues}
+        publishPending={registryPublishMutation.isPending}
+        selectedForm={selectedForm}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <Card className="xl:sticky xl:top-[9.5rem] xl:self-start">
