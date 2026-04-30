@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 6 implemented locally, local verification passing; commit/deploy/live check are next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 6 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -241,6 +241,12 @@ Local:
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:
+
+- Released commit `cd24d39` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran `verify_workspace.py`, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live diagnostic-policy check created an uncommitted transactional ticket `17d28afe-92ba-4164-9d6e-649a46a6e7a5` with `request_template.diagnostic_policy.attach_results.as_evidence=true`, a terminal operation `7f364cda-a246-4317-a2bc-e7c44a52ca4d`, generated a passport, and observed `evidence_count=1` with `source_ref=operation:7f364cda-a246-4317-a2bc-e7c44a52ca4d`; the transaction was rolled back after verification.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
 
 - Released commit `f295abe` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Remote smoke passed: `GET /api/health` -> 200.
