@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+﻿import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -89,6 +89,7 @@ function createHelpdeskModelRegistryPayload() {
     capabilities: {
       registry_endpoint: "/api/web/admin/helpdesk-model/policies",
       publish_from_form_endpoint: "/api/web/admin/helpdesk-model/request-templates/publish-from-form",
+      publish_policy_endpoint: "/api/web/admin/helpdesk-model/policies/publish",
       inheritance_order: ["system", "ticket_type", "category", "request_template"],
       policy_kinds: ["approval", "closure", "diagnostic", "notification", "priority", "routing", "visibility"],
     },
@@ -128,7 +129,6 @@ function renderFormsBuilder(props?: { permissions?: string[] }) {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
 
 describe("FormsBuilderPanel", () => {
   it("shows a read-only reason and blocks publish without admin.forms.publish", async () => {
@@ -1107,5 +1107,103 @@ describe("FormsBuilderPanel", () => {
     expect(payload.form.fields.map((field) => field.key)).toContain("room");
     expect(payload.publish_policies).toBe(true);
     expect(await screen.findByText(/Шаблон обращения printer опубликован/)).toBeInTheDocument();
+  });
+  it("публикует отдельную routing policy из редактора политик", async () => {
+    const publishCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({
+            status: "success",
+            data: createHelpdeskModelRegistryPayload()
+          });
+        }
+
+        if (url === "/api/web/admin/helpdesk-model/policies/publish" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          publishCalls.push(body);
+          return jsonResponse({
+            status: "success",
+            data: {
+              policy: {
+                kind: "routing",
+                table: "routing_policies",
+                code: body.code,
+                version: "1.0.1",
+                title: body.title,
+                description: body.description,
+                scope_level: body.scope_level,
+                scope_ref: body.scope_ref,
+                config: body.config,
+                is_active: true,
+                published_at: "2026-04-30T18:30:00+05:00",
+                created_at: "2026-04-30T18:30:00+05:00",
+                created_by: "admin1",
+                updated_at: "2026-04-30T18:30:00+05:00",
+                updated_by: "admin1"
+              },
+              message: "Политика printer_routing_policy опубликована в реестр как версия 1.0.1."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редакторы политик");
+    const publishPolicyButton = screen.getByRole("button", { name: "Опубликовать политику" });
+    await waitFor(() => {
+      expect(publishPolicyButton).not.toBeDisabled();
+      expect(screen.getByLabelText("Код политики")).toHaveValue("printer_routing_policy");
+    });
+    fireEvent.change(screen.getByLabelText("Куда направить"), {
+      target: { value: "networks" }
+    });
+    fireEvent.click(publishPolicyButton);
+
+    await waitFor(() => {
+      expect(publishCalls).toHaveLength(1);
+    });
+    expect(publishCalls[0]).toMatchObject({
+      kind: "routing",
+      code: "printer_routing_policy",
+      scope_level: "request_template",
+      scope_ref: "printer",
+      config: {
+        rules: [
+          expect.objectContaining({
+            then: expect.objectContaining({
+              queue: "networks"
+            })
+          })
+        ]
+      }
+    });
+    expect(await screen.findByText(/Политика printer_routing_policy опубликована/)).toBeInTheDocument();
   });
 });

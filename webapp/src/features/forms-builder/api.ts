@@ -228,6 +228,7 @@ export type AdminHelpdeskModelPayload = {
   capabilities: {
     registry_endpoint: string;
     publish_from_form_endpoint: string;
+    publish_policy_endpoint: string;
     inheritance_order: string[];
     policy_kinds: string[];
   };
@@ -239,6 +240,11 @@ export type AdminHelpdeskModelPayload = {
 export type AdminHelpdeskPublishFromFormResult = {
   request_template: AdminHelpdeskRequestTemplateItem;
   policies: Record<string, AdminHelpdeskPolicyItem>;
+  message: string;
+};
+
+export type AdminHelpdeskPublishPolicyResult = {
+  policy: AdminHelpdeskPolicyItem;
   message: string;
 };
 
@@ -285,6 +291,27 @@ export async function publishHelpdeskTemplateFromForm(payload: {
     body: JSON.stringify({ ...payload, publish_policies: payload.publish_policies ?? true })
   });
   return readSuccessResponse(response, "Не удалось опубликовать шаблон обращения в реестр");
+}
+
+export async function publishHelpdeskPolicy(payload: {
+  kind: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  scope_level: string;
+  scope_ref?: string | null;
+  config: Record<string, unknown>;
+  requested_version?: string | null;
+}): Promise<AdminHelpdeskPublishPolicyResult> {
+  const response = await fetch("/api/web/admin/helpdesk-model/policies/publish", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось опубликовать политику в реестр");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

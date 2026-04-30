@@ -120,6 +120,8 @@ from web_api.dto.admin import (
     AdminHelpdeskModelPayload,
     AdminHelpdeskModelSummary,
     AdminHelpdeskPolicyItem,
+    AdminHelpdeskPublishPolicyRequest,
+    AdminHelpdeskPublishPolicyResult,
     AdminHelpdeskPublishFromFormRequest,
     AdminHelpdeskPublishFromFormResult,
     AdminHelpdeskRequestTemplateItem,
@@ -274,6 +276,7 @@ _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
 _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
 _HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
 _HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
+_HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT = "/api/web/admin/helpdesk-model/policies/publish"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
 _FORM_FIELD_TYPE_LABELS = {
@@ -2001,6 +2004,7 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
         capabilities=AdminHelpdeskModelCapabilities(
             registry_endpoint=_HELPDESK_MODEL_REGISTRY_ENDPOINT,
             publish_from_form_endpoint=_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT,
+            publish_policy_endpoint=_HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT,
             inheritance_order=["system", "ticket_type", "category", "request_template"],
             policy_kinds=sorted(POLICY_MODELS.keys()),
         ),
@@ -2109,6 +2113,35 @@ async def _publish_helpdesk_template_from_form(
             f"Шаблон обращения {typed_template.template_code} опубликован в реестр как версия "
             f"{typed_template.version}. Политик опубликовано: {len(policies)}."
         ),
+    )
+
+async def _publish_helpdesk_policy(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishPolicyRequest,
+) -> AdminHelpdeskPublishPolicyResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.publish_policy(
+            kind=payload.kind,
+            code=payload.code,
+            title=payload.title,
+            description=payload.description,
+            config=payload.config,
+            scope_level=payload.scope_level,
+            scope_ref=payload.scope_ref,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            requested_version=payload.requested_version,
+        )
+        await session.commit()
+
+    policy = AdminHelpdeskPolicyItem.model_validate(item)
+    return AdminHelpdeskPublishPolicyResult(
+        policy=policy,
+        message=f"Политика {policy.code} опубликована в реестр как версия {policy.version}.",
     )
 
 
@@ -2841,6 +2874,48 @@ async def handle_web_admin_helpdesk_model_publish_from_form(request: web.Request
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPublishFromFormResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_publish_policy(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPublishPolicyRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру политики",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_helpdesk_policy(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру политики",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_publish_policy] Failed to publish policy: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать политику в реестр",
+                "error_code": "HELPDESK_POLICY_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPublishPolicyResult](data=result))
 
 
 @require_auth("admin")

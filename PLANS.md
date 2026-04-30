@@ -106,7 +106,7 @@ Missing or weak:
 
 ### Current Step
 
-Slice 11 in progress: standalone versioned registry for full target model.
+Slice 12 in progress: standalone policy editors over the versioned helpdesk model registry.
 
 Planned behavior:
 
@@ -117,6 +117,8 @@ Planned behavior:
   - `GET /api/web/admin/helpdesk-model/policies` for registry overview.
   - `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form` for publishing the currently edited visual constructor form into the standalone registry.
 - Extend `/app/admin/forms` so the visual constructor can publish the selected template and its policies into the standalone registry, while the existing catalog-save flow remains unchanged.
+- Add typed admin API `POST /api/web/admin/helpdesk-model/policies/publish` for publishing one standalone policy version from a dedicated editor.
+- Add dedicated editors for routing, approval, closure, diagnostic, notification and visibility policies over the standalone registry.
 - Add focused backend and frontend tests, then run local verification, release to Linux, browser-check the new registry controls and stop the remote server.
 
 Implemented locally:
@@ -137,10 +139,16 @@ Local verification for slice 11 so far:
 
 Non-goals for this slice:
 
-- Full standalone visual editors for every policy type.
+- Full standalone visual editors for priority/SLA/OLA policy types.
 - External email/Telegram/VK Teams delivery.
 - Workflow actions beyond the existing transition roles/required fields.
 - Replacing existing SLA/calendar storage.
+
+Slice 12 delta implemented locally:
+
+- Typed admin API now also exposes `POST /api/web/admin/helpdesk-model/policies/publish` for direct standalone policy publication.
+- `/app/admin/forms` has dedicated editors for routing, approval, closure, diagnostic, notification and visibility policies. They provide structured controls, JSON preview and active-version publication into the same registry/audit path.
+- Focused tests now cover direct policy publish/version/audit behavior and the React routing-policy editor action.
 
 Previous current step:
 

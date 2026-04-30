@@ -557,6 +557,7 @@ class AdminHelpdeskModelCapabilities(BaseModel):
 
     registry_endpoint: str
     publish_from_form_endpoint: str
+    publish_policy_endpoint: str
     inheritance_order: list[str]
     policy_kinds: list[str]
 
@@ -594,6 +595,26 @@ class AdminHelpdeskPublishFromFormResult(BaseModel):
 
     request_template: AdminHelpdeskRequestTemplateItem
     policies: dict[str, AdminHelpdeskPolicyItem] = Field(default_factory=dict)
+    message: str
+
+
+class AdminHelpdeskPublishPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    code: str
+    title: str
+    description: str | None = None
+    scope_level: str = "request_template"
+    scope_ref: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    requested_version: str | None = None
+
+
+class AdminHelpdeskPublishPolicyResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy: AdminHelpdeskPolicyItem
     message: str
 
 

@@ -38,9 +38,11 @@ import {
   type AdminFormsPlaybookTrigger,
   type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
+  type AdminHelpdeskPolicyItem,
   type AdminHelpdeskModelPayload,
   fetchHelpdeskModelRegistry,
   fetchAdminFormsCatalog,
+  publishHelpdeskPolicy,
   publishHelpdeskTemplateFromForm,
   previewAdminFormRoute,
   saveAdminFormsCatalog,
@@ -1305,6 +1307,588 @@ function PolicyJsonEditor({
   );
 }
 
+type PolicyEditorKind = "routing" | "approval" | "closure" | "diagnostic" | "notification" | "visibility";
+
+type PolicyEditorDraft = {
+  kind: PolicyEditorKind;
+  code: string;
+  title: string;
+  description: string;
+  scope_level: "system" | "ticket_type" | "category" | "request_template";
+  scope_ref: string;
+  jsonText: string;
+};
+
+const POLICY_EDITOR_ITEMS: Array<{ kind: PolicyEditorKind; label: string; description: string }> = [
+  { kind: "routing", label: "Роутинг", description: "Очереди, fallback и защита от перекидывания" },
+  { kind: "approval", label: "Согласования", description: "Кто согласует, сроки и отказ" },
+  { kind: "closure", label: "Закрытие", description: "Коды решения, итог и доказательства" },
+  { kind: "diagnostic", label: "Диагностика", description: "Playbook, consent и evidence" },
+  { kind: "notification", label: "Уведомления", description: "Получатели и каналы событий" },
+  { kind: "visibility", label: "Видимость", description: "Публичные статусы и скрытые поля" },
+];
+
+function parseEditorJson(text: string): Record<string, unknown> {
+  const parsed = JSON.parse(text || "{}") as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Политика должна быть JSON-объектом.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<string, unknown> {
+  const fieldByKind: Record<PolicyEditorKind, PolicyJsonField> = {
+    routing: "routing_policy_json",
+    approval: "approval_policy_json",
+    closure: "closure_policy_json",
+    diagnostic: "diagnostic_policy_json",
+    notification: "notification_policy_json",
+    visibility: "visibility_policy_json",
+  };
+  const existing = parseJsonDraft(form[fieldByKind[kind]]);
+  if (Object.keys(existing).length) {
+    return existing;
+  }
+  const presetText =
+    kind === "routing"
+      ? buildRoutingPreset(form)
+      : kind === "approval"
+        ? buildApprovalPreset()
+        : kind === "closure"
+          ? buildClosurePreset()
+          : kind === "diagnostic"
+            ? buildDiagnosticPreset(form)
+            : kind === "notification"
+              ? buildNotificationPreset()
+              : buildVisibilityPreset();
+  return parseJsonDraft(presetText);
+}
+
+function buildPolicyEditorDraft(kind: PolicyEditorKind, form: DraftForm | null): PolicyEditorDraft {
+  const codeBase = form?.key?.trim() || "request_template";
+  const titleBase = form?.title?.trim() || codeBase;
+  const item = POLICY_EDITOR_ITEMS.find((entry) => entry.kind === kind);
+  return {
+    kind,
+    code: `${codeBase}_${kind}_policy`,
+    title: `${titleBase}: ${item?.label ?? kind}`,
+    description: `Политика опубликована из редактора целевой модели для шаблона ${codeBase}.`,
+    scope_level: "request_template",
+    scope_ref: codeBase,
+    jsonText: prettyJson(form ? policyEditorPreset(kind, form) : {}),
+  };
+}
+
+function getFirstRule(config: Record<string, unknown>): Record<string, unknown> {
+  const rules = Array.isArray(config.rules) ? config.rules : [];
+  const first = rules[0];
+  return first && typeof first === "object" && !Array.isArray(first) ? (first as Record<string, unknown>) : {};
+}
+
+function updateFirstRule(
+  config: Record<string, unknown>,
+  patch: (rule: Record<string, unknown>) => Record<string, unknown>
+): Record<string, unknown> {
+  const rules = Array.isArray(config.rules) ? [...config.rules] : [];
+  rules[0] = patch(getFirstRule(config));
+  return { ...config, rules };
+}
+
+function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
+  const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
+  if (enabled) {
+    set.add(value);
+  } else {
+    set.delete(value);
+  }
+  return Array.from(set);
+}
+
+function JsonLinkedCheckbox({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 rounded-[0.8rem] border border-border bg-white px-3 py-2 text-sm text-slate-700">
+      <input checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function PolicyKindControls({
+  config,
+  form,
+  kind,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  form: DraftForm | null;
+  kind: PolicyEditorKind;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  if (kind === "routing") {
+    const rule = getFirstRule(config);
+    const when = typeof rule.when === "object" && rule.when ? (rule.when as Record<string, unknown>) : {};
+    const then = typeof rule.then === "object" && rule.then ? (rule.then as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Очередь по умолчанию</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, default_queue: event.currentTarget.value })}
+            value={String(config.default_queue ?? config.default_queue_id ?? "")}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Поле условия роутинга</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange(updateFirstRule(config, (current) => ({ ...current, when: { ...when, field: event.currentTarget.value } })))
+            }
+            placeholder="request_form_data.affected_scope"
+            value={String(when.field ?? "")}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Значения условия</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange(
+                updateFirstRule(config, (current) => ({
+                  ...current,
+                  when: {
+                    ...when,
+                    op: "in",
+                    values: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
+                  },
+                }))
+              )
+            }
+            placeholder="department, whole_building"
+            value={Array.isArray(when.values) ? when.values.join(", ") : String(when.value ?? "")}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Куда направить</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange(updateFirstRule(config, (current) => ({ ...current, then: { ...then, queue: event.currentTarget.value } })))
+            }
+            placeholder={form?.default_queue_id || "servicedesk_l1"}
+            value={String(then.queue ?? then.queue_id ?? "")}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Повысить приоритет на</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange(
+                updateFirstRule(config, (current) => ({
+                  ...current,
+                  then: { ...then, priority_boost: Number(event.currentTarget.value || 0) },
+                }))
+              )
+            }
+            type="number"
+            value={Number(then.priority_boost ?? 0)}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Максимум авто-маршрутов</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, max_auto_reroutes: Number(event.currentTarget.value || 0) })}
+            type="number"
+            value={Number(config.max_auto_reroutes ?? 3)}
+          />
+        </label>
+      </div>
+    );
+  }
+
+  if (kind === "approval") {
+    const approverSource =
+      typeof config.approver_source === "object" && config.approver_source ? (config.approver_source as Record<string, unknown>) : {};
+    const timeout = typeof config.timeout === "object" && config.timeout ? (config.timeout as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <JsonLinkedCheckbox checked={Boolean(config.required)} label="Согласование обязательно" onChange={(checked) => onChange({ ...config, required: checked })} />
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Источник согласующего</span>
+          <Select
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, approver_source: { ...approverSource, type: event.currentTarget.value } })}
+            value={String(approverSource.type ?? "service_owner")}
+          >
+            <option value="service_owner">Владелец сервиса</option>
+            <option value="requester_manager">Руководитель заявителя</option>
+            <option value="security_role">Роль ИБ</option>
+            <option value="form_field">Поле формы</option>
+          </Select>
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Режим</span>
+          <Select
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, approval_mode: event.currentTarget.value })}
+            value={String(config.approval_mode ?? "any_one")}
+          >
+            <option value="any_one">Достаточно одного</option>
+            <option value="all">Все согласующие</option>
+            <option value="sequential">Последовательно</option>
+          </Select>
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Напомнить через</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, timeout: { ...timeout, reminder_after: event.currentTarget.value } })}
+            placeholder="4h"
+            value={String(timeout.reminder_after ?? "")}
+          />
+        </label>
+        <JsonLinkedCheckbox
+          checked={Boolean(config.require_comment_on_reject ?? true)}
+          label="Комментарий при отказе"
+          onChange={(checked) => onChange({ ...config, require_comment_on_reject: checked })}
+        />
+        <JsonLinkedCheckbox
+          checked={Boolean(config.log_to_passport ?? true)}
+          label="Писать в паспорт решения"
+          onChange={(checked) => onChange({ ...config, log_to_passport: checked })}
+        />
+      </div>
+    );
+  }
+
+  if (kind === "closure") {
+    const before = typeof config.before_resolved === "object" && config.before_resolved ? (config.before_resolved as Record<string, unknown>) : {};
+    const evidence = typeof config.evidence === "object" && config.evidence ? (config.evidence as Record<string, unknown>) : {};
+    const confirmation =
+      typeof config.requester_confirmation === "object" && config.requester_confirmation
+        ? (config.requester_confirmation as Record<string, unknown>)
+        : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <JsonLinkedCheckbox checked={Boolean(before.require_resolution_code ?? true)} label="Нужен код решения" onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(before.require_public_summary ?? true)} label="Нужен публичный итог" onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_public_summary: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(evidence.require_operation_log_if_module_used)} label="Evidence после модуля" onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_operation_log_if_module_used: checked } })} />
+        {["P0", "P1", "P2"].map((priority) => (
+          <JsonLinkedCheckbox
+            checked={
+              Array.isArray(evidence.require_evidence_for_priorities)
+                ? evidence.require_evidence_for_priorities.map((item) => String(item)).includes(priority)
+                : false
+            }
+            key={priority}
+            label={`Evidence для ${priority}`}
+            onChange={(checked) =>
+              onChange({
+                ...config,
+                evidence: {
+                  ...evidence,
+                  require_evidence_for_priorities: toggleStringInList(evidence.require_evidence_for_priorities, priority, checked),
+                },
+              })
+            }
+          />
+        ))}
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Автозакрытие через дней</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
+            }
+            type="number"
+            value={Number(confirmation.auto_close_after_days ?? 3)}
+          />
+        </label>
+      </div>
+    );
+  }
+
+  if (kind === "diagnostic") {
+    const autoRun = typeof config.auto_run === "object" && config.auto_run ? (config.auto_run as Record<string, unknown>) : {};
+    const consent = typeof config.consent === "object" && config.consent ? (config.consent as Record<string, unknown>) : {};
+    const attach = typeof config.attach_results === "object" && config.attach_results ? (config.attach_results as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+          <span>Плейбуки</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, suggested_playbooks: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean) })}
+            placeholder={form?.suggested_playbook_id || "diagnose.website"}
+            value={Array.isArray(config.suggested_playbooks) ? config.suggested_playbooks.join(", ") : ""}
+          />
+        </label>
+        <JsonLinkedCheckbox checked={Boolean(autoRun.enabled)} label="Автозапуск" onChange={(checked) => onChange({ ...config, auto_run: { ...autoRun, enabled: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(consent.required_for_requester_device ?? true)} label="Нужно согласие пользователя" onChange={(checked) => onChange({ ...config, consent: { ...consent, required_for_requester_device: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(attach.to_passport ?? true)} label="Прикладывать к паспорту" onChange={(checked) => onChange({ ...config, attach_results: { ...attach, to_passport: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(attach.as_evidence ?? true)} label="Считать доказательством" onChange={(checked) => onChange({ ...config, attach_results: { ...attach, as_evidence: checked } })} />
+      </div>
+    );
+  }
+
+  if (kind === "notification") {
+    const updateEvent = (eventName: string, field: string, checked: boolean) => {
+      const eventConfig =
+        typeof config[eventName] === "object" && config[eventName] ? (config[eventName] as Record<string, unknown>) : {};
+      onChange({ ...config, [eventName]: { ...eventConfig, [field]: checked } });
+    };
+    const channels = typeof config.channels === "object" && config.channels ? (config.channels as Record<string, unknown>) : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <JsonLinkedCheckbox checked={Boolean((config.on_created as Record<string, unknown> | undefined)?.requester)} label="Создание: заявителю" onChange={(checked) => updateEvent("on_created", "requester", checked)} />
+        <JsonLinkedCheckbox checked={Boolean((config.on_created as Record<string, unknown> | undefined)?.queue)} label="Создание: очереди" onChange={(checked) => updateEvent("on_created", "queue", checked)} />
+        <JsonLinkedCheckbox checked={Boolean((config.on_assigned as Record<string, unknown> | undefined)?.assignee)} label="Назначение: исполнителю" onChange={(checked) => updateEvent("on_assigned", "assignee", checked)} />
+        <JsonLinkedCheckbox checked={Boolean((config.on_sla_warning as Record<string, unknown> | undefined)?.queue_lead)} label="Риск срока: руководителю" onChange={(checked) => updateEvent("on_sla_warning", "queue_lead", checked)} />
+        <JsonLinkedCheckbox checked={Boolean((config.on_resolved as Record<string, unknown> | undefined)?.requester)} label="Решено: заявителю" onChange={(checked) => updateEvent("on_resolved", "requester", checked)} />
+        <JsonLinkedCheckbox checked={Boolean(channels.web ?? true)} label="Канал: web" onChange={(checked) => onChange({ ...config, channels: { ...channels, web: checked } })} />
+      </div>
+    );
+  }
+
+  const mapping =
+    typeof config.public_status_mapping === "object" && config.public_status_mapping
+      ? (config.public_status_mapping as Record<string, unknown>)
+      : {};
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      {[
+        ["new", "Новая"],
+        ["in_progress", "В работе"],
+        ["waiting_user", "Нужен ответ"],
+        ["resolved", "Решена"],
+        ["closed", "Закрыта"],
+      ].map(([status, label]) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={status}>
+          <span>{label}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({ ...config, public_status_mapping: { ...mapping, [status]: event.currentTarget.value } })
+            }
+            value={String(mapping[status] ?? "")}
+          />
+        </label>
+      ))}
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Скрыть от заявителя</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, hide_from_requester: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean) })}
+          value={Array.isArray(config.hide_from_requester) ? config.hide_from_requester.join(", ") : ""}
+        />
+      </label>
+    </div>
+  );
+}
+
+function PolicyRegistryEditors({
+  data,
+  disabled,
+  onFeedback,
+  selectedForm,
+}: {
+  data?: AdminHelpdeskModelPayload;
+  disabled: boolean;
+  onFeedback: (feedback: ActionFeedback) => void;
+  selectedForm: DraftForm | null;
+}) {
+  const queryClient = useQueryClient();
+  const [kind, setKind] = useState<PolicyEditorKind>("routing");
+  const [draft, setDraft] = useState<PolicyEditorDraft>(() => buildPolicyEditorDraft("routing", selectedForm));
+
+  useEffect(() => {
+    setDraft(buildPolicyEditorDraft(kind, selectedForm));
+  }, [kind, selectedForm?.key]);
+
+  const config = useMemo(() => {
+    try {
+      return parseEditorJson(draft.jsonText);
+    } catch {
+      return {};
+    }
+  }, [draft.jsonText]);
+
+  const publishMutation = useMutation({
+    mutationFn: async () => {
+      const configPayload = parseEditorJson(draft.jsonText);
+      if (!draft.code.trim() || !draft.title.trim()) {
+        throw new Error("Укажите код и название политики.");
+      }
+      return publishHelpdeskPolicy({
+        kind: draft.kind,
+        code: draft.code.trim(),
+        title: draft.title.trim(),
+        description: draft.description.trim() || null,
+        scope_level: draft.scope_level,
+        scope_ref: draft.scope_ref.trim() || null,
+        config: configPayload,
+      });
+    },
+    onSuccess: async (result) => {
+      onFeedback({ tone: "success", text: result.message });
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      onFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось опубликовать политику.",
+      });
+    },
+  });
+
+  const activeKindPolicies = data?.policies[kind]?.filter((item) => item.is_active) ?? [];
+  const latestForCode = activeKindPolicies.find((item) => item.code === draft.code);
+
+  const updateConfig = (nextConfig: Record<string, unknown>) => {
+    setDraft((current) => ({
+      ...current,
+      jsonText: prettyJson(nextConfig),
+    }));
+  };
+
+  return (
+    <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4 shadow-soft">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Редакторы политик</p>
+          <p className="mt-1 max-w-3xl text-xs leading-6 text-slate-600">
+            Каждая публикация создаёт новую активную версию отдельной policy-сущности и audit-запись. Шаблон обращения может ссылаться на эти политики или наследовать их по scope.
+          </p>
+        </div>
+        <Button
+          disabled={disabled || publishMutation.isPending || !selectedForm}
+          onClick={() => publishMutation.mutate()}
+          size="sm"
+          variant="primary"
+        >
+          {publishMutation.isPending ? "Публикуем..." : "Опубликовать политику"}
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+        {POLICY_EDITOR_ITEMS.map((item) => (
+          <button
+            className={cn(
+              "rounded-[0.9rem] border px-3 py-3 text-left transition",
+              kind === item.kind ? "border-brand-300 bg-brand-50 text-brand-900" : "border-border bg-surface-subtle text-slate-600"
+            )}
+            key={item.kind}
+            onClick={() => setKind(item.kind)}
+            type="button"
+          >
+            <span className="block text-sm font-semibold">Политика: {item.label}</span>
+            <span className="mt-1 block text-xs leading-5">{item.description}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <div className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-4">
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Код политики</span>
+              <input
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => setDraft((current) => ({ ...current, code: event.currentTarget.value }))}
+                value={draft.code}
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+              <span>Название</span>
+              <input
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => setDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+                value={draft.title}
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Scope</span>
+              <Select
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    scope_level: event.currentTarget.value as PolicyEditorDraft["scope_level"],
+                  }))
+                }
+                value={draft.scope_level}
+              >
+                <option value="system">system defaults</option>
+                <option value="ticket_type">ticket_type</option>
+                <option value="category">category</option>
+                <option value="request_template">request_template</option>
+              </Select>
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Scope ref</span>
+              <input
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => setDraft((current) => ({ ...current, scope_ref: event.currentTarget.value }))}
+                value={draft.scope_ref}
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-3">
+              <span>Описание</span>
+              <input
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => setDraft((current) => ({ ...current, description: event.currentTarget.value }))}
+                value={draft.description}
+              />
+            </label>
+          </div>
+
+          <PolicyKindControls config={config} form={selectedForm} kind={kind} onChange={updateConfig} />
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-[0.9rem] border border-border bg-surface-subtle px-3 py-3">
+            <p className="text-xs font-semibold text-slate-950">Текущая версия</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {latestForCode ? `${latestForCode.version} опубликована` : "Для этого кода ещё нет активной версии"}
+            </p>
+          </div>
+          <textarea
+            className="field-base min-h-[300px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"
+            onChange={(event) => setDraft((current) => ({ ...current, jsonText: event.currentTarget.value }))}
+            spellCheck={false}
+            value={draft.jsonText}
+          />
+          <div className="max-h-36 overflow-y-auto rounded-[0.9rem] border border-border bg-white px-3 py-3">
+            <p className="text-xs font-semibold text-slate-950">Активные политики этого типа</p>
+            <div className="mt-2 space-y-1 text-xs text-slate-600">
+              {activeKindPolicies.length ? (
+                activeKindPolicies.slice(0, 8).map((policy: AdminHelpdeskPolicyItem) => (
+                  <p className="truncate" key={`${policy.code}-${policy.version}`}>
+                    {policy.code} · {policy.version} · {policy.scope_level}
+                  </p>
+                ))
+              ) : (
+                <p>Пока нет опубликованных политик.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TemplateConstructorPanel({
   form,
   activeStep,
@@ -2019,6 +2603,13 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
         onPublish={() => registryPublishMutation.mutate()}
         publishDisabled={publishDisabled || hasBlockingValidationIssues}
         publishPending={registryPublishMutation.isPending}
+        selectedForm={selectedForm}
+      />
+
+      <PolicyRegistryEditors
+        data={helpdeskModelQuery.data}
+        disabled={publishDisabled || hasBlockingValidationIssues}
+        onFeedback={setActionFeedback}
         selectedForm={selectedForm}
       />
 

@@ -175,3 +175,65 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
 
     assert template.config_json["form"]["key"] == form_key
     assert audit_count == 5
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publish_policy_creates_version_and_audit(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    policy_code = f"routing_{uuid.uuid4().hex[:8]}"
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "routing",
+            "code": policy_code,
+            "title": "Routing policy",
+            "description": "Policy editor smoke",
+            "scope_level": "request_template",
+            "scope_ref": "printer",
+            "config": {
+                "default_queue": "servicedesk_l1",
+                "rules": [
+                    {
+                        "priority_order": 10,
+                        "when": {"field": "request_form_data.room", "op": "eq", "value": "214"},
+                        "then": {"queue": "printers", "priority_boost": 1},
+                    }
+                ],
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 200, await response.text()
+    result = (await response.json())["data"]
+    assert result["policy"]["kind"] == "routing"
+    assert result["policy"]["code"] == policy_code
+    assert result["policy"]["version"] == "1.0.1"
+    assert result["policy"]["scope_level"] == "request_template"
+    assert result["policy"]["scope_ref"] == "printer"
+    assert result["policy"]["config"]["rules"][0]["then"]["queue"] == "printers"
+
+    second_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "routing",
+            "code": policy_code,
+            "title": "Routing policy v2",
+            "scope_level": "request_template",
+            "scope_ref": "printer",
+            "config": {"default_queue": "networks"},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert second_response.status == 200, await second_response.text()
+    second = (await second_response.json())["data"]
+    assert second["policy"]["version"] == "1.0.2"
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        rows = list((await session.execute(select(RoutingPolicy).where(RoutingPolicy.code == policy_code))).scalars().all())
+        audit_count = len((await session.execute(select(HelpdeskPolicyAudit))).scalars().all())
+
+    assert len(rows) == 2
+    assert sum(1 for row in rows if row.is_active) == 1
+    assert audit_count == 2
