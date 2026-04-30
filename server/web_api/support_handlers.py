@@ -1502,6 +1502,8 @@ async def handle_web_support_change_status(request: web.Request):
                     resolution_summary=data.get("resolution_summary"),
                     requester_resolution_summary=data.get("requester_resolution_summary"),
                     root_cause=data.get("root_cause"),
+                    public_comment=data.get("public_comment"),
+                    internal_comment=data.get("internal_comment"),
                     source="web_support_api",
                 )
             except ValueError as exc:

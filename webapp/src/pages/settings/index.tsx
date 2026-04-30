@@ -154,6 +154,15 @@ type WorkflowProfileDraft = Omit<
   required_resolve_fields_text: string;
   evidence_required_for_priorities_text: string;
   transitions_json: string;
+  transition_builder_from: string;
+  transition_builder_to: string;
+  transition_builder_allowed_roles_text: string;
+  transition_builder_required_fields_text: string;
+  transition_builder_required_comment: string;
+  transition_builder_require_approval: boolean;
+  transition_builder_require_evidence: boolean;
+  transition_builder_notify_text: string;
+  transition_builder_sla_action: string;
 };
 
 const TAB_ITEMS = [
@@ -550,8 +559,128 @@ function listToCsv(value: string[] | undefined): string {
   return (value ?? []).join(", ");
 }
 
+type WorkflowTransitionEntry = string | Record<string, unknown>;
+type WorkflowTransitionsJson = Record<string, WorkflowTransitionEntry[]>;
+
+function transitionTarget(entry: WorkflowTransitionEntry): string {
+  if (typeof entry === "string") {
+    return entry;
+  }
+  return String(entry.to ?? entry.to_status ?? entry.target ?? "").trim();
+}
+
+function normalizeTransitionRows(value: unknown): WorkflowTransitionEntry[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        return entry && typeof entry === "object" ? ({ ...(entry as Record<string, unknown>) } as Record<string, unknown>) : "";
+      })
+      .filter((entry) => transitionTarget(entry).length > 0);
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([to, gate]) => (gate && typeof gate === "object" ? { to, ...(gate as Record<string, unknown>) } : to))
+      .filter((entry) => transitionTarget(entry).length > 0);
+  }
+  return [];
+}
+
+function parseWorkflowTransitionsJson(value: string): WorkflowTransitionsJson {
+  const parsed = JSON.parse(value || "{}") as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(parsed).map(([from, rows]) => [from, normalizeTransitionRows(rows)]));
+}
+
+function findTransitionBuilderDefaults(profile: WorkflowProfileItem) {
+  const transitions = profile.transitions as Record<string, WorkflowTransitionEntry[]>;
+  const from =
+    Object.prototype.hasOwnProperty.call(transitions, "in_progress")
+      ? "in_progress"
+      : Object.keys(transitions)[0] ?? "new";
+  const rows = normalizeTransitionRows(transitions[from]);
+  const entry = rows.find((item) => transitionTarget(item) === "resolved") ?? rows[0];
+  const target = transitionTarget(entry) || "resolved";
+  const gate = entry && typeof entry === "object" ? entry : {};
+  const actions = gate.actions && typeof gate.actions === "object" ? (gate.actions as Record<string, unknown>) : {};
+  return {
+    from,
+    to: target,
+    allowedRoles: listToCsv(Array.isArray(gate.allowed_roles) ? (gate.allowed_roles as string[]) : []),
+    requiredFields: listToCsv(Array.isArray(gate.required_fields) ? (gate.required_fields as string[]) : []),
+    requiredComment: String(gate.required_comment ?? ""),
+    requireApproval: Boolean(gate.require_approval),
+    requireEvidence: Boolean(gate.require_evidence),
+    notify: listToCsv(Array.isArray(actions.notify) ? (actions.notify as string[]) : []),
+    slaAction: String(actions.sla ?? ""),
+  };
+}
+
+function buildTransitionRuleFromDraft(draft: WorkflowProfileDraft): Record<string, unknown> {
+  const rule: Record<string, unknown> = { to: draft.transition_builder_to.trim() };
+  const allowedRoles = csvToList(draft.transition_builder_allowed_roles_text);
+  const requiredFields = csvToList(draft.transition_builder_required_fields_text);
+  const notify = csvToList(draft.transition_builder_notify_text);
+  const slaAction = draft.transition_builder_sla_action.trim();
+  if (allowedRoles.length) {
+    rule.allowed_roles = allowedRoles;
+  }
+  if (requiredFields.length) {
+    rule.required_fields = requiredFields;
+  }
+  if (draft.transition_builder_required_comment) {
+    rule.required_comment = draft.transition_builder_required_comment;
+  }
+  if (draft.transition_builder_require_approval) {
+    rule.require_approval = true;
+  }
+  if (draft.transition_builder_require_evidence) {
+    rule.require_evidence = true;
+  }
+  const actions: Record<string, unknown> = {};
+  if (notify.length) {
+    actions.notify = notify;
+  }
+  if (slaAction) {
+    actions.sla = slaAction;
+  }
+  if (Object.keys(actions).length) {
+    rule.actions = actions;
+  }
+  return rule;
+}
+
+function applyWorkflowTransitionRule(profile: WorkflowProfileDraft): WorkflowProfileDraft {
+  const from = profile.transition_builder_from.trim();
+  const to = profile.transition_builder_to.trim();
+  if (!from || !to) {
+    return profile;
+  }
+  const transitions = parseWorkflowTransitionsJson(profile.transitions_json);
+  const rule = buildTransitionRuleFromDraft(profile);
+  const rows = normalizeTransitionRows(transitions[from]);
+  let replaced = false;
+  const nextRows = rows.map((entry) => {
+    if (transitionTarget(entry) !== to) {
+      return entry;
+    }
+    replaced = true;
+    return rule;
+  });
+  if (!replaced) {
+    nextRows.push(rule);
+  }
+  transitions[from] = nextRows;
+  return {
+    ...profile,
+    transitions_json: JSON.stringify(transitions, null, 2),
+  };
+}
+
 
 function buildWorkflowProfileDraft(profile: WorkflowProfileItem): WorkflowProfileDraft {
+  const builder = findTransitionBuilderDefaults(profile);
   return {
     ticket_type: profile.ticket_type,
     label: profile.label,
@@ -565,6 +694,15 @@ function buildWorkflowProfileDraft(profile: WorkflowProfileItem): WorkflowProfil
     required_resolve_fields_text: listToCsv(profile.required_resolve_fields),
     evidence_required_for_priorities_text: listToCsv(profile.evidence_required_for_priorities),
     transitions_json: JSON.stringify(profile.transitions ?? {}, null, 2),
+    transition_builder_from: builder.from,
+    transition_builder_to: builder.to,
+    transition_builder_allowed_roles_text: builder.allowedRoles,
+    transition_builder_required_fields_text: builder.requiredFields,
+    transition_builder_required_comment: builder.requiredComment,
+    transition_builder_require_approval: builder.requireApproval,
+    transition_builder_require_evidence: builder.requireEvidence,
+    transition_builder_notify_text: builder.notify,
+    transition_builder_sla_action: builder.slaAction,
   };
 }
 
@@ -582,7 +720,7 @@ function buildWorkflowProfilePayload(drafts: WorkflowProfileDraft[]): WorkflowPr
     requires_change_plan: draft.requires_change_plan,
     requires_action_log: draft.requires_action_log,
     evidence_required_for_priorities: csvToList(draft.evidence_required_for_priorities_text),
-    transitions: JSON.parse(draft.transitions_json || "{}") as Record<string, string[]>,
+    transitions: parseWorkflowTransitionsJson(draft.transitions_json),
   }));
 }
 
@@ -614,6 +752,15 @@ function createWorkflowProfileDraft(index: number): WorkflowProfileDraft {
       null,
       2
     ),
+    transition_builder_from: "in_progress",
+    transition_builder_to: "resolved",
+    transition_builder_allowed_roles_text: "",
+    transition_builder_required_fields_text: "resolution_code",
+    transition_builder_required_comment: "public",
+    transition_builder_require_approval: false,
+    transition_builder_require_evidence: false,
+    transition_builder_notify_text: "",
+    transition_builder_sla_action: "",
   };
 }
 
@@ -1420,7 +1567,7 @@ export function SettingsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
                       <Badge tone="info">{workflowProfileDrafts.length} профилей</Badge>
-                      <Badge tone="neutral">переходы хранятся как JSON</Badge>
+                      <Badge tone="neutral">переходы редактируются визуально и совместимы с JSON</Badge>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -1551,6 +1698,190 @@ export function SettingsPage() {
                               {label}
                             </label>
                           ))}
+                        </div>
+
+                        <div className="mt-4 rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-950">Правило перехода</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Настройте, кто может перевести тикет, что должно быть заполнено и какие действия выполнить.
+                              </p>
+                            </div>
+                            <Button
+                              disabled={!canManageRouting}
+                              onClick={() =>
+                                setWorkflowProfileDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index ? applyWorkflowTransitionRule(item) : item
+                                  )
+                                )
+                              }
+                              variant="secondary"
+                            >
+                              <Workflow className="h-4 w-4" />
+                              Применить правило перехода
+                            </Button>
+                          </div>
+
+                          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+                            <SettingsField label="Откуда">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_from: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_from}
+                              />
+                            </SettingsField>
+                            <SettingsField label="Куда">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_to: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_to}
+                              />
+                            </SettingsField>
+                            <SettingsField label="Какой комментарий нужен">
+                              <select
+                                className="field-base w-full px-3 py-2 text-sm"
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_required_comment: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_required_comment}
+                              >
+                                <option value="">Не обязателен</option>
+                                <option value="public">Публичный комментарий</option>
+                                <option value="internal">Внутренний комментарий</option>
+                                <option value="any">Любой комментарий</option>
+                              </select>
+                            </SettingsField>
+                            <SettingsField label="Что сделать со сроками ответа">
+                              <select
+                                className="field-base w-full px-3 py-2 text-sm"
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_sla_action: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_sla_action}
+                              >
+                                <option value="">Не менять</option>
+                                <option value="pause">Поставить на паузу</option>
+                                <option value="resume">Продолжить отсчёт</option>
+                                <option value="stop">Зафиксировать действие</option>
+                              </select>
+                            </SettingsField>
+                          </div>
+
+                          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                            <SettingsField label="Роли, которые могут перевести">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, transition_builder_allowed_roles_text: value }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_allowed_roles_text}
+                              />
+                            </SettingsField>
+                            <SettingsField label="Поля, обязательные перед переходом">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, transition_builder_required_fields_text: value }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_required_fields_text}
+                              />
+                            </SettingsField>
+                            <SettingsField label="Кого уведомить">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_notify_text: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_notify_text}
+                              />
+                            </SettingsField>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <label className="flex items-center gap-3 rounded-[0.9rem] bg-white px-4 py-3 text-sm font-medium text-slate-800">
+                              <input
+                                checked={profile.transition_builder_require_approval}
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const checked = event.currentTarget.checked;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, transition_builder_require_approval: checked }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                type="checkbox"
+                              />
+                              Нужно согласование
+                            </label>
+                            <label className="flex items-center gap-3 rounded-[0.9rem] bg-white px-4 py-3 text-sm font-medium text-slate-800">
+                              <input
+                                checked={profile.transition_builder_require_evidence}
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const checked = event.currentTarget.checked;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, transition_builder_require_evidence: checked }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                type="checkbox"
+                              />
+                              Нужно доказательство
+                            </label>
+                          </div>
                         </div>
 
                         <SettingsField label="Переходы статусов JSON">

@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 88% after custom smart-view runtime, standalone SLA JSON target calculation and lifecycle effective policy resolution for workflow guards, notifications and runtime visibility.
+Status: executing the remaining target-model gaps. Current factual completion is about 92%; slice 17 has workflow guard/action code, editor and local verification complete, with release/live-check still pending.
 
 ### Goal
 
@@ -53,7 +53,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 
 ### Current Slice
 
-Slice 16: effective registry policy resolution across lifecycle runtime.
+Slice 17: workflow guards/actions editor and execution.
 
 Progress:
 
@@ -74,6 +74,12 @@ Progress:
 - [x] Apply effective registry resolution to approval guards, closure guards, notification recipients and async ticket visibility payloads.
 - [x] Run focused lifecycle/registry tests and workspace verification.
 - [x] Commit, release/live-check lifecycle runtime and stop the remote server.
+- [x] Add failing backend tests for transition comment guards, evidence/approval guards, notification actions and SLA action markers.
+- [x] Extend workflow profile normalization/runtime to execute advanced transition guards/actions.
+- [x] Replace raw workflow transition JSON editing in `/app/settings` with structured transition guard/action controls while preserving JSON compatibility.
+- [x] Add frontend tests for editor payload and backend tests for guard/action execution.
+- [x] Run focused workflow/settings tests, webapp type/test/build checks and workspace verification.
+- [ ] Commit, release/live-check workflow guard/action runtime and stop the remote server.
 
 Local verification for slice 16:
 

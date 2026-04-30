@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPage } from "./index";
@@ -401,5 +401,72 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Маршрутизация" }));
     expect(screen.getByText("Недостаточно прав: settings.manage_routing")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сохранить правило" })).toBeDisabled();
+  });
+
+  it("builds workflow transition guards and actions without hand-editing JSON", async () => {
+    const payload = createSettingsPayload();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/settings" && (!init?.method || init.method === "GET")) {
+        return jsonResponse({
+          status: "success",
+          data: payload,
+        });
+      }
+      if (url === "/api/web/settings/workflow_profiles" && init?.method === "PUT") {
+        return jsonResponse({
+          status: "success",
+          data: { workflow_profiles: payload.ticket_settings.workflow_profiles },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderSettingsPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Тикеты" }));
+    fireEvent.change(screen.getByLabelText("Откуда"), { target: { value: "in_progress" } });
+    fireEvent.change(screen.getByLabelText("Куда"), { target: { value: "resolved" } });
+    fireEvent.change(screen.getByLabelText("Роли, которые могут перевести"), {
+      target: { value: "assignee, queue_lead" },
+    });
+    fireEvent.change(screen.getByLabelText("Поля, обязательные перед переходом"), {
+      target: { value: "resolution_code" },
+    });
+    fireEvent.change(screen.getByLabelText("Какой комментарий нужен"), {
+      target: { value: "public" },
+    });
+    fireEvent.click(screen.getByLabelText("Нужно согласование"));
+    fireEvent.click(screen.getByLabelText("Нужно доказательство"));
+    fireEvent.change(screen.getByLabelText("Кого уведомить"), {
+      target: { value: "assignee, queue_lead" },
+    });
+    fireEvent.change(screen.getByLabelText("Что сделать со сроками ответа"), {
+      target: { value: "pause" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Применить правило перехода" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить профили процесса" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/settings/workflow_profiles",
+        expect.objectContaining({ method: "PUT" }),
+      );
+    });
+    const putCall = fetchMock.mock.calls.find(([input, init]) => String(input) === "/api/web/settings/workflow_profiles" && init?.method === "PUT");
+    const body = JSON.parse(String(putCall?.[1]?.body ?? "{}"));
+    expect(body.workflow_profiles[0].transitions.in_progress[0]).toEqual({
+      to: "resolved",
+      allowed_roles: ["assignee", "queue_lead"],
+      required_fields: ["resolution_code"],
+      required_comment: "public",
+      require_approval: true,
+      require_evidence: true,
+      actions: {
+        notify: ["assignee", "queue_lead"],
+        sla: "pause",
+      },
+    });
   });
 });

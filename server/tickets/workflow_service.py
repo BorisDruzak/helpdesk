@@ -9,7 +9,7 @@ from typing import List, Optional
 from loguru import logger
 from sqlalchemy import select
 
-from app.db.models import TicketEvidenceItem, TicketWait
+from app.db.models import TicketApproval, TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.approval_policy import validate_approval_policy
 from tickets.closure_policy import validate_closure_policy
@@ -129,13 +129,26 @@ def _actor_matches_allowed_role(ticket, *, actor_id: str, actor_role: str, allow
     return False
 
 
-def _validate_transition_gate(
+def _comment_value_for_requirement(required_comment: str | None, *, public_comment: str | None, internal_comment: str | None):
+    if required_comment == "public":
+        return public_comment
+    if required_comment == "internal":
+        return internal_comment
+    if required_comment == "any":
+        return public_comment or internal_comment
+    return None
+
+
+async def _validate_transition_gate(
     *,
     gate: WorkflowTransitionGate | None,
+    session,
     ticket,
     updates: dict,
     actor_id: str,
     actor_role: str,
+    public_comment: str | None = None,
+    internal_comment: str | None = None,
 ) -> dict | None:
     if gate is None:
         return None
@@ -158,10 +171,46 @@ def _validate_transition_gate(
             f"{actor_role} is not allowed for {gate.to_status}; allowed_roles="
             + ", ".join(gate.allowed_roles)
         )
+    if gate.required_comment and _is_missing_required_value(
+        _comment_value_for_requirement(
+            gate.required_comment,
+            public_comment=public_comment,
+            internal_comment=internal_comment,
+        )
+    ):
+        raise ValueError(
+            "workflow_profile transition gate missing required_comment: "
+            f"{gate.required_comment}"
+        )
+    if gate.require_evidence:
+        ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+        evidence_ref = getattr(ticket, "evidence_ref", None) if ticket is not None else None
+        evidence_exists = None
+        if ticket_id:
+            evidence_exists = await session.scalar(
+                select(TicketEvidenceItem.id)
+                .where(TicketEvidenceItem.ticket_id == ticket_id)
+                .limit(1)
+            )
+        if not evidence_ref and evidence_exists is None:
+            raise ValueError("workflow_profile transition gate blocked by require_evidence")
+    if gate.require_approval:
+        ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+        rows = await session.execute(
+            select(TicketApproval.status).where(TicketApproval.ticket_id == ticket_id)
+        )
+        approval_statuses = [str(status or "").strip().lower() for status in rows.scalars().all()]
+        if any(status in {"rejected", "denied", "declined"} for status in approval_statuses):
+            raise ValueError("workflow_profile transition gate rejected approval blocks transition")
+        if "approved" not in approval_statuses:
+            raise ValueError("workflow_profile transition gate requires approved approval")
     return {
         "to": gate.to_status,
         "allowed_roles": list(gate.allowed_roles),
         "required_fields": list(gate.required_fields),
+        "required_comment": gate.required_comment,
+        "require_approval": gate.require_approval,
+        "require_evidence": gate.require_evidence,
     }
 
 
@@ -205,6 +254,8 @@ class TicketWorkflowService:
         resolution_summary: Optional[str] = None,
         requester_resolution_summary: Optional[str] = None,
         root_cause: Optional[str] = None,
+        public_comment: Optional[str] = None,
+        internal_comment: Optional[str] = None,
         source: str = "api",
     ) -> dict:
         now = datetime.now(timezone.utc)
@@ -243,16 +294,31 @@ class TicketWorkflowService:
         if root_cause is not None:
             event_payload["root_cause"] = root_cause
             updates["root_cause"] = root_cause
+        if public_comment is not None:
+            event_payload["public_comment"] = public_comment
+        if internal_comment is not None:
+            event_payload["internal_comment"] = internal_comment
 
-        gate_payload = _validate_transition_gate(
-            gate=_transition_gate_for_profile(workflow_profile, from_status, to_status),
+        transition_gate = _transition_gate_for_profile(workflow_profile, from_status, to_status)
+        gate_payload = await _validate_transition_gate(
+            gate=transition_gate,
+            session=self.session,
             ticket=ticket,
             updates=updates,
             actor_id=actor_id,
             actor_role=actor_role,
+            public_comment=public_comment,
+            internal_comment=internal_comment,
         )
         if gate_payload:
             event_payload["workflow_transition_gate"] = gate_payload
+            action_payload: dict[str, object] = {}
+            if transition_gate and transition_gate.notify:
+                action_payload["notify"] = list(transition_gate.notify)
+            if transition_gate and transition_gate.sla_action:
+                action_payload["sla"] = transition_gate.sla_action
+            if action_payload:
+                event_payload["workflow_transition_actions"] = action_payload
 
         approval_decision = await validate_approval_policy(
             self.session,
@@ -306,6 +372,11 @@ class TicketWorkflowService:
             await self.sla_service.pause_sla(ticket_id)
 
         if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
+            await self.sla_service.resume_sla(ticket_id)
+
+        if transition_gate and transition_gate.sla_action == "pause":
+            await self.sla_service.pause_sla(ticket_id)
+        elif transition_gate and transition_gate.sla_action == "resume":
             await self.sla_service.resume_sla(ticket_id)
 
         await self._sync_wait_ledger(

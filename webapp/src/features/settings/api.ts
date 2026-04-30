@@ -75,7 +75,7 @@ export type WebSettingsPayload = {
       requires_change_plan: boolean;
       requires_action_log: boolean;
       evidence_required_for_priorities: string[];
-      transitions: Record<string, string[]>;
+      transitions: Record<string, Array<string | Record<string, unknown>>>;
     }>;
     request_templates: Array<{
       id: string;

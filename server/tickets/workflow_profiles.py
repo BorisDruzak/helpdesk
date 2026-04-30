@@ -83,6 +83,11 @@ class WorkflowTransitionGate:
     to_status: str
     allowed_roles: tuple[str, ...] = ()
     required_fields: tuple[str, ...] = ()
+    required_comment: str | None = None
+    require_approval: bool = False
+    require_evidence: bool = False
+    notify: tuple[str, ...] = ()
+    sla_action: str | None = None
 
     def to_dict(self) -> dict:
         payload: dict[str, Any] = {"to": self.to_status}
@@ -90,6 +95,19 @@ class WorkflowTransitionGate:
             payload["allowed_roles"] = list(self.allowed_roles)
         if self.required_fields:
             payload["required_fields"] = list(self.required_fields)
+        if self.required_comment:
+            payload["required_comment"] = self.required_comment
+        if self.require_approval:
+            payload["require_approval"] = True
+        if self.require_evidence:
+            payload["require_evidence"] = True
+        actions: dict[str, Any] = {}
+        if self.notify:
+            actions["notify"] = list(self.notify)
+        if self.sla_action:
+            actions["sla"] = self.sla_action
+        if actions:
+            payload["actions"] = actions
         return payload
 
 
@@ -251,11 +269,38 @@ def _normalize_string_list(value: Any, *, field_name: str, allow_statuses: bool 
     return tuple(normalized)
 
 
+def _normalize_comment_requirement(value: Any, *, field_name: str) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    aliases = {
+        "public_comment": "public",
+        "internal_comment": "internal",
+        "comment": "any",
+        "required": "any",
+        "true": "any",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in {"public", "internal", "any"}:
+        raise ValueError(f"{field_name} must be public, internal or any")
+    return normalized
+
+
+def _normalize_sla_action(value: Any, *, field_name: str) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized not in {"pause", "resume", "stop"}:
+        raise ValueError(f"{field_name} must be pause, resume or stop")
+    return normalized
+
+
 def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str) -> WorkflowTransitionGate:
     if raw_gate is None or isinstance(raw_gate, str):
         return WorkflowTransitionGate(to_status=to_status)
     if not isinstance(raw_gate, dict):
         raise ValueError(f"{field_name} must be an object")
+    actions = raw_gate.get("actions") if isinstance(raw_gate.get("actions"), dict) else {}
     return WorkflowTransitionGate(
         to_status=to_status,
         allowed_roles=_normalize_string_list(
@@ -265,6 +310,22 @@ def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str
         required_fields=_normalize_string_list(
             raw_gate.get("required_fields"),
             field_name=f"{field_name}.required_fields",
+        ),
+        required_comment=_normalize_comment_requirement(
+            raw_gate.get("required_comment")
+            or raw_gate.get("comment_required")
+            or raw_gate.get("comment_visibility"),
+            field_name=f"{field_name}.required_comment",
+        ),
+        require_approval=bool(raw_gate.get("require_approval") or raw_gate.get("approval_required")),
+        require_evidence=bool(raw_gate.get("require_evidence") or raw_gate.get("evidence_required")),
+        notify=_normalize_string_list(
+            actions.get("notify") or raw_gate.get("notify"),
+            field_name=f"{field_name}.actions.notify",
+        ),
+        sla_action=_normalize_sla_action(
+            actions.get("sla") or raw_gate.get("sla_action"),
+            field_name=f"{field_name}.actions.sla",
         ),
     )
 
@@ -314,7 +375,7 @@ def _normalize_transitions(
                     to_status=target,
                     field_name=f"transitions.{from_status}.{target}",
                 )
-                if gate.allowed_roles or gate.required_fields:
+                if gate.to_dict() != {"to": gate.to_status}:
                     target_gates[target] = gate
             else:
                 target = str(raw_target or "").strip()
@@ -368,7 +429,7 @@ def _normalize_transition_gates(
                 to_status=to_status,
                 field_name=f"transition_gates.{from_status}.{to_status}",
             )
-            if gate.allowed_roles or gate.required_fields:
+            if gate.to_dict() != {"to": gate.to_status}:
                 gates.setdefault(from_status, {})[to_status] = gate
     return gates
 
