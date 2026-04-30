@@ -109,6 +109,13 @@ def test_ticket_creation_user_microcopy_uses_request_wording():
     assert "Обращение создано" in creation_source
 
 
+def test_ticket_create_wizard_uses_server_backed_preview():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+
+    assert "preview_ticket_create" in source
+    assert "server_preview=self._server_creation_preview" in source
+
+
 def test_agent_default_forms_carry_process_type_and_priority_policy():
     pack = build_default_ticket_form_pack()
     forms = {item["key"]: item for item in pack["forms"]}
@@ -279,6 +286,30 @@ def test_build_request_creation_preview_uses_template_policies():
     assert "Перед диагностикой потребуется ваше согласие" in preview
     assert "Вам должны ответить примерно за 1 ч" in preview
     assert "Решение или обходной вариант ожидается примерно за 4 ч" in preview
+
+
+def test_build_request_creation_preview_prefers_server_effective_preview():
+    preview = build_request_creation_preview(
+        {
+            "request_template_title": "Локальный шаблон",
+            "routing_policy": {"default_queue": "local"},
+        },
+        server_preview={
+            "request_template_title": "Печать / принтер",
+            "routing": {"target_queue_name": "ServiceDesk L1"},
+            "sla": {"first_response_minutes": 60, "resolution_minutes": 1440},
+            "approval_required": True,
+            "diagnostic_consent_required": True,
+        },
+    )
+
+    assert "Шаблон: Печать / принтер" in preview
+    assert "Предварительно попадёт в очередь: ServiceDesk L1" in preview
+    assert "Потребуется согласование." in preview
+    assert "Перед диагностикой потребуется ваше согласие." in preview
+    assert "Вам должны ответить примерно за 1 ч." in preview
+    assert "Решение или обходной вариант ожидается примерно за 1 дн." in preview
+    assert "SLA" not in preview
 
 
 def test_diagnostic_consent_payload_marks_requester_device_decision():

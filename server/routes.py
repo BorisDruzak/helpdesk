@@ -62,6 +62,7 @@ from tickets.form_pack_handlers import (
 )
 from tickets.handlers import (
     handle_tickets_create,
+    handle_tickets_create_preview,
     handle_ticket_get,
     handle_tickets_list,
     handle_ticket_send_message,
@@ -571,6 +572,7 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Tickets API (static paths before {ticket_id} to avoid "resolution_codes" as ticket_id)
         # ============================================================================
+        web.post('/api/tickets/create/preview', handle_tickets_create_preview),
         web.post('/api/tickets/create', handle_tickets_create),
         web.get('/api/tickets', handle_tickets_list),
         web.get('/api/ticket_forms/current', handle_ticket_form_pack_current),

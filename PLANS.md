@@ -2,7 +2,7 @@
 
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
-Status: план срезов 1-6 выполнен и проверен. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после этого релиза: функционально около 85-88%, GUI около 75-78%.
+Status: план срезов 1-6 выполнен и проверен; срез 7 по server-backed preview в работе. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после среза 6: функционально около 85-88%, GUI около 75-78%; после среза 7 ожидаемое закрытие функционального preview gap поднимает функциональную готовность примерно до 88-90%.
 
 ### Goal
 
@@ -147,7 +147,34 @@ Verification:
 
 ### Current Slice
 
-Slice 6: local live validation and release path.
+Slice 7: server-backed creation preview.
+
+- [x] RED: добавить тест клиента `TicketApiClient.preview_ticket_create(...)`, который отправляет `request_template_key`, `form_key`, `form_pack_key`, `form_payload` и `ticket_type`.
+- [x] RED: добавить серверный тест `/api/tickets/create/preview`, который требует effective request-template context, priority, routing fallback and first-response/resolution due dates without creating a ticket.
+- [x] Реализовать authenticated preview endpoint без сайд-эффектов: form validation, effective registry overlays, priority policy, routing decision and SLA target calculation.
+- [x] Подключить агентский API method for preview.
+- [x] GREEN: подключить master preview в `TicketCreateWizardWidget` с локальным fallback, если сервер временно недоступен.
+- [x] Обновить docs/CODEMAP and run focused/broader verification.
+- [ ] Выполнить remote/live API preview check после локальной проверки.
+
+Verification:
+
+- RED:
+  - `python -m pytest pc_agent/tests/test_ticket_api_client_attachments.py::test_preview_ticket_create_posts_request_template_payload -q --tb=short` -> failed because `TicketApiClient.preview_ticket_create` did not exist.
+  - `python -m pytest server/tests/test_ticket_form_packs.py::test_create_ticket_preview_returns_effective_template_context -q --tb=short` -> failed with 404 for `/api/tickets/create/preview`.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_build_request_creation_preview_prefers_server_effective_preview -q --tb=short` -> failed because `server_preview` was unsupported.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_create_wizard_uses_server_backed_preview -q --tb=short` -> failed because the wizard did not call `preview_ticket_create`.
+- GREEN focused so far:
+  - `python -m pytest pc_agent/tests/test_ticket_api_client_attachments.py::test_preview_ticket_create_posts_request_template_payload server/tests/test_ticket_form_packs.py::test_create_ticket_preview_returns_effective_template_context -q --tb=short` -> passed, 2 tests.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_create_wizard_uses_server_backed_preview pc_agent/tests/test_chat_panel_helpers.py::test_build_request_creation_preview_prefers_server_effective_preview -q --tb=short` -> passed, 2 tests.
+- Broader local:
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 45 tests.
+  - `python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 18 tests.
+  - `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
+  - `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> passed, 8 tests.
+  - `python scripts/verify_workspace.py` -> passed.
+
+### Completed Slice 6: local live validation and release path.
 
 - [x] Run `python scripts/verify_workspace.py`.
 - [x] Run agent runtime baseline tests required for `pc_agent/ui_gui/*` changes.

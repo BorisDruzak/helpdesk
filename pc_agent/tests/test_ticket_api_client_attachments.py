@@ -296,6 +296,49 @@ async def test_create_ticket_sends_diagnostic_consent(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_preview_ticket_create_posts_request_template_payload(monkeypatch):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            payload={
+                "status": "ok",
+                "preview": {
+                    "request_template_key": "website_unavailable",
+                    "routing": {"target_queue_name": "Сети"},
+                },
+            },
+            text_payload='{"status":"ok","preview":{"request_template_key":"website_unavailable","routing":{"target_queue_name":"Сети"}}}',
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.preview_ticket_create(
+        request_template_key="website_unavailable",
+        form_key="website_form",
+        form_pack_key="request_forms",
+        form_payload={"url": "https://example.test"},
+        ticket_type="incident",
+    )
+
+    assert result["preview"]["routing"]["target_queue_name"] == "Сети"
+    call = fake_session.calls[0]
+    assert call["url"] == "http://localhost:8666/api/tickets/create/preview"
+    assert call["json"]["request_template_key"] == "website_unavailable"
+    assert call["json"]["form_payload"]["url"] == "https://example.test"
+
+
+@pytest.mark.asyncio
 async def test_upload_attachment_sends_expected_multipart(monkeypatch):
     client = TicketApiClient(
         base_url="http://localhost:8666/api",

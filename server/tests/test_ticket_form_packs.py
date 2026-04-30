@@ -5,7 +5,19 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Playbook, PlaybookRun, PlaybookVersion, ServerConfig, Ticket, TicketCategory, TicketEvent, TicketFormPack
+from app.db.models import (
+    Playbook,
+    PlaybookRun,
+    PlaybookVersion,
+    ServerConfig,
+    Ticket,
+    TicketCategory,
+    TicketEvent,
+    TicketFormPack,
+    TicketQueue,
+    TicketSlaPolicy,
+    TicketSlaTarget,
+)
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
@@ -24,6 +36,35 @@ async def _clear_request_form_packs(test_engine) -> None:
             delete(ServerConfig).where(
                 ServerConfig.key == f"{TICKET_FORM_PREFERRED_KEY_PREFIX}request_forms"
             )
+        )
+        await session.commit()
+
+
+async def _ensure_fallback_queue(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        result = await session.execute(select(TicketQueue).where(TicketQueue.code == "servicedesk_l1"))
+        if result.scalar_one_or_none() is None:
+            session.add(TicketQueue(code="servicedesk_l1", name="ServiceDesk L1", is_triage=True, is_active=True))
+            await session.commit()
+
+
+async def _ensure_default_sla_policy(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        result = await session.execute(select(TicketSlaPolicy).where(TicketSlaPolicy.is_default.is_(True)))
+        if result.scalar_one_or_none() is not None:
+            return
+        policy = TicketSlaPolicy(name="Default SLA", is_default=True, is_active=True)
+        session.add(policy)
+        await session.flush()
+        session.add_all(
+            [
+                TicketSlaTarget(policy_id=policy.id, priority="P0", first_response_min=15, resolution_min=240),
+                TicketSlaTarget(policy_id=policy.id, priority="P1", first_response_min=60, resolution_min=1440),
+                TicketSlaTarget(policy_id=policy.id, priority="P2", first_response_min=240, resolution_min=4320),
+                TicketSlaTarget(policy_id=policy.id, priority="P3", first_response_min=480, resolution_min=7200),
+            ]
         )
         await session.commit()
 
@@ -244,6 +285,42 @@ async def test_create_ticket_accepts_request_template_key_as_form_alias(test_cli
     assert custom_fields["request_form_key"] == "printer"
     assert custom_fields["request_template"]["key"] == "printer"
     assert custom_fields["request_form_data"]["room"] == "214"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_preview_returns_effective_template_context(test_client, test_engine):
+    await _ensure_fallback_queue(test_engine)
+    await _ensure_default_sla_policy(test_engine)
+
+    response = await test_client.post(
+        "/api/tickets/create/preview",
+        json={
+            "request_template_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "214",
+                "impact_scope": "department",
+                "work_continuity": "work_stopped_no_workaround",
+                "business_importance": "deadline_today",
+            },
+            "ticket_type": "service_request",
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    preview = payload["preview"]
+
+    assert preview["request_template_key"] == "printer"
+    assert preview["request_template_title"] == "Печать / принтер"
+    assert preview["ticket_type"] == "incident"
+    assert preview["priority"]["priority_class"] in {"P0", "P1", "P2", "P3"}
+    assert preview["routing"]["target_queue_id"] is not None
+    assert preview["routing"]["fallback_applied"] is True
+    assert preview["sla"]["first_response_due_at"]
+    assert preview["sla"]["resolution_due_at"]
+    assert {"key": "room", "label": "Кабинет", "value": "214"} in preview["summary_rows"]
 
 
 @pytest.mark.asyncio

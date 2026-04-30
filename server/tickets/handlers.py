@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional
 
 from aiohttp import web
@@ -886,6 +887,159 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
         public_access_code=created["public_access_code"],
         public_access_url=ticket_data.get("public_access_url"),
     )
+
+
+def _iso_or_none(value: Any) -> str | None:
+    return value.isoformat() if hasattr(value, "isoformat") else None
+
+
+async def handle_tickets_create_preview(request: web.Request) -> web.Response:
+    auth_context = _auth(request)
+    if auth_context.actor_role not in {"user", "agent", "admin", "support"}:
+        return _json_error("forbidden", status=403)
+    try:
+        data = await request.json()
+    except Exception:
+        return _json_error("Invalid JSON", status=400)
+    if not isinstance(data, dict):
+        return _json_error("JSON body must be an object", status=400)
+
+    request_template_key = str(data.get("request_template_key") or "").strip()
+    form_key = str(data.get("form_key") or request_template_key or "").strip()
+    if not form_key:
+        return _validation_error({"form_key": "form_key or request_template_key is required"})
+    pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
+    pack_version = str(data.get("form_pack_version") or "").strip() or None
+
+    try:
+        normalized_priority = _default_priority_payload(data)
+    except ValueError as exc:
+        return _validation_error({"priority": str(exc)})
+
+    async with get_session() as session:
+        try:
+            form_pack = await resolve_ticket_form_pack(
+                TicketFormPacksRepo(session),
+                pack_key=pack_key,
+                version=pack_version,
+            )
+            validated_submission = validate_form_submission(
+                form_pack,
+                form_key=form_key,
+                raw_values=data.get("form_payload") or {},
+            )
+            validated_submission = await apply_effective_registry_policies(session, validated_submission)
+            custom_fields = build_form_custom_fields(validated_submission)
+            ticket_type = str(validated_submission.get("ticket_type") or data.get("ticket_type") or "request").strip() or "request"
+            template_context = validated_submission.get("template_context") or {}
+            priority_policy = template_context.get("priority_policy") or {}
+            if priority_policy:
+                normalized_priority = compute_priority_from_policy(
+                    priority_policy=priority_policy,
+                    submitted_values=validated_submission.get("submitted_values") or {},
+                    fallback={
+                        "impact": data.get("impact"),
+                        "urgency": data.get("urgency"),
+                        "importance": data.get("importance"),
+                    },
+                )
+        except ValueError as exc:
+            details = exc.args[0] if exc.args else "invalid form payload"
+            return _validation_error({"form_payload": details})
+
+        priority_class = (
+            normalized_priority.get("effective_priority")
+            or normalized_priority.get("priority_class")
+            or normalized_priority.get("computed_priority")
+            or "P3"
+        )
+        priority_decision = {
+            "impact": normalized_priority.get("impact"),
+            "urgency": normalized_priority.get("urgency"),
+            "importance": normalized_priority.get("importance"),
+            "computed_priority": normalized_priority.get("computed_priority") or priority_class,
+            "effective_priority": priority_class,
+            "priority_class": priority_class,
+            "legacy_priority": normalized_priority.get("legacy_priority", "P4"),
+            "priority_source": normalized_priority.get("priority_source", "system"),
+            "priority_reason": normalized_priority.get("priority_reason") or normalized_priority.get("urgency_reason"),
+        }
+        custom_fields["priority_class"] = priority_class
+        custom_fields["priority_decision"] = priority_decision
+
+        ticket_repo = TicketEventsRepo(session)
+        synthetic_ticket = SimpleNamespace(
+            ticket_id="preview",
+            device_id=str(data.get("device_id") or ""),
+            title=str(data.get("title") or ""),
+            description=str(data.get("description") or ""),
+            status="new",
+            priority=normalized_priority.get("legacy_priority", "P4"),
+            impact=normalized_priority.get("impact"),
+            urgency=normalized_priority.get("urgency"),
+            importance=normalized_priority.get("importance"),
+            queue_id=None,
+            category_id=template_context.get("category_id"),
+            service_id=template_context.get("service_id"),
+            subcategory_id=template_context.get("subcategory_id"),
+            assignee_id=None,
+            requester_id=auth_context.actor_id,
+            sla_policy_id=template_context.get("sla_policy_id"),
+            custom_fields=custom_fields,
+            ticket_type=ticket_type,
+        )
+
+        routing_service = TicketRoutingService(session, ticket_repo)
+        routing_decision = await routing_service.resolve_routing_decision(synthetic_ticket, device_metadata=None)
+        queue_id = routing_decision.get("queue_id") if isinstance(routing_decision, dict) else None
+        queue = await ticket_repo.get_queue(queue_id) if queue_id is not None else None
+
+        sla_preview: dict[str, Any] = {
+            "first_response_due_at": None,
+            "resolution_due_at": None,
+            "first_response_minutes": None,
+            "resolution_minutes": None,
+        }
+        sla_service = TicketSlaService(session, ticket_repo)
+        policy, targets = await sla_service._get_policy_and_targets(synthetic_ticket)
+        target = sla_service._target_for_priority(targets, priority_class) if targets else None
+        if policy and target:
+            now = datetime.now(timezone.utc)
+            calendar = await sla_service._calendar_for_policy(policy)
+            first_response_due_at = sla_service._due_at(now, target.first_response_min, calendar)
+            resolution_due_at = sla_service._due_at(now, target.resolution_min, calendar)
+            sla_preview = {
+                "first_response_due_at": _iso_or_none(first_response_due_at),
+                "resolution_due_at": _iso_or_none(resolution_due_at),
+                "first_response_minutes": target.first_response_min,
+                "resolution_minutes": target.resolution_min,
+            }
+
+    request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
+    approval_policy = request_template.get("approval_policy") if isinstance(request_template.get("approval_policy"), dict) else {}
+    diagnostic_policy = request_template.get("diagnostic_policy") if isinstance(request_template.get("diagnostic_policy"), dict) else {}
+    consent = diagnostic_policy.get("consent") if isinstance(diagnostic_policy.get("consent"), dict) else {}
+    preview = {
+        "request_template_key": request_template.get("key") or form_key,
+        "request_template_title": request_template.get("title") or custom_fields.get("request_form_title") or form_key,
+        "form_key": custom_fields.get("request_form_key") or form_key,
+        "ticket_type": ticket_type,
+        "priority": priority_decision,
+        "routing": {
+            "source": routing_decision.get("source") if isinstance(routing_decision, dict) else None,
+            "target_queue_id": queue_id,
+            "target_queue_name": getattr(queue, "name", None),
+            "fallback_applied": bool(isinstance(routing_decision, dict) and routing_decision.get("source") == "fallback_queue"),
+            "matched_rule": routing_decision.get("matched_rule") if isinstance(routing_decision, dict) else None,
+        },
+        "sla": sla_preview,
+        "approval_required": bool(approval_policy.get("required")),
+        "diagnostic_consent_required": bool(
+            diagnostic_policy.get("requires_user_consent") or consent.get("required_for_requester_device")
+        ),
+        "summary_rows": validated_submission.get("summary_rows") or [],
+    }
+    return _json_ok(preview=preview)
 
 
 async def handle_tickets_list(request: web.Request) -> web.Response:

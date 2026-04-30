@@ -3,7 +3,7 @@
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 import json
 import uuid
 import aiohttp
@@ -598,6 +598,44 @@ class TicketApiClient:
             )
             logger.error(f"Ошибка сети при create_ticket: {e}")
             raise Exception(f"Network error: {e}")
+
+    async def preview_ticket_create(
+        self,
+        *,
+        form_key: Optional[str] = None,
+        request_template_key: Optional[str] = None,
+        form_pack_key: Optional[str] = None,
+        form_pack_version: Optional[str] = None,
+        form_payload: Optional[dict] = None,
+        ticket_type: Optional[str] = None,
+    ) -> dict:
+        """Возвращает серверный предпросмотр маршрута, приоритета и сроков перед созданием обращения."""
+        url = f"{self.base_url}/tickets/create/preview"
+        payload: dict[str, Any] = {"device_id": self.device_id}
+        if form_key is not None:
+            payload["form_key"] = form_key
+        if request_template_key is not None:
+            payload["request_template_key"] = request_template_key
+        if form_pack_key is not None:
+            payload["form_pack_key"] = form_pack_key
+        if form_pack_version is not None:
+            payload["form_pack_version"] = form_pack_version
+        if form_payload is not None:
+            payload["form_payload"] = form_payload
+        if ticket_type is not None:
+            payload["ticket_type"] = ticket_type
+
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}: {response_text}")
+                return json.loads(response_text)
+        except aiohttp.ClientError as exc:
+            logger.info(f"Предпросмотр создания обращения недоступен: {exc}")
+            raise Exception(f"Network error: {exc}")
     
     async def get_ticket_form_pack_current(
         self,

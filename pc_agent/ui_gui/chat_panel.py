@@ -239,9 +239,21 @@ def build_priority_facts_payload_from_form(
 
 
 def _duration_to_user_text(value: Any) -> str:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minutes = max(1, int(value))
+        if minutes % 1440 == 0:
+            return f"{minutes // 1440} дн"
+        if minutes % 60 == 0:
+            return f"{minutes // 60} ч"
+        if minutes > 60:
+            hours, remaining_minutes = divmod(minutes, 60)
+            return f"{hours} ч {remaining_minutes} мин"
+        return f"{minutes} мин"
     raw = str(value or "").strip().lower()
     if not raw:
         return ""
+    if raw.isdigit():
+        return _duration_to_user_text(int(raw))
     match = re.match(r"^(\d+)\s*([mhd])$", raw)
     if not match:
         return raw
@@ -260,9 +272,44 @@ def _target_for_priority(policy: dict[str, Any], target_key: str, priority_class
     return str(target_block.get(priority_class) or target_block.get("P3") or "").strip()
 
 
-def build_request_creation_preview(form_def: Optional[dict[str, Any]], *, priority_class: str = "P3") -> str:
+def build_request_creation_preview(
+    form_def: Optional[dict[str, Any]],
+    *,
+    priority_class: str = "P3",
+    server_preview: Optional[dict[str, Any]] = None,
+) -> str:
     if not isinstance(form_def, dict):
         return "Шаблон обращения пока не выбран."
+    if isinstance(server_preview, dict):
+        preview = server_preview.get("preview") if isinstance(server_preview.get("preview"), dict) else server_preview
+        lines: list[str] = []
+        title = str(
+            preview.get("request_template_title")
+            or form_def.get("request_template_title")
+            or form_def.get("title")
+            or form_def.get("key")
+            or ""
+        ).strip()
+        if title:
+            lines.append(f"Шаблон: {title}")
+        routing = preview.get("routing") if isinstance(preview.get("routing"), dict) else {}
+        queue = routing.get("target_queue_name") or routing.get("target_queue_id")
+        if queue:
+            lines.append(f"Предварительно попадёт в очередь: {queue}")
+        if preview.get("approval_required"):
+            lines.append("Потребуется согласование.")
+        if preview.get("diagnostic_consent_required"):
+            lines.append("Перед диагностикой потребуется ваше согласие.")
+        sla = preview.get("sla") if isinstance(preview.get("sla"), dict) else {}
+        first_response = _duration_to_user_text(sla.get("first_response_minutes"))
+        resolution = _duration_to_user_text(sla.get("resolution_minutes"))
+        if first_response:
+            lines.append(f"Вам должны ответить примерно за {first_response}.")
+        if resolution:
+            lines.append(f"Решение или обходной вариант ожидается примерно за {resolution}.")
+        if lines:
+            return "\n".join(lines)
+
     lines: list[str] = []
     title = str(form_def.get("request_template_title") or form_def.get("title") or form_def.get("key") or "").strip()
     if title:
@@ -1405,6 +1452,8 @@ class TicketCreateWizardWidget(QFrame):
         self._submitting = False
         self._capture_in_progress = False
         self._status_is_error = False
+        self._server_creation_preview: dict[str, Any] | None = None
+        self._preview_request_seq = 0
         self._attachment_paths: list[str] = []
         self._temporary_attachment_paths: set[str] = set()
         self.setObjectName("ProfileSidebar")
@@ -1720,8 +1769,41 @@ class TicketCreateWizardWidget(QFrame):
                 build_request_creation_preview(
                     self._selected_form(),
                     priority_class=self._current_priority_class_hint(),
+                    server_preview=self._server_creation_preview,
                 )
             )
+
+    def _schedule_server_creation_preview(self) -> None:
+        self._preview_request_seq += 1
+        self._server_creation_preview = None
+        self._update_creation_preview()
+        if not self._selected_form() or not getattr(self._panel, "ticket_client", None):
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        asyncio.create_task(self._async_refresh_server_creation_preview(self._preview_request_seq))
+
+    async def _async_refresh_server_creation_preview(self, request_seq: int) -> None:
+        try:
+            payload = self._payload()
+            result = await self._panel.ticket_client.preview_ticket_create(
+                form_key=payload.get("form_key"),
+                request_template_key=payload.get("request_template_key"),
+                form_pack_key=payload.get("form_pack_key"),
+                form_pack_version=payload.get("form_pack_version"),
+                form_payload=payload.get("form_payload") if isinstance(payload.get("form_payload"), dict) else {},
+                ticket_type=payload.get("ticket_type"),
+            )
+        except Exception as exc:
+            logger.debug(f"Предпросмотр создания обращения недоступен: {exc}")
+            return
+        if request_seq != self._preview_request_seq:
+            return
+        if isinstance(result, dict):
+            self._server_creation_preview = result.get("preview") if isinstance(result.get("preview"), dict) else result
+            self._update_creation_preview()
 
     def _refresh_forms(self) -> None:
         form_pack = self._panel.ticket_form_pack()
@@ -1766,12 +1848,14 @@ class TicketCreateWizardWidget(QFrame):
             self.diagnostic_consent_checkbox.setChecked(False)
         self._update_navigation_state()
         self._update_creation_preview()
+        self._schedule_server_creation_preview()
 
     def _on_form_fields_changed(self) -> None:
         self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
         self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
         self._update_navigation_state()
         self._update_creation_preview()
+        self._schedule_server_creation_preview()
 
     def _on_manage_profiles(self) -> None:
         self._panel.open_profile_manager(start_new=True)
