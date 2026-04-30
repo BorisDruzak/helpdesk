@@ -91,6 +91,7 @@ _TEMPLATE_DICT_FIELDS = (
     "ola_policy",
     "closure_policy",
     "visibility_policy",
+    "notification_policy",
 )
 _TEMPLATE_INT_FIELDS = (
     "category_id",
@@ -740,6 +741,7 @@ def validate_form_submission(
             "ola_policy": deepcopy(form.get("ola_policy") or {}),
             "closure_policy": deepcopy(form.get("closure_policy") or {}),
             "visibility_policy": deepcopy(form.get("visibility_policy") or {}),
+            "notification_policy": deepcopy(form.get("notification_policy") or {}),
         },
     }
 

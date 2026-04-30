@@ -551,6 +551,7 @@ def test_validate_form_pack_schema_preserves_request_template_process_context():
                     },
                     "approval_policy": {"required": False},
                     "closure_policy": {"require_resolution_code": True},
+                    "notification_policy": {"on_status_changed": {"requester": True}},
                     "fields": [
                         {"key": "url", "label": "URL", "type": "text", "required": True},
                         {"key": "affected_scope", "label": "Кого затронуло", "type": "text"},
@@ -572,6 +573,7 @@ def test_validate_form_pack_schema_preserves_request_template_process_context():
     assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
     assert form["priority_policy"]["impact_field"] == "affected_scope"
     assert form["closure_policy"]["require_resolution_code"] is True
+    assert form["notification_policy"]["on_status_changed"]["requester"] is True
 
 
 def test_validate_form_pack_schema_preserves_custom_ticket_type():

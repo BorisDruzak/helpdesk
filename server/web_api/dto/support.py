@@ -30,6 +30,7 @@ class SupportQueueFilters(BaseModel):
 
     scope_options: list[SupportFilterOption]
     status_options: list[SupportFilterOption]
+    smart_view_options: list[SupportFilterOption] = Field(default_factory=list)
 
 
 class SupportCountItem(BaseModel):
@@ -80,6 +81,7 @@ class SupportQueuePayload(BaseModel):
     scope: str
     query: str
     status_filter: str
+    smart_view: str = "all"
     summary: SupportQueueSummary
     filters: SupportQueueFilters
     tickets: list[SupportQueueTicketItem]

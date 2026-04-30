@@ -334,6 +334,7 @@ class AdminFormsFormItem(BaseModel):
     ola_policy: dict[str, Any] = Field(default_factory=dict)
     closure_policy: dict[str, Any] = Field(default_factory=dict)
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
+    notification_policy: dict[str, Any] = Field(default_factory=dict)
     fields: list[AdminFormsFieldItem] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
@@ -418,6 +419,7 @@ class AdminFormsSaveFormRequest(BaseModel):
     ola_policy: dict[str, Any] = Field(default_factory=dict)
     closure_policy: dict[str, Any] = Field(default_factory=dict)
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
+    notification_policy: dict[str, Any] = Field(default_factory=dict)
     fields: list[AdminFormsSaveFieldRequest] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 

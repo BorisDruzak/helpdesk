@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 
 import pytest
@@ -378,6 +378,60 @@ async def test_web_support_queue_returns_typed_scope_and_filter_payload(test_cli
 
     assert mine_payload["data"]["scope"] == "mine"
     assert [item["title"] for item in mine_payload["data"]["tickets"]] == ["Visible by assignee"]
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="smart_sla", name="Smart SLA", members=["support-test"])
+        session.add_all([
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-sla-risk",
+                title="SLA risk visible",
+                description="Due soon ticket should be in smart view",
+                status="in_progress",
+                requester_id="user-sla-risk",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(minutes=30),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-sla-later",
+                title="SLA later hidden",
+                description="Far deadline should stay outside smart view",
+                status="in_progress",
+                requester_id="user-sla-later",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(days=2),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-sla-closed",
+                title="Closed SLA hidden",
+                description="Terminal tickets should stay outside risk views",
+                status="closed",
+                requester_id="user-sla-closed",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(minutes=10),
+            ),
+        ])
+        await session.commit()
+
+    response = await test_client.get("/api/web/support/queue?scope=all&smart_view=sla_risk", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["smart_view"] == "sla_risk"
+    assert [item["title"] for item in payload["data"]["tickets"]] == ["SLA risk visible"]
+    smart_view_options = payload["data"]["filters"]["smart_view_options"]
+    assert {"value": "sla_risk", "label": "SLA риск"} in smart_view_options
 
 
 @pytest.mark.asyncio

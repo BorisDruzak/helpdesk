@@ -40,6 +40,7 @@ from tickets.statuses import (
 )
 from tickets.sla_service import TicketSlaService
 from tickets.passport_service import TicketPassportService
+from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
 from web_api.dto.common import SuccessResponse, json_model_response
@@ -129,11 +130,12 @@ def _build_status_options(statuses: set[str]) -> list[SupportFilterOption]:
     return options
 
 
-def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str) -> SupportQueuePayload:
+def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str, smart_view: str = "all") -> SupportQueuePayload:
     return SupportQueuePayload(
         scope=scope,
         query=query,
         status_filter=status_filter,
+        smart_view=smart_view,
         summary=SupportQueueSummary(
             visible_count=0,
             selected_ticket_id=None,
@@ -146,6 +148,7 @@ def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str) ->
         filters=SupportQueueFilters(
             scope_options=SCOPE_OPTIONS,
             status_options=[SupportFilterOption(value="all", label="Все статусы")],
+            smart_view_options=[SupportFilterOption(**option) for option in smart_view_options()],
         ),
         tickets=[],
     )
@@ -234,6 +237,11 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         requires_operator_action=bool(ticket_data.get("requires_operator_action")),
         unread_user_messages=unread_messages,
     )
+
+
+def _iso_attr(obj, name: str) -> str | None:
+    value = getattr(obj, name, None)
+    return value.isoformat() if value is not None and hasattr(value, "isoformat") else None
 
 
 def _matches_ticket_query(ticket: SupportQueueTicketItem, query: str) -> bool:
@@ -929,6 +937,7 @@ async def handle_web_support_queue(request: web.Request):
     auth_context = request["auth_context"]
     scope = _normalize_scope(request.query.get("scope"))
     status_filter = _normalize_status_filter(request.query.get("status"))
+    smart_view = normalize_smart_view_id(request.query.get("smart_view"))
     query = str(request.query.get("query", "") or "").strip()
     limit = min(max(int(request.query.get("limit", "200")), 1), 300)
 
@@ -958,6 +967,16 @@ async def handle_web_support_queue(request: web.Request):
             for ticket in tickets:
                 ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
                 ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
+                ticket_data.update(
+                    {
+                        "ola_ack_due_at": _iso_attr(ticket, "ola_ack_due_at"),
+                        "ola_ack_breached_at": _iso_attr(ticket, "ola_ack_breached_at"),
+                        "ola_processing_due_at": _iso_attr(ticket, "ola_processing_due_at"),
+                        "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
+                    }
+                )
+                if not matches_smart_view(ticket_data, smart_view, actor_id=auth_context.actor_id):
+                    continue
                 accessible_items.append(_build_ticket_item(ticket_data))
 
         scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
@@ -984,6 +1003,7 @@ async def handle_web_support_queue(request: web.Request):
             scope=scope,
             query=query,
             status_filter=status_filter,
+            smart_view=smart_view,
             summary=SupportQueueSummary(
                 visible_count=len(typed_items),
                 selected_ticket_id=typed_items[0].ticket_id if typed_items else None,
@@ -993,6 +1013,7 @@ async def handle_web_support_queue(request: web.Request):
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,
                 status_options=_build_status_options(status_values),
+                smart_view_options=[SupportFilterOption(**option) for option in smart_view_options()],
             ),
             tickets=typed_items,
         )
@@ -1005,6 +1026,7 @@ async def handle_web_support_queue(request: web.Request):
             scope=scope,
             query=query,
             status_filter=status_filter,
+            smart_view=smart_view,
         )
     return json_model_response(SuccessResponse[SupportQueuePayload](data=payload))
 

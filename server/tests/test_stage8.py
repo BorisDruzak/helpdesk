@@ -93,3 +93,47 @@ async def test_notify_ticket_event_suppress_self():
     # Проверяем что support-1 не в create calls
     for call in notif_repo.create.call_args_list:
         assert call.kwargs.get("actor_id") != "support-1"
+
+
+@pytest.mark.asyncio
+async def test_notification_policy_limits_recipients_by_request_template():
+    """request_template.notification_policy controls event recipients before prefs filtering."""
+    from tickets.notification_service import notify_ticket_event
+
+    ticket_repo = AsyncMock()
+    ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
+        queue_id=1,
+        assignee_id="assignee-1",
+        requester_id="requester-1",
+        custom_fields={
+            "request_template": {
+                "notification_policy": {
+                    "on_status_changed": {
+                        "requester": True,
+                        "assignee": True,
+                        "queue": False,
+                        "watchers": False,
+                    }
+                }
+            }
+        },
+    ))
+    ticket_repo.list_queue_member_actor_ids = AsyncMock(return_value=["queue-1", "queue-2"])
+    ticket_repo.list_watchers = AsyncMock(return_value=[MagicMock(actor_id="watcher-1")])
+
+    notif_repo = AsyncMock()
+    prefs_repo = AsyncMock()
+    prefs_repo.get_or_default = AsyncMock(return_value=(False, [], False))
+
+    await notify_ticket_event(
+        ticket_repo,
+        notif_repo,
+        "t-policy",
+        "status_changed",
+        {"status": "in_progress"},
+        visibility="public",
+        prefs_repo=prefs_repo,
+    )
+
+    actor_ids = [call.kwargs["actor_id"] for call in notif_repo.create.call_args_list]
+    assert actor_ids == ["assignee-1", "requester-1"]

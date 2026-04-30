@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 7 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 8 in progress: executable notification_policy and backend smart_views. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -29,7 +29,7 @@ Already present:
 
 - Request-template-like catalog exists as the `request_forms` form pack in `ticket_form_packs`.
 - Form validation supports fields, required flags, options and conditional visibility.
-- Template context is preserved in `custom_fields.request_template`, including `ticket_type`, category/service/subcategory, queue, SLA, priority/routing/approval/OLA/closure/visibility policies, field roles and suggested playbook.
+- Template context is preserved in `custom_fields.request_template`, including `ticket_type`, category/service/subcategory, queue, SLA, priority/routing/approval/OLA/closure/visibility/notification policies, field roles and suggested playbook.
 - Workflow profiles exist and status transitions use the configured profile for `ticket_type`.
 - Priority policy exists for intake facts and stores computed/effective priority context.
 - SLA and OLA services exist, and SLA due dates use calendar-aware calculation when a policy points to a business calendar.
@@ -40,10 +40,10 @@ Already present:
 Missing or weak:
 
 - No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
-- `closure_policy`, `approval_policy`, `routing_policy`, diagnostic attach-to-evidence behavior and `visibility_policy` public-status/redaction behavior are executable.
+- `closure_policy`, `approval_policy`, `routing_policy`, diagnostic attach-to-evidence behavior, `visibility_policy` public-status/redaction behavior and `notification_policy` recipient selection are executable.
 - Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
-- Notification rules are not policy-driven.
-- Smart views are not first-class saved settings.
+- Notification delivery is policy-driven for in-app recipients; external channels remain future work.
+- Smart views exist as backend support queue filters; admin persistence/editor remains future work.
 
 ### Decisions
 
@@ -104,6 +104,35 @@ Missing or weak:
    - Stop remote server after checks unless the user explicitly asks to leave it running.
 
 ### Current Step
+
+Slice 8 implemented locally: executable notification policy and backend smart views.
+
+Implemented behavior:
+
+- `request_template.notification_policy` controls in-app notification recipients per event while keeping existing user notification preferences (`mute_internal`, `muted_event_types`, `suppress_self`) as the final per-recipient filter.
+- Policy events use `on_<event_type>` blocks such as `on_status_changed`, `on_sla_breach`, `on_requester_replied`, with recipient toggles for requester, assignee, queue and watchers.
+- Typed support queue exposes backend smart views as saved operational filters (`sla_risk`, `ola_risk`, `unassigned`, `waiting_approval`, requester replies and stale waits) through the existing `/api/web/support/queue` payload.
+- Smart views filter ticket payloads server-side and are queryable without adding a visual builder in this slice.
+
+Changed files for slice 8:
+
+- `server/tickets/notification_service.py`
+- `server/tickets/smart_views.py`
+- `server/tickets/form_catalog.py`
+- `server/web_api/dto/admin.py`
+- `server/web_api/admin_handlers.py`
+- `server/web_api/dto/support.py`
+- `server/web_api/support_handlers.py`
+- `server/tests/test_stage8.py`
+- `server/tests/test_ticket_form_packs.py`
+- `server/tests/test_web_admin_api.py`
+- `server/tests/test_web_support_api.py`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+- `PLANS.md`
+
+Previous current step:
 
 Slice 7 implemented and live-verified: executable visibility policy for ticket payloads.
 
@@ -267,6 +296,8 @@ Local:
 - `python -m pytest server/tests/test_ticket_passport_service.py server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_closure_policy.py -q --tb=short` -> passed, 14 tests.
 - `python -m pytest server/tests/test_ticket_workflow_visibility.py server/tests/test_web_support_api.py -q --tb=short` -> passed, 28 tests.
 - `python -m pytest server/tests/test_ticket_workflow_visibility.py server/tests/test_web_support_api.py server/tests/test_ticket_create_contracts.py -q --tb=short` -> passed, 38 tests.
+- `python -m pytest server/tests/test_stage8.py server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload server/tests/test_web_support_api.py::test_web_support_queue_applies_smart_view_sla_risk -q --tb=short` -> passed, 11 tests.
+- `python -m pytest server/tests/test_ticket_workflow_visibility.py server/tests/test_web_support_api.py server/tests/test_ticket_create_contracts.py server/tests/test_stage8.py server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context -q --tb=short` -> passed, 48 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:

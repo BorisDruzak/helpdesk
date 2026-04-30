@@ -863,6 +863,7 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
         assert form.approval_policy == {"required": False}
         assert form.closure_policy == {"require_resolution_code": True}
         assert form.visibility_policy == {"operator_fields": ["url"]}
+        assert form.notification_policy == {"on_status_changed": {"requester": True}}
         assert form.ola_policy == {"use_queue_targets": True}
         return AdminFormsSaveResult(
             summary=AdminFormsSummary(
@@ -895,6 +896,7 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
                     approval_policy={"required": False},
                     closure_policy={"require_resolution_code": True},
                     visibility_policy={"operator_fields": ["url"]},
+                    notification_policy={"on_status_changed": {"requester": True}},
                     ola_policy={"use_queue_targets": True},
                     fields=[
                         AdminFormsFieldItem(
@@ -936,6 +938,7 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
                     "approval_policy": {"required": False},
                     "closure_policy": {"require_resolution_code": True},
                     "visibility_policy": {"operator_fields": ["url"]},
+                    "notification_policy": {"on_status_changed": {"requester": True}},
                     "ola_policy": {"use_queue_targets": True},
                     "fields": [
                         {"key": "url", "label": "URL", "type": "text", "required": True, "options": []},
@@ -950,6 +953,7 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
     assert form["ticket_type"] == "incident"
     assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
     assert form["priority_policy"]["impact_field"] == "affected_scope"
+    assert form["notification_policy"]["on_status_changed"]["requester"] is True
 
 
 @pytest.mark.asyncio
