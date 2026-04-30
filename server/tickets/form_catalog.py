@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from playbooks.form_triggers import normalize_form_playbook_triggers
-from tickets.workflow_profiles import DEFAULT_WORKFLOW_PROFILE, get_workflow_profile
+from tickets.workflow_profiles import DEFAULT_WORKFLOW_PROFILE
 
 
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
@@ -556,7 +556,6 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
         ticket_type = str(
             raw_form.get("ticket_type") or infer_ticket_type_for_form(form_key, request_kind)
         ).strip() or DEFAULT_WORKFLOW_PROFILE
-        ticket_type = get_workflow_profile(ticket_type).ticket_type
         raw_field_roles = raw_form.get("field_roles")
         merged_field_roles = {
             field_key: deepcopy(roles)

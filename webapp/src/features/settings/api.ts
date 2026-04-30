@@ -75,6 +75,7 @@ export type WebSettingsPayload = {
       requires_change_plan: boolean;
       requires_action_log: boolean;
       evidence_required_for_priorities: string[];
+      transitions: Record<string, string[]>;
     }>;
     process_schema: Array<{
       key: string;
@@ -539,6 +540,21 @@ export async function saveWebSettingsPriorityMatrix(
       body: JSON.stringify({ matrix })
     },
     "Не удалось сохранить матрицу приоритетов."
+  );
+}
+
+export async function saveWebSettingsWorkflowProfiles(
+  workflowProfiles: WebSettingsPayload["ticket_settings"]["workflow_profiles"]
+) {
+  return requestJson<{
+    workflow_profiles: WebSettingsPayload["ticket_settings"]["workflow_profiles"];
+  }>(
+    "/api/web/settings/workflow_profiles",
+    {
+      method: "PUT",
+      body: JSON.stringify({ workflow_profiles: workflowProfiles })
+    },
+    "Не удалось сохранить workflow profiles."
   );
 }
 

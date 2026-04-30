@@ -89,6 +89,13 @@ function createSettingsPayload(): WebSettingsPayload {
           requires_change_plan: false,
           requires_action_log: false,
           evidence_required_for_priorities: ["P0", "P1"],
+          transitions: {
+            new: ["queued"],
+            queued: ["in_progress"],
+            in_progress: ["resolved"],
+            resolved: ["closed"],
+            closed: [],
+          },
         },
       ],
       process_schema: [

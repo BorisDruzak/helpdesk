@@ -1,5 +1,33 @@
 # PLANS.md
 
+## 2026-04-30 Configurable Workflow Profiles Slice
+
+Status: implemented locally; verification and live checks in progress.
+
+### Goal
+
+Make `ticket_type` / process type and its workflow profile configurable from the server UI. The minimal functional slice must let an admin edit process type names, paths, required fields, flags and transition rules, then have ticket status validation use those rules.
+
+### Implementation Checklist
+
+- [x] Store workflow profile settings in `ServerConfig` with default profiles as fallback.
+- [x] Add server validation/normalization for workflow profile payloads and transition maps.
+- [x] Add typed web settings API to save workflow profiles.
+- [x] Make ticket status changes validate against the configured workflow for the ticket's `ticket_type`.
+- [x] Add a functional editor to `/app/settings` without a visual redesign.
+- [x] Let `/app/admin/forms` read configured workflow profile options instead of using a fixed list.
+- [x] Add focused backend and frontend tests.
+- [x] Update docs/CODEMAP/navigation.
+- [ ] Run focused tests, workspace verification, browser/live checks.
+
+### Verification So Far
+
+- `python -m py_compile server/tickets/workflow_profiles.py server/tickets/workflow_service.py server/web_api/settings_handlers.py server/tickets/handlers.py server/web_api/support_handlers.py server/tickets/form_catalog.py` -> passed.
+- `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_workflow_visibility.py server/tests/test_web_settings_api.py server/tests/test_ticket_form_packs.py -q` -> 33 passed.
+- `pnpm --dir webapp exec tsc --noEmit` -> passed.
+- `pnpm --dir webapp test -- settings` -> 3 passed.
+- `pnpm --dir webapp test -- forms-builder-panel` -> 9 passed.
+
 ## 2026-04-29 Help Desk Process Model Completion Slice
 
 Status: second slice in progress: server-driven priority questions, agent SLA display and ticket passport completeness added locally; live verification pending.

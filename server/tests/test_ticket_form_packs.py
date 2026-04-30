@@ -574,6 +574,29 @@ def test_validate_form_pack_schema_preserves_request_template_process_context():
     assert form["closure_policy"]["require_resolution_code"] is True
 
 
+def test_validate_form_pack_schema_preserves_custom_ticket_type():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "custom_access",
+                    "request_kind": "custom_access",
+                    "ticket_type": "custom_access_process",
+                    "title": "Custom access",
+                    "fields": [
+                        {"key": "system", "label": "System", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    assert pack["forms"][0]["ticket_type"] == "custom_access_process"
+
+
 @pytest.mark.asyncio
 async def test_create_ticket_uses_template_ticket_type_over_request_body(test_client, test_engine):
     await _clear_request_form_packs(test_engine)

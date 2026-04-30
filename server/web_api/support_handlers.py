@@ -40,7 +40,7 @@ from tickets.statuses import (
 )
 from tickets.sla_service import TicketSlaService
 from tickets.passport_service import TicketPassportService
-from tickets.workflow_service import TicketWorkflowService, validate_transition
+from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
@@ -287,16 +287,17 @@ def _build_status_counts(items: list[SupportQueueTicketItem]) -> list[SupportCou
     return result
 
 
-def _build_support_status_actions(ticket_status: str | None, *, is_staff: bool) -> SupportTicketActions:
+async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> SupportTicketActions:
     if not is_staff:
         return SupportTicketActions(status_options=[], can_send_internal_note=False)
 
-    current_status = str(ticket_status or "")
-    options = [
-        SupportStatusAction(value=value, label=label)
-        for value, label in QUICK_STATUS_ACTIONS
-        if value != current_status and validate_transition(current_status, value, True)
-    ]
+    current_status = str(getattr(ticket, "status", "") or "")
+    options: list[SupportStatusAction] = []
+    for value, label in QUICK_STATUS_ACTIONS:
+        if value == current_status:
+            continue
+        if await validate_transition_for_ticket(session, ticket, value, True):
+            options.append(SupportStatusAction(value=value, label=label))
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
@@ -829,8 +830,9 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             break
 
     snapshot = await _build_support_snapshot(request, session, ticket, auth_context)
-    actions = _build_support_status_actions(
-        ticket_data.get("status"),
+    actions = await _build_support_status_actions(
+        session,
+        ticket,
         is_staff=auth_context.actor_role in {"admin", "support"},
     )
     request_form = _build_support_request_form_payload(ticket_data)
@@ -1430,7 +1432,7 @@ async def handle_web_support_change_status(request: web.Request):
                 return denied
 
             is_staff = auth_context.actor_role in {"admin", "support"}
-            if not validate_transition(ticket.status, to_status, is_staff):
+            if not await validate_transition_for_ticket(session, ticket, to_status, is_staff):
                 return web.json_response(
                     {
                         "status": "error",

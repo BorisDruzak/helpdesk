@@ -267,6 +267,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert payload["data"]["ticket_settings"]["next_action_owners"][0]["value"] == "support"
     workflow_profiles = {item["ticket_type"]: item for item in payload["data"]["ticket_settings"]["workflow_profiles"]}
     assert workflow_profiles["incident"]["purpose"] == "restore_service"
+    assert workflow_profiles["incident"]["transitions"]["new"]
     assert workflow_profiles["access_request"]["requires_approval"] is True
     assert "waiting_on_approval" in workflow_profiles["access_request"]["suggested_path"]
     assert payload["data"]["ticket_settings"]["operational_flags"]["take_queue_mode"]
@@ -363,3 +364,58 @@ async def test_web_settings_ola_targets_accept_process_priority_p0(test_client, 
 
     assert payload["status"] == "ok"
     assert payload["ola_targets"] == [{"priority": "P0", "ack_min": 5, "processing_min": 30}]
+
+
+@pytest.mark.asyncio
+async def test_web_settings_can_save_workflow_profiles(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="admin", password_hash="secret", actor_role="admin", is_active=True))
+        await session.commit()
+
+    response = await test_client.put(
+        "/api/web/settings/workflow_profiles",
+        headers=_admin_headers(),
+        json={
+            "workflow_profiles": [
+                {
+                    "ticket_type": "incident",
+                    "label": "Авария",
+                    "purpose": "restore_service",
+                    "suggested_path": ["new", "queued", "in_progress", "resolved", "closed"],
+                    "allowed_statuses": ["new", "queued", "in_progress", "resolved", "closed", "canceled"],
+                    "required_create_fields": ["affected_object"],
+                    "required_resolve_fields": ["resolution_code"],
+                    "requires_approval": False,
+                    "requires_change_plan": False,
+                    "requires_action_log": False,
+                    "evidence_required_for_priorities": ["P0"],
+                    "transitions": {
+                        "new": ["queued", "canceled"],
+                        "queued": ["in_progress", "canceled"],
+                        "in_progress": ["resolved", "canceled"],
+                        "resolved": ["closed"],
+                        "closed": [],
+                        "canceled": [],
+                    },
+                }
+            ]
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    profiles = {item["ticket_type"]: item for item in payload["workflow_profiles"]}
+    assert profiles["incident"]["label"] == "Авария"
+    assert profiles["incident"]["transitions"]["new"] == ["queued", "canceled"]
+
+    settings_response = await test_client.get("/api/web/settings", headers=_admin_headers())
+    assert settings_response.status == 200, await settings_response.text()
+    settings_payload = await settings_response.json()
+    settings_profiles = {
+        item["ticket_type"]: item
+        for item in settings_payload["data"]["ticket_settings"]["workflow_profiles"]
+    }
+    assert settings_profiles["incident"]["label"] == "Авария"
+    assert settings_profiles["incident"]["required_create_fields"] == ["affected_object"]

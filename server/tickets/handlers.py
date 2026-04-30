@@ -54,7 +54,7 @@ from tickets.statuses import (
     normalize_ticket_priority_inputs,
     resolve_status,
 )
-from tickets.workflow_service import TicketWorkflowService, validate_transition
+from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from utils import new_ticket_id
 from websocket.ui_handler import push_ticket_event_committed
 
@@ -1351,7 +1351,7 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
         if error:
             return error
         is_support_or_admin = auth_context.actor_role in {"admin", "support"}
-        if not validate_transition(ticket.status, to_status, is_support_or_admin):
+        if not await validate_transition_for_ticket(session, ticket, to_status, is_support_or_admin):
             return _json_error(
                 "invalid_transition",
                 status=400,

@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { requirePermission, type PermissionDecision } from "../auth/permissions";
+import { fetchWebSettingsPayload } from "../settings/api";
 import { cn } from "../../shared/ui/cn";
 import {
   type AdminFormsFieldItem,
@@ -1119,6 +1120,29 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   const selectedForm =
     draft?.forms.find((form) => form.key === selectedFormKey) ?? draft?.forms[0] ?? null;
 
+  const workflowProfilesQuery = useQuery({
+    queryKey: ["web-settings-workflow-profiles"],
+    queryFn: fetchWebSettingsPayload,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  const workflowProfileOptions = useMemo(() => {
+    const configured =
+      workflowProfilesQuery.data?.ticket_settings.workflow_profiles.map((profile) => ({
+        value: profile.ticket_type,
+        label: `${profile.label} (${profile.ticket_type})`,
+      })) ?? [];
+    const options = configured.length ? configured : [...WORKFLOW_PROFILE_OPTIONS];
+    if (selectedForm?.ticket_type && !options.some((option) => option.value === selectedForm.ticket_type)) {
+      return [
+        ...options,
+        { value: selectedForm.ticket_type, label: selectedForm.ticket_type },
+      ];
+    }
+    return options;
+  }, [selectedForm?.ticket_type, workflowProfilesQuery.data?.ticket_settings.workflow_profiles]);
+
   useEffect(() => {
     if (!selectedForm?.fields.length) {
       setSelectedFieldKey(null);
@@ -1737,7 +1761,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                 }}
                                 value={selectedForm.ticket_type}
                               >
-                                {WORKFLOW_PROFILE_OPTIONS.map((option) => (
+                                {workflowProfileOptions.map((option) => (
                                   <option key={option.value} value={option.value}>
                                     {option.label}
                                   </option>

@@ -18,66 +18,18 @@ from tickets.statuses import (
     requester_status_for_internal,
     wait_type_for_status,
 )
-from tickets.workflow_profiles import get_workflow_profile
+from tickets.workflow_profiles import (
+    DEFAULT_REQUESTER_TRANSITIONS,
+    DEFAULT_SUPPORT_TRANSITIONS,
+    WorkflowProfile,
+    load_workflow_profiles,
+    workflow_profile_by_type,
+)
 
 
-SUPPORT_TRANSITIONS = {
-    "new": ["queued", "assigned", "in_progress", "canceled"],
-    "triaged": [
-        "assigned",
-        "in_progress",
-        "waiting_on_user",
-        "waiting_on_internal_team",
-        "waiting_on_vendor",
-        "waiting_on_approval",
-        "scheduled",
-        "resolved",
-        "canceled",
-    ],
-    "queued": [
-        "assigned",
-        "in_progress",
-        "waiting_on_user",
-        "waiting_on_internal_team",
-        "waiting_on_vendor",
-        "waiting_on_approval",
-        "scheduled",
-        "canceled",
-    ],
-    "assigned": [
-        "queued",
-        "in_progress",
-        "waiting_on_user",
-        "waiting_on_internal_team",
-        "waiting_on_vendor",
-        "waiting_on_approval",
-        "scheduled",
-        "canceled",
-    ],
-    "in_progress": [
-        "queued",
-        "assigned",
-        "waiting_on_user",
-        "waiting_on_internal_team",
-        "waiting_on_vendor",
-        "waiting_on_approval",
-        "scheduled",
-        "resolved",
-        "canceled",
-    ],
-    "waiting_on_user": ["queued", "assigned", "in_progress", "resolved", "canceled"],
-    "waiting_on_internal_team": ["queued", "assigned", "in_progress", "resolved", "canceled"],
-    "waiting_on_vendor": ["queued", "assigned", "in_progress", "resolved", "canceled"],
-    "waiting_on_approval": ["queued", "assigned", "in_progress", "resolved", "canceled"],
-    "scheduled": ["assigned", "in_progress", "canceled"],
-    "resolved": ["new", "in_progress", "closed"],
-    "closed": ["new"],
-    "canceled": ["new"],
-}
+SUPPORT_TRANSITIONS = {key: list(value) for key, value in DEFAULT_SUPPORT_TRANSITIONS.items()}
 
-REQUESTER_TRANSITIONS = {
-    "resolved": ["in_progress", "closed"],
-}
+REQUESTER_TRANSITIONS = {key: list(value) for key, value in DEFAULT_REQUESTER_TRANSITIONS.items()}
 
 
 def _allowed_transitions(from_status: str, is_support_or_admin: bool) -> List[str]:
@@ -92,6 +44,40 @@ def validate_transition(
     is_support_or_admin: bool,
 ) -> bool:
     return to_status_canonical in _allowed_transitions(from_status, is_support_or_admin)
+
+
+def validate_transition_for_profile(
+    profile: WorkflowProfile,
+    from_status: str,
+    to_status_canonical: str,
+    is_support_or_admin: bool,
+) -> bool:
+    if not is_support_or_admin:
+        return to_status_canonical in REQUESTER_TRANSITIONS.get(from_status, [])
+    if to_status_canonical not in profile.allowed_statuses:
+        return False
+    transitions = profile.transitions or DEFAULT_SUPPORT_TRANSITIONS
+    return to_status_canonical in transitions.get(from_status, ())
+
+
+async def load_ticket_workflow_profile(session, ticket) -> WorkflowProfile:
+    profiles = await load_workflow_profiles(session)
+    return workflow_profile_by_type(profiles, getattr(ticket, "ticket_type", None) if ticket else None)
+
+
+async def validate_transition_for_ticket(
+    session,
+    ticket,
+    to_status_canonical: str,
+    is_support_or_admin: bool,
+) -> bool:
+    profile = await load_ticket_workflow_profile(session, ticket)
+    return validate_transition_for_profile(
+        profile,
+        getattr(ticket, "status", "") if ticket else "",
+        to_status_canonical,
+        is_support_or_admin,
+    )
 
 
 class TicketWorkflowService:
@@ -116,7 +102,7 @@ class TicketWorkflowService:
     ) -> dict:
         now = datetime.now(timezone.utc)
         ticket = await self.ticket_repo.get_ticket(ticket_id)
-        workflow_profile = get_workflow_profile(getattr(ticket, "ticket_type", None) if ticket else None)
+        workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
         updates = {
             "next_action_owner": next_action_owner_for_status(to_status),
             "requester_status": requester_status_for_internal(to_status),

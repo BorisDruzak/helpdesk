@@ -261,7 +261,7 @@ from web_api.registry_handlers import (
     handle_web_admin_registry,
 )
 from web_api.reports_handlers import handle_web_reports_summary
-from web_api.settings_handlers import handle_web_settings_payload
+from web_api.settings_handlers import handle_web_settings_payload, handle_web_settings_workflow_profiles_put
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
 from chat.handlers import (
     handle_chat_start,
@@ -486,6 +486,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.get('/api/web/reports/summary', handle_web_reports_summary),
         web.get('/api/web/settings', handle_web_settings_payload),
+        web.put('/api/web/settings/workflow_profiles', handle_web_settings_workflow_profiles_put),
         web.get('/api/web/notifications', handle_notifications_list),
         web.get('/api/web/notifications/unread_count', handle_notifications_unread_count),
         web.post('/api/web/notifications/read_all', handle_notifications_read_all),

@@ -42,7 +42,7 @@ from tickets.statuses import (
     next_action_owner_for_status,
     requester_status_for_internal,
 )
-from tickets.workflow_profiles import list_workflow_profiles
+from tickets.workflow_profiles import list_workflow_profiles, load_workflow_profiles, save_workflow_profiles
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.settings import (
     WebSettingsAuditItem,
@@ -245,7 +245,7 @@ def _status_stage(status: str) -> str:
     return "work"
 
 
-def _build_ticket_settings_payload() -> WebSettingsTicketSettingsPayload:
+def _build_ticket_settings_payload(workflow_profiles=None) -> WebSettingsTicketSettingsPayload:
     requester_map: dict[str, list[str]] = {}
     owner_map: dict[str, list[str]] = {}
     status_items: list[WebSettingsTicketStatusItem] = []
@@ -294,7 +294,7 @@ def _build_ticket_settings_payload() -> WebSettingsTicketSettingsPayload:
         ],
         workflow_profiles=[
             WebSettingsWorkflowProfileItem(**profile.to_dict())
-            for profile in list_workflow_profiles()
+            for profile in (workflow_profiles or list_workflow_profiles())
         ],
         process_schema=_build_process_schema_items(),
         support_lines=_build_support_line_items(),
@@ -431,6 +431,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
             calendars_map = {calendar.id: calendar.name for calendar in calendars}
             resolution_codes = await repo.list_resolution_codes(include_inactive=True)
             audit_records = await audit_repo.list_audit(limit=80, offset=0)
+            workflow_profiles = await load_workflow_profiles(session)
 
             queue_items: list[WebSettingsQueueItem] = []
             for queue in queues:
@@ -525,7 +526,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
                     audit_records_count=len(audit_records),
                 ),
                 routing_builder=_build_routing_builder_payload(form_pack),
-                ticket_settings=_build_ticket_settings_payload(),
+                ticket_settings=_build_ticket_settings_payload(workflow_profiles),
                 queues=queue_items,
                 routing_rules=[
                     WebSettingsRoutingRuleItem(
@@ -583,3 +584,65 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
         payload = _empty_settings_payload(actor_role=actor_role)
 
     return json_model_response(SuccessResponse[WebSettingsPayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_settings_workflow_profiles_put(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Invalid JSON", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    if not isinstance(data, dict):
+        return web.json_response(
+            {"status": "error", "error": "Request body must be an object", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        async with get_session() as session:
+            denied = not await can(session, auth_context, "settings.manage_routing")
+            if denied:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Недостаточно прав: settings.manage_routing",
+                        "error_code": "FORBIDDEN",
+                        "required_permission": "settings.manage_routing",
+                    },
+                    status=403,
+                )
+            before_profiles = [profile.to_dict() for profile in await load_workflow_profiles(session)]
+            profiles = await save_workflow_profiles(session, data)
+            audit_repo = TicketAdminAuditRepo(session)
+            await audit_repo.add(
+                entity_type="workflow_profiles",
+                entity_id="ticket.workflow_profiles",
+                action="save",
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                before_json={"workflow_profiles": before_profiles},
+                after_json={"workflow_profiles": [profile.to_dict() for profile in profiles]},
+                trace_id=None,
+            )
+            await session.commit()
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_settings] failed to save workflow profiles: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {"status": "error", "error": "Failed to save workflow profiles", "error_code": "SAVE_FAILED"},
+            status=500,
+        )
+    return web.json_response(
+        {
+            "status": "ok",
+            "workflow_profiles": [profile.to_dict() for profile in profiles],
+        }
+    )

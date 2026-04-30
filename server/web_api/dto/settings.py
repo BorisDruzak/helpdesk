@@ -153,6 +153,7 @@ class WebSettingsWorkflowProfileItem(BaseModel):
     requires_change_plan: bool = False
     requires_action_log: bool = False
     evidence_required_for_priorities: list[str] = Field(default_factory=list)
+    transitions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class WebSettingsProcessSchemaItem(BaseModel):

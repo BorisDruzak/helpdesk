@@ -22,6 +22,7 @@ import {
   fetchTechAlerts,
   fetchWebSettingsPayload,
   saveNotificationPreferences,
+  saveWebSettingsWorkflowProfiles,
   saveWebSettingsOlaTargets,
   saveWebSettingsPriorityMatrix,
   saveWebSettingsSlaTargets,
@@ -134,6 +135,25 @@ type PriorityMatrixDraftRow = {
   impact: number;
   urgency: number;
   priority: string;
+};
+
+type WorkflowProfileItem = WebSettingsPayload["ticket_settings"]["workflow_profiles"][number];
+
+type WorkflowProfileDraft = Omit<
+  WorkflowProfileItem,
+  | "suggested_path"
+  | "allowed_statuses"
+  | "required_create_fields"
+  | "required_resolve_fields"
+  | "evidence_required_for_priorities"
+  | "transitions"
+> & {
+  suggested_path_text: string;
+  allowed_statuses_text: string;
+  required_create_fields_text: string;
+  required_resolve_fields_text: string;
+  evidence_required_for_priorities_text: string;
+  transitions_json: string;
 };
 
 const TAB_ITEMS = [
@@ -518,6 +538,86 @@ function buildPriorityMatrixDraft(policy: SlaPolicyItem | null): PriorityMatrixD
 }
 
 
+function csvToList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+
+function listToCsv(value: string[] | undefined): string {
+  return (value ?? []).join(", ");
+}
+
+
+function buildWorkflowProfileDraft(profile: WorkflowProfileItem): WorkflowProfileDraft {
+  return {
+    ticket_type: profile.ticket_type,
+    label: profile.label,
+    purpose: profile.purpose,
+    requires_approval: profile.requires_approval,
+    requires_change_plan: profile.requires_change_plan,
+    requires_action_log: profile.requires_action_log,
+    suggested_path_text: listToCsv(profile.suggested_path),
+    allowed_statuses_text: listToCsv(profile.allowed_statuses),
+    required_create_fields_text: listToCsv(profile.required_create_fields),
+    required_resolve_fields_text: listToCsv(profile.required_resolve_fields),
+    evidence_required_for_priorities_text: listToCsv(profile.evidence_required_for_priorities),
+    transitions_json: JSON.stringify(profile.transitions ?? {}, null, 2),
+  };
+}
+
+
+function buildWorkflowProfilePayload(drafts: WorkflowProfileDraft[]): WorkflowProfileItem[] {
+  return drafts.map((draft) => ({
+    ticket_type: draft.ticket_type.trim(),
+    label: draft.label.trim() || draft.ticket_type.trim(),
+    purpose: draft.purpose.trim() || draft.ticket_type.trim(),
+    suggested_path: csvToList(draft.suggested_path_text),
+    allowed_statuses: csvToList(draft.allowed_statuses_text),
+    required_create_fields: csvToList(draft.required_create_fields_text),
+    required_resolve_fields: csvToList(draft.required_resolve_fields_text),
+    requires_approval: draft.requires_approval,
+    requires_change_plan: draft.requires_change_plan,
+    requires_action_log: draft.requires_action_log,
+    evidence_required_for_priorities: csvToList(draft.evidence_required_for_priorities_text),
+    transitions: JSON.parse(draft.transitions_json || "{}") as Record<string, string[]>,
+  }));
+}
+
+
+function createWorkflowProfileDraft(index: number): WorkflowProfileDraft {
+  return {
+    ticket_type: `custom_${index}`,
+    label: "New ticket type",
+    purpose: "custom_process",
+    requires_approval: false,
+    requires_change_plan: false,
+    requires_action_log: false,
+    suggested_path_text: "new, queued, in_progress, resolved, closed",
+    allowed_statuses_text:
+      "new, queued, assigned, in_progress, waiting_on_user, waiting_on_internal_team, waiting_on_vendor, waiting_on_approval, scheduled, resolved, closed, canceled",
+    required_create_fields_text: "",
+    required_resolve_fields_text: "public_summary",
+    evidence_required_for_priorities_text: "",
+    transitions_json: JSON.stringify(
+      {
+        new: ["queued", "canceled"],
+        queued: ["assigned", "in_progress", "canceled"],
+        assigned: ["in_progress", "canceled"],
+        in_progress: ["resolved", "canceled"],
+        resolved: ["closed"],
+        closed: [],
+        canceled: [],
+      },
+      null,
+      2
+    ),
+  };
+}
+
+
 function SettingsField({
   children,
   label,
@@ -624,6 +724,7 @@ export function SettingsPage() {
   const [olaDraft, setOlaDraft] = useState<OlaDraftRow[]>(buildOlaDraft(null));
   const [slaTargetsDraft, setSlaTargetsDraft] = useState<SlaTargetDraftRow[]>(buildSlaTargetsDraft(null));
   const [priorityMatrixDraft, setPriorityMatrixDraft] = useState<PriorityMatrixDraftRow[]>(buildPriorityMatrixDraft(null));
+  const [workflowProfileDrafts, setWorkflowProfileDrafts] = useState<WorkflowProfileDraft[]>([]);
   const [newMemberActorId, setNewMemberActorId] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("");
 
@@ -734,6 +835,14 @@ export function SettingsPage() {
     setResolutionDraft(buildResolutionDraft(selectedResolution));
   }, [selectedResolution]);
 
+  useEffect(() => {
+    if (!payload?.ticket_settings.workflow_profiles) {
+      setWorkflowProfileDrafts([]);
+      return;
+    }
+    setWorkflowProfileDrafts(payload.ticket_settings.workflow_profiles.map(buildWorkflowProfileDraft));
+  }, [payload?.ticket_settings.workflow_profiles]);
+
   function reportError(error: unknown, fallback: string) {
     setFeedback({
       tone: "error",
@@ -754,6 +863,31 @@ export function SettingsPage() {
       reportSuccess(text);
     }
   }
+
+  const workflowProfilesMutation = useMutation({
+    mutationFn: async () => {
+      if (!canManageRouting) {
+        throw new Error(routingDeniedReason ?? "Недостаточно прав: settings.manage_routing");
+      }
+      const profiles = buildWorkflowProfilePayload(workflowProfileDrafts);
+      if (!profiles.length) {
+        throw new Error("Нужен хотя бы один workflow profile.");
+      }
+      const ticketTypes = new Set<string>();
+      for (const profile of profiles) {
+        if (!profile.ticket_type) {
+          throw new Error("ticket_type не может быть пустым.");
+        }
+        if (ticketTypes.has(profile.ticket_type)) {
+          throw new Error(`ticket_type дублируется: ${profile.ticket_type}`);
+        }
+        ticketTypes.add(profile.ticket_type);
+      }
+      await saveWebSettingsWorkflowProfiles(profiles);
+    },
+    onSuccess: async () => refreshSettings("Workflow profiles сохранены."),
+    onError: (error) => reportError(error, "Не удалось сохранить workflow profiles."),
+  });
 
   const queueMutation = useMutation({
     mutationFn: async () => {
@@ -1279,23 +1413,160 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Workflow profiles</CardTitle>
-                  <CardDescription>ticket_type управляет процессным профилем. Сейчас профили серверные, позже их можно вынести в редактор.</CardDescription>
+                  <CardDescription>ticket_type controls the process profile and status transition map.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3 xl:grid-cols-5">
-                    {payload.ticket_settings.workflow_profiles.map((profile) => (
-                      <div key={profile.ticket_type} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-semibold text-slate-950">{profile.label}</p>
-                          <code className="text-xs text-slate-400">{profile.ticket_type}</code>
+                <CardContent className="space-y-4">
+                  <PermissionNotice text={routingDeniedReason} />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone="info">{workflowProfileDrafts.length} profiles</Badge>
+                      <Badge tone="neutral">status transitions are JSON</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        disabled={!canManageRouting}
+                        onClick={() =>
+                          setWorkflowProfileDrafts((current) => [
+                            ...current,
+                            createWorkflowProfileDraft(current.length + 1),
+                          ])
+                        }
+                        variant="secondary"
+                      >
+                        <Plus className="h-4 w-4" />
+                        New type
+                      </Button>
+                      <Button
+                        disabled={!canManageRouting || workflowProfilesMutation.isPending}
+                        onClick={() => workflowProfilesMutation.mutate()}
+                      >
+                        <Workflow className="h-4 w-4" />
+                        Save workflow profiles
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {workflowProfileDrafts.map((profile, index) => (
+                      <div key={`${profile.ticket_type}-${index}`} className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-950">{profile.label || profile.ticket_type || `Profile ${index + 1}`}</p>
+                            <p className="mt-1 text-xs text-slate-500">{profile.purpose || "purpose is not set"}</p>
+                          </div>
+                          <Button
+                            disabled={!canManageRouting || workflowProfileDrafts.length <= 1}
+                            onClick={() => setWorkflowProfileDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                            variant="ghost"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <p className="mt-2 text-sm text-slate-500">{profile.purpose}</p>
-                        <p className="mt-3 text-xs leading-5 text-slate-500">{profile.suggested_path.join(" → ")}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {profile.requires_approval ? <Badge tone="warning">approval</Badge> : null}
-                          {profile.requires_change_plan ? <Badge tone="warning">change plan</Badge> : null}
-                          {profile.requires_action_log ? <Badge tone="info">action log</Badge> : null}
+
+                        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                          <SettingsField label="ticket_type">
+                            <Input
+                              disabled={!canManageRouting}
+                              onChange={(event) =>
+                                setWorkflowProfileDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, ticket_type: event.currentTarget.value } : item
+                                  )
+                                )
+                              }
+                              value={profile.ticket_type}
+                            />
+                          </SettingsField>
+                          <SettingsField label="Label">
+                            <Input
+                              disabled={!canManageRouting}
+                              onChange={(event) =>
+                                setWorkflowProfileDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, label: event.currentTarget.value } : item
+                                  )
+                                )
+                              }
+                              value={profile.label}
+                            />
+                          </SettingsField>
+                          <SettingsField label="Purpose">
+                            <Input
+                              disabled={!canManageRouting}
+                              onChange={(event) =>
+                                setWorkflowProfileDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, purpose: event.currentTarget.value } : item
+                                  )
+                                )
+                              }
+                              value={profile.purpose}
+                            />
+                          </SettingsField>
                         </div>
+
+                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                          {[
+                            ["suggested_path_text", "Suggested path"],
+                            ["allowed_statuses_text", "Allowed statuses"],
+                            ["required_create_fields_text", "Required create fields"],
+                            ["required_resolve_fields_text", "Required resolve fields"],
+                            ["evidence_required_for_priorities_text", "Evidence priorities"],
+                          ].map(([key, label]) => (
+                            <SettingsField key={key} label={label}>
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) =>
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, [key]: event.currentTarget.value } : item
+                                    )
+                                  )
+                                }
+                                value={String(profile[key as keyof WorkflowProfileDraft] ?? "")}
+                              />
+                            </SettingsField>
+                          ))}
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-3">
+                          {[
+                            ["requires_approval", "Requires approval"],
+                            ["requires_change_plan", "Requires change plan"],
+                            ["requires_action_log", "Requires action log"],
+                          ].map(([key, label]) => (
+                            <label key={key} className="flex items-center gap-3 rounded-[1rem] bg-surface-subtle px-4 py-3 text-sm font-medium text-slate-800">
+                              <input
+                                checked={Boolean(profile[key as keyof WorkflowProfileDraft])}
+                                disabled={!canManageRouting}
+                                onChange={(event) =>
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, [key]: event.currentTarget.checked } : item
+                                    )
+                                  )
+                                }
+                                type="checkbox"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+
+                        <SettingsField label="Transitions JSON">
+                          <textarea
+                            className="field-base mt-4 min-h-[220px] w-full px-4 py-3 font-mono text-xs"
+                            disabled={!canManageRouting}
+                            onChange={(event) =>
+                              setWorkflowProfileDrafts((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index ? { ...item, transitions_json: event.currentTarget.value } : item
+                                )
+                              )
+                            }
+                            value={profile.transitions_json}
+                          />
+                        </SettingsField>
                       </div>
                     ))}
                   </div>
