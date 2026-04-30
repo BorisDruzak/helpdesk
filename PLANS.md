@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 5 implemented and verified locally; deploy/live check pending. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 5 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -217,6 +217,15 @@ Local:
 
 Live:
 
+- Released commit `f295abe` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live workflow-gate check created ticket `2cbee566-ed84-432e-b49a-87c86f96f0e4` with temporary ticket type `live_workflow_3b5b312584`.
+- Transition `in_progress -> resolved` as support with `resolution_code=fixed_remote` was blocked with `workflow_profile transition gate blocked by allowed_roles`.
+- Transition `in_progress -> resolved` as admin without `resolution_code` was blocked with `workflow_profile transition gate missing required_fields: resolution_code`.
+- Transition `in_progress -> resolved` as admin with `resolution_code=fixed_remote` succeeded; final status is `resolved`, and the event payload contains `workflow_transition_gate` with `allowed_roles=["admin"]` and `required_fields=["resolution_code"]`.
+- Browser check opened `http://192.168.100.17:8666/admin`, logged in with `op1`, and loaded the real support ticket queue. The only browser console error was the expected 401 from a first wrong login attempt.
+- Final remote status confirmed the server was stopped: `active=inactive`.
+
 - Released commit `f7bdac3` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Remote smoke passed: `GET /api/health` -> 200.
 - Live routing-policy check created ticket `8fa40e76-20d3-4910-97c1-9e1c0a587205` through `create_ticket_with_side_effects` using a temporary request template.
@@ -259,6 +268,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Commit verified workflow-gates slice.
-2. Deploy to Linux, run remote smoke and live transition-gate check, then stop the remote server.
-3. Continue with diagnostic policy and evidence/passport binding after live verification.
+1. Continue with diagnostic policy and evidence/passport binding.
+2. Start with tests for suggested playbooks, consent requirements, attach-to-passport/evidence flags and reroute-by-result metadata.
+3. Keep workflow/routing/priority/SLA/approval/closure regression tests in the verification set.
