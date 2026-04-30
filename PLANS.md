@@ -2,7 +2,7 @@
 
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
-Status: план срезов 1-8 выполнен и локально проверен; срез 8 по registry picker-полям и file-полям формы ждёт commit и live smoke. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после registry/file fields: функционально около 91-93%, GUI около 80-82%.
+Status: план срезов 1-8 выполнен, локально проверен, закоммичен и проверен на Linux стенде. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после registry/file fields: функционально около 91-93%, GUI около 80-82%.
 
 ### Goal
 
@@ -166,7 +166,7 @@ Steps:
 - [x] GREEN: implement endpoint/client/cache/widget/file propagation.
 - [x] Run focused agent/server tests.
 - [x] Run `python scripts/verify_workspace.py`.
-- [ ] Commit scoped files; if server route changed, deploy and live smoke `/api/registry/options` plus create-preview/create payload.
+- [x] Commit scoped files; if server route changed, deploy and live smoke `/api/registry/options` plus create-preview/create payload.
 
 Verification so far:
 
@@ -177,6 +177,12 @@ Verification so far:
   - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py server/tests/test_registry_web_api.py server/tests/test_registry_service.py server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 71 tests.
   - `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
   - `python scripts/verify_workspace.py` -> passed.
+- Commit:
+  - `55be13c pc_agent: add registry-backed form fields`.
+- Remote/live:
+  - `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running` -> deployed commit `55be13c`, migrations up to head, remote server smoke passed.
+  - `GET http://192.168.100.17:8666/api/registry/options` with a real local agent token -> 200, `status=success`, returned compact counts: devices 24, users 4, locations 1.
+  - `POST http://192.168.100.17:8666/api/tickets/create/preview` for `request_template_key=breakage` -> 200, `priority_class=P3`, routed to `ServiceDesk L1`, first-response/resolution due fields present.
 
 ### Completed Slice 7: server-backed creation preview.
 
