@@ -58,11 +58,11 @@
 ### Компоненты
 
 **TicketRoutingService (`tickets/routing_service.py`)**
-- Загрузка активных правил из `ticket_routing_rules` (по `priority_order`).
-- Компиляция `condition_json` в предикаты (поля тикета + `devices.metadata`: location, device_type).
-- First-match по приоритету правил.
-- Fallback-очередь: `servicedesk_l1`.
-- События: `routing_applied`, `queue_changed`.
+- First-match выполняется в порядке: `request_template.routing_policy.rules` -> глобальные `ticket_routing_rules` -> `request_template.default_queue_id` -> `servicedesk_l1`.
+- Условия используют общий evaluator (`when` / `condition` / `condition_json`) по полям тикета, template context, `custom_fields`, `request_form_data.<field>` и `devices.metadata`.
+- Template actions могут выставлять `queue_id` / `queue_code`, `assignee_id`, `priority_boost` / `minimum_priority`, `sla_policy_id`, `approval_policy`, `suggested_playbook_id`, `tags`; OLA/watchers/visibility сохраняются в `custom_fields.routing_decision`.
+- Loop guards: `routing_lock`, `do_not_reroute_if_assignee_locked`, `max_auto_reroutes`.
+- События: `routing_applied` с `routing_source`, matched rule и actions; `queue_changed` только при фактической смене очереди.
 
 **Manual queue lock**
 - При ручной смене очереди (POST `/api/tickets/{id}/queue`) в `custom_fields` сохраняются: `routing_lock` = true, `routing_lock_reason`, `routing_lock_at`.

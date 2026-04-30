@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 3 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 4 implemented locally: executable request-template `routing_policy`; deployment/live verification is next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -33,14 +33,14 @@ Already present:
 - Workflow profiles exist and status transitions use the configured profile for `ticket_type`.
 - Priority policy exists for intake facts and stores computed/effective priority context.
 - SLA and OLA services exist, but SLA due dates still need calendar-aware calculation.
-- Routing exists through global rules plus template fallback queue.
+- Routing exists through global rules, executable template-level `routing_policy`, template fallback queue and global fallback queue.
 - Diagnostics/playbooks are separate operations, not ticket statuses.
 - Resolution passport tables and services exist.
 
 Missing or weak:
 
 - No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
-- `closure_policy`, `approval_policy`, `visibility_policy` and much of `routing_policy` are saved as template metadata but not fully enforced.
+- `closure_policy`, `approval_policy` and `routing_policy` are executable; `visibility_policy` is still mostly saved as template metadata.
 - Workflow transitions do not yet enforce per-transition roles, required fields, guards and actions beyond the profile transition map.
 - SLA does not yet use the business calendar engine for due date calculation.
 - Notification rules are not policy-driven.
@@ -106,6 +106,25 @@ Missing or weak:
 
 ### Current Step
 
+Slice 4 implemented locally: executable request-template `routing_policy`.
+
+Implemented behavior:
+
+- `TicketRoutingService` evaluates `custom_fields.request_template.routing_policy.rules` before global `ticket_routing_rules`.
+- Rules are first-match by `priority_order` and support `when` / `condition` / `condition_json` using the existing condition evaluator over ticket, template and form facts.
+- Actions support `queue_id` / `queue_code`, `assignee_id`, `priority_boost` / `increase_priority_by`, `minimum_priority`, `sla_policy_id`, `approval_policy`, `suggested_playbook_id`, `tags`, plus persisted decision metadata for OLA/watchers/visibility.
+- `routing_policy.fallback.queue_id` and `routing_policy.default_queue_id` are evaluated before the old `request_template.default_queue_id` and global `servicedesk_l1` fallback.
+- Loop/lock protections include existing manual `routing_lock`, `do_not_reroute_if_assignee_locked` and `max_auto_reroutes`.
+- `routing_applied` events now include `routing_source`, matched rule metadata and actions; `queue_changed` remains emitted only when queue changes.
+
+Changed files for slice 4:
+
+- `server/tickets/routing_service.py`
+- `server/app/repos/ticket_events_repo.py`
+- `server/tests/test_ticket_routing_policy.py`
+
+Previous current step:
+
 Slice 3 implemented locally: calendar-aware SLA due dates.
 
 Implemented behavior:
@@ -152,6 +171,9 @@ Changed files:
 - `server/tickets/sla_service.py`
 - `server/tickets/calendar_engine.py`
 - `server/tests/test_ticket_sla_calendar.py`
+- `server/tickets/routing_service.py`
+- `server/app/repos/ticket_events_repo.py`
+- `server/tests/test_ticket_routing_policy.py`
 
 ### Verification Plan
 
@@ -164,6 +186,9 @@ Local:
 - `python -m pytest server/tests/test_ticket_sla_calendar.py -q` -> passed, 1 test.
 - `python -m pytest server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_queue_routing_contracts.py::test_create_ticket_applies_sla_and_ola_configuration server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 12 tests.
 - After the sub-minute calendar edge-case regression test was added: `python -m pytest server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_queue_routing_contracts.py::test_create_ticket_applies_sla_and_ola_configuration server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 13 tests.
+- `python -m pytest server/tests/test_ticket_routing_policy.py -q` -> passed, 5 tests.
+- `python -m pytest server/tests/test_ticket_routing_policy.py server/tests/test_ticket_queue_routing_contracts.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 28 tests.
+- `python -m pytest server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_route_preview_returns_typed_payload server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context -q` -> passed, 4 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:
@@ -200,6 +225,6 @@ Previous closure-policy live check:
 
 Next immediate action:
 
-1. Continue with slice 4: `routing_policy` as an executable first-match condition/action engine for request templates.
-2. Start with tests around routing conditions over ticket/template/form facts, fallback queue, and reroute loop guards.
-3. Keep `workflow_profile`, `approval_policy`, `closure_policy`, priority/SLA/OLA and docs regression tests in the verification set.
+1. Run final local `verify_workspace.py` for slice 4.
+2. Commit slice 4.
+3. Deploy to the Linux stand, run live routing-policy check and stop the server.

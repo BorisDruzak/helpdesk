@@ -1020,6 +1020,7 @@ class TicketEventsRepo:
             "evidence_ref", "closure_feedback", "canceled_at",
             "manual_rank", "manual_rank_updated_at", "manual_rank_updated_by",
             "ticket_type",
+            "tags",
             "archived_at",
         }
         for key, value in fields.items():
