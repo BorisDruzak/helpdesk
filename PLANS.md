@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 99%; final slice is implemented and locally verified, release/live-check is in progress.
+Status: complete. Current factual completion is 100% for the planned helpdesk policy target-model slice.
 
 ### Goal
 
@@ -94,7 +94,7 @@ Progress:
 - [x] Apply reporting policy to passport generation: required sections, evidence/action package, export visibility and report tags.
 - [x] Add reporting/passport policy editor controls in `/app/admin/forms`.
 - [x] Run focused notification/passport/registry/UI tests, webapp build and workspace verification.
-- [ ] Commit, release/live-check final model and stop the remote server.
+- [x] Commit, release/live-check final model and stop the remote server.
 
 Local verification for slice 19:
 
@@ -105,6 +105,14 @@ Local verification for slice 19:
 - `python -m pytest server/tests/test_stage8.py server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_passport_service.py -q --tb=short` -> passed, 24 tests.
 - `pnpm --dir webapp build` -> passed.
 - `python scripts/verify_workspace.py` -> passed.
+
+Live verification for slice 19:
+
+- Released commit `19abe55` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`; release flow ran workspace verification, webapp build, Git deploy, migration `064 -> 065`, server start and `/api/health` smoke.
+- Browser-checked `http://192.168.100.17:8666/app/admin/forms`: the policy editor shows `Политика: Паспорт решения` with passport sections, report tags, export-hidden sections, action/related-object evidence toggles and internal-note toggle.
+- Browser-checked the notification policy editor on the same page: `Канал: email`, `Канал: Telegram` and `Канал: VK Teams` are visible alongside baseline `web`.
+- Live API `GET /api/web/admin/helpdesk-model/policies` returned HTTP 200 with `reporting` in `capabilities.policy_kinds`.
+- Live-safe temporary reporting policy `codex_live_reporting_1777573853091` was published with version `1.0.1` and immediately deactivated; the registry returned it as `is_active=false`, proving publish/deactivate/audit/migration path on the stand without leaving an active policy.
 
 Local verification for slice 18:
 
