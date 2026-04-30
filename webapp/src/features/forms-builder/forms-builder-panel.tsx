@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRight,
+  BellRing,
   CheckCircle2,
   ClipboardList,
+  Eye,
   FileClock,
+  FileCheck2,
   FilePenLine,
   FolderClock,
+  Gauge,
   Plus,
   RefreshCcw,
+  Route,
   Save,
+  Settings2,
   Star,
+  Stethoscope,
   Trash2,
+  UserCheck,
 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
@@ -80,9 +89,11 @@ type DraftForm = {
   field_roles_json: string;
   routing_policy_json: string;
   approval_policy_json: string;
+  diagnostic_policy_json: string;
   ola_policy_json: string;
   closure_policy_json: string;
   visibility_policy_json: string;
+  notification_policy_json: string;
   playbook_triggers: AdminFormsPlaybookTrigger[];
   fields: DraftField[];
 };
@@ -105,6 +116,19 @@ type PreviewValidationIssue = {
   key: string;
   message: string;
 };
+
+type TemplateStepKey =
+  | "template"
+  | "form"
+  | "workflow"
+  | "priority"
+  | "deadlines"
+  | "routing"
+  | "approvals"
+  | "diagnostics"
+  | "closure"
+  | "visibility"
+  | "notifications";
 
 const WORKFLOW_PROFILE_OPTIONS = [
   { value: "incident", label: "Инцидент" },
@@ -352,9 +376,11 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
       field_roles_json: jsonDraft(form.field_roles),
       routing_policy_json: jsonDraft(form.routing_policy),
       approval_policy_json: jsonDraft(form.approval_policy),
+      diagnostic_policy_json: jsonDraft(form.diagnostic_policy),
       ola_policy_json: jsonDraft(form.ola_policy),
       closure_policy_json: jsonDraft(form.closure_policy),
       visibility_policy_json: jsonDraft(form.visibility_policy),
+      notification_policy_json: jsonDraft(form.notification_policy),
       playbook_triggers: form.playbook_triggers ?? [],
       fields: form.fields.map((field) => ({
         key: field.key,
@@ -414,9 +440,11 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
         field_roles_json: jsonDraft((form as { field_roles?: unknown }).field_roles),
         routing_policy_json: jsonDraft((form as { routing_policy?: unknown }).routing_policy),
         approval_policy_json: jsonDraft((form as { approval_policy?: unknown }).approval_policy),
+        diagnostic_policy_json: jsonDraft((form as { diagnostic_policy?: unknown }).diagnostic_policy),
         ola_policy_json: jsonDraft((form as { ola_policy?: unknown }).ola_policy),
         closure_policy_json: jsonDraft((form as { closure_policy?: unknown }).closure_policy),
         visibility_policy_json: jsonDraft((form as { visibility_policy?: unknown }).visibility_policy),
+        notification_policy_json: jsonDraft((form as { notification_policy?: unknown }).notification_policy),
         playbook_triggers: Array.isArray((form as { playbook_triggers?: unknown[] }).playbook_triggers)
           ? ((form as { playbook_triggers: unknown[] }).playbook_triggers ?? [])
               .map((triggerRaw) => {
@@ -506,9 +534,11 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
       },
       routing_policy: parseJsonDraft(form.routing_policy_json),
       approval_policy: parseJsonDraft(form.approval_policy_json),
+      diagnostic_policy: parseJsonDraft(form.diagnostic_policy_json),
       ola_policy: parseJsonDraft(form.ola_policy_json),
       closure_policy: parseJsonDraft(form.closure_policy_json),
       visibility_policy: parseJsonDraft(form.visibility_policy_json),
+      notification_policy: parseJsonDraft(form.notification_policy_json),
       playbook_triggers: form.playbook_triggers,
       fields: form.fields.map((field) => {
         const options = field.options.filter((option) => option.value.trim() && option.label.trim());
@@ -614,9 +644,11 @@ function createEmptyForm(index: number): DraftForm {
     field_roles_json: "",
     routing_policy_json: "",
     approval_policy_json: "",
+    diagnostic_policy_json: "",
     ola_policy_json: "",
     closure_policy_json: "",
     visibility_policy_json: "",
+    notification_policy_json: "",
     playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
   };
@@ -999,6 +1031,553 @@ function resolveOptionalAccess(permissions: string[] | undefined, permission: st
   return permissions === undefined ? { allowed: true, reason: null } : requirePermission({ permissions }, permission);
 }
 
+const TEMPLATE_STEPS: Array<{
+  key: TemplateStepKey;
+  title: string;
+  shortTitle: string;
+  description: string;
+  icon: typeof ClipboardList;
+}> = [
+  {
+    key: "template",
+    title: "Шаблон обращения",
+    shortTitle: "Шаблон",
+    description: "Название, код и публичный сценарий",
+    icon: ClipboardList,
+  },
+  {
+    key: "form",
+    title: "Форма сбора данных",
+    shortTitle: "Форма",
+    description: "Поля, обязательность и условия показа",
+    icon: FilePenLine,
+  },
+  {
+    key: "workflow",
+    title: "Процесс",
+    shortTitle: "Процесс",
+    description: "Тип процесса и профиль workflow",
+    icon: Settings2,
+  },
+  {
+    key: "priority",
+    title: "Приоритет",
+    shortTitle: "Приоритет",
+    description: "Поля impact, urgency и importance",
+    icon: Gauge,
+  },
+  {
+    key: "deadlines",
+    title: "Сроки ответа",
+    shortTitle: "Сроки",
+    description: "SLA/OLA без технического языка для пользователя",
+    icon: FileClock,
+  },
+  {
+    key: "routing",
+    title: "Роутинг",
+    shortTitle: "Роутинг",
+    description: "Очередь, правила и fallback",
+    icon: Route,
+  },
+  {
+    key: "approvals",
+    title: "Согласования",
+    shortTitle: "Согласования",
+    description: "Кто согласует и что делать при отказе",
+    icon: UserCheck,
+  },
+  {
+    key: "diagnostics",
+    title: "Диагностика",
+    shortTitle: "Диагностика",
+    description: "Playbook, consent и доказательства",
+    icon: Stethoscope,
+  },
+  {
+    key: "closure",
+    title: "Закрытие",
+    shortTitle: "Закрытие",
+    description: "Коды решения, итог и evidence",
+    icon: FileCheck2,
+  },
+  {
+    key: "visibility",
+    title: "Видимость",
+    shortTitle: "Видимость",
+    description: "Что видит пользователь и support",
+    icon: Eye,
+  },
+  {
+    key: "notifications",
+    title: "Уведомления",
+    shortTitle: "Уведомления",
+    description: "Кому писать при событиях",
+    icon: BellRing,
+  },
+];
+
+type PolicyJsonField =
+  | "routing_policy_json"
+  | "approval_policy_json"
+  | "diagnostic_policy_json"
+  | "ola_policy_json"
+  | "closure_policy_json"
+  | "visibility_policy_json"
+  | "notification_policy_json";
+
+function policyObject(form: DraftForm, field: PolicyJsonField): Record<string, unknown> {
+  return parseJsonDraft(form[field]);
+}
+
+function policySize(form: DraftForm, field: PolicyJsonField): number {
+  return Object.keys(policyObject(form, field)).length;
+}
+
+function prettyJson(value: Record<string, unknown>): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function buildRoutingPreset(form: DraftForm): string {
+  return prettyJson({
+    default_queue: form.default_queue_id.trim() || "servicedesk_l1",
+    rules: [
+      {
+        priority_order: 10,
+        when: {
+          field: "request_form_data.affected_scope",
+          op: "in",
+          values: ["department", "whole_building"],
+        },
+        then: {
+          queue: "networks",
+          priority_boost: 1,
+          suggested_playbook: form.suggested_playbook_id.trim() || "diagnose.network.basic",
+        },
+      },
+    ],
+    fallback: {
+      queue: form.default_queue_id.trim() || "servicedesk_l1",
+    },
+    max_auto_reroutes: 3,
+    do_not_reroute_if_assignee_locked: true,
+  });
+}
+
+function buildOlaPreset(): string {
+  return prettyJson({
+    targets: {
+      ack: { P0: "10m", P1: "30m", P2: "2h", P3: "1d" },
+      processing: { P0: "2h", P1: "4h", P2: "2d", P3: "5d" },
+    },
+    pause_conditions: ["waiting_user", "waiting_approval"],
+    breach_actions: {
+      notify_queue_lead: true,
+      create_internal_event: true,
+    },
+  });
+}
+
+function buildApprovalPreset(): string {
+  return prettyJson({
+    required: true,
+    approver_source: { type: "service_owner", fallback: "requester_manager" },
+    approval_mode: "any_one",
+    statuses: {
+      waiting_status: "waiting_approval",
+      approved_transition: "in_progress",
+      rejected_transition: "canceled",
+    },
+    require_comment_on_reject: true,
+    log_to_passport: true,
+  });
+}
+
+function buildDiagnosticPreset(form: DraftForm): string {
+  return prettyJson({
+    suggested_playbooks: [form.suggested_playbook_id.trim() || "diagnose.website"],
+    auto_run: { enabled: false, only_if_agent_online: true, only_for_priorities: ["P0", "P1", "P2"] },
+    consent: { required_for_requester_device: true, required_for_high_risk_tools: true },
+    attach_results: { to_timeline: true, to_passport: true, as_evidence: true },
+    reroute_by_result: {
+      DNS_FAIL: "networks",
+      HTTP_500: "information_systems",
+      TLS_CERT_INVALID: "security_or_servers",
+    },
+  });
+}
+
+function buildClosurePreset(): string {
+  return prettyJson({
+    before_resolved: {
+      require_resolution_code: true,
+      require_public_summary: true,
+      require_internal_summary: false,
+    },
+    evidence: {
+      require_evidence_for_priorities: ["P0", "P1"],
+      require_operation_log_if_module_used: true,
+      require_approval_if_approval_policy_used: true,
+    },
+    requester_confirmation: {
+      required: true,
+      auto_close_after_days: 3,
+      reopen_on_negative_feedback: true,
+    },
+    allowed_resolution_codes: ["fixed_remote", "workaround_provided", "external_issue", "user_error"],
+  });
+}
+
+function buildVisibilityPreset(): string {
+  return prettyJson({
+    public_status_mapping: {
+      new: "Заявка принята",
+      queued: "Заявка принята",
+      assigned: "Заявка в работе",
+      in_progress: "Заявка в работе",
+      waiting_user: "Нужен ваш ответ",
+      waiting_approval: "Ожидает согласование",
+      resolved: "Проверьте решение",
+      closed: "Закрыта",
+      canceled: "Отменена",
+    },
+    hide_from_requester: ["internal_notes", "ola_details", "raw_diagnostics", "internal_queue_comments"],
+    show_to_requester: ["public_messages", "public_status", "attachments_public", "expected_due_at"],
+  });
+}
+
+function buildNotificationPreset(): string {
+  return prettyJson({
+    on_created: { requester: true, queue: true },
+    on_assigned: { assignee: true },
+    on_waiting_user: { requester: true },
+    on_requester_replied: { assignee: true, queue_if_no_assignee: true },
+    on_sla_warning: { assignee: true, queue_lead: true },
+    on_sla_breach: { assignee: true, queue_lead: true },
+    on_resolved: { requester: true },
+    channels: { email: true, web: true, telegram: false },
+  });
+}
+
+function policyBadgeTone(count: number): "success" | "warning" | "neutral" {
+  if (count > 0) {
+    return "success";
+  }
+  return "warning";
+}
+
+function PolicyJsonEditor({
+  title,
+  description,
+  value,
+  presetLabel,
+  presetValue,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: string;
+  presetLabel: string;
+  presetValue: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">{title}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+        </div>
+        <Button onClick={() => onChange(presetValue)} size="sm" variant="outline">
+          {presetLabel}
+        </Button>
+      </div>
+      <textarea
+        className="field-base mt-4 min-h-[180px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"
+        onChange={(event) => onChange(event.currentTarget.value)}
+        spellCheck={false}
+        value={value}
+      />
+    </div>
+  );
+}
+
+function TemplateConstructorPanel({
+  form,
+  activeStep,
+  onStepChange,
+  onUpdateForm,
+  onUpdatePolicyJson,
+  onSelectField,
+}: {
+  form: DraftForm;
+  activeStep: TemplateStepKey;
+  onStepChange: (step: TemplateStepKey) => void;
+  onUpdateForm: (updater: (form: DraftForm) => DraftForm) => void;
+  onUpdatePolicyJson: (field: PolicyJsonField, value: string) => void;
+  onSelectField: (fieldKey: string) => void;
+}) {
+  const policyCounts: Partial<Record<TemplateStepKey, number>> = {
+    routing: policySize(form, "routing_policy_json"),
+    approvals: policySize(form, "approval_policy_json"),
+    diagnostics: policySize(form, "diagnostic_policy_json"),
+    deadlines: policySize(form, "ola_policy_json") + (form.sla_policy_id.trim() ? 1 : 0),
+    closure: policySize(form, "closure_policy_json"),
+    visibility: policySize(form, "visibility_policy_json"),
+    notifications: policySize(form, "notification_policy_json"),
+  };
+  const requiredCount = form.fields.filter((field) => field.required).length;
+  const activeStepMeta = TEMPLATE_STEPS.find((step) => step.key === activeStep) ?? TEMPLATE_STEPS[0];
+
+  return (
+    <div className="rounded-[1.1rem] border border-brand-100 bg-white px-4 py-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Визуальный конструктор шаблона обращения</p>
+          <p className="mt-1 max-w-3xl text-xs text-slate-500">
+            Собирает сценарий от пользовательского шаблона до закрытия: форма, процесс, приоритет, сроки ответа,
+            роутинг, согласования, диагностика, видимость и уведомления сохраняются в текущую версию каталога.
+          </p>
+        </div>
+        <Badge tone="info">{form.ticket_type}</Badge>
+      </div>
+
+      <div className="mt-5 overflow-x-auto pb-2">
+        <div className="flex min-w-[980px] items-stretch gap-2">
+          {TEMPLATE_STEPS.map((step, index) => {
+            const Icon = step.icon;
+            const count = policyCounts[step.key] ?? (step.key === "form" ? form.fields.length : 1);
+            const isActive = activeStep === step.key;
+            return (
+              <div className="flex items-center gap-2" key={step.key}>
+                <button
+                  className={cn(
+                    "min-h-[118px] w-[148px] rounded-[0.9rem] border px-3 py-3 text-left transition-colors",
+                    isActive
+                      ? "border-brand-300 bg-brand-50 text-brand-900"
+                      : "border-border bg-surface-subtle text-slate-700 hover:border-brand-200 hover:bg-white"
+                  )}
+                  onClick={() => onStepChange(step.key)}
+                  type="button"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <Badge tone={policyBadgeTone(count)}>{count}</Badge>
+                  </div>
+                  <p className="mt-3 text-sm font-semibold">{step.shortTitle}</p>
+                  <p className="mt-1 text-xs leading-4 text-current/70">{step.description}</p>
+                </button>
+                {index < TEMPLATE_STEPS.length - 1 ? <ArrowRight className="h-4 w-4 text-slate-300" /> : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">{activeStepMeta.title}</p>
+            <p className="mt-1 text-xs text-slate-500">{activeStepMeta.description}</p>
+          </div>
+          <Badge tone="neutral">{form.key}</Badge>
+        </div>
+
+        {activeStep === "template" ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Публично</p>
+              <p className="mt-2 font-semibold text-slate-950">{form.title || "Без названия"}</p>
+              <p className="mt-1 text-sm text-slate-500">{form.description || "Описание не задано"}</p>
+            </div>
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Классификация</p>
+              <p className="mt-2 font-semibold text-slate-950">{form.ticket_type}</p>
+              <p className="mt-1 text-sm text-slate-500">request_kind: {form.request_kind}</p>
+            </div>
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Версия</p>
+              <p className="mt-2 font-semibold text-slate-950">Публикуется вместе с catalog pack</p>
+              <p className="mt-1 text-sm text-slate-500">Старые тикеты продолжают хранить свой process context.</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === "form" ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid gap-3 md:grid-cols-2">
+              {form.fields.map((field) => (
+                <button
+                  className="rounded-[0.9rem] border border-border bg-white px-4 py-3 text-left hover:border-brand-200"
+                  key={field.key}
+                  onClick={() => onSelectField(field.key)}
+                  type="button"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-950">{field.label || field.key}</p>
+                    <Badge tone={field.required ? "warning" : "neutral"}>{fieldTypeLabel(field.type)}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{field.key}</p>
+                  {getFieldRoles(form, field.key).length ? (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {getFieldRoles(form, field.key).map((role) => (
+                        <span className="rounded-pill bg-brand-50 px-2 py-1 text-[11px] font-semibold text-brand-800" key={role}>
+                          {role}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-[0.9rem] bg-white px-4 py-3 text-sm text-slate-600">
+              <p className="font-semibold text-slate-950">Итог формы</p>
+              <p className="mt-3">Всего полей: {form.fields.length}</p>
+              <p className="mt-1">Обязательных: {requiredCount}</p>
+              <p className="mt-1">С процессными ролями: {Object.keys(parseFieldRolesDraft(form.field_roles_json)).length}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === "workflow" ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Тип процесса</p>
+              <p className="mt-2 font-semibold text-slate-950">{form.ticket_type}</p>
+              <p className="mt-1 text-sm text-slate-500">Профиль workflow выбирается по ticket_type.</p>
+            </div>
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Категория</p>
+              <p className="mt-2 font-semibold text-slate-950">{form.category_id || "Не задана"}</p>
+              <p className="mt-1 text-sm text-slate-500">service: {form.service_id || "не задан"}</p>
+            </div>
+            <div className="rounded-[0.9rem] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Очередь по умолчанию</p>
+              <p className="mt-2 font-semibold text-slate-950">{form.default_queue_id || "Fallback сервера"}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === "priority" ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {[
+              ["priority_impact_field", "Поле влияния"],
+              ["priority_urgency_field", "Поле срочности"],
+              ["priority_importance_field", "Поле важности"],
+            ].map(([key, label]) => (
+              <label className="space-y-2 text-sm font-medium text-slate-800" key={key}>
+                <span>{label}</span>
+                <Select
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    onUpdateForm((current) => ({ ...current, [key]: value }));
+                  }}
+                  value={String(form[key as keyof DraftForm] ?? "")}
+                >
+                  <option value="">Не выбрано</option>
+                  {form.fields.map((field) => (
+                    <option key={field.key} value={field.key}>
+                      {field.label || field.key}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            ))}
+          </div>
+        ) : null}
+
+        {activeStep === "deadlines" ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Политика сроков ответа</span>
+              <input
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => onUpdateForm((current) => ({ ...current, sla_policy_id: event.currentTarget.value }))}
+                placeholder="incident_sla"
+                value={form.sla_policy_id}
+              />
+            </label>
+            <PolicyJsonEditor
+              description="Внутренние сроки очереди: принять, обработать, предупредить руководителя."
+              onChange={(value) => onUpdatePolicyJson("ola_policy_json", value)}
+              presetLabel="Вставить OLA"
+              presetValue={buildOlaPreset()}
+              title="Внутренние сроки очереди"
+              value={form.ola_policy_json}
+            />
+          </div>
+        ) : null}
+
+        {activeStep === "routing" ? (
+          <PolicyJsonEditor
+            description="Условия и действия: очередь, исполнитель, повышение приоритета, теги и suggested playbook."
+            onChange={(value) => onUpdatePolicyJson("routing_policy_json", value)}
+            presetLabel="Вставить роутинг"
+            presetValue={buildRoutingPreset(form)}
+            title="Политика маршрутизации"
+            value={form.routing_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "approvals" ? (
+          <PolicyJsonEditor
+            description="Определяет, нужно ли согласование, кто согласует и какой статус ждать."
+            onChange={(value) => onUpdatePolicyJson("approval_policy_json", value)}
+            presetLabel="Вставить согласование"
+            presetValue={buildApprovalPreset()}
+            title="Политика согласования"
+            value={form.approval_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "diagnostics" ? (
+          <PolicyJsonEditor
+            description="Playbook, consent, автозапуск и прикрепление результатов к паспорту решения."
+            onChange={(value) => onUpdatePolicyJson("diagnostic_policy_json", value)}
+            presetLabel="Вставить диагностику"
+            presetValue={buildDiagnosticPreset(form)}
+            title="Политика диагностики"
+            value={form.diagnostic_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "closure" ? (
+          <PolicyJsonEditor
+            description="Что нужно перед статусом Решена/Закрыта: код, публичный итог, evidence и подтверждение."
+            onChange={(value) => onUpdatePolicyJson("closure_policy_json", value)}
+            presetLabel="Вставить закрытие"
+            presetValue={buildClosurePreset()}
+            title="Правила закрытия"
+            value={form.closure_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "visibility" ? (
+          <PolicyJsonEditor
+            description="Публичные статусы, скрытые внутренние поля и requester/support-visible metadata."
+            onChange={(value) => onUpdatePolicyJson("visibility_policy_json", value)}
+            presetLabel="Вставить видимость"
+            presetValue={buildVisibilityPreset()}
+            title="Политика видимости"
+            value={form.visibility_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "notifications" ? (
+          <PolicyJsonEditor
+            description="Получатели in-app/email уведомлений по событиям тикета и срокам ответа."
+            onChange={(value) => onUpdatePolicyJson("notification_policy_json", value)}
+            presetLabel="Вставить уведомления"
+            presetValue={buildNotificationPreset()}
+            title="Политика уведомлений"
+            value={form.notification_policy_json}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = {}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftCatalog | null>(null);
@@ -1007,6 +1586,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   const [loadedSourceLabel, setLoadedSourceLabel] = useState("Текущий рабочий каталог");
   const [selectedFormKey, setSelectedFormKey] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
+  const [activeTemplateStep, setActiveTemplateStep] = useState<TemplateStepKey>("template");
   const [newFieldType, setNewFieldType] = useState<AdminFormsFieldType>("text");
   const [versionSearch, setVersionSearch] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
@@ -1171,6 +1751,20 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     setPreviewValues((current) => ({
       ...current,
       [fieldKey]: value,
+    }));
+  };
+
+  const updateSelectedForm = (updater: (form: DraftForm) => DraftForm) => {
+    if (!selectedForm) {
+      return;
+    }
+    setDraft((current) => (current ? updateFormInCatalog(current, selectedForm.key, updater) : current));
+  };
+
+  const updateSelectedPolicyJson = (field: PolicyJsonField, value: string) => {
+    updateSelectedForm((form) => ({
+      ...form,
+      [field]: value,
     }));
   };
 
@@ -1877,6 +2471,17 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                             </Button>
                           </div>
                         </div>
+
+                        <TemplateConstructorPanel
+                          activeStep={activeTemplateStep}
+                          form={selectedForm}
+                          onSelectField={(fieldKey) => {
+                            setSelectedFieldKey(fieldKey);
+                          }}
+                          onStepChange={setActiveTemplateStep}
+                          onUpdateForm={updateSelectedForm}
+                          onUpdatePolicyJson={updateSelectedPolicyJson}
+                        />
 
                         <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
                           <div className="flex flex-wrap items-start justify-between gap-4">

@@ -50,6 +50,7 @@ export type AdminFormsFormItem = {
   ola_policy?: Record<string, unknown>;
   closure_policy?: Record<string, unknown>;
   visibility_policy?: Record<string, unknown>;
+  notification_policy?: Record<string, unknown>;
   fields: AdminFormsFieldItem[];
   playbook_triggers?: AdminFormsPlaybookTrigger[];
 };
@@ -103,6 +104,7 @@ export type AdminFormsSaveRequest = {
     ola_policy?: Record<string, unknown>;
     closure_policy?: Record<string, unknown>;
     visibility_policy?: Record<string, unknown>;
+    notification_policy?: Record<string, unknown>;
     playbook_triggers?: AdminFormsPlaybookTrigger[];
     fields: Array<{
       key: string;

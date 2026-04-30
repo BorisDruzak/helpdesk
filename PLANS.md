@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 9 implemented locally and live-verified on the remote server. Scope is functional backend/domain behavior first; current UI work is localization of existing labels and user-facing wording, not a visual redesign.
+Status: slice 10 in progress: complex visual request-template constructor in the existing forms builder. Scope remains functional settings behavior first; the visual builder edits the current versioned request-form catalog rather than introducing separate policy tables yet.
 
 ### Goal
 
@@ -105,7 +105,29 @@ Missing or weak:
 
 ### Current Step
 
-Slice 9 in progress: request-template catalog contract and Russian user-facing localization.
+Slice 10 in progress: visual request-template constructor.
+
+Implemented locally:
+
+- `/app/admin/forms` now has an interactive request-template chain: template -> form -> workflow -> priority -> deadlines -> routing -> approvals -> diagnostics -> closure -> visibility -> notifications.
+- The constructor keeps the existing form editor and route preview, but adds step-based policy editing and quick presets for OLA, routing, approvals, diagnostics, closure, visibility and notifications.
+- Web draft/save payload now preserves `diagnostic_policy` and `notification_policy` from the visual constructor.
+- Focused test verifies the visual constructor writes OLA, diagnostic and notification policies into the catalog save payload.
+
+Local verification for slice 10 so far:
+
+- `pnpm --dir webapp exec tsc --noEmit` -> passed.
+- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 10 tests.
+
+Next verification:
+
+- Run `pnpm --dir webapp run build`.
+- Run `python scripts/verify_workspace.py`.
+- Deploy through project release scripts, browser-check `/app/admin/forms`, API-check saved contract if needed, then stop the remote server.
+
+Previous current step:
+
+Slice 9 completed: request-template catalog contract and Russian user-facing localization.
 
 Planned behavior:
 
