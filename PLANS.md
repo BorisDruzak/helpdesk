@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 7 implemented locally, local verification passing; commit/deploy/live check are next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 7 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -105,7 +105,7 @@ Missing or weak:
 
 ### Current Step
 
-Slice 7 implemented locally: executable visibility policy for ticket payloads.
+Slice 7 implemented and live-verified: executable visibility policy for ticket payloads.
 
 Implemented behavior:
 
@@ -270,6 +270,14 @@ Local:
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:
+
+- Released commit `57d31dc` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran `verify_workspace.py`, bootstrapped the web toolchain, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live visibility-policy check created uncommitted transactional ticket `6d517cf4-8773-4ca9-ab9f-025fff5b7fa2` with `request_template.visibility_policy.public_status_mapping.waiting_on_internal_team = "Заявка в работе"`.
+- Runtime payloads resolved `public_status = in_work` and `public_status_label = "Заявка в работе"` for both support and requester views without changing internal `ticket.status`.
+- Support view kept internal `root_cause` and `ola`; requester view redacted both and preserved requester-visible field metadata `["public_status", "public_status_label", "expected_due_at"]`; the transaction was rolled back after verification.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
 
 - Released commit `cd24d39` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Release flow ran `verify_workspace.py`, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
