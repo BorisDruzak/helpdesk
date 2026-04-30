@@ -10,10 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ui_gui.chat_panel as chat_panel_module
 import ui_gui.main_window as main_window_module
 
-from PySide6.QtWidgets import QApplication, QComboBox, QListWidget, QLineEdit  # noqa: E402
+from PySide6.QtWidgets import QApplication, QComboBox, QDateEdit, QDateTimeEdit, QListWidget, QLineEdit  # noqa: E402
 
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
+    build_post_create_process_summary,
     build_request_creation_preview,
     build_diagnostic_consent_payload,
     build_default_ticket_form_pack,
@@ -114,6 +115,14 @@ def test_ticket_create_wizard_uses_server_backed_preview():
 
     assert "preview_ticket_create" in source
     assert "server_preview=self._server_creation_preview" in source
+
+
+def test_ticket_create_wizard_has_structured_process_preview_panel():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_priority_step)
+
+    assert "process_preview_group" in source
+    assert "Что будет после отправки" in source
+    assert "preview_label" in source
 
 
 def test_agent_default_forms_carry_process_type_and_priority_policy():
@@ -246,7 +255,7 @@ def test_dynamic_fields_widget_supports_extended_field_types():
     )
 
     assert isinstance(widget._widgets["symptoms"], QListWidget)
-    assert isinstance(widget._widgets["started_at"], QLineEdit)
+    assert isinstance(widget._widgets["started_at"], QDateTimeEdit)
     assert widget.values() == {
         "symptoms": ["dns", "proxy"],
         "started_at": "2026-05-01T09:30",
@@ -315,6 +324,80 @@ def test_dynamic_fields_widget_returns_file_metadata_for_file_field(tmp_path):
     }
     assert widget.file_attachment_paths() == [str(file_path)]
     assert widget.missing_required_labels() == []
+
+
+def test_dynamic_fields_widget_uses_native_date_controls():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {"key": "needed_on", "label": "Нужно к дате", "type": "date", "required": True},
+                {"key": "started_at", "label": "Началось", "type": "datetime", "required": True},
+            ]
+        },
+        values={"needed_on": "2026-05-12", "started_at": "2026-05-12T09:30"},
+    )
+
+    assert isinstance(widget._widgets["needed_on"], QDateEdit)
+    assert isinstance(widget._widgets["started_at"], QDateTimeEdit)
+    assert widget.values() == {
+        "needed_on": "2026-05-12",
+        "started_at": "2026-05-12T09:30",
+    }
+    assert widget.missing_required_labels() == []
+
+
+def test_dynamic_fields_widget_can_clear_file_field(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    file_path = tmp_path / "evidence.txt"
+    file_path.write_text("proof", encoding="utf-8")
+
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form({"fields": [{"key": "evidence", "label": "Доказательство", "type": "file", "required": True}]})
+    widget.set_file_field_path("evidence", str(file_path))
+    assert widget.file_attachment_paths() == [str(file_path)]
+
+    widget.clear_file_field_path("evidence")
+
+    assert widget.values() == {"evidence": {}}
+    assert widget.file_attachment_paths() == []
+    assert widget.missing_required_labels() == ["Доказательство"]
+
+
+def test_build_post_create_process_summary_explains_next_steps_without_sla():
+    summary = build_post_create_process_summary(
+        {
+            "ticket_code": "HD-42",
+            "queue_name": "ServiceDesk L1",
+            "assignee_display_name": "Иван Петров",
+            "public_status_label": "Заявка в работе",
+            "next_action_owner": "support",
+            "first_response_due_at": "2026-05-01T10:00:00+05:00",
+            "resolution_due_at": "2026-05-02T18:00:00+05:00",
+            "custom_fields": {
+                "request_template": {
+                    "approval_policy": {"required": True},
+                    "diagnostic_policy": {"suggested_playbooks": ["diagnose.website"]},
+                    "reporting_policy": {"enabled": True},
+                }
+            },
+        },
+        public_access_code="ABC123",
+    )
+
+    assert "Код доступа: ABC123" in summary
+    assert "Очередь: ServiceDesk L1" in summary
+    assert "Исполнитель: Иван Петров" in summary
+    assert "Сейчас работает поддержка" in summary
+    assert "Потребуется согласование" in summary
+    assert "Диагностика может быть предложена" in summary
+    assert "Паспорт решения будет заполнен" in summary
+    assert "Вам должны ответить до" in summary
+    assert "Решение или обходной вариант ожидается до" in summary
+    assert "SLA" not in summary
 
 
 def test_build_request_creation_preview_uses_template_policies():

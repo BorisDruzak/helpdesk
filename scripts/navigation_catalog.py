@@ -442,7 +442,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields and clearable file metadata, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
         aliases=(
             "registry",
             "registries",
@@ -962,7 +962,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, extended dynamic fields, server-driven priority fields, server-backed creation preview for effective queue/priority/approval/diagnostics/deadlines with local fallback, diagnostic consent payloads, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, native date/datetime controls, replaceable/clearable file fields, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback, post-create summary for owner/next step/deadlines/passport without raw SLA wording, diagnostic consent payloads, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -1025,7 +1025,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with native date/datetime controls, file replace/clear, structured process preview and post-create process summary, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",

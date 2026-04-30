@@ -11,12 +11,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QDate, QDateTime, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDateEdit,
+    QDateTimeEdit,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -681,6 +683,77 @@ def build_ticket_sla_user_summary(ticket: dict) -> str:
     return "; ".join(parts)
 
 
+def _format_user_deadline(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return normalize_iso_ts(text) or text
+
+
+def _request_template_context(ticket: dict) -> dict[str, Any]:
+    custom_fields = ticket.get("custom_fields") if isinstance(ticket.get("custom_fields"), dict) else {}
+    template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
+    return template
+
+
+def build_post_create_process_summary(ticket: dict, *, public_access_code: str = "") -> str:
+    """Requester-facing process summary shown after a ticket is created."""
+    if not isinstance(ticket, dict):
+        ticket = {}
+    template = _request_template_context(ticket)
+    lines: list[str] = []
+    code = str(public_access_code or ticket.get("public_access_code") or "").strip()
+    if code:
+        lines.append(f"Код доступа: {code}")
+
+    public_status = str(ticket.get("public_status_label") or ticket_status_label(str(ticket.get("status") or "")) or "").strip()
+    if public_status:
+        lines.append(f"Статус: {public_status}")
+
+    queue = str(ticket.get("queue_name") or ticket.get("queue_code") or ticket.get("queue_id") or "").strip()
+    if queue:
+        lines.append(f"Очередь: {queue}")
+
+    assignee = str(ticket.get("assignee_display_name") or ticket.get("assignee_name") or ticket.get("assignee_id") or "").strip()
+    lines.append(f"Исполнитель: {assignee or 'пока не назначен'}")
+
+    next_owner = str(ticket.get("next_action_owner") or "").strip().lower()
+    if next_owner in {"support", "assignee", "queue"}:
+        lines.append("Сейчас работает поддержка.")
+    elif next_owner in {"requester", "user"}:
+        lines.append("Сейчас нужен ваш ответ.")
+    elif next_owner in {"approval", "approver"}:
+        lines.append("Сейчас ожидается согласование.")
+
+    approval_policy = template.get("approval_policy") if isinstance(template.get("approval_policy"), dict) else {}
+    if approval_policy.get("required"):
+        lines.append("Потребуется согласование.")
+
+    diagnostic_policy = template.get("diagnostic_policy") if isinstance(template.get("diagnostic_policy"), dict) else {}
+    if (
+        diagnostic_policy.get("suggested_playbooks")
+        or diagnostic_policy.get("suggested_playbook_id")
+        or diagnostic_policy.get("suggested_playbook")
+    ):
+        lines.append("Диагностика может быть предложена специалистом.")
+
+    first_response_due = _format_user_deadline(ticket.get("first_response_due_at"))
+    resolution_due = _format_user_deadline(ticket.get("resolution_due_at"))
+    if first_response_due:
+        lines.append(f"Вам должны ответить до {first_response_due}.")
+    if resolution_due:
+        lines.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
+
+    reporting_policy = template.get("reporting_policy") if isinstance(template.get("reporting_policy"), dict) else {}
+    closure_policy = template.get("closure_policy") if isinstance(template.get("closure_policy"), dict) else {}
+    if reporting_policy.get("enabled") or reporting_policy.get("required_sections") or closure_policy.get("evidence"):
+        lines.append("Паспорт решения будет заполнен по итогам работ.")
+
+    if not lines:
+        return "Обращение создано. Служба поддержки рассчитает очередь, сроки и дальнейшие действия."
+    return "\n".join(lines)
+
+
 def ticket_matches_query(ticket: dict, query: str) -> bool:
     normalized_query = (query or "").strip().casefold()
     if not normalized_query:
@@ -968,8 +1041,12 @@ class TicketFileFieldWidget(QWidget):
         self.choose_button = QPushButton("Выбрать файл")
         self.choose_button.setObjectName("SecondaryButton")
         self.choose_button.clicked.connect(self._choose_file)
+        self.clear_button = QPushButton("Убрать")
+        self.clear_button.setObjectName("SecondaryButton")
+        self.clear_button.clicked.connect(self.clear_file_path)
         layout.addWidget(self.path_input, 1)
         layout.addWidget(self.choose_button)
+        layout.addWidget(self.clear_button)
 
     def _choose_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Выберите файл")
@@ -983,6 +1060,9 @@ class TicketFileFieldWidget(QWidget):
         self._path = normalized
         self.path_input.setText(normalized)
         self.changed.emit()
+
+    def clear_file_path(self) -> None:
+        self.set_file_path("")
 
     def value(self) -> dict[str, str]:
         if not self._path:
@@ -1076,6 +1156,23 @@ class TicketDynamicFieldsWidget(QWidget):
                 input_widget.setPlaceholderText(field_def.get("placeholder") or "")
                 input_widget.setPlainText(str(values.get(field_key) or ""))
                 input_widget.textChanged.connect(self._on_any_changed)
+                widget = input_widget
+            elif field_type == "date":
+                input_widget = QDateEdit()
+                input_widget.setCalendarPopup(True)
+                input_widget.setDisplayFormat("yyyy-MM-dd")
+                current_date = QDate.fromString(str(values.get(field_key) or "")[:10], "yyyy-MM-dd")
+                input_widget.setDate(current_date if current_date.isValid() else QDate.currentDate())
+                input_widget.dateChanged.connect(self._on_any_changed)
+                widget = input_widget
+            elif field_type == "datetime":
+                input_widget = QDateTimeEdit()
+                input_widget.setCalendarPopup(True)
+                input_widget.setDisplayFormat("yyyy-MM-dd HH:mm")
+                raw_datetime = str(values.get(field_key) or "").strip().replace("T", " ")[:16]
+                current_datetime = QDateTime.fromString(raw_datetime, "yyyy-MM-dd HH:mm")
+                input_widget.setDateTime(current_datetime if current_datetime.isValid() else QDateTime.currentDateTime())
+                input_widget.dateTimeChanged.connect(self._on_any_changed)
                 widget = input_widget
             elif field_type in OPTION_FIELD_TYPES:
                 input_widget = QComboBox()
@@ -1189,6 +1286,10 @@ class TicketDynamicFieldsWidget(QWidget):
             return ""
         if isinstance(widget, QTextEdit):
             return widget.toPlainText().strip()
+        if isinstance(widget, QDateEdit):
+            return widget.date().toString("yyyy-MM-dd")
+        if isinstance(widget, QDateTimeEdit):
+            return widget.dateTime().toString("yyyy-MM-ddTHH:mm")
         if isinstance(widget, QComboBox):
             return str(widget.currentData() or "").strip()
         if isinstance(widget, QListWidget):
@@ -1221,6 +1322,11 @@ class TicketDynamicFieldsWidget(QWidget):
         widget = self._widgets.get(str(field_key or "").strip())
         if isinstance(widget, TicketFileFieldWidget):
             widget.set_file_path(path)
+
+    def clear_file_field_path(self, field_key: str) -> None:
+        widget = self._widgets.get(str(field_key or "").strip())
+        if isinstance(widget, TicketFileFieldWidget):
+            widget.clear_file_path()
 
     def file_attachment_paths(self, *, visible_only: bool = True) -> list[str]:
         paths: list[str] = []
@@ -1809,11 +1915,17 @@ class TicketCreateWizardWidget(QFrame):
         )
         summary.setWordWrap(True)
         summary.setObjectName("ProfileHint")
-        layout.addWidget(summary)
+        process_preview_group = QGroupBox("Что будет после отправки")
+        process_preview_layout = QVBoxLayout(process_preview_group)
+        process_preview_layout.setContentsMargins(10, 10, 10, 10)
+        process_preview_layout.setSpacing(6)
+        summary.setText("Проверьте маршрут, сроки, согласование и диагностику до создания обращения.")
+        process_preview_layout.addWidget(summary)
         self.preview_label = QLabel("")
         self.preview_label.setWordWrap(True)
         self.preview_label.setObjectName("ProfileHint")
-        layout.addWidget(self.preview_label)
+        process_preview_layout.addWidget(self.preview_label)
+        layout.addWidget(process_preview_group)
         layout.addStretch(1)
         self._stack.addWidget(page)
 
@@ -2275,8 +2387,8 @@ class TicketCreateWizardWidget(QFrame):
             ticket = result.get("ticket", {}) if isinstance(result, dict) else {}
             ticket_id = str(ticket.get("ticket_id") or "")
             code = result.get("public_access_code") or "—"
-            self._set_status(f"Обращение создано. Код доступа: {code}.", error=False)
             self.reset_wizard()
+            self._set_status(build_post_create_process_summary(ticket, public_access_code=str(code)), error=False)
             self.ticketCreated.emit(ticket_id)
         except Exception as exc:
             logger.error(f"Ошибка создания обращения из мастера: {exc}")
@@ -4616,11 +4728,11 @@ class ChatPanel(QWidget):
 
             code = result.get("public_access_code") or "—"
             url = result.get("public_access_url") or ""
-            sla_summary = build_ticket_sla_user_summary(ticket)
-            if sla_summary:
-                url = f"{url}\n{sla_summary}" if url else sla_summary
+            message = build_post_create_process_summary(ticket, public_access_code=str(code))
+            if url:
+                message = f"{message}\n\nСсылка для просмотра: {url}"
             if show_success_dialog:
-                QMessageBox.information(self, "Обращение создано", f"Код: {code}\n{url}")
+                QMessageBox.information(self, "Обращение создано", message)
             return result
         except Exception as exc:
             logger.error(f"Ошибка создания обращения: {exc}")

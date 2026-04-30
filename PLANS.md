@@ -4,6 +4,47 @@
 
 Status: план срезов 1-8 выполнен, локально проверен, закоммичен и проверен на Linux стенде. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после registry/file fields: функционально около 91-93%, GUI около 80-82%.
 
+## 2026-05-01 ПК-агент: UX формы, post-create процесс и release
+
+Status: срезы 9-10 реализованы и проверены; агентская версия поднята до `3.1.25`, Windows release собран локально. Идёт публикация build-а и canary/release verification. Текущая готовность после локальной проверки: функционально 95-96%, GUI 88-90%.
+
+### Goal
+
+Довести пользовательский мастер создания обращения в ПК-агенте до рабочего UX-уровня: нормальные date/datetime controls, управляемое file-поле, понятный post-create summary по процессу и более цельный предпросмотр выбранного шаблона до отправки. После проверки собрать и выкатить agent release через штатный update flow.
+
+### Current Slice 9: form field UX and process summaries
+
+- [x] RED: `date` и `datetime` поля в `TicketDynamicFieldsWidget` должны рендериться нативными Qt controls и возвращать нормализованные значения.
+- [x] RED: `file` поле должно уметь заменить и очистить файл; обязательность должна снова срабатывать после очистки.
+- [x] RED: helper post-create summary должен показывать очередь/исполнителя, следующий шаг, согласование, диагностику, сроки ответа/решения и паспорт без raw SLA.
+- [x] GREEN: реализовать field controls, file clear/replace and post-create summary.
+- [x] GREEN: встроить process summary в wizard success/status and modal success dialog.
+- [x] Обновить `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `PLANS.md`.
+- [x] Прогнать focused tests, runtime tests, `python scripts/verify_workspace.py`.
+
+### Planned Slice 10: visual wizard polish
+
+- [x] Сделать step 2/4 более цельным: описание шаблона, компактные блоки "куда попадёт", "что потребуется", "когда ответят/решат", "диагностика/паспорт".
+- [x] Убрать перегруз в preview label: разделить summary на структурированные строки/блоки, сохранить русские пользовательские формулировки.
+- [x] Проверить GUI live через isolated local agent.
+
+### Planned Slice 11: agent release and canary
+
+- [x] Обновить версию агента, если меняется распространяемый build.
+- [x] Собрать Windows release штатным `pc_agent/build_windows_release_v2.py`.
+- [ ] Загрузить build на сервер, назначить canary, проверить handshake/update diagnostics/UI.
+- [ ] Зафиксировать результаты и остаточные риски.
+
+Verification:
+
+- `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> passed, 60 tests.
+- `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
+- `python -m pytest pc_agent/tests/ -q --tb=short` -> passed, 172 tests.
+- `python scripts/verify_workspace.py` -> passed after `scripts/navigation_catalog.py` sync and after version bump.
+- Source GUI live: `python scripts/manage_local_agent.py start codex-agent-ux-3125 --gui --ui-port 8881` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; server connection was unavailable because remote server was stopped.
+- Built launcher live: `python scripts/manage_local_agent.py start codex-agent-build-3125 --launcher --build-root pc_agent\dist --ui-port 8882` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; instance stopped after smoke.
+- `python pc_agent/build_windows_release_v2.py` -> produced `pc_agent/dist/release/windows_amd64/stable/3.1.25/pc_agent-windows_amd64-3.1.25.zip`, size `98258789`, SHA256 `C7BB83C01B2672AB31A18E9D852310A5569610453E663BF9CC7582F817DFCC50`.
+
 ### Goal
 
 Довести пользовательский ПК-агент до модели, где человек создаёт не "тикет" и не абстрактную форму, а понятное обращение по опубликованному `request_template`; агент показывает только нужные поля, объясняет последствия выбора человеческим языком, корректно передаёт template/process context на сервер и поддерживает диагностику/согласие/материалы.
