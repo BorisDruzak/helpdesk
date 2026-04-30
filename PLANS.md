@@ -2,7 +2,7 @@
 
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
-Status: план срезов 1-6 выполнен и проверен; срез 7 по server-backed preview в работе. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после среза 6: функционально около 85-88%, GUI около 75-78%; после среза 7 ожидаемое закрытие функционального preview gap поднимает функциональную готовность примерно до 88-90%.
+Status: план срезов 1-7 выполнен и проверен. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после server-backed preview: функционально около 88-90%, GUI около 78-80%.
 
 ### Goal
 
@@ -145,9 +145,7 @@ Verification:
   - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 42 tests.
   - `python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> passed, 17 tests.
 
-### Current Slice
-
-Slice 7: server-backed creation preview.
+### Completed Slice 7: server-backed creation preview.
 
 - [x] RED: добавить тест клиента `TicketApiClient.preview_ticket_create(...)`, который отправляет `request_template_key`, `form_key`, `form_pack_key`, `form_payload` и `ticket_type`.
 - [x] RED: добавить серверный тест `/api/tickets/create/preview`, который требует effective request-template context, priority, routing fallback and first-response/resolution due dates without creating a ticket.
@@ -155,7 +153,7 @@ Slice 7: server-backed creation preview.
 - [x] Подключить агентский API method for preview.
 - [x] GREEN: подключить master preview в `TicketCreateWizardWidget` с локальным fallback, если сервер временно недоступен.
 - [x] Обновить docs/CODEMAP and run focused/broader verification.
-- [ ] Выполнить remote/live API preview check после локальной проверки.
+- [x] Выполнить remote/live API preview check после локальной проверки.
 
 Verification:
 
@@ -173,6 +171,11 @@ Verification:
   - `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> passed, 10 tests.
   - `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> passed, 8 tests.
   - `python scripts/verify_workspace.py` -> passed.
+- Remote/live:
+  - `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running` -> deployed commit `c1f214a`, built webapp, ran migrations, started remote server and passed remote smoke.
+  - Live `POST /api/tickets/create/preview` with an issued agent token and `request_template_key=printer` returned `status=ok`, `ticket_type=incident`, `priority_class=P0`, fallback `target_queue_id=1`, and first-response/resolution due dates.
+  - Side-effect-free check after preview on a fresh agent token: `GET /api/tickets` returned `count=0`.
+  - `python scripts/manage_remote_stack.py stop server` -> server stopped.
 
 ### Completed Slice 6: local live validation and release path.
 
