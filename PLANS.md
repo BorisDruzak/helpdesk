@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 8 in progress: executable notification_policy and backend smart_views. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 8 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -105,7 +105,7 @@ Missing or weak:
 
 ### Current Step
 
-Slice 8 implemented locally: executable notification policy and backend smart views.
+Slice 8 implemented and live-verified: executable notification policy and backend smart views.
 
 Implemented behavior:
 
@@ -301,6 +301,14 @@ Local:
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:
+
+- Released commit `3e1a67d` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Release flow ran `verify_workspace.py`, bootstrapped the web toolchain, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live notification/smart-view check created transactional queue `live_smart_0a5891ee2b` and uncommitted ticket `dc5d603f-b394-494f-b3ad-423886047d4f` with `request_template.notification_policy.on_status_changed`.
+- Runtime `notify_ticket_event` created notifications only for `["assignee-live", "requester-live"]`, excluding queue members and watcher by policy while keeping preferences in the path.
+- Runtime `smart_view=sla_risk` matched only `["Live SLA risk"]` among the transactional live tickets; safe and closed tickets were excluded; the transaction was rolled back after verification.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
 
 - Released commit `57d31dc` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Release flow ran `verify_workspace.py`, bootstrapped the web toolchain, built the webapp bundle, deployed the committed Git state to `/var/chat_bot/pc_client`, applied migrations and started control/server.
