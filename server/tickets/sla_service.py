@@ -8,14 +8,82 @@
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+import re
+from typing import Any, Optional
 
 from loguru import logger
 
 from app.db.models import Ticket, TicketBusinessCalendar, TicketSlaPolicy
 from tickets.calendar_engine import add_business_minutes
 from tickets.statuses import PRIORITY_CLASS_TO_LEGACY_PRIORITY, WAITING_STATUSES, TERMINAL_STATUSES, extract_priority_class
+
+
+@dataclass(frozen=True)
+class SlaTarget:
+    priority: str
+    first_response_min: int
+    resolution_min: int
+
+
+_DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Zа-яА-Я]*)\s*$")
+
+
+def _duration_to_minutes(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return max(1, int(value))
+    match = _DURATION_RE.match(str(value).strip())
+    if not match:
+        return None
+    amount = float(match.group(1))
+    unit = match.group(2).strip().lower()
+    if unit in {"", "m", "min", "mins", "minute", "minutes", "мин", "м"}:
+        return max(1, int(amount))
+    if unit in {"h", "hr", "hour", "hours", "ч", "час", "часа", "часов"}:
+        return max(1, int(amount * 60))
+    if unit in {"d", "day", "days", "д", "дн", "день", "дня", "дней"}:
+        return max(1, int(amount * 24 * 60))
+    return None
+
+
+def _standalone_sla_policy_config(ticket: Ticket) -> dict[str, Any] | None:
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    if not isinstance(custom_fields, dict):
+        return None
+    template_context = custom_fields.get("request_template") or {}
+    if not isinstance(template_context, dict):
+        return None
+    config = template_context.get("sla_policy")
+    return config if isinstance(config, dict) else None
+
+
+def _build_standalone_targets(config: dict[str, Any]) -> list[SlaTarget]:
+    targets = config.get("targets") or {}
+    if not isinstance(targets, dict):
+        return []
+    first_response = targets.get("first_response") or targets.get("first_response_targets") or {}
+    resolution = targets.get("resolution") or targets.get("resolution_targets") or {}
+    if not isinstance(first_response, dict) or not isinstance(resolution, dict):
+        return []
+    priorities = ["P0", "P1", "P2", "P3", "P4"]
+    priorities.extend(str(item) for item in first_response.keys())
+    priorities.extend(str(item) for item in resolution.keys())
+    result: list[SlaTarget] = []
+    seen: set[str] = set()
+    for priority in priorities:
+        normalized_priority = str(priority).strip().upper()
+        if not normalized_priority or normalized_priority in seen:
+            continue
+        seen.add(normalized_priority)
+        fr_minutes = _duration_to_minutes(first_response.get(normalized_priority) or first_response.get(priority))
+        resolution_minutes = _duration_to_minutes(resolution.get(normalized_priority) or resolution.get(priority))
+        if fr_minutes is None or resolution_minutes is None:
+            continue
+        result.append(SlaTarget(normalized_priority, fr_minutes, resolution_minutes))
+    return result
 
 
 class TicketSlaService:
@@ -28,6 +96,11 @@ class TicketSlaService:
     async def _get_policy_and_targets(self, ticket: Ticket):
         """Политика SLA и цели по приоритету для тикета."""
         policy_id = ticket.sla_policy_id
+        standalone_config = _standalone_sla_policy_config(ticket)
+        if not policy_id and standalone_config:
+            targets = _build_standalone_targets(standalone_config)
+            if targets:
+                return standalone_config, targets
         if not policy_id:
             policy = await self.ticket_repo.get_default_sla_policy()
             if not policy:
@@ -39,8 +112,34 @@ class TicketSlaService:
         targets = await self.ticket_repo.get_sla_targets(policy.id)
         return policy, targets
 
-    async def _calendar_for_policy(self, policy: TicketSlaPolicy | None) -> dict | None:
+    async def _calendar_for_policy(self, policy: TicketSlaPolicy | dict | None) -> dict | None:
         if not policy:
+            return None
+        if isinstance(policy, dict):
+            calendar = policy.get("calendar")
+            if isinstance(calendar, dict):
+                return {
+                    "timezone": calendar.get("timezone") or policy.get("timezone") or "UTC",
+                    "weekly_hours_json": calendar.get("weekly_hours_json")
+                    or calendar.get("weekly_hours")
+                    or [],
+                    "holidays_json": calendar.get("holidays_json") or calendar.get("holidays") or [],
+                }
+            business_hours = policy.get("business_hours_json") or policy.get("business_hours")
+            if isinstance(business_hours, dict):
+                return {
+                    "timezone": business_hours.get("timezone") or policy.get("timezone") or "UTC",
+                    "weekly_hours_json": business_hours.get("weekly_hours_json")
+                    or business_hours.get("weekly_hours")
+                    or [],
+                    "holidays_json": business_hours.get("holidays_json") or business_hours.get("holidays") or [],
+                }
+            if isinstance(business_hours, list):
+                return {
+                    "timezone": policy.get("timezone") or "UTC",
+                    "weekly_hours_json": business_hours,
+                    "holidays_json": [],
+                }
             return None
         if getattr(policy, "calendar_id", None):
             calendar = await self.session.get(TicketBusinessCalendar, policy.calendar_id)
@@ -104,7 +203,7 @@ class TicketSlaService:
         res_due = self._due_at(now, target.resolution_min, calendar)
         await self.ticket_repo.update_ticket(
             ticket.ticket_id,
-            sla_policy_id=policy.id,
+            sla_policy_id=getattr(policy, "id", None),
             first_response_due_at=fr_due,
             resolution_due_at=res_due,
         )

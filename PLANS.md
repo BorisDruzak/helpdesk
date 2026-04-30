@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: rewritten execution plan for the remaining target-model gaps. Current factual completion after the previous committed slice is about 78%; after custom smart-view runtime lands, expected completion is about 80%.
+Status: executing the remaining target-model gaps. Current factual completion is about 84% after custom smart-view runtime and standalone SLA JSON target calculation.
 
 ### Goal
 
@@ -53,7 +53,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 
 ### Current Slice
 
-Slice 14: implement custom published `smart_views` in support queue runtime.
+Slice 15: implement standalone SLA JSON targets in timer runtime.
 
 Progress:
 
@@ -63,6 +63,12 @@ Progress:
 - [x] Update CODEMAP/QUICK_LOOKUP/navigation docs.
 - [x] Run workspace verification and commit this slice.
 - [x] Release/live-check support queue if web/API behavior changed.
+- [x] Write failing pytest proving `request_template.sla_policy.targets` is ignored without legacy `ticket_sla_policies`.
+- [x] Implement standalone SLA duration parsing and target selection for `first_response` / `resolution`.
+- [x] Support embedded standalone business calendar config through the existing calendar engine.
+- [x] Add ticket-create API regression proving published standalone `sla` policy sets due dates without `ticket.sla_policy_id`.
+- [x] Run focused SLA/priority/registry tests and workspace verification.
+- [ ] Release/live-check standalone SLA runtime on the Linux stand.
 
 ### Completion Metric
 
