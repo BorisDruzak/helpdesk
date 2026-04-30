@@ -341,3 +341,87 @@ async def test_passport_refresh_creates_new_version_without_overwriting_previous
         assert len(passports) == 2
         assert "Первое описание" in passports[0].problem_summary
         assert "Описание после уточнения" in passports[1].problem_summary
+@pytest.mark.asyncio
+async def test_passport_service_applies_reporting_policy_sections_and_evidence_package(test_engine):
+    from sqlalchemy import delete
+
+    from app.db.models import HelpdeskPolicyAudit, ReportingPolicy
+    from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
+        await session.execute(delete(ReportingPolicy))
+        await HelpdeskPolicyRepo(session).publish_policy(
+            kind="reporting",
+            code="website_passport_reporting",
+            title="Website passport reporting",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config={
+                "required_sections": ["problem", "evidence", "user_result"],
+                "evidence_package": {
+                    "include_action_log": False,
+                    "include_related_objects": False,
+                },
+                "export_visibility": {
+                    "hide_sections": ["internal_result", "operator_checks"],
+                },
+                "report_tags": ["critical_service", "diagnostics"],
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Cannot open reporting site",
+                status="resolved",
+                requester_id="user-net",
+                requester_status="resolved",
+                next_action_owner="support",
+                resolution_code="fixed_remote",
+                resolution_summary="DNS cache cleared",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                    },
+                },
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="status_changed",
+                payload={"status": "resolved", "actor_id": "support-1"},
+            )
+        )
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="diagnostic_result",
+                title="HTTP check",
+                summary="HTTP 200 OK",
+                visibility="internal",
+                created_by="support-1",
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+    passport = payload["passport"]
+    assert set(passport["sections"]) == {"problem", "evidence", "user_result"}
+    assert "HTTP 200 OK" in passport["sections"]["evidence"]
+    assert passport["source_payload"]["report_tags"] == ["critical_service", "diagnostics"]
+    assert passport["source_payload"]["reporting_policy"]["required_sections"] == ["problem", "evidence", "user_result"]
+    assert payload["actions"] == []
+    assert payload["related_objects"] == []

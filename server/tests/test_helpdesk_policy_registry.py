@@ -12,6 +12,7 @@ from app.db.models import (
     NotificationPolicy,
     OlaPolicy,
     PriorityPolicy,
+    ReportingPolicy,
     RequestTemplate,
     RoutingPolicy,
     SlaPolicy,
@@ -41,6 +42,7 @@ async def _clear_policy_registry(test_engine) -> None:
             DiagnosticPolicy,
             NotificationPolicy,
             VisibilityPolicy,
+            ReportingPolicy,
         ):
             await session.execute(delete(model))
         await session.commit()
@@ -314,6 +316,54 @@ async def test_helpdesk_policy_repo_diffs_deactivates_and_rolls_back_policy_vers
     assert len(rows) == 3
     assert sum(1 for row in rows if row.is_active) == 1
     assert [audit.action for audit in audits] == ["published", "published", "deactivated", "rollback_published"]
+
+
+@pytest.mark.asyncio
+async def test_helpdesk_policy_repo_publishes_reporting_policy(test_engine):
+    from sqlalchemy import delete
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
+        await session.execute(delete(ReportingPolicy))
+        repo = HelpdeskPolicyRepo(session)
+
+        item = await repo.publish_policy(
+            kind="reporting",
+            code="website_passport_reporting",
+            title="Website passport reporting",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config={
+                "required_sections": ["problem", "evidence", "user_result"],
+                "evidence_package": {"include_action_log": False, "include_related_objects": False},
+                "export_visibility": {"hide_sections": ["internal_result", "operator_checks"]},
+                "report_tags": ["critical_service", "diagnostics"],
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    assert item["kind"] == "reporting"
+    assert item["table"] == "reporting_policies"
+    assert item["config"]["report_tags"] == ["critical_service", "diagnostics"]
+
+    async with session_maker() as session:
+        rows = list((await session.execute(select(ReportingPolicy))).scalars().all())
+        audit = list(
+            (
+                await session.execute(
+                    select(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies")
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(rows) == 1
+    assert rows[0].code == "website_passport_reporting"
+    assert audit[-1].entity_type == "reporting_policies"
 
 
 @pytest.mark.asyncio

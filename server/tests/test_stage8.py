@@ -204,3 +204,132 @@ async def test_notification_policy_resolves_from_registry_when_snapshot_missing(
         )
 
     assert recipients == []
+
+
+@pytest.mark.asyncio
+async def test_notification_policy_sends_external_channel_and_writes_delivery_audit():
+    """External channels are selected by notification_policy without replacing in-app delivery."""
+    from tickets.notification_service import notify_ticket_event
+
+    class FakeExternalProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def send(self, *, channel, actor_id, ticket_id, event_type, payload):
+            self.calls.append(
+                {
+                    "channel": channel,
+                    "actor_id": actor_id,
+                    "ticket_id": ticket_id,
+                    "event_type": event_type,
+                    "payload": payload,
+                }
+            )
+            return {"status": "sent", "provider_message_id": "email-1"}
+
+    ticket_repo = AsyncMock()
+    ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
+        ticket_id="t-external",
+        device_id="device-external",
+        queue_id=1,
+        assignee_id=None,
+        requester_id="requester-1",
+        custom_fields={
+            "request_template": {
+                "notification_policy": {
+                    "channels": {"email": False},
+                    "on_status_changed": {
+                        "requester": True,
+                        "queue": False,
+                        "watchers": False,
+                        "channels": {"email": True, "telegram": False},
+                    },
+                }
+            }
+        },
+    ))
+    ticket_repo.list_queue_member_actor_ids = AsyncMock(return_value=["queue-1"])
+    ticket_repo.list_watchers = AsyncMock(return_value=[])
+    ticket_repo.add_event = AsyncMock(return_value=(1, None))
+    notif_repo = AsyncMock()
+    prefs_repo = AsyncMock()
+    prefs_repo.get_or_default = AsyncMock(return_value=(False, [], False))
+    provider = FakeExternalProvider()
+
+    await notify_ticket_event(
+        ticket_repo,
+        notif_repo,
+        "t-external",
+        "status_changed",
+        {"status": "resolved"},
+        visibility="public",
+        prefs_repo=prefs_repo,
+        channel_provider=provider,
+    )
+
+    assert [call.kwargs["actor_id"] for call in notif_repo.create.call_args_list] == ["requester-1"]
+    assert provider.calls == [
+        {
+            "channel": "email",
+            "actor_id": "requester-1",
+            "ticket_id": "t-external",
+            "event_type": "status_changed",
+            "payload": {"status": "resolved"},
+        }
+    ]
+    audit_payload = ticket_repo.add_event.call_args.kwargs["payload"]
+    assert audit_payload["channel"] == "email"
+    assert audit_payload["actor_id"] == "requester-1"
+    assert audit_payload["delivery_status"] == "sent"
+    assert audit_payload["provider_message_id"] == "email-1"
+
+
+@pytest.mark.asyncio
+async def test_notification_external_channel_failure_is_non_blocking_and_audited():
+    """External delivery errors must not prevent baseline in-app notification rows."""
+    from tickets.notification_service import notify_ticket_event
+
+    class FailingExternalProvider:
+        async def send(self, **_kwargs):
+            raise RuntimeError("smtp unavailable")
+
+    ticket_repo = AsyncMock()
+    ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
+        ticket_id="t-external-fail",
+        device_id="device-external-fail",
+        queue_id=None,
+        assignee_id=None,
+        requester_id="requester-1",
+        custom_fields={
+            "request_template": {
+                "notification_policy": {
+                    "on_status_changed": {
+                        "requester": True,
+                        "channels": {"email": True},
+                    },
+                }
+            }
+        },
+    ))
+    ticket_repo.list_queue_member_actor_ids = AsyncMock(return_value=[])
+    ticket_repo.list_watchers = AsyncMock(return_value=[])
+    ticket_repo.add_event = AsyncMock(return_value=(1, None))
+    notif_repo = AsyncMock()
+    prefs_repo = AsyncMock()
+    prefs_repo.get_or_default = AsyncMock(return_value=(False, [], False))
+
+    await notify_ticket_event(
+        ticket_repo,
+        notif_repo,
+        "t-external-fail",
+        "status_changed",
+        {"status": "resolved"},
+        visibility="public",
+        prefs_repo=prefs_repo,
+        channel_provider=FailingExternalProvider(),
+    )
+
+    notif_repo.create.assert_called_once()
+    audit_payload = ticket_repo.add_event.call_args.kwargs["payload"]
+    assert audit_payload["delivery_status"] == "failed"
+    assert "smtp unavailable" in audit_payload["error"]

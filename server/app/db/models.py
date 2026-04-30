@@ -1657,6 +1657,17 @@ class VisibilityPolicy(_VersionedPolicyMixin, Base):
     )
 
 
+class ReportingPolicy(_VersionedPolicyMixin, Base):
+    """Versioned reporting and passport generation policy."""
+
+    __tablename__ = "reporting_policies"
+    __table_args__ = (
+        Index("ix_reporting_policies_active", "code", "is_active"),
+        Index("ix_reporting_policies_scope", "scope_level", "scope_ref"),
+        Index("ix_reporting_policies_published_at", "published_at"),
+    )
+
+
 class SmartView(Base):
     """Versioned saved operational queue view."""
 

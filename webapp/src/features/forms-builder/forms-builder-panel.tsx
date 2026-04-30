@@ -1306,6 +1306,20 @@ function buildNotificationPreset(): string {
   });
 }
 
+function buildReportingPreset(): string {
+  return prettyJson({
+    required_sections: ["requester", "problem", "affected_object", "automated_checks", "evidence", "user_result"],
+    evidence_package: {
+      include_action_log: true,
+      include_related_objects: true,
+    },
+    export_visibility: {
+      hide_sections: ["internal_result"],
+    },
+    report_tags: ["standard_passport"],
+  });
+}
+
 function policyBadgeTone(count: number): "success" | "warning" | "neutral" {
   if (count > 0) {
     return "success";
@@ -1358,7 +1372,8 @@ type PolicyEditorKind =
   | "closure"
   | "diagnostic"
   | "notification"
-  | "visibility";
+  | "visibility"
+  | "reporting";
 
 type PolicyEditorDraft = {
   kind: PolicyEditorKind;
@@ -1380,6 +1395,7 @@ const POLICY_EDITOR_ITEMS: Array<{ kind: PolicyEditorKind; label: string; descri
   { kind: "diagnostic", label: "Диагностика", description: "Playbook, consent и evidence" },
   { kind: "notification", label: "Уведомления", description: "Получатели и каналы событий" },
   { kind: "visibility", label: "Видимость", description: "Публичные статусы и скрытые поля" },
+  { kind: "reporting", label: "Паспорт решения", description: "Разделы паспорта, evidence package и теги отчёта" },
 ];
 
 function parseEditorJson(text: string): Record<string, unknown> {
@@ -1402,7 +1418,7 @@ function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<str
   if (kind === "sla") {
     return parseJsonDraft(buildSlaPreset(form));
   }
-  const fieldByKind: Record<Exclude<PolicyEditorKind, "priority" | "sla">, PolicyJsonField> = {
+  const fieldByKind: Partial<Record<Exclude<PolicyEditorKind, "priority" | "sla">, PolicyJsonField>> = {
     ola: "ola_policy_json",
     routing: "routing_policy_json",
     approval: "approval_policy_json",
@@ -1411,7 +1427,8 @@ function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<str
     notification: "notification_policy_json",
     visibility: "visibility_policy_json",
   };
-  const existing = parseJsonDraft(form[fieldByKind[kind]]);
+  const fieldName = fieldByKind[kind];
+  const existing = fieldName ? parseJsonDraft(form[fieldName]) : {};
   if (Object.keys(existing).length) {
     return existing;
   }
@@ -1428,6 +1445,8 @@ function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<str
             ? buildDiagnosticPreset(form)
             : kind === "notification"
               ? buildNotificationPreset()
+              : kind === "reporting"
+                ? buildReportingPreset()
               : buildVisibilityPreset();
   return parseJsonDraft(presetText);
 }
@@ -1848,6 +1867,81 @@ function PolicyKindControls({
         <JsonLinkedCheckbox checked={Boolean((config.on_sla_warning as Record<string, unknown> | undefined)?.queue_lead)} label="Риск срока: руководителю" onChange={(checked) => updateEvent("on_sla_warning", "queue_lead", checked)} />
         <JsonLinkedCheckbox checked={Boolean((config.on_resolved as Record<string, unknown> | undefined)?.requester)} label="Решено: заявителю" onChange={(checked) => updateEvent("on_resolved", "requester", checked)} />
         <JsonLinkedCheckbox checked={Boolean(channels.web ?? true)} label="Канал: web" onChange={(checked) => onChange({ ...config, channels: { ...channels, web: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(channels.email)} label="Канал: email" onChange={(checked) => onChange({ ...config, channels: { ...channels, email: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(channels.telegram)} label="Канал: Telegram" onChange={(checked) => onChange({ ...config, channels: { ...channels, telegram: checked } })} />
+        <JsonLinkedCheckbox checked={Boolean(channels.vk_teams)} label="Канал: VK Teams" onChange={(checked) => onChange({ ...config, channels: { ...channels, vk_teams: checked } })} />
+      </div>
+    );
+  }
+
+  if (kind === "reporting") {
+    const evidencePackage =
+      typeof config.evidence_package === "object" && config.evidence_package
+        ? (config.evidence_package as Record<string, unknown>)
+        : {};
+    const exportVisibility =
+      typeof config.export_visibility === "object" && config.export_visibility
+        ? (config.export_visibility as Record<string, unknown>)
+        : {};
+    return (
+      <div className="grid gap-3 lg:grid-cols-3">
+        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+          <span>Разделы паспорта</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({
+                ...config,
+                required_sections: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
+              })
+            }
+            value={Array.isArray(config.required_sections) ? config.required_sections.join(", ") : ""}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800">
+          <span>Теги отчёта</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({
+                ...config,
+                report_tags: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
+              })
+            }
+            value={Array.isArray(config.report_tags) ? config.report_tags.join(", ") : ""}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+          <span>Скрыть из экспорта</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({
+                ...config,
+                export_visibility: {
+                  ...exportVisibility,
+                  hide_sections: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
+                },
+              })
+            }
+            value={Array.isArray(exportVisibility.hide_sections) ? exportVisibility.hide_sections.join(", ") : ""}
+          />
+        </label>
+        <JsonLinkedCheckbox
+          checked={Boolean(evidencePackage.include_action_log ?? true)}
+          label="Включать журнал действий"
+          onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_action_log: checked } })}
+        />
+        <JsonLinkedCheckbox
+          checked={Boolean(evidencePackage.include_related_objects ?? true)}
+          label="Включать связанные объекты"
+          onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_related_objects: checked } })}
+        />
+        <JsonLinkedCheckbox
+          checked={Boolean(config.include_internal_notes)}
+          label="Включать внутренние заметки"
+          onChange={(checked) => onChange({ ...config, include_internal_notes: checked })}
+        />
       </div>
     );
   }

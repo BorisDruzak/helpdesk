@@ -21,6 +21,7 @@ from app.db.models import (
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.diagnostic_policy import materialize_diagnostic_operation_evidence
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.statuses import get_requester_display_name, get_requester_profile
 
 
@@ -64,6 +65,36 @@ def _payload_text(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _reporting_policy_bool(policy: dict[str, Any], section: str, key: str, default: bool) -> bool:
+    block = policy.get(section)
+    if not isinstance(block, dict):
+        return default
+    if key not in block:
+        return default
+    return bool(block.get(key))
+
+
+def _apply_reporting_policy_to_sections(
+    sections: dict[str, str],
+    policy: dict[str, Any],
+) -> dict[str, str]:
+    if not policy:
+        return sections
+    selected = _string_list(policy.get("required_sections"))
+    result = {key: sections.get(key, "") for key in selected if key in SECTION_KEYS} if selected else dict(sections)
+    export_visibility = policy.get("export_visibility")
+    hidden = set(_string_list(export_visibility.get("hide_sections") if isinstance(export_visibility, dict) else []))
+    if hidden:
+        result = {key: value for key, value in result.items() if key not in hidden}
+    return result
+
+
 class TicketPassportService:
     """Builds deterministic resolution passport drafts from ticket facts."""
 
@@ -87,6 +118,15 @@ class TicketPassportService:
         if ticket is None:
             raise ValueError("ticket_not_found")
 
+        reporting_policy = await resolve_effective_ticket_policy(
+            self.session,
+            ticket,
+            "reporting",
+            snapshot_fields=("reporting_policy", "passport_policy"),
+        )
+        if isinstance(reporting_policy, dict) and "include_internal_notes" in reporting_policy:
+            include_internal_notes = bool(reporting_policy.get("include_internal_notes"))
+
         events = await self._load_events(ticket_id)
         operations = await self._load_operations(ticket_id, ticket.device_id)
         worklogs = await self._load_worklogs(ticket_id)
@@ -109,10 +149,13 @@ class TicketPassportService:
             approvals=approvals,
             include_internal_notes=include_internal_notes,
         )
+        sections = _apply_reporting_policy_to_sections(sections, reporting_policy)
         source_payload = {
             "summary_source": "deterministic",
             "mode": mode,
             "include_internal_notes": include_internal_notes,
+            "reporting_policy": reporting_policy,
+            "report_tags": _string_list(reporting_policy.get("report_tags") if isinstance(reporting_policy, dict) else []),
             "source_event_ids": [event.id for event in events if event.id is not None],
             "source_operation_ids": [op.operation_id for op in operations],
             "generated_from": {
@@ -128,12 +171,14 @@ class TicketPassportService:
             source_payload=source_payload,
         )
         actions = self._actions_from_events_and_operations(events, operations)
-        await self.repo.replace_generated_actions(ticket_id=ticket_id, passport_id=passport.id, actions=actions)
-        await self.repo.replace_related_objects(
-            ticket_id=ticket_id,
-            passport_id=passport.id,
-            objects=related_objects,
-        )
+        if _reporting_policy_bool(reporting_policy, "evidence_package", "include_action_log", True):
+            await self.repo.replace_generated_actions(ticket_id=ticket_id, passport_id=passport.id, actions=actions)
+        if _reporting_policy_bool(reporting_policy, "evidence_package", "include_related_objects", True):
+            await self.repo.replace_related_objects(
+                ticket_id=ticket_id,
+                passport_id=passport.id,
+                objects=related_objects,
+            )
         await self._record_passport_event(ticket, passport, actor_id)
         return await self._build_payload(ticket_id, passport)
 
@@ -358,6 +403,10 @@ class TicketPassportService:
 
     def _passport_to_dict(self, passport: TicketResolutionPassport) -> dict[str, Any]:
         sections = {key: getattr(passport, attr) or "" for key, attr in SECTION_KEYS.items()}
+        source_payload = passport.source_payload or {}
+        reporting_policy = source_payload.get("reporting_policy") if isinstance(source_payload, dict) else {}
+        if isinstance(reporting_policy, dict) and reporting_policy:
+            sections = _apply_reporting_policy_to_sections(sections, reporting_policy)
         return {
             "passport_id": passport.id,
             "ticket_id": passport.ticket_id,
@@ -371,7 +420,7 @@ class TicketPassportService:
             "sections": sections,
             "source_event_ids": passport.source_event_ids or [],
             "source_operation_ids": passport.source_operation_ids or [],
-            "source_payload": passport.source_payload or {},
+            "source_payload": source_payload,
             "stale": False,
         }
 

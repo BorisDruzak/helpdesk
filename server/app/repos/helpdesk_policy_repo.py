@@ -17,6 +17,7 @@ from app.db.models import (
     NotificationPolicy,
     OlaPolicy,
     PriorityPolicy,
+    ReportingPolicy,
     RequestTemplate,
     RoutingPolicy,
     SlaPolicy,
@@ -37,6 +38,7 @@ POLICY_MODELS = {
     "diagnostic": DiagnosticPolicy,
     "notification": NotificationPolicy,
     "visibility": VisibilityPolicy,
+    "reporting": ReportingPolicy,
 }
 
 POLICY_TABLE_NAMES = {
@@ -49,6 +51,7 @@ POLICY_TABLE_NAMES = {
     "diagnostic": "diagnostic_policies",
     "notification": "notification_policies",
     "visibility": "visibility_policies",
+    "reporting": "reporting_policies",
 }
 
 SCOPE_RANK = {

@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 95%; slice 18 policy rollback, diff and deactivate UI is complete, committed, released and live-checked.
+Status: executing the remaining target-model gaps. Current factual completion is about 99%; final slice is implemented and locally verified, release/live-check is in progress.
 
 ### Goal
 
@@ -53,7 +53,7 @@ Finish the remaining gap between the standalone helpdesk policy registry and rea
 
 ### Current Slice
 
-Slice 18: policy rollback, diff and deactivate UI.
+Slice 19: external notification channels and reporting/passport policy.
 
 Progress:
 
@@ -87,6 +87,24 @@ Progress:
 - [x] Add React test for calling diff/deactivate/rollback actions.
 - [x] Run focused registry/API/UI tests, webapp build and workspace verification.
 - [x] Commit, release/live-check policy lifecycle UI and stop the remote server.
+- [x] Add failing tests for notification external channel delivery, non-blocking failures and delivery audit events.
+- [x] Implement notification channel provider abstraction with email-first routing from `notification_policy.channels`.
+- [x] Add failing repo/API/passport tests for standalone `reporting` policy kind and passport runtime enforcement.
+- [x] Add `reporting_policies` table/model/migration, registry publish/list/diff/deactivate/rollback support and runtime resolution.
+- [x] Apply reporting policy to passport generation: required sections, evidence/action package, export visibility and report tags.
+- [x] Add reporting/passport policy editor controls in `/app/admin/forms`.
+- [x] Run focused notification/passport/registry/UI tests, webapp build and workspace verification.
+- [ ] Commit, release/live-check final model and stop the remote server.
+
+Local verification for slice 19:
+
+- `python -m pytest server/tests/test_stage8.py::test_notification_policy_sends_external_channel_and_writes_delivery_audit server/tests/test_stage8.py::test_notification_external_channel_failure_is_non_blocking_and_audited -q` -> passed, 2 tests.
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_helpdesk_policy_repo_publishes_reporting_policy server/tests/test_ticket_passport_service.py::test_passport_service_applies_reporting_policy_sections_and_evidence_package -q` -> passed, 2 tests.
+- `pnpm --dir webapp test src/features/forms-builder/forms-builder-panel.test.tsx -t "reporting policy"` -> passed, 1 test.
+- `pnpm --dir webapp test src/features/forms-builder/forms-builder-panel.test.tsx` -> passed, 14 tests.
+- `python -m pytest server/tests/test_stage8.py server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_passport_service.py -q --tb=short` -> passed, 24 tests.
+- `pnpm --dir webapp build` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
 
 Local verification for slice 18:
 

@@ -95,7 +95,7 @@ function createHelpdeskModelRegistryPayload(): AdminHelpdeskModelPayload {
       policy_rollback_endpoint: "/api/web/admin/helpdesk-model/policies/rollback",
       publish_smart_view_endpoint: "/api/web/admin/helpdesk-model/smart-views/publish",
       inheritance_order: ["system", "ticket_type", "category", "request_template"],
-      policy_kinds: ["approval", "closure", "diagnostic", "notification", "ola", "priority", "routing", "sla", "visibility"],
+      policy_kinds: ["approval", "closure", "diagnostic", "notification", "ola", "priority", "reporting", "routing", "sla", "visibility"],
     },
     request_templates: [],
     policies: {
@@ -105,6 +105,7 @@ function createHelpdeskModelRegistryPayload(): AdminHelpdeskModelPayload {
       notification: [],
       ola: [],
       priority: [],
+      reporting: [],
       routing: [],
       sla: [],
       visibility: [],
@@ -1211,6 +1212,84 @@ describe("FormsBuilderPanel", () => {
       }
     });
     expect(await screen.findByText(/Политика printer_routing_policy опубликована/)).toBeInTheDocument();
+  });
+
+  it("публикует reporting policy для паспорта решения", async () => {
+    const publishCalls: Record<string, unknown>[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: createHelpdeskModelRegistryPayload() });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies/publish" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          publishCalls.push(body);
+          return jsonResponse({
+            status: "success",
+            data: {
+              policy: {
+                kind: "reporting",
+                table: "reporting_policies",
+                code: body.code,
+                version: "1.0.1",
+                title: body.title,
+                description: body.description,
+                scope_level: body.scope_level,
+                scope_ref: body.scope_ref,
+                config: body.config,
+                is_active: true,
+                published_at: "2026-04-30T18:30:00+05:00",
+                created_at: "2026-04-30T18:30:00+05:00",
+                created_by: "admin1",
+                updated_at: "2026-04-30T18:30:00+05:00",
+                updated_by: "admin1"
+              },
+              message: "Политика printer_reporting_policy опубликована в реестр как версия 1.0.1."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редакторы политик");
+    fireEvent.click(screen.getByRole("button", { name: /Политика: Паспорт решения/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Код политики")).toHaveValue("printer_reporting_policy");
+    });
+    fireEvent.change(screen.getByLabelText("Разделы паспорта"), {
+      target: { value: "problem, evidence, user_result" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать политику" }));
+
+    await waitFor(() => {
+      expect(publishCalls).toHaveLength(1);
+    });
+    expect(publishCalls[0]).toMatchObject({
+      kind: "reporting",
+      code: "printer_reporting_policy",
+      config: {
+        required_sections: ["problem", "evidence", "user_result"],
+        evidence_package: {
+          include_action_log: true,
+          include_related_objects: true
+        }
+      }
+    });
   });
 
   it("вызывает diff, deactivate и rollback для версий политики", async () => {

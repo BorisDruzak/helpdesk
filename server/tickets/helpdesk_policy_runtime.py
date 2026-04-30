@@ -21,6 +21,7 @@ RUNTIME_POLICY_KINDS = (
     "diagnostic",
     "notification",
     "visibility",
+    "reporting",
 )
 
 POLICY_SNAPSHOT_FIELDS = {
