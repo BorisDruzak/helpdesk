@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Policy Runtime Completion Plan
 
-Status: executing the remaining target-model gaps. Current factual completion is about 92%; slice 17 has workflow guard/action code, editor and local verification complete, with release/live-check still pending.
+Status: executing the remaining target-model gaps. Current factual completion is about 92%; slice 17 workflow guards/actions editor and execution is complete and live-checked.
 
 ### Goal
 
@@ -79,7 +79,23 @@ Progress:
 - [x] Replace raw workflow transition JSON editing in `/app/settings` with structured transition guard/action controls while preserving JSON compatibility.
 - [x] Add frontend tests for editor payload and backend tests for guard/action execution.
 - [x] Run focused workflow/settings tests, webapp type/test/build checks and workspace verification.
-- [ ] Commit, release/live-check workflow guard/action runtime and stop the remote server.
+- [x] Commit, release/live-check workflow guard/action runtime and stop the remote server.
+
+Local verification for slice 17:
+
+- `python -m pytest server/tests/test_ticket_workflow_profiles.py -q` -> passed, 13 tests.
+- `pnpm test src/pages/settings/index.test.tsx` from `webapp/` -> passed, 4 tests.
+- `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 23 tests.
+- `pnpm build` from `webapp/` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
+
+Live verification for slice 17:
+
+- Released workflow guard/action runtime and settings UI to the Linux stand with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote release flow ran workspace verification, webapp build, Git deploy, migrations and server smoke; `GET /api/health` returned 200.
+- Browser-checked `http://192.168.100.17:8666/app/settings`: the `Тикеты` tab shows the visual transition rule constructor with role, required field, comment, approval, evidence, notification and срок-action controls.
+- Filled the live constructor without saving to DB and confirmed `Переходы статусов JSON` was updated with `allowed_roles`, `required_fields`, `required_comment`, `require_approval`, `require_evidence`, `actions.notify` and `actions.sla`.
+- Stopped the remote server with `python scripts/manage_remote_stack.py stop server`.
 
 Local verification for slice 16:
 
