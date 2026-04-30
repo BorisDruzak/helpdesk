@@ -62,7 +62,7 @@ Progress:
 - [x] Run focused built-in + custom smart-view tests.
 - [x] Update CODEMAP/QUICK_LOOKUP/navigation docs.
 - [x] Run workspace verification and commit this slice.
-- [ ] Release/live-check support queue if web/API behavior changed.
+- [x] Release/live-check support queue if web/API behavior changed.
 
 ### Completion Metric
 
