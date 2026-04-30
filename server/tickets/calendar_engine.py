@@ -132,9 +132,9 @@ def add_business_minutes(
         return start_utc + timedelta(minutes=minutes)
     tz = _get_calendar_tz(calendar)
     local = start_utc.astimezone(tz)
-    remaining = minutes
+    remaining_seconds = minutes * 60
     cur = local
-    while remaining > 0:
+    while remaining_seconds > 0:
         if _is_holiday(cur, calendar):
             nstart = _next_work_start_after(cur, calendar, tz)
             if nstart is None:
@@ -144,27 +144,28 @@ def add_business_minutes(
         if not _is_inside_work_interval(cur, calendar):
             nstart = _next_work_start_after(cur, calendar, tz)
             if nstart is None:
-                cur = cur + timedelta(minutes=remaining)
+                cur = cur + timedelta(seconds=remaining_seconds)
                 break
             cur = nstart
             continue
         nend = _next_work_end_after(cur, calendar, tz)
         if nend is None:
-            cur = cur + timedelta(minutes=remaining)
+            cur = cur + timedelta(seconds=remaining_seconds)
             break
         if cur >= nend:
             nstart = _next_work_start_after(cur, calendar, tz)
             if nstart is None:
-                cur = cur + timedelta(minutes=remaining)
+                cur = cur + timedelta(seconds=remaining_seconds)
                 break
             cur = nstart
             continue
-        segment_m = min(
-            remaining,
-            int((nend - cur).total_seconds() // 60),
-        )
-        cur = cur + timedelta(minutes=segment_m)
-        remaining -= segment_m
+        available_seconds = int((nend - cur).total_seconds())
+        if available_seconds <= 0:
+            cur = nend
+            continue
+        segment_seconds = min(remaining_seconds, available_seconds)
+        cur = cur + timedelta(seconds=segment_seconds)
+        remaining_seconds -= segment_seconds
     return cur.astimezone(timezone.utc)
 
 

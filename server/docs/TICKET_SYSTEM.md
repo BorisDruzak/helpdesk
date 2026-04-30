@@ -94,7 +94,7 @@
 
 **События ticket_events:** `routing_applied`, `queue_changed`, `sla_started`, `sla_paused`, `sla_resumed`, `sla_breached`, `sla_reminder_sent`, `sla_cleared`.
 
-**Терминальные статусы:** Resolved, Closed. SLA due dates считаются через `calendar_engine.add_business_minutes`, если политика SLA связана с бизнес-календарём; без календаря остаётся 24x7. Recipients эскалации: участники очереди (`ticket_queue_members`) + admins; доставка через `ticket_event_committed`.
+**Терминальные статусы:** Resolved, Closed. SLA due dates считаются через `calendar_engine.add_business_minutes`, если политика SLA связана с бизнес-календарём; расчёт ведётся в секундах, чтобы реальный `now()` у границы рабочего окна не застревал на неполной минуте. Без календаря остаётся 24x7. Recipients эскалации: участники очереди (`ticket_queue_members`) + admins; доставка через `ticket_event_committed`.
 
 ---
 

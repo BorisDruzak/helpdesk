@@ -113,6 +113,7 @@ Implemented behavior:
 - `TicketSlaService.start_sla`, `on_reopen` and priority recalculation use `calendar_engine.add_business_minutes` when the SLA policy has `calendar_id` or business-hours config.
 - SLA without calendar keeps 24x7 fallback behavior.
 - `calendar_engine.add_business_minutes` now moves from a non-working time to the next work interval start before consuming remaining minutes.
+- Calendar due-date calculation consumes seconds internally, so live `now()` values near the end of a work interval cannot stall on a zero-minute segment.
 
 Slice 2 implemented and live-verified: executable `approval_policy`.
 
@@ -162,6 +163,7 @@ Local:
 - `python -m pytest server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_form_packs.py server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q` -> passed, 28 tests.
 - `python -m pytest server/tests/test_ticket_sla_calendar.py -q` -> passed, 1 test.
 - `python -m pytest server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_queue_routing_contracts.py::test_create_ticket_applies_sla_and_ola_configuration server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 12 tests.
+- After the sub-minute calendar edge-case regression test was added: `python -m pytest server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_queue_routing_contracts.py::test_create_ticket_applies_sla_and_ola_configuration server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 13 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:

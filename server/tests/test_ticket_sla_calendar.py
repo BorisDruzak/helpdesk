@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketBusinessCalendar, TicketSlaPolicy, TicketSlaTarget
 from app.repos.ticket_events_repo import TicketEventsRepo
+from tickets.calendar_engine import add_business_minutes
 from tickets.sla_service import TicketSlaService
 import tickets.sla_service as sla_service_module
 
@@ -85,3 +86,22 @@ async def test_start_sla_uses_business_calendar_for_due_dates(test_engine, monke
     assert ticket is not None
     assert ticket.first_response_due_at == datetime(2026, 5, 4, 17, 0, tzinfo=timezone.utc)
     assert ticket.resolution_due_at == datetime(2026, 5, 5, 10, 30, tzinfo=timezone.utc)
+
+
+def test_add_business_minutes_handles_seconds_before_interval_end() -> None:
+    calendar = {
+        "timezone": "UTC",
+        "weekly_hours_json": [
+            {"day": 0, "start": "09:00", "end": "17:00"},
+            {"day": 1, "start": "09:00", "end": "17:00"},
+        ],
+        "holidays_json": [],
+    }
+
+    due_at = add_business_minutes(
+        datetime(2026, 5, 4, 16, 59, 30, tzinfo=timezone.utc),
+        2,
+        calendar,
+    )
+
+    assert due_at == datetime(2026, 5, 5, 9, 1, 30, tzinfo=timezone.utc)
