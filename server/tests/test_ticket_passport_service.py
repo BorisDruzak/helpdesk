@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Operation, Ticket, TicketEvent, TicketResolutionPassport
+from app.db.models import Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport
 from tickets.passport_service import TicketPassportService
 
 
@@ -107,6 +107,200 @@ async def test_passport_service_collects_tool_events_as_automated_checks(test_en
         assert "Средняя задержка 3 мс" in payload["passport"]["sections"]["automated_checks"]
         assert operation_id in payload["passport"]["source_operation_ids"]
         assert payload["actions"][0]["operation_id"] == operation_id
+
+
+@pytest.mark.asyncio
+async def test_passport_service_materializes_diagnostic_operation_evidence_from_policy(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    operation_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Check website availability",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                        "diagnostic_policy": {
+                            "id": "website_diagnostics",
+                            "attach_results": {
+                                "to_passport": True,
+                                "as_evidence": True,
+                            },
+                        },
+                    },
+                },
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool",
+                tool_name="diagnose.website",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                result_summary="HTTP 200 OK, DNS resolved",
+            )
+        )
+        await session.flush()
+
+        first_payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        second_payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="refresh")
+
+        evidence_rows = (
+            await session.execute(
+                select(TicketEvidenceItem).where(TicketEvidenceItem.ticket_id == ticket_id)
+            )
+        ).scalars().all()
+
+        assert len(evidence_rows) == 1
+        evidence = evidence_rows[0]
+        assert evidence.evidence_type == "diagnostic_result"
+        assert evidence.source_ref == f"operation:{operation_id}"
+        assert evidence.title == "diagnose.website"
+        assert evidence.summary == "HTTP 200 OK, DNS resolved"
+        assert evidence.created_by == "op1"
+        assert first_payload["evidence"][0]["source_ref"] == f"operation:{operation_id}"
+        assert "HTTP 200 OK" in first_payload["passport"]["sections"]["evidence"]
+        assert len(second_payload["evidence"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_passport_service_does_not_materialize_diagnostic_evidence_when_policy_disables_it(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Check website availability",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                        "diagnostic_policy": {
+                            "id": "website_diagnostics",
+                            "attach_results": {"to_passport": True, "as_evidence": False},
+                        },
+                    },
+                },
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=str(uuid.uuid4()),
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool",
+                tool_name="diagnose.website",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                result_summary="HTTP 200 OK",
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+        evidence_count = await session.scalar(
+            select(func.count(TicketEvidenceItem.id)).where(TicketEvidenceItem.ticket_id == ticket_id)
+        )
+        assert evidence_count == 0
+        assert payload["evidence"] == []
+
+
+@pytest.mark.asyncio
+async def test_passport_service_does_not_materialize_foreign_ticket_device_operation(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    other_ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Current ticket has no own operations",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                        "diagnostic_policy": {
+                            "id": "website_diagnostics",
+                            "attach_results": {"to_passport": True, "as_evidence": True},
+                        },
+                    },
+                },
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=other_ticket_id,
+                device_id=device_id,
+                title="Previous website check",
+                description="Owns the operation",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=str(uuid.uuid4()),
+                device_id=device_id,
+                ticket_id=other_ticket_id,
+                kind="tool",
+                tool_name="diagnose.website",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                result_summary="HTTP 200 OK for another ticket",
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+        evidence_count = await session.scalar(
+            select(func.count(TicketEvidenceItem.id)).where(TicketEvidenceItem.ticket_id == ticket_id)
+        )
+        assert evidence_count == 0
+        assert payload["evidence"] == []
 
 
 @pytest.mark.asyncio

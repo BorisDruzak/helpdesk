@@ -277,7 +277,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="tickets",
         title="Tickets / chat / queue",
-        summary="Ticket lifecycle, workflow profiles with executable per-transition role/required-field gates, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, executable request-template routing/approval/closure policies, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
+        summary="Ticket lifecycle, workflow profiles with executable per-transition role/required-field gates, deterministic priority/SLA/OLA, second-precision business-calendar SLA due dates, executable request-template routing/approval/closure policies, diagnostic policy evidence materialization for resolution passports, chat, public access, queue behavior, request-template process context, legacy form-pack ticket_type inference, form-aware routing over ticket/request-form context, template default queue fallback, editable server-driven priority question fields/roles with old pack backfill that preserves custom policy field keys, P0 process priority support in OLA targets, 64-char ticket_type/request_kind slugs, and canonical ticket-root observer trace.",
         aliases=(
             "ticket",
             "tickets",
@@ -309,6 +309,11 @@ TOPICS: tuple[Topic, ...] = (
             "APPROVAL_POLICY_BLOCKED",
             "closure policy",
             "closure_policy",
+            "diagnostic policy",
+            "diagnostic_policy",
+            "diagnostic_result",
+            "ticket_evidence_items",
+            "ticket passport evidence",
             "resolution_summary",
             "requester_resolution_summary",
             "evidence required",
@@ -343,6 +348,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tickets/calendar_engine.py",
             "server/tickets/approval_policy.py",
             "server/tickets/closure_policy.py",
+            "server/tickets/diagnostic_policy.py",
             "server/tickets/ola_service.py",
             "server/tickets/routing_service.py",
             "server/tickets/form_catalog.py",
@@ -354,6 +360,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/CHAT_MESSAGE_CONTRACT.md",
             "server/docs/CODEMAP.md",
+            "server/docs/DIAGNOSTIC_PLAYBOOKS.md",
             "server/docs/REQUEST_FORM_BUILDER.md",
         ),
         suggested_commands=(
@@ -365,6 +372,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "calendar_engine" --dir server',
             'python scripts/agent_find.py "approval_policy" --dir server',
             'python scripts/agent_find.py "closure_policy" --dir server',
+            'python scripts/agent_find.py "diagnostic_policy" --dir server',
         ),
         mode="Tickets / chat / queue",
         skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
@@ -377,6 +385,7 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(SERVER_CODEMAP_PATH),
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/CHAT_MESSAGE_CONTRACT.md",
+            "server/docs/DIAGNOSTIC_PLAYBOOKS.md",
         ),
         path_prefixes=(
             "server/tickets/",

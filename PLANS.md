@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 5 implemented, verified locally, deployed and live-checked on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 6 implemented locally, local verification passing; commit/deploy/live check are next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -32,7 +32,7 @@ Already present:
 - Template context is preserved in `custom_fields.request_template`, including `ticket_type`, category/service/subcategory, queue, SLA, priority/routing/approval/OLA/closure/visibility policies, field roles and suggested playbook.
 - Workflow profiles exist and status transitions use the configured profile for `ticket_type`.
 - Priority policy exists for intake facts and stores computed/effective priority context.
-- SLA and OLA services exist, but SLA due dates still need calendar-aware calculation.
+- SLA and OLA services exist, and SLA due dates use calendar-aware calculation when a policy points to a business calendar.
 - Routing exists through global rules, executable template-level `routing_policy`, template fallback queue and global fallback queue.
 - Diagnostics/playbooks are separate operations, not ticket statuses.
 - Resolution passport tables and services exist.
@@ -40,9 +40,8 @@ Already present:
 Missing or weak:
 
 - No standalone persisted entities yet for `request_templates`, `form_schemas`, `priority_policies`, `routing_policies`, `approval_policies`, `closure_policies`, `diagnostic_policies`, `notification_policies`, `visibility_policies` and `smart_views`.
-- `closure_policy`, `approval_policy` and `routing_policy` are executable; `visibility_policy` is still mostly saved as template metadata.
+- `closure_policy`, `approval_policy`, `routing_policy` and diagnostic attach-to-evidence behavior are executable; `visibility_policy` is still mostly saved as template metadata.
 - Workflow transitions now enforce configured per-transition roles and required fields; transition actions/guards beyond that remain future work.
-- SLA does not yet use the business calendar engine for due date calculation.
 - Notification rules are not policy-driven.
 - Smart views are not first-class saved settings.
 
@@ -106,7 +105,31 @@ Missing or weak:
 
 ### Current Step
 
-Slice 5 implemented locally: workflow transition gates.
+Slice 6 implemented locally: diagnostic policy and evidence/passport binding.
+
+Implemented behavior:
+
+- `server/tickets/diagnostic_policy.py` reads `custom_fields.request_template.diagnostic_policy` / legacy `diagnostics`.
+- When `attach_results.as_evidence=true` and `attach_results.to_passport` is not disabled, passport generation materializes terminal ticket operations as `ticket_evidence_items`.
+- Generated evidence uses `evidence_type=diagnostic_result`, `source_ref=operation:<operation_id>`, operation title/summary and the passport actor as `created_by`.
+- Evidence creation is idempotent per ticket/evidence type/source operation, so passport refresh does not create duplicates.
+- Device-level operation fallback never materializes evidence from another ticket; only operations owned by the current ticket can become diagnostic evidence.
+- Ticket status remains independent from operation status: operations still feed automated checks and now can become closure/passport evidence only through policy.
+
+Changed files for slice 6:
+
+- `server/tickets/diagnostic_policy.py`
+- `server/tickets/passport_service.py`
+- `server/tests/test_ticket_passport_service.py`
+- `server/docs/CODEMAP.md`
+- `server/docs/DIAGNOSTIC_PLAYBOOKS.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+- `PLANS.md`
+
+Previous current step:
+
+Slice 5 implemented and live-verified: workflow transition gates.
 
 Implemented behavior:
 
@@ -213,6 +236,8 @@ Local:
 - `python -m pytest server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context server/tests/test_web_admin_api.py::test_web_admin_forms_route_preview_returns_typed_payload server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_preserves_request_template_process_context -q` -> passed, 4 tests.
 - `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_web_support_api.py::test_web_support_status_action_reports_workflow_gate_block server/tests/test_web_settings_api.py::test_web_settings_can_save_workflow_profiles -q` -> passed, 12 tests.
 - `python -m pytest server/tests/test_ticket_workflow_profiles.py server/tests/test_web_support_api.py::test_web_support_status_action_reports_workflow_gate_block server/tests/test_web_settings_api.py::test_web_settings_can_save_workflow_profiles server/tests/test_ticket_routing_policy.py server/tests/test_ticket_queue_routing_contracts.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py -q` -> passed, 40 tests.
+- `python -m pytest server/tests/test_ticket_passport_service.py -v --tb=short` -> passed, 6 tests.
+- `python -m pytest server/tests/test_ticket_passport_service.py server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_closure_policy.py -q --tb=short` -> passed, 14 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:

@@ -1,5 +1,7 @@
 # Diagnostic playbooks
 
+Update note 2026-04-30 diagnostic policy evidence: request templates can now execute `diagnostic_policy.attach_results` during passport generation. When `attach_results.as_evidence=true` and `attach_results.to_passport` is not disabled, `server/tickets/diagnostic_policy.py` materializes terminal ticket operations as `ticket_evidence_items` with `evidence_type=diagnostic_result` and `source_ref=operation:<operation_id>`. This keeps `ticket.status` independent from operation status while allowing diagnostic results to satisfy passport/closure evidence requirements.
+
 Update note 2026-04-28 ticket launch: support ticket detail now has typed playbook launch routes. `GET /api/web/support/tickets/{ticket_id}/playbooks` returns published playbook versions with required tools and readiness for the ticket device. `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version through `playbook_engine.start_run` with `trigger_type=support_ticket` and a ticket-bound context.
 
 Update note 2026-04-27: saved drafts now use `pc_client.playbook.self_healing.v2`. The server stores `required_tools` with module owner, source, install policy, platforms, minimum agent version, params/output schemas, output contract, condition hints, presets and known error codes. Tool-backed playbook steps run the existing module auto-install preflight before `run_tool`; install failures stop the step with `stage=module_install`, while capability gate failures use `stage=capability_gate`. After a successful DB-backed module preflight/install, the playbook engine treats that preflight as authoritative for the immediate `run_tool` enqueue, because device module inventory/toolset snapshots can lag behind the install command result. Presets are expanded into concrete params on the server for both support tool launches and playbook steps, so agents receive normal command params.
@@ -89,10 +91,31 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 
 Результат старта фиксируется событием тикета `playbook_started`; дальнейшие step results остаются в существующих таблицах `playbook_run` / `playbook_step_run` и operation timeline.
 
+## Привязка к паспорту и evidence
+
+Шаблон обращения может хранить diagnostic policy:
+
+```json
+{
+  "diagnostic_policy": {
+    "id": "website_diagnostics",
+    "attach_results": {
+      "to_passport": true,
+      "as_evidence": true
+    }
+  }
+}
+```
+
+При генерации паспорта `server/tickets/passport_service.py` вызывает `tickets.diagnostic_policy.materialize_diagnostic_operation_evidence(...)`. Завершённые операции тикета (`succeeded`, `failed`, `denied`, `timed_out`, `canceled`) становятся доказательствами только если policy это разрешает. Повторная генерация паспорта не создаёт дубликаты: идемпотентность строится по `ticket_id`, `evidence_type=diagnostic_result` и `source_ref=operation:<operation_id>`.
+
+Диагностика не является статусом тикета: тикет остаётся, например, `in_progress`, а выполнение/результат живёт в `operations`, playbook tables, timeline и evidence/passport.
+
 ## Проверки
 
 Минимальный локальный baseline при изменении этого потока:
 
 - `python -m pytest server/tests/test_playbook_scenarios_no_db.py server/tests/test_web_admin_api.py server/tests/test_ticket_form_packs.py -q --tb=short`
+- `python -m pytest server/tests/test_ticket_passport_service.py -q --tb=short`
 - `pnpm --dir webapp run test -- --run src/features/playbooks/playbook-builder-panel.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx src/features/agent-updates/device-update-panel.test.tsx`
 - `pnpm --dir webapp run build`

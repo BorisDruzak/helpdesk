@@ -20,6 +20,7 @@ from app.db.models import (
 )
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
+from tickets.diagnostic_policy import materialize_diagnostic_operation_evidence
 from tickets.statuses import get_requester_display_name, get_requester_profile
 
 
@@ -89,6 +90,12 @@ class TicketPassportService:
         events = await self._load_events(ticket_id)
         operations = await self._load_operations(ticket_id, ticket.device_id)
         worklogs = await self._load_worklogs(ticket_id)
+        await materialize_diagnostic_operation_evidence(
+            self.session,
+            ticket=ticket,
+            operations=operations,
+            created_by=actor_id,
+        )
         evidence = await self.repo.list_evidence(ticket_id)
         approvals = await self.repo.list_approvals(ticket_id)
         related_objects = self._related_objects_from_ticket(ticket)
