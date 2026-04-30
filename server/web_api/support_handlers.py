@@ -1458,11 +1458,17 @@ async def handle_web_support_change_status(request: web.Request):
                     source="web_support_api",
                 )
             except ValueError as exc:
+                message = str(exc)
+                error_code = (
+                    "APPROVAL_POLICY_BLOCKED"
+                    if message.startswith("approval_policy")
+                    else "CLOSURE_POLICY_BLOCKED"
+                )
                 return web.json_response(
                     {
                         "status": "error",
-                        "error": str(exc),
-                        "error_code": "CLOSURE_POLICY_BLOCKED",
+                        "error": message,
+                        "error_code": error_code,
                     },
                     status=400,
                 )

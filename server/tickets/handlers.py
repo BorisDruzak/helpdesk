@@ -1374,7 +1374,7 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
                 source="api",
             )
         except ValueError as exc:
-            return _validation_error({"closure_policy": str(exc)})
+            return _validation_error({"workflow_policy": str(exc)})
         followup_result = None
         followup_payload = None
         ticket = await repo.get_ticket(ticket.ticket_id)

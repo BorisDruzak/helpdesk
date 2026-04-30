@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 1 implemented, verified locally and checked live on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 2 implemented locally: executable `approval_policy`; live verification is next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -106,7 +106,17 @@ Missing or weak:
 
 ### Current Step
 
-Slice 1 implemented locally: executable `closure_policy`.
+Slice 2 implemented locally: executable `approval_policy`.
+
+Implemented behavior:
+
+- A ticket with `request_template.approval_policy.required=true` can move into `waiting_on_approval` without prior approval evidence.
+- The same ticket cannot move from approval wait into execution statuses without an approved `ticket_approvals` row.
+- A rejected approval blocks execution transitions.
+- An approved approval allows the configured workflow transition.
+- Typed support status actions return `APPROVAL_POLICY_BLOCKED` for approval-policy blocks while keeping `CLOSURE_POLICY_BLOCKED` for closure-policy blocks.
+
+Slice 1 already implemented and live-verified: executable `closure_policy`.
 
 Implemented behavior:
 
@@ -124,6 +134,8 @@ Changed files:
 - `server/tickets/handlers.py`
 - `server/web_api/support_handlers.py`
 - `server/tests/test_ticket_closure_policy.py`
+- `server/tests/test_ticket_approval_policy.py`
+- `server/tickets/approval_policy.py`
 - `server/docs/CODEMAP.md`
 - `docs/QUICK_LOOKUP.md`
 - `server/docs/TICKET_SYSTEM.md`
@@ -135,6 +147,8 @@ Local:
 
 - `python -m pytest server/tests/test_ticket_closure_policy.py -q` -> passed, 4 tests.
 - `python -m pytest server/tests/test_ticket_closure_policy.py server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_form_packs.py server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q` -> passed, 24 tests.
+- `python -m pytest server/tests/test_ticket_approval_policy.py -q` -> passed, 4 tests.
+- `python -m pytest server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_workflow_profiles.py server/tests/test_ticket_form_packs.py server/tests/test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket -q` -> passed, 28 tests.
 - `python scripts/verify_workspace.py` -> passed.
 
 Live:

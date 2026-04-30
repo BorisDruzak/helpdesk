@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.db.models import TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
+from tickets.approval_policy import validate_approval_policy
 from tickets.closure_policy import validate_closure_policy
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
@@ -139,6 +140,15 @@ class TicketWorkflowService:
         if root_cause is not None:
             event_payload["root_cause"] = root_cause
             updates["root_cause"] = root_cause
+
+        approval_decision = await validate_approval_policy(
+            self.session,
+            ticket,
+            from_status=from_status,
+            to_status=to_status,
+        )
+        if approval_decision.get("applied"):
+            event_payload["approval_policy"] = approval_decision
 
         if to_status == "resolved":
             closure_decision = await validate_closure_policy(
