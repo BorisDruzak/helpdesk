@@ -2,7 +2,7 @@
 
 ## 2026-04-30 Help Desk Settings: Functional Policy Model
 
-Status: slice 2 implemented locally: executable `approval_policy`; live verification is next. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
+Status: slice 2 implemented, verified locally and checked live on the Linux stand. Scope is functional backend/domain behavior first; visual redesign is intentionally out of scope for this plan.
 
 ### Goal
 
@@ -153,6 +153,16 @@ Local:
 
 Live:
 
+- Released commit `e587d7c` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
+- Remote smoke passed: `GET /api/health` -> 200.
+- Live API login as support `op1` succeeded.
+- Created live verification ticket `051c5ea7-b55f-4e0c-90bc-97628e237e56` with `request_template.approval_policy`.
+- Transition to `in_progress` without approval returned HTTP 400 with `APPROVAL_POLICY_BLOCKED` and `approval_policy requires approved approval`.
+- After adding approved `ticket_approvals` row, transition to `in_progress` returned HTTP 200 and ticket status became `in_progress`.
+- Final remote status/smoke passed, then server was stopped: `active=inactive`.
+
+Previous closure-policy live check:
+
 - Released commit `248e276` with `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running`.
 - Remote smoke passed: `GET /api/health` -> 200.
 - Live API login as support `op1` succeeded.
@@ -166,5 +176,5 @@ Live:
 Next immediate action:
 
 1. Continue with slice 2: executable `approval_policy`.
-2. Start with failing tests that block access/change transitions without required approval evidence.
-3. Reuse the same workflow-policy pattern introduced in `server/tickets/closure_policy.py`.
+2. Continue with slice 3: calendar-aware SLA.
+3. Start with failing tests around `sla_service.py` due date calculation through the existing calendar engine.
