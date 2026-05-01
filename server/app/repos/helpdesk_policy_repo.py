@@ -13,6 +13,9 @@ from app.db.models import (
     ApprovalPolicy,
     ClosurePolicy,
     DiagnosticPolicy,
+    FormCondition,
+    FormField,
+    FormSchema,
     HelpdeskPolicyAudit,
     NotificationPolicy,
     OlaPolicy,
@@ -25,7 +28,7 @@ from app.db.models import (
     TicketType,
     VisibilityPolicy,
 )
-from tickets.form_catalog import next_form_pack_version
+from tickets.form_catalog import next_form_pack_version, validate_form_pack_schema
 from utils.versioning import version_key
 
 
@@ -203,6 +206,55 @@ def serialize_ticket_type(row: TicketType) -> dict[str, Any]:
     }
 
 
+def serialize_form_field(row: FormField) -> dict[str, Any]:
+    return {
+        "key": str(row.key),
+        "label": str(row.label),
+        "type": str(row.field_type),
+        "required": bool(row.required),
+        "options": deepcopy(row.options_json or []),
+        "validation": deepcopy(row.validation_json or {}),
+        "process_mapping": deepcopy(row.process_mapping_json or {}),
+        "visibility": deepcopy(row.visibility_json or {}),
+        "sort_order": int(row.sort_order or 0),
+    }
+
+
+def serialize_form_condition(row: FormCondition) -> dict[str, Any]:
+    return {
+        "condition": deepcopy(row.condition_json or {}),
+        "show_fields": deepcopy(row.show_fields_json or []),
+        "require_fields": deepcopy(row.require_fields_json or []),
+        "sort_order": int(row.sort_order or 0),
+    }
+
+
+def serialize_form_schema(
+    row: FormSchema,
+    *,
+    fields: list[FormField] | None = None,
+    conditions: list[FormCondition] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_id": str(row.schema_id),
+        "version": str(row.version),
+        "title": str(row.title),
+        "description": row.description,
+        "form_key": row.form_key,
+        "request_template_code": row.request_template_code,
+        "ticket_type": row.ticket_type,
+        "fields": [serialize_form_field(field) for field in fields or []],
+        "conditions": [serialize_form_condition(condition) for condition in conditions or []],
+        "config": deepcopy(row.config_json or {}),
+        "is_active": bool(row.is_active),
+        "published_at": row.published_at.isoformat() if row.published_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "created_by": row.created_by,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "updated_by": row.updated_by,
+    }
+
+
 def serialize_smart_view(row: SmartView) -> dict[str, Any]:
     return {
         "code": str(row.code),
@@ -295,6 +347,210 @@ class HelpdeskPolicyRepo:
         stmt = stmt.order_by(TicketType.code.asc(), TicketType.created_at.desc())
         rows = list((await self.session.execute(stmt)).scalars().all())
         return [serialize_ticket_type(row) for row in rows]
+
+    async def list_form_schemas(self, *, include_inactive: bool = True) -> list[dict[str, Any]]:
+        stmt = select(FormSchema)
+        if not include_inactive:
+            stmt = stmt.where(FormSchema.is_active.is_(True))
+        stmt = stmt.order_by(FormSchema.schema_id.asc(), FormSchema.created_at.desc())
+        schemas = list((await self.session.execute(stmt)).scalars().all())
+        result: list[dict[str, Any]] = []
+        for schema in schemas:
+            fields = list(
+                (
+                    await self.session.execute(
+                        select(FormField)
+                        .where(
+                            FormField.schema_id == schema.schema_id,
+                            FormField.schema_version == schema.version,
+                        )
+                        .order_by(FormField.sort_order.asc(), FormField.id.asc())
+                    )
+                ).scalars().all()
+            )
+            conditions = list(
+                (
+                    await self.session.execute(
+                        select(FormCondition)
+                        .where(
+                            FormCondition.schema_id == schema.schema_id,
+                            FormCondition.schema_version == schema.version,
+                        )
+                        .order_by(FormCondition.sort_order.asc(), FormCondition.id.asc())
+                    )
+                ).scalars().all()
+            )
+            result.append(serialize_form_schema(schema, fields=fields, conditions=conditions))
+        return result
+
+    async def publish_form_schema(
+        self,
+        *,
+        schema_id: str,
+        title: str,
+        fields: list[dict[str, Any]],
+        form_key: str | None = None,
+        request_template_code: str | None = None,
+        ticket_type: str | None = None,
+        description: str | None = None,
+        field_roles: dict[str, list[str]] | None = None,
+        conditions: list[dict[str, Any]] | None = None,
+        config: dict[str, Any] | None = None,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        requested_version: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_schema_id = normalize_template_code(schema_id)
+        if not normalized_schema_id:
+            raise ValueError("form schema id is required")
+        normalized_form_key = normalize_template_code(form_key or normalized_schema_id)
+        normalized_template_code = normalize_template_code(request_template_code) if request_template_code else None
+        if not isinstance(fields, list) or not fields:
+            raise ValueError("form schema fields must be a non-empty list")
+
+        raw_form = {
+            "key": normalized_form_key,
+            "request_kind": normalized_form_key,
+            "request_template_key": normalized_template_code or normalized_form_key,
+            "request_template_title": str(title or normalized_schema_id),
+            "title": str(title or normalized_schema_id),
+            "description": str(description or "").strip(),
+            "ticket_type": normalize_template_code(ticket_type) if ticket_type else None,
+            "field_roles": deepcopy(field_roles or {}),
+            "priority_policy": deepcopy((config or {}).get("priority_policy") if isinstance((config or {}).get("priority_policy"), dict) else {}),
+            "fields": deepcopy(fields),
+        }
+        normalized_pack = validate_form_pack_schema(
+            {
+                "pack_key": "form_schema_registry",
+                "version": "1.0.1",
+                "title": str(title or normalized_schema_id),
+                "description": str(description or ""),
+                "forms": [raw_form],
+            }
+        )
+        normalized_form = deepcopy(normalized_pack["forms"][0])
+        field_keys = {str(field.get("key") or "") for field in normalized_form.get("fields") or []}
+        normalized_conditions: list[dict[str, Any]] = []
+        for index, field in enumerate(normalized_form.get("fields") or []):
+            visibility = field.get("visible_when") if isinstance(field.get("visible_when"), dict) else None
+            if visibility:
+                normalized_conditions.append(
+                    {
+                        "condition": deepcopy(visibility),
+                        "show_fields": [field["key"]],
+                        "require_fields": [field["key"]] if field.get("required") else [],
+                        "sort_order": index,
+                    }
+                )
+        for index, raw_condition in enumerate(conditions or [], start=len(normalized_conditions)):
+            if not isinstance(raw_condition, dict):
+                raise ValueError("form condition must be an object")
+            condition = raw_condition.get("condition") or raw_condition.get("if")
+            if not isinstance(condition, dict):
+                raise ValueError("form condition requires condition")
+            dependency_field = str(condition.get("field") or "").strip()
+            if dependency_field and dependency_field not in field_keys:
+                raise ValueError(f"form condition references unknown field {dependency_field!r}")
+            show_fields = [str(item or "").strip() for item in raw_condition.get("show_fields") or [] if str(item or "").strip()]
+            require_fields = [str(item or "").strip() for item in raw_condition.get("require_fields") or [] if str(item or "").strip()]
+            missing = sorted({item for item in show_fields + require_fields if item not in field_keys})
+            if missing:
+                raise ValueError(f"form condition references unknown output fields: {', '.join(missing)}")
+            normalized_conditions.append(
+                {
+                    "condition": deepcopy(condition),
+                    "show_fields": show_fields,
+                    "require_fields": require_fields,
+                    "sort_order": int(raw_condition.get("sort_order") or index),
+                }
+            )
+
+        existing_rows = list(
+            (
+                await self.session.execute(
+                    select(FormSchema).where(FormSchema.schema_id == normalized_schema_id)
+                )
+            ).scalars().all()
+        )
+        latest = _latest_version(existing_rows)
+        version = str(requested_version or next_form_pack_version(latest)).strip()
+        now = datetime.now(timezone.utc)
+        await self.session.execute(
+            update(FormSchema)
+            .where(FormSchema.schema_id == normalized_schema_id, FormSchema.is_active.is_(True))
+            .values(is_active=False, valid_to=now, updated_at=now, updated_by=actor_id)
+        )
+        schema = FormSchema(
+            schema_id=normalized_schema_id,
+            version=version,
+            title=str(title or normalized_schema_id),
+            description=description,
+            form_key=normalized_form_key,
+            request_template_code=normalized_template_code,
+            ticket_type=normalize_template_code(ticket_type) if ticket_type else normalized_form.get("ticket_type"),
+            config_json={
+                **deepcopy(config or {}),
+                "form": {
+                    key: deepcopy(value)
+                    for key, value in normalized_form.items()
+                    if key not in {"fields"}
+                },
+            },
+            is_active=True,
+            valid_from=now,
+            published_at=now,
+            created_at=now,
+            created_by=actor_id,
+            updated_at=now,
+            updated_by=actor_id,
+        )
+        self.session.add(schema)
+        await self.session.flush()
+        field_rows: list[FormField] = []
+        for index, field in enumerate(normalized_form.get("fields") or []):
+            field_row = FormField(
+                schema_id=normalized_schema_id,
+                schema_version=version,
+                key=str(field.get("key") or ""),
+                label=str(field.get("label") or field.get("key") or ""),
+                field_type=str(field.get("type") or "text"),
+                required=bool(field.get("required")),
+                options_json=deepcopy(field.get("options") or []),
+                validation_json=deepcopy(field.get("validation") or {}),
+                process_mapping_json=deepcopy(field.get("process_mapping") or {}),
+                visibility_json=deepcopy(field.get("visible_when") or {}),
+                sort_order=index,
+                created_at=now,
+            )
+            self.session.add(field_row)
+            field_rows.append(field_row)
+        condition_rows: list[FormCondition] = []
+        for index, condition in enumerate(normalized_conditions):
+            condition_row = FormCondition(
+                schema_id=normalized_schema_id,
+                schema_version=version,
+                condition_json=deepcopy(condition.get("condition") or {}),
+                show_fields_json=deepcopy(condition.get("show_fields") or []),
+                require_fields_json=deepcopy(condition.get("require_fields") or []),
+                sort_order=int(condition.get("sort_order") or index),
+                created_at=now,
+            )
+            self.session.add(condition_row)
+            condition_rows.append(condition_row)
+        await self.session.flush()
+        serialized = serialize_form_schema(schema, fields=field_rows, conditions=condition_rows)
+        await self._audit(
+            entity_type="form_schemas",
+            entity_code=normalized_schema_id,
+            version=version,
+            action="published",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json=None,
+            after_json=serialized,
+        )
+        return serialized
 
     async def list_smart_views(self, *, include_inactive: bool = True) -> list[dict[str, Any]]:
         stmt = select(SmartView)

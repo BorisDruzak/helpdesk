@@ -124,6 +124,9 @@ from web_api.dto.admin import (
     AdminHelpdeskPolicyDiffRequest,
     AdminHelpdeskPolicyDiffResult,
     AdminHelpdeskPolicyItem,
+    AdminHelpdeskFormSchemaItem,
+    AdminHelpdeskPublishFormSchemaRequest,
+    AdminHelpdeskPublishFormSchemaResult,
     AdminHelpdeskPublishPolicyRequest,
     AdminHelpdeskPublishPolicyResult,
     AdminHelpdeskPublishSmartViewRequest,
@@ -298,6 +301,7 @@ _HELPDESK_MODEL_POLICY_ROLLBACK_ENDPOINT = "/api/web/admin/helpdesk-model/polici
 _HELPDESK_MODEL_PUBLISH_TICKET_TYPE_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/publish"
 _HELPDESK_MODEL_TICKET_TYPE_DEACTIVATE_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/deactivate"
 _HELPDESK_MODEL_TICKET_TYPE_ROLLBACK_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/rollback"
+_HELPDESK_MODEL_PUBLISH_FORM_SCHEMA_ENDPOINT = "/api/web/admin/helpdesk-model/form-schemas/publish"
 _HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT = "/api/web/admin/helpdesk-model/smart-views/publish"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
@@ -474,6 +478,8 @@ def _map_admin_form_field(raw_field: dict | None) -> AdminFormsFieldItem:
             if isinstance(option, dict)
         ],
         visible_when=_map_admin_form_visible_when(field.get("visible_when")),
+        validation=field.get("validation") if isinstance(field.get("validation"), dict) else {},
+        process_mapping=field.get("process_mapping") if isinstance(field.get("process_mapping"), dict) else {},
     )
 
 
@@ -626,6 +632,10 @@ def _serialize_admin_form_field_request(payload: AdminFormsSaveFieldRequest) -> 
     visible_when = _serialize_admin_form_visible_when(payload.visible_when)
     if visible_when:
         field_payload["visible_when"] = visible_when
+    if payload.validation:
+        field_payload["validation"] = dict(payload.validation)
+    if payload.process_mapping:
+        field_payload["process_mapping"] = dict(payload.process_mapping)
     return field_payload
 
 
@@ -2007,6 +2017,10 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             AdminHelpdeskTicketTypeItem.model_validate(item)
             for item in await repo.list_ticket_types(include_inactive=True)
         ]
+        form_schemas = [
+            AdminHelpdeskFormSchemaItem.model_validate(item)
+            for item in await repo.list_form_schemas(include_inactive=True)
+        ]
         policies_raw = await repo.list_policies(include_inactive=True)
         policies = {
             kind: [AdminHelpdeskPolicyItem.model_validate(item) for item in items]
@@ -2024,6 +2038,8 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             active_request_templates_count=sum(1 for item in request_templates if item.is_active),
             ticket_types_count=len(ticket_types),
             active_ticket_types_count=sum(1 for item in ticket_types if item.is_active),
+            form_schemas_count=len(form_schemas),
+            active_form_schemas_count=sum(1 for item in form_schemas if item.is_active),
             policies_count=len(all_policies),
             active_policies_count=sum(1 for item in all_policies if item.is_active),
             smart_views_count=len(smart_views),
@@ -2039,12 +2055,14 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             publish_ticket_type_endpoint=_HELPDESK_MODEL_PUBLISH_TICKET_TYPE_ENDPOINT,
             ticket_type_deactivate_endpoint=_HELPDESK_MODEL_TICKET_TYPE_DEACTIVATE_ENDPOINT,
             ticket_type_rollback_endpoint=_HELPDESK_MODEL_TICKET_TYPE_ROLLBACK_ENDPOINT,
+            publish_form_schema_endpoint=_HELPDESK_MODEL_PUBLISH_FORM_SCHEMA_ENDPOINT,
             publish_smart_view_endpoint=_HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT,
             inheritance_order=["system", "ticket_type", "category", "request_template"],
             policy_kinds=sorted(POLICY_MODELS.keys()),
         ),
         request_templates=request_templates,
         ticket_types=ticket_types,
+        form_schemas=form_schemas,
         policies=policies,
         smart_views=smart_views,
     )
@@ -2085,6 +2103,22 @@ async def _publish_helpdesk_template_from_form(
 
     async with get_session() as session:
         repo = HelpdeskPolicyRepo(session)
+        form_schema = await repo.publish_form_schema(
+            schema_id=f"{template_code}_form",
+            title=str(form.get("title") or template_code),
+            description=str(form.get("description") or "").strip() or None,
+            form_key=template_code,
+            request_template_code=template_code,
+            ticket_type=str(form.get("ticket_type") or "incident"),
+            fields=form.get("fields") if isinstance(form.get("fields"), list) else [],
+            field_roles=form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
+            config={
+                "source": "forms_builder_visual_constructor",
+                "request_kind": form.get("request_kind") or template_code,
+            },
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
         if payload.publish_policies:
             for kind, field_name in policy_fields.items():
                 config = form.get(field_name) if isinstance(form.get(field_name), dict) else {}
@@ -2128,6 +2162,11 @@ async def _publish_helpdesk_template_from_form(
             notification_policy_code=policy_ref_by_kind.get("notification"),
             config={
                 "form": form,
+                "form_schema": {
+                    "schema_id": form_schema["schema_id"],
+                    "version": form_schema["version"],
+                    "field_count": len(form_schema.get("fields") or []),
+                },
                 "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
                 "ola_policy": form.get("ola_policy") if isinstance(form.get("ola_policy"), dict) else {},
                 "suggested_playbook_id": form.get("suggested_playbook_id"),
@@ -2142,8 +2181,10 @@ async def _publish_helpdesk_template_from_form(
         await session.commit()
 
     typed_template = AdminHelpdeskRequestTemplateItem.model_validate(request_template)
+    typed_form_schema = AdminHelpdeskFormSchemaItem.model_validate(form_schema)
     return AdminHelpdeskPublishFromFormResult(
         request_template=typed_template,
+        form_schema=typed_form_schema,
         policies=policies,
         message=(
             f"Шаблон обращения {typed_template.template_code} опубликован в реестр как версия "
@@ -2189,6 +2230,39 @@ async def _publish_helpdesk_ticket_type(
     return AdminHelpdeskPublishTicketTypeResult(
         ticket_type=ticket_type,
         message=f"Ticket type {ticket_type.code} published as version {ticket_type.version}.",
+    )
+
+
+async def _publish_helpdesk_form_schema(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishFormSchemaRequest,
+) -> AdminHelpdeskPublishFormSchemaResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.publish_form_schema(
+            schema_id=payload.schema_id,
+            title=payload.title,
+            description=payload.description,
+            form_key=payload.form_key,
+            request_template_code=payload.request_template_code,
+            ticket_type=payload.ticket_type,
+            fields=payload.fields,
+            field_roles=payload.field_roles,
+            conditions=payload.conditions,
+            config=payload.config,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            requested_version=payload.requested_version,
+        )
+        await session.commit()
+
+    form_schema = AdminHelpdeskFormSchemaItem.model_validate(item)
+    return AdminHelpdeskPublishFormSchemaResult(
+        form_schema=form_schema,
+        message=f"Form schema {form_schema.schema_id} published as version {form_schema.version}.",
     )
 
 
@@ -3138,6 +3212,48 @@ async def handle_web_admin_helpdesk_model_publish_ticket_type(request: web.Reque
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPublishTicketTypeResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_publish_form_schema(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPublishFormSchemaRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Check form schema payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_helpdesk_form_schema(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Check form schema payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_publish_form_schema] Failed to publish form schema: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Could not publish form schema",
+                "error_code": "HELPDESK_FORM_SCHEMA_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPublishFormSchemaResult](data=result))
 
 
 @require_auth("admin")

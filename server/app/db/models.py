@@ -1533,6 +1533,96 @@ class TicketType(Base):
     )
 
 
+class FormSchema(Base):
+    """Versioned first-class intake form schema linked by request templates."""
+
+    __tablename__ = "form_schemas"
+
+    schema_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    form_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    request_template_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    ticket_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_form_schemas_active", "schema_id", "is_active"),
+        Index("ix_form_schemas_template", "request_template_code", "is_active"),
+        Index("ix_form_schemas_published_at", "published_at"),
+    )
+
+
+class FormField(Base):
+    """Field definition materialized from a versioned form schema."""
+
+    __tablename__ = "form_fields"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    schema_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    field_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    options_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    validation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    process_mapping_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    visibility_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint("schema_id", "schema_version", "key", name="uq_form_fields_schema_key"),
+        Index("ix_form_fields_schema", "schema_id", "schema_version"),
+    )
+
+
+class FormCondition(Base):
+    """Conditional visibility/requiredness rule for a versioned form schema."""
+
+    __tablename__ = "form_conditions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    schema_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    condition_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    show_fields_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    require_fields_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_form_conditions_schema", "schema_id", "schema_version"),
+    )
+
+
 class RequestTemplate(Base):
     """Versioned request template assembled from form, workflow and policy references."""
 

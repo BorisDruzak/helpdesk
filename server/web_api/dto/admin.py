@@ -302,6 +302,8 @@ class AdminFormsFieldItem(BaseModel):
     help_text: str | None = None
     options: list[AdminFormsFieldOption] = Field(default_factory=list)
     visible_when: AdminFormsVisibleWhen | None = None
+    validation: dict[str, Any] = Field(default_factory=dict)
+    process_mapping: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdminFormsPlaybookTrigger(BaseModel):
@@ -397,6 +399,8 @@ class AdminFormsSaveFieldRequest(BaseModel):
     help_text: str | None = None
     options: list[AdminFormsSaveFieldOptionRequest] = Field(default_factory=list)
     visible_when: AdminFormsSaveVisibleWhenRequest | None = None
+    validation: dict[str, Any] = Field(default_factory=dict)
+    process_mapping: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdminFormsSaveFormRequest(BaseModel):
@@ -581,6 +585,50 @@ class AdminHelpdeskSmartViewItem(BaseModel):
     updated_by: str | None = None
 
 
+class AdminHelpdeskFormFieldItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    type: str
+    required: bool = False
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    validation: dict[str, Any] = Field(default_factory=dict)
+    process_mapping: dict[str, Any] = Field(default_factory=dict)
+    visibility: dict[str, Any] = Field(default_factory=dict)
+    sort_order: int = 0
+
+
+class AdminHelpdeskFormConditionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    condition: dict[str, Any] = Field(default_factory=dict)
+    show_fields: list[str] = Field(default_factory=list)
+    require_fields: list[str] = Field(default_factory=list)
+    sort_order: int = 0
+
+
+class AdminHelpdeskFormSchemaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str
+    version: str
+    title: str
+    description: str | None = None
+    form_key: str | None = None
+    request_template_code: str | None = None
+    ticket_type: str | None = None
+    fields: list[AdminHelpdeskFormFieldItem] = Field(default_factory=list)
+    conditions: list[AdminHelpdeskFormConditionItem] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
 class AdminHelpdeskModelCapabilities(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -593,6 +641,7 @@ class AdminHelpdeskModelCapabilities(BaseModel):
     publish_ticket_type_endpoint: str
     ticket_type_deactivate_endpoint: str | None = None
     ticket_type_rollback_endpoint: str | None = None
+    publish_form_schema_endpoint: str
     publish_smart_view_endpoint: str
     inheritance_order: list[str]
     policy_kinds: list[str]
@@ -605,6 +654,8 @@ class AdminHelpdeskModelSummary(BaseModel):
     active_request_templates_count: int
     ticket_types_count: int
     active_ticket_types_count: int
+    form_schemas_count: int
+    active_form_schemas_count: int
     policies_count: int
     active_policies_count: int
     smart_views_count: int
@@ -618,6 +669,7 @@ class AdminHelpdeskModelPayload(BaseModel):
     capabilities: AdminHelpdeskModelCapabilities
     request_templates: list[AdminHelpdeskRequestTemplateItem] = Field(default_factory=list)
     ticket_types: list[AdminHelpdeskTicketTypeItem] = Field(default_factory=list)
+    form_schemas: list[AdminHelpdeskFormSchemaItem] = Field(default_factory=list)
     policies: dict[str, list[AdminHelpdeskPolicyItem]] = Field(default_factory=dict)
     smart_views: list[AdminHelpdeskSmartViewItem] = Field(default_factory=list)
 
@@ -633,7 +685,31 @@ class AdminHelpdeskPublishFromFormResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_template: AdminHelpdeskRequestTemplateItem
+    form_schema: AdminHelpdeskFormSchemaItem
     policies: dict[str, AdminHelpdeskPolicyItem] = Field(default_factory=dict)
+    message: str
+
+
+class AdminHelpdeskPublishFormSchemaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str
+    title: str
+    description: str | None = None
+    form_key: str | None = None
+    request_template_code: str | None = None
+    ticket_type: str | None = None
+    fields: list[dict[str, Any]]
+    field_roles: dict[str, list[str]] = Field(default_factory=dict)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+    requested_version: str | None = None
+
+
+class AdminHelpdeskPublishFormSchemaResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    form_schema: AdminHelpdeskFormSchemaItem
     message: str
 
 

@@ -416,6 +416,24 @@ def _normalize_optional_dict(raw_value: Any, field_name: str) -> dict[str, Any]:
     return deepcopy(raw_value)
 
 
+def _normalize_process_mapping(raw_value: Any, *, roles: list[str] | None = None) -> dict[str, Any]:
+    mapping = _normalize_optional_dict(raw_value, "process_mapping")
+    normalized_roles: list[str] = []
+    for raw_role in list(roles or []) + list(mapping.get("roles") or []):
+        role = str(raw_role or "").strip()
+        if not role:
+            continue
+        if role not in _ALLOWED_FIELD_ROLES:
+            raise ValueError(f"process_mapping.roles has unsupported role {role!r}")
+        if role not in normalized_roles:
+            normalized_roles.append(role)
+    if normalized_roles:
+        mapping["roles"] = normalized_roles
+    elif "roles" in mapping:
+        mapping.pop("roles", None)
+    return mapping
+
+
 def _normalize_field_roles(raw_value: Any, field_keys: set[str], *, form_key: str) -> dict[str, list[str]]:
     if raw_value in (None, ""):
         return {}
@@ -536,6 +554,8 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                     "placeholder": str(raw_field.get("placeholder") or "").strip(),
                     "help_text": str(raw_field.get("help_text") or "").strip(),
                     "options": normalized_options,
+                    "validation": _normalize_optional_dict(raw_field.get("validation"), "validation"),
+                    "process_mapping": _normalize_process_mapping(raw_field.get("process_mapping")),
                     "visible_when": _normalize_visible_when(raw_field.get("visible_when")),
                 }
             )
@@ -592,9 +612,30 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                 merged_field_roles.setdefault(policy_field_key, ["priority_field"])
         if isinstance(raw_field_roles, dict):
             merged_field_roles.update(raw_field_roles)
+        for raw_field in raw_fields:
+            if not isinstance(raw_field, dict):
+                continue
+            field_key = str(raw_field.get("key") or "").strip()
+            process_mapping = raw_field.get("process_mapping")
+            if not field_key or not isinstance(process_mapping, dict):
+                continue
+            roles = process_mapping.get("roles")
+            if not isinstance(roles, list):
+                continue
+            for role in roles:
+                merged_field_roles.setdefault(field_key, [])
+                if role not in merged_field_roles[field_key]:
+                    merged_field_roles[field_key].append(role)
+        normalized_field_roles = _normalize_field_roles(merged_field_roles, seen_fields, form_key=form_key)
+        for normalized_field in normalized_fields:
+            field_key = str(normalized_field.get("key") or "").strip()
+            normalized_field["process_mapping"] = _normalize_process_mapping(
+                normalized_field.get("process_mapping"),
+                roles=normalized_field_roles.get(field_key, []),
+            )
         template_context: dict[str, Any] = {
             "ticket_type": ticket_type,
-            "field_roles": _normalize_field_roles(merged_field_roles, seen_fields, form_key=form_key),
+            "field_roles": normalized_field_roles,
         }
         for int_field in _TEMPLATE_INT_FIELDS:
             value = _normalize_optional_int(raw_form.get(int_field), int_field)
@@ -737,7 +778,9 @@ def validate_form_submission(
             else:
                 is_empty = not str(value or "").strip()
             if is_empty:
-                errors[key] = "Поле обязательно"
+                validation = field_def.get("validation") if isinstance(field_def.get("validation"), dict) else {}
+                required_message = str(validation.get("required_message") or "").strip()
+                errors[key] = required_message or "Поле обязательно"
                 continue
         if field_def.get("type") == "checkbox":
             submitted_values[key] = bool(value)

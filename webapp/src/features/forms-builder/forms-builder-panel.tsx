@@ -74,6 +74,8 @@ type DraftField = {
   placeholder: string;
   help_text: string;
   options: AdminFormsFieldOption[];
+  validation?: Record<string, unknown>;
+  process_mapping?: Record<string, unknown>;
   visible_when: {
     field: string;
     equals: string;
@@ -403,6 +405,8 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
           value: option.value,
           label: option.label,
         })),
+        validation: field.validation ?? {},
+        process_mapping: field.process_mapping ?? {},
         visible_when: {
           field: field.visible_when?.field ?? "",
           equals: field.visible_when?.equals ?? "",
@@ -586,6 +590,16 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
               }
             : {}),
           options,
+          ...(Object.keys(field.validation ?? {}).length
+            ? {
+                validation: field.validation ?? {},
+              }
+            : {}),
+          ...(Object.keys(field.process_mapping ?? {}).length
+            ? {
+                process_mapping: field.process_mapping ?? {},
+              }
+            : {}),
           ...(visibleWhen
             ? {
                 visible_when: visibleWhen,
@@ -2804,8 +2818,10 @@ function HelpdeskModelRegistryPanel({
   selectedForm: DraftForm | null;
 }) {
   const selectedTemplate = data?.request_templates.find((item) => item.template_code === selectedForm?.key);
+  const selectedFormSchema = data?.form_schemas.find((item) => item.schema_id === `${selectedForm?.key ?? ""}_form` && item.is_active);
   const activePolicies = data?.summary.active_policies_count ?? 0;
   const activeTemplates = data?.summary.active_request_templates_count ?? 0;
+  const activeFormSchemas = data?.summary.active_form_schemas_count ?? 0;
   return (
     <div className="rounded-[1.1rem] border border-emerald-200 bg-emerald-50/70 px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2824,10 +2840,14 @@ function HelpdeskModelRegistryPanel({
           {publishPending ? "Публикуем..." : "Опубликовать в реестр"}
         </Button>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
         <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Шаблоны</p>
           <p className="mt-2 text-2xl font-semibold text-slate-950">{isLoading ? "..." : activeTemplates}</p>
+        </div>
+        <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Form schemas</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950">{isLoading ? "..." : activeFormSchemas}</p>
         </div>
         <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Политики</p>
@@ -2842,7 +2862,7 @@ function HelpdeskModelRegistryPanel({
         <div className="rounded-[0.9rem] border border-emerald-100 bg-white px-3 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Текущий шаблон</p>
           <p className="mt-2 truncate text-sm font-semibold text-slate-950">
-            {selectedTemplate ? `${selectedTemplate.version} опубликован` : "ещё не в реестре"}
+            {selectedTemplate ? `${selectedTemplate.version} / schema ${selectedFormSchema?.version ?? "n/a"}` : "ещё не в реестре"}
           </p>
         </div>
       </div>

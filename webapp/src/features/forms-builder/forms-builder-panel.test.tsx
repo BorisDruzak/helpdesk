@@ -57,7 +57,9 @@ function createFormsPayload(): AdminFormsPayload {
             placeholder: "",
             help_text: "",
             options: [],
-            visible_when: null
+            visible_when: null,
+            validation: {},
+            process_mapping: {}
           },
           {
             key: "printer_model",
@@ -68,7 +70,9 @@ function createFormsPayload(): AdminFormsPayload {
             placeholder: "",
             help_text: "",
             options: [],
-            visible_when: null
+            visible_when: null,
+            validation: {},
+            process_mapping: {}
           }
         ]
       }
@@ -83,6 +87,8 @@ function createHelpdeskModelRegistryPayload(): AdminHelpdeskModelPayload {
       active_request_templates_count: 0,
       ticket_types_count: 0,
       active_ticket_types_count: 0,
+      form_schemas_count: 0,
+      active_form_schemas_count: 0,
       policies_count: 0,
       active_policies_count: 0,
       smart_views_count: 0,
@@ -98,12 +104,14 @@ function createHelpdeskModelRegistryPayload(): AdminHelpdeskModelPayload {
       publish_ticket_type_endpoint: "/api/web/admin/helpdesk-model/ticket-types/publish",
       ticket_type_deactivate_endpoint: "/api/web/admin/helpdesk-model/ticket-types/deactivate",
       ticket_type_rollback_endpoint: "/api/web/admin/helpdesk-model/ticket-types/rollback",
+      publish_form_schema_endpoint: "/api/web/admin/helpdesk-model/form-schemas/publish",
       publish_smart_view_endpoint: "/api/web/admin/helpdesk-model/smart-views/publish",
       inheritance_order: ["system", "ticket_type", "category", "request_template"],
       policy_kinds: ["approval", "closure", "diagnostic", "notification", "ola", "priority", "reporting", "routing", "sla", "visibility"],
     },
     request_templates: [],
     ticket_types: [],
+    form_schemas: [],
     policies: {
       approval: [],
       closure: [],
@@ -758,6 +766,8 @@ describe("FormsBuilderPanel", () => {
               { value: "network", label: "Сеть" },
             ],
             visible_when: null,
+            validation: {},
+            process_mapping: {},
           };
           payload.forms[0].fields[1].visible_when = {
             field: "issue_type",
@@ -1060,6 +1070,24 @@ describe("FormsBuilderPanel", () => {
                 notification_policy_code: null,
                 config: {},
                 overrides: {},
+                is_active: true,
+                published_at: "2026-04-30T18:00:00+05:00",
+                created_at: "2026-04-30T18:00:00+05:00",
+                created_by: "admin1",
+                updated_at: "2026-04-30T18:00:00+05:00",
+                updated_by: "admin1"
+              },
+              form_schema: {
+                schema_id: "printer_form",
+                version: "1.0.1",
+                title: "Печать / принтер",
+                description: "Проблемы печати",
+                form_key: "printer",
+                request_template_code: "printer",
+                ticket_type: "incident",
+                fields: [],
+                conditions: [],
+                config: {},
                 is_active: true,
                 published_at: "2026-04-30T18:00:00+05:00",
                 created_at: "2026-04-30T18:00:00+05:00",

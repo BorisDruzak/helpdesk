@@ -26,6 +26,7 @@
 - Для проверяемого закрытия в госсекторном контуре тикет может иметь `evidence_required=true`; переход в `resolved` тогда запрещён без `evidence_ref` или записи в `ticket_evidence_items`, а официальный `Паспорт решения` собирается из фактов тикета, событий, операций, worklog, согласований и доказательств.
 - Request-template `closure_policy` исполняется в `server/tickets/closure_policy.py` при переходе в `resolved`: политика может требовать `resolution_code`, публичный `resolution_summary` / `requester_resolution_summary` и evidence для указанных P0..P3 приоритетов.
 - Versioned `ticket_types` live in the standalone helpdesk model registry (`ticket_types`, migration `066`). A ticket type is the top-level process profile (`incident`, `service_request`, `access_request`, etc.) with default workflow/profile/policy references and feature flags; `request_templates` inherit those defaults when published while legacy unknown `ticket_type` values remain accepted for old form packs.
+- Versioned `form_schemas`, `form_fields` and `form_conditions` live in migration `067`. `request_templates.form_schema_id` is now backed by a first-class schema publication when the visual forms builder publishes a template; the legacy `ticket_form_packs` path stays compatible for `/help`, agent create and old packs. Field `process_mapping.roles` is normalized as an alias of existing `field_roles`, and `validation.required_message` is preserved by server-side submission validation.
 
 ---
 

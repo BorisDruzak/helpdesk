@@ -21,6 +21,8 @@ export type AdminFormsFieldItem = {
   help_text: string | null;
   options: AdminFormsFieldOption[];
   visible_when: AdminFormsVisibleWhen | null;
+  validation: Record<string, unknown>;
+  process_mapping: Record<string, unknown>;
 };
 
 export type AdminFormsPlaybookTrigger = {
@@ -114,6 +116,8 @@ export type AdminFormsSaveRequest = {
       placeholder?: string;
       help_text?: string;
       options: AdminFormsFieldOption[];
+      validation?: Record<string, unknown>;
+      process_mapping?: Record<string, unknown>;
       visible_when?: {
         field: string;
         equals?: string;
@@ -257,12 +261,48 @@ export type AdminHelpdeskTicketTypeItem = {
   updated_by: string | null;
 };
 
+export type AdminHelpdeskFormSchemaItem = {
+  schema_id: string;
+  version: string;
+  title: string;
+  description: string | null;
+  form_key: string | null;
+  request_template_code: string | null;
+  ticket_type: string | null;
+  fields: Array<{
+    key: string;
+    label: string;
+    type: string;
+    required: boolean;
+    options: Array<Record<string, unknown>>;
+    validation: Record<string, unknown>;
+    process_mapping: Record<string, unknown>;
+    visibility: Record<string, unknown>;
+    sort_order: number;
+  }>;
+  conditions: Array<{
+    condition: Record<string, unknown>;
+    show_fields: string[];
+    require_fields: string[];
+    sort_order: number;
+  }>;
+  config: Record<string, unknown>;
+  is_active: boolean;
+  published_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
 export type AdminHelpdeskModelPayload = {
   summary: {
     request_templates_count: number;
     active_request_templates_count: number;
     ticket_types_count: number;
     active_ticket_types_count: number;
+    form_schemas_count: number;
+    active_form_schemas_count: number;
     policies_count: number;
     active_policies_count: number;
     smart_views_count: number;
@@ -278,18 +318,21 @@ export type AdminHelpdeskModelPayload = {
     publish_ticket_type_endpoint: string;
     ticket_type_deactivate_endpoint?: string | null;
     ticket_type_rollback_endpoint?: string | null;
+    publish_form_schema_endpoint: string;
     publish_smart_view_endpoint: string;
     inheritance_order: string[];
     policy_kinds: string[];
   };
   request_templates: AdminHelpdeskRequestTemplateItem[];
   ticket_types: AdminHelpdeskTicketTypeItem[];
+  form_schemas: AdminHelpdeskFormSchemaItem[];
   policies: Record<string, AdminHelpdeskPolicyItem[]>;
   smart_views: AdminHelpdeskSmartViewItem[];
 };
 
 export type AdminHelpdeskPublishFromFormResult = {
   request_template: AdminHelpdeskRequestTemplateItem;
+  form_schema: AdminHelpdeskFormSchemaItem;
   policies: Record<string, AdminHelpdeskPolicyItem>;
   message: string;
 };

@@ -1010,3 +1010,46 @@ def test_validate_form_submission_applies_visible_when_in():
     assert "inventory_number" not in hidden["submitted_values"]
     assert [item["key"] for item in hidden["summary_rows"][:1]] == ["asset_type"]
     assert "impact_scope" in [item["key"] for item in hidden["summary_rows"]]
+
+
+def test_form_pack_schema_preserves_validation_and_process_mapping_alias():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.1",
+            "forms": [
+                {
+                    "key": "website",
+                    "title": "Website",
+                    "field_roles": {"url": ["routing_field"]},
+                    "fields": [
+                        {
+                            "key": "url",
+                            "label": "URL",
+                            "type": "url",
+                            "required": True,
+                            "validation": {"required_message": "Provide URL"},
+                            "process_mapping": {
+                                "roles": ["diagnostic_input"],
+                                "diagnostic_param": "target_url",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    form = pack["forms"][0]
+    field = form["fields"][0]
+    assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
+    assert field["validation"]["required_message"] == "Provide URL"
+    assert field["process_mapping"] == {
+        "roles": ["routing_field", "diagnostic_input"],
+        "diagnostic_param": "target_url",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        validate_form_submission(pack, form_key="website", raw_values={"url": ""})
+
+    assert exc.value.args[0]["url"] == "Provide URL"

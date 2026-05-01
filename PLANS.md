@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 1 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After the `ticket_types` registry slice the working estimate is backend/runtime about 78%, server UI about 72%, agent GUI unchanged about 73%, overall about 74%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 2 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`) and Slice 2 (`form_schemas`/`form_fields`/`form_conditions`) the working estimate is backend/runtime about 80%, server UI about 74%, agent GUI unchanged about 73%, overall about 76%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -29,6 +29,7 @@ Status: Slice 1 is implemented locally. Baseline audit was backend/runtime about
 
 - Уже есть `request_templates` и versioned policy tables для priority, SLA, OLA, routing, approval, closure, diagnostic, notification, visibility, reporting, smart views и audit.
 - Implemented Slice 1: versioned `ticket_types` registry with defaults, feature flags, audit, API lifecycle endpoints and active ticket type exposure in settings/forms-builder selectors.
+- Implemented Slice 2: versioned `form_schemas`, `form_fields` and `form_conditions`; visual publish-from-form now materializes `request_template.form_schema_id` as a first-class schema while preserving legacy `ticket_form_packs` compatibility. Field `process_mapping.roles` is normalized as an alias to current `field_roles`; `validation.required_message` is preserved by submission validation.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
@@ -67,12 +68,19 @@ Slice 1 verification:
 
 ### Slice 2: Form Schema Registry
 
-- [ ] Add `form_schemas`, `form_fields`, `form_conditions` or equivalent versioned tables; do not remove `ticket_form_packs` yet.
-- [ ] Add migration/adapter that can publish current form pack forms into `form_schemas` and keep `request_template.form_schema_id` as a first-class reference.
-- [ ] Move field validation rules into reusable schema runtime while preserving `validate_form_submission(pack, ...)`.
-- [ ] Extend field config with `validation.required_message`, richer constraints for `url/email/phone/date/datetime/file`, and explicit `process_mapping` alias to current `field_roles`.
-- [ ] Tests: schema publication, conditional required fields, invalid field refs, legacy pack compatibility, agent/public create compatibility.
-- [ ] UI: server admin shows schema version/reference, field roles and conditions without raw JSON for the common path.
+- [x] Add `form_schemas`, `form_fields`, `form_conditions` or equivalent versioned tables; do not remove `ticket_form_packs` yet.
+- [x] Add migration/adapter that can publish current form pack forms into `form_schemas` and keep `request_template.form_schema_id` as a first-class reference.
+- [x] Move field validation metadata into reusable schema publication while preserving `validate_form_submission(pack, ...)`.
+- [x] Extend field config with `validation.required_message` and explicit `process_mapping` alias to current `field_roles`.
+- [x] Tests: schema publication, conditional fields, invalid field refs through existing pack validation, legacy pack compatibility, agent/public create compatibility via full form-pack regression suite.
+- [x] UI: server admin shows active form schema count and selected template schema version/reference in the registry panel.
+
+Slice 2 verification:
+
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_helpdesk_policy_repo_publishes_form_schema_fields_conditions_and_audit server/tests/test_helpdesk_policy_registry.py::test_web_admin_publish_from_form_creates_form_schema_reference server/tests/test_ticket_form_packs.py::test_form_pack_schema_preserves_validation_and_process_mapping_alias -q --tb=short` -> 3 passed.
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_form_packs.py -q --tb=short` -> 32 passed.
+- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
+- `pnpm --dir webapp run build` -> passed.
 
 ### Slice 3: Policy Reference Cleanup For Request Templates
 

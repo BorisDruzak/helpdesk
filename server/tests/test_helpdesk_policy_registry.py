@@ -8,6 +8,9 @@ from app.db.models import (
     ApprovalPolicy,
     ClosurePolicy,
     DiagnosticPolicy,
+    FormCondition,
+    FormField,
+    FormSchema,
     HelpdeskPolicyAudit,
     NotificationPolicy,
     OlaPolicy,
@@ -32,6 +35,9 @@ async def _clear_policy_registry(test_engine) -> None:
     async with session_maker() as session:
         for model in (
             HelpdeskPolicyAudit,
+            FormCondition,
+            FormField,
+            FormSchema,
             SmartView,
             RequestTemplate,
             TicketType,
@@ -189,6 +195,160 @@ async def test_helpdesk_policy_repo_keeps_legacy_unknown_ticket_type_fallback(te
 
 
 @pytest.mark.asyncio
+async def test_helpdesk_policy_repo_publishes_form_schema_fields_conditions_and_audit(test_engine):
+    await _clear_policy_registry(test_engine)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        first = await repo.publish_form_schema(
+            schema_id="website_unavailable_form",
+            title="Website unavailable form",
+            form_key="website_unavailable",
+            request_template_code="website_unavailable",
+            ticket_type="incident",
+            fields=[
+                {
+                    "key": "url",
+                    "label": "URL",
+                    "type": "url",
+                    "required": True,
+                    "validation": {"required_message": "URL is required"},
+                    "process_mapping": {
+                        "roles": ["diagnostic_input", "routing_field"],
+                        "diagnostic_param": "target_url",
+                    },
+                },
+                {
+                    "key": "affected_scope",
+                    "label": "Affected scope",
+                    "type": "select",
+                    "required": True,
+                    "options": [
+                        {"value": "only_me", "label": "Only me"},
+                        {"value": "department", "label": "Department"},
+                    ],
+                },
+                {
+                    "key": "affected_count",
+                    "label": "Affected count",
+                    "type": "text",
+                    "required": True,
+                    "visible_when": {"field": "affected_scope", "equals": "department"},
+                },
+            ],
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        second = await repo.publish_form_schema(
+            schema_id="website_unavailable_form",
+            title="Website unavailable form v2",
+            form_key="website_unavailable",
+            request_template_code="website_unavailable",
+            ticket_type="incident",
+            fields=[
+                {"key": "url", "label": "URL", "type": "url", "required": True},
+            ],
+            actor_id="admin2",
+            actor_role="admin",
+        )
+        await session.commit()
+
+        schemas = list(
+            (
+                await session.execute(
+                    select(FormSchema).where(FormSchema.schema_id == "website_unavailable_form")
+                )
+            ).scalars().all()
+        )
+        fields = list(
+            (
+                await session.execute(
+                    select(FormField)
+                    .where(
+                        FormField.schema_id == "website_unavailable_form",
+                        FormField.schema_version == "1.0.1",
+                    )
+                    .order_by(FormField.sort_order.asc())
+                )
+            ).scalars().all()
+        )
+        conditions = list(
+            (
+                await session.execute(
+                    select(FormCondition).where(
+                        FormCondition.schema_id == "website_unavailable_form",
+                        FormCondition.schema_version == "1.0.1",
+                    )
+                )
+            ).scalars().all()
+        )
+
+    assert first["version"] == "1.0.1"
+    assert second["version"] == "1.0.2"
+    assert second["is_active"] is True
+    assert sum(1 for row in schemas if row.is_active) == 1
+    assert first["fields"][0]["validation"]["required_message"] == "URL is required"
+    assert first["fields"][0]["process_mapping"]["roles"] == ["diagnostic_input", "routing_field"]
+    assert first["fields"][0]["process_mapping"]["diagnostic_param"] == "target_url"
+    assert first["fields"][2]["visibility"]["field"] == "affected_scope"
+    assert [field.key for field in fields] == ["url", "affected_scope", "affected_count"]
+    assert fields[0].validation_json["required_message"] == "URL is required"
+    assert fields[0].process_mapping_json["roles"] == ["diagnostic_input", "routing_field"]
+    assert len(conditions) == 1
+    assert conditions[0].condition_json == {"field": "affected_scope", "equals": "department"}
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publish_from_form_creates_form_schema_reference(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    form_key = f"schema_{uuid.uuid4().hex[:8]}"
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/request-templates/publish-from-form",
+        json={
+            "form": {
+                "key": form_key,
+                "request_kind": form_key,
+                "ticket_type": "incident",
+                "title": "Website unavailable",
+                "field_roles": {"url": ["routing_field"]},
+                "fields": [
+                    {
+                        "key": "url",
+                        "label": "URL",
+                        "type": "url",
+                        "required": True,
+                        "validation": {"required_message": "Provide URL"},
+                        "process_mapping": {"roles": ["diagnostic_input"], "diagnostic_param": "target_url"},
+                    },
+                ],
+            },
+            "publish_policies": False,
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 200, await response.text()
+    result = (await response.json())["data"]
+    assert result["form_schema"]["schema_id"] == f"{form_key}_form"
+    assert result["form_schema"]["fields"][0]["process_mapping"]["roles"] == [
+        "routing_field",
+        "diagnostic_input",
+    ]
+    assert result["request_template"]["form_schema_id"] == f"{form_key}_form"
+    assert result["request_template"]["config"]["form_schema"]["version"] == "1.0.1"
+
+    registry_response = await test_client.get(
+        "/api/web/admin/helpdesk-model/policies",
+        headers=_admin_headers(),
+    )
+    assert registry_response.status == 200, await registry_response.text()
+    registry = (await registry_response.json())["data"]
+    assert registry["summary"]["active_form_schemas_count"] == 1
+    assert registry["form_schemas"][0]["schema_id"] == f"{form_key}_form"
+
+
+@pytest.mark.asyncio
 async def test_helpdesk_policy_repo_publishes_versions_and_resolves_inheritance(test_engine):
     await _clear_policy_registry(test_engine)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -322,7 +482,7 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
         audit_count = len((await session.execute(select(HelpdeskPolicyAudit))).scalars().all())
 
     assert template.config_json["form"]["key"] == form_key
-    assert audit_count == 5
+    assert audit_count == 6
 
 
 @pytest.mark.asyncio
