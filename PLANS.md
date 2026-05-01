@@ -101,7 +101,7 @@ Verification:
 
 ## 2026-05-01 ПК-агент: error states/result screen и release 3.1.26
 
-Status: в работе. Шаги 3 и 5 реализованы локально, focused/runtime/full agent tests, `verify_workspace.py` и local GUI smoke прошли; дальше release-flow до приоритетной stable-версии `3.1.26`.
+Status: выполнено. Шаги 3 и 5 реализованы, `3.1.26` собрана, загружена на сервер, прошла canary на `AD-MAIN` и назначена приоритетной stable-версией для `windows_amd64`.
 
 ### Scope
 
@@ -127,8 +127,8 @@ Status: в работе. Шаги 3 и 5 реализованы локально
 - [x] Bump `pc_agent/version.py` до `3.1.26`.
 - [x] Focused/runtime/full agent tests + `verify_workspace.py`.
 - [x] Local GUI smoke.
-- [ ] Commit, deploy committed state to remote, build Windows release, upload build.
-- [ ] Canary на launcher-managed Windows устройстве, затем `PATCH /api/agent_updates/rollout_policy` на `windows_amd64/stable/3.1.26`.
+- [x] Commit, deploy committed state to remote, build Windows release, upload build.
+- [x] Canary на launcher-managed Windows устройстве, затем `PATCH /api/agent_updates/rollout_policy` на `windows_amd64/stable/3.1.26`.
 
 Verification so far:
 
@@ -137,6 +137,11 @@ Verification so far:
 - Workspace: `python scripts/verify_workspace.py` -> passed.
 - Full agent tests: `python -m pytest pc_agent/tests/ -q --tb=short` -> 179 passed.
 - Live source GUI: `python scripts/manage_local_agent.py start codex-agent-gui-3126 --gui --ui-port 8884` -> `/ui/agent/status` returned `agent_version=3.1.26`, `ui_bridge_running=true`; stopped through `POST /ui/agent/shutdown`, then `manage_local_agent.py status` returned stopped.
+- Deploy: `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running` -> committed revision `e96be4845238e91f8ee1a2119f22a7f3e8f85ccd` deployed, migrations checked, remote server smoke `/api/health` passed.
+- Build: `python pc_agent/build_windows_release_v2.py` -> `pc_agent-windows_amd64-3.1.26.zip`, size `98269850`, SHA256 `3abfa25a59e1cc4d11997af0f0f83adb65546eee60da99edead78d028c440225`.
+- Upload: `POST /api/agent_builds/upload` -> `status=success`, target `windows_amd64`, channel `stable`, version `3.1.26`.
+- Canary: device `AD-MAIN` / `15c8f029-bd7d-533b-a11e-dcd6c2ff48ab`, operation `64a8135a-4959-46e4-bb9f-7f3ddd7beb48` -> `succeeded`, `confirmed_by_handshake:3.1.26`.
+- Rollout: `PATCH /api/agent_updates/rollout_policy` -> `windows_amd64/stable/3.1.26`; build registry returned `is_rollout_assigned=true`.
 
 ### Goal
 
