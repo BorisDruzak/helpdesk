@@ -22,6 +22,7 @@ from app.db.models import (
     RoutingPolicy,
     SlaPolicy,
     SmartView,
+    TicketType,
     VisibilityPolicy,
 )
 from tickets.form_catalog import next_form_pack_version
@@ -161,6 +162,47 @@ def serialize_request_template(row: RequestTemplate) -> dict[str, Any]:
     }
 
 
+def _ticket_type_feature_flags(row: TicketType) -> dict[str, bool]:
+    return {
+        "sla_required": bool(row.sla_required),
+        "ola_required": bool(row.ola_required),
+        "approval_allowed": bool(row.approval_allowed),
+        "approval_required_by_default": bool(row.approval_required_by_default),
+        "diagnostics_allowed": bool(row.diagnostics_allowed),
+        "remediation_allowed": bool(row.remediation_allowed),
+        "portal_visible": bool(row.portal_visible),
+    }
+
+
+def serialize_ticket_type(row: TicketType) -> dict[str, Any]:
+    return {
+        "code": str(row.code),
+        "version": str(row.version),
+        "title": str(row.title),
+        "description": row.description,
+        "default_workflow_profile_id": row.default_workflow_profile_id,
+        "default_priority_policy_code": row.default_priority_policy_code,
+        "default_routing_policy_code": row.default_routing_policy_code,
+        "default_sla_policy_id": row.default_sla_policy_id,
+        "default_sla_policy_code": row.default_sla_policy_code,
+        "default_ola_policy_code": row.default_ola_policy_code,
+        "default_approval_policy_code": row.default_approval_policy_code,
+        "default_diagnostic_policy_code": row.default_diagnostic_policy_code,
+        "default_closure_policy_code": row.default_closure_policy_code,
+        "default_visibility_policy_code": row.default_visibility_policy_code,
+        "default_notification_policy_code": row.default_notification_policy_code,
+        "default_reporting_policy_code": row.default_reporting_policy_code,
+        "feature_flags": _ticket_type_feature_flags(row),
+        "config": deepcopy(row.config_json or {}),
+        "is_active": bool(row.is_active),
+        "published_at": row.published_at.isoformat() if row.published_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "created_by": row.created_by,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "updated_by": row.updated_by,
+    }
+
+
 def serialize_smart_view(row: SmartView) -> dict[str, Any]:
     return {
         "code": str(row.code),
@@ -246,6 +288,14 @@ class HelpdeskPolicyRepo:
         rows = list((await self.session.execute(stmt)).scalars().all())
         return [serialize_request_template(row) for row in rows]
 
+    async def list_ticket_types(self, *, include_inactive: bool = True) -> list[dict[str, Any]]:
+        stmt = select(TicketType)
+        if not include_inactive:
+            stmt = stmt.where(TicketType.is_active.is_(True))
+        stmt = stmt.order_by(TicketType.code.asc(), TicketType.created_at.desc())
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        return [serialize_ticket_type(row) for row in rows]
+
     async def list_smart_views(self, *, include_inactive: bool = True) -> list[dict[str, Any]]:
         stmt = select(SmartView)
         if not include_inactive:
@@ -322,6 +372,227 @@ class HelpdeskPolicyRepo:
             actor_id=actor_id,
             actor_role=actor_role,
             before_json=None,
+            after_json=serialized,
+        )
+        return serialized
+
+    async def publish_ticket_type(
+        self,
+        *,
+        code: str,
+        title: str,
+        description: str | None = None,
+        default_workflow_profile_id: str | None = None,
+        default_priority_policy_code: str | None = None,
+        default_routing_policy_code: str | None = None,
+        default_sla_policy_id: int | None = None,
+        default_sla_policy_code: str | None = None,
+        default_ola_policy_code: str | None = None,
+        default_approval_policy_code: str | None = None,
+        default_diagnostic_policy_code: str | None = None,
+        default_closure_policy_code: str | None = None,
+        default_visibility_policy_code: str | None = None,
+        default_notification_policy_code: str | None = None,
+        default_reporting_policy_code: str | None = None,
+        feature_flags: dict[str, Any] | None = None,
+        config: dict[str, Any] | None = None,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        requested_version: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_code = normalize_template_code(code)
+        if not normalized_code:
+            raise ValueError("ticket type code is required")
+        flags = dict(feature_flags or {})
+        existing_rows = list(
+            (
+                await self.session.execute(
+                    select(TicketType).where(TicketType.code == normalized_code)
+                )
+            ).scalars().all()
+        )
+        latest = _latest_version(existing_rows)
+        version = str(requested_version or next_form_pack_version(latest)).strip()
+        now = datetime.now(timezone.utc)
+        await self.session.execute(
+            update(TicketType)
+            .where(TicketType.code == normalized_code, TicketType.is_active.is_(True))
+            .values(is_active=False, valid_to=now, updated_at=now, updated_by=actor_id)
+        )
+        row = TicketType(
+            code=normalized_code,
+            version=version,
+            title=str(title or normalized_code),
+            description=description,
+            default_workflow_profile_id=default_workflow_profile_id,
+            default_priority_policy_code=default_priority_policy_code,
+            default_routing_policy_code=default_routing_policy_code,
+            default_sla_policy_id=default_sla_policy_id,
+            default_sla_policy_code=default_sla_policy_code,
+            default_ola_policy_code=default_ola_policy_code,
+            default_approval_policy_code=default_approval_policy_code,
+            default_diagnostic_policy_code=default_diagnostic_policy_code,
+            default_closure_policy_code=default_closure_policy_code,
+            default_visibility_policy_code=default_visibility_policy_code,
+            default_notification_policy_code=default_notification_policy_code,
+            default_reporting_policy_code=default_reporting_policy_code,
+            sla_required=bool(flags.get("sla_required", False)),
+            ola_required=bool(flags.get("ola_required", False)),
+            approval_allowed=bool(flags.get("approval_allowed", False)),
+            approval_required_by_default=bool(flags.get("approval_required_by_default", False)),
+            diagnostics_allowed=bool(flags.get("diagnostics_allowed", False)),
+            remediation_allowed=bool(flags.get("remediation_allowed", False)),
+            portal_visible=bool(flags.get("portal_visible", True)),
+            config_json=deepcopy(config or {}),
+            is_active=True,
+            valid_from=now,
+            published_at=now,
+            created_at=now,
+            created_by=actor_id,
+            updated_at=now,
+            updated_by=actor_id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        serialized = serialize_ticket_type(row)
+        await self._audit(
+            entity_type="ticket_types",
+            entity_code=normalized_code,
+            version=version,
+            action="published",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json=None,
+            after_json=serialized,
+        )
+        return serialized
+
+    async def resolve_ticket_type_defaults(self, code: str | None) -> dict[str, Any] | None:
+        normalized_code = normalize_template_code(code)
+        if not normalized_code:
+            return None
+        row = await self.session.scalar(
+            select(TicketType)
+            .where(TicketType.code == normalized_code, TicketType.is_active.is_(True))
+            .order_by(TicketType.published_at.desc(), TicketType.created_at.desc())
+        )
+        if row is None:
+            return None
+        return serialize_ticket_type(row)
+
+    async def _get_ticket_type_row(self, *, code: str, version: str) -> tuple[str, TicketType]:
+        normalized_code = normalize_template_code(code)
+        row = await self.session.scalar(
+            select(TicketType).where(
+                TicketType.code == normalized_code,
+                TicketType.version == str(version),
+            )
+        )
+        if row is None:
+            raise ValueError(f"ticket type version not found: {normalized_code}/{version}")
+        return normalized_code, row
+
+    async def deactivate_ticket_type(
+        self,
+        *,
+        code: str,
+        version: str,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_code, row = await self._get_ticket_type_row(code=code, version=version)
+        before = serialize_ticket_type(row)
+        now = datetime.now(timezone.utc)
+        row.is_active = False
+        row.valid_to = now
+        row.updated_at = now
+        row.updated_by = actor_id
+        await self.session.flush()
+        after = serialize_ticket_type(row)
+        await self._audit(
+            entity_type="ticket_types",
+            entity_code=normalized_code,
+            version=str(version),
+            action="deactivated",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json=before,
+            after_json=after,
+        )
+        return after
+
+    async def rollback_ticket_type(
+        self,
+        *,
+        code: str,
+        target_version: str,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_code, target_row = await self._get_ticket_type_row(code=code, version=target_version)
+        existing_rows = list(
+            (
+                await self.session.execute(
+                    select(TicketType).where(TicketType.code == normalized_code)
+                )
+            ).scalars().all()
+        )
+        latest = _latest_version(existing_rows)
+        version = next_form_pack_version(latest)
+        now = datetime.now(timezone.utc)
+        active_before = [serialize_ticket_type(row) for row in existing_rows if bool(row.is_active)]
+        await self.session.execute(
+            update(TicketType)
+            .where(TicketType.code == normalized_code, TicketType.is_active.is_(True))
+            .values(is_active=False, valid_to=now, updated_at=now, updated_by=actor_id)
+        )
+        row = TicketType(
+            code=normalized_code,
+            version=version,
+            title=str(target_row.title),
+            description=target_row.description,
+            default_workflow_profile_id=target_row.default_workflow_profile_id,
+            default_priority_policy_code=target_row.default_priority_policy_code,
+            default_routing_policy_code=target_row.default_routing_policy_code,
+            default_sla_policy_id=target_row.default_sla_policy_id,
+            default_sla_policy_code=target_row.default_sla_policy_code,
+            default_ola_policy_code=target_row.default_ola_policy_code,
+            default_approval_policy_code=target_row.default_approval_policy_code,
+            default_diagnostic_policy_code=target_row.default_diagnostic_policy_code,
+            default_closure_policy_code=target_row.default_closure_policy_code,
+            default_visibility_policy_code=target_row.default_visibility_policy_code,
+            default_notification_policy_code=target_row.default_notification_policy_code,
+            default_reporting_policy_code=target_row.default_reporting_policy_code,
+            sla_required=bool(target_row.sla_required),
+            ola_required=bool(target_row.ola_required),
+            approval_allowed=bool(target_row.approval_allowed),
+            approval_required_by_default=bool(target_row.approval_required_by_default),
+            diagnostics_allowed=bool(target_row.diagnostics_allowed),
+            remediation_allowed=bool(target_row.remediation_allowed),
+            portal_visible=bool(target_row.portal_visible),
+            config_json=deepcopy(target_row.config_json or {}),
+            is_active=True,
+            valid_from=now,
+            published_at=now,
+            created_at=now,
+            created_by=actor_id,
+            updated_at=now,
+            updated_by=actor_id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        serialized = serialize_ticket_type(row)
+        await self._audit(
+            entity_type="ticket_types",
+            entity_code=normalized_code,
+            version=version,
+            action="rollback_published",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            before_json={
+                "target_version": str(target_version),
+                "active_versions": active_before,
+            },
             after_json=serialized,
         )
         return serialized
@@ -570,6 +841,42 @@ class HelpdeskPolicyRepo:
         code = normalize_template_code(template_code)
         if not code:
             raise ValueError("template code is required")
+        ticket_type_code = normalize_template_code(ticket_type) or "incident"
+        ticket_type_defaults = await self.resolve_ticket_type_defaults(ticket_type_code)
+        if ticket_type_defaults:
+            workflow_profile_id = workflow_profile_id or ticket_type_defaults.get("default_workflow_profile_id")
+            priority_policy_code = priority_policy_code or ticket_type_defaults.get("default_priority_policy_code")
+            routing_policy_code = routing_policy_code or ticket_type_defaults.get("default_routing_policy_code")
+            sla_policy_id = sla_policy_id if sla_policy_id is not None else ticket_type_defaults.get("default_sla_policy_id")
+            ola_policy_code = ola_policy_code or ticket_type_defaults.get("default_ola_policy_code")
+            approval_policy_code = approval_policy_code or ticket_type_defaults.get("default_approval_policy_code")
+            diagnostic_policy_code = diagnostic_policy_code or ticket_type_defaults.get("default_diagnostic_policy_code")
+            closure_policy_code = closure_policy_code or ticket_type_defaults.get("default_closure_policy_code")
+            visibility_policy_code = visibility_policy_code or ticket_type_defaults.get("default_visibility_policy_code")
+            notification_policy_code = notification_policy_code or ticket_type_defaults.get("default_notification_policy_code")
+        config_json = deepcopy(config or {})
+        if ticket_type_defaults:
+            config_json.setdefault(
+                "ticket_type_defaults",
+                {
+                    "code": ticket_type_defaults.get("code"),
+                    "version": ticket_type_defaults.get("version"),
+                    "title": ticket_type_defaults.get("title"),
+                    "default_workflow_profile_id": ticket_type_defaults.get("default_workflow_profile_id"),
+                    "default_priority_policy_code": ticket_type_defaults.get("default_priority_policy_code"),
+                    "default_routing_policy_code": ticket_type_defaults.get("default_routing_policy_code"),
+                    "default_sla_policy_id": ticket_type_defaults.get("default_sla_policy_id"),
+                    "default_sla_policy_code": ticket_type_defaults.get("default_sla_policy_code"),
+                    "default_ola_policy_code": ticket_type_defaults.get("default_ola_policy_code"),
+                    "default_approval_policy_code": ticket_type_defaults.get("default_approval_policy_code"),
+                    "default_diagnostic_policy_code": ticket_type_defaults.get("default_diagnostic_policy_code"),
+                    "default_closure_policy_code": ticket_type_defaults.get("default_closure_policy_code"),
+                    "default_visibility_policy_code": ticket_type_defaults.get("default_visibility_policy_code"),
+                    "default_notification_policy_code": ticket_type_defaults.get("default_notification_policy_code"),
+                    "default_reporting_policy_code": ticket_type_defaults.get("default_reporting_policy_code"),
+                    "feature_flags": deepcopy(ticket_type_defaults.get("feature_flags") or {}),
+                },
+            )
         existing_rows = list(
             (
                 await self.session.execute(
@@ -591,7 +898,7 @@ class HelpdeskPolicyRepo:
             public_title=str(public_title or code),
             internal_name=internal_name,
             description=description,
-            ticket_type=str(ticket_type or "incident"),
+            ticket_type=ticket_type_code,
             category_id=category_id,
             service_id=service_id,
             subcategory_id=subcategory_id,
@@ -606,7 +913,7 @@ class HelpdeskPolicyRepo:
             closure_policy_code=closure_policy_code,
             visibility_policy_code=visibility_policy_code,
             notification_policy_code=notification_policy_code,
-            config_json=deepcopy(config or {}),
+            config_json=config_json,
             overrides_json=deepcopy(overrides or {}),
             is_active=True,
             valid_from=now,

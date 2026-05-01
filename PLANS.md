@@ -1,5 +1,211 @@
 # PLANS.md
 
+## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
+
+Status: Slice 1 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After the `ticket_types` registry slice the working estimate is backend/runtime about 78%, server UI about 72%, agent GUI unchanged about 73%, overall about 74%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+
+### Goal
+
+Довести проект до полноценной service desk модели, где пользователь выбирает понятный шаблон обращения, сервер хранит версионируемые политики как отдельные сущности, runtime исполняет эти политики без ручных обходов, а администратор может настраивать процесс без редактирования больших JSON-блоков.
+
+### Scope
+
+- Backend domain/model: `server/app/db/models.py`, migrations in `server/app/db/migrations/versions/`, `server/app/repos/helpdesk_policy_repo.py`, `server/tickets/helpdesk_policy_runtime.py`.
+- Ticket runtime: `server/tickets/create_flow.py`, `server/tickets/form_catalog.py`, `server/tickets/workflow_profiles.py`, `server/tickets/workflow_service.py`, `server/tickets/priority_policy.py`, `server/tickets/sla_service.py`, `server/tickets/ola_service.py`, `server/tickets/routing_service.py`, `server/tickets/approval_policy.py`, `server/tickets/closure_policy.py`, `server/tickets/diagnostic_policy.py`, `server/tickets/notification_service.py`, `server/tickets/visibility_policy.py`, `server/tickets/passport_service.py`, `server/tickets/smart_views.py`.
+- Typed web API/UI: `server/web_api/admin_handlers.py`, `server/web_api/settings_handlers.py`, `server/web_api/dto/admin.py`, `webapp/src/features/forms-builder/*`, `webapp/src/features/settings/*`, `webapp/src/pages/settings/index.tsx`, `webapp/src/pages/tickets/detail-page.tsx`.
+- Agent GUI consumer: `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/server_api.py`.
+- Docs/navigation: `server/docs/TICKET_SYSTEM.md`, `server/docs/REQUEST_FORM_BUILDER.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`.
+
+### Constraints
+
+- Все изменения делать только в локальной копии `C:\Users\admin-2\CodexProjects\pc_client`.
+- Для нового `webapp/` перед frontend-командами запускать `python scripts/bootstrap_web_toolchain.py`.
+- Не ломать текущий `request_forms` compatibility path: старые packs и `form_key` должны продолжать работать.
+- Версионирование политик обязательно: старый тикет должен сохранять snapshot шаблона, но runtime для lifecycle-действий может применять active effective policies там, где это уже предусмотрено.
+- Пользовательские строки в агенте и web UI должны быть на русском и без raw SLA/OLA-жаргона для requester.
+- Для каждого среза: сначала focused regression tests, затем реализация, затем `python scripts/verify_workspace.py`; для UI-срезов добавлять Vitest/browser signoff.
+
+### Current State
+
+- Уже есть `request_templates` и versioned policy tables для priority, SLA, OLA, routing, approval, closure, diagnostic, notification, visibility, reporting, smart views и audit.
+- Implemented Slice 1: versioned `ticket_types` registry with defaults, feature flags, audit, API lifecycle endpoints and active ticket type exposure in settings/forms-builder selectors.
+- Уже есть inheritance `system -> ticket_type -> category -> request_template`.
+- Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
+- Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
+
+### Target Completion Criteria
+
+- Есть отдельная управляемая сущность `ticket_type`, а не только строка/профиль workflow.
+- Есть отдельный versioned реестр `form_schemas` / `form_fields` / `form_conditions`, связанный с `request_template`, с совместимостью для текущего `request_forms`.
+- `request_template` ссылается на отдельные политики, а не зависит от inline JSON как основного пути.
+- Priority policy поддерживает настраиваемую matrix/modifiers/manual override, а не только фиксированный вычислитель.
+- SLA/OLA policies полностью покрывают calendar/start/pause/resume/stop/targets/warnings/breach actions/applies-to.
+- Workflow profile настраивает statuses/transitions/allowed roles/required fields/comments/actions/logging и исполняет это в runtime.
+- Approval policy умеет не только блокировать переход, но и создавать approval requests по источникам согласующих, режиму, timeout/reminder/escalation.
+- Closure policy покрывает resolution code, public/internal summary, evidence, operation log, approval evidence, requester confirmation и auto-close.
+- Diagnostic policy умеет suggested playbooks, consent, safe auto-run constraints, attach-to-passport/evidence и reroute-by-result.
+- Notification/visibility/reporting/smart views имеют отдельные UI editors и runtime-tests.
+- Админка даёт мастер настройки шаблона без обязательного ручного JSON.
+- GUI агента показывает только requester-facing часть модели и всегда получает effective preview с сервера.
+
+### Slice 1: Ticket Type Registry
+
+- [x] Add `ticket_types` versioned registry with `code`, `version`, `title`, `default_workflow_profile_id`, default policy refs, feature flags (`sla_required`, `ola_required`, `approval_allowed`, `diagnostics_allowed`, `remediation_allowed`, `closure_policy_code`), visibility flags and audit.
+- [x] Add repo methods in `server/app/repos/helpdesk_policy_repo.py`: publish/list/deactivate/rollback ticket types, resolve defaults for inheritance.
+- [x] Update `request_templates` publication so `ticket_type` resolves active registry defaults when present; keep permissive fallback for legacy packs.
+- [x] Update settings payload to expose active ticket types for UI selectors.
+- [x] Tests: publish ticket type, deactivate old version, resolve template defaults through ticket type, legacy unknown type fallback.
+- [x] Docs: update `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`.
+
+Slice 1 verification:
+
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> 11 passed.
+- `python -m pytest server/tests/test_web_settings_api.py -q --tb=short` -> 9 passed.
+- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
+- `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed.
+
+### Slice 2: Form Schema Registry
+
+- [ ] Add `form_schemas`, `form_fields`, `form_conditions` or equivalent versioned tables; do not remove `ticket_form_packs` yet.
+- [ ] Add migration/adapter that can publish current form pack forms into `form_schemas` and keep `request_template.form_schema_id` as a first-class reference.
+- [ ] Move field validation rules into reusable schema runtime while preserving `validate_form_submission(pack, ...)`.
+- [ ] Extend field config with `validation.required_message`, richer constraints for `url/email/phone/date/datetime/file`, and explicit `process_mapping` alias to current `field_roles`.
+- [ ] Tests: schema publication, conditional required fields, invalid field refs, legacy pack compatibility, agent/public create compatibility.
+- [ ] UI: server admin shows schema version/reference, field roles and conditions without raw JSON for the common path.
+
+### Slice 3: Policy Reference Cleanup For Request Templates
+
+- [ ] Make request-template publication prefer policy refs (`priority_policy_code`, `routing_policy_code`, `sla_policy_code` or id, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code`, `reporting_policy_code`) over inline policy JSON.
+- [ ] Add effective template resolver that returns policy refs + resolved config + source list for preview and create.
+- [ ] Store ticket snapshot with policy codes/versions/sources so historical tickets remain explainable.
+- [ ] Tests: create ticket stores snapshot with policy sources, active policy update affects lifecycle runtime where intended, old ticket still renders old template context.
+
+### Slice 4: Priority Policy Engine
+
+- [ ] Replace fixed `_BASE_MATRIX` path with configurable `priority_policy.matrix` supporting named impact/urgency levels and P0-P3 targets.
+- [ ] Support modifiers as list rules: condition, increase/decrease priority, minimum_priority, maximum_priority.
+- [ ] Enforce manual override policy: allowed roles, reason required, audit event, old/new computed/manual/effective priority.
+- [ ] Store canonical fields: `impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`.
+- [ ] Add preview endpoint output that explains priority source and matched modifiers in requester-safe language.
+- [ ] Tests: matrix calculation, modifiers, security/minimum P1, manual override denial/reason/audit, SLA recalculation after effective priority change.
+
+### Slice 5: SLA Policy Engine
+
+- [ ] Make standalone `sla_policies.config` cover `calendar_id` or inline calendar, targets, start/pause/resume/stop conditions, warnings, breach actions and applies-to metadata.
+- [ ] Update `TicketSlaService` to evaluate configured start/pause/resume/stop conditions instead of relying only on hardcoded waiting statuses and first public reply.
+- [ ] Add warning scheduler actions before breach and configurable breach recipients/escalation.
+- [ ] Add policy-aware SLA event payloads with policy code/version/source.
+- [ ] Tests: calendar-aware targets, pause/resume condition variants, stop conditions per first_response/resolution, warning event, breach notification/escalation.
+- [ ] UI: settings/forms builder provides structured SLA editor for calendar, P0-P3 targets, pause/stop conditions and warnings.
+
+### Slice 6: OLA Policy Engine
+
+- [ ] Promote queue-level OLA targets into full versioned `ola_policy` execution: ack/processing targets, start/stop/pause conditions, queue handoff behavior, breach actions.
+- [ ] Keep existing `ticket_queue_ola_targets` as compatibility/default source.
+- [ ] Add per-queue OLA source tracking on ticket: policy code/version, queue_id, start reason, stop reason.
+- [ ] Tests: OLA starts on create/queue change, restarts on handoff, closes ack on assignment, closes processing on handoff/resolved, pause conditions, breach actions.
+- [ ] UI: structured OLA editor and smart-view surfacing for OLA risk.
+
+### Slice 7: Workflow Profile Builder And Runtime Actions
+
+- [ ] Extend workflow profile schema to include transition actions: notify, start/pause/stop SLA, create approval, require evidence, require public/internal comment, log fields, auto transitions.
+- [ ] Add typed admin API for workflow profiles with validation and diff/audit, not only raw config save.
+- [ ] Update `TicketWorkflowService` to execute configured transition actions where safe.
+- [ ] Add system-triggered transitions for requester replied, approval received/rejected, auto-close due.
+- [ ] Tests: allowed roles, required fields, required comments, transition actions, auto transition trigger, audit payload.
+- [ ] UI: visual workflow editor for statuses/transitions/gates with safe presets for incident/service_request/access_request/change_request/consultation/problem.
+
+### Slice 8: Approval Requests
+
+- [ ] Add service that creates `ticket_approvals` from `approval_policy` when entering waiting approval or on configured transition.
+- [ ] Implement approver sources: requester_manager, service_owner, queue_lead, security role, explicit user/group, form field.
+- [ ] Implement approval modes: any_one, all, sequential.
+- [ ] Implement due/reminder/escalate timeout behavior and require comment on reject.
+- [ ] Add requester/support UI to show pending approvals and actions.
+- [ ] Tests: approval request creation, source resolution fallback, sequential mode, rejection transition, timeout reminder/escalation, passport logging.
+
+### Slice 9: Closure Policy Completion
+
+- [ ] Expand closure policy runtime to support nested `before_resolved`, `evidence`, `requester_confirmation`, `allowed_resolution_codes`.
+- [ ] Enforce operation log evidence when diagnostic/remediation modules were used.
+- [ ] Enforce approval evidence when approval policy was used.
+- [ ] Implement requester confirmation policy and auto-close-after-days as policy-driven, not just global defaults.
+- [ ] Tests: resolution code whitelist, public/internal summary requirements, P0/P1 evidence, module evidence, approval evidence, requester reject/reopen, auto-close timer.
+- [ ] UI: support ticket close panel shows exactly which closure requirements are missing.
+
+### Slice 10: Diagnostic Policy Completion
+
+- [ ] Add `diagnostic_policy` runtime for suggested playbooks, safe auto-run checks, consent requirements, attach results, reroute-by-result.
+- [ ] Keep invariant: `ticket.status` remains workflow status; operation status carries diagnostic running/succeeded/failed.
+- [ ] Add result classification contract (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.) from playbook outputs to routing facts.
+- [ ] Tests: consent required/denied/granted, auto-run only for allowed priority/online agent, evidence attachment, reroute by diagnostic result, no ticket status misuse.
+- [ ] UI: admin diagnostic editor and support ticket automation panel show suggested playbooks and consent/evidence behavior.
+
+### Slice 11: Notification And Visibility Policy Completion
+
+- [ ] Expand notification policy events: created, assigned, waiting_user, requester_replied, SLA warning/breach, resolved, closed, approval events, diagnostic completion.
+- [ ] Add channel configuration validation for web/email/telegram/vk_teams/provider channels.
+- [ ] Ensure preferences remain final per-recipient filter after policy selection.
+- [ ] Expand visibility policy to support field-level requester/support views, public status mapping, raw diagnostics redaction, OLA hiding, passport export visibility.
+- [ ] Tests: each notification group, channel audit, requester redaction, support-visible metadata, public status mapping.
+- [ ] UI: structured notification/visibility editors with preview for requester vs support.
+
+### Slice 12: Reporting And Passport Policy Completion
+
+- [ ] Expand reporting policy editor/runtime for required sections, evidence package, action package, related objects, export visibility, report tags and knowledge draft hints.
+- [ ] Add passport validation before closure when policy requires official dossier.
+- [ ] Add deterministic section coverage report: which required facts are missing before publish/print.
+- [ ] Tests: required sections, hidden internal sections, diagnostic evidence inclusion, approval/action/related object package, knowledge draft source.
+- [ ] UI: support passport tab shows policy requirements, missing facts and export preview.
+
+### Slice 13: Smart Views As Configurable Operational Queues
+
+- [ ] Make custom smart views fully executable for filters used in target model: SLA risk, OLA risk, unassigned, waiting approval, stale waits, diagnostics failed, requester replied, mass incident candidates.
+- [ ] Add validation for smart view filters/sorts/columns at publication time.
+- [ ] Add UI builder for smart view filters instead of raw JSON only.
+- [ ] Tests: each builtin smart view, published custom filter, invalid filter rejection, support queue counters.
+
+### Slice 14: Server Admin UX To Remove JSON Dependency
+
+- [ ] Convert policy editors in `/app/admin/forms` from raw JSON-first to structured controls for priority, SLA, OLA, routing, approvals, diagnostics, closure, visibility, notifications, reporting.
+- [ ] Keep advanced JSON preview/edit behind explicit advanced mode with validation/diff.
+- [ ] Add template wizard screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA/OLA, Согласования, Диагностика, Закрытие, Видимость/Уведомления, Паспорт/Отчётность.
+- [ ] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
+- [ ] Tests: Vitest coverage for each structured editor, publish-from-form, policy publish/diff/deactivate/rollback, smart view publish.
+- [ ] Browser signoff: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` after deploy.
+
+### Slice 15: Agent GUI Final Consumer Alignment
+
+- [ ] Ensure agent never exposes internal process choices to requester: no direct ticket_type/priority/SLA policy selection unless template says fields are visible.
+- [ ] Agent create preview must always call server preview when available and show effective queue/approval/diagnostics/deadlines.
+- [ ] Agent must handle schema/policy versions in cached form pack and refresh when server version changes.
+- [ ] Add requester-safe rendering of public status, expected due dates and passport/result summary after create.
+- [ ] Tests: cached pack refresh, server-preview fallback, hidden internal fields, dynamic required fields, diagnostic consent, file/picker fields.
+- [ ] Live GUI smoke with remote server and current published templates.
+
+### Slice 16: Migration, Backfill And Compatibility
+
+- [ ] Add migration/backfill from current default `request_forms` pack into `request_templates`, `form_schemas` and initial policy rows.
+- [ ] Add idempotent admin command/API to republish legacy forms into registry.
+- [ ] Add compatibility tests for old clients sending only `form_key`, old packs without priority fields, and tickets created before registry.
+- [ ] Add data-quality report: templates missing workflow/priority/routing/SLA/closure policies.
+- [ ] Docs: operator migration steps and rollback path.
+
+### Slice 17: Verification And Release Gates
+
+- [ ] Local baseline: `python scripts/verify_workspace.py`.
+- [ ] Server focused: `python -m pytest server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_routing_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_passport_service.py server/tests/test_web_support_api.py server/tests/test_web_settings_api.py -q --tb=short`.
+- [ ] Agent focused: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short`.
+- [ ] Web focused: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx src/pages/settings/index.test.tsx src/pages/tickets/detail-page.test.tsx`.
+- [ ] Remote deploy smoke through `python scripts/release_server_to_remote.py` and `python scripts/manage_remote_stack.py smoke server`.
+- [ ] Browser signoff at `http://192.168.100.17:8666/admin`; for admin UI changes inspect `/app/admin/forms`, `/app/settings`, `/app/tickets/:ticketId`.
+- [ ] Stop remote server after checks unless explicitly asked to keep it running: `python scripts/manage_remote_stack.py stop server`.
+
+### Handoff
+
+Recommended execution order: Slices 1-3 establish the missing canonical model; Slices 4-13 complete runtime policy behavior; Slices 14-15 make the model usable in server UI and agent GUI; Slices 16-17 harden migration and release. Do not start with UI-only polish before ticket type/form schema/policy references are stable, otherwise the admin surface will encode temporary shapes.
+
 ## 2026-04-30 ПК-агент: создание обращений по целевой helpdesk-модели
 
 Status: план срезов 1-8 выполнен, локально проверен, закоммичен и проверен на Linux стенде. Старый серверный helpdesk policy plan завершён и убран из актуального рабочего плана. Текущая фактическая готовность ПК-агента к целевой модели после registry/file fields: функционально около 91-93%, GUI около 80-82%.

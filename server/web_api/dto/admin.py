@@ -532,6 +532,35 @@ class AdminHelpdeskRequestTemplateItem(BaseModel):
     updated_by: str | None = None
 
 
+class AdminHelpdeskTicketTypeItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    version: str
+    title: str
+    description: str | None = None
+    default_workflow_profile_id: str | None = None
+    default_priority_policy_code: str | None = None
+    default_routing_policy_code: str | None = None
+    default_sla_policy_id: int | None = None
+    default_sla_policy_code: str | None = None
+    default_ola_policy_code: str | None = None
+    default_approval_policy_code: str | None = None
+    default_diagnostic_policy_code: str | None = None
+    default_closure_policy_code: str | None = None
+    default_visibility_policy_code: str | None = None
+    default_notification_policy_code: str | None = None
+    default_reporting_policy_code: str | None = None
+    feature_flags: dict[str, bool] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
 class AdminHelpdeskSmartViewItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -561,6 +590,9 @@ class AdminHelpdeskModelCapabilities(BaseModel):
     policy_diff_endpoint: str | None = None
     policy_deactivate_endpoint: str | None = None
     policy_rollback_endpoint: str | None = None
+    publish_ticket_type_endpoint: str
+    ticket_type_deactivate_endpoint: str | None = None
+    ticket_type_rollback_endpoint: str | None = None
     publish_smart_view_endpoint: str
     inheritance_order: list[str]
     policy_kinds: list[str]
@@ -571,6 +603,8 @@ class AdminHelpdeskModelSummary(BaseModel):
 
     request_templates_count: int
     active_request_templates_count: int
+    ticket_types_count: int
+    active_ticket_types_count: int
     policies_count: int
     active_policies_count: int
     smart_views_count: int
@@ -583,6 +617,7 @@ class AdminHelpdeskModelPayload(BaseModel):
     summary: AdminHelpdeskModelSummary
     capabilities: AdminHelpdeskModelCapabilities
     request_templates: list[AdminHelpdeskRequestTemplateItem] = Field(default_factory=list)
+    ticket_types: list[AdminHelpdeskTicketTypeItem] = Field(default_factory=list)
     policies: dict[str, list[AdminHelpdeskPolicyItem]] = Field(default_factory=dict)
     smart_views: list[AdminHelpdeskSmartViewItem] = Field(default_factory=list)
 
@@ -619,6 +654,64 @@ class AdminHelpdeskPublishPolicyResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     policy: AdminHelpdeskPolicyItem
+    message: str
+
+
+class AdminHelpdeskPublishTicketTypeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    title: str
+    description: str | None = None
+    default_workflow_profile_id: str | None = None
+    default_priority_policy_code: str | None = None
+    default_routing_policy_code: str | None = None
+    default_sla_policy_id: int | None = None
+    default_sla_policy_code: str | None = None
+    default_ola_policy_code: str | None = None
+    default_approval_policy_code: str | None = None
+    default_diagnostic_policy_code: str | None = None
+    default_closure_policy_code: str | None = None
+    default_visibility_policy_code: str | None = None
+    default_notification_policy_code: str | None = None
+    default_reporting_policy_code: str | None = None
+    feature_flags: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+    requested_version: str | None = None
+
+
+class AdminHelpdeskPublishTicketTypeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: AdminHelpdeskTicketTypeItem
+    message: str
+
+
+class AdminHelpdeskTicketTypeDeactivateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    version: str
+
+
+class AdminHelpdeskTicketTypeDeactivateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: AdminHelpdeskTicketTypeItem
+    message: str
+
+
+class AdminHelpdeskTicketTypeRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    target_version: str
+
+
+class AdminHelpdeskTicketTypeRollbackResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: AdminHelpdeskTicketTypeItem
     message: str
 
 

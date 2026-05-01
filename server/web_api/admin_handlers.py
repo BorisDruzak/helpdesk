@@ -128,12 +128,19 @@ from web_api.dto.admin import (
     AdminHelpdeskPublishPolicyResult,
     AdminHelpdeskPublishSmartViewRequest,
     AdminHelpdeskPublishSmartViewResult,
+    AdminHelpdeskPublishTicketTypeRequest,
+    AdminHelpdeskPublishTicketTypeResult,
     AdminHelpdeskPolicyRollbackRequest,
     AdminHelpdeskPolicyRollbackResult,
     AdminHelpdeskPublishFromFormRequest,
     AdminHelpdeskPublishFromFormResult,
     AdminHelpdeskRequestTemplateItem,
     AdminHelpdeskSmartViewItem,
+    AdminHelpdeskTicketTypeDeactivateRequest,
+    AdminHelpdeskTicketTypeDeactivateResult,
+    AdminHelpdeskTicketTypeItem,
+    AdminHelpdeskTicketTypeRollbackRequest,
+    AdminHelpdeskTicketTypeRollbackResult,
     AdminObserverCapabilities,
     AdminPlaybookBlockCatalogItem,
     AdminPlaybookBuilderCapabilities,
@@ -288,6 +295,9 @@ _HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT = "/api/web/admin/helpdesk-model/policie
 _HELPDESK_MODEL_POLICY_DIFF_ENDPOINT = "/api/web/admin/helpdesk-model/policies/diff"
 _HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT = "/api/web/admin/helpdesk-model/policies/deactivate"
 _HELPDESK_MODEL_POLICY_ROLLBACK_ENDPOINT = "/api/web/admin/helpdesk-model/policies/rollback"
+_HELPDESK_MODEL_PUBLISH_TICKET_TYPE_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/publish"
+_HELPDESK_MODEL_TICKET_TYPE_DEACTIVATE_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/deactivate"
+_HELPDESK_MODEL_TICKET_TYPE_ROLLBACK_ENDPOINT = "/api/web/admin/helpdesk-model/ticket-types/rollback"
 _HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT = "/api/web/admin/helpdesk-model/smart-views/publish"
 _PLAYBOOKS_CATALOG_ENDPOINT = "/api/web/admin/playbooks/catalog"
 _PLAYBOOKS_SAVE_ENDPOINT = "/api/web/admin/playbooks/save"
@@ -1993,6 +2003,10 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             AdminHelpdeskRequestTemplateItem.model_validate(item)
             for item in await repo.list_request_templates(include_inactive=True)
         ]
+        ticket_types = [
+            AdminHelpdeskTicketTypeItem.model_validate(item)
+            for item in await repo.list_ticket_types(include_inactive=True)
+        ]
         policies_raw = await repo.list_policies(include_inactive=True)
         policies = {
             kind: [AdminHelpdeskPolicyItem.model_validate(item) for item in items]
@@ -2008,6 +2022,8 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
         summary=AdminHelpdeskModelSummary(
             request_templates_count=len(request_templates),
             active_request_templates_count=sum(1 for item in request_templates if item.is_active),
+            ticket_types_count=len(ticket_types),
+            active_ticket_types_count=sum(1 for item in ticket_types if item.is_active),
             policies_count=len(all_policies),
             active_policies_count=sum(1 for item in all_policies if item.is_active),
             smart_views_count=len(smart_views),
@@ -2020,11 +2036,15 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             policy_diff_endpoint=_HELPDESK_MODEL_POLICY_DIFF_ENDPOINT,
             policy_deactivate_endpoint=_HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT,
             policy_rollback_endpoint=_HELPDESK_MODEL_POLICY_ROLLBACK_ENDPOINT,
+            publish_ticket_type_endpoint=_HELPDESK_MODEL_PUBLISH_TICKET_TYPE_ENDPOINT,
+            ticket_type_deactivate_endpoint=_HELPDESK_MODEL_TICKET_TYPE_DEACTIVATE_ENDPOINT,
+            ticket_type_rollback_endpoint=_HELPDESK_MODEL_TICKET_TYPE_ROLLBACK_ENDPOINT,
             publish_smart_view_endpoint=_HELPDESK_MODEL_PUBLISH_SMART_VIEW_ENDPOINT,
             inheritance_order=["system", "ticket_type", "category", "request_template"],
             policy_kinds=sorted(POLICY_MODELS.keys()),
         ),
         request_templates=request_templates,
+        ticket_types=ticket_types,
         policies=policies,
         smart_views=smart_views,
     )
@@ -2130,6 +2150,98 @@ async def _publish_helpdesk_template_from_form(
             f"{typed_template.version}. Политик опубликовано: {len(policies)}."
         ),
     )
+
+
+async def _publish_helpdesk_ticket_type(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishTicketTypeRequest,
+) -> AdminHelpdeskPublishTicketTypeResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.publish_ticket_type(
+            code=payload.code,
+            title=payload.title,
+            description=payload.description,
+            default_workflow_profile_id=payload.default_workflow_profile_id,
+            default_priority_policy_code=payload.default_priority_policy_code,
+            default_routing_policy_code=payload.default_routing_policy_code,
+            default_sla_policy_id=payload.default_sla_policy_id,
+            default_sla_policy_code=payload.default_sla_policy_code,
+            default_ola_policy_code=payload.default_ola_policy_code,
+            default_approval_policy_code=payload.default_approval_policy_code,
+            default_diagnostic_policy_code=payload.default_diagnostic_policy_code,
+            default_closure_policy_code=payload.default_closure_policy_code,
+            default_visibility_policy_code=payload.default_visibility_policy_code,
+            default_notification_policy_code=payload.default_notification_policy_code,
+            default_reporting_policy_code=payload.default_reporting_policy_code,
+            feature_flags=payload.feature_flags,
+            config=payload.config,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            requested_version=payload.requested_version,
+        )
+        await session.commit()
+
+    ticket_type = AdminHelpdeskTicketTypeItem.model_validate(item)
+    return AdminHelpdeskPublishTicketTypeResult(
+        ticket_type=ticket_type,
+        message=f"Ticket type {ticket_type.code} published as version {ticket_type.version}.",
+    )
+
+
+async def _deactivate_helpdesk_ticket_type(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskTicketTypeDeactivateRequest,
+) -> AdminHelpdeskTicketTypeDeactivateResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.deactivate_ticket_type(
+            code=payload.code,
+            version=payload.version,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        await session.commit()
+
+    ticket_type = AdminHelpdeskTicketTypeItem.model_validate(item)
+    return AdminHelpdeskTicketTypeDeactivateResult(
+        ticket_type=ticket_type,
+        message=f"Ticket type {ticket_type.code} version {ticket_type.version} deactivated.",
+    )
+
+
+async def _rollback_helpdesk_ticket_type(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskTicketTypeRollbackRequest,
+) -> AdminHelpdeskTicketTypeRollbackResult:
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    async with get_session() as session:
+        repo = HelpdeskPolicyRepo(session)
+        item = await repo.rollback_ticket_type(
+            code=payload.code,
+            target_version=payload.target_version,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        await session.commit()
+
+    ticket_type = AdminHelpdeskTicketTypeItem.model_validate(item)
+    return AdminHelpdeskTicketTypeRollbackResult(
+        ticket_type=ticket_type,
+        message=(
+            f"Ticket type {ticket_type.code} rolled back from {payload.target_version}; "
+            f"new active version {ticket_type.version}."
+        ),
+    )
+
 
 async def _publish_helpdesk_policy(
     *,
@@ -2987,6 +3099,48 @@ async def handle_web_admin_helpdesk_model_publish_from_form(request: web.Request
 
 
 @require_auth("admin")
+async def handle_web_admin_helpdesk_model_publish_ticket_type(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskPublishTicketTypeRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Check ticket type payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_helpdesk_ticket_type(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Check ticket type payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_publish_ticket_type] Failed to publish ticket type: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Could not publish ticket type",
+                "error_code": "HELPDESK_TICKET_TYPE_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskPublishTicketTypeResult](data=result))
+
+
+@require_auth("admin")
 async def handle_web_admin_helpdesk_model_publish_policy(request: web.Request):
     auth_context: AuthContext = request["auth_context"]
     try:
@@ -3151,6 +3305,90 @@ async def handle_web_admin_helpdesk_model_policy_rollback(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPolicyRollbackResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_ticket_type_deactivate(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskTicketTypeDeactivateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Check ticket type deactivation payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _deactivate_helpdesk_ticket_type(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Check ticket type deactivation payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_ticket_type_deactivate] Failed to deactivate ticket type: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Could not deactivate ticket type",
+                "error_code": "HELPDESK_TICKET_TYPE_DEACTIVATE_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskTicketTypeDeactivateResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_ticket_type_rollback(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskTicketTypeRollbackRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Check ticket type rollback payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _rollback_helpdesk_ticket_type(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Check ticket type rollback payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_ticket_type_rollback] Failed to roll back ticket type: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Could not roll back ticket type",
+                "error_code": "HELPDESK_TICKET_TYPE_ROLLBACK_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskTicketTypeRollbackResult](data=result))
 
 
 @require_auth("admin")

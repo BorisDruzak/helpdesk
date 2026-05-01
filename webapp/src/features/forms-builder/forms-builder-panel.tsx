@@ -3014,12 +3014,21 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   });
 
   const workflowProfileOptions = useMemo(() => {
+    const registryTicketTypes =
+      workflowProfilesQuery.data?.ticket_settings.ticket_types.map((ticketType) => ({
+        value: ticketType.code,
+        label: `${ticketType.title} (${ticketType.code})`,
+      })) ?? [];
     const configured =
       workflowProfilesQuery.data?.ticket_settings.workflow_profiles.map((profile) => ({
         value: profile.ticket_type,
         label: `${profile.label} (${profile.ticket_type})`,
       })) ?? [];
-    const options = configured.length ? configured : [...WORKFLOW_PROFILE_OPTIONS];
+    const options = registryTicketTypes.length
+      ? registryTicketTypes
+      : configured.length
+        ? configured
+        : [...WORKFLOW_PROFILE_OPTIONS];
     if (selectedForm?.ticket_type && !options.some((option) => option.value === selectedForm.ticket_type)) {
       return [
         ...options,
@@ -3027,7 +3036,11 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
       ];
     }
     return options;
-  }, [selectedForm?.ticket_type, workflowProfilesQuery.data?.ticket_settings.workflow_profiles]);
+  }, [
+    selectedForm?.ticket_type,
+    workflowProfilesQuery.data?.ticket_settings.ticket_types,
+    workflowProfilesQuery.data?.ticket_settings.workflow_profiles,
+  ]);
 
   useEffect(() => {
     if (!selectedForm?.fields.length) {

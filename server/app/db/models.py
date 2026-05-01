@@ -1479,6 +1479,60 @@ class TicketFormPack(Base):
         )
 
 
+class TicketType(Base):
+    """Versioned top-level service desk process type defaults."""
+
+    __tablename__ = "ticket_types"
+
+    code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    default_workflow_profile_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    default_priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_routing_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_sla_policy_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    default_sla_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_ola_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_approval_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_diagnostic_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_closure_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_visibility_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_notification_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_reporting_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sla_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    ola_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    approval_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    approval_required_by_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    diagnostics_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    remediation_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    portal_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_ticket_types_active", "code", "is_active"),
+        Index("ix_ticket_types_published_at", "published_at"),
+        Index("ix_ticket_types_portal_visible", "portal_visible", "is_active"),
+    )
+
+
 class RequestTemplate(Base):
     """Versioned request template assembled from form, workflow and policy references."""
 

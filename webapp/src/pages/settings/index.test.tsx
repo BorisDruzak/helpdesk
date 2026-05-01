@@ -98,6 +98,7 @@ function createSettingsPayload(): WebSettingsPayload {
           },
         },
       ],
+      ticket_types: [],
       request_templates: [
         {
           id: "breakage",

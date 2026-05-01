@@ -230,10 +230,39 @@ export type AdminHelpdeskSmartViewItem = {
   updated_by: string | null;
 };
 
+export type AdminHelpdeskTicketTypeItem = {
+  code: string;
+  version: string;
+  title: string;
+  description: string | null;
+  default_workflow_profile_id: string | null;
+  default_priority_policy_code: string | null;
+  default_routing_policy_code: string | null;
+  default_sla_policy_id: number | null;
+  default_sla_policy_code: string | null;
+  default_ola_policy_code: string | null;
+  default_approval_policy_code: string | null;
+  default_diagnostic_policy_code: string | null;
+  default_closure_policy_code: string | null;
+  default_visibility_policy_code: string | null;
+  default_notification_policy_code: string | null;
+  default_reporting_policy_code: string | null;
+  feature_flags: Record<string, boolean>;
+  config: Record<string, unknown>;
+  is_active: boolean;
+  published_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
 export type AdminHelpdeskModelPayload = {
   summary: {
     request_templates_count: number;
     active_request_templates_count: number;
+    ticket_types_count: number;
+    active_ticket_types_count: number;
     policies_count: number;
     active_policies_count: number;
     smart_views_count: number;
@@ -246,11 +275,15 @@ export type AdminHelpdeskModelPayload = {
     policy_diff_endpoint?: string | null;
     policy_deactivate_endpoint?: string | null;
     policy_rollback_endpoint?: string | null;
+    publish_ticket_type_endpoint: string;
+    ticket_type_deactivate_endpoint?: string | null;
+    ticket_type_rollback_endpoint?: string | null;
     publish_smart_view_endpoint: string;
     inheritance_order: string[];
     policy_kinds: string[];
   };
   request_templates: AdminHelpdeskRequestTemplateItem[];
+  ticket_types: AdminHelpdeskTicketTypeItem[];
   policies: Record<string, AdminHelpdeskPolicyItem[]>;
   smart_views: AdminHelpdeskSmartViewItem[];
 };

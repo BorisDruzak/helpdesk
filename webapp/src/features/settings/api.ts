@@ -77,6 +77,25 @@ export type WebSettingsPayload = {
       evidence_required_for_priorities: string[];
       transitions: Record<string, Array<string | Record<string, unknown>>>;
     }>;
+    ticket_types: Array<{
+      code: string;
+      version: string;
+      title: string;
+      description: string | null;
+      default_workflow_profile_id: string | null;
+      default_priority_policy_code: string | null;
+      default_routing_policy_code: string | null;
+      default_sla_policy_id: number | null;
+      default_sla_policy_code: string | null;
+      default_ola_policy_code: string | null;
+      default_approval_policy_code: string | null;
+      default_diagnostic_policy_code: string | null;
+      default_closure_policy_code: string | null;
+      default_visibility_policy_code: string | null;
+      default_notification_policy_code: string | null;
+      default_reporting_policy_code: string | null;
+      feature_flags: Record<string, boolean>;
+    }>;
     request_templates: Array<{
       id: string;
       public_title: string;

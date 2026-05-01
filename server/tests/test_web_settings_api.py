@@ -8,6 +8,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import AccessGroup, AccessGroupMember, AccessGroupPermission, Ticket, UiUser
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from auth.context import AuthContext, AuthType
@@ -175,6 +176,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
             ]
         )
         repo = TicketAdminConfigRepo(session)
+        policy_repo = HelpdeskPolicyRepo(session)
         audit_repo = TicketAdminAuditRepo(session)
 
         queue = await repo.create_queue("servicedesk_l1", "ServiceDesk L1", is_triage=True, auto_assign_enabled=True)
@@ -206,6 +208,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
             calendar_id=calendar.id,
             is_default=True,
         )
+        policy_id = policy.id
         await repo.replace_sla_targets(
             policy.id,
             [
@@ -228,6 +231,20 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
             ],
         )
         await repo.create_resolution_code("solved_remotely", "Решено удалённо", is_active=True, sort_order=10)
+        await policy_repo.publish_ticket_type(
+            code="incident",
+            title="Incident",
+            default_workflow_profile_id="incident_default",
+            default_priority_policy_code="incident_priority",
+            default_routing_policy_code="incident_routing",
+            default_sla_policy_id=policy_id,
+            default_sla_policy_code="incident_sla",
+            default_ola_policy_code="incident_ola",
+            default_closure_policy_code="incident_closure",
+            feature_flags={"sla_required": True, "diagnostics_allowed": True, "portal_visible": True},
+            actor_id="admin",
+            actor_role="admin",
+        )
         session.add(
             Ticket(
                 ticket_id="00000000-0000-0000-0000-000000000111",
@@ -270,6 +287,10 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert workflow_profiles["incident"]["transitions"]["new"]
     assert workflow_profiles["access_request"]["requires_approval"] is True
     assert "waiting_on_approval" in workflow_profiles["access_request"]["suggested_path"]
+    ticket_types = {item["code"]: item for item in payload["data"]["ticket_settings"]["ticket_types"]}
+    assert ticket_types["incident"]["default_workflow_profile_id"] == "incident_default"
+    assert ticket_types["incident"]["default_sla_policy_id"] == policy_id
+    assert ticket_types["incident"]["feature_flags"]["sla_required"] is True
     assert payload["data"]["ticket_settings"]["operational_flags"]["take_queue_mode"]
     process_schema = {item["key"]: item for item in payload["data"]["ticket_settings"]["process_schema"]}
     assert process_schema["request_template"]["meaning"] == "Каталог обращений собирает факты и порождает процессный контекст"

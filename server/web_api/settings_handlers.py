@@ -7,6 +7,7 @@ from loguru import logger
 
 from access_control.service import can, can_role
 from app.db import get_session
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
@@ -74,6 +75,7 @@ from web_api.dto.settings import (
     WebSettingsTicketOperationalFlags,
     WebSettingsTicketSettingsPayload,
     WebSettingsTicketStatusItem,
+    WebSettingsTicketTypeItem,
     WebSettingsSupportLineItem,
     WebSettingsWorkflowProfileItem,
 )
@@ -388,7 +390,11 @@ def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettin
     return items
 
 
-def _build_ticket_settings_payload(workflow_profiles=None, form_pack: dict[str, Any] | None = None) -> WebSettingsTicketSettingsPayload:
+def _build_ticket_settings_payload(
+    workflow_profiles=None,
+    form_pack: dict[str, Any] | None = None,
+    ticket_types: list[dict[str, Any]] | None = None,
+) -> WebSettingsTicketSettingsPayload:
     requester_map: dict[str, list[str]] = {}
     owner_map: dict[str, list[str]] = {}
     status_items: list[WebSettingsTicketStatusItem] = []
@@ -438,6 +444,10 @@ def _build_ticket_settings_payload(workflow_profiles=None, form_pack: dict[str, 
         workflow_profiles=[
             WebSettingsWorkflowProfileItem(**profile.to_dict())
             for profile in (workflow_profiles or list_workflow_profiles())
+        ],
+        ticket_types=[
+            WebSettingsTicketTypeItem.model_validate(item)
+            for item in (ticket_types or [])
         ],
         request_templates=_build_request_template_items(form_pack),
         process_schema=_build_process_schema_items(),
@@ -578,6 +588,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
             resolution_codes = await repo.list_resolution_codes(include_inactive=True)
             audit_records = await audit_repo.list_audit(limit=80, offset=0)
             workflow_profiles = await load_workflow_profiles(session)
+            ticket_types = await HelpdeskPolicyRepo(session).list_ticket_types(include_inactive=False)
 
             queue_items: list[WebSettingsQueueItem] = []
             for queue in queues:
@@ -672,7 +683,7 @@ async def handle_web_settings_payload(request: web.Request) -> web.Response:
                     audit_records_count=len(audit_records),
                 ),
                 routing_builder=_build_routing_builder_payload(form_pack),
-                ticket_settings=_build_ticket_settings_payload(workflow_profiles, form_pack),
+                ticket_settings=_build_ticket_settings_payload(workflow_profiles, form_pack, ticket_types),
                 queues=queue_items,
                 routing_rules=[
                     WebSettingsRoutingRuleItem(

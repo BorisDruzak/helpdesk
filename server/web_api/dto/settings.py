@@ -181,6 +181,35 @@ class WebSettingsRequestTemplateItem(BaseModel):
     policies_missing: list[str] = Field(default_factory=list)
 
 
+class WebSettingsTicketTypeItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    version: str
+    title: str
+    description: str | None = None
+    default_workflow_profile_id: str | None = None
+    default_priority_policy_code: str | None = None
+    default_routing_policy_code: str | None = None
+    default_sla_policy_id: int | None = None
+    default_sla_policy_code: str | None = None
+    default_ola_policy_code: str | None = None
+    default_approval_policy_code: str | None = None
+    default_diagnostic_policy_code: str | None = None
+    default_closure_policy_code: str | None = None
+    default_visibility_policy_code: str | None = None
+    default_notification_policy_code: str | None = None
+    default_reporting_policy_code: str | None = None
+    feature_flags: dict[str, bool] = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
+    is_active: bool = True
+    published_at: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
 class WebSettingsProcessSchemaItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -249,6 +278,7 @@ class WebSettingsTicketSettingsPayload(BaseModel):
     requester_statuses: list[WebSettingsRequesterStatusItem] = Field(default_factory=list)
     next_action_owners: list[WebSettingsNextActionOwnerItem] = Field(default_factory=list)
     workflow_profiles: list[WebSettingsWorkflowProfileItem] = Field(default_factory=list)
+    ticket_types: list[WebSettingsTicketTypeItem] = Field(default_factory=list)
     request_templates: list[WebSettingsRequestTemplateItem] = Field(default_factory=list)
     process_schema: list[WebSettingsProcessSchemaItem] = Field(default_factory=list)
     support_lines: list[WebSettingsSupportLineItem] = Field(default_factory=list)
