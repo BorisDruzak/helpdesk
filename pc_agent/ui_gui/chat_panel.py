@@ -276,6 +276,29 @@ def _duration_to_user_text(value: Any) -> str:
     return f"{amount} дн"
 
 
+def _bytes_to_user_text(size: int) -> str:
+    if size < 1024:
+        return f"{size} Б"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} КБ"
+    if size < 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} МБ"
+    return f"{size / (1024 * 1024 * 1024):.1f} ГБ"
+
+
+def format_attachment_item_label(file_path: str) -> str:
+    path = Path(str(file_path or "").strip())
+    name = path.name or str(file_path or "").strip()
+    if not name:
+        return "Файл"
+    try:
+        if path.exists() and path.is_file():
+            return f"{name} · {_bytes_to_user_text(path.stat().st_size)}"
+    except OSError:
+        return name
+    return name
+
+
 def _target_for_priority(policy: dict[str, Any], target_key: str, priority_class: str) -> str:
     targets = policy.get("targets") if isinstance(policy.get("targets"), dict) else {}
     target_block = targets.get(target_key) if isinstance(targets.get(target_key), dict) else {}
@@ -358,6 +381,62 @@ def build_request_creation_preview(
     if not lines:
         return "После создания служба поддержки рассчитает очередь, сроки и дальнейшие действия."
     return "\n".join(lines)
+
+
+def build_request_template_card_summary(form_def: Optional[dict[str, Any]], *, priority_class: str = "P3") -> str:
+    if not isinstance(form_def, dict):
+        return "Выберите шаблон обращения."
+
+    title = str(form_def.get("request_template_title") or form_def.get("title") or form_def.get("key") or "").strip()
+    category = str(form_def.get("category") or form_def.get("category_id") or form_def.get("ticket_type") or "").strip()
+    description = str(form_def.get("description") or "").strip()
+    fields = form_def.get("fields") if isinstance(form_def.get("fields"), list) else []
+    required_labels = [
+        str(field.get("label") or field.get("key") or "").strip()
+        for field in fields
+        if isinstance(field, dict) and field.get("required")
+    ]
+    required_labels = [label for label in required_labels if label]
+
+    badges: list[str] = []
+    approval_policy = form_def.get("approval_policy") if isinstance(form_def.get("approval_policy"), dict) else {}
+    if approval_policy.get("required"):
+        badges.append("Нужно согласование")
+
+    diagnostic_policy = form_def.get("diagnostic_policy") if isinstance(form_def.get("diagnostic_policy"), dict) else {}
+    if (
+        diagnostic_policy.get("suggested_playbooks")
+        or diagnostic_policy.get("suggested_playbook")
+        or diagnostic_policy.get("suggested_playbook_id")
+    ):
+        badges.append("Может быть диагностика")
+
+    if any(isinstance(field, dict) and str(field.get("type") or "").strip().lower() == "file" for field in fields):
+        badges.append("Понадобятся файлы")
+
+    sla_policy = form_def.get("sla_policy") if isinstance(form_def.get("sla_policy"), dict) else {}
+    if _target_for_priority(sla_policy, "first_response", priority_class):
+        badges.append("Есть сроки ответа")
+
+    lines: list[str] = []
+    if title:
+        lines.append(title)
+    if category:
+        lines.append(f"Категория: {category}")
+    if description:
+        lines.append(description)
+    if required_labels:
+        lines.append(f"Обязательные поля: {', '.join(required_labels[:4])}")
+    if badges:
+        lines.append(" · ".join(badges))
+
+    preview = build_request_creation_preview(form_def, priority_class=priority_class)
+    preview_lines = [line for line in preview.splitlines() if not line.startswith("Шаблон:")]
+    if preview_lines:
+        lines.append("Что будет дальше:")
+        lines.extend(preview_lines)
+
+    return "\n".join(lines) if lines else "Выберите шаблон обращения."
 
 
 def diagnostic_consent_required(form_def: Optional[dict[str, Any]]) -> bool:
@@ -1085,6 +1164,7 @@ class TicketDynamicFieldsWidget(QWidget):
         self._widgets: dict[str, QWidget] = {}
         self._labels: dict[str, QLabel] = {}
         self._help_labels: dict[str, QLabel] = {}
+        self._error_labels: dict[str, QLabel] = {}
         self._registry_options: dict[str, list[dict[str, Any]]] = {}
         self._show_validation_feedback = False
         self._layout = QVBoxLayout(self)
@@ -1102,6 +1182,7 @@ class TicketDynamicFieldsWidget(QWidget):
         self._widgets = {}
         self._labels = {}
         self._help_labels = {}
+        self._error_labels = {}
         self._registry_options = {}
         self._show_validation_feedback = False
 
@@ -1265,9 +1346,16 @@ class TicketDynamicFieldsWidget(QWidget):
                 container_layout.addWidget(help_label)
                 self._help_labels[field_key] = help_label
 
+            error_label = QLabel("")
+            error_label.setWordWrap(True)
+            error_label.setStyleSheet(f"font-size: {theme.UI_FONT_PT}pt; color: {theme.DANGER_FG};")
+            error_label.setVisible(False)
+            container_layout.addWidget(error_label)
+
             self._containers[field_key] = container
             self._widgets[field_key] = widget
             self._labels[field_key] = field_label
+            self._error_labels[field_key] = error_label
             self._layout.addWidget(container)
 
         self._layout.addStretch(1)
@@ -1410,6 +1498,7 @@ class TicketDynamicFieldsWidget(QWidget):
             field_key = str(field_def.get("key") or "").strip()
             label = self._labels.get(field_key)
             help_label = self._help_labels.get(field_key)
+            error_label = self._error_labels.get(field_key)
             widget = self._widgets.get(field_key)
             is_missing = field_key in missing_keys
             if label is not None:
@@ -1421,6 +1510,17 @@ class TicketDynamicFieldsWidget(QWidget):
                 help_label.setStyleSheet(
                     f"font-size: {theme.UI_FONT_PT}pt; color: {theme.DANGER_FG if is_missing else theme.TEXT_MUTED};"
                 )
+            if error_label is not None:
+                if is_missing:
+                    error_text = str(
+                        field_def.get("required_message")
+                        or f"Заполните поле «{field_def.get('label') or field_key}»."
+                    ).strip()
+                    error_label.setText(error_text)
+                    error_label.setVisible(True)
+                else:
+                    error_label.setText("")
+                    error_label.setVisible(False)
             if widget is not None:
                 if is_missing:
                     widget.setStyleSheet(
@@ -1698,6 +1798,7 @@ class TicketCreateWizardWidget(QFrame):
         self._preview_request_seq = 0
         self._attachment_paths: list[str] = []
         self._temporary_attachment_paths: set[str] = set()
+        self._last_created_ticket_id = ""
         self.setObjectName("ProfileSidebar")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
 
@@ -1767,6 +1868,28 @@ class TicketCreateWizardWidget(QFrame):
         self._status_label.setWordWrap(True)
         outer.addWidget(self._status_label)
 
+        self.result_group = QGroupBox("Обращение создано")
+        result_layout = QVBoxLayout(self.result_group)
+        result_layout.setContentsMargins(10, 10, 10, 10)
+        result_layout.setSpacing(8)
+        self.result_label = QLabel("")
+        self.result_label.setWordWrap(True)
+        self.result_label.setObjectName("ProfileHint")
+        result_layout.addWidget(self.result_label)
+        result_actions = QHBoxLayout()
+        self.open_created_ticket_btn = QPushButton("Открыть обращение")
+        self.open_created_ticket_btn.setObjectName("PrimaryButton")
+        self.open_created_ticket_btn.clicked.connect(self._on_open_created_ticket)
+        self.create_another_btn = QPushButton("Создать ещё одно")
+        self.create_another_btn.setObjectName("SecondaryButton")
+        self.create_another_btn.clicked.connect(self._on_create_another_clicked)
+        result_actions.addWidget(self.open_created_ticket_btn)
+        result_actions.addWidget(self.create_another_btn)
+        result_actions.addStretch(1)
+        result_layout.addLayout(result_actions)
+        self.result_group.setVisible(False)
+        outer.addWidget(self.result_group)
+
         self.refresh_from_panel()
         self.reset_wizard()
 
@@ -1802,8 +1925,24 @@ class TicketCreateWizardWidget(QFrame):
 
         group = QGroupBox("Шаг 2. Шаблон обращения и уточнения")
         group_layout = QVBoxLayout(group)
+        self.template_search_input = QLineEdit()
+        self.template_search_input.setPlaceholderText("Поиск по шаблонам")
+        self.template_search_input.textChanged.connect(self._refresh_template_list)
+        group_layout.addWidget(self.template_search_input)
+
+        self.template_list = QListWidget()
+        self.template_list.setMinimumHeight(132)
+        self.template_list.currentItemChanged.connect(self._on_template_item_changed)
+        group_layout.addWidget(self.template_list)
+
+        self.selected_template_card = QLabel("Выберите шаблон обращения.")
+        self.selected_template_card.setWordWrap(True)
+        self.selected_template_card.setObjectName("ProfileHint")
+        group_layout.addWidget(self.selected_template_card)
+
         self.form_selector = QComboBox()
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
+        self.form_selector.setVisible(False)
         group_layout.addWidget(self.form_selector)
         self.form_summary = QLabel("")
         self.form_summary.setWordWrap(True)
@@ -1962,12 +2101,31 @@ class TicketCreateWizardWidget(QFrame):
         self._sync_attachments_list()
         self._go_to_step(0, force=True)
         self._set_status("", error=False)
+        self._hide_create_result()
 
     def _set_status(self, text: str, *, error: bool) -> None:
         self._status_is_error = error
         color = theme.DANGER_FG if error else theme.TEXT_MUTED
         self._status_label.setStyleSheet(f"color: {color}; background: transparent;")
         self._status_label.setText(text)
+
+    def _hide_create_result(self) -> None:
+        self._last_created_ticket_id = ""
+        self.result_label.setText("")
+        self.result_group.setVisible(False)
+
+    def _show_create_result(self, ticket: dict[str, Any], *, public_access_code: str = "") -> None:
+        self._last_created_ticket_id = str(ticket.get("ticket_id") or "")
+        self.result_label.setText(build_post_create_process_summary(ticket, public_access_code=public_access_code))
+        self.open_created_ticket_btn.setEnabled(bool(self._last_created_ticket_id))
+        self.result_group.setVisible(True)
+
+    def _on_open_created_ticket(self) -> None:
+        if self._last_created_ticket_id:
+            self.ticketCreated.emit(self._last_created_ticket_id)
+
+    def _on_create_another_clicked(self) -> None:
+        self.reset_wizard()
 
     def refresh_theme(self) -> None:
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
@@ -2065,6 +2223,7 @@ class TicketCreateWizardWidget(QFrame):
             index = self.form_selector.findData(current_key)
             self.form_selector.setCurrentIndex(index if index >= 0 else 0)
         self.form_selector.blockSignals(False)
+        self._refresh_template_list()
         self._on_form_changed()
 
     def _selected_form(self) -> Optional[dict[str, Any]]:
@@ -2075,17 +2234,73 @@ class TicketCreateWizardWidget(QFrame):
         forms = self._panel.ticket_form_pack().get("forms") or []
         return forms[0] if forms else None
 
+    def _refresh_template_list(self, *_args) -> None:
+        if not hasattr(self, "template_list"):
+            return
+        forms = list(self._panel.ticket_form_pack().get("forms") or [])
+        current_key = str(self.form_selector.currentData() or "").strip()
+        query = str(self.template_search_input.text() if hasattr(self, "template_search_input") else "").strip().casefold()
+        self.template_list.blockSignals(True)
+        self.template_list.clear()
+        for form in forms:
+            title = str(form.get("request_template_title") or form.get("title") or form.get("key") or "Форма").strip()
+            search_blob = " ".join(
+                str(form.get(key) or "") for key in ("key", "request_template_title", "title", "description", "category", "ticket_type")
+            ).casefold()
+            if query and query not in search_blob:
+                continue
+            item = QListWidgetItem(title)
+            item.setData(Qt.ItemDataRole.UserRole, form.get("key"))
+            item.setToolTip(build_request_template_card_summary(form, priority_class=self._current_priority_class_hint()))
+            self.template_list.addItem(item)
+        selected_row = 0
+        for row in range(self.template_list.count()):
+            item = self.template_list.item(row)
+            if str(item.data(Qt.ItemDataRole.UserRole) or "") == current_key:
+                selected_row = row
+                break
+        if self.template_list.count() > 0:
+            self.template_list.setCurrentRow(selected_row)
+        self.template_list.blockSignals(False)
+
+    def _sync_template_list_selection(self, form_key: Any) -> None:
+        if not hasattr(self, "template_list"):
+            return
+        target = str(form_key or "").strip()
+        self.template_list.blockSignals(True)
+        for row in range(self.template_list.count()):
+            item = self.template_list.item(row)
+            if str(item.data(Qt.ItemDataRole.UserRole) or "") == target:
+                self.template_list.setCurrentRow(row)
+                break
+        self.template_list.blockSignals(False)
+
+    def _on_template_item_changed(self, current: Optional[QListWidgetItem], _previous: Optional[QListWidgetItem] = None) -> None:
+        if current is None:
+            return
+        form_key = current.data(Qt.ItemDataRole.UserRole)
+        index = self.form_selector.findData(form_key)
+        if index >= 0 and index != self.form_selector.currentIndex():
+            self.form_selector.setCurrentIndex(index)
+
     def _on_form_changed(self, *_args) -> None:
         form = self._selected_form()
         if not form:
             self.form_summary.setText("Каталог форм пока недоступен.")
+            if hasattr(self, "selected_template_card"):
+                self.selected_template_card.setText("Каталог шаблонов пока недоступен.")
             self.dynamic_fields_widget.clear_form()
             self.priority_dynamic_fields_widget.clear_form()
             self.priority_fallback_group.setVisible(True)
         else:
+            self._sync_template_list_selection(form.get("key"))
             self.form_summary.setText(
                 form.get("description") or "Уточните детали, чтобы обращение сразу попало в нужный поток."
             )
+            if hasattr(self, "selected_template_card"):
+                self.selected_template_card.setText(
+                    build_request_template_card_summary(form, priority_class=self._current_priority_class_hint())
+                )
             priority_keys = set(ticket_form_priority_field_keys(form))
             registry_options = self._panel.registry_options()
             self.dynamic_fields_widget.set_form(form, exclude_keys=priority_keys, registry_options=registry_options)
@@ -2113,7 +2328,7 @@ class TicketCreateWizardWidget(QFrame):
     def _sync_attachments_list(self) -> None:
         self.attachments_list.clear()
         for file_path in self._attachment_paths:
-            item = QListWidgetItem(Path(file_path).name)
+            item = QListWidgetItem(format_attachment_item_label(file_path))
             item.setToolTip(file_path)
             self.attachments_list.addItem(item)
         self.remove_attachment_btn.setEnabled(self.attachments_list.count() > 0)
@@ -2388,7 +2603,8 @@ class TicketCreateWizardWidget(QFrame):
             ticket_id = str(ticket.get("ticket_id") or "")
             code = result.get("public_access_code") or "—"
             self.reset_wizard()
-            self._set_status(build_post_create_process_summary(ticket, public_access_code=str(code)), error=False)
+            self._set_status("Обращение создано. Проверьте дальнейшие действия ниже.", error=False)
+            self._show_create_result(ticket, public_access_code=str(code))
             self.ticketCreated.emit(ticket_id)
         except Exception as exc:
             logger.error(f"Ошибка создания обращения из мастера: {exc}")

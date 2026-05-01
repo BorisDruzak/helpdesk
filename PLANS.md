@@ -50,6 +50,55 @@ Verification:
 - `PATCH /api/agent_updates/rollout_policy` -> assigned `windows_amd64/stable/3.1.25`; `GET /api/agent_builds` shows `3.1.25` as `is_rollout_assigned=true`.
 - Residual note: the first local `ADMIN-2` canary command was accepted by a source-run agent without launcher install layout, so it downloaded the artifact and exited with code `42` but could not apply the ZIP by itself. The local source agent was restarted from the repo at `3.1.25` and is online; use launcher-managed devices for release canary evidence.
 
+## 2026-05-01 ПК-агент: финальный GUI-polish мастера обращений
+
+Status: срезы 12-14 выполнены и проверены локально. Цель: довести GUI мастера до цельного пользовательского потока без изменения серверного контракта. Итоговая готовность после среза: функционально 96-97%, GUI 93-95%.
+
+### Goal
+
+Сделать мастер создания обращения в ПК-агенте визуально понятным для обычного пользователя: быстрый выбор шаблона, карточка выбранного сценария, компактный предпросмотр маршрута/сроков/диагностики, понятные ошибки рядом с формой и полноценный экран результата после создания.
+
+### Scope
+
+- `pc_agent/ui_gui/chat_panel.py`: только GUI/UX мастера, без изменения API payload contract.
+- `pc_agent/tests/test_chat_panel_helpers.py`: TDD-покрытие helper-ов и структуры виджетов.
+- `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, `PLANS.md`: синхронизация навигации после GUI-правок.
+
+### Current Slice 12: template chooser and compact process cards
+
+- [x] RED: helper для summary шаблона должен выдавать категорию, описание и человекочитаемые бейджи "нужно согласование", "может быть диагностика", "понадобятся файлы", "есть сроки ответа".
+- [x] RED: wizard step 2 должен иметь поиск по шаблонам, список шаблонов и карточку выбранного шаблона, а не только одиночный dropdown.
+- [x] GREEN: реализовать searchable template chooser с сохранением совместимости `form_selector.currentData()`.
+- [x] GREEN: добавить карточку выбранного шаблона с описанием, категорией, бейджами и кратким preview "что будет дальше".
+- [x] Проверить focused tests и docs drift.
+
+### Planned Slice 13: field validation and attachments polish
+
+- [x] Показывать ошибки рядом с конкретными полями, а не только общим статусом.
+- [x] Сделать визуальный список вложений с размером, remove/replace и понятным состоянием пустого списка.
+- [x] Добавить подсказки/help text под полями, если они приходят из схемы.
+
+### Planned Slice 14: result screen and live GUI pass
+
+- [x] После создания показывать отдельный результат: код, статус, очередь/исполнитель, сроки, действия "открыть обращение" / "создать ещё".
+- [x] Пройти source GUI live smoke через `manage_local_agent.py`.
+- [x] Прогнать runtime tests и `python scripts/verify_workspace.py`.
+
+Verification:
+
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_create_wizard_has_searchable_template_chooser pc_agent/tests/test_chat_panel_helpers.py::test_build_request_template_card_summary_surfaces_badges_and_next_steps -q --tb=short` -> failed on missing `build_request_template_card_summary`.
+- GREEN: same focused tests -> passed, 2 tests.
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_dynamic_fields_widget_shows_inline_required_message -q --tb=short` -> failed on missing `_error_labels`.
+- GREEN: inline required-message test -> passed.
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_format_attachment_item_label_includes_file_size -q --tb=short` -> failed on missing `format_attachment_item_label`.
+- GREEN: attachment label test -> passed.
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py::test_ticket_create_wizard_has_post_create_result_panel -q --tb=short` -> failed on missing result panel.
+- GREEN: result panel test -> passed.
+- Focused: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> passed, 57 tests.
+- Runtime/docs: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py scripts/test_navigation_catalog.py -q --tb=short` -> passed, 75 tests.
+- Workspace: `python scripts/verify_workspace.py` -> passed.
+- Live source GUI: `python scripts/manage_local_agent.py start codex-agent-gui-polish --gui --ui-port 8883` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; stopped through `POST /ui/agent/shutdown`, then `manage_local_agent.py status` returned stopped.
+
 ### Goal
 
 Довести пользовательский ПК-агент до модели, где человек создаёт не "тикет" и не абстрактную форму, а понятное обращение по опубликованному `request_template`; агент показывает только нужные поля, объясняет последствия выбора человеческим языком, корректно передаёт template/process context на сервер и поддерживает диагностику/согласие/материалы.

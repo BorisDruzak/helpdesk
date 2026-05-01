@@ -962,7 +962,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, native date/datetime controls, replaceable/clearable file fields, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback, post-create summary for owner/next step/deadlines/passport without raw SLA wording, diagnostic consent payloads, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, searchable request-template chooser, selected-template summary cards, inline required-field errors, native date/datetime controls, replaceable/clearable file fields with attachment size labels, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback, post-create result panel for owner/next step/deadlines/passport without raw SLA wording, diagnostic consent payloads, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -1025,7 +1025,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with native date/datetime controls, file replace/clear, structured process preview and post-create process summary, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, native date/datetime controls, file replace/clear, inline form validation, structured process preview and post-create result panel, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",

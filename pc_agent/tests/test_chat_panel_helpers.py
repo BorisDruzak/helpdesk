@@ -16,8 +16,10 @@ from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
     build_post_create_process_summary,
     build_request_creation_preview,
+    build_request_template_card_summary,
     build_diagnostic_consent_payload,
     build_default_ticket_form_pack,
+    format_attachment_item_label,
     build_priority_facts_payload,
     build_priority_facts_payload_from_form,
     build_ticket_sla_user_summary,
@@ -123,6 +125,51 @@ def test_ticket_create_wizard_has_structured_process_preview_panel():
     assert "process_preview_group" in source
     assert "Что будет после отправки" in source
     assert "preview_label" in source
+
+
+def test_ticket_create_wizard_has_searchable_template_chooser():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_form_step)
+
+    assert "template_search_input" in source
+    assert "template_list" in source
+    assert "selected_template_card" in source
+    assert "Поиск по шаблонам" in source
+
+
+def test_ticket_create_wizard_has_post_create_result_panel():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+
+    assert "result_group" in source
+    assert "Открыть обращение" in source
+    assert "Создать ещё одно" in source
+    assert "_show_create_result" in source
+
+
+def test_build_request_template_card_summary_surfaces_badges_and_next_steps():
+    summary = build_request_template_card_summary(
+        {
+            "request_template_title": "Не открывается сайт",
+            "description": "Поможет собрать адрес сайта, ошибку и масштаб проблемы.",
+            "category": "network",
+            "fields": [
+                {"key": "url", "label": "Адрес сайта", "type": "url", "required": True},
+                {"key": "screenshot", "label": "Скриншот", "type": "file", "required": False},
+            ],
+            "approval_policy": {"required": True},
+            "diagnostic_policy": {"suggested_playbooks": ["diagnose.website"]},
+            "sla_policy": {"targets": {"first_response": {"P3": "4h"}}},
+        },
+        priority_class="P3",
+    )
+
+    assert "Не открывается сайт" in summary
+    assert "Категория: network" in summary
+    assert "Поможет собрать адрес сайта" in summary
+    assert "Обязательные поля: Адрес сайта" in summary
+    assert "Нужно согласование" in summary
+    assert "Может быть диагностика" in summary
+    assert "Понадобятся файлы" in summary
+    assert "Вам должны ответить примерно за 4 ч" in summary
 
 
 def test_agent_default_forms_carry_process_type_and_priority_policy():
@@ -365,6 +412,43 @@ def test_dynamic_fields_widget_can_clear_file_field(tmp_path):
     assert widget.values() == {"evidence": {}}
     assert widget.file_attachment_paths() == []
     assert widget.missing_required_labels() == ["Доказательство"]
+
+
+def test_format_attachment_item_label_includes_file_size(tmp_path):
+    file_path = tmp_path / "log.txt"
+    file_path.write_bytes(b"x" * 2048)
+
+    assert format_attachment_item_label(str(file_path)) == "log.txt · 2.0 КБ"
+    assert format_attachment_item_label(str(tmp_path / "missing.txt")) == "missing.txt"
+
+
+def test_dynamic_fields_widget_shows_inline_required_message():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {
+                    "key": "url",
+                    "label": "Адрес сайта",
+                    "type": "url",
+                    "required": True,
+                    "required_message": "Укажите адрес сайта, чтобы поддержка могла проверить доступность.",
+                    "help_text": "Можно вставить полный адрес из браузера.",
+                }
+            ]
+        }
+    )
+
+    assert widget.validate_required_fields(show_feedback=True) == ["Адрес сайта"]
+    assert widget._error_labels["url"].text() == "Укажите адрес сайта, чтобы поддержка могла проверить доступность."
+    assert not widget._error_labels["url"].isHidden()
+
+    widget._widgets["url"].setText("https://example.test")
+
+    assert widget.validate_required_fields(show_feedback=True) == []
+    assert widget._error_labels["url"].text() == ""
 
 
 def test_build_post_create_process_summary_explains_next_steps_without_sla():
