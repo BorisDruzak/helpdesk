@@ -29,6 +29,7 @@
 - Versioned `form_schemas`, `form_fields` and `form_conditions` live in migration `067`. `request_templates.form_schema_id` is now backed by a first-class schema publication when the visual forms builder publishes a template; the legacy `ticket_form_packs` path stays compatible for `/help`, agent create and old packs. Field `process_mapping.roles` is normalized as an alias of existing `field_roles`, and `validation.required_message` is preserved by server-side submission validation.
 - Request-template policy references live on the template row, including `priority_policy_code`, `routing_policy_code`, `sla_policy_code`/legacy `sla_policy_id`, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code` and `reporting_policy_code` (migration `068`). `HelpdeskPolicyRepo.resolve_effective_request_template()` prefers those refs over inline legacy form JSON, returns resolved config plus source rows, and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in `custom_fields.request_template` so historical tickets remain explainable.
 - `priority_policy` now supports configured `input_fields`, named/raw `matrix` rows and columns, list `modifiers` with `condition`/`action` rules, and `manual_override` role/reason checks. Ticket creation and create-preview expose canonical priority fields (`impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`), requester-safe `priority_explanation`, matched modifier labels, and a `priority_overridden` audit event when manual override logging is enabled.
+- Request-template `sla_policy` now participates in lifecycle execution: standalone targets and inline calendars are used for due dates; `start_conditions`, `pause_conditions`, `resume_conditions` and `stop_conditions` gate timer state changes; warning-before settings emit `sla_warning`; SLA events include policy code/version/source and configured breach action metadata for observer/reporting.
 
 ---
 
@@ -75,14 +76,16 @@
 - POST `/api/tickets/{id}/reroute` снимает lock и пересчитывает очередь по правилам.
 
 **TicketSlaService (`tickets/sla_service.py`)**
-- При создании тикета: старт FRT и Resolution по policy + priority (24x7).
-- FRT закрывается первым public comment от support/agent (`first_response_at`).
-- В статусах ожидания (`waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`) workflow пишет `ticket_waits`, обновляет `next_action_owner` и выполняет паузу/возобновление SLA с накоплением `sla_paused_seconds`.
+- При создании тикета: старт FRT и Resolution по policy + priority; standalone `request_template.sla_policy.targets` и inline/legacy calendars поддерживаются без обязательного legacy `ticket_sla_policies.id`.
+- `start_conditions`, `pause_conditions`, `resume_conditions` и `stop_conditions` могут управлять стартом, паузой, возобновлением, остановкой FRT и остановкой resolution timer; без явных условий сохраняется legacy-поведение.
+- FRT закрывается первым public comment от support/agent (`first_response_at`) или другим trigger, если это явно задано в policy.
+- В статусах ожидания (`waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`) workflow пишет `ticket_waits`, обновляет `next_action_owner` и выполняет policy-aware паузу/возобновление SLA с накоплением `sla_paused_seconds`.
 - При reopen: сброс resolution timer, `reopen_count++`.
 
 **TicketSlaWatchdog (`app/services/ticket_sla_watchdog.py`)**
+- До breach проверяет `warnings.warning_before` / `breach_actions.warning_before` и пишет однократный `sla_warning` по каждому таймеру.
 - Периодический скан тикетов с истёкшими `first_response_due_at` / `resolution_due_at` (с учётом `sla_paused_seconds`).
-- При первом breach: проставление `*_breached_at`, событие `sla_breached`, push в UI.
+- При первом breach: проставление `*_breached_at`, событие `sla_breached`, policy metadata и configured `breach_actions` в payload, push в UI.
 - Напоминания каждые 60 минут: событие `sla_reminder_sent`, push в UI.
 - Остановка напоминаний при переходе в Resolved/Closed.
 
@@ -97,7 +100,7 @@
 
 **Фильтры GET `/api/tickets`:** `device_id`, `queue_id`, `priority`, `assignee_id`, `requester_id`, `status`, `first_response_breached`, `resolution_breached`.
 
-**События ticket_events:** `routing_applied`, `queue_changed`, `sla_started`, `sla_paused`, `sla_resumed`, `sla_breached`, `sla_reminder_sent`, `sla_cleared`.
+**События ticket_events:** `routing_applied`, `queue_changed`, `sla_started`, `sla_paused`, `sla_resumed`, `sla_first_response_stopped`, `sla_resolution_stopped`, `sla_warning`, `sla_breached`, `sla_reminder_sent`, `sla_cleared`.
 
 **Терминальные статусы:** Resolved, Closed. SLA due dates считаются через `calendar_engine.add_business_minutes`, если политика SLA связана с бизнес-календарём; расчёт ведётся в секундах, чтобы реальный `now()` у границы рабочего окна не застревал на неполной минуте. Без календаря остаётся 24x7. Recipients эскалации: участники очереди (`ticket_queue_members`) + admins; доставка через `ticket_event_committed`.
 

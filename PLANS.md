@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 4 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots) and Slice 4 (`priority_policy.matrix`, rule modifiers and manual override) the working estimate is backend/runtime about 84%, server UI about 74%, agent GUI unchanged about 73%, overall about 80%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 5 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots), Slice 4 (`priority_policy.matrix`, rule modifiers and manual override) and Slice 5 (`sla_policy` start/pause/resume/stop/warning events) the working estimate is backend/runtime about 86%, server UI about 74%, agent GUI unchanged about 73%, overall about 82%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -32,6 +32,7 @@ Status: Slice 4 is implemented locally and is in verification/release. Baseline 
 - Implemented Slice 2: versioned `form_schemas`, `form_fields` and `form_conditions`; visual publish-from-form now materializes `request_template.form_schema_id` as a first-class schema while preserving legacy `ticket_form_packs` compatibility. Field `process_mapping.roles` is normalized as an alias to current `field_roles`; `validation.required_message` is preserved by submission validation.
 - Implemented Slice 3: `request_templates` now carry explicit refs for the policy assembly, including `sla_policy_code` and `reporting_policy_code`; `resolve_effective_request_template()` prefers policy refs over inline form JSON and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in the ticket snapshot.
 - Implemented Slice 4: `priority_policy` supports configurable matrix rows/columns, list modifiers with conditions/actions, manual override role/reason enforcement, audit event payloads and requester-safe preview explanations.
+- Implemented Slice 5: `sla_policy` runtime now evaluates configured start/pause/resume/stop conditions, emits policy-aware `sla_started`, `sla_paused`, `sla_resumed`, `sla_first_response_stopped`, `sla_resolution_stopped` and `sla_warning` events, and carries policy code/version/source plus breach actions in observer-visible SLA payloads.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
@@ -126,12 +127,20 @@ Slice 4 verification:
 
 ### Slice 5: SLA Policy Engine
 
-- [ ] Make standalone `sla_policies.config` cover `calendar_id` or inline calendar, targets, start/pause/resume/stop conditions, warnings, breach actions and applies-to metadata.
-- [ ] Update `TicketSlaService` to evaluate configured start/pause/resume/stop conditions instead of relying only on hardcoded waiting statuses and first public reply.
-- [ ] Add warning scheduler actions before breach and configurable breach recipients/escalation.
-- [ ] Add policy-aware SLA event payloads with policy code/version/source.
-- [ ] Tests: calendar-aware targets, pause/resume condition variants, stop conditions per first_response/resolution, warning event, breach notification/escalation.
+- [x] Make standalone `sla_policies.config` cover inline calendar, targets, start/pause/resume/stop conditions, warnings and breach action metadata in runtime.
+- [x] Update `TicketSlaService` to evaluate configured start/pause/resume/stop conditions instead of relying only on hardcoded waiting statuses and first public reply.
+- [x] Add warning scheduler events before breach and carry configured breach action metadata in warning/breach payloads.
+- [x] Add policy-aware SLA event payloads with policy code/version/source.
+- [x] Tests: calendar-aware targets, pause/resume condition variants, stop conditions per first_response/resolution, warning event and policy-aware payloads.
+- [ ] Complete applies-to matching and recipient/escalation execution for breach actions beyond payload/audit metadata.
 - [ ] UI: settings/forms builder provides structured SLA editor for calendar, P0-P3 targets, pause/stop conditions and warnings.
+
+Slice 5 verification:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_sla_calendar.py::test_start_sla_respects_start_conditions_and_logs_policy_metadata server\tests\test_ticket_sla_calendar.py::test_sla_pause_resume_uses_configured_conditions_and_logs_events server\tests\test_ticket_sla_calendar.py::test_sla_stop_conditions_control_frt_and_resolution_stop server\tests\test_ticket_sla_calendar.py::test_sla_watchdog_emits_configured_warning_before_breach -q --tb=short` -> 4 failed on missing trigger/stop/warning contracts.
+- GREEN focused: same command -> 4 passed.
+- GREEN file regression: `python -m pytest server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 8 passed.
+- GREEN broader sequential: `python -m pytest server\tests\test_ticket_priority_policy.py server\tests\test_ticket_form_packs.py server\tests\test_web_settings_api.py -q --tb=short` -> 35 passed.
 
 ### Slice 6: OLA Policy Engine
 

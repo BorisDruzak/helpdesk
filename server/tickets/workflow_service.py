@@ -369,15 +369,15 @@ class TicketWorkflowService:
             updates["canceled_at"] = None
 
         if to_status in WAITING_STATUSES:
-            await self.sla_service.pause_sla(ticket_id)
+            await self.sla_service.pause_sla(ticket_id, trigger="status_changed")
 
         if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
-            await self.sla_service.resume_sla(ticket_id)
+            await self.sla_service.resume_sla(ticket_id, trigger="status_changed")
 
         if transition_gate and transition_gate.sla_action == "pause":
-            await self.sla_service.pause_sla(ticket_id)
+            await self.sla_service.pause_sla(ticket_id, trigger="workflow_transition_gate")
         elif transition_gate and transition_gate.sla_action == "resume":
-            await self.sla_service.resume_sla(ticket_id)
+            await self.sla_service.resume_sla(ticket_id, trigger="workflow_transition_gate")
 
         await self._sync_wait_ledger(
             ticket_id=ticket_id,
@@ -387,6 +387,9 @@ class TicketWorkflowService:
             reason=reason,
             now=now,
         )
+
+        if to_status in ("resolved", "closed"):
+            await self.sla_service.stop_resolution(ticket_id, status=to_status, trigger="status_changed")
 
         await self.ticket_repo.update_ticket(
             ticket_id,

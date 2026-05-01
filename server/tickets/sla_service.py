@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
 from typing import Any, Optional
+import uuid
 
 from loguru import logger
 
@@ -58,6 +59,114 @@ def _standalone_sla_policy_config(ticket: Ticket) -> dict[str, Any] | None:
         return None
     config = template_context.get("sla_policy")
     return config if isinstance(config, dict) else None
+
+
+def _sla_policy_config(policy: TicketSlaPolicy | dict | None) -> dict[str, Any]:
+    if isinstance(policy, dict):
+        return policy
+    return {}
+
+
+def _sla_policy_metadata(policy: TicketSlaPolicy | dict | None) -> dict[str, Any]:
+    if isinstance(policy, dict):
+        code = (
+            policy.get("code")
+            or policy.get("policy_code")
+            or policy.get("sla_policy_code")
+            or policy.get("id")
+        )
+        result: dict[str, Any] = {}
+        if code is not None:
+            result["code"] = str(code)
+        if policy.get("version") is not None:
+            result["version"] = str(policy.get("version"))
+        result["source"] = str(policy.get("source") or policy.get("scope_level") or "request_template")
+        return result
+    if policy is None:
+        return {}
+    code = getattr(policy, "code", None) or getattr(policy, "name", None) or getattr(policy, "id", None)
+    result = {}
+    if code is not None:
+        result["code"] = str(code)
+    result["source"] = "sla_policy"
+    return result
+
+
+def _ticket_custom_value(ticket: Ticket, key: str) -> Any:
+    if hasattr(ticket, key):
+        value = getattr(ticket, key)
+        if value is not None:
+            return value
+    current: Any = getattr(ticket, "custom_fields", None) or {}
+    for part in str(key).split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _normalized_status(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _condition_matches(
+    condition: Any,
+    *,
+    ticket: Ticket,
+    trigger: str | None = None,
+    status: str | None = None,
+) -> bool:
+    trigger_value = str(trigger or "").strip()
+    current_status = _normalized_status(status if status is not None else getattr(ticket, "status", None))
+    if isinstance(condition, str):
+        raw = condition.strip()
+        lowered = raw.lower()
+        if trigger_value and lowered == trigger_value.lower():
+            return True
+        if lowered.startswith("status in"):
+            _, _, tail = lowered.partition("in")
+            values = [item.strip(" '\"\t\r\n") for item in tail.strip().strip("[]()").split(",")]
+            return current_status in {item for item in values if item}
+        if lowered.startswith("status ="):
+            return current_status == lowered.split("=", 1)[1].strip(" '\"")
+        return False
+    if not isinstance(condition, dict):
+        return False
+
+    event_name = condition.get("event") or condition.get("trigger")
+    if event_name is not None and str(event_name).strip().lower() != trigger_value.lower():
+        return False
+    if condition.get("status") is not None and current_status != _normalized_status(condition.get("status")):
+        return False
+    if condition.get("status_equals") is not None and current_status != _normalized_status(condition.get("status_equals")):
+        return False
+    if condition.get("status_in") is not None:
+        allowed = {_normalized_status(item) for item in condition.get("status_in") or []}
+        if current_status not in allowed:
+            return False
+
+    known_keys = {"event", "trigger", "status", "status_equals", "status_in"}
+    for key, expected in condition.items():
+        if key in known_keys:
+            continue
+        if _ticket_custom_value(ticket, key) != expected:
+            return False
+    return True
+
+
+def _conditions_allow(
+    conditions: Any,
+    *,
+    ticket: Ticket,
+    trigger: str | None = None,
+    status: str | None = None,
+    default: bool,
+) -> bool:
+    if not conditions:
+        return default
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+    return any(_condition_matches(item, ticket=ticket, trigger=trigger, status=status) for item in conditions)
 
 
 def _build_standalone_targets(config: dict[str, Any]) -> list[SlaTarget]:
@@ -186,13 +295,36 @@ class TicketSlaService:
                 return t
         return targets[0] if targets else None
 
-    async def start_sla(self, ticket: Ticket) -> bool:
+    async def _add_sla_event(
+        self,
+        ticket: Ticket,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        await self.ticket_repo.add_event(
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type=event_type,
+            payload=payload,
+            trace_id=str(uuid.uuid4()),
+        )
+
+    async def start_sla(self, ticket: Ticket, *, trigger: str = "ticket_created") -> bool:
         """
         Запустить SLA для тикета: установить first_response_due_at и resolution_due_at.
         Используется при создании тикета. Календарь 24x7 — просто добавляем минуты к now().
         """
         policy, targets = await self._get_policy_and_targets(ticket)
         if not policy or not targets:
+            return False
+        config = _sla_policy_config(policy)
+        if not _conditions_allow(
+            config.get("start_conditions"),
+            ticket=ticket,
+            trigger=trigger,
+            default=True,
+        ):
             return False
         target = self._target_for_priority(targets, extract_priority_class(ticket))
         if not target:
@@ -207,50 +339,161 @@ class TicketSlaService:
             first_response_due_at=fr_due,
             resolution_due_at=res_due,
         )
+        await self._add_sla_event(
+            ticket,
+            "sla_started",
+            {
+                "ticket_id": ticket.ticket_id,
+                "trigger": trigger,
+                "priority": extract_priority_class(ticket),
+                "sla_policy": _sla_policy_metadata(policy),
+                "targets": {
+                    "priority": target.priority,
+                    "first_response_min": target.first_response_min,
+                    "resolution_min": target.resolution_min,
+                },
+                "first_response_due_at": fr_due.isoformat(),
+                "resolution_due_at": res_due.isoformat(),
+            },
+        )
         logger.debug(
             f"[SLA] Started for ticket_id={ticket.ticket_id} "
             f"FRT due {fr_due.isoformat()} resolution due {res_due.isoformat()}"
         )
         return True
 
-    async def close_frt(self, ticket_id: str) -> bool:
+    async def close_frt(self, ticket_id: str, *, trigger: str = "first_public_support_reply_sent") -> bool:
         """Закрыть FRT: зафиксировать first_response_at (при первом public support/agent comment)."""
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket or ticket.first_response_at is not None:
             return False
+        policy, _ = await self._get_policy_and_targets(ticket)
+        config = _sla_policy_config(policy)
+        stop_conditions = (config.get("stop_conditions") or {}).get("first_response")
+        if not _conditions_allow(stop_conditions, ticket=ticket, trigger=trigger, default=True):
+            return False
         now = datetime.now(timezone.utc)
         await self.ticket_repo.update_ticket(ticket_id, first_response_at=now)
+        await self._add_sla_event(
+            ticket,
+            "sla_first_response_stopped",
+            {
+                "ticket_id": ticket_id,
+                "trigger": trigger,
+                "stopped_at": now.isoformat(),
+                "sla_policy": _sla_policy_metadata(policy),
+            },
+        )
         logger.debug(f"[SLA] FRT closed for ticket_id={ticket_id}")
         return True
 
-    async def pause_sla(self, ticket_id: str) -> bool:
+    async def pause_sla(self, ticket_id: str, *, trigger: str = "status_changed") -> bool:
         """Поставить SLA на паузу (Waiting on User/Vendor): записать sla_paused_at."""
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
             return False
         if ticket.sla_paused_at is not None:
             return True  # уже на паузе
+        policy, _ = await self._get_policy_and_targets(ticket)
+        config = _sla_policy_config(policy)
+        if not _conditions_allow(
+            config.get("pause_conditions"),
+            ticket=ticket,
+            trigger=trigger,
+            default=_normalized_status(ticket.status) in WAITING_STATUSES,
+        ):
+            return False
         now = datetime.now(timezone.utc)
         await self.ticket_repo.update_ticket(ticket_id, sla_paused_at=now)
+        await self._add_sla_event(
+            ticket,
+            "sla_paused",
+            {
+                "ticket_id": ticket_id,
+                "trigger": trigger,
+                "paused_at": now.isoformat(),
+                "sla_policy": _sla_policy_metadata(policy),
+            },
+        )
         logger.debug(f"[SLA] Paused for ticket_id={ticket_id}")
         return True
 
-    async def resume_sla(self, ticket_id: str) -> bool:
+    async def resume_sla(self, ticket_id: str, *, trigger: str = "status_changed") -> bool:
         """Снять паузу: накопить sla_paused_seconds и очистить sla_paused_at."""
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
             return False
         if ticket.sla_paused_at is None:
             return True
+        policy, _ = await self._get_policy_and_targets(ticket)
+        config = _sla_policy_config(policy)
+        if not _conditions_allow(
+            config.get("resume_conditions"),
+            ticket=ticket,
+            trigger=trigger,
+            default=_normalized_status(ticket.status) not in WAITING_STATUSES,
+        ):
+            return False
         now = datetime.now(timezone.utc)
         delta_sec = int((now - ticket.sla_paused_at).total_seconds())
         prev_paused = ticket.sla_paused_seconds or 0
+        total_paused = prev_paused + delta_sec
         await self.ticket_repo.update_ticket(
             ticket_id,
-            sla_paused_seconds=prev_paused + delta_sec,
+            sla_paused_seconds=total_paused,
             sla_paused_at=None,
         )
+        await self._add_sla_event(
+            ticket,
+            "sla_resumed",
+            {
+                "ticket_id": ticket_id,
+                "trigger": trigger,
+                "resumed_at": now.isoformat(),
+                "added_pause_sec": delta_sec,
+                "sla_paused_seconds": total_paused,
+                "sla_policy": _sla_policy_metadata(policy),
+            },
+        )
         logger.debug(f"[SLA] Resumed for ticket_id={ticket_id} added_pause_sec={delta_sec}")
+        return True
+
+    async def stop_resolution(
+        self,
+        ticket_id: str,
+        *,
+        status: str | None = None,
+        trigger: str = "status_changed",
+    ) -> bool:
+        ticket = await self.ticket_repo.get_ticket(ticket_id)
+        if not ticket or ticket.resolution_at is not None:
+            return False
+        policy, _ = await self._get_policy_and_targets(ticket)
+        config = _sla_policy_config(policy)
+        stop_conditions = (config.get("stop_conditions") or {}).get("resolution")
+        effective_status = status or ticket.status
+        if not _conditions_allow(
+            stop_conditions,
+            ticket=ticket,
+            trigger=trigger,
+            status=effective_status,
+            default=_normalized_status(effective_status) in (TERMINAL_STATUSES | {"resolved", "closed"}),
+        ):
+            return False
+        now = datetime.now(timezone.utc)
+        await self.ticket_repo.update_ticket(ticket_id, resolution_at=now)
+        await self._add_sla_event(
+            ticket,
+            "sla_resolution_stopped",
+            {
+                "ticket_id": ticket_id,
+                "trigger": trigger,
+                "status": effective_status,
+                "stopped_at": now.isoformat(),
+                "sla_policy": _sla_policy_metadata(policy),
+            },
+        )
+        logger.debug(f"[SLA] Resolution stopped for ticket_id={ticket_id} status={effective_status}")
         return True
 
     async def on_reopen(self, ticket_id: str) -> bool:
