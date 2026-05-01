@@ -199,6 +199,8 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 or (normalized_priority or {}).get("urgency_reason", "Не указано при создании"),
                 "manual_priority_reason": (normalized_priority or {}).get("manual_priority_reason"),
                 "applied_modifiers": (normalized_priority or {}).get("applied_modifiers", []),
+                "manual_override_event": (normalized_priority or {}).get("manual_override_event"),
+                "priority_explanation": (normalized_priority or {}).get("priority_explanation") or {},
             }
             if extra_custom_fields:
                 custom_fields.update(extra_custom_fields)

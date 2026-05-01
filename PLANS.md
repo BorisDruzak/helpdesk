@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 3 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`) and Slice 3 (`request_template` policy refs/effective snapshots) the working estimate is backend/runtime about 82%, server UI about 74%, agent GUI unchanged about 73%, overall about 78%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 4 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots) and Slice 4 (`priority_policy.matrix`, rule modifiers and manual override) the working estimate is backend/runtime about 84%, server UI about 74%, agent GUI unchanged about 73%, overall about 80%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,6 +31,7 @@ Status: Slice 3 is implemented locally. Baseline audit was backend/runtime about
 - Implemented Slice 1: versioned `ticket_types` registry with defaults, feature flags, audit, API lifecycle endpoints and active ticket type exposure in settings/forms-builder selectors.
 - Implemented Slice 2: versioned `form_schemas`, `form_fields` and `form_conditions`; visual publish-from-form now materializes `request_template.form_schema_id` as a first-class schema while preserving legacy `ticket_form_packs` compatibility. Field `process_mapping.roles` is normalized as an alias to current `field_roles`; `validation.required_message` is preserved by submission validation.
 - Implemented Slice 3: `request_templates` now carry explicit refs for the policy assembly, including `sla_policy_code` and `reporting_policy_code`; `resolve_effective_request_template()` prefers policy refs over inline form JSON and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in the ticket snapshot.
+- Implemented Slice 4: `priority_policy` supports configurable matrix rows/columns, list modifiers with conditions/actions, manual override role/reason enforcement, audit event payloads and requester-safe preview explanations.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
@@ -103,12 +104,25 @@ Slice 3 verification:
 
 ### Slice 4: Priority Policy Engine
 
-- [ ] Replace fixed `_BASE_MATRIX` path with configurable `priority_policy.matrix` supporting named impact/urgency levels and P0-P3 targets.
-- [ ] Support modifiers as list rules: condition, increase/decrease priority, minimum_priority, maximum_priority.
-- [ ] Enforce manual override policy: allowed roles, reason required, audit event, old/new computed/manual/effective priority.
-- [ ] Store canonical fields: `impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`.
-- [ ] Add preview endpoint output that explains priority source and matched modifiers in requester-safe language.
-- [ ] Tests: matrix calculation, modifiers, security/minimum P1, manual override denial/reason/audit, SLA recalculation after effective priority change.
+- [x] Replace fixed `_BASE_MATRIX` path with configurable `priority_policy.matrix` supporting named impact/urgency levels and P0-P3 targets.
+- [x] Support modifiers as list rules: condition, increase/decrease priority, minimum_priority, maximum_priority.
+- [x] Enforce manual override policy: allowed roles, reason required, audit event, old/new computed/manual/effective priority.
+- [x] Store canonical fields: `impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`.
+- [x] Add preview endpoint output that explains priority source and matched modifiers in requester-safe language.
+- [x] Tests: matrix calculation, modifiers, security/minimum P1, manual override denial/reason/audit, SLA recalculation after effective priority change.
+
+Slice 4 verification:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_priority_policy.py::test_compute_priority_from_policy_uses_configurable_matrix_and_rule_modifiers server\tests\test_ticket_priority_policy.py::test_compute_priority_from_policy_enforces_manual_override_policy server\tests\test_ticket_priority_policy.py::test_ticket_create_preview_explains_configurable_priority_policy -q --tb=short` -> failed on fixed matrix/manual override/preview explanation gaps.
+- GREEN focused: same command -> 3 passed.
+- GREEN file regression: `python -m pytest server\tests\test_ticket_priority_policy.py -q --tb=short` -> 7 passed.
+- GREEN broader sequential:
+  - `python -m pytest server\tests\test_ticket_priority_policy.py server\tests\test_ticket_form_packs.py -q --tb=short` -> 26 passed.
+  - `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_ticket_routing_policy.py -q --tb=short` -> 20 passed.
+  - `python -m pytest server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 4 passed.
+  - `python -m pytest server\tests\test_web_settings_api.py -q --tb=short` -> 9 passed.
+  - `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed.
+  - `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 5: SLA Policy Engine
 

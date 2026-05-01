@@ -213,6 +213,8 @@ async def create_ticket_with_side_effects(
         or "Не указано при создании",
         "manual_priority_reason": normalized_priority.get("manual_priority_reason"),
         "applied_modifiers": normalized_priority.get("applied_modifiers") or [],
+        "manual_override_event": normalized_priority.get("manual_override_event"),
+        "priority_explanation": normalized_priority.get("priority_explanation") or {},
     }
     custom_fields = merge_requester_custom_fields(
         getattr(ticket, "custom_fields", None),
@@ -258,6 +260,19 @@ async def create_ticket_with_side_effects(
         priority=normalized_priority["legacy_priority"],
         custom_fields=custom_fields,
     )
+    if priority_decision.get("manual_override_event"):
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="priority_overridden",
+            payload={
+                "priority_decision": priority_decision,
+                "override": priority_decision["manual_override_event"],
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id=str(uuid.uuid4()),
+        )
     ticket = await ticket_repo.get_ticket(ticket_id)
     ticket = await apply_create_side_effects(session, ticket_repo, ticket)
 

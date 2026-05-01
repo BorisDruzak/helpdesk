@@ -963,6 +963,11 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
             "legacy_priority": normalized_priority.get("legacy_priority", "P4"),
             "priority_source": normalized_priority.get("priority_source", "system"),
             "priority_reason": normalized_priority.get("priority_reason") or normalized_priority.get("urgency_reason"),
+            "manual_priority": normalized_priority.get("manual_priority"),
+            "manual_priority_reason": normalized_priority.get("manual_priority_reason"),
+            "applied_modifiers": normalized_priority.get("applied_modifiers") or [],
+            "manual_override_event": normalized_priority.get("manual_override_event"),
+            "priority_explanation": normalized_priority.get("priority_explanation") or {},
         }
         custom_fields["priority_class"] = priority_class
         custom_fields["priority_decision"] = priority_decision

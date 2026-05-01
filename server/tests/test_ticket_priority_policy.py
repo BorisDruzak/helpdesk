@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import HelpdeskPolicyAudit, PriorityPolicy, ServerConfig, SlaPolicy, Ticket, TicketFormPack, TicketSlaPolicy, TicketSlaTarget
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
-from tickets.priority_policy import compute_priority_from_facts
+from tickets.priority_policy import compute_priority_from_facts, compute_priority_from_policy
 
 
 def _admin_headers() -> dict[str, str]:
@@ -61,6 +61,85 @@ def test_compute_priority_from_impact_urgency_and_modifiers():
     assert result["priority_source"] == "system"
     assert result["applied_modifiers"] == ["critical_service", "security"]
     assert "security" in result["priority_reason"]
+
+
+def test_compute_priority_from_policy_uses_configurable_matrix_and_rule_modifiers():
+    result = compute_priority_from_policy(
+        priority_policy={
+            "input_fields": {
+                "impact_field": "affected_scope",
+                "urgency_field": "work_blocked",
+                "importance_field": "service_criticality",
+            },
+            "matrix": {
+                "high_impact": {"high_urgency": "P1", "medium_urgency": "P2", "low_urgency": "P3"},
+                "medium_impact": {"high_urgency": "P2", "medium_urgency": "P2", "low_urgency": "P3"},
+                "low_impact": {"high_urgency": "P2", "medium_urgency": "P3", "low_urgency": "P3"},
+            },
+            "modifiers": [
+                {
+                    "condition": {"service_criticality": "critical"},
+                    "action": {"increase_priority_by": 1},
+                    "label": "Критичный сервис",
+                },
+                {
+                    "condition": {"security_category": True},
+                    "action": {"minimum_priority": "P1"},
+                    "label": "ИБ",
+                },
+            ],
+        },
+        submitted_values={
+            "affected_scope": "department",
+            "work_blocked": "partial_work",
+            "service_criticality": "critical",
+            "security_category": True,
+        },
+    )
+
+    assert result["computed_priority"] == "P2"
+    assert result["effective_priority"] == "P1"
+    assert result["priority_source"] == "priority_policy"
+    assert result["applied_modifiers"] == ["Критичный сервис", "ИБ"]
+    assert result["priority_explanation"]["summary"] == "Приоритет рассчитан по матрице влияния и срочности."
+
+
+def test_compute_priority_from_policy_enforces_manual_override_policy():
+    result = compute_priority_from_policy(
+        priority_policy={
+            "impact_field": "impact_scope",
+            "urgency_field": "urgency_scope",
+            "manual_override": {
+                "allowed_roles": ["support", "queue_lead", "admin"],
+                "require_reason": True,
+                "log_event": True,
+            },
+        },
+        submitted_values={"impact_scope": "only_me", "urgency_scope": "workaround_available"},
+        fallback={"manual_priority": "P1", "manual_reason": "VIP escalation", "manual_actor_role": "support"},
+    )
+
+    assert result["computed_priority"] == "P3"
+    assert result["manual_priority"] == "P1"
+    assert result["effective_priority"] == "P1"
+    assert result["priority_source"] == "support_override"
+    assert result["manual_override_event"] == {
+        "old_effective_priority": "P3",
+        "new_effective_priority": "P1",
+        "actor_role": "support",
+        "reason": "VIP escalation",
+    }
+
+    with pytest.raises(ValueError, match="manual priority override is not allowed"):
+        compute_priority_from_policy(
+            priority_policy={
+                "impact_field": "impact_scope",
+                "urgency_field": "urgency_scope",
+                "manual_override": {"allowed_roles": ["admin"], "require_reason": True},
+            },
+            submitted_values={"impact_scope": "only_me", "urgency_scope": "workaround_available"},
+            fallback={"manual_priority": "P1", "manual_reason": "VIP escalation", "manual_actor_role": "support"},
+        )
 
 
 @pytest.mark.asyncio
@@ -244,6 +323,81 @@ async def test_ticket_creation_overlays_priority_policy_from_standalone_registry
     assert ticket.custom_fields["priority_decision"]["computed_priority"] == "P3"
     assert ticket.custom_fields["priority_decision"]["effective_priority"] == "P2"
     assert ticket.custom_fields["request_template"]["effective_policy_sources"]["priority"][0]["scope_level"] == "request_template"
+
+
+@pytest.mark.asyncio
+async def test_ticket_create_preview_explains_configurable_priority_policy(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    form_key = f"priority_preview_{uuid.uuid4().hex[:8]}"
+
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_kind": form_key,
+                        "ticket_type": "incident",
+                        "title": "Priority preview",
+                        "priority_policy": {
+                            "input_fields": {
+                                "impact_field": "affected_scope",
+                                "urgency_field": "work_continuity",
+                                "importance_field": "service_criticality",
+                            },
+                            "matrix": {
+                                "high_impact": {"high_urgency": "P1", "medium_urgency": "P2", "low_urgency": "P3"},
+                                "medium_impact": {"high_urgency": "P2", "medium_urgency": "P2", "low_urgency": "P3"},
+                                "low_impact": {"high_urgency": "P2", "medium_urgency": "P3", "low_urgency": "P3"},
+                            },
+                            "modifiers": [
+                                {
+                                    "condition": {"service_criticality": "critical"},
+                                    "action": {"increase_priority_by": 1},
+                                    "label": "Критичный сервис",
+                                }
+                            ],
+                        },
+                        "fields": [
+                            {"key": "affected_scope", "label": "Scope", "type": "text", "required": True},
+                            {"key": "work_continuity", "label": "Continuity", "type": "text", "required": True},
+                            {"key": "service_criticality", "label": "Criticality", "type": "text", "required": False},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    response = await test_client.post(
+        "/api/tickets/create/preview",
+        json={
+            "device_id": str(uuid.uuid4()),
+            "title": "Preview",
+            "description": "Preview priority",
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "affected_scope": "department",
+                "work_continuity": "partial_work",
+                "service_criticality": "critical",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    preview = (await response.json())["preview"]
+
+    assert preview["priority"]["computed_priority"] == "P2"
+    assert preview["priority"]["effective_priority"] == "P1"
+    assert preview["priority"]["applied_modifiers"] == ["Критичный сервис"]
+    assert preview["priority"]["priority_explanation"]["summary"] == "Приоритет рассчитан по матрице влияния и срочности."
 
 
 @pytest.mark.asyncio
