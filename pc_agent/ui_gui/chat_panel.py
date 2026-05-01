@@ -98,6 +98,7 @@ DEFAULT_PRIORITY_FIELD_ROLES = {
 }
 HIGH_URGENCY_FACTS = {"work_stopped_no_workaround", "work_stopped", "no_workaround"}
 HIGH_IMPORTANCE_FACTS = {"deadline_today", "deadline_tomorrow", "critical", "security", "public_service"}
+AGENT_CREATE_ATTACHMENT_MAX_BYTES = 200 * 1024 * 1024
 
 
 def build_default_priority_fields() -> list[dict[str, Any]]:
@@ -297,6 +298,45 @@ def format_attachment_item_label(file_path: str) -> str:
     except OSError:
         return name
     return name
+
+
+def validate_create_attachment_paths(
+    paths: list[str],
+    *,
+    max_bytes: int = AGENT_CREATE_ATTACHMENT_MAX_BYTES,
+) -> list[str]:
+    errors: list[str] = []
+    for raw_path in paths:
+        text = str(raw_path or "").strip()
+        if not text:
+            continue
+        path = Path(text)
+        name = path.name or text
+        try:
+            if not path.exists() or not path.is_file():
+                errors.append(f"Файл не найден: {name}")
+                continue
+            size = path.stat().st_size
+        except OSError:
+            errors.append(f"Файл недоступен: {name}")
+            continue
+        if size > max_bytes:
+            errors.append(f"Файл слишком большой: {name}. Максимум {_bytes_to_user_text(max_bytes)}.")
+    return errors
+
+
+def build_ticket_create_error_message(exc: BaseException | str) -> str:
+    raw = str(exc or "").strip()
+    lowered = raw.lower()
+    if any(marker in lowered for marker in ("cannot connect", "connection refused", "connect call failed", "server disconnected")):
+        return "Сервер поддержки недоступен. Проверьте подключение и попробуйте отправить обращение ещё раз."
+    if any(marker in lowered for marker in ("form_version_conflict", "form_version", "pack version", "форма обращения обнов")):
+        return "Форма обращения изменилась на сервере. Обновите шаблоны и проверьте поля перед отправкой."
+    if any(marker in lowered for marker in ("413", "too large", "payload too large", "request entity too large")):
+        return "Файл слишком большой. Уберите крупное вложение или приложите меньший файл."
+    if any(marker in lowered for marker in ("file not found", "no such file", "не найден", "not found")):
+        return "Один из файлов не найден. Уберите его из вложений или выберите файл заново."
+    return "Не удалось создать обращение. Проверьте данные и попробуйте ещё раз."
 
 
 def _target_for_priority(policy: dict[str, Any], target_key: str, priority_class: str) -> str:
@@ -1875,15 +1915,31 @@ class TicketCreateWizardWidget(QFrame):
         self.result_label = QLabel("")
         self.result_label.setWordWrap(True)
         self.result_label.setObjectName("ProfileHint")
+        self.access_code_label = QLabel("")
+        self.access_code_label.setWordWrap(True)
+        self.access_code_label.setObjectName("ProfileHint")
+        self.next_action_label = QLabel("")
+        self.next_action_label.setWordWrap(True)
+        self.next_action_label.setObjectName("ProfileHint")
+        self.deadline_label = QLabel("")
+        self.deadline_label.setWordWrap(True)
+        self.deadline_label.setObjectName("ProfileHint")
+        result_layout.addWidget(self.access_code_label)
+        result_layout.addWidget(self.next_action_label)
+        result_layout.addWidget(self.deadline_label)
         result_layout.addWidget(self.result_label)
         result_actions = QHBoxLayout()
         self.open_created_ticket_btn = QPushButton("Открыть обращение")
         self.open_created_ticket_btn.setObjectName("PrimaryButton")
         self.open_created_ticket_btn.clicked.connect(self._on_open_created_ticket)
+        self.add_message_to_created_ticket_btn = QPushButton("Добавить сообщение")
+        self.add_message_to_created_ticket_btn.setObjectName("SecondaryButton")
+        self.add_message_to_created_ticket_btn.clicked.connect(self._on_add_message_to_created_ticket)
         self.create_another_btn = QPushButton("Создать ещё одно")
         self.create_another_btn.setObjectName("SecondaryButton")
         self.create_another_btn.clicked.connect(self._on_create_another_clicked)
         result_actions.addWidget(self.open_created_ticket_btn)
+        result_actions.addWidget(self.add_message_to_created_ticket_btn)
         result_actions.addWidget(self.create_another_btn)
         result_actions.addStretch(1)
         result_layout.addLayout(result_actions)
@@ -2064,6 +2120,12 @@ class TicketCreateWizardWidget(QFrame):
         self.preview_label.setWordWrap(True)
         self.preview_label.setObjectName("ProfileHint")
         process_preview_layout.addWidget(self.preview_label)
+        self.preview_warning_label = QLabel("")
+        self.preview_warning_label.setWordWrap(True)
+        self.preview_warning_label.setObjectName("ProfileHint")
+        self.preview_warning_label.setStyleSheet("color: #a16207; background: transparent;")
+        self.preview_warning_label.setVisible(False)
+        process_preview_layout.addWidget(self.preview_warning_label)
         layout.addWidget(process_preview_group)
         layout.addStretch(1)
         self._stack.addWidget(page)
@@ -2112,15 +2174,44 @@ class TicketCreateWizardWidget(QFrame):
     def _hide_create_result(self) -> None:
         self._last_created_ticket_id = ""
         self.result_label.setText("")
+        self.access_code_label.setText("")
+        self.next_action_label.setText("")
+        self.deadline_label.setText("")
         self.result_group.setVisible(False)
 
     def _show_create_result(self, ticket: dict[str, Any], *, public_access_code: str = "") -> None:
         self._last_created_ticket_id = str(ticket.get("ticket_id") or "")
+        code = str(public_access_code or ticket.get("public_access_code") or "").strip()
+        self.access_code_label.setText(f"Код доступа: {code}" if code and code != "—" else "")
+        next_owner = str(ticket.get("next_action_owner") or "").strip().lower()
+        if next_owner in {"support", "assignee", "queue"}:
+            next_action_text = "Что дальше: сейчас работает поддержка."
+        elif next_owner in {"requester", "user"}:
+            next_action_text = "Что дальше: сейчас нужен ваш ответ."
+        elif next_owner in {"approval", "approver"}:
+            next_action_text = "Что дальше: сейчас ожидается согласование."
+        else:
+            next_action_text = "Что дальше: следующий шаг появится в обращении."
+        self.next_action_label.setText(next_action_text)
+        deadline_parts: list[str] = []
+        first_response_due = _format_user_deadline(ticket.get("first_response_due_at"))
+        resolution_due = _format_user_deadline(ticket.get("resolution_due_at"))
+        if first_response_due:
+            deadline_parts.append(f"Вам должны ответить до {first_response_due}.")
+        if resolution_due:
+            deadline_parts.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
+        self.deadline_label.setText(" ".join(deadline_parts) if deadline_parts else "Сроки покажутся в обращении после расчёта сервером.")
         self.result_label.setText(build_post_create_process_summary(ticket, public_access_code=public_access_code))
-        self.open_created_ticket_btn.setEnabled(bool(self._last_created_ticket_id))
+        has_ticket = bool(self._last_created_ticket_id)
+        self.open_created_ticket_btn.setEnabled(has_ticket)
+        self.add_message_to_created_ticket_btn.setEnabled(has_ticket)
         self.result_group.setVisible(True)
 
     def _on_open_created_ticket(self) -> None:
+        if self._last_created_ticket_id:
+            self.ticketCreated.emit(self._last_created_ticket_id)
+
+    def _on_add_message_to_created_ticket(self) -> None:
         if self._last_created_ticket_id:
             self.ticketCreated.emit(self._last_created_ticket_id)
 
@@ -2182,6 +2273,9 @@ class TicketCreateWizardWidget(QFrame):
     def _schedule_server_creation_preview(self) -> None:
         self._preview_request_seq += 1
         self._server_creation_preview = None
+        if hasattr(self, "preview_warning_label"):
+            self.preview_warning_label.setText("")
+            self.preview_warning_label.setVisible(False)
         self._update_creation_preview()
         if not self._selected_form() or not getattr(self._panel, "ticket_client", None):
             return
@@ -2204,11 +2298,19 @@ class TicketCreateWizardWidget(QFrame):
             )
         except Exception as exc:
             logger.debug(f"Предпросмотр создания обращения недоступен: {exc}")
+            if request_seq == self._preview_request_seq and hasattr(self, "preview_warning_label"):
+                self.preview_warning_label.setText(
+                    "Предпросмотр сервера временно недоступен. Можно продолжить: очередь и сроки будут рассчитаны при создании."
+                )
+                self.preview_warning_label.setVisible(True)
             return
         if request_seq != self._preview_request_seq:
             return
         if isinstance(result, dict):
             self._server_creation_preview = result.get("preview") if isinstance(result.get("preview"), dict) else result
+            if hasattr(self, "preview_warning_label"):
+                self.preview_warning_label.setText("")
+                self.preview_warning_label.setVisible(False)
             self._update_creation_preview()
 
     def _refresh_forms(self) -> None:
@@ -2594,8 +2696,15 @@ class TicketCreateWizardWidget(QFrame):
         self._update_navigation_state()
         self._set_status("Создаю обращение и подготавливаю первое сообщение...", error=False)
         try:
+            payload = self._payload()
+            attachment_errors = validate_create_attachment_paths(payload.get("attachment_paths") or [])
+            if attachment_errors:
+                message = "\n".join(attachment_errors)
+                self._set_status(message, error=True)
+                QMessageBox.warning(self, "Проверьте вложения", message)
+                return
             result = await self._panel._async_create_ticket(
-                self._payload(),
+                payload,
                 show_success_dialog=False,
                 raise_errors=True,
             )
@@ -2608,8 +2717,9 @@ class TicketCreateWizardWidget(QFrame):
             self.ticketCreated.emit(ticket_id)
         except Exception as exc:
             logger.error(f"Ошибка создания обращения из мастера: {exc}")
-            self._set_status(f"Не удалось создать обращение: {exc}", error=True)
-            QMessageBox.critical(self, "Ошибка", str(exc))
+            message = build_ticket_create_error_message(exc)
+            self._set_status(message, error=True)
+            QMessageBox.critical(self, "Ошибка", message)
         finally:
             self._submitting = False
             self._update_navigation_state()

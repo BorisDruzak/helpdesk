@@ -26,6 +26,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     can_user_confirm_close,
     diagnostic_consent_required,
     merge_ticket_stream,
+    build_ticket_create_error_message,
     message_visual_role,
     normalize_ticket_form_pack,
     prepend_ticket_stream,
@@ -33,6 +34,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     ticket_request_form_summary_rows,
     ticket_matches_query,
     ticket_status_label,
+    validate_create_attachment_paths,
 )
 
 
@@ -140,9 +142,40 @@ def test_ticket_create_wizard_has_post_create_result_panel():
     source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
 
     assert "result_group" in source
+    assert "access_code_label" in source
+    assert "next_action_label" in source
     assert "Открыть обращение" in source
+    assert "Добавить сообщение" in source
     assert "Создать ещё одно" in source
     assert "_show_create_result" in source
+
+
+def test_build_ticket_create_error_message_uses_user_language():
+    assert "Сервер поддержки недоступен" in build_ticket_create_error_message(
+        RuntimeError("Cannot connect to host 192.168.100.17:8666")
+    )
+    assert "Форма обращения изменилась" in build_ticket_create_error_message(
+        RuntimeError("FORM_VERSION_CONFLICT")
+    )
+    assert "Файл слишком большой" in build_ticket_create_error_message(
+        RuntimeError("413 Request Entity Too Large")
+    )
+    assert "Не удалось создать обращение" in build_ticket_create_error_message(RuntimeError("unknown"))
+    assert "SLA" not in build_ticket_create_error_message(RuntimeError("SLA failed"))
+
+
+def test_validate_create_attachment_paths_reports_missing_and_large_files(tmp_path):
+    missing_path = tmp_path / "missing.txt"
+    large_path = tmp_path / "large.bin"
+    large_path.write_bytes(b"x" * 9)
+
+    errors = validate_create_attachment_paths(
+        [str(missing_path), str(large_path)],
+        max_bytes=8,
+    )
+
+    assert "Файл не найден: missing.txt" in errors
+    assert any("Файл слишком большой: large.bin" in item for item in errors)
 
 
 def test_build_request_template_card_summary_surfaces_badges_and_next_steps():

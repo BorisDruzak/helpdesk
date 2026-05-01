@@ -99,6 +99,45 @@ Verification:
 - Workspace: `python scripts/verify_workspace.py` -> passed.
 - Live source GUI: `python scripts/manage_local_agent.py start codex-agent-gui-polish --gui --ui-port 8883` -> `/ui/agent/status` returned `agent_version=3.1.25`, `ui_bridge_running=true`, `has_auth_token=true`; stopped through `POST /ui/agent/shutdown`, then `manage_local_agent.py status` returned stopped.
 
+## 2026-05-01 ПК-агент: error states/result screen и release 3.1.26
+
+Status: в работе. Шаги 3 и 5 реализованы локально, focused/runtime/full agent tests, `verify_workspace.py` и local GUI smoke прошли; дальше release-flow до приоритетной stable-версии `3.1.26`.
+
+### Scope
+
+- `pc_agent/ui_gui/chat_panel.py`: понятные ошибки создания/preview/вложений и более явный result panel.
+- `pc_agent/version.py`: bump до `3.1.26`.
+- `pc_agent/tests/test_chat_panel_helpers.py`: TDD для error/result helpers.
+- Docs/navigation/plan sync, local GUI smoke, Windows release build/upload/canary/rollout.
+
+### Slice 15: error states
+
+- [x] RED: helper должен переводить сетевые/preview/form/file ошибки в понятные русские тексты.
+- [x] RED: вложения перед submit должны проверяться на отсутствие файла и превышение лимита.
+- [x] GREEN: показать warning при недоступном preview без блокировки отправки.
+- [x] GREEN: показывать понятную ошибку, если файл исчез/слишком большой до отправки.
+
+### Slice 16: result screen
+
+- [x] RED: result panel должен иметь отдельные строки кода доступа, следующего действия, сроков и кнопки `Открыть обращение`, `Добавить сообщение`, `Создать ещё одно`.
+- [x] GREEN: усилить `_show_create_result()` и скрывать старый результат при новом создании.
+
+### Slice 17: release
+
+- [x] Bump `pc_agent/version.py` до `3.1.26`.
+- [x] Focused/runtime/full agent tests + `verify_workspace.py`.
+- [x] Local GUI smoke.
+- [ ] Commit, deploy committed state to remote, build Windows release, upload build.
+- [ ] Canary на launcher-managed Windows устройстве, затем `PATCH /api/agent_updates/rollout_policy` на `windows_amd64/stable/3.1.26`.
+
+Verification so far:
+
+- RED: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q --tb=short` first failed on missing `build_ticket_create_error_message`.
+- Focused/runtime/navigation: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py scripts/test_navigation_catalog.py -q --tb=short` -> 77 passed.
+- Workspace: `python scripts/verify_workspace.py` -> passed.
+- Full agent tests: `python -m pytest pc_agent/tests/ -q --tb=short` -> 179 passed.
+- Live source GUI: `python scripts/manage_local_agent.py start codex-agent-gui-3126 --gui --ui-port 8884` -> `/ui/agent/status` returned `agent_version=3.1.26`, `ui_bridge_running=true`; stopped through `POST /ui/agent/shutdown`, then `manage_local_agent.py status` returned stopped.
+
 ### Goal
 
 Довести пользовательский ПК-агент до модели, где человек создаёт не "тикет" и не абстрактную форму, а понятное обращение по опубликованному `request_template`; агент показывает только нужные поля, объясняет последствия выбора человеческим языком, корректно передаёт template/process context на сервер и поддерживает диагностику/согласие/материалы.
