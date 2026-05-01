@@ -370,9 +370,21 @@ class TicketWorkflowService:
 
         if to_status in WAITING_STATUSES:
             await self.sla_service.pause_sla(ticket_id, trigger="status_changed")
+            try:
+                from tickets.ola_service import pause_ola
+
+                await pause_ola(self.session, ticket_id, trigger="status_changed")
+            except Exception:
+                pass
 
         if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
             await self.sla_service.resume_sla(ticket_id, trigger="status_changed")
+            try:
+                from tickets.ola_service import resume_ola
+
+                await resume_ola(self.session, ticket_id, trigger="status_changed")
+            except Exception:
+                pass
 
         if transition_gate and transition_gate.sla_action == "pause":
             await self.sla_service.pause_sla(ticket_id, trigger="workflow_transition_gate")
@@ -401,7 +413,7 @@ class TicketWorkflowService:
             try:
                 from tickets.ola_service import close_ola_processing
 
-                await close_ola_processing(self.session, ticket_id)
+                await close_ola_processing(self.session, ticket_id, status=to_status, trigger="status_changed")
             except Exception:
                 pass
 

@@ -133,7 +133,7 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
         logger.warning(f"[create] sla failed ticket_id={ticket.ticket_id} err={exc}")
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     try:
-        await start_ola_for_ticket(session, ticket)
+        await start_ola_for_ticket(session, ticket, trigger="ticket_created")
     except Exception as exc:
         logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)

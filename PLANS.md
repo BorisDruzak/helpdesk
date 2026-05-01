@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 5 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots), Slice 4 (`priority_policy.matrix`, rule modifiers and manual override) and Slice 5 (`sla_policy` start/pause/resume/stop/warning events) the working estimate is backend/runtime about 86%, server UI about 74%, agent GUI unchanged about 73%, overall about 82%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 6 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots), Slice 4 (`priority_policy.matrix`, rule modifiers and manual override), Slice 5 (`sla_policy` start/pause/resume/stop/warning events) and Slice 6 (`ola_policy` start/stop/pause/resume/breach events) the working estimate is backend/runtime about 88%, server UI about 74%, agent GUI unchanged about 73%, overall about 84%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -33,6 +33,7 @@ Status: Slice 5 is implemented locally and is in verification/release. Baseline 
 - Implemented Slice 3: `request_templates` now carry explicit refs for the policy assembly, including `sla_policy_code` and `reporting_policy_code`; `resolve_effective_request_template()` prefers policy refs over inline form JSON and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in the ticket snapshot.
 - Implemented Slice 4: `priority_policy` supports configurable matrix rows/columns, list modifiers with conditions/actions, manual override role/reason enforcement, audit event payloads and requester-safe preview explanations.
 - Implemented Slice 5: `sla_policy` runtime now evaluates configured start/pause/resume/stop conditions, emits policy-aware `sla_started`, `sla_paused`, `sla_resumed`, `sla_first_response_stopped`, `sla_resolution_stopped` and `sla_warning` events, and carries policy code/version/source plus breach actions in observer-visible SLA payloads.
+- Implemented Slice 6: `ola_policy` runtime now evaluates configured start/ack-stop/processing-stop/pause/resume conditions, emits policy-aware OLA lifecycle and breach events, keeps legacy queue target fallback, stores `custom_fields.ola_runtime` source tracking and runs OLA breach detection through the existing watchdog loop.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
@@ -144,11 +145,26 @@ Slice 5 verification:
 
 ### Slice 6: OLA Policy Engine
 
-- [ ] Promote queue-level OLA targets into full versioned `ola_policy` execution: ack/processing targets, start/stop/pause conditions, queue handoff behavior, breach actions.
-- [ ] Keep existing `ticket_queue_ola_targets` as compatibility/default source.
-- [ ] Add per-queue OLA source tracking on ticket: policy code/version, queue_id, start reason, stop reason.
-- [ ] Tests: OLA starts on create/queue change, restarts on handoff, closes ack on assignment, closes processing on handoff/resolved, pause conditions, breach actions.
+- [x] Promote queue-level OLA targets into full versioned `ola_policy` execution: ack/processing targets, start/stop/pause conditions, queue handoff behavior and breach action metadata.
+- [x] Keep existing `ticket_queue_ola_targets` as compatibility/default source.
+- [x] Add per-queue OLA source tracking on ticket: policy code/version, queue_id, start reason, stop reason and breach reason in `custom_fields.ola_runtime`.
+- [x] Tests: OLA starts on create/queue change, closes ack on assignment, closes processing on handoff/resolved, pause/resume conditions and breach actions.
+- [ ] Complete external recipient/escalation delivery for OLA breach actions beyond event payload/audit metadata.
 - [ ] UI: structured OLA editor and smart-view surfacing for OLA risk.
+
+Slice 6 verification:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_ola_policy.py -q --tb=short` -> 4 failed on missing trigger/pause/breach contracts.
+- GREEN focused: same command -> 4 passed.
+- GREEN broader sequential:
+  - `python -m pytest server\tests\test_ticket_queue_routing_contracts.py -q --tb=short` -> 11 passed.
+  - `python -m pytest server\tests\test_web_settings_api.py -q --tb=short` -> 9 passed.
+  - `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 12 passed.
+  - `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_ticket_sla_calendar.py server\tests\test_ticket_queue_routing_contracts.py server\tests\test_web_settings_api.py -q --tb=short` -> 32 passed.
+- Docs/navigation and workspace:
+  - `python -m py_compile scripts\navigation_catalog.py server\tickets\ola_service.py server\app\services\ticket_sla_watchdog.py server\tickets\workflow_service.py server\tickets\handlers.py server\tickets\create_flow.py server\tickets\public_ticket_handlers.py` -> passed.
+  - `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed.
+  - `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 7: Workflow Profile Builder And Runtime Actions
 

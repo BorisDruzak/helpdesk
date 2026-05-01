@@ -250,7 +250,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 logger.warning(f"[public_create] sla start failed: {sla_err}")
 
             try:
-                await start_ola_for_ticket(db_session, ticket)
+                await start_ola_for_ticket(db_session, ticket, trigger="ticket_created")
             except Exception as ola_err:
                 logger.warning(f"[public_create] OLA start failed: {ola_err}")
 

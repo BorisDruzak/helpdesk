@@ -333,6 +333,14 @@ class TicketSlaWatchdog:
             try:
                 await self._check_warnings()
                 await self._check_breaches()
+                try:
+                    async with get_session() as session:
+                        from tickets.ola_service import check_ola_breaches
+
+                        await check_ola_breaches(session)
+                        await session.commit()
+                except Exception as ola_err:
+                    logger.warning(f"[TicketSlaWatchdog] OLA breach check failed: {ola_err}")
                 await self._check_reminders()
             except Exception as e:
                 logger.error(f"[TicketSlaWatchdog] Loop error: {e}", exc_info=True)
@@ -362,6 +370,14 @@ class TicketSlaWatchdog:
     async def force_check(self) -> None:
         await self._check_warnings()
         await self._check_breaches()
+        try:
+            async with get_session() as session:
+                from tickets.ola_service import check_ola_breaches
+
+                await check_ola_breaches(session)
+                await session.commit()
+        except Exception as ola_err:
+            logger.warning(f"[TicketSlaWatchdog] OLA breach check failed: {ola_err}")
         await self._check_reminders()
 
 

@@ -30,6 +30,7 @@
 - Request-template policy references live on the template row, including `priority_policy_code`, `routing_policy_code`, `sla_policy_code`/legacy `sla_policy_id`, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code` and `reporting_policy_code` (migration `068`). `HelpdeskPolicyRepo.resolve_effective_request_template()` prefers those refs over inline legacy form JSON, returns resolved config plus source rows, and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in `custom_fields.request_template` so historical tickets remain explainable.
 - `priority_policy` now supports configured `input_fields`, named/raw `matrix` rows and columns, list `modifiers` with `condition`/`action` rules, and `manual_override` role/reason checks. Ticket creation and create-preview expose canonical priority fields (`impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`), requester-safe `priority_explanation`, matched modifier labels, and a `priority_overridden` audit event when manual override logging is enabled.
 - Request-template `sla_policy` now participates in lifecycle execution: standalone targets and inline calendars are used for due dates; `start_conditions`, `pause_conditions`, `resume_conditions` and `stop_conditions` gate timer state changes; warning-before settings emit `sla_warning`; SLA events include policy code/version/source and configured breach action metadata for observer/reporting.
+- Request-template `ola_policy` now participates in lifecycle execution: standalone ack/processing targets can gate start, ack stop, processing stop, pause/resume and breach behavior while legacy `ticket_queue_ola_targets` remains the fallback. Runtime source tracking is stored in `custom_fields.ola_runtime`, and OLA events include policy code/version/source plus configured breach action metadata.
 
 ---
 
@@ -421,7 +422,9 @@ API: POST status, assign, queue, priority, reroute, close, worklogs, read; GET t
 ### Feature flags
 
 - SLA due_at рассчитывается по календарю, если `ticket_sla_policies.calendar_id` задан; иначе используется 24x7 fallback.
-- `TICKET_OLA_ENABLED` — учёт OLA (старт при create/queue change, ack при assign, processing при handoff/Resolved/Closed).
+- `TICKET_OLA_ENABLED` — учёт OLA. Legacy fallback starts OLA при create/queue change, closes ack при assign, closes processing при handoff/Resolved/Closed. If `request_template.ola_policy` is present, its `start_conditions`, `stop_conditions.ack`, `stop_conditions.processing`, `pause_conditions`, `resume_conditions`, targets and `breach_actions` control runtime behavior.
+- OLA source tracking: `custom_fields.ola_runtime.policy`, `queue_id`, `start_reason`, `ack_stop_reason`, `processing_stop_reason`, `pause_reason`, `resume_reason`, `breach_types`.
+- OLA events: `ola_started`, `ola_ack_stopped`, `ola_processing_stopped`, `ola_paused`, `ola_resumed`, `ola_breached`.
 
 ### Calendar engine
 
