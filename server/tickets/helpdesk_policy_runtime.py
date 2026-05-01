@@ -110,6 +110,20 @@ async def resolve_effective_ticket_policy(
     if category_id is None:
         category_id = getattr(ticket, "category_id", None)
 
+    policy_refs = request_template.get("policy_refs") if isinstance(request_template.get("policy_refs"), dict) else {}
+    ref = policy_refs.get(kind) if isinstance(policy_refs, dict) else None
+    ref_code = str(ref.get("code") if isinstance(ref, dict) else ref or "").strip()
+    if ref_code:
+        effective = await HelpdeskPolicyRepo(session).resolve_policy_ref(
+            kind=kind,
+            code=ref_code,
+            source=f"ticket_snapshot.policy_refs.{kind}",
+        )
+        config = effective.get("config") if isinstance(effective, dict) else {}
+        if isinstance(config, dict) and config:
+            return config
+        return policy
+
     effective = await HelpdeskPolicyRepo(session).resolve_effective_policy(
         kind=kind,
         ticket_type=ticket_type or None,
@@ -140,22 +154,78 @@ async def apply_effective_registry_policies(
 
     repo = HelpdeskPolicyRepo(session)
     sources: dict[str, list[dict[str, Any]]] = {}
-    for kind in RUNTIME_POLICY_KINDS:
-        effective = await repo.resolve_effective_policy(
-            kind=kind,
-            ticket_type=ticket_type or None,
-            category_id=category_id,
-            template_code=template_code or None,
+    snapshots: dict[str, dict[str, Any]] = {}
+    refs: dict[str, dict[str, Any]] = {}
+    effective_template = await repo.resolve_effective_request_template(
+        template_code=template_code,
+        ticket_type=ticket_type or None,
+        category_id=category_id,
+        raise_if_missing=False,
+    )
+    if effective_template:
+        request_template = effective_template.get("request_template") or {}
+        if isinstance(request_template, dict):
+            template_context.setdefault("request_template_version", request_template.get("version"))
+            for key in (
+                "form_schema_id",
+                "workflow_profile_id",
+                "priority_policy_code",
+                "routing_policy_code",
+                "sla_policy_id",
+                "sla_policy_code",
+                "ola_policy_code",
+                "approval_policy_code",
+                "diagnostic_policy_code",
+                "closure_policy_code",
+                "visibility_policy_code",
+                "notification_policy_code",
+                "reporting_policy_code",
+            ):
+                if request_template.get(key) is not None:
+                    template_context[key] = deepcopy(request_template.get(key))
+        resolved_policies = (
+            effective_template.get("resolved_policies")
+            if isinstance(effective_template.get("resolved_policies"), dict)
+            else {}
         )
-        config = effective.get("config") if isinstance(effective, dict) else {}
-        if not isinstance(config, dict) or not config:
-            continue
-        field_name = f"{kind}_policy"
-        existing = template_context.get(field_name) if isinstance(template_context.get(field_name), dict) else {}
-        template_context[field_name] = _deep_merge(existing, config)
-        source_rows = effective.get("sources") if isinstance(effective.get("sources"), list) else []
-        if source_rows:
-            sources[kind] = source_rows
+        for kind, config in resolved_policies.items():
+            if not isinstance(config, dict) or not config:
+                continue
+            field_name = f"{kind}_policy"
+            existing = template_context.get(field_name) if isinstance(template_context.get(field_name), dict) else {}
+            template_context[field_name] = _deep_merge(existing, config)
+        sources = (
+            effective_template.get("policy_sources")
+            if isinstance(effective_template.get("policy_sources"), dict)
+            else {}
+        )
+        snapshots = (
+            effective_template.get("policy_snapshots")
+            if isinstance(effective_template.get("policy_snapshots"), dict)
+            else {}
+        )
+        refs = (
+            effective_template.get("policy_refs")
+            if isinstance(effective_template.get("policy_refs"), dict)
+            else {}
+        )
+    else:
+        for kind in RUNTIME_POLICY_KINDS:
+            effective = await repo.resolve_effective_policy(
+                kind=kind,
+                ticket_type=ticket_type or None,
+                category_id=category_id,
+                template_code=template_code or None,
+            )
+            config = effective.get("config") if isinstance(effective, dict) else {}
+            if not isinstance(config, dict) or not config:
+                continue
+            field_name = f"{kind}_policy"
+            existing = template_context.get(field_name) if isinstance(template_context.get(field_name), dict) else {}
+            template_context[field_name] = _deep_merge(existing, config)
+            source_rows = effective.get("sources") if isinstance(effective.get("sources"), list) else []
+            if source_rows:
+                sources[kind] = source_rows
 
     sla_policy = template_context.get("sla_policy")
     if isinstance(sla_policy, dict):
@@ -165,6 +235,10 @@ async def apply_effective_registry_policies(
 
     if sources:
         template_context["effective_policy_sources"] = sources
+    if snapshots:
+        template_context["effective_policy_snapshots"] = snapshots
+    if refs:
+        template_context["policy_refs"] = refs
 
     result = deepcopy(validated_submission)
     result["template_context"] = template_context

@@ -106,12 +106,14 @@ _ROUTING_OPERATOR_OPTIONS = (
 _TEMPLATE_DICT_FIELDS = (
     "priority_policy",
     "routing_policy",
+    "sla_policy",
     "approval_policy",
     "diagnostic_policy",
     "ola_policy",
     "closure_policy",
     "visibility_policy",
     "notification_policy",
+    "reporting_policy",
 )
 _TEMPLATE_INT_FIELDS = (
     "category_id",
@@ -857,11 +859,14 @@ def validate_form_submission(
             "field_roles": deepcopy(form.get("field_roles") or {}),
             "priority_policy": deepcopy(form.get("priority_policy") or {}),
             "routing_policy": deepcopy(form.get("routing_policy") or {}),
+            "sla_policy": deepcopy(form.get("sla_policy") or {}),
             "approval_policy": deepcopy(form.get("approval_policy") or {}),
+            "diagnostic_policy": deepcopy(form.get("diagnostic_policy") or {}),
             "ola_policy": deepcopy(form.get("ola_policy") or {}),
             "closure_policy": deepcopy(form.get("closure_policy") or {}),
             "visibility_policy": deepcopy(form.get("visibility_policy") or {}),
             "notification_policy": deepcopy(form.get("notification_policy") or {}),
+            "reporting_policy": deepcopy(form.get("reporting_policy") or {}),
         },
     }
 

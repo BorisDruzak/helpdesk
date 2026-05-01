@@ -18,12 +18,17 @@ from app.db.models import (
     ReportingPolicy,
     RequestTemplate,
     RoutingPolicy,
+    ServerConfig,
     SlaPolicy,
     SmartView,
+    Ticket,
+    TicketFormPack,
     TicketType,
     VisibilityPolicy,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 
 
 def _admin_headers() -> dict[str, str]:
@@ -53,6 +58,18 @@ async def _clear_policy_registry(test_engine) -> None:
             ReportingPolicy,
         ):
             await session.execute(delete(model))
+        await session.commit()
+
+
+async def _clear_request_form_packs(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(
+            delete(TicketFormPack).where(TicketFormPack.pack_key == "request_forms")
+        )
+        await session.execute(
+            delete(ServerConfig).where(ServerConfig.key == f"{TICKET_FORM_PREFERRED_KEY_PREFIX}request_forms")
+        )
         await session.commit()
 
 
@@ -408,6 +425,166 @@ async def test_helpdesk_policy_repo_publishes_versions_and_resolves_inheritance(
         "ticket_type",
         "request_template",
     ]
+
+
+@pytest.mark.asyncio
+async def test_helpdesk_policy_repo_resolves_request_template_policy_refs_before_inline_config(test_engine):
+    await _clear_policy_registry(test_engine)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="priority",
+            code="website_priority_ref",
+            title="Website priority ref",
+            scope_level="system",
+            config={
+                "impact_field": "affected_scope",
+                "urgency_field": "work_blocked",
+                "matrix": {"low_impact": {"low_urgency": "P3"}},
+            },
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        await repo.publish_request_template(
+            template_code="website_unavailable",
+            public_title="Не открывается сайт",
+            ticket_type="incident",
+            priority_policy_code="website_priority_ref",
+            config={
+                "priority_policy": {
+                    "impact_field": "legacy_inline_impact",
+                    "urgency_field": "legacy_inline_urgency",
+                }
+            },
+            actor_id="admin1",
+            actor_role="admin",
+        )
+
+        effective = await repo.resolve_effective_request_template(template_code="website_unavailable")
+        await session.commit()
+
+    assert effective["request_template"]["template_code"] == "website_unavailable"
+    assert effective["policy_refs"]["priority"]["code"] == "website_priority_ref"
+    assert effective["policy_refs"]["priority"]["version"] == "1.0.1"
+    assert effective["resolved_policies"]["priority"]["impact_field"] == "affected_scope"
+    assert effective["resolved_policies"]["priority"]["urgency_field"] == "work_blocked"
+    assert effective["policy_sources"]["priority"][0]["source"] == "request_template.priority_policy_code"
+    assert effective["policy_sources"]["priority"][0]["scope_level"] == "policy_ref"
+
+
+@pytest.mark.asyncio
+async def test_ticket_creation_stores_request_template_policy_ref_snapshot(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _clear_policy_registry(test_engine)
+    form_key = f"policy_ref_{uuid.uuid4().hex[:8]}"
+
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_kind": form_key,
+                        "ticket_type": "incident",
+                        "title": "Policy ref form",
+                        "priority_policy": {
+                            "impact_field": "legacy_inline_impact",
+                            "urgency_field": "legacy_inline_urgency",
+                        },
+                        "fields": [
+                            {"key": "impact_scope", "label": "Impact", "type": "text", "required": True},
+                            {"key": "work_continuity", "label": "Urgency", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        policy = await repo.publish_policy(
+            kind="priority",
+            code=f"{form_key}_priority_ref",
+            title="Priority ref",
+            scope_level="system",
+            config={
+                "impact_field": "impact_scope",
+                "urgency_field": "work_continuity",
+                "modifiers": {"critical_service": True},
+            },
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        await repo.publish_request_template(
+            template_code=form_key,
+            public_title="Policy ref form",
+            ticket_type="incident",
+            priority_policy_code=policy["code"],
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Policy ref request",
+            "description": "Priority should come from request_template policy ref",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "impact_scope": "only_me",
+                "work_continuity": "workaround_available",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    template_snapshot = ticket.custom_fields["request_template"]
+    assert ticket.custom_fields["priority_decision"]["effective_priority"] == "P2"
+    assert template_snapshot["priority_policy"]["impact_field"] == "impact_scope"
+    assert template_snapshot["policy_refs"]["priority"]["code"] == f"{form_key}_priority_ref"
+    assert template_snapshot["effective_policy_snapshots"]["priority"]["version"] == "1.0.1"
+    assert template_snapshot["effective_policy_snapshots"]["priority"]["source"] == "request_template.priority_policy_code"
+    assert template_snapshot["effective_policy_sources"]["priority"][0]["scope_level"] == "policy_ref"
+
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="priority",
+            code=f"{form_key}_priority_ref",
+            title="Priority ref v2",
+            scope_level="system",
+            config={
+                "impact_field": "impact_scope_v2",
+                "urgency_field": "work_continuity_v2",
+            },
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        refreshed_ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+        active_policy = await resolve_effective_ticket_policy(session, refreshed_ticket, "priority")
+        await session.commit()
+
+    assert template_snapshot["effective_policy_snapshots"]["priority"]["version"] == "1.0.1"
+    assert active_policy["impact_field"] == "impact_scope_v2"
+    assert "modifiers" not in active_policy
 
 
 @pytest.mark.asyncio

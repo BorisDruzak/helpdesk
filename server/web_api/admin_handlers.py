@@ -678,6 +678,7 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
         "closure_policy",
         "visibility_policy",
         "notification_policy",
+        "reporting_policy",
     ):
         value = getattr(payload, key, None)
         if isinstance(value, dict) and value:
@@ -2095,10 +2096,13 @@ async def _publish_helpdesk_template_from_form(
         "priority": "priority_policy",
         "routing": "routing_policy",
         "approval": "approval_policy",
+        "sla": "sla_policy",
+        "ola": "ola_policy",
         "diagnostic": "diagnostic_policy",
         "closure": "closure_policy",
         "visibility": "visibility_policy",
         "notification": "notification_policy",
+        "reporting": "reporting_policy",
     }
 
     async with get_session() as session:
@@ -2154,12 +2158,14 @@ async def _publish_helpdesk_template_from_form(
             priority_policy_code=policy_ref_by_kind.get("priority"),
             routing_policy_code=policy_ref_by_kind.get("routing"),
             sla_policy_id=form.get("sla_policy_id") if form.get("sla_policy_id") is not None else None,
-            ola_policy_code=None,
+            sla_policy_code=policy_ref_by_kind.get("sla"),
+            ola_policy_code=policy_ref_by_kind.get("ola"),
             approval_policy_code=policy_ref_by_kind.get("approval"),
             diagnostic_policy_code=policy_ref_by_kind.get("diagnostic"),
             closure_policy_code=policy_ref_by_kind.get("closure"),
             visibility_policy_code=policy_ref_by_kind.get("visibility"),
             notification_policy_code=policy_ref_by_kind.get("notification"),
+            reporting_policy_code=policy_ref_by_kind.get("reporting"),
             config={
                 "form": form,
                 "form_schema": {
@@ -2168,7 +2174,6 @@ async def _publish_helpdesk_template_from_form(
                     "field_count": len(form_schema.get("fields") or []),
                 },
                 "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
-                "ola_policy": form.get("ola_policy") if isinstance(form.get("ola_policy"), dict) else {},
                 "suggested_playbook_id": form.get("suggested_playbook_id"),
             },
             overrides={

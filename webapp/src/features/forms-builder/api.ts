@@ -53,6 +53,7 @@ export type AdminFormsFormItem = {
   closure_policy?: Record<string, unknown>;
   visibility_policy?: Record<string, unknown>;
   notification_policy?: Record<string, unknown>;
+  reporting_policy?: Record<string, unknown>;
   fields: AdminFormsFieldItem[];
   playbook_triggers?: AdminFormsPlaybookTrigger[];
 };
@@ -107,6 +108,7 @@ export type AdminFormsSaveRequest = {
     closure_policy?: Record<string, unknown>;
     visibility_policy?: Record<string, unknown>;
     notification_policy?: Record<string, unknown>;
+    reporting_policy?: Record<string, unknown>;
     playbook_triggers?: AdminFormsPlaybookTrigger[];
     fields: Array<{
       key: string;
@@ -200,12 +202,14 @@ export type AdminHelpdeskRequestTemplateItem = {
   priority_policy_code: string | null;
   routing_policy_code: string | null;
   sla_policy_id: number | null;
+  sla_policy_code: string | null;
   ola_policy_code: string | null;
   approval_policy_code: string | null;
   diagnostic_policy_code: string | null;
   closure_policy_code: string | null;
   visibility_policy_code: string | null;
   notification_policy_code: string | null;
+  reporting_policy_code: string | null;
   config: Record<string, unknown>;
   overrides: Record<string, unknown>;
   is_active: boolean;

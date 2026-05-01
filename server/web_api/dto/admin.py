@@ -338,6 +338,7 @@ class AdminFormsFormItem(BaseModel):
     closure_policy: dict[str, Any] = Field(default_factory=dict)
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
     notification_policy: dict[str, Any] = Field(default_factory=dict)
+    reporting_policy: dict[str, Any] = Field(default_factory=dict)
     fields: list[AdminFormsFieldItem] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
@@ -520,12 +521,14 @@ class AdminHelpdeskRequestTemplateItem(BaseModel):
     priority_policy_code: str | None = None
     routing_policy_code: str | None = None
     sla_policy_id: int | None = None
+    sla_policy_code: str | None = None
     ola_policy_code: str | None = None
     approval_policy_code: str | None = None
     diagnostic_policy_code: str | None = None
     closure_policy_code: str | None = None
     visibility_policy_code: str | None = None
     notification_policy_code: str | None = None
+    reporting_policy_code: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     overrides: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True

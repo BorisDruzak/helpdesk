@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 2 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`) and Slice 2 (`form_schemas`/`form_fields`/`form_conditions`) the working estimate is backend/runtime about 80%, server UI about 74%, agent GUI unchanged about 73%, overall about 76%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 3 is implemented locally. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`) and Slice 3 (`request_template` policy refs/effective snapshots) the working estimate is backend/runtime about 82%, server UI about 74%, agent GUI unchanged about 73%, overall about 78%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -30,6 +30,7 @@ Status: Slice 2 is implemented locally. Baseline audit was backend/runtime about
 - Уже есть `request_templates` и versioned policy tables для priority, SLA, OLA, routing, approval, closure, diagnostic, notification, visibility, reporting, smart views и audit.
 - Implemented Slice 1: versioned `ticket_types` registry with defaults, feature flags, audit, API lifecycle endpoints and active ticket type exposure in settings/forms-builder selectors.
 - Implemented Slice 2: versioned `form_schemas`, `form_fields` and `form_conditions`; visual publish-from-form now materializes `request_template.form_schema_id` as a first-class schema while preserving legacy `ticket_form_packs` compatibility. Field `process_mapping.roles` is normalized as an alias to current `field_roles`; `validation.required_message` is preserved by submission validation.
+- Implemented Slice 3: `request_templates` now carry explicit refs for the policy assembly, including `sla_policy_code` and `reporting_policy_code`; `resolve_effective_request_template()` prefers policy refs over inline form JSON and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in the ticket snapshot.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
@@ -84,10 +85,21 @@ Slice 2 verification:
 
 ### Slice 3: Policy Reference Cleanup For Request Templates
 
-- [ ] Make request-template publication prefer policy refs (`priority_policy_code`, `routing_policy_code`, `sla_policy_code` or id, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code`, `reporting_policy_code`) over inline policy JSON.
-- [ ] Add effective template resolver that returns policy refs + resolved config + source list for preview and create.
-- [ ] Store ticket snapshot with policy codes/versions/sources so historical tickets remain explainable.
-- [ ] Tests: create ticket stores snapshot with policy sources, active policy update affects lifecycle runtime where intended, old ticket still renders old template context.
+- [x] Make request-template publication prefer policy refs (`priority_policy_code`, `routing_policy_code`, `sla_policy_code` or id, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code`, `reporting_policy_code`) over inline policy JSON.
+- [x] Add effective template resolver that returns policy refs + resolved config + source list for preview and create.
+- [x] Store ticket snapshot with policy codes/versions/sources so historical tickets remain explainable.
+- [x] Tests: create ticket stores snapshot with policy sources, active policy update affects lifecycle runtime where intended, old ticket still renders old template context.
+
+Slice 3 verification:
+
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_helpdesk_policy_repo_resolves_request_template_policy_refs_before_inline_config server/tests/test_helpdesk_policy_registry.py::test_ticket_creation_stores_request_template_policy_ref_snapshot -q --tb=short` -> 2 passed after RED failure.
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> 15 passed.
+- `python -m pytest server/tests/test_ticket_priority_policy.py server/tests/test_ticket_form_packs.py server/tests/test_web_settings_api.py -q --tb=short` -> 32 passed.
+- `python -m pytest server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_passport_service.py server/tests/test_ticket_workflow_visibility.py server/tests/test_stage8.py -q --tb=short` -> 34 passed.
+- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
+- `pnpm --dir webapp run build` -> passed.
+- `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> 10 passed.
+- `python scripts/verify_workspace.py` -> passed.
 
 ### Slice 4: Priority Policy Engine
 

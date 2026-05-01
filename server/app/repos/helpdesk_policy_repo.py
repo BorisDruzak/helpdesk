@@ -58,6 +58,19 @@ POLICY_TABLE_NAMES = {
     "reporting": "reporting_policies",
 }
 
+REQUEST_TEMPLATE_POLICY_CODE_FIELDS = {
+    "priority": "priority_policy_code",
+    "routing": "routing_policy_code",
+    "sla": "sla_policy_code",
+    "ola": "ola_policy_code",
+    "approval": "approval_policy_code",
+    "diagnostic": "diagnostic_policy_code",
+    "closure": "closure_policy_code",
+    "visibility": "visibility_policy_code",
+    "notification": "notification_policy_code",
+    "reporting": "reporting_policy_code",
+}
+
 SCOPE_RANK = {
     "system": 0,
     "ticket_type": 1,
@@ -148,12 +161,14 @@ def serialize_request_template(row: RequestTemplate) -> dict[str, Any]:
         "priority_policy_code": row.priority_policy_code,
         "routing_policy_code": row.routing_policy_code,
         "sla_policy_id": row.sla_policy_id,
+        "sla_policy_code": row.sla_policy_code,
         "ola_policy_code": row.ola_policy_code,
         "approval_policy_code": row.approval_policy_code,
         "diagnostic_policy_code": row.diagnostic_policy_code,
         "closure_policy_code": row.closure_policy_code,
         "visibility_policy_code": row.visibility_policy_code,
         "notification_policy_code": row.notification_policy_code,
+        "reporting_policy_code": row.reporting_policy_code,
         "config": deepcopy(row.config_json or {}),
         "overrides": deepcopy(row.overrides_json or {}),
         "is_active": bool(row.is_active),
@@ -1082,12 +1097,14 @@ class HelpdeskPolicyRepo:
         priority_policy_code: str | None = None,
         routing_policy_code: str | None = None,
         sla_policy_id: int | None = None,
+        sla_policy_code: str | None = None,
         ola_policy_code: str | None = None,
         approval_policy_code: str | None = None,
         diagnostic_policy_code: str | None = None,
         closure_policy_code: str | None = None,
         visibility_policy_code: str | None = None,
         notification_policy_code: str | None = None,
+        reporting_policy_code: str | None = None,
         config: dict[str, Any] | None = None,
         overrides: dict[str, Any] | None = None,
         actor_id: str | None = None,
@@ -1104,12 +1121,14 @@ class HelpdeskPolicyRepo:
             priority_policy_code = priority_policy_code or ticket_type_defaults.get("default_priority_policy_code")
             routing_policy_code = routing_policy_code or ticket_type_defaults.get("default_routing_policy_code")
             sla_policy_id = sla_policy_id if sla_policy_id is not None else ticket_type_defaults.get("default_sla_policy_id")
+            sla_policy_code = sla_policy_code or ticket_type_defaults.get("default_sla_policy_code")
             ola_policy_code = ola_policy_code or ticket_type_defaults.get("default_ola_policy_code")
             approval_policy_code = approval_policy_code or ticket_type_defaults.get("default_approval_policy_code")
             diagnostic_policy_code = diagnostic_policy_code or ticket_type_defaults.get("default_diagnostic_policy_code")
             closure_policy_code = closure_policy_code or ticket_type_defaults.get("default_closure_policy_code")
             visibility_policy_code = visibility_policy_code or ticket_type_defaults.get("default_visibility_policy_code")
             notification_policy_code = notification_policy_code or ticket_type_defaults.get("default_notification_policy_code")
+            reporting_policy_code = reporting_policy_code or ticket_type_defaults.get("default_reporting_policy_code")
         config_json = deepcopy(config or {})
         if ticket_type_defaults:
             config_json.setdefault(
@@ -1163,12 +1182,14 @@ class HelpdeskPolicyRepo:
             priority_policy_code=priority_policy_code,
             routing_policy_code=routing_policy_code,
             sla_policy_id=sla_policy_id,
+            sla_policy_code=sla_policy_code,
             ola_policy_code=ola_policy_code,
             approval_policy_code=approval_policy_code,
             diagnostic_policy_code=diagnostic_policy_code,
             closure_policy_code=closure_policy_code,
             visibility_policy_code=visibility_policy_code,
             notification_policy_code=notification_policy_code,
+            reporting_policy_code=reporting_policy_code,
             config_json=config_json,
             overrides_json=deepcopy(overrides or {}),
             is_active=True,
@@ -1253,4 +1274,125 @@ class HelpdeskPolicyRepo:
             "kind": normalized_kind,
             "config": effective,
             "sources": sources,
+        }
+
+    async def resolve_policy_ref(
+        self,
+        *,
+        kind: str,
+        code: str | None,
+        source: str = "policy_ref",
+    ) -> dict[str, Any]:
+        normalized_kind = normalize_policy_kind(kind)
+        normalized_code = normalize_template_code(code)
+        if not normalized_code:
+            return {"kind": normalized_kind, "config": {}, "sources": []}
+        model = POLICY_MODELS[normalized_kind]
+        rows = list(
+            (
+                await self.session.execute(
+                    select(model).where(
+                        model.code == normalized_code,
+                        model.is_active.is_(True),
+                    )
+                )
+            ).scalars().all()
+        )
+        if not rows:
+            return {"kind": normalized_kind, "config": {}, "sources": []}
+        rows.sort(key=lambda row: (_row_timestamp(row), version_key(str(row.version)).key), reverse=True)
+        row = rows[0]
+        source_row = {
+            "code": row.code,
+            "version": row.version,
+            "scope_level": "policy_ref",
+            "scope_ref": normalized_code,
+            "source": source,
+            "policy_scope_level": row.scope_level,
+            "policy_scope_ref": row.scope_ref,
+        }
+        return {
+            "kind": normalized_kind,
+            "config": deepcopy(row.config_json or {}),
+            "sources": [source_row],
+            "policy": serialize_policy_row(normalized_kind, row),
+        }
+
+    async def resolve_effective_request_template(
+        self,
+        *,
+        template_code: str,
+        ticket_type: str | None = None,
+        category_id: int | str | None = None,
+        raise_if_missing: bool = True,
+    ) -> dict[str, Any]:
+        code = normalize_template_code(template_code)
+        row = (
+            await self.session.execute(
+                select(RequestTemplate).where(
+                    RequestTemplate.template_code == code,
+                    RequestTemplate.is_active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            if raise_if_missing:
+                raise ValueError(f"active request template {template_code!r} not found")
+            return {}
+
+        serialized = serialize_request_template(row)
+        config_json = deepcopy(row.config_json or {})
+        config_refs = config_json.get("policy_refs") if isinstance(config_json.get("policy_refs"), dict) else {}
+        resolved_policies: dict[str, dict[str, Any]] = {}
+        policy_sources: dict[str, list[dict[str, Any]]] = {}
+        policy_refs: dict[str, dict[str, Any]] = {}
+        policy_snapshots: dict[str, dict[str, Any]] = {}
+        for kind, attr_name in REQUEST_TEMPLATE_POLICY_CODE_FIELDS.items():
+            ref_code = str(getattr(row, attr_name, None) or "").strip()
+            if not ref_code and isinstance(config_refs, dict):
+                raw_config_ref = config_refs.get(kind) or config_refs.get(f"{kind}_policy")
+                if isinstance(raw_config_ref, dict):
+                    ref_code = str(raw_config_ref.get("code") or raw_config_ref.get("policy_code") or "").strip()
+                else:
+                    ref_code = str(raw_config_ref or "").strip()
+            if ref_code:
+                effective = await self.resolve_policy_ref(
+                    kind=kind,
+                    code=ref_code,
+                    source=f"request_template.{attr_name}",
+                )
+            else:
+                effective = await self.resolve_effective_policy(
+                    kind=kind,
+                    ticket_type=ticket_type or row.ticket_type,
+                    category_id=category_id if category_id is not None else row.category_id,
+                    template_code=row.template_code,
+                )
+            config = effective.get("config") if isinstance(effective, dict) else {}
+            sources = effective.get("sources") if isinstance(effective, dict) else []
+            if isinstance(config, dict) and config:
+                resolved_policies[kind] = config
+            if isinstance(sources, list) and sources:
+                policy_sources[kind] = sources
+                primary_source = sources[-1]
+                policy_refs[kind] = {
+                    "code": primary_source.get("code"),
+                    "version": primary_source.get("version"),
+                    "source": primary_source.get("source") or primary_source.get("scope_level"),
+                }
+                policy_snapshots[kind] = {
+                    "code": primary_source.get("code"),
+                    "version": primary_source.get("version"),
+                    "source": primary_source.get("source") or primary_source.get("scope_level"),
+                    "scope_level": primary_source.get("scope_level"),
+                    "scope_ref": primary_source.get("scope_ref"),
+                    "config": deepcopy(config),
+                }
+
+        return {
+            "request_template": serialized,
+            "policy_refs": policy_refs,
+            "resolved_policies": resolved_policies,
+            "policy_sources": policy_sources,
+            "policy_snapshots": policy_snapshots,
         }
