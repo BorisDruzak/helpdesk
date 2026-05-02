@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval
+from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval, TicketEvent
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from tickets.approval_policy import process_approval_policy_timeouts
 from tickets.workflow_service import TicketWorkflowService
 
 
@@ -115,6 +116,31 @@ async def _transition_ticket(test_engine, ticket_id: str, *, from_status: str, t
             actor_id="support-test",
             actor_role="support",
             reason="approval_policy_check",
+            source="test",
+        )
+        await session.commit()
+        return result
+
+
+async def _transition_ticket_with_reason(
+    test_engine,
+    ticket_id: str,
+    *,
+    from_status: str,
+    to_status: str,
+    reason: str | None,
+) -> dict:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        result = await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id="support-test",
+            actor_role="support",
+            reason=reason,
             source="test",
         )
         await session.commit()
@@ -413,6 +439,117 @@ async def test_approval_policy_all_mode_requires_every_approval(test_engine) -> 
     assert result["updates"]["status"] == "in_progress"
     assert result["event_payload"]["approval_policy"]["approval_mode"] == "all"
     assert result["event_payload"]["approval_policy"]["approved_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_timeout_runtime_emits_reminder_escalation_and_timeout(test_engine) -> None:
+    await _clear_approval_registry(test_engine)
+    ticket_id = await _seed_ticket(
+        test_engine,
+        status="new",
+        approval_policy={
+            "required": True,
+            "approval_mode": "any_one",
+            "approver_source": {"type": "explicit_user", "user_id": "service-owner-1"},
+            "timeout": {
+                "due_in": "1h",
+                "reminder_after": "30m",
+                "escalate_after": "45m",
+            },
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+    await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="new",
+        to_status="waiting_on_approval",
+    )
+
+    requested_at = datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        approval = (
+            await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        ).scalar_one()
+        approval.requested_at = requested_at
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        assert await process_approval_policy_timeouts(session, repo, now=requested_at + timedelta(minutes=31)) == 1
+        assert await process_approval_policy_timeouts(session, repo, now=requested_at + timedelta(minutes=46)) == 1
+        assert await process_approval_policy_timeouts(session, repo, now=requested_at + timedelta(minutes=61)) == 1
+        assert await process_approval_policy_timeouts(session, repo, now=requested_at + timedelta(minutes=62)) == 0
+        await session.commit()
+
+    async with session_maker() as session:
+        event_rows = await session.execute(
+            select(TicketEvent)
+            .where(
+                TicketEvent.ticket_id == ticket_id,
+                TicketEvent.event_type.in_(
+                    ["approval_reminder_due", "approval_escalated", "approval_timed_out"]
+                ),
+            )
+            .order_by(TicketEvent.created_at.asc(), TicketEvent.id.asc())
+        )
+        events = event_rows.scalars().all()
+        approval = (
+            await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        ).scalar_one()
+
+    assert [event.event_type for event in events] == [
+        "approval_reminder_due",
+        "approval_escalated",
+        "approval_timed_out",
+    ]
+    assert events[0].payload["approval_policy"]["timeout"]["reminder_after"] == "30m"
+    assert events[1].payload["approval_policy"]["timeout"]["escalate_after"] == "45m"
+    assert events[2].payload["due_at"] == (requested_at + timedelta(hours=1)).isoformat()
+    assert approval.status == "timed_out"
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_requires_comment_on_reject_transition(test_engine) -> None:
+    await _clear_approval_registry(test_engine)
+    ticket_id = await _seed_ticket(
+        test_engine,
+        approval_policy={
+            "required": True,
+            "approval_mode": "any_one",
+            "require_comment_on_reject": True,
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="reject comment"):
+        await _transition_ticket_with_reason(
+            test_engine,
+            ticket_id,
+            from_status="waiting_on_approval",
+            to_status="canceled",
+            reason=None,
+        )
+
+    result = await _transition_ticket_with_reason(
+        test_engine,
+        ticket_id,
+        from_status="waiting_on_approval",
+        to_status="canceled",
+        reason="Владелец сервиса отказал в доступе",
+    )
+
+    assert result["updates"]["status"] == "canceled"
+    assert result["event_payload"]["approval_policy"]["require_comment_on_reject"] is True
 
 
 @pytest.mark.asyncio

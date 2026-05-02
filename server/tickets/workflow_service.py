@@ -345,6 +345,7 @@ class TicketWorkflowService:
             ticket,
             from_status=from_status,
             to_status=to_status,
+            reject_comment=reason or public_comment or internal_comment,
         )
         if approval_decision.get("applied"):
             if approval_decision.get("gate") == "waiting":

@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 8b is complete, committed and released to the Linux stand. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 8c is locally complete and pending remote release/browser signoff: approval timeout/reminder/escalation runtime and reject-comment enforcement. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release, expected maturity is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -106,7 +106,7 @@ Slice 7b local verification:
 
 - [x] Slice 8a: create active `ticket_approvals` from `approval_policy` when entering waiting approval, with explicit user, form field, service owner/requester manager fallback, queue lead, security role and group identifiers.
 - [x] Slice 8b: implement `approval_mode=all` execution semantics and `approval_mode=sequential` request creation semantics (`requested` first step, `pending` later steps).
-- [ ] Implement due/reminder/escalate timeout behavior and require comment on reject.
+- [x] Slice 8c: implement due/reminder/escalate timeout behavior and require comment on reject.
 - [ ] Add requester/support UI to show pending approvals and actions.
 - [ ] Tests: approval request creation, source resolution fallback, sequential mode, rejection transition, timeout reminder/escalation, passport logging.
 
@@ -126,6 +126,13 @@ Slice 8b local verification:
 - Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 10 passed.
 - Broader local: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 32 passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `cdc0d3b server: add approval mode semantics`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` loaded admin inventory and `http://192.168.100.17:8666/app/admin/observer` showed `Runtime: ok`, hot traces and dangerous flows; browser console errors -> 0.
+
+Slice 8c local verification:
+
+- RED confirmed: focused tests failed because approval timeout processing returned `0` instead of reminder/escalation/timeout events, and `require_comment_on_reject=true` did not block a rejected transition without a reason.
+- GREEN focused: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_timeout_runtime_emits_reminder_escalation_and_timeout server\tests\test_ticket_approval_policy.py::test_approval_policy_requires_comment_on_reject_transition -q --tb=short` -> 2 passed.
+- Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 12 passed.
+- Broader local: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 42 passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 9: Closure Policy Completion
 

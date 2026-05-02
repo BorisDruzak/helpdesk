@@ -336,11 +336,13 @@ class TicketSlaWatchdog:
                 try:
                     async with get_session() as session:
                         from tickets.ola_service import check_ola_breaches
+                        from tickets.approval_policy import process_approval_policy_timeouts
 
                         await check_ola_breaches(session)
+                        await process_approval_policy_timeouts(session, TicketEventsRepo(session))
                         await session.commit()
                 except Exception as ola_err:
-                    logger.warning(f"[TicketSlaWatchdog] OLA breach check failed: {ola_err}")
+                    logger.warning(f"[TicketSlaWatchdog] OLA/approval policy check failed: {ola_err}")
                 await self._check_reminders()
             except Exception as e:
                 logger.error(f"[TicketSlaWatchdog] Loop error: {e}", exc_info=True)
@@ -373,11 +375,13 @@ class TicketSlaWatchdog:
         try:
             async with get_session() as session:
                 from tickets.ola_service import check_ola_breaches
+                from tickets.approval_policy import process_approval_policy_timeouts
 
                 await check_ola_breaches(session)
+                await process_approval_policy_timeouts(session, TicketEventsRepo(session))
                 await session.commit()
         except Exception as ola_err:
-            logger.warning(f"[TicketSlaWatchdog] OLA breach check failed: {ola_err}")
+            logger.warning(f"[TicketSlaWatchdog] OLA/approval policy check failed: {ola_err}")
         await self._check_reminders()
 
 

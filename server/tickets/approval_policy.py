@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
-from app.db.models import TicketApproval, TicketQueueMember
+from app.db.models import Ticket, TicketApproval, TicketQueueMember
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 
 
@@ -197,6 +198,76 @@ def _approval_mode(policy: dict[str, Any]) -> str:
     return mode if mode in {"any_one", "all", "sequential"} else "any_one"
 
 
+def _duration_to_seconds(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        seconds = int(value)
+        return seconds if seconds >= 0 else None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    multiplier = 60
+    if raw.endswith("ms"):
+        raw = raw[:-2]
+        multiplier = 0
+    elif raw.endswith("s"):
+        raw = raw[:-1]
+        multiplier = 1
+    elif raw.endswith("m"):
+        raw = raw[:-1]
+        multiplier = 60
+    elif raw.endswith("h"):
+        raw = raw[:-1]
+        multiplier = 60 * 60
+    elif raw.endswith("d"):
+        raw = raw[:-1]
+        multiplier = 24 * 60 * 60
+    try:
+        amount = float(raw)
+    except ValueError:
+        return None
+    if multiplier == 0:
+        seconds = int(amount / 1000)
+    else:
+        seconds = int(amount * multiplier)
+    return seconds if seconds >= 0 else None
+
+
+def _approval_timeout(policy: dict[str, Any]) -> dict[str, Any]:
+    timeout = policy.get("timeout") or {}
+    return dict(timeout) if isinstance(timeout, dict) else {}
+
+
+def _approval_policy_metadata(policy: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {"approval_mode": _approval_mode(policy)}
+    code = policy.get("code") or policy.get("policy_code") or policy.get("approval_policy_code") or policy.get("id")
+    if code is not None:
+        result["code"] = str(code)
+    if policy.get("version") is not None:
+        result["version"] = str(policy.get("version"))
+    result["source"] = str(policy.get("source") or policy.get("scope_level") or "request_template")
+    timeout = _approval_timeout(policy)
+    if timeout:
+        result["timeout"] = timeout
+    return result
+
+
+def _ensure_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _approval_runtime(ticket: Ticket) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    custom_fields = dict(ticket.custom_fields or {}) if isinstance(ticket.custom_fields, dict) else {}
+    runtime = dict(custom_fields.get("approval_runtime") or {})
+    approvals = dict(runtime.get("approvals") or {})
+    runtime["approvals"] = approvals
+    custom_fields["approval_runtime"] = runtime
+    return custom_fields, runtime, approvals
+
+
 async def _active_approval_keys(session: Any, ticket_id: str) -> dict[tuple[str, str | None], str]:
     rows = await session.execute(
         select(TicketApproval.approval_type, TicketApproval.approver_id, TicketApproval.status)
@@ -301,6 +372,7 @@ async def validate_approval_policy(
     *,
     from_status: str,
     to_status: str,
+    reject_comment: str | None = None,
 ) -> dict[str, Any]:
     if ticket is None:
         return {"applied": False}
@@ -319,10 +391,13 @@ async def validate_approval_policy(
         }
 
     if to_status == statuses["rejected_transition"]:
+        if policy.get("require_comment_on_reject") and not str(reject_comment or "").strip():
+            raise ValueError("approval_policy reject comment required")
         return {
             "applied": True,
             "required": True,
             "gate": "rejected_transition",
+            "require_comment_on_reject": bool(policy.get("require_comment_on_reject")),
         }
 
     if to_status not in _protected_statuses(policy):
@@ -337,3 +412,112 @@ async def validate_approval_policy(
         "to_status": to_status,
         **decision,
     }
+
+
+async def process_approval_policy_timeouts(
+    session: Any,
+    ticket_repo: Any,
+    *,
+    now: datetime | None = None,
+    limit: int = 100,
+) -> int:
+    current_time = _ensure_aware(now or datetime.now(timezone.utc))
+    rows = await session.execute(
+        select(TicketApproval, Ticket)
+        .join(Ticket, Ticket.ticket_id == TicketApproval.ticket_id)
+        .where(
+            Ticket.status.notin_(["resolved", "closed", "canceled"]),
+            TicketApproval.status.in_(["requested", "waiting"]),
+        )
+        .order_by(TicketApproval.requested_at.asc(), TicketApproval.id.asc())
+        .limit(limit)
+    )
+    processed = 0
+    for approval, ticket in rows.all():
+        policy = await resolve_effective_ticket_policy(session, ticket, "approval")
+        if not policy or not policy.get("required"):
+            continue
+        timeout = _approval_timeout(policy)
+        if not timeout:
+            continue
+        requested_at = _ensure_aware(approval.requested_at)
+        approval_key = str(approval.id)
+        custom_fields, _runtime, approvals_runtime = _approval_runtime(ticket)
+        approval_runtime = dict(approvals_runtime.get(approval_key) or {})
+        policy_metadata = _approval_policy_metadata(policy)
+        common_payload = {
+            "ticket_id": ticket.ticket_id,
+            "approval_id": approval.id,
+            "approval_type": approval.approval_type,
+            "approver_id": approval.approver_id,
+            "requested_at": requested_at.isoformat(),
+            "ts": current_time.isoformat(),
+            "approval_policy": policy_metadata,
+        }
+
+        async def emit_once(
+            *,
+            marker_key: str,
+            event_type: str,
+            due_at: datetime,
+            extra: dict[str, Any] | None = None,
+        ) -> bool:
+            if approval_runtime.get(marker_key):
+                return False
+            approval_runtime[marker_key] = current_time.isoformat()
+            approvals_runtime[approval_key] = approval_runtime
+            ticket.custom_fields = custom_fields
+            await session.execute(
+                update(Ticket).where(Ticket.ticket_id == ticket.ticket_id).values(custom_fields=custom_fields)
+            )
+            payload = {
+                **common_payload,
+                "due_at": due_at.isoformat(),
+            }
+            if extra:
+                payload.update(extra)
+            await ticket_repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type=event_type,
+                payload=payload,
+                trace_id=str(uuid.uuid4()),
+            )
+            return True
+
+        reminder_sec = _duration_to_seconds(timeout.get("reminder_after"))
+        if reminder_sec is not None:
+            reminder_at = requested_at + timedelta(seconds=reminder_sec)
+            if current_time >= reminder_at and await emit_once(
+                marker_key="reminded_at",
+                event_type="approval_reminder_due",
+                due_at=reminder_at,
+            ):
+                processed += 1
+
+        escalate_sec = _duration_to_seconds(timeout.get("escalate_after"))
+        if escalate_sec is not None:
+            escalate_at = requested_at + timedelta(seconds=escalate_sec)
+            if current_time >= escalate_at and await emit_once(
+                marker_key="escalated_at",
+                event_type="approval_escalated",
+                due_at=escalate_at,
+                extra={"escalation": timeout.get("escalation") or timeout.get("escalate_to")},
+            ):
+                processed += 1
+
+        due_sec = _duration_to_seconds(timeout.get("due_in"))
+        if due_sec is not None:
+            due_at = requested_at + timedelta(seconds=due_sec)
+            if current_time >= due_at and not approval_runtime.get("timed_out_at"):
+                approval.status = "timed_out"
+                approval.decided_at = current_time
+                approval.reason = approval.reason or "approval_policy_timeout"
+                if await emit_once(
+                    marker_key="timed_out_at",
+                    event_type="approval_timed_out",
+                    due_at=due_at,
+                ):
+                    processed += 1
+    return processed
