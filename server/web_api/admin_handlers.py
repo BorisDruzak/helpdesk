@@ -51,6 +51,7 @@ from tickets.routing_service import (
     build_form_routing_context,
     find_matching_routing_rule,
 )
+from tickets.smart_views import validate_smart_view_definition
 from tech.runtime_audit import write_agent_runtime_audit
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
@@ -2422,15 +2423,20 @@ async def _publish_helpdesk_smart_view(
 ) -> AdminHelpdeskPublishSmartViewResult:
     actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
     actor_role = str(auth_context.actor_role or "admin").strip() or "admin"
+    filter_config, sort, columns = validate_smart_view_definition(
+        filter_config=payload.filter,
+        sort=payload.sort,
+        columns=payload.columns,
+    )
     async with get_session() as session:
         repo = HelpdeskPolicyRepo(session)
         item = await repo.publish_smart_view(
             code=payload.code,
             title=payload.title,
             description=payload.description,
-            filter_config=payload.filter,
-            sort=payload.sort,
-            columns=payload.columns,
+            filter_config=filter_config,
+            sort=sort,
+            columns=columns,
             scope_level=payload.scope_level,
             scope_ref=payload.scope_ref,
             actor_id=actor_id,

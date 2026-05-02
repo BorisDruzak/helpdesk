@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14i is released: `/app/admin/forms` now has structured smart-view controls so operational slices such as SLA/OLA risk can be published without editing raw filter/sort JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14i release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 90%, agent GUI about 73%, overall about 97.0%. The remaining plan targets final validation/diff/impact UX, deeper smart-view execution validation and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 13a is in progress: smart-view publication now rejects unsupported filter keys, unsafe field paths, invalid sort directions and unsupported display columns before writing a registry version. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14i release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 90%, agent GUI about 73%, overall about 97.0%; Slice 13a should move this to about 97.2% after release/browser/observer signoff. The remaining plan targets final publish diff/impact UX, deeper smart-view execution coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 14i is released: `/app/admin/forms` now has structured smart-view 
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, а deeper publish-impact/diff UX и строгая smart-view validation ещё требуют добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, а smart-view publish validation закрывается в Slice 13a; deeper publish-impact/diff UX ещё требует добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -270,9 +270,23 @@ Slice 10b local verification so far:
 ### Slice 13: Smart Views As Configurable Operational Queues
 
 - [ ] Make custom smart views fully executable for filters used in target model: SLA risk, OLA risk, unassigned, waiting approval, stale waits, diagnostics failed, requester replied, mass incident candidates.
-- [ ] Add validation for smart view filters/sorts/columns at publication time.
+- [x] Add validation for smart view filters/sorts/columns at publication time.
 - [x] Add UI builder for common smart view filters instead of raw JSON only.
 - [ ] Tests: each builtin smart view, published custom filter, invalid filter rejection, support queue counters.
+
+Slice 13a target:
+
+- [x] Reject unsupported custom smart-view filter keys before registry publication.
+- [x] Validate safe field paths for due/breached fields, field_equals/field_in, sort fields and display columns.
+- [x] Validate sort direction and normalize status aliases before saving filter JSON.
+- [x] Add endpoint regression proving invalid filter/sort/columns return `400 VALIDATION_ERROR` and do not create active smart views.
+
+Slice 13a local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_helpdesk_policy_registry.py::test_web_admin_rejects_invalid_smart_view_definition -q --tb=short` failed because invalid `raw_sql` filter published with `200 OK`.
+- GREEN focused: same command -> 1 passed.
+- Registry/support regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py::test_web_admin_publishes_sla_ola_and_smart_view_versions server\tests\test_web_support_api.py::test_web_support_queue_applies_published_custom_smart_view -q --tb=short` -> 2 passed.
+- Broader backend regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_web_support_api.py -q --tb=short` -> 43 passed.
 
 ### Slice 14: Server Admin UX To Remove JSON Dependency
 

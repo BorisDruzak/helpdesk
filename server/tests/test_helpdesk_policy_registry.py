@@ -1043,3 +1043,63 @@ async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, 
     assert registry["summary"]["active_smart_views_count"] == 1
     assert "sla" in registry["capabilities"]["policy_kinds"]
     assert "ola" in registry["capabilities"]["policy_kinds"]
+
+
+@pytest.mark.asyncio
+async def test_web_admin_rejects_invalid_smart_view_definition(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    invalid_filter_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/smart-views/publish",
+        json={
+            "code": "invalid_filter_view",
+            "title": "Некорректный фильтр",
+            "filter": {"status_not_in": ["closed"], "raw_sql": "1=1"},
+            "sort": [{"field": "resolution_due_at", "direction": "asc"}],
+            "columns": ["ticket_id", "title", "resolution_due_at"],
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert invalid_filter_response.status == 400
+    invalid_filter_payload = await invalid_filter_response.json()
+    assert invalid_filter_payload["error_code"] == "VALIDATION_ERROR"
+    assert "raw_sql" in invalid_filter_payload["error"]
+
+    invalid_sort_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/smart-views/publish",
+        json={
+            "code": "invalid_sort_view",
+            "title": "Некорректная сортировка",
+            "filter": {"status_not_in": ["closed"]},
+            "sort": [{"field": "resolution_due_at", "direction": "sideways"}],
+            "columns": ["ticket_id", "title", "resolution_due_at"],
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert invalid_sort_response.status == 400
+    invalid_sort_payload = await invalid_sort_response.json()
+    assert invalid_sort_payload["error_code"] == "VALIDATION_ERROR"
+    assert "direction" in invalid_sort_payload["error"]
+
+    invalid_column_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/smart-views/publish",
+        json={
+            "code": "invalid_column_view",
+            "title": "Некорректная колонка",
+            "filter": {"status_not_in": ["closed"]},
+            "sort": [{"field": "resolution_due_at", "direction": "asc"}],
+            "columns": ["ticket_id", "title", "raw_secret"],
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert invalid_column_response.status == 400
+    invalid_column_payload = await invalid_column_response.json()
+    assert invalid_column_payload["error_code"] == "VALIDATION_ERROR"
+    assert "raw_secret" in invalid_column_payload["error"]
+
+    registry_response = await test_client.get(
+        "/api/web/admin/helpdesk-model/policies",
+        headers=_admin_headers(),
+    )
+    registry = (await registry_response.json())["data"]
+    assert registry["summary"]["active_smart_views_count"] == 0

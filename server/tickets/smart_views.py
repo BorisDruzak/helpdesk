@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
+
+from tickets.statuses import normalize_status
 
 
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
@@ -40,6 +43,103 @@ DEFAULT_SMART_VIEWS: tuple[SmartView, ...] = (
 
 _SMART_VIEW_IDS = {view.id for view in DEFAULT_SMART_VIEWS}
 
+_CUSTOM_FILTER_KEYS = {
+    "status",
+    "status_in",
+    "status_not_in",
+    "open_only",
+    "queue_code",
+    "queue_code_in",
+    "assignee_id",
+    "assignee_id_in",
+    "assignee_empty",
+    "assigned_to_me",
+    "next_action_owner",
+    "next_action_owner_in",
+    "due_fields",
+    "due_before_hours",
+    "breached_fields",
+    "field_equals",
+    "field_in",
+    "tags_any",
+    "tag",
+}
+_FIELD_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
+_SAFE_FIELD_PATH_PREFIXES = (
+    "custom_fields.",
+    "request_form_data.",
+    "request_form_summary.",
+    "request_template.",
+    "diagnostics.",
+)
+_SAFE_FIELD_PATHS = {
+    "ticket_id",
+    "ticket_code",
+    "title",
+    "status",
+    "status_label",
+    "requester_status",
+    "requester_status_label",
+    "public_status",
+    "public_status_label",
+    "next_action_owner",
+    "next_action_due_at",
+    "status_reason",
+    "queue_id",
+    "queue_code",
+    "assignee_id",
+    "requester_id",
+    "requester_display_name",
+    "device_id",
+    "updated_at",
+    "created_at",
+    "requires_operator_action",
+    "unread_user_messages",
+    "support_pending_user_messages",
+    "support_unread_user_messages",
+    "first_response_due_at",
+    "resolution_due_at",
+    "first_response_breached_at",
+    "resolution_breached_at",
+    "ola_ack_due_at",
+    "ola_processing_due_at",
+    "ola_ack_breached_at",
+    "ola_processing_breached_at",
+    "priority",
+    "priority_class",
+    "impact",
+    "urgency",
+    "importance",
+    "tags",
+}
+_SMART_VIEW_COLUMN_FIELDS = {
+    "ticket_id",
+    "ticket_code",
+    "title",
+    "status",
+    "status_label",
+    "public_status_label",
+    "next_action_owner",
+    "next_action_due_at",
+    "status_reason",
+    "queue_id",
+    "queue_code",
+    "assignee_id",
+    "requester_display_name",
+    "device_id",
+    "updated_at",
+    "created_at",
+    "unread_user_messages",
+    "first_response_due_at",
+    "resolution_due_at",
+    "ola_ack_due_at",
+    "ola_processing_due_at",
+    "priority",
+    "priority_class",
+}
+_NEXT_ACTION_OWNERS = {"support", "requester", "internal_team", "vendor", "approver", "system"}
+_SORT_DIRECTIONS = {"asc", "desc"}
+
 
 def normalize_smart_view_id(raw_value: Any, *, custom_view_ids: set[str] | None = None) -> str:
     value = str(raw_value or "all").strip()
@@ -60,6 +160,137 @@ def smart_view_options(custom_views: list[dict[str, Any]] | None = None) -> list
         options.append({"value": code, "label": str(view.get("title") or code)})
         existing_ids.add(code)
     return options
+
+
+def _listify_validation_value(value: Any, *, field_name: str) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    raise ValueError(f"smart view {field_name} must be list or comma-separated string")
+
+
+def _validate_status_values(value: Any, *, field_name: str) -> list[str]:
+    normalized: list[str] = []
+    for raw_status in _listify_validation_value(value, field_name=field_name):
+        status, _changed = normalize_status(str(raw_status or "").strip())
+        if not status:
+            raise ValueError(f"smart view {field_name} contains unsupported status: {raw_status}")
+        normalized.append(status)
+    return normalized
+
+
+def _validate_owner_values(value: Any, *, field_name: str) -> list[str]:
+    owners = [str(item or "").strip() for item in _listify_validation_value(value, field_name=field_name)]
+    invalid = [item for item in owners if item not in _NEXT_ACTION_OWNERS]
+    if invalid:
+        raise ValueError(f"smart view {field_name} contains unsupported owner: {invalid[0]}")
+    return owners
+
+
+def _validate_bool(value: Any, *, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"smart view {field_name} must be boolean")
+    return value
+
+
+def _validate_due_before_hours(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("smart view due_before_hours must be numeric") from None
+    if parsed < 0:
+        raise ValueError("smart view due_before_hours must be non-negative")
+    return parsed
+
+
+def _validate_field_path(value: Any, *, field_name: str, allow_custom_prefixes: bool = True) -> str:
+    path = str(value or "").strip()
+    if not path:
+        raise ValueError(f"smart view {field_name} contains empty field path")
+    if not _FIELD_PATH_RE.match(path):
+        raise ValueError(f"smart view {field_name} contains unsupported field path: {path}")
+    if path in _SAFE_FIELD_PATHS:
+        return path
+    if allow_custom_prefixes and any(path.startswith(prefix) for prefix in _SAFE_FIELD_PATH_PREFIXES):
+        return path
+    raise ValueError(f"smart view {field_name} contains unsupported field path: {path}")
+
+
+def _validate_field_path_list(value: Any, *, field_name: str) -> list[str]:
+    return [_validate_field_path(item, field_name=field_name) for item in _listify_validation_value(value, field_name=field_name)]
+
+
+def validate_smart_view_definition(
+    *,
+    filter_config: dict[str, Any],
+    sort: list[dict[str, Any]] | None = None,
+    columns: list[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], list[str]]:
+    """Validate and normalize a published smart view before it enters the registry."""
+
+    if not isinstance(filter_config, dict):
+        raise ValueError("smart view filter must be object")
+    unsupported_filter_keys = sorted(set(filter_config) - _CUSTOM_FILTER_KEYS)
+    if unsupported_filter_keys:
+        raise ValueError(f"smart view filter contains unsupported key: {unsupported_filter_keys[0]}")
+
+    normalized_filter: dict[str, Any] = dict(filter_config)
+    for key in ("status", "status_in", "status_not_in"):
+        if key in normalized_filter:
+            normalized_filter[key] = _validate_status_values(normalized_filter[key], field_name=key)
+    for key in ("next_action_owner", "next_action_owner_in"):
+        if key in normalized_filter:
+            normalized_filter[key] = _validate_owner_values(normalized_filter[key], field_name=key)
+    for key in ("open_only", "assignee_empty", "assigned_to_me"):
+        if key in normalized_filter:
+            normalized_filter[key] = _validate_bool(normalized_filter[key], field_name=key)
+    if "due_before_hours" in normalized_filter:
+        normalized_filter["due_before_hours"] = _validate_due_before_hours(normalized_filter["due_before_hours"])
+    for key in ("due_fields", "breached_fields"):
+        if key in normalized_filter:
+            normalized_filter[key] = _validate_field_path_list(normalized_filter[key], field_name=key)
+    for key in ("field_equals", "field_in"):
+        if key in normalized_filter:
+            mapping = normalized_filter[key]
+            if not isinstance(mapping, dict):
+                raise ValueError(f"smart view {key} must be object")
+            normalized_filter[key] = {
+                _validate_field_path(field, field_name=key): expected
+                for field, expected in mapping.items()
+            }
+    for key in ("queue_code", "queue_code_in", "assignee_id", "assignee_id_in", "tags_any", "tag"):
+        if key in normalized_filter:
+            normalized_filter[key] = [str(item).strip() for item in _listify_validation_value(normalized_filter[key], field_name=key) if str(item).strip()]
+
+    if sort is not None and not isinstance(sort, list):
+        raise ValueError("smart view sort must be list")
+    normalized_sort: list[dict[str, str]] = []
+    for index, raw_sort in enumerate(sort or []):
+        if not isinstance(raw_sort, dict):
+            raise ValueError(f"smart view sort[{index}] must be object")
+        unsupported_sort_keys = sorted(set(raw_sort) - {"field", "direction"})
+        if unsupported_sort_keys:
+            raise ValueError(f"smart view sort[{index}] contains unsupported key: {unsupported_sort_keys[0]}")
+        field = _validate_field_path(raw_sort.get("field"), field_name=f"sort[{index}].field", allow_custom_prefixes=False)
+        direction = str(raw_sort.get("direction") or "asc").strip().lower()
+        if direction not in _SORT_DIRECTIONS:
+            raise ValueError(f"smart view sort[{index}].direction must be asc or desc")
+        normalized_sort.append({"field": field, "direction": direction})
+
+    if columns is not None and not isinstance(columns, list):
+        raise ValueError("smart view columns must be list")
+    normalized_columns: list[str] = []
+    for raw_column in columns or []:
+        column = _validate_field_path(raw_column, field_name="columns", allow_custom_prefixes=False)
+        if column not in _SMART_VIEW_COLUMN_FIELDS:
+            raise ValueError(f"smart view columns contains unsupported field: {column}")
+        if column not in normalized_columns:
+            normalized_columns.append(column)
+
+    return normalized_filter, normalized_sort, normalized_columns
 
 
 def _parse_datetime(value: Any) -> datetime | None:
