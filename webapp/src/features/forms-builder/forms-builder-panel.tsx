@@ -1156,6 +1156,25 @@ const TEMPLATE_STEPS: Array<{
   },
 ];
 
+const TEMPLATE_WIZARD_SCREENS: Array<{
+  title: string;
+  description: string;
+  stepKey: TemplateStepKey;
+}> = [
+  { title: "Основное", description: "Название и публичный сценарий", stepKey: "template" },
+  { title: "Классификация", description: "ticket_type, категория и сервис", stepKey: "workflow" },
+  { title: "Форма", description: "Поля и условия показа", stepKey: "form" },
+  { title: "Процесс", description: "workflow и процессный контекст", stepKey: "workflow" },
+  { title: "Приоритет", description: "impact, urgency, importance", stepKey: "priority" },
+  { title: "Роутинг", description: "Очередь, правила и fallback", stepKey: "routing" },
+  { title: "SLA / OLA", description: "Внешние и внутренние сроки", stepKey: "deadlines" },
+  { title: "Согласования", description: "Кто согласует и сроки", stepKey: "approvals" },
+  { title: "Диагностика", description: "Playbook, consent и evidence", stepKey: "diagnostics" },
+  { title: "Закрытие", description: "Коды, итоги и доказательства", stepKey: "closure" },
+  { title: "Видимость / Уведомления", description: "Публичные статусы и каналы", stepKey: "visibility" },
+  { title: "Паспорт / Отчётность", description: "Разделы паспорта и экспорт", stepKey: "reporting" },
+];
+
 type PolicyJsonField =
   | "routing_policy_json"
   | "approval_policy_json"
@@ -3327,6 +3346,41 @@ function TemplateConstructorPanel({
           </p>
         </div>
         <Badge tone="info">{form.ticket_type}</Badge>
+      </div>
+
+      <div className="mt-5 rounded-[1rem] border border-border bg-surface-subtle px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Карта экранов мастера</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Экраны соответствуют целевой модели request_template и ведут к связанным настройкам ниже.
+            </p>
+          </div>
+          <Badge tone="neutral">{TEMPLATE_WIZARD_SCREENS.length} экранов</Badge>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {TEMPLATE_WIZARD_SCREENS.map((screen, index) => {
+            const isActive = activeStep === screen.stepKey;
+            return (
+              <button
+                className={cn(
+                  "rounded-[0.8rem] border px-3 py-2 text-left transition-colors",
+                  isActive
+                    ? "border-brand-300 bg-white text-brand-900"
+                    : "border-border bg-white text-slate-700 hover:border-brand-200"
+                )}
+                key={`${screen.title}-${index}`}
+                onClick={() => onStepChange(screen.stepKey)}
+                type="button"
+              >
+                <p className="text-xs font-semibold text-slate-950">
+                  {index + 1}. {screen.title}
+                </p>
+                <p className="mt-1 text-[11px] leading-4 text-slate-500">{screen.description}</p>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mt-5 overflow-x-auto pb-2">

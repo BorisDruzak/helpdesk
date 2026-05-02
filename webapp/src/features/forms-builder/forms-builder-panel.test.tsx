@@ -1009,6 +1009,58 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("показывает карту экранов мастера шаблона обращения", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    expect(screen.getByText("Карта экранов мастера")).toBeInTheDocument();
+    [
+      "Основное",
+      "Классификация",
+      "Форма",
+      "Процесс",
+      "Приоритет",
+      "Роутинг",
+      "SLA / OLA",
+      "Согласования",
+      "Диагностика",
+      "Закрытие",
+      "Видимость / Уведомления",
+      "Паспорт / Отчётность",
+    ].forEach((label) => {
+      expect(screen.getAllByRole("button", { name: new RegExp(label.replace("/", "\\/")) }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Паспорт \/ Отчётность/ }));
+    expect(screen.getAllByText("Паспорт решения и отчётность").length).toBeGreaterThan(0);
+  });
+
   it("настраивает OLA цели и escalation actions без ручного JSON", async () => {
     const saveCalls: unknown[] = [];
 

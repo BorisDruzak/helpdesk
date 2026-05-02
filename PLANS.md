@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14k is released: `/app/admin/forms` policy editors now keep raw JSON, diff, deactivate and rollback behind an explicit `Расширенный JSON и версии` mode. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14k release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 91.0%, agent GUI about 73%, overall about 97.5%. The remaining plan targets any remaining smart-view edge coverage, template-wizard polish and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14l is locally implemented: `/app/admin/forms` now has an explicit request-template wizard screen map that mirrors the target process model from `Основное` through `Паспорт / Отчётность`. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14l local verification the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 73%, overall about 97.6%. The remaining plan targets release/browser/observer signoff for Slice 14l, any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 14k is released: `/app/admin/forms` policy editors now keep raw JS
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, built-in operational smart views теперь включают `mass_incident_candidates`, policy publish impact preview закрыт в Slice 14j, а raw JSON/diff/deactivate/rollback вынесены в explicit advanced mode в Slice 14k.
+- Серверный UI `/app/admin/forms` умеет visual chain, explicit request-template wizard screen map и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, built-in operational smart views теперь включают `mass_incident_candidates`, policy publish impact preview закрыт в Slice 14j, а raw JSON/diff/deactivate/rollback вынесены в explicit advanced mode в Slice 14k.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -310,7 +310,7 @@ Slice 13b local verification:
 
 - [x] Convert policy editors in `/app/admin/forms` from raw JSON-first to structured controls for priority, SLA, OLA, routing, approvals, diagnostics, closure, visibility, notifications, reporting and common smart-view fields.
 - [x] Keep advanced JSON preview/edit behind explicit advanced mode with validation/diff.
-- [ ] Add template wizard screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA/OLA, Согласования, Диагностика, Закрытие, Видимость/Уведомления, Паспорт/Отчётность.
+- [x] Add template wizard screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA/OLA, Согласования, Диагностика, Закрытие, Видимость/Уведомления, Паспорт/Отчётность.
 - [x] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
 - [ ] Tests: finish coverage for remaining policy publish/diff/deactivate/rollback edges; structured editor publish paths now have focused Vitest coverage through Slice 14k and strict smart-view validation is covered.
 - [ ] Browser signoff: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` after deploy.
@@ -446,6 +446,20 @@ Slice 14k local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
 - Release/live: committed as `b0b3998 webapp: hide policy advanced json by default`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed the policy editor shows only `Расширенный JSON и версии` by default, then reveals `Сравнить версии`, deactivate/rollback and `JSON конфигурации политики` after opening advanced mode; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/advanced-policy errors, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14l target:
+
+- [x] Add an explicit `Карта экранов мастера` block to the request-template constructor.
+- [x] Mirror the target model screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA / OLA, Согласования, Диагностика, Закрытие, Видимость / Уведомления, Паспорт / Отчётность.
+- [x] Reuse existing constructor steps so the screen map navigates into the current structured policy editors.
+- [x] Add Vitest coverage proving the screen map renders and navigates to the passport/reporting step.
+
+Slice 14l local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx -t "показывает карту"` failed because `Карта экранов мастера` was absent.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 26 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
