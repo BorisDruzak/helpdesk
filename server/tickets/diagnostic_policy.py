@@ -14,6 +14,7 @@ from tickets.statuses import extract_priority_class
 TERMINAL_OPERATION_STATUSES = {"succeeded", "failed", "denied", "timed_out", "canceled"}
 ROUTING_DECISION_KEY = "routing_decision"
 ROUTING_LOCK_KEY = "routing_lock"
+HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
 
 _RESULT_CLASS_KEYS = (
     "diagnostic_result",
@@ -37,6 +38,15 @@ def normalize_diagnostic_consent_payload(raw: Any) -> dict[str, Any] | None:
         "scope": scope,
         "source": source,
     }
+    if "high_risk_tools_granted" in raw:
+        result["high_risk_tools_granted"] = bool(raw.get("high_risk_tools_granted"))
+    grants = raw.get("grants")
+    if isinstance(grants, dict):
+        result["grants"] = {
+            str(key): bool(value)
+            for key, value in grants.items()
+            if str(key or "").strip()
+        }
     request_template_key = str(raw.get("request_template_key") or "").strip()
     if request_template_key:
         result["request_template_key"] = request_template_key
@@ -108,12 +118,33 @@ def _policy_requires_requester_device_consent(policy: dict[str, Any]) -> bool:
     return bool(policy.get("requires_user_consent") or consent.get("required_for_requester_device"))
 
 
+def policy_requires_high_risk_tool_consent(policy: dict[str, Any]) -> bool:
+    consent = policy.get("consent") if isinstance(policy.get("consent"), dict) else {}
+    return bool(consent.get("required_for_high_risk_tools") or policy.get("requires_high_risk_tool_consent"))
+
+
 def _has_granted_requester_device_consent(custom_fields: dict[str, Any]) -> bool:
     consent = custom_fields.get("diagnostic_consent")
     if not isinstance(consent, dict):
         return False
     scope = str(consent.get("scope") or "requester_device").strip() or "requester_device"
     return scope == "requester_device" and bool(consent.get("granted"))
+
+
+def has_granted_high_risk_tool_consent(custom_fields: dict[str, Any]) -> bool:
+    consent = custom_fields.get("diagnostic_consent")
+    if not isinstance(consent, dict):
+        return False
+    if bool(consent.get("high_risk_tools_granted")):
+        return True
+    grants = consent.get("grants")
+    if isinstance(grants, dict) and bool(grants.get("high_risk_tools")):
+        return True
+    scopes = consent.get("scopes")
+    if isinstance(scopes, list) and "high_risk_tools" in {str(item).strip() for item in scopes}:
+        return bool(consent.get("granted"))
+    scope = str(consent.get("scope") or "").strip()
+    return scope in {"high_risk_tools", "all_diagnostics"} and bool(consent.get("granted"))
 
 
 def _state_reports_agent_online(state: Any | None, device_id: str) -> bool:
@@ -172,6 +203,7 @@ def collect_diagnostic_policy_auto_run_triggers(
     priority_class = extract_priority_class(ticket)
     allowed_priorities = _normalize_priority_list(auto_run.get("only_for_priorities"))
     consent_required = _policy_requires_requester_device_consent(policy)
+    high_risk_consent_required = policy_requires_high_risk_tool_consent(policy)
     consent_granted = _has_granted_requester_device_consent(fields)
     online_required = _bool_from_policy(auto_run.get("only_if_agent_online"), default=False)
     agent_online = _state_reports_agent_online(state, device_id)
@@ -214,7 +246,9 @@ def collect_diagnostic_policy_auto_run_triggers(
                     "id": policy.get("id"),
                     "policy_id": policy.get("policy_id"),
                     "auto_run": dict(auto_run),
+                    "consent": dict(policy.get("consent")) if isinstance(policy.get("consent"), dict) else {},
                     "consent_required": consent_required,
+                    "high_risk_consent_required": high_risk_consent_required,
                 },
             }
         )

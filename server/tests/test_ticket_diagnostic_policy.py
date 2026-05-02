@@ -14,7 +14,7 @@ from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.diagnostic_policy import apply_diagnostic_result_policy
 
 
-async def _seed_published_playbook(session, *, key: str) -> PlaybookVersion:
+async def _seed_published_playbook(session, *, key: str, manifest_json: dict | None = None) -> PlaybookVersion:
     playbook = Playbook(
         key=key,
         name=key,
@@ -27,7 +27,7 @@ async def _seed_published_playbook(session, *, key: str) -> PlaybookVersion:
     version = PlaybookVersion(
         playbook_id=playbook.id,
         version="1.0.0",
-        manifest_json={},
+        manifest_json=manifest_json or {},
         status="published",
         created_at=datetime.now(timezone.utc),
         published_at=datetime.now(timezone.utc),
@@ -273,6 +273,152 @@ async def test_diagnostic_policy_auto_run_starts_suggested_playbook_when_safe(te
         assert run.context_json["diagnostic_policy"]["auto_run"]["enabled"] is True
         assert event.payload["trigger"] == "diagnostic_policy_auto_run"
         assert event.payload["source"] == "diagnostic_policy"
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_skips_high_risk_playbook_without_explicit_consent(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_high_risk_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "diagnostic_consent": {
+            "required": True,
+            "granted": True,
+            "scope": "requester_device",
+            "source": "pc_agent_create",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {"enabled": True, "only_if_agent_online": True},
+                "consent": {"required_for_high_risk_tools": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(
+            session,
+            key=playbook_key,
+            manifest_json={
+                "required_tools": [
+                    {"tool": "diag.danger", "risk_level": "system_write"},
+                ],
+            },
+        )
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            title="Website unavailable",
+            description="Needs diagnostics",
+            status="in_progress",
+            priority="P1",
+            requester_id="user-net",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        runs = (await session.execute(select(PlaybookRun).where(PlaybookRun.device_id == device_id))).scalars().all()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalar_one()
+
+        assert started == []
+        assert runs == []
+        assert event.payload["reason"] == "high_risk_consent_required"
+        assert event.payload["playbook_key"] == playbook_key
+        assert event.payload["high_risk_tools"] == ["diag.danger"]
+        assert event.payload["high_risk_levels"] == ["system_write"]
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_starts_high_risk_playbook_with_explicit_consent(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_high_risk_allowed_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "diagnostic_consent": {
+            "required": True,
+            "granted": True,
+            "scope": "requester_device",
+            "source": "pc_agent_create",
+            "high_risk_tools_granted": True,
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {"enabled": True, "only_if_agent_online": True},
+                "consent": {"required_for_high_risk_tools": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(
+            session,
+            key=playbook_key,
+            manifest_json={
+                "required_tools": [
+                    {"tool": "diag.danger", "risk_level": "dangerous"},
+                ],
+            },
+        )
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            title="Website unavailable",
+            description="Needs diagnostics",
+            status="in_progress",
+            priority="P1",
+            requester_id="user-net",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        run = (await session.execute(select(PlaybookRun).where(PlaybookRun.device_id == device_id))).scalar_one()
+        skipped = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalars().all()
+
+        assert started == [run.id]
+        assert run.trigger_type == "diagnostic_policy_auto_run"
+        assert skipped == []
 
 
 @pytest.mark.asyncio
