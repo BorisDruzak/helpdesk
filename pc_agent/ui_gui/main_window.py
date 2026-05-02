@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         self.ticket_create_page = TicketCreateWizardWidget(self.chat_panel)
         self.ticket_create_page.ticketCreated.connect(self._on_ticket_created_from_wizard)
         self.ticket_create_page.cancelled.connect(lambda: self._select_sidebar_view("tickets", expand=True))
+        self.chat_panel.ticketFormPackChanged.connect(lambda _pack: self.ticket_create_page.refresh_from_panel())
         self.chat_panel.set_profile_sidebar(self.profile_sidebar)
         self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
 

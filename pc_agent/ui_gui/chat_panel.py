@@ -96,6 +96,30 @@ DEFAULT_PRIORITY_FIELD_ROLES = {
     "critical_service": ["priority_field", "sla_field"],
     "public_service": ["priority_field", "sla_field"],
 }
+REQUEST_TEMPLATE_STRING_METADATA_KEYS = (
+    "form_schema_id",
+    "workflow_profile_id",
+    "priority_policy_code",
+    "routing_policy_code",
+    "sla_policy_code",
+    "ola_policy_code",
+    "approval_policy_code",
+    "diagnostic_policy_code",
+    "closure_policy_code",
+    "visibility_policy_code",
+    "notification_policy_code",
+    "reporting_policy_code",
+)
+REQUEST_TEMPLATE_INT_METADATA_KEYS = (
+    "request_template_version",
+    "form_schema_version",
+    "category_id",
+    "service_id",
+    "subcategory_id",
+    "default_queue_id",
+    "sla_policy_id",
+)
+REQUEST_TEMPLATE_DICT_METADATA_KEYS = ("policy_refs",)
 HIGH_URGENCY_FACTS = {"work_stopped_no_workaround", "work_stopped", "no_workaround"}
 HIGH_IMPORTANCE_FACTS = {"deadline_today", "deadline_tomorrow", "critical", "security", "public_service"}
 AGENT_CREATE_ATTACHMENT_MAX_BYTES = 200 * 1024 * 1024
@@ -721,9 +745,24 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
             "approval_policy": form.get("approval_policy") if isinstance(form.get("approval_policy"), dict) else {},
             "diagnostic_policy": form.get("diagnostic_policy") if isinstance(form.get("diagnostic_policy"), dict) else {},
             "sla_policy": form.get("sla_policy") if isinstance(form.get("sla_policy"), dict) else {},
-            "default_queue_id": form.get("default_queue_id"),
             "fields": [],
         }
+        for key in REQUEST_TEMPLATE_STRING_METADATA_KEYS:
+            value = str(form.get(key) or "").strip()
+            if value:
+                normalized_form[key] = value
+        for key in REQUEST_TEMPLATE_INT_METADATA_KEYS:
+            value = form.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                normalized_form[key] = int(value)
+            except (TypeError, ValueError):
+                logger.debug(f"Некорректное числовое поле формы {form_key}.{key}: {value!r}")
+        for key in REQUEST_TEMPLATE_DICT_METADATA_KEYS:
+            value = form.get(key)
+            if isinstance(value, dict):
+                normalized_form[key] = dict(value)
         raw_fields = form.get("fields") if isinstance(form.get("fields"), list) else []
         for field in raw_fields:
             if not isinstance(field, dict):
@@ -755,6 +794,28 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
     if not normalized["forms"]:
         return build_default_ticket_form_pack()
     return normalized
+
+
+def _ticket_form_pack_fingerprint(raw_pack: Any) -> str:
+    normalized = normalize_ticket_form_pack(raw_pack)
+    return json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def should_apply_ticket_form_pack_update(current_pack: Any, server_result: Any, *, force: bool = False) -> bool:
+    if not isinstance(server_result, dict):
+        return False
+    next_pack = server_result.get("pack")
+    if not isinstance(next_pack, dict):
+        return False
+    if force:
+        return True
+    if bool(server_result.get("has_update")):
+        return True
+    current_version = str((current_pack or {}).get("version") or "") if isinstance(current_pack, dict) else ""
+    next_version = str(next_pack.get("version") or "")
+    if next_version and next_version != current_version:
+        return True
+    return _ticket_form_pack_fingerprint(current_pack) != _ticket_form_pack_fingerprint(next_pack)
 
 
 def ticket_form_field_visible(field_def: dict[str, Any], values: dict[str, Any]) -> bool:
@@ -3058,6 +3119,7 @@ class ChatPanel(QWidget):
     chatSessionChanged = Signal(str)
     requesterProfileChanged = Signal()
     listNavigationVisibilityChanged = Signal(bool)
+    ticketFormPackChanged = Signal(dict)
     ticketsListChanged = Signal()
 
     def __init__(
@@ -3555,6 +3617,7 @@ class ChatPanel(QWidget):
     def _apply_ticket_form_pack(self, raw_pack: Any) -> None:
         self._ticket_form_pack = normalize_ticket_form_pack(raw_pack)
         self._save_ticket_form_pack()
+        self.ticketFormPackChanged.emit(self._ticket_form_pack)
 
     def _refresh_ticket_form_pack_async(self, force: bool = False) -> None:
         self._spawn_task(self._async_refresh_ticket_form_pack(force=force))
@@ -3568,11 +3631,8 @@ class ChatPanel(QWidget):
                 pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
                 current_version=current_version or None,
             )
-            pack = result.get("pack") if isinstance(result, dict) else None
-            has_update = bool(result.get("has_update")) if isinstance(result, dict) else False
-            next_version = str((pack or {}).get("version") or "")
-            if pack and (force or has_update or next_version != current_version):
-                self._apply_ticket_form_pack(pack)
+            if should_apply_ticket_form_pack_update(self._ticket_form_pack, result, force=force):
+                self._apply_ticket_form_pack(result.get("pack"))
         except Exception as exc:
             logger.info(f"Каталог форм недоступен, используем кеш: {exc}")
         try:

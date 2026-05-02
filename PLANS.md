@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14l is released: `/app/admin/forms` now has an explicit request-template wizard screen map that mirrors the target process model from `Основное` through `Паспорт / Отчётность`. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14l release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 73%, overall about 97.6%. The remaining plan targets any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 15a is locally implemented: Agent GUI cached form packs now preserve schema/policy version metadata and refresh even when policy refs change without a pack version bump. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 15a local verification the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 74.5%, overall about 97.8%. The remaining plan targets release/deploy signoff for Slice 15a, any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -32,7 +32,7 @@ Status: Slice 14l is released: `/app/admin/forms` now has an explicit request-te
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain, explicit request-template wizard screen map и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, built-in operational smart views теперь включают `mass_incident_candidates`, policy publish impact preview закрыт в Slice 14j, а raw JSON/diff/deactivate/rollback вынесены в explicit advanced mode в Slice 14k.
-- Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
+- Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview; cached form packs now preserve request-template/schema/policy refs and refresh the open create wizard when the cached pack changes.
 
 ### Decisions Added 2026-05-02
 
@@ -467,10 +467,24 @@ Slice 14l local verification:
 
 - [ ] Ensure agent never exposes internal process choices to requester: no direct ticket_type/priority/SLA policy selection unless template says fields are visible.
 - [ ] Agent create preview must always call server preview when available and show effective queue/approval/diagnostics/deadlines.
-- [ ] Agent must handle schema/policy versions in cached form pack and refresh when server version changes.
+- [x] Agent must handle schema/policy versions in cached form pack and refresh when server version changes.
 - [ ] Add requester-safe rendering of public status, expected due dates and passport/result summary after create.
-- [ ] Tests: cached pack refresh, server-preview fallback, hidden internal fields, dynamic required fields, diagnostic consent, file/picker fields.
+- [ ] Tests: cached pack refresh covered in Slice 15a; remaining coverage focus is hidden internal fields plus any missing server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases.
 - [ ] Live GUI smoke with remote server and current published templates.
+
+Slice 15a target:
+
+- [x] Preserve request-template version, form schema id/version and `*_policy_code` / `policy_refs` metadata when the agent normalizes cached server form packs.
+- [x] Refresh cached form packs when normalized policy metadata changes even if the server did not bump `pack.version`.
+- [x] Emit a form-pack changed signal and refresh the open create wizard from `MainWindow` when the cache updates.
+- [x] Add focused agent tests for metadata preservation, refresh decision and wizard refresh wiring.
+
+Slice 15a local verification:
+
+- RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_agent_normalizes_request_template_schema_and_policy_versions pc_agent\tests\test_chat_panel_helpers.py::test_ticket_form_pack_refresh_decision_detects_policy_ref_change_without_version_bump -q --tb=short` failed because `should_apply_ticket_form_pack_update` and metadata preservation did not exist.
+- GREEN focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_agent_normalizes_request_template_schema_and_policy_versions pc_agent\tests\test_chat_panel_helpers.py::test_ticket_form_pack_refresh_decision_detects_policy_ref_change_without_version_bump pc_agent\tests\test_chat_panel_helpers.py::test_open_create_wizard_refreshes_when_form_pack_changes -q --tb=short` -> 3 passed.
+- Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 62 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
 
 ### Slice 16: Migration, Backfill And Compatibility
 

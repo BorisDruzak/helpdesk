@@ -30,6 +30,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     message_visual_role,
     normalize_ticket_form_pack,
     prepend_ticket_stream,
+    should_apply_ticket_form_pack_update,
     ticket_form_priority_field_keys,
     ticket_request_form_summary_rows,
     ticket_matches_query,
@@ -150,6 +151,13 @@ def test_ticket_create_wizard_has_post_create_result_panel():
     assert "_show_create_result" in source
 
 
+def test_open_create_wizard_refreshes_when_form_pack_changes():
+    source = inspect.getsource(main_window_module.MainWindow._setup_ui)
+
+    assert "ticketFormPackChanged" in source
+    assert "ticket_create_page.refresh_from_panel" in source
+
+
 def test_build_ticket_create_error_message_uses_user_language():
     assert "Сервер поддержки недоступен" in build_ticket_create_error_message(
         RuntimeError("Cannot connect to host 192.168.100.17:8666")
@@ -249,6 +257,96 @@ def test_agent_normalizes_request_template_identity_from_server_pack():
     assert form["key"] == "website_form"
     assert form["request_template_key"] == "website_unavailable"
     assert form["request_template_title"] == "Не открывается сайт"
+
+
+def test_agent_normalizes_request_template_schema_and_policy_versions():
+    pack = normalize_ticket_form_pack(
+        {
+            "pack_key": "request_forms",
+            "version": "2.1.0",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "title": "Не открывается сайт",
+                    "ticket_type": "incident",
+                    "request_template_version": 4,
+                    "form_schema_id": "website_unavailable_form",
+                    "form_schema_version": 3,
+                    "workflow_profile_id": "incident_default",
+                    "priority_policy_code": "incident_priority_policy",
+                    "routing_policy_code": "website_routing",
+                    "sla_policy_code": "incident_sla",
+                    "ola_policy_code": "default_queue_ola",
+                    "approval_policy_code": "service_owner_approval",
+                    "diagnostic_policy_code": "website_diagnostics",
+                    "closure_policy_code": "diagnostic_incident_closure",
+                    "visibility_policy_code": "default_public_statuses",
+                    "notification_policy_code": "incident_notifications",
+                    "reporting_policy_code": "incident_passport",
+                    "policy_refs": {
+                        "priority": "incident_priority_policy",
+                        "routing": "website_routing",
+                        "sla": "incident_sla",
+                    },
+                    "fields": [
+                        {"key": "url", "label": "Адрес сайта", "type": "url", "required": True},
+                    ],
+                }
+            ],
+        }
+    )
+
+    form = pack["forms"][0]
+    assert form["request_template_version"] == 4
+    assert form["form_schema_id"] == "website_unavailable_form"
+    assert form["form_schema_version"] == 3
+    assert form["workflow_profile_id"] == "incident_default"
+    assert form["priority_policy_code"] == "incident_priority_policy"
+    assert form["routing_policy_code"] == "website_routing"
+    assert form["sla_policy_code"] == "incident_sla"
+    assert form["ola_policy_code"] == "default_queue_ola"
+    assert form["approval_policy_code"] == "service_owner_approval"
+    assert form["diagnostic_policy_code"] == "website_diagnostics"
+    assert form["closure_policy_code"] == "diagnostic_incident_closure"
+    assert form["visibility_policy_code"] == "default_public_statuses"
+    assert form["notification_policy_code"] == "incident_notifications"
+    assert form["reporting_policy_code"] == "incident_passport"
+    assert form["policy_refs"]["routing"] == "website_routing"
+
+
+def test_ticket_form_pack_refresh_decision_detects_policy_ref_change_without_version_bump():
+    current = normalize_ticket_form_pack(
+        {
+            "pack_key": "request_forms",
+            "version": "2.1.0",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "title": "Не открывается сайт",
+                    "routing_policy_code": "website_routing_v1",
+                    "fields": [{"key": "url", "label": "Адрес сайта", "type": "url"}],
+                }
+            ],
+        }
+    )
+    result = {
+        "status": "ok",
+        "has_update": False,
+        "pack": {
+            "pack_key": "request_forms",
+            "version": "2.1.0",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "title": "Не открывается сайт",
+                    "routing_policy_code": "website_routing_v2",
+                    "fields": [{"key": "url", "label": "Адрес сайта", "type": "url"}],
+                }
+            ],
+        },
+    }
+
+    assert should_apply_ticket_form_pack_update(current, result) is True
 
 
 def test_ticket_form_priority_field_keys_use_policy_modifiers_and_roles():
