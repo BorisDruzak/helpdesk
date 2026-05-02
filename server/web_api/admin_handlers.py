@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from aiohttp import web
@@ -124,6 +126,7 @@ from web_api.dto.admin import (
     AdminHelpdeskPolicyDeactivateResult,
     AdminHelpdeskPolicyDiffRequest,
     AdminHelpdeskPolicyDiffResult,
+    AdminHelpdeskDataQualityItem,
     AdminHelpdeskPolicyItem,
     AdminHelpdeskFormSchemaItem,
     AdminHelpdeskPublishFormSchemaRequest,
@@ -138,6 +141,10 @@ from web_api.dto.admin import (
     AdminHelpdeskPolicyRollbackResult,
     AdminHelpdeskPublishFromFormRequest,
     AdminHelpdeskPublishFromFormResult,
+    AdminHelpdeskRepublishLegacyFormsItem,
+    AdminHelpdeskRepublishLegacyFormsRequest,
+    AdminHelpdeskRepublishLegacyFormsResult,
+    AdminHelpdeskRepublishLegacyFormsSummary,
     AdminHelpdeskRequestTemplateItem,
     AdminHelpdeskSmartViewItem,
     AdminHelpdeskTicketTypeDeactivateRequest,
@@ -295,6 +302,7 @@ _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
 _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
 _HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
 _HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
+_HELPDESK_MODEL_REPUBLISH_LEGACY_FORMS_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms"
 _HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT = "/api/web/admin/helpdesk-model/policies/publish"
 _HELPDESK_MODEL_POLICY_DIFF_ENDPOINT = "/api/web/admin/helpdesk-model/policies/diff"
 _HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT = "/api/web/admin/helpdesk-model/policies/deactivate"
@@ -2008,6 +2016,60 @@ def _policy_title(form: dict[str, object], kind: str) -> str:
     return f"{title}: {labels.get(kind, kind)}".strip(": ")
 
 
+def _template_has_policy(template: AdminHelpdeskRequestTemplateItem, kind: str) -> bool:
+    config = template.config if isinstance(template.config, dict) else {}
+    if kind == "priority":
+        return bool(template.priority_policy_code or config.get("priority_policy"))
+    if kind == "routing":
+        return bool(template.routing_policy_code or config.get("routing_policy"))
+    if kind == "sla":
+        return bool(template.sla_policy_code or template.sla_policy_id or config.get("sla_policy"))
+    if kind == "closure":
+        return bool(template.closure_policy_code or config.get("closure_policy"))
+    return False
+
+
+def _build_helpdesk_model_data_quality(
+    request_templates: list[AdminHelpdeskRequestTemplateItem],
+) -> list[AdminHelpdeskDataQualityItem]:
+    issues: list[AdminHelpdeskDataQualityItem] = []
+    required_fields = [
+        ("workflow_profile_id", "workflow_profile_id", "Workflow profile is not linked"),
+        ("priority_policy", "priority_policy", "Priority policy is not linked"),
+        ("routing_policy", "routing_policy", "Routing policy is not linked"),
+        ("sla_policy", "sla_policy", "SLA policy is not linked"),
+        ("closure_policy", "closure_policy", "Closure policy is not linked"),
+    ]
+    for template in request_templates:
+        if not template.is_active:
+            continue
+        for field, issue_code, message in required_fields:
+            missing = False
+            if field == "workflow_profile_id":
+                missing = not bool(str(template.workflow_profile_id or "").strip())
+            elif field == "priority_policy":
+                missing = not _template_has_policy(template, "priority")
+            elif field == "routing_policy":
+                missing = not _template_has_policy(template, "routing")
+            elif field == "sla_policy":
+                missing = not _template_has_policy(template, "sla")
+            elif field == "closure_policy":
+                missing = not _template_has_policy(template, "closure")
+            if missing:
+                issues.append(
+                    AdminHelpdeskDataQualityItem(
+                        entity_type="request_template",
+                        entity_code=template.template_code,
+                        severity="warning",
+                        issue_code=f"missing_{issue_code}",
+                        field=field,
+                        message=message,
+                        remediation="Publish or link the policy before relying on this template in production.",
+                    )
+                )
+    return issues
+
+
 async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
     async with get_session() as session:
         repo = HelpdeskPolicyRepo(session)
@@ -2034,6 +2096,7 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
         ]
 
     all_policies = [item for items in policies.values() for item in items]
+    data_quality = _build_helpdesk_model_data_quality(request_templates)
     return AdminHelpdeskModelPayload(
         summary=AdminHelpdeskModelSummary(
             request_templates_count=len(request_templates),
@@ -2046,10 +2109,12 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
             active_policies_count=sum(1 for item in all_policies if item.is_active),
             smart_views_count=len(smart_views),
             active_smart_views_count=sum(1 for item in smart_views if item.is_active),
+            data_quality_issue_count=len(data_quality),
         ),
         capabilities=AdminHelpdeskModelCapabilities(
             registry_endpoint=_HELPDESK_MODEL_REGISTRY_ENDPOINT,
             publish_from_form_endpoint=_HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT,
+            republish_legacy_forms_endpoint=_HELPDESK_MODEL_REPUBLISH_LEGACY_FORMS_ENDPOINT,
             publish_policy_endpoint=_HELPDESK_MODEL_PUBLISH_POLICY_ENDPOINT,
             policy_diff_endpoint=_HELPDESK_MODEL_POLICY_DIFF_ENDPOINT,
             policy_deactivate_endpoint=_HELPDESK_MODEL_POLICY_DEACTIVATE_ENDPOINT,
@@ -2067,15 +2132,18 @@ async def _build_helpdesk_model_payload() -> AdminHelpdeskModelPayload:
         form_schemas=form_schemas,
         policies=policies,
         smart_views=smart_views,
+        data_quality=data_quality,
     )
 
 
-async def _publish_helpdesk_template_from_form(
+async def _publish_helpdesk_template_from_form_dict(
     *,
     auth_context: AuthContext,
-    payload: AdminHelpdeskPublishFromFormRequest,
+    form_payload: dict[str, object],
+    publish_policies: bool,
+    source: str = "forms_builder_visual_constructor",
+    registry_republish: dict[str, object] | None = None,
 ) -> AdminHelpdeskPublishFromFormResult:
-    form_payload = _serialize_admin_form_request(payload.form)
     preview_pack = validate_form_pack_schema(
         {
             "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
@@ -2118,13 +2186,14 @@ async def _publish_helpdesk_template_from_form(
             fields=form.get("fields") if isinstance(form.get("fields"), list) else [],
             field_roles=form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
             config={
-                "source": "forms_builder_visual_constructor",
+                "source": source,
                 "request_kind": form.get("request_kind") or template_code,
+                **({"registry_republish": registry_republish} if registry_republish else {}),
             },
             actor_id=actor_id,
             actor_role=actor_role,
         )
-        if payload.publish_policies:
+        if publish_policies:
             for kind, field_name in policy_fields.items():
                 config = form.get(field_name) if isinstance(form.get(field_name), dict) else {}
                 if not config:
@@ -2174,12 +2243,13 @@ async def _publish_helpdesk_template_from_form(
                     "version": form_schema["version"],
                     "field_count": len(form_schema.get("fields") or []),
                 },
+                **({"registry_republish": registry_republish} if registry_republish else {}),
                 "field_roles": form.get("field_roles") if isinstance(form.get("field_roles"), dict) else {},
                 "suggested_playbook_id": form.get("suggested_playbook_id"),
             },
             overrides={
-                "source": "forms_builder_visual_constructor",
-                "publish_policies": bool(payload.publish_policies),
+                "source": source,
+                "publish_policies": bool(publish_policies),
             },
             actor_id=actor_id,
             actor_role=actor_role,
@@ -2195,6 +2265,150 @@ async def _publish_helpdesk_template_from_form(
         message=(
             f"Шаблон обращения {typed_template.template_code} опубликован в реестр как версия "
             f"{typed_template.version}. Политик опубликовано: {len(policies)}."
+        ),
+    )
+
+
+async def _publish_helpdesk_template_from_form(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskPublishFromFormRequest,
+) -> AdminHelpdeskPublishFromFormResult:
+    return await _publish_helpdesk_template_from_form_dict(
+        auth_context=auth_context,
+        form_payload=_serialize_admin_form_request(payload.form),
+        publish_policies=payload.publish_policies,
+    )
+
+
+def _legacy_form_registry_fingerprint(
+    *,
+    form: dict[str, object],
+    pack_key: str,
+    pack_version: str | None,
+    publish_policies: bool,
+) -> str:
+    payload = {
+        "pack_key": pack_key,
+        "pack_version": pack_version,
+        "publish_policies": bool(publish_policies),
+        "form": form,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def _republish_legacy_request_forms(
+    *,
+    auth_context: AuthContext,
+    payload: AdminHelpdeskRepublishLegacyFormsRequest,
+) -> AdminHelpdeskRepublishLegacyFormsResult:
+    pack_key = str(payload.pack_key or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
+    if pack_key != DEFAULT_TICKET_FORM_PACK_KEY:
+        raise ValueError("only request_forms pack is supported for legacy republish")
+    actor_id = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+
+    async with get_session() as session:
+        form_repo = TicketFormPacksRepo(session)
+        pack = await resolve_ticket_form_pack(form_repo, pack_key=pack_key)
+        policy_repo = HelpdeskPolicyRepo(session)
+        active_templates = {
+            item["template_code"]: item
+            for item in await policy_repo.list_request_templates(include_inactive=False)
+        }
+
+    forms = [item for item in pack.get("forms") or [] if isinstance(item, dict)]
+    pack_version = str(pack.get("version") or "").strip() or None
+    items: list[AdminHelpdeskRepublishLegacyFormsItem] = []
+    published_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for form in forms:
+        template_code = normalize_template_code(form.get("key"))
+        if not template_code:
+            failed_count += 1
+            items.append(
+                AdminHelpdeskRepublishLegacyFormsItem(
+                    template_code="",
+                    status="failed",
+                    message="form key is required",
+                )
+            )
+            continue
+        fingerprint = _legacy_form_registry_fingerprint(
+            form=form,
+            pack_key=pack_key,
+            pack_version=pack_version,
+            publish_policies=payload.publish_policies,
+        )
+        active_template = active_templates.get(template_code) or {}
+        active_config = active_template.get("config") if isinstance(active_template.get("config"), dict) else {}
+        active_republish = (
+            active_config.get("registry_republish")
+            if isinstance(active_config.get("registry_republish"), dict)
+            else {}
+        )
+        if not payload.force and active_republish.get("fingerprint") == fingerprint:
+            skipped_count += 1
+            items.append(
+                AdminHelpdeskRepublishLegacyFormsItem(
+                    template_code=template_code,
+                    status="skipped_unchanged",
+                    form_schema_id=active_template.get("form_schema_id"),
+                    request_template_version=active_template.get("version"),
+                    message="active registry version already matches legacy form",
+                )
+            )
+            continue
+        try:
+            result = await _publish_helpdesk_template_from_form_dict(
+                auth_context=auth_context,
+                form_payload=form,
+                publish_policies=payload.publish_policies,
+                source="legacy_request_forms_republish",
+                registry_republish={
+                    "pack_key": pack_key,
+                    "pack_version": pack_version,
+                    "fingerprint": fingerprint,
+                    "republished_by": actor_id,
+                },
+            )
+        except Exception as exc:
+            failed_count += 1
+            items.append(
+                AdminHelpdeskRepublishLegacyFormsItem(
+                    template_code=template_code,
+                    status="failed",
+                    message=str(exc) or "failed to republish legacy form",
+                )
+            )
+            continue
+        published_count += 1
+        items.append(
+            AdminHelpdeskRepublishLegacyFormsItem(
+                template_code=result.request_template.template_code,
+                status="published",
+                form_schema_id=result.form_schema.schema_id,
+                request_template_version=result.request_template.version,
+                published_policy_count=len(result.policies),
+                message=result.message,
+            )
+        )
+
+    return AdminHelpdeskRepublishLegacyFormsResult(
+        summary=AdminHelpdeskRepublishLegacyFormsSummary(
+            pack_key=pack_key,
+            pack_version=pack_version,
+            forms_seen_count=len(forms),
+            published_templates_count=published_count,
+            skipped_unchanged_count=skipped_count,
+            failed_count=failed_count,
+        ),
+        items=items,
+        message=(
+            f"Legacy request forms republish complete: published={published_count}, "
+            f"skipped={skipped_count}, failed={failed_count}."
         ),
     )
 
@@ -3181,6 +3395,48 @@ async def handle_web_admin_helpdesk_model_publish_from_form(request: web.Request
         )
 
     return json_model_response(SuccessResponse[AdminHelpdeskPublishFromFormResult](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_helpdesk_model_republish_legacy_forms(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+    try:
+        raw_payload = await request.json()
+        payload = AdminHelpdeskRepublishLegacyFormsRequest.model_validate(raw_payload or {})
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Check legacy forms republish payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _republish_legacy_request_forms(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Check legacy forms republish payload",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_helpdesk_model_republish_legacy_forms] Failed to republish legacy forms: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Failed to republish legacy request forms into helpdesk registry",
+                "error_code": "HELPDESK_LEGACY_FORMS_REPUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    return json_model_response(SuccessResponse[AdminHelpdeskRepublishLegacyFormsResult](data=result))
 
 
 @require_auth("admin")

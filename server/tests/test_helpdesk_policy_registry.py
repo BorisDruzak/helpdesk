@@ -366,6 +366,124 @@ async def test_web_admin_publish_from_form_creates_form_schema_reference(test_cl
 
 
 @pytest.mark.asyncio
+async def test_web_admin_republish_legacy_forms_is_idempotent(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _clear_policy_registry(test_engine)
+    first_form_key = f"legacy_{uuid.uuid4().hex[:8]}"
+    second_form_key = f"legacy_{uuid.uuid4().hex[:8]}"
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Legacy request forms",
+                "forms": [
+                    {
+                        "key": first_form_key,
+                        "request_kind": first_form_key,
+                        "ticket_type": "incident",
+                        "title": "Legacy incident",
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    },
+                    {
+                        "key": second_form_key,
+                        "request_kind": second_form_key,
+                        "ticket_type": "service_request",
+                        "title": "Legacy service request",
+                        "priority_policy": {"matrix": {"low_impact": {"low_urgency": "P3"}}},
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    },
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    first_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms",
+        json={"publish_policies": True},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert first_response.status == 200, await first_response.text()
+    first_result = (await first_response.json())["data"]
+    assert first_result["summary"]["forms_seen_count"] == 2
+    assert first_result["summary"]["published_templates_count"] == 2
+    assert first_result["summary"]["skipped_unchanged_count"] == 0
+    assert {item["template_code"] for item in first_result["items"]} == {first_form_key, second_form_key}
+
+    second_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms",
+        json={"publish_policies": True},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert second_response.status == 200, await second_response.text()
+    second_result = (await second_response.json())["data"]
+    assert second_result["summary"]["published_templates_count"] == 0
+    assert second_result["summary"]["skipped_unchanged_count"] == 2
+    assert {item["status"] for item in second_result["items"]} == {"skipped_unchanged"}
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        templates = list(
+            (
+                await session.execute(
+                    select(RequestTemplate).where(RequestTemplate.template_code.in_([first_form_key, second_form_key]))
+                )
+            ).scalars().all()
+        )
+        schemas = list(
+            (
+                await session.execute(
+                    select(FormSchema).where(FormSchema.request_template_code.in_([first_form_key, second_form_key]))
+                )
+            ).scalars().all()
+        )
+
+    assert len(templates) == 2
+    assert len(schemas) == 2
+    assert sum(1 for item in templates if item.is_active) == 2
+    assert sum(1 for item in schemas if item.is_active) == 2
+
+
+@pytest.mark.asyncio
+async def test_web_admin_registry_reports_template_policy_quality_gaps(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    template_code = f"quality_{uuid.uuid4().hex[:8]}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_request_template(
+            template_code=template_code,
+            public_title="Incomplete template",
+            ticket_type="incident",
+            form_schema_id=f"{template_code}_form",
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/admin/helpdesk-model/policies",
+        headers=_admin_headers(),
+    )
+    assert response.status == 200, await response.text()
+    registry = (await response.json())["data"]
+    assert registry["summary"]["data_quality_issue_count"] >= 5
+    template_issues = [
+        item
+        for item in registry["data_quality"]
+        if item["entity_type"] == "request_template" and item["entity_code"] == template_code
+    ]
+    missing_fields = {item["field"] for item in template_issues}
+    assert {"workflow_profile_id", "priority_policy", "routing_policy", "sla_policy", "closure_policy"} <= missing_fields
+
+
+@pytest.mark.asyncio
 async def test_helpdesk_policy_repo_publishes_versions_and_resolves_inheritance(test_engine):
     await _clear_policy_registry(test_engine)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

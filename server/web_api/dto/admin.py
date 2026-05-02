@@ -637,6 +637,7 @@ class AdminHelpdeskModelCapabilities(BaseModel):
 
     registry_endpoint: str
     publish_from_form_endpoint: str
+    republish_legacy_forms_endpoint: str | None = None
     publish_policy_endpoint: str
     policy_diff_endpoint: str | None = None
     policy_deactivate_endpoint: str | None = None
@@ -663,6 +664,19 @@ class AdminHelpdeskModelSummary(BaseModel):
     active_policies_count: int
     smart_views_count: int
     active_smart_views_count: int
+    data_quality_issue_count: int = 0
+
+
+class AdminHelpdeskDataQualityItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: str
+    entity_code: str
+    severity: str
+    issue_code: str
+    field: str
+    message: str
+    remediation: str | None = None
 
 
 class AdminHelpdeskModelPayload(BaseModel):
@@ -675,6 +689,7 @@ class AdminHelpdeskModelPayload(BaseModel):
     form_schemas: list[AdminHelpdeskFormSchemaItem] = Field(default_factory=list)
     policies: dict[str, list[AdminHelpdeskPolicyItem]] = Field(default_factory=dict)
     smart_views: list[AdminHelpdeskSmartViewItem] = Field(default_factory=list)
+    data_quality: list[AdminHelpdeskDataQualityItem] = Field(default_factory=list)
 
 
 class AdminHelpdeskPublishFromFormRequest(BaseModel):
@@ -690,6 +705,44 @@ class AdminHelpdeskPublishFromFormResult(BaseModel):
     request_template: AdminHelpdeskRequestTemplateItem
     form_schema: AdminHelpdeskFormSchemaItem
     policies: dict[str, AdminHelpdeskPolicyItem] = Field(default_factory=dict)
+    message: str
+
+
+class AdminHelpdeskRepublishLegacyFormsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pack_key: str = "request_forms"
+    publish_policies: bool = True
+    force: bool = False
+
+
+class AdminHelpdeskRepublishLegacyFormsSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pack_key: str
+    pack_version: str | None = None
+    forms_seen_count: int
+    published_templates_count: int
+    skipped_unchanged_count: int
+    failed_count: int
+
+
+class AdminHelpdeskRepublishLegacyFormsItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_code: str
+    status: str
+    form_schema_id: str | None = None
+    request_template_version: str | None = None
+    published_policy_count: int = 0
+    message: str | None = None
+
+
+class AdminHelpdeskRepublishLegacyFormsResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminHelpdeskRepublishLegacyFormsSummary
+    items: list[AdminHelpdeskRepublishLegacyFormsItem] = Field(default_factory=list)
     message: str
 
 

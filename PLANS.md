@@ -523,11 +523,20 @@ Slice 15c local verification:
 
 ### Slice 16: Migration, Backfill And Compatibility
 
-- [ ] Add migration/backfill from current default `request_forms` pack into `request_templates`, `form_schemas` and initial policy rows.
-- [ ] Add idempotent admin command/API to republish legacy forms into registry.
+- [x] Add migration/backfill from current default `request_forms` pack into `request_templates`, `form_schemas` and initial policy rows.
+- [x] Add idempotent admin command/API to republish legacy forms into registry.
 - [ ] Add compatibility tests for old clients sending only `form_key`, old packs without priority fields, and tickets created before registry.
-- [ ] Add data-quality report: templates missing workflow/priority/routing/SLA/closure policies.
-- [ ] Docs: operator migration steps and rollback path.
+- [x] Add data-quality report: templates missing workflow/priority/routing/SLA/closure policies.
+- [x] Docs: operator migration steps and rollback path.
+
+Slice 16a local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_helpdesk_policy_registry.py::test_web_admin_republish_legacy_forms_is_idempotent server\tests\test_helpdesk_policy_registry.py::test_web_admin_registry_reports_template_policy_quality_gaps -q --tb=short` failed with `404` for `/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms` and missing `summary.data_quality_issue_count`.
+- GREEN focused: same command -> 2 passed.
+- Registry regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 18 passed.
+- Implemented typed admin backfill route `POST /api/web/admin/helpdesk-model/request-templates/republish-legacy-forms`: it reads active `request_forms`, publishes first-class form schemas/templates/policies, records a source fingerprint and skips unchanged forms unless `force=true`.
+- Registry payload now exposes `summary.data_quality_issue_count` and `data_quality` rows for active request templates missing workflow/profile, priority, routing, SLA or closure policy links.
+- Rollback path: keep legacy clients on `request_forms` because `/api/tickets/create` and public/agent create still accept `form_key` without requiring a registry template; if registry backfill must be reverted, make the previous form pack preferred and rerun the republish endpoint with `force=true`, while policy/ticket-type rows can also use the existing deactivate/rollback endpoints.
 
 ### Slice 17: Verification And Release Gates
 
