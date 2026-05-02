@@ -509,7 +509,7 @@ Slice 15c target:
 - [x] Make post-create summary consume requester-safe `requester_view` / `public_view` blocks when the server returns them.
 - [x] Show public/requester status, expected due dates, next action and passport/result summary from nested server response shapes without exposing internal fields.
 - [x] Keep old flat ticket payload compatibility.
-- [ ] Add focused tests and release/live signoff.
+- [x] Add focused tests and release/live signoff.
 
 Slice 15c local verification:
 
@@ -517,6 +517,9 @@ Slice 15c local verification:
 - RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_build_post_create_result_labels_use_requester_view -q --tb=short` failed because `build_post_create_result_labels` did not exist.
 - GREEN focused: both tests -> 2 passed.
 - Agent helper regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q --tb=short` -> 55 passed.
+- Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 66 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Release/live: committed as `99272d4 pc_agent: render requester-safe create result`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK on attempt 2; browser observer signoff on `http://192.168.100.17:8666/app/admin/observer` confirmed `Runtime: ok` and fresh console errors -> 0; server status/log tail showed authenticated observer/agent requests and no post-create rendering errors, with unrelated existing SLA reminder/agent offline warnings; `python scripts\manage_remote_stack.py stop server` -> stopped, follow-up status confirmed stopped.
 
 ### Slice 16: Migration, Backfill And Compatibility
 
