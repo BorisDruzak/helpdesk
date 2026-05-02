@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14e is locally implemented: `/app/admin/forms` now has structured diagnostic controls in the request-template step, so suggested playbooks, auto-run priorities, requester/high-risk consent, evidence attachment and reroute-by-result can be edited without hand-writing diagnostic JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14e local verification the working estimate is backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14e is released: `/app/admin/forms` now has structured diagnostic controls in the request-template step, so suggested playbooks, auto-run priorities, requester/high-risk consent, evidence attachment and reroute-by-result can be edited without hand-writing diagnostic JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14e release/browser signoff the working estimate is backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -218,11 +218,12 @@ Slice 9b local verification so far:
 
 - [x] Slice 10a: classify terminal diagnostic/tool results into `diagnostic_result` facts and execute `diagnostic_policy.reroute_by_result` without changing `ticket.status`.
 - [x] Slice 10b: execute `diagnostic_policy.auto_run` for suggested playbooks on ticket creation with safety gates for priority, online agent and requester-device consent.
-- [ ] Add remaining `diagnostic_policy` runtime for high-risk-tool consent gates and richer support/admin policy surfacing.
+- [x] Add remaining `diagnostic_policy` runtime for high-risk-tool consent gates and richer support/admin policy surfacing.
 - [x] Keep invariant: `ticket.status` remains workflow status; operation status carries diagnostic running/succeeded/failed.
 - [x] Add result classification contract (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.) from terminal operation/result payloads to routing facts.
-- [ ] Tests: consent required/denied/granted, auto-run only for allowed priority/online agent, evidence attachment, reroute by diagnostic result, no ticket status misuse.
-- [ ] UI: admin diagnostic editor and support ticket automation panel show suggested playbooks and consent/evidence behavior.
+- [x] Tests: consent required/denied/granted, auto-run only for allowed priority/online agent, evidence attachment, reroute by diagnostic result, no ticket status misuse.
+- [x] UI: admin diagnostic editor shows suggested playbooks and consent/evidence behavior.
+- [ ] UI follow-up: support ticket automation panel shows suggested playbooks and consent/evidence behavior outside the admin template editor.
 
 Slice 10a verification:
 
@@ -316,6 +317,7 @@ Slice 14e local verification:
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 19 passed.
 - Web build: `pnpm --dir webapp run build` -> passed after widening `DiagnosticPolicyControls.form` to accept the existing `DraftForm | null` policy-editor contract.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `b8ad3c6 webapp: add structured diagnostic controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/forms` confirmed structured diagnostic fields in the template `Диагностика` step; fresh browser console errors -> 0; server status/log tail showed the released server running with authenticated requests and no forms-builder errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
