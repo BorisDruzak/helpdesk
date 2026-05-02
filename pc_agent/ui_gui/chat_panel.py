@@ -120,6 +120,45 @@ REQUEST_TEMPLATE_INT_METADATA_KEYS = (
     "sla_policy_id",
 )
 REQUEST_TEMPLATE_DICT_METADATA_KEYS = ("policy_refs",)
+REQUESTER_VISIBLE_AUDIENCES = {"requester", "user", "portal", "public", "customer", "employee"}
+INTERNAL_PROCESS_FIELD_KEYS = {
+    "ticket_type",
+    "ticket_type_code",
+    "priority",
+    "priority_class",
+    "priority_policy",
+    "priority_policy_id",
+    "priority_policy_code",
+    "sla_policy",
+    "sla_policy_id",
+    "sla_policy_code",
+    "ola_policy",
+    "ola_policy_id",
+    "ola_policy_code",
+    "routing_policy",
+    "routing_policy_id",
+    "routing_policy_code",
+    "workflow_profile",
+    "workflow_profile_id",
+    "approval_policy",
+    "approval_policy_id",
+    "approval_policy_code",
+    "closure_policy",
+    "closure_policy_id",
+    "closure_policy_code",
+    "diagnostic_policy",
+    "diagnostic_policy_id",
+    "diagnostic_policy_code",
+    "visibility_policy",
+    "visibility_policy_id",
+    "visibility_policy_code",
+    "notification_policy",
+    "notification_policy_id",
+    "notification_policy_code",
+    "reporting_policy",
+    "reporting_policy_id",
+    "reporting_policy_code",
+}
 HIGH_URGENCY_FACTS = {"work_stopped_no_workaround", "work_stopped", "no_workaround"}
 HIGH_IMPORTANCE_FACTS = {"deadline_today", "deadline_tomorrow", "critical", "security", "public_service"}
 AGENT_CREATE_ATTACHMENT_MAX_BYTES = 200 * 1024 * 1024
@@ -369,6 +408,50 @@ def _target_for_priority(policy: dict[str, Any], target_key: str, priority_class
     return str(target_block.get(priority_class) or target_block.get("P3") or "").strip()
 
 
+def _field_audience_values(raw_value: Any) -> set[str]:
+    if isinstance(raw_value, str):
+        values = [raw_value]
+    elif isinstance(raw_value, list):
+        values = raw_value
+    elif isinstance(raw_value, tuple):
+        values = list(raw_value)
+    else:
+        values = []
+    return {str(item or "").strip().lower() for item in values if str(item or "").strip()}
+
+
+def ticket_form_field_requester_visible(field_def: dict[str, Any]) -> bool:
+    """Return whether a server-driven field is safe to render in requester GUI."""
+    if not isinstance(field_def, dict):
+        return False
+    field_key = str(field_def.get("key") or "").strip().lower()
+    visibility = field_def.get("visibility") if isinstance(field_def.get("visibility"), dict) else {}
+    if field_def.get("internal") is True or visibility.get("internal") is True:
+        return False
+    requester_visible = field_def.get("requester_visible", visibility.get("requester_visible"))
+    if requester_visible is False:
+        return False
+    if requester_visible is True:
+        return True
+
+    hidden_from = set()
+    hidden_from.update(_field_audience_values(field_def.get("hidden_from")))
+    hidden_from.update(_field_audience_values(visibility.get("hidden_from")))
+    if hidden_from & REQUESTER_VISIBLE_AUDIENCES:
+        return False
+
+    visible_to = set()
+    for key in ("visible_to", "visible_for", "audience", "audiences"):
+        visible_to.update(_field_audience_values(field_def.get(key)))
+        visible_to.update(_field_audience_values(visibility.get(key)))
+    if visible_to:
+        return bool(visible_to & REQUESTER_VISIBLE_AUDIENCES)
+
+    if field_key in INTERNAL_PROCESS_FIELD_KEYS:
+        return False
+    return True
+
+
 def build_request_creation_preview(
     form_def: Optional[dict[str, Any]],
     *,
@@ -397,12 +480,29 @@ def build_request_creation_preview(
             lines.append("Потребуется согласование.")
         if preview.get("diagnostic_consent_required"):
             lines.append("Перед диагностикой потребуется ваше согласие.")
+        diagnostics = preview.get("diagnostics") if isinstance(preview.get("diagnostics"), dict) else {}
+        diagnostic_title = str(
+            diagnostics.get("suggested_playbook_title")
+            or diagnostics.get("suggested_playbook")
+            or diagnostics.get("suggested_playbook_id")
+            or preview.get("suggested_playbook_title")
+            or preview.get("suggested_playbook")
+            or ""
+        ).strip()
+        if diagnostic_title:
+            lines.append(f"Диагностика: {diagnostic_title}.")
         sla = preview.get("sla") if isinstance(preview.get("sla"), dict) else {}
+        first_response_due = _format_user_deadline(preview.get("first_response_due_at") or preview.get("first_response_due"))
+        resolution_due = _format_user_deadline(preview.get("resolution_due_at") or preview.get("resolution_due"))
         first_response = _duration_to_user_text(sla.get("first_response_minutes"))
         resolution = _duration_to_user_text(sla.get("resolution_minutes"))
-        if first_response:
+        if first_response_due:
+            lines.append(f"Вам должны ответить до {first_response_due}.")
+        elif first_response:
             lines.append(f"Вам должны ответить примерно за {first_response}.")
-        if resolution:
+        if resolution_due:
+            lines.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
+        elif resolution:
             lines.append(f"Решение или обходной вариант ожидается примерно за {resolution}.")
         if lines:
             return "\n".join(lines)
@@ -771,25 +871,42 @@ def normalize_ticket_form_pack(raw_pack: Any) -> dict[str, Any]:
             if not field_key:
                 continue
             field_type = str(field.get("type") or "text").strip().lower() or "text"
-            normalized_form["fields"].append(
-                {
-                    "key": field_key,
-                    "label": str(field.get("label") or field_key).strip() or field_key,
-                    "type": field_type,
-                    "required": bool(field.get("required")),
-                    "placeholder": str(field.get("placeholder") or "").strip(),
-                    "help_text": str(field.get("help_text") or "").strip(),
-                    "options": [
-                        {
-                            "value": str(option.get("value") or "").strip(),
-                            "label": str(option.get("label") or option.get("value") or "").strip(),
-                        }
-                        for option in (field.get("options") if isinstance(field.get("options"), list) else [])
-                        if isinstance(option, dict) and str(option.get("value") or "").strip()
-                    ],
-                    "visible_when": field.get("visible_when") if isinstance(field.get("visible_when"), dict) else None,
-                }
-            )
+            normalized_field = {
+                "key": field_key,
+                "label": str(field.get("label") or field_key).strip() or field_key,
+                "type": field_type,
+                "required": bool(field.get("required")),
+                "placeholder": str(field.get("placeholder") or "").strip(),
+                "help_text": str(field.get("help_text") or "").strip(),
+                "options": [
+                    {
+                        "value": str(option.get("value") or "").strip(),
+                        "label": str(option.get("label") or option.get("value") or "").strip(),
+                    }
+                    for option in (field.get("options") if isinstance(field.get("options"), list) else [])
+                    if isinstance(option, dict) and str(option.get("value") or "").strip()
+                ],
+                "visible_when": field.get("visible_when") if isinstance(field.get("visible_when"), dict) else None,
+            }
+            for key in ("required_message", "validation_message"):
+                value = str(field.get(key) or "").strip()
+                if value:
+                    normalized_field[key] = value
+            for key in ("visibility", "process_mapping", "validation"):
+                value = field.get(key)
+                if isinstance(value, dict):
+                    normalized_field[key] = dict(value)
+            for key in ("visible_to", "visible_for", "hidden_from", "audience", "audiences"):
+                value = field.get(key)
+                if isinstance(value, (list, tuple)):
+                    normalized_field[key] = [str(item).strip() for item in value if str(item).strip()]
+                elif isinstance(value, str) and value.strip():
+                    normalized_field[key] = value.strip()
+            if field.get("internal") is True:
+                normalized_field["internal"] = True
+            if "requester_visible" in field:
+                normalized_field["requester_visible"] = bool(field.get("requester_visible"))
+            normalized_form["fields"].append(normalized_field)
         normalized["forms"].append(normalized_form)
     if not normalized["forms"]:
         return build_default_ticket_form_pack()
@@ -1311,6 +1428,7 @@ class TicketDynamicFieldsWidget(QWidget):
             field
             for field in list(form_def.get("fields") or [])
             if isinstance(field, dict)
+            and ticket_form_field_requester_visible(field)
             and (not include_keys or str(field.get("key") or "").strip() in include_keys)
             and str(field.get("key") or "").strip() not in exclude_keys
         ]

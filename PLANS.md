@@ -465,11 +465,11 @@ Slice 14l local verification:
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
-- [ ] Ensure agent never exposes internal process choices to requester: no direct ticket_type/priority/SLA policy selection unless template says fields are visible.
-- [ ] Agent create preview must always call server preview when available and show effective queue/approval/diagnostics/deadlines.
+- [x] Ensure agent never exposes internal process choices to requester: no direct ticket_type/priority/SLA policy selection unless template says fields are visible.
+- [x] Agent create preview must always call server preview when available and show effective queue/approval/diagnostics/deadlines.
 - [x] Agent must handle schema/policy versions in cached form pack and refresh when server version changes.
 - [ ] Add requester-safe rendering of public status, expected due dates and passport/result summary after create.
-- [ ] Tests: cached pack refresh covered in Slice 15a; remaining coverage focus is hidden internal fields plus any missing server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases.
+- [ ] Tests: cached pack refresh and hidden internal fields covered in Slices 15a/15b; remaining coverage focus is post-create public rendering, server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases.
 - [ ] Live GUI smoke with remote server and current published templates.
 
 Slice 15a target:
@@ -486,6 +486,19 @@ Slice 15a local verification:
 - Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 62 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
 - Release/live: committed as `d570d0c pc_agent: refresh cached request form policy metadata`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated observer requests and no errors related to agent cached form-pack metadata, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 15b target:
+
+- [x] Preserve field-level `visibility`, `process_mapping`, validation and audience metadata in normalized agent form packs.
+- [x] Hide requester-invisible/internal process fields in `TicketDynamicFieldsWidget`, including `ticket_type`, priority/SLA/OLA/routing/workflow/approval/closure/diagnostic/visibility/notification/reporting policy selectors unless explicitly visible to requester.
+- [x] Extend server-backed creation preview rendering with exact first-response/resolution due dates and suggested diagnostic playbook, without raw SLA wording.
+- [ ] Commit/release after focused checks finish.
+
+Slice 15b local verification:
+
+- RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_dynamic_fields_widget_hides_internal_process_fields_from_requester pc_agent\tests\test_chat_panel_helpers.py::test_build_request_creation_preview_shows_server_deadlines_and_diagnostics -q --tb=short` failed because internal process fields were rendered and server due dates/diagnostics were ignored.
+- GREEN focused: same command -> 2 passed.
+- Agent helper regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q --tb=short` -> 53 passed.
 
 ### Slice 16: Migration, Backfill And Compatibility
 

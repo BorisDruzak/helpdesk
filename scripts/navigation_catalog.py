@@ -551,7 +551,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields and clearable file metadata, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
         aliases=(
             "registry",
             "registries",
@@ -1150,7 +1150,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with preview-unavailable warning and post-create result panel, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",

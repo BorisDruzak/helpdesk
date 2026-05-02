@@ -444,6 +444,58 @@ def test_dynamic_fields_widget_supports_extended_field_types():
     assert widget.missing_required_labels() == []
 
 
+def test_dynamic_fields_widget_hides_internal_process_fields_from_requester():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    normalized = normalize_ticket_form_pack(
+        {
+            "pack_key": "request_forms",
+            "version": "15b",
+            "forms": [
+                {
+                    "key": "website",
+                    "title": "Не открывается сайт",
+                    "fields": [
+                        {
+                            "key": "url",
+                            "label": "Адрес сайта",
+                            "type": "url",
+                            "required": True,
+                            "visibility": {"visible_to": ["requester", "support"]},
+                            "process_mapping": {"roles": ["diagnostic_input"], "diagnostic_param": "target_url"},
+                        },
+                        {
+                            "key": "sla_policy_id",
+                            "label": "SLA policy",
+                            "type": "select",
+                            "required": True,
+                            "options": [{"value": "incident_sla", "label": "Incident SLA"}],
+                            "visibility": {"visible_to": ["support", "admin"]},
+                            "process_mapping": {"roles": ["sla_field"]},
+                        },
+                        {
+                            "key": "ticket_type",
+                            "label": "Ticket type",
+                            "type": "select",
+                            "options": [{"value": "incident", "label": "Incident"}],
+                            "visible_to": ["internal"],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    form = normalized["forms"][0]
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(form, values={"url": "https://example.test", "sla_policy_id": "incident_sla", "ticket_type": "incident"})
+
+    assert set(widget._widgets) == {"url"}
+    assert form["fields"][0]["process_mapping"]["diagnostic_param"] == "target_url"
+    assert widget.values() == {"url": "https://example.test"}
+    assert widget.missing_required_labels() == []
+
+
 def test_dynamic_fields_widget_uses_registry_options_for_picker_fields():
     app = QApplication.instance() or QApplication([])
     assert app is not None
@@ -667,6 +719,26 @@ def test_build_request_creation_preview_prefers_server_effective_preview():
     assert "Перед диагностикой потребуется ваше согласие." in preview
     assert "Вам должны ответить примерно за 1 ч." in preview
     assert "Решение или обходной вариант ожидается примерно за 1 дн." in preview
+    assert "SLA" not in preview
+
+
+def test_build_request_creation_preview_shows_server_deadlines_and_diagnostics():
+    preview = build_request_creation_preview(
+        {"request_template_title": "Не открывается сайт"},
+        server_preview={
+            "request_template_title": "Не открывается сайт",
+            "routing": {"target_queue_name": "Сеть"},
+            "first_response_due_at": "2026-05-02T13:15:00+05:00",
+            "resolution_due_at": "2026-05-03T18:30:00+05:00",
+            "diagnostics": {"suggested_playbook_title": "Проверка сайта"},
+        },
+    )
+
+    assert "Предварительно попадёт в очередь: Сеть" in preview
+    assert "Вам должны ответить до" in preview
+    assert "2026-05-02" in preview
+    assert "Решение или обходной вариант ожидается до" in preview
+    assert "Диагностика: Проверка сайта." in preview
     assert "SLA" not in preview
 
 
