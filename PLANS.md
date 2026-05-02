@@ -6,6 +6,8 @@
 
 Created: 2026-05-02.
 
+Last updated: 2026-05-02, after Slice 1.
+
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
 - Backend/runtime: about 99.6%.
@@ -14,6 +16,8 @@ The previous service desk model plan is complete. Final signoff covered server/a
 - Overall configurable service desk maturity: about 99.0% for the documented model, with remaining work treated as hardening/UX backlog.
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
+
+Current plan completion: 12.5% (1 of 8 slices complete).
 
 ## Goal
 
@@ -114,16 +118,16 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 1: Workflow Actions, Typed API And Visual Editor
 
-- [ ] Add tests for transition actions in `server/tests/test_ticket_workflow_profiles.py`: notify action metadata, SLA action marker, approval creation marker, required public/internal comment, evidence gate and audit payload.
-- [ ] Extend workflow profile schema normalization in `server/tickets/workflow_profiles.py` for `actions.notify`, `actions.sla`, `actions.approval`, `require_evidence`, `required_comment_type`, and `log_fields`.
-- [ ] Update `TicketWorkflowService` to execute safe configured gates/actions and record skipped high-risk actions in audit payload instead of silently ignoring them.
-- [ ] Add typed workflow profile publish/diff validation in `server/web_api/settings_handlers.py` without removing raw JSON compatibility.
-- [ ] Add visual workflow editor controls in `webapp/src/pages/settings/index.tsx` for statuses, transitions, gates and action markers.
-- [ ] Verification: `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_web_settings_api.py -q --tb=short`.
-- [ ] Verification: `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx`.
-- [ ] Verification: browser `/app/settings`, workflow editor visible and console errors 0.
-- [ ] Update `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
-- [ ] Commit and release if server/runtime behavior changes.
+- [x] Add tests for transition actions in `server/tests/test_ticket_workflow_profiles.py`: notify action metadata, SLA action marker, approval creation marker, required public/internal comment, evidence gate and audit payload.
+- [x] Extend workflow profile schema normalization in `server/tickets/workflow_profiles.py` for `actions.notify`, `actions.sla`, `actions.approval`, `require_evidence`, `required_comment_type`, and `log_fields`.
+- [x] Update `TicketWorkflowService` to execute safe configured gates/actions and record skipped high-risk actions in audit payload instead of silently ignoring them.
+- [x] Add typed workflow profile publish/diff validation in `server/web_api/settings_handlers.py` without removing raw JSON compatibility.
+- [x] Add visual workflow editor controls in `webapp/src/pages/settings/index.tsx` for statuses, transitions, gates and action markers.
+- [x] Verification: `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_web_settings_api.py -q --tb=short` -> 25 passed.
+- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed.
+- [x] Verification: browser `/app/settings`, workflow editor visible and console errors 0.
+- [x] Update `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
+- [x] Commit and release if server/runtime behavior changes.
 
 ## Slice 2: Approvals UI And Action Surface
 

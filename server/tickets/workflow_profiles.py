@@ -86,8 +86,10 @@ class WorkflowTransitionGate:
     required_comment: str | None = None
     require_approval: bool = False
     require_evidence: bool = False
+    log_fields: tuple[str, ...] = ()
     notify: tuple[str, ...] = ()
     sla_action: str | None = None
+    approval_action: str | None = None
     trigger: str | None = None
     auto: bool = False
 
@@ -107,11 +109,15 @@ class WorkflowTransitionGate:
             payload["require_approval"] = True
         if self.require_evidence:
             payload["require_evidence"] = True
+        if self.log_fields:
+            payload["log_fields"] = list(self.log_fields)
         actions: dict[str, Any] = {}
         if self.notify:
             actions["notify"] = list(self.notify)
         if self.sla_action:
             actions["sla"] = self.sla_action
+        if self.approval_action:
+            actions["approval"] = self.approval_action
         if actions:
             payload["actions"] = actions
         return payload
@@ -301,6 +307,24 @@ def _normalize_sla_action(value: Any, *, field_name: str) -> str | None:
     return normalized
 
 
+def _normalize_approval_action(value: Any, *, field_name: str) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    aliases = {
+        "request": "create_request",
+        "create": "create_request",
+        "ensure": "create_request",
+        "ensure_request": "create_request",
+        "ensure_requests": "create_request",
+        "create_requests": "create_request",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in {"create_request", "require_existing"}:
+        raise ValueError(f"{field_name} must be create_request or require_existing")
+    return normalized
+
+
 def _normalize_trigger(value: Any, *, field_name: str) -> str | None:
     normalized = str(value or "").strip()
     if not normalized:
@@ -327,13 +351,18 @@ def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str
             field_name=f"{field_name}.required_fields",
         ),
         required_comment=_normalize_comment_requirement(
-            raw_gate.get("required_comment")
+            raw_gate.get("required_comment_type")
+            or raw_gate.get("required_comment")
             or raw_gate.get("comment_required")
             or raw_gate.get("comment_visibility"),
             field_name=f"{field_name}.required_comment",
         ),
         require_approval=bool(raw_gate.get("require_approval") or raw_gate.get("approval_required")),
         require_evidence=bool(raw_gate.get("require_evidence") or raw_gate.get("evidence_required")),
+        log_fields=_normalize_string_list(
+            raw_gate.get("log_fields") or raw_gate.get("audit_fields"),
+            field_name=f"{field_name}.log_fields",
+        ),
         notify=_normalize_string_list(
             actions.get("notify") or raw_gate.get("notify"),
             field_name=f"{field_name}.actions.notify",
@@ -341,6 +370,10 @@ def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str
         sla_action=_normalize_sla_action(
             actions.get("sla") or raw_gate.get("sla_action"),
             field_name=f"{field_name}.actions.sla",
+        ),
+        approval_action=_normalize_approval_action(
+            actions.get("approval") or raw_gate.get("approval_action"),
+            field_name=f"{field_name}.actions.approval",
         ),
         trigger=_normalize_trigger(
             raw_gate.get("trigger") or raw_gate.get("system_trigger"),

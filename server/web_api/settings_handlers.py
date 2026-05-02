@@ -773,6 +773,18 @@ async def handle_web_settings_workflow_profiles_put(request: web.Request) -> web
                 )
             before_profiles = [profile.to_dict() for profile in await load_workflow_profiles(session)]
             profiles = await save_workflow_profiles(session, data)
+            after_profiles = [profile.to_dict() for profile in profiles]
+            before_by_type = {str(item.get("ticket_type") or ""): item for item in before_profiles}
+            after_by_type = {str(item.get("ticket_type") or ""): item for item in after_profiles}
+            diff = {
+                "added": sorted(set(after_by_type) - set(before_by_type)),
+                "removed": sorted(set(before_by_type) - set(after_by_type)),
+                "changed": sorted(
+                    ticket_type
+                    for ticket_type in set(before_by_type) & set(after_by_type)
+                    if before_by_type[ticket_type] != after_by_type[ticket_type]
+                ),
+            }
             audit_repo = TicketAdminAuditRepo(session)
             await audit_repo.add(
                 entity_type="workflow_profiles",
@@ -781,7 +793,7 @@ async def handle_web_settings_workflow_profiles_put(request: web.Request) -> web
                 actor_id=auth_context.actor_id,
                 actor_role=auth_context.actor_role,
                 before_json={"workflow_profiles": before_profiles},
-                after_json={"workflow_profiles": [profile.to_dict() for profile in profiles]},
+                after_json={"workflow_profiles": after_profiles, "diff": diff},
                 trace_id=None,
             )
             await session.commit()
@@ -800,6 +812,7 @@ async def handle_web_settings_workflow_profiles_put(request: web.Request) -> web
     return web.json_response(
         {
             "status": "ok",
-            "workflow_profiles": [profile.to_dict() for profile in profiles],
+            "workflow_profiles": after_profiles,
+            "diff": diff,
         }
     )

@@ -446,6 +446,12 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByLabelText("Что сделать со сроками ответа"), {
       target: { value: "pause" },
     });
+    fireEvent.change(screen.getByLabelText("Approval action"), {
+      target: { value: "create_request" },
+    });
+    fireEvent.change(screen.getByLabelText("Audit log fields"), {
+      target: { value: "resolution_code, custom_fields.routing_decision.queue" },
+    });
     fireEvent.change(screen.getByLabelText("Trigger события"), {
       target: { value: "requester_replied" },
     });
@@ -468,11 +474,13 @@ describe("SettingsPage", () => {
       required_comment: "public",
       require_approval: true,
       require_evidence: true,
+      log_fields: ["resolution_code", "custom_fields.routing_decision.queue"],
       trigger: "requester_replied",
       auto: true,
       actions: {
         notify: ["assignee", "queue_lead"],
         sla: "pause",
+        approval: "create_request",
       },
     });
   });

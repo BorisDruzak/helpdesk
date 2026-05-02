@@ -13,6 +13,7 @@ from app.db.models import TicketApproval, TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.approval_policy import ensure_approval_requests, validate_approval_policy
 from tickets.closure_policy import validate_closure_policy
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
     WAITING_STATUSES,
@@ -108,7 +109,10 @@ def _field_value(ticket, updates: dict, field_name: str):
     if ticket is not None and hasattr(ticket, field):
         return getattr(ticket, field)
     current = getattr(ticket, "custom_fields", None) or {}
-    for part in field.split("."):
+    parts = field.split(".")
+    if parts and parts[0] == "custom_fields":
+        parts = parts[1:]
+    for part in parts:
         if not isinstance(current, dict):
             return None
         current = current.get(part)
@@ -154,6 +158,22 @@ def _comment_value_for_requirement(required_comment: str | None, *, public_comme
     if required_comment == "any":
         return public_comment or internal_comment
     return None
+
+
+def _transition_log_field_payload(gate: WorkflowTransitionGate | None, *, ticket, updates: dict) -> list[dict]:
+    if gate is None or not gate.log_fields:
+        return []
+    payload: list[dict] = []
+    for field in gate.log_fields:
+        value = _field_value(ticket, updates, field)
+        payload.append(
+            {
+                "field": field,
+                "value": value,
+                "present": not _is_missing_required_value(value),
+            }
+        )
+    return payload
 
 
 async def _validate_transition_gate(
@@ -228,6 +248,7 @@ async def _validate_transition_gate(
         "required_comment": gate.required_comment,
         "require_approval": gate.require_approval,
         "require_evidence": gate.require_evidence,
+        "log_fields": list(gate.log_fields),
     }
 
 
@@ -333,12 +354,28 @@ class TicketWorkflowService:
         if gate_payload:
             event_payload["workflow_transition_gate"] = gate_payload
             action_payload: dict[str, object] = {}
+            action_results: dict[str, object] = {}
             if transition_gate and transition_gate.notify:
                 action_payload["notify"] = list(transition_gate.notify)
+                action_results["notify"] = {
+                    "status": "recorded_marker",
+                    "recipients": list(transition_gate.notify),
+                }
             if transition_gate and transition_gate.sla_action:
                 action_payload["sla"] = transition_gate.sla_action
+            if transition_gate and transition_gate.approval_action:
+                action_payload["approval"] = transition_gate.approval_action
             if action_payload:
                 event_payload["workflow_transition_actions"] = action_payload
+            log_fields_payload = _transition_log_field_payload(
+                transition_gate,
+                ticket=ticket,
+                updates=updates,
+            )
+            if log_fields_payload:
+                event_payload["workflow_transition_log_fields"] = log_fields_payload
+            if action_results:
+                event_payload["workflow_transition_action_results"] = action_results
 
         approval_decision = await validate_approval_policy(
             self.session,
@@ -423,9 +460,51 @@ class TicketWorkflowService:
                 pass
 
         if transition_gate and transition_gate.sla_action == "pause":
-            await self.sla_service.pause_sla(ticket_id, trigger="workflow_transition_gate")
+            applied = await self.sla_service.pause_sla(ticket_id, trigger="workflow_transition_gate")
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "executed" if applied else "no_op",
+                "action": "pause",
+            }
         elif transition_gate and transition_gate.sla_action == "resume":
-            await self.sla_service.resume_sla(ticket_id, trigger="workflow_transition_gate")
+            applied = await self.sla_service.resume_sla(ticket_id, trigger="workflow_transition_gate")
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "executed" if applied else "no_op",
+                "action": "resume",
+            }
+        elif transition_gate and transition_gate.sla_action == "stop":
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "skipped_use_terminal_status",
+                "action": "stop",
+            }
+
+        if transition_gate and transition_gate.approval_action:
+            approval_action = transition_gate.approval_action
+            approval_policy = await resolve_effective_ticket_policy(self.session, ticket, "approval")
+            if not approval_policy or not approval_policy.get("required"):
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "skipped_no_active_policy",
+                    "action": approval_action,
+                }
+            elif approval_action == "create_request":
+                approval_request_result = await ensure_approval_requests(
+                    self.session,
+                    ticket,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                )
+                created = int(approval_request_result.get("requests_created") or 0)
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "executed" if created else "no_op_existing",
+                    "action": approval_action,
+                    "requests_created": created,
+                    "approval_mode": approval_request_result.get("approval_mode"),
+                    "approver_source": approval_request_result.get("approver_source"),
+                }
+            else:
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "recorded_marker",
+                    "action": approval_action,
+                }
 
         await self._sync_wait_ledger(
             ticket_id=ticket_id,

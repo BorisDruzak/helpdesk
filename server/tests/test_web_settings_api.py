@@ -451,7 +451,20 @@ async def test_web_settings_can_save_workflow_profiles(test_client, test_engine)
                     "transitions": {
                         "new": ["queued", "canceled"],
                         "queued": ["in_progress", "canceled"],
-                        "in_progress": ["resolved", "canceled"],
+                        "in_progress": [
+                            {
+                                "to": "resolved",
+                                "required_comment_type": "public",
+                                "require_evidence": True,
+                                "log_fields": ["resolution_code"],
+                                "actions": {
+                                    "notify": ["assignee"],
+                                    "sla": "pause",
+                                    "approval": "create_request",
+                                },
+                            },
+                            "canceled",
+                        ],
                         "resolved": ["closed"],
                         "closed": [],
                         "canceled": [],
@@ -464,9 +477,21 @@ async def test_web_settings_can_save_workflow_profiles(test_client, test_engine)
     assert response.status == 200, await response.text()
     payload = await response.json()
     assert payload["status"] == "ok"
+    assert "incident" in payload["diff"]["changed"]
     profiles = {item["ticket_type"]: item for item in payload["workflow_profiles"]}
     assert profiles["incident"]["label"] == "Авария"
     assert profiles["incident"]["transitions"]["new"] == ["queued", "canceled"]
+    assert profiles["incident"]["transition_gates"]["in_progress"]["resolved"] == {
+        "to": "resolved",
+        "required_comment": "public",
+        "require_evidence": True,
+        "log_fields": ["resolution_code"],
+        "actions": {
+            "notify": ["assignee"],
+            "sla": "pause",
+            "approval": "create_request",
+        },
+    }
 
     settings_response = await test_client.get("/api/web/settings", headers=_admin_headers())
     assert settings_response.status == 200, await settings_response.text()

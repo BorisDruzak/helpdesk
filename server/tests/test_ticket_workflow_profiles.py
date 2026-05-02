@@ -145,12 +145,14 @@ async def test_workflow_profile_accepts_advanced_transition_guards_and_actions(t
                             "in_progress": [
                                 {
                                     "to": "resolved",
-                                    "required_comment": "public",
+                                    "required_comment_type": "public",
                                     "require_approval": True,
                                     "require_evidence": True,
+                                    "log_fields": ["resolution_code", "custom_fields.routing_decision.queue"],
                                     "actions": {
                                         "notify": ["assignee", "queue_lead"],
                                         "sla": "pause",
+                                        "approval": "create_request",
                                     },
                                 }
                             ],
@@ -169,16 +171,20 @@ async def test_workflow_profile_accepts_advanced_transition_guards_and_actions(t
         assert gate.required_comment == "public"
         assert gate.require_approval is True
         assert gate.require_evidence is True
+        assert gate.log_fields == ("resolution_code", "custom_fields.routing_decision.queue")
         assert gate.notify == ("assignee", "queue_lead")
         assert gate.sla_action == "pause"
+        assert gate.approval_action == "create_request"
         assert gate.to_dict() == {
             "to": "resolved",
             "required_comment": "public",
             "require_approval": True,
             "require_evidence": True,
+            "log_fields": ["resolution_code", "custom_fields.routing_decision.queue"],
             "actions": {
                 "notify": ["assignee", "queue_lead"],
                 "sla": "pause",
+                "approval": "create_request",
             },
         }
 
@@ -375,9 +381,11 @@ async def _seed_advanced_gated_workflow_ticket(test_engine) -> str:
                                     "required_comment": "public",
                                     "require_approval": True,
                                     "require_evidence": True,
+                                    "log_fields": ["resolution_code", "custom_fields.routing_decision.queue"],
                                     "actions": {
                                         "notify": ["assignee", "queue_lead"],
                                         "sla": "pause",
+                                        "approval": "create_request",
                                     },
                                 }
                             ],
@@ -399,6 +407,7 @@ async def _seed_advanced_gated_workflow_ticket(test_engine) -> str:
                 requester_id="requester",
                 assignee_id="support-test",
                 ticket_type="incident",
+                custom_fields={"routing_decision": {"queue": "servicedesk_l1"}},
             )
         )
         await session.commit()
@@ -552,4 +561,14 @@ async def test_workflow_transition_gate_requires_evidence_and_approval(test_engi
     assert result["event_payload"]["workflow_transition_actions"] == {
         "notify": ["assignee", "queue_lead"],
         "sla": "pause",
+        "approval": "create_request",
+    }
+    assert result["event_payload"]["workflow_transition_log_fields"] == [
+        {"field": "resolution_code", "value": "fixed_remote", "present": True},
+        {"field": "custom_fields.routing_decision.queue", "value": "servicedesk_l1", "present": True},
+    ]
+    assert result["event_payload"]["workflow_transition_action_results"] == {
+        "notify": {"status": "recorded_marker", "recipients": ["assignee", "queue_lead"]},
+        "sla": {"status": "no_op", "action": "pause"},
+        "approval": {"status": "skipped_no_active_policy", "action": "create_request"},
     }

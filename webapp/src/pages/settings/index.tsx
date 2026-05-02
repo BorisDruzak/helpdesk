@@ -163,6 +163,8 @@ type WorkflowProfileDraft = Omit<
   transition_builder_require_evidence: boolean;
   transition_builder_notify_text: string;
   transition_builder_sla_action: string;
+  transition_builder_approval_action: string;
+  transition_builder_log_fields_text: string;
   transition_builder_trigger: string;
   transition_builder_auto: boolean;
 };
@@ -616,6 +618,8 @@ function findTransitionBuilderDefaults(profile: WorkflowProfileItem) {
     requireEvidence: Boolean(gate.require_evidence),
     notify: listToCsv(Array.isArray(actions.notify) ? (actions.notify as string[]) : []),
     slaAction: String(actions.sla ?? ""),
+    approvalAction: String(actions.approval ?? ""),
+    logFields: listToCsv(Array.isArray(gate.log_fields) ? (gate.log_fields as string[]) : []),
     trigger: String(gate.trigger ?? ""),
     auto: Boolean(gate.auto),
   };
@@ -627,6 +631,8 @@ function buildTransitionRuleFromDraft(draft: WorkflowProfileDraft): Record<strin
   const requiredFields = csvToList(draft.transition_builder_required_fields_text);
   const notify = csvToList(draft.transition_builder_notify_text);
   const slaAction = draft.transition_builder_sla_action.trim();
+  const approvalAction = draft.transition_builder_approval_action.trim();
+  const logFields = csvToList(draft.transition_builder_log_fields_text);
   if (allowedRoles.length) {
     rule.allowed_roles = allowedRoles;
   }
@@ -642,6 +648,9 @@ function buildTransitionRuleFromDraft(draft: WorkflowProfileDraft): Record<strin
   if (draft.transition_builder_require_evidence) {
     rule.require_evidence = true;
   }
+  if (logFields.length) {
+    rule.log_fields = logFields;
+  }
   if (draft.transition_builder_trigger.trim()) {
     rule.trigger = draft.transition_builder_trigger.trim();
   }
@@ -654,6 +663,9 @@ function buildTransitionRuleFromDraft(draft: WorkflowProfileDraft): Record<strin
   }
   if (slaAction) {
     actions.sla = slaAction;
+  }
+  if (approvalAction) {
+    actions.approval = approvalAction;
   }
   if (Object.keys(actions).length) {
     rule.actions = actions;
@@ -713,6 +725,8 @@ function buildWorkflowProfileDraft(profile: WorkflowProfileItem): WorkflowProfil
     transition_builder_require_evidence: builder.requireEvidence,
     transition_builder_notify_text: builder.notify,
     transition_builder_sla_action: builder.slaAction,
+    transition_builder_approval_action: builder.approvalAction,
+    transition_builder_log_fields_text: builder.logFields,
     transition_builder_trigger: builder.trigger,
     transition_builder_auto: builder.auto,
   };
@@ -773,6 +787,8 @@ function createWorkflowProfileDraft(index: number): WorkflowProfileDraft {
     transition_builder_require_evidence: false,
     transition_builder_notify_text: "",
     transition_builder_sla_action: "",
+    transition_builder_approval_action: "",
+    transition_builder_log_fields_text: "",
     transition_builder_trigger: "",
     transition_builder_auto: false,
   };
@@ -1738,7 +1754,7 @@ export function SettingsPage() {
                             </Button>
                           </div>
 
-                          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+                          <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-5">
                             <SettingsField label="Откуда">
                               <Input
                                 disabled={!canManageRouting}
@@ -1807,9 +1823,28 @@ export function SettingsPage() {
                                 <option value="stop">Зафиксировать действие</option>
                               </select>
                             </SettingsField>
+                            <SettingsField label="Approval action">
+                              <select
+                                className="field-base w-full px-3 py-2 text-sm"
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_approval_action: value } : item
+                                    )
+                                  );
+                                }}
+                                value={profile.transition_builder_approval_action}
+                              >
+                                <option value="">None</option>
+                                <option value="create_request">Create approval request</option>
+                                <option value="require_existing">Require existing approval</option>
+                              </select>
+                            </SettingsField>
                           </div>
 
-                          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                          <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
                             <SettingsField label="Роли, которые могут перевести">
                               <Input
                                 disabled={!canManageRouting}
@@ -1854,6 +1889,23 @@ export function SettingsPage() {
                                   );
                                 }}
                                 value={profile.transition_builder_notify_text}
+                              />
+                            </SettingsField>
+                            <SettingsField label="Audit log fields">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, transition_builder_log_fields_text: value }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                placeholder="resolution_code, custom_fields.routing_decision.queue"
+                                value={profile.transition_builder_log_fields_text}
                               />
                             </SettingsField>
                           </div>
