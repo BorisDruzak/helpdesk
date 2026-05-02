@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, after Slice 7.
+Last updated: 2026-05-03, after Slice 8 final gates.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 87.5% (7 of 8 slices complete).
+Current plan completion: 100.0% (8 of 8 slices complete).
 
 ## Goal
 
@@ -106,7 +106,7 @@ Turn the completed service desk model into a more production-grade operator/requ
 - Structured OLA editor and OLA risk UI are already present at MVP level.
 - The known old `web_settings` calendar JSON warning cleanup was completed in the previous plan.
 - Slice 7 added a read-only helpdesk historical data cleanup inventory. Latest remote dry-run report: `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260502_211544.json`.
-- Remaining gaps are mainly final release-gate coverage and live browser/observer signoff.
+- Slice 8 final release gates are complete. Remaining items are now backlog follow-ups, not blockers for this hardening plan.
 
 ## Decisions
 
@@ -213,17 +213,27 @@ Remote dry-run summary:
 
 ## Slice 8: Final Hardening Release Gates
 
-- [ ] Local baseline: `python scripts\verify_workspace.py`.
-- [ ] Server focused: workflow, approval, notification, visibility, passport, smart-view and support API tests from Slices 1-5.
-- [ ] Agent focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short`.
-- [ ] Web focused: settings/forms/tickets Vitest suites touched by this plan.
-- [ ] Remote release: `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3`.
-- [ ] Remote smoke: `python scripts\manage_remote_stack.py smoke server`.
-- [ ] Browser signoff: `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, one real `/app/tickets/:ticketId`, `/app/admin/observer`.
-- [ ] Observer signoff: `/app/admin/observer` shows `Runtime: ok`, console errors 0, server logs contain no new tracebacks for changed flows.
-- [ ] Stop server: `python scripts\manage_remote_stack.py stop server`, then confirm stopped.
-- [ ] Update final status and completion percentage in this plan.
-- [ ] Commit docs closure.
+- [x] Local baseline: `python scripts\verify_workspace.py` -> passed.
+- [x] Server focused: workflow, approval, notification, visibility, passport, smart-view and support API tests from Slices 1-5 -> 121 passed.
+- [x] Agent focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
+- [x] Web focused: settings/forms/tickets Vitest suites touched by this plan -> 4 files / 46 tests passed.
+- [x] Remote release: `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> completed; webapp build/upload, migrations, control/server start and release smoke passed.
+- [x] Remote smoke: `python scripts\manage_remote_stack.py smoke server` -> `/api/health` 200.
+- [x] Browser signoff: `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, one real `/app/tickets/:ticketId`, `/app/admin/observer` -> MCP/browser signoff passed on `http://192.168.100.17:8666`.
+- [x] Observer signoff: `/app/admin/observer` showed `Runtime: ok`; browser console errors 0; server logs had no traceback/critical/exception. Two startup reconcile ERROR lines for offline agents were observed and treated as existing operational noise, not changed-flow regressions.
+- [x] Stop server: `python scripts\manage_remote_stack.py stop server`, then confirm stopped -> stopped, `active=inactive`, `sub=dead`.
+- [x] Update final status and completion percentage in this plan.
+- [x] Commit docs closure.
+
+Slice 8 verification details:
+
+- `python scripts\verify_workspace.py` -> passed.
+- `python scripts\bootstrap_web_toolchain.py` -> Node.js 24.15.0, pnpm 10.33.0 ready.
+- `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_web_settings_api.py server\tests\test_ticket_approval_policy.py server\tests\test_web_support_api.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 121 passed.
+- `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
+- `pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx` -> 4 files / 46 tests passed.
+- `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` -> route mode `webapp`, admin/support pages loaded, console/page errors empty.
+- MCP live paths checked: `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, `/app/tickets/1161327d-e873-4ded-bd48-a38b98209722`, `/app/admin/observer`.
 
 ## Hardening / UX Backlog
 
