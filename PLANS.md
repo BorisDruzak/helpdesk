@@ -1,266 +1,775 @@
-# Service Desk Hardening And Agent Live UX Plan
+# Service Desk Live Acceptance Test Plan
 
-> For agentic workers: use `superpowers:executing-plans` for each slice and keep this file current after every verified checkpoint. This is the active long-horizon plan for `pc_client`; completed historical service-desk and agent plans were intentionally removed from this file after Slice 17 signoff.
+> For agentic workers: use `superpowers:executing-plans` for each slice and keep this file current after every verified checkpoint. This is the active long-horizon plan for live testing the full configurable service desk model in `pc_client`.
 
 ## Status
 
-Created: 2026-05-02.
+Created: 2026-05-03.
 
-Last updated: 2026-05-03, after Slice 8 final gates.
+Last updated: 2026-05-03, initial live acceptance plan.
 
-The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
+Current plan completion: 0.0%.
 
-- Backend/runtime: about 99.6%.
-- Server UI: about 91.5%.
-- Agent GUI: about 74.5%.
-- Overall configurable service desk maturity: about 99.0% for the documented model, with remaining work treated as hardening/UX backlog.
-
-This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
-
-Current plan completion: 100.0% (8 of 8 slices complete).
+This plan replaces the completed service-desk hardening plan. The previous implementation and hardening work is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation and final confidence scoring across the whole ticket system.
 
 ## Goal
 
-Turn the completed service desk model into a more production-grade operator/requester experience: policy actions are explicit and auditable, support/requester UIs show the right next actions, exported/passport evidence is validated, smart views are dependable, and the agent create flow is live-smoked end to end against current published templates.
+Verify in live conditions that the full service desk model works end to end on real tickets and real settings: request templates, dynamic forms, workflow, priority, SLA, OLA, routing, approvals, diagnostics, notifications, visibility, smart views, closure rules, passport/reporting, agent GUI create flow, observer traces and RBAC.
+
+## Success Criteria
+
+The live test campaign is complete only when all of these are true:
+
+- A disposable but realistic set of request templates and policies is created on the remote stand.
+- Tickets are created through server UI/API and agent GUI paths.
+- Each ticket keeps the expected template, schema and policy snapshot.
+- Workflow transitions enforce required fields, comments, evidence and role gates.
+- Priority, routing, SLA and OLA decisions are visible, deterministic and auditable.
+- SLA/OLA timers, warning/risk/breach views and pause/resume/stop behavior are verified on live tickets.
+- Approvals work through approve, reject and timeout/escalation-visible paths.
+- Diagnostics run as operations separate from ticket status and attach results to timeline/passport/observer.
+- Closure policy blocks incomplete important tickets and allows closure when required facts are present.
+- Requester-visible projections hide internal fields, OLA internals, raw diagnostics and internal notes.
+- Notification recipient/action previews and audit records match the configured policies.
+- Smart views show the right slices and do not behave like ownership queues.
+- Agent GUI can create a ticket from current published templates and display a requester-safe result.
+- Observer layer shows trace roots, spans and operation lifecycle without trace-visible gaps.
+- Browser checks on `http://192.168.100.17:8666/admin` and relevant `/app/*` routes show no active-tab console errors.
+- Generated artifacts are stored under ignored `artifacts/*` folders and not committed.
+- Remote server is stopped at the end unless the user explicitly asks to leave it running.
 
 ## Scope
 
-- Workflow actions and editor:
-  - `server/tickets/workflow_profiles.py`
-  - `server/tickets/workflow_service.py`
+### In Scope
+
+- Remote live stand:
+  - `http://192.168.100.17:8666/admin`
+  - `/app/admin/forms`
+  - `/app/settings`
+  - `/app/tickets`
+  - `/app/tickets/:ticketId`
+  - `/app/admin/observer`
+  - `/help` if requester portal behavior is involved
+
+- Server domains:
+  - `server/tickets/*`
   - `server/web_api/settings_handlers.py`
+  - `server/web_api/support_handlers.py`
+  - `server/web_api/admin_handlers.py`
+  - `server/observer/*`
+  - `server/tools/*`
+  - `server/app/repos/*`
+
+- Agent domains:
+  - `pc_agent/ui_gui/*`
+  - `pc_agent/ui_bridge/*`
+  - `pc_agent/ws_agent.py`
+  - `pc_agent/core/orchestrator.py`
+  - `pc_agent/core/action_trace.py`
+
+- Webapp:
   - `webapp/src/pages/settings/index.tsx`
-  - `server/tests/test_ticket_workflow_profiles.py`
-  - `server/tests/test_web_settings_api.py`
-  - `webapp/src/pages/settings/index.test.tsx`
-
-- Approvals UI and API surfacing:
-  - `server/tickets/approval_policy.py`
-  - `server/web_api/support_handlers.py`
-  - `server/web_api/dto/support.py`
-  - `webapp/src/pages/tickets/detail-page.tsx`
-  - `server/tests/test_ticket_approval_policy.py`
-  - `server/tests/test_web_support_api.py`
-  - `webapp/src/pages/tickets/detail-page.test.tsx`
-
-- Notification and visibility hardening:
-  - `server/tickets/notification_service.py`
-  - `server/tickets/policy_action_dispatcher.py`
-  - `server/tickets/visibility_policy.py`
-  - `server/tickets/passport_service.py`
-  - `webapp/src/features/forms-builder/forms-builder-panel.tsx`
-  - `server/tests/test_ticket_notification_policy.py`
-  - `server/tests/test_ticket_visibility_policy.py`
-  - `webapp/src/features/forms-builder/forms-builder-panel.test.tsx`
-
-- Passport/reporting hardening:
-  - `server/tickets/passport_service.py`
-  - `server/tickets/closure_policy.py`
-  - `server/web_api/support_handlers.py`
-  - `webapp/src/pages/tickets/detail-page.tsx`
-  - `server/tests/test_ticket_passport_service.py`
-  - `server/tests/test_ticket_closure_policy.py`
-
-- Smart views:
-  - `server/tickets/smart_views.py`
-  - `server/web_api/support_handlers.py`
-  - `server/app/repos/helpdesk_policy_repo.py`
   - `webapp/src/pages/tickets/list-page.tsx`
-  - `server/tests/test_web_support_api.py`
-  - `server/tests/test_helpdesk_policy_registry.py`
+  - `webapp/src/pages/tickets/detail-page.tsx`
+  - `webapp/src/features/forms-builder/*`
+  - relevant typed API clients under `webapp/src/features/*`
 
-- Agent live UX:
-  - `pc_agent/ui_gui/chat_panel.py`
-  - `pc_agent/ui_gui/server_api.py`
-  - `pc_agent/tests/test_chat_panel_helpers.py`
-  - `pc_agent/tests/test_ticket_api_client_attachments.py`
-  - `pc_agent/docs/CODEMAP.md`
-
-- Docs/navigation:
-  - `docs/QUICK_LOOKUP.md`
-  - `server/docs/CODEMAP.md`
-  - `server/docs/TICKET_SYSTEM.md`
-  - `scripts/navigation_catalog.py`
+- Scripts and artifacts:
+  - `scripts/verify_workspace.py`
+  - `scripts/bootstrap_web_toolchain.py`
+  - `scripts/release_server_to_remote.py`
+  - `scripts/manage_remote_stack.py`
+  - `scripts/run_observer_canary_suite.py`
   - `scripts/helpdesk_data_cleanup.py`
-  - `PLANS.md`
+  - `artifacts/live_checks/`
+  - `artifacts/browser_checks/`
+  - `artifacts/observer_canaries/`
+  - `artifacts/diagnostics/`
+
+### Out Of Scope
+
+- New product features unless a live test exposes a blocking defect.
+- Manual DB edits outside project scripts or controlled API calls.
+- Permanent production-like seed data.
+- Changing historical tickets except through an explicit cleanup slice.
+- Publishing generated artifacts to Git.
 
 ## Constraints
 
 - Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
-- Keep the remote Linux copy `/var/chat_bot/pc_client` as a deploy target only.
-- Preserve old `request_forms`, `form_key`, public `/help`, and agent cached form-pack compatibility.
-- Do not expose raw SLA/OLA/internal policy jargon to requester-facing UI.
-- For UI changes use the Browser Canon: `http://192.168.100.17:8666/admin`, then inspect the relevant `/app/*` pages.
-- For new or changed React/webapp paths, first run `python scripts/bootstrap_web_toolchain.py`.
-- Use RED/GREEN tests for behavior changes where realistic.
-- Before claiming a slice complete, run fresh verification and record it here.
-- After remote checks stop the server unless the user explicitly asks to leave it running.
-
-## Current State
-
-- The core model chain exists and is released:
-  `request_template -> form_schema -> workflow_profile -> priority_policy -> SLA/OLA -> routing_policy -> approval_policy -> diagnostic_policy -> closure_policy -> visibility/notification/reporting -> passport`.
-- Legacy migration/backfill and compatibility are in place:
-  old `request_forms` packs, old clients sending only `form_key`, old packs without priority fields, and pre-registry tickets are covered by tests.
-- External SLA/OLA policy actions are dispatched outside event payloads through `policy_action_dispatcher`.
-- Structured OLA editor and OLA risk UI are already present at MVP level.
-- The known old `web_settings` calendar JSON warning cleanup was completed in the previous plan.
-- Slice 7 added a read-only helpdesk historical data cleanup inventory. Latest remote dry-run report: `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260502_211544.json`.
-- Slice 8 final release gates are complete. Remaining items are now backlog follow-ups, not blockers for this hardening plan.
+- Do not edit `\\192.168.100.17\NTFS_Share\pc_client` directly.
+- Use remote Linux copy `/var/chat_bot/pc_client` only as deploy/live stand.
+- Use project scripts for deploy and lifecycle.
+- Use Browser Canon: browser checks only against `http://192.168.100.17:8666/admin` and linked `/app/*` routes.
+- For webapp commands, first run `python scripts/bootstrap_web_toolchain.py`.
+- Do not expose raw tokens or secrets in artifacts.
+- Prefix all disposable live entities with `codex-live-acceptance-20260503`.
+- Every created ticket/template/policy must be listed in the live evidence summary for cleanup.
+- Do not commit generated artifacts.
+- If defects are found, isolate them with focused tests before code changes where realistic.
 
 ## Decisions
 
-- Keep workflow transition actions explicit and typed. Runtime may execute safe actions automatically, but high-risk side effects must be auditable and gated.
-- Keep approvals as first-class requests, not only status flags. Support and requester UI must show who is expected to act next.
-- Notification policy chooses intent and recipients; preferences/channel availability remain the final per-recipient filter, and unavailable/disabled external channels must leave audit evidence instead of disappearing silently.
-- Visibility policy owns requester-safe projection. Redaction, including nested dotted paths, must happen before public/requester payloads leave the server.
-- Passport/reporting policy owns required facts and export visibility. Closure should block only when the active closure/reporting policy explicitly requires an official dossier.
-- Smart views are saved filters, not ownership queues.
-- Agent live UX should be validated against the remote server with current published templates, not only unit helpers.
+- The campaign tests the whole system as a process engine, not individual isolated widgets.
+- Disposable live settings are preferred over mutating existing operator templates.
+- Every live ticket must be tied to an explicit scenario id.
+- Evidence is more important than volume. A smaller number of carefully traced tickets is better than many weak smoke checks.
+- API checks verify data contracts; browser checks verify operator/requester usability; observer checks verify traceability.
+- Agent GUI live checks are required for at least one current preferred template and one schema-backed disposable template.
+- Cleanup is a planned final slice, but test artifacts may remain until evidence is summarized.
 
-## Slice 1: Workflow Actions, Typed API And Visual Editor
+## Test Data Model
 
-- [x] Add tests for transition actions in `server/tests/test_ticket_workflow_profiles.py`: notify action metadata, SLA action marker, approval creation marker, required public/internal comment, evidence gate and audit payload.
-- [x] Extend workflow profile schema normalization in `server/tickets/workflow_profiles.py` for `actions.notify`, `actions.sla`, `actions.approval`, `require_evidence`, `required_comment_type`, and `log_fields`.
-- [x] Update `TicketWorkflowService` to execute safe configured gates/actions and record skipped high-risk actions in audit payload instead of silently ignoring them.
-- [x] Add typed workflow profile publish/diff validation in `server/web_api/settings_handlers.py` without removing raw JSON compatibility.
-- [x] Add visual workflow editor controls in `webapp/src/pages/settings/index.tsx` for statuses, transitions, gates and action markers.
-- [x] Verification: `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_web_settings_api.py -q --tb=short` -> 25 passed.
-- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed.
-- [x] Verification: browser `/app/settings`, workflow editor visible and console errors 0.
-- [x] Update `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
-- [x] Commit and release if server/runtime behavior changes.
+Use these scenario ids and names:
 
-## Slice 2: Approvals UI And Action Surface
+- `codex-live-acceptance-incident-website`
+  - Ticket type: `incident`
+  - Request template: "Live: Не открывается сайт"
+  - Diagnostics: website/DNS style playbook, consent required
+  - Expected policy chain: form, workflow, priority, routing, SLA, OLA, diagnostics, closure, visibility, notification
 
-- [x] Add server tests showing support ticket detail exposes pending approvals, current approver source, due/reminder/escalation timestamps, mode and reject-comment requirement.
-- [x] Extend support DTO/API to include support-safe approval summary and requester-safe builder mode for future public/requester surfaces.
-- [x] Render approvals in `/app/tickets/:ticketId`: pending approvers, current action owner, approve/reject transitions, missing reject comment state and timeout/escalation status.
-- [x] Keep requester-safe public status text for waiting approval through the existing visibility/status projection without exposing internal approver groups in public labels.
-- [x] Verification: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_web_support_api.py -q --tb=short` -> 41 passed.
-- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 13 passed.
-- [x] Verification: browser ticket detail with seeded approval-policy ticket `T-000352`, approval panel visible, console errors 0.
-- [x] Update docs/navigation and this plan.
-- [x] Commit and release if API/UI changed: functional commit created, remote smoke passed, browser signoff completed.
+- `codex-live-acceptance-access`
+  - Ticket type: `access_request`
+  - Request template: "Live: Нужен доступ к системе"
+  - Approval required
+  - Diagnostics disabled
+  - Expected policy chain: form, workflow, priority, routing, SLA, approval, closure, visibility, notification
 
-## Slice 3: Notification And Visibility Hardening
+- `codex-live-acceptance-consultation`
+  - Ticket type: `consultation`
+  - Request template: "Live: Консультация по рабочему месту"
+  - Simple workflow
+  - No OLA escalation requirement
+  - Expected policy chain: form, workflow, routing, SLA, closure, visibility
 
-- [x] Add tests for notification events: created, assigned, waiting_user, requester_replied, SLA warning/breach, resolved, closed, approval events and diagnostic completion.
-- [x] Add channel validation for `web`, `email`, `telegram`, `vk_teams`, provider channels and disabled/unavailable channel audit.
-- [x] Ensure notification preferences remain the final per-recipient filter after policy recipient resolution.
-- [x] Expand visibility policy tests for field-level requester/support views, public status mapping, raw diagnostics redaction, OLA hiding and passport export visibility.
-- [x] Add UI preview in the policy editor showing requester view vs support view before publication.
-- [x] Verification: `python -m pytest server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 21 passed.
-- [x] Verification: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 27 passed.
-- [x] Browser check `/app/admin/forms`, notification/visibility policy editors and preview: requester/support preview and notification recipient/channel preview visible, active-tab console errors 0.
-- [x] Update docs/navigation and this plan.
-- [x] Commit and release if API/runtime/UI changed: `efb9c06 server: harden notification visibility policies`, remote smoke passed.
+- `codex-live-acceptance-change`
+  - Ticket type: `change_request`
+  - Request template: "Live: Изменение конфигурации"
+  - Approval and scheduled state required
+  - Expected policy chain: form, workflow, priority, routing, SLA/OLA, approval, closure, reporting
 
-## Slice 4: Passport And Reporting Enforcement
+Minimum live ticket set:
 
-- [x] Add tests for required reporting sections, hidden internal sections, diagnostic evidence inclusion, approval/action packages, related objects and knowledge draft source.
-- [x] Add deterministic missing-facts report in `passport_service`: required fact, source, current value, requester-visible label and blocking severity.
-- [x] Enforce official dossier requirements before closure only when active policies require it.
-- [x] Render support passport tab requirements, missing facts and export preview in ticket detail.
-- [x] Verification: `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_web_support_api.py -q --tb=short` -> 50 passed.
-- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 14 passed.
-- [x] Browser check ticket detail passport tab and closure requirement checklist: live ticket `T-000353` showed passport missing facts/export preview and resolved-transition close checklist.
-- [x] Update docs/navigation and this plan.
-- [x] Commit and release if API/runtime/UI changed: `af13e86 server: enforce passport reporting requirements`, remote smoke passed.
+- `T-LIVE-01`: incident website, normal path with diagnostics and successful closure.
+- `T-LIVE-02`: incident website, high impact/urgency path with P0/P1 SLA/OLA risk.
+- `T-LIVE-03`: access request, approve path.
+- `T-LIVE-04`: access request, reject path with required rejection comment.
+- `T-LIVE-05`: consultation, requester reply and waiting_user pause/resume path.
+- `T-LIVE-06`: change request, scheduled/waiting_approval path.
+- `T-LIVE-07`: invalid/negative ticket create or transition attempt for validation/RBAC evidence.
+- `T-LIVE-08`: agent GUI-created ticket using current published template.
 
-## Slice 5: Smart Views Execution Coverage
+## Evidence Artifacts
 
-- [x] Add executable coverage for target smart views: `sla_risk`, `ola_risk`, `unassigned`, `waiting_approval`, `stale_waiting`, `diagnostics_failed`, `requester_reply`, `mass_incident_candidates`.
-- [x] Add tests for published custom filters, invalid filter rejection and support queue counters.
-- [x] Make unsupported custom filter paths fail at publication time with actionable validation messages.
-- [x] Ensure list UI shows custom/built-in smart-view counts consistently and does not confuse smart views with queues.
-- [x] Verification: `python -m pytest server\tests\test_web_support_api.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 50 passed.
-- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx` -> 28 passed.
-- [x] Browser check `/app/tickets` and `/app/admin/forms` smart-view editor: OLA risk filter reduced the queue to 1 ticket, smart-view editor structured filter/sort controls visible, active-tab console errors 0.
-- [x] Update docs/navigation and this plan.
-- [x] Commit and release if API/UI changed: no runtime/API/UI source changed in this slice, only tests and plan; release skipped.
+Write only generated evidence into ignored artifact folders:
 
-## Slice 6: Agent Live UX And Template Create Smoke
+- `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`
+- `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`
+- `artifacts/browser_checks/live-acceptance/`
+- `artifacts/observer_canaries/live-acceptance/`
+- `artifacts/diagnostics/live_acceptance_logs_YYYYMMDD.txt`
 
-- [x] Add or refresh helper tests for agent post-create public rendering, server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases. Added conditional hidden-required file coverage and kept existing preview/consent/picker/result-label coverage green.
-- [x] Run agent focused tests: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
-- [x] Add server coverage for schema/template/policy metadata preservation from versioned `request_forms` into `custom_fields.request_template`.
-- [x] Verification: `python -m pytest server\tests\test_ticket_form_packs.py::test_create_ticket_preserves_form_schema_and_policy_refs_in_template_context server\tests\test_ticket_form_packs.py::test_create_ticket_accepts_request_template_key_as_form_alias server\tests\test_ticket_form_packs.py::test_create_ticket_preview_returns_effective_template_context -q --tb=short` -> 3 passed.
-- [x] Verification: `python scripts\verify_workspace.py` -> passed.
-- [x] Start remote server through release script and run a live agent GUI/API create smoke against current preferred template and a temporary schema-backed template version.
-- [x] Verify created ticket context on server: `request_template`, `form_schema`, priority decision, routing decision, requester-safe due dates, consent, attachments if used and passport/result summary. Live schema-backed ticket `1161327d-e873-4ded-bd48-a38b98209722` preserved `form_schema_id`, template version, policy refs, diagnostic consent, P0 priority, fallback routing, attachment message ref and observer root trace. Temporary template was removed from the preferred pack afterwards.
-- [x] Verify agent result panel text: access code, next action, expected due dates, open/add-message/create-another actions, no raw SLA/OLA/internal wording. Source-level button coverage remains in helper tests; live result labels had access code, next action, response/resolution deadlines, diagnostics/passport user wording and no raw SLA/OLA terms.
-- [x] Update `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
-- [x] Commit and release agent/server changes if any were required by smoke findings: `c204c83 server: preserve request form schema metadata`, remote release smoke passed.
+Evidence summary must include:
 
-## Slice 7: Data Cleanup And Mojibake Hardening
+- branch and commit hash
+- deploy command and result
+- remote health result
+- created templates/policies ids and versions
+- created ticket ids
+- scenario id per ticket
+- expected vs actual policy chain
+- SLA/OLA timer facts
+- workflow transition facts
+- approval facts
+- diagnostic operation ids and trace ids
+- closure/passport facts
+- browser paths checked
+- console errors count
+- defects found, with severity and reproduction command
+- cleanup status
 
-- [x] Inventory historical live data with mojibake or placeholder `???` in ticket titles, requester names, module descriptions and tool descriptions via `scripts/helpdesk_data_cleanup.py`.
-- [x] Decide which cleanup is data-only and which requires code hardening/security review: placeholder-only findings are `data_only_cleanup_candidate`; mojibake/mixed findings are `manual_review_required`; token-like values are redacted and classified as `security_review_required`.
-- [x] Add a safe admin/scripted cleanup path for historical test data, with dry-run output and no token leakage. Mutation is intentionally disabled: `--apply` returns `apply_requested_but_not_implemented` until deterministic cleanup rules are reviewed.
-- [x] Add tests for UTF-8 preservation in any new cleanup parser/formatter.
-- [x] Verification: remote dry-run report stored at `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260502_211544.json` and Markdown sibling `.md`.
-- [x] Browser check representative cleaned pages if cleanup is applied to remote data: skipped because no cleanup was applied; this slice was inventory-only.
-- [x] Update docs/navigation and this plan.
-- [x] Commit script/docs changes if added: `ec00606 server: add helpdesk data cleanup inventory` plus merge commit `f51fb32` for fast-forward remote deploy after amended detection.
+## Slice 0: Baseline, Context And Live Stand Readiness
 
-Remote dry-run summary:
+- [ ] Run intake and context retrieval:
+  - `python scripts/task_intake.py --task "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`
+  - `python scripts/build_context_pack.py --topic "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`
+  - `python scripts/search_context_index.py "request_template workflow_profile sla_policy ola_policy approval_policy diagnostic_policy closure_policy observer"`
+- [ ] Read canonical docs:
+  - `AGENTS.md`
+  - `docs/CODEX_WORKFLOW.md`
+  - `docs/ARCHITECTURE_BOUNDARIES.md`
+  - `docs/CONTEXT_INDEX.md`
+  - `docs/QUICK_LOOKUP.md`
+  - `server/docs/CODEMAP.md`
+  - `pc_agent/docs/CODEMAP.md`
+  - `server/docs/TICKET_SYSTEM.md`
+  - `server/docs/OBSERVER_LAYER.md`
+  - `server/docs/OBSERVER_AUTHORING_RULES.md`
+- [ ] Confirm git state is suitable:
+  - `git status --short`
+  - Expected: clean or only intentional plan changes.
+- [ ] Run local baseline:
+  - `python scripts/verify_workspace.py`
+  - `python scripts/docs_inventory.py --check-links`
+- [ ] Bootstrap web toolchain:
+  - `python scripts/bootstrap_web_toolchain.py`
+- [ ] Run focused local test baseline:
+  - `python -m pytest server\tests\test_web_settings_api.py server\tests\test_web_support_api.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_approval_policy.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short`
+  - `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short`
+  - `pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx`
+- [ ] Deploy verified state to remote:
+  - `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3`
+- [ ] Confirm remote health:
+  - `python scripts\manage_remote_stack.py status control`
+  - `python scripts\manage_remote_stack.py smoke server`
+- [ ] Open browser baseline:
+  - `/admin`
+  - `/app/admin/forms`
+  - `/app/settings`
+  - `/app/tickets`
+  - `/app/admin/observer`
+- [ ] Record baseline evidence and any existing operational noise.
 
-- Scanned rows: tickets 338, registry_people 6, modules 53, device_toolset_snapshots 69.
-- Findings: 73 total; mojibake 20, placeholder 33, sensitive_token_like 20.
-- Strategies: data-only cleanup candidates 33, manual review 20, security review 20.
-- No raw token-like values were printed in the report samples; samples use `[REDACTED_TOKEN]`.
+## Slice 1: Live Settings Fixture Creation
 
-## Slice 8: Final Hardening Release Gates
+- [ ] Inventory existing published request templates and policy registry through API/UI.
+- [ ] Confirm disposable ids do not already exist.
+- [ ] Create or publish `codex-live-acceptance-incident-website` request template:
+  - classification: `incident`, category `network`, subcategory `website_unavailable`
+  - form fields: URL, affected scope, started at, error text, screenshot/file, workaround available, consent
+  - workflow: incident default with waiting_user, waiting_internal, resolved, closed
+  - priority: impact/urgency matrix and manual override reason required
+  - SLA: first response and resolution targets by P0-P3
+  - OLA: queue ack and processing targets
+  - routing: L1 fallback, networks for DNS/connectivity, systems for HTTP 500, security/servers for TLS
+  - diagnostics: suggested website/DNS playbook, consent required
+  - closure: resolution code, public summary and evidence for P0/P1
+  - visibility: requester-safe status mapping, hide OLA/raw diagnostics/internal notes
+- [ ] Create or publish `codex-live-acceptance-access` request template:
+  - classification: `access_request`
+  - form fields: system, role, business reason, manager, desired date
+  - approval: service owner or manager, reject comment required
+  - diagnostics disabled
+  - closure requires approval and action log
+- [ ] Create or publish `codex-live-acceptance-consultation` request template:
+  - classification: `consultation`
+  - simpler form and workflow
+  - requester reply path required
+- [ ] Create or publish `codex-live-acceptance-change` request template:
+  - classification: `change_request`
+  - scheduled status and approval step
+  - closure/reporting requires change outcome summary
+- [ ] Validate settings reload:
+  - refresh `/app/admin/forms`
+  - refresh `/app/settings`
+  - confirm every disposable template remains active or draft according to scenario
+- [ ] Negative settings validation:
+  - invalid form field mapping fails
+  - invalid workflow transition fails
+  - invalid SLA/OLA target/calendar shape fails
+  - invalid approval approver source fails
+  - invalid routing loop or unsupported path fails
+- [ ] Record policy ids, versions, active flags and screenshots.
 
-- [x] Local baseline: `python scripts\verify_workspace.py` -> passed.
-- [x] Server focused: workflow, approval, notification, visibility, passport, smart-view and support API tests from Slices 1-5 -> 121 passed.
-- [x] Agent focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
-- [x] Web focused: settings/forms/tickets Vitest suites touched by this plan -> 4 files / 46 tests passed.
-- [x] Remote release: `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> completed; webapp build/upload, migrations, control/server start and release smoke passed.
-- [x] Remote smoke: `python scripts\manage_remote_stack.py smoke server` -> `/api/health` 200.
-- [x] Browser signoff: `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, one real `/app/tickets/:ticketId`, `/app/admin/observer` -> MCP/browser signoff passed on `http://192.168.100.17:8666`.
-- [x] Observer signoff: `/app/admin/observer` showed `Runtime: ok`; browser console errors 0; server logs had no traceback/critical/exception. Two startup reconcile ERROR lines for offline agents were observed and treated as existing operational noise, not changed-flow regressions.
-- [x] Stop server: `python scripts\manage_remote_stack.py stop server`, then confirm stopped -> stopped, `active=inactive`, `sub=dead`.
-- [x] Update final status and completion percentage in this plan.
-- [x] Commit docs closure.
+## Slice 2: Request Form And Ticket Creation Acceptance
 
-Slice 8 verification details:
+- [ ] Create `T-LIVE-01` through server/API using incident website template.
+- [ ] Create `T-LIVE-02` through server/API using high impact/urgency incident values.
+- [ ] Create `T-LIVE-03` through server/API using access request approve path.
+- [ ] Create `T-LIVE-04` through server/API using access request reject path.
+- [ ] Create `T-LIVE-05` through requester/server path using consultation template.
+- [ ] Create `T-LIVE-06` through server/API using change request template.
+- [ ] Verify each created ticket stores:
+  - request template id and version
+  - form schema id and version
+  - workflow profile id
+  - priority policy id
+  - routing policy id
+  - SLA policy id
+  - OLA policy id if applicable
+  - approval policy id if applicable
+  - diagnostic policy id if applicable
+  - closure policy id
+  - visibility/notification policy ids
+- [ ] Verify dynamic form behavior:
+  - hidden conditional fields are not required
+  - visible conditional fields become required
+  - file fields and picker fields preserve values
+  - process_mapping feeds impact/urgency/routing/diagnostic params
+- [ ] Verify requester-safe response:
+  - access code visible
+  - next action visible
+  - expected response/resolution due dates visible
+  - no raw SLA/OLA/internal policy ids in requester text
+- [ ] Negative create tests:
+  - missing required field rejected
+  - invalid select option rejected
+  - inactive template unavailable
+  - old `form_key` compatibility still works if applicable
+- [ ] Record ticket ids and raw API snippets in evidence.
 
-- `python scripts\verify_workspace.py` -> passed.
-- `python scripts\bootstrap_web_toolchain.py` -> Node.js 24.15.0, pnpm 10.33.0 ready.
-- `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_web_settings_api.py server\tests\test_ticket_approval_policy.py server\tests\test_web_support_api.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 121 passed.
-- `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
-- `pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx` -> 4 files / 46 tests passed.
-- `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` -> route mode `webapp`, admin/support pages loaded, console/page errors empty.
-- MCP live paths checked: `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, `/app/tickets/1161327d-e873-4ded-bd48-a38b98209722`, `/app/admin/observer`.
+## Slice 3: Workflow Transition And Status Acceptance
 
-## Hardening / UX Backlog
+- [ ] For `T-LIVE-01`, run happy-path incident workflow:
+  - `new -> queued`
+  - `queued -> assigned`
+  - `assigned -> in_progress`
+  - `in_progress -> waiting_user`
+  - requester reply triggers or allows `waiting_user -> in_progress`
+  - `in_progress -> resolved`
+  - requester confirmation or autoclose path to `closed`
+- [ ] Verify transition gates:
+  - `queued -> assigned` requires queue/assignee
+  - `in_progress -> waiting_user` requires public question
+  - `in_progress -> resolved` requires resolution code and public summary
+  - `resolved -> closed` follows closure policy
+- [ ] For `T-LIVE-06`, verify change workflow:
+  - scheduled state is reachable only through allowed transition
+  - waiting approval state uses approval policy
+  - rejected approval cannot move to resolved without correction
+- [ ] Verify status projection:
+  - internal status can differ from public status
+  - requester sees "Заявка в работе" style public mapping, not internal queue details
+- [ ] Verify audit/timeline:
+  - old status
+  - new status
+  - actor
+  - reason/comment
+  - required fields snapshot
+  - configured action markers
+- [ ] Negative transition tests:
+  - wrong role denied
+  - missing required comment denied
+  - missing evidence denied for priority where required
+  - invalid transition denied
+- [ ] Record transition matrix evidence.
 
-These are known follow-ups. Promote them into slices only when they become the next active work item.
+## Slice 4: Priority, Routing And Queue Acceptance
 
-- Full recipient expansion for admin/group notification recipients beyond explicit actor ids.
-- Richer notification delivery provider health UI and retry controls.
-- Requester-facing approval actions outside the support workspace if a requester must approve.
-- More granular visibility previews for every form field and passport section.
-- Printable/exported passport visual QA with representative long Russian text and attachments.
-- Automated remote browser signoff through `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666`.
-- Dedicated load/performance pass for support queue smart-view counters with large ticket volumes.
-- Cleanup of historical observer-canary/test tickets and duplicated offline agents on the remote stand.
-- Agent GUI visual QA on Windows for small screens, long labels, file picker paths and preview-unavailable state.
-- Release-note and operator-runbook pass once the hardening plan is complete.
+- [ ] Verify `T-LIVE-01` computed priority from impact/urgency.
+- [ ] Verify `T-LIVE-02` escalates to P0/P1 according to configured high impact/urgency and modifiers.
+- [ ] Verify stored priority fields:
+  - impact
+  - urgency
+  - importance if present
+  - computed_priority
+  - manual_priority
+  - effective_priority
+  - priority_source
+  - priority_reason
+- [ ] Test manual priority override:
+  - allowed support/lead/admin role can override with reason
+  - override without reason rejected
+  - requester role cannot override
+  - audit contains previous and new priority
+- [ ] Verify initial routing:
+  - default queue applied when no rule matches
+  - incident website high impact routes to expected queue
+  - access request routes to access/service-owner queue
+- [ ] Verify rerouting by diagnostic result:
+  - DNS failure moves/suggests networks
+  - HTTP 500 moves/suggests information systems
+  - TLS error moves/suggests security/servers
+- [ ] Verify anti-loop constraints:
+  - max auto reroutes honored
+  - manually locked assignee prevents automatic reroute
+  - reroute after manual assignment requires reason or is skipped/audited
+- [ ] Verify support list and ticket detail show queue/assignee/routing reason.
+- [ ] Record queue state and routing decision facts.
+
+## Slice 5: SLA And OLA Timer Acceptance
+
+- [ ] Verify SLA starts at ticket creation for each scenario where enabled.
+- [ ] Verify first response SLA stops at first public support reply.
+- [ ] Verify resolution SLA stops at resolved/closed.
+- [ ] Verify waiting statuses pause/resume:
+  - `waiting_user` pauses SLA/OLA where configured
+  - requester reply resumes
+  - `waiting_approval` pauses where configured
+  - approval resumes
+  - `waiting_vendor` behavior follows configured external wait flag
+- [ ] Verify calendar behavior:
+  - 5x8 calendar excludes non-working time
+  - 24x7 calendar behaves continuously if configured
+  - calendar JSON warning from previous cleanup does not reappear as a live blocker
+- [ ] Verify OLA starts on queue assignment and queue change.
+- [ ] Verify OLA ack stops on assignee set or in_progress.
+- [ ] Verify OLA processing stops on queue change, resolved, closed or handoff.
+- [ ] Verify warning and breach actions:
+  - warning timestamps are computed
+  - warning recipients are resolved
+  - breach event/audit created
+  - escalation action is outside event payload
+- [ ] Verify UI:
+  - SLA risk smart view includes near-breach ticket
+  - OLA risk smart view includes queue-risk ticket
+  - ticket detail shows internal support timer details
+  - requester view shows only safe due information
+- [ ] Record timer snapshots before and after transitions.
+
+## Slice 6: Approval Policy Acceptance
+
+- [ ] For `T-LIVE-03`, verify access approval creation:
+  - approver source resolved
+  - current approver visible to support
+  - requester-safe waiting approval status visible
+  - due/reminder/escalation timestamps visible
+- [ ] Approve `T-LIVE-03`:
+  - approval audit recorded
+  - transition moves to configured status
+  - notification action generated
+  - passport includes approval evidence
+- [ ] For `T-LIVE-04`, reject approval:
+  - reject without comment rejected
+  - reject with comment accepted
+  - ticket moves to configured reject transition
+  - requester-safe rejection text does not expose internal policy internals
+- [ ] Verify approval modes where available:
+  - any_one
+  - all
+  - sequential if configured
+- [ ] Verify timeout/escalation visibility:
+  - reminder event/audit visible
+  - escalation recipient/action visible
+  - no hidden silent failure for unavailable external channel
+- [ ] Verify RBAC:
+  - non-approver cannot approve
+  - support/admin visibility differs from requester visibility
+- [ ] Record approval lifecycle facts.
+
+## Slice 7: Diagnostics, Modules And Observer Acceptance
+
+- [ ] For `T-LIVE-01`, run suggested diagnostic playbook with consent.
+- [ ] Verify consent:
+  - required before requester-device/high-risk tool
+  - consent decision stored
+  - denied consent blocks auto-run or high-risk step
+- [ ] Verify operation model:
+  - ticket status remains `in_progress` or configured workflow status
+  - operation status moves through queued/running/succeeded/failed
+  - operation id is stable and visible
+- [ ] Verify observer trace:
+  - root trace exists
+  - operation spans exist
+  - module/tool entry breadcrumb exists
+  - command/result correlation exists
+  - dangerous flow, if any, is visible in observer
+- [ ] Verify diagnostic result attachment:
+  - timeline event created
+  - passport evidence created when configured
+  - raw diagnostic hidden from requester if visibility policy says so
+  - support can inspect raw/internal diagnostic facts
+- [ ] Verify reroute by diagnostic result.
+- [ ] Run observer canary suite if relevant:
+  - `python scripts\run_observer_canary_suite.py`
+- [ ] Browser check `/app/admin/observer`:
+  - runtime status ok
+  - trace visible
+  - no active-tab console errors
+- [ ] Record trace ids, operation ids and screenshots.
+
+## Slice 8: Notification, Recipient Actions And Visibility Acceptance
+
+- [ ] Verify notification policy events:
+  - created
+  - assigned
+  - waiting_user
+  - requester_replied
+  - SLA warning
+  - SLA breach
+  - OLA warning/breach if configured
+  - approval created/approved/rejected
+  - diagnostic completed/failed
+  - resolved
+  - closed
+- [ ] Verify recipient resolution:
+  - requester
+  - assignee
+  - queue
+  - queue lead
+  - admin if configured
+  - watchers if configured
+  - external groups or provider channels if configured
+- [ ] Verify external delivery action model:
+  - escalation/recipient actions are represented outside event payload
+  - disabled/unavailable channels leave audit evidence
+  - per-recipient preferences remain final filter
+- [ ] Verify visibility policy:
+  - public status mapping
+  - requester cannot see internal_notes
+  - requester cannot see OLA details
+  - requester cannot see raw diagnostics
+  - requester cannot see internal queue comments
+  - support can see support-safe internal detail
+  - passport export obeys visibility rules
+- [ ] Browser check previews:
+  - settings/form builder requester/support preview
+  - ticket detail requester-safe vs support-safe fields where available
+- [ ] Record recipient/action and visibility evidence.
+
+## Slice 9: Smart Views And Support Queue Acceptance
+
+- [ ] Verify built-in smart views:
+  - SLA risk
+  - OLA risk
+  - unassigned
+  - requester replied
+  - stale waiting
+  - waiting approval
+  - diagnostics failed
+  - mass incident candidates
+- [ ] Verify smart views are saved filters, not ownership queues.
+- [ ] Verify custom smart view publication:
+  - valid filter accepted
+  - invalid filter rejected with actionable message
+  - sort order applied
+  - counts match list results
+- [ ] Verify support ticket list:
+  - filter by status
+  - filter by queue
+  - filter by priority
+  - filter by due/risk
+  - search by access code/title/requester where supported
+- [ ] Verify queue counters do not include closed/canceled unless configured.
+- [ ] Browser check `/app/tickets`:
+  - switch views
+  - open ticket from smart view
+  - back navigation keeps context where expected
+  - console errors 0
+- [ ] Record list screenshots and API count facts.
+
+## Slice 10: Closure, Passport And Reporting Acceptance
+
+- [ ] Attempt to close `T-LIVE-02` without required P0/P1 evidence:
+  - expected: blocked
+  - missing facts report visible
+  - requester-safe label available
+  - blocking severity clear
+- [ ] Add required facts:
+  - resolution code
+  - public summary
+  - internal summary if required
+  - diagnostic evidence
+  - approval evidence if used
+  - operation log if module used
+  - worklog if required
+- [ ] Resolve and close:
+  - transition succeeds
+  - SLA/OLA stop correctly
+  - closure audit recorded
+  - passport includes solution summary and evidence
+- [ ] Verify requester confirmation:
+  - required confirmation path
+  - negative feedback reopens if configured
+  - autoclose after days represented if configured
+- [ ] Verify allowed resolution codes:
+  - valid code accepted
+  - invalid code rejected
+- [ ] Verify reporting/passport export preview:
+  - public sections visible
+  - internal-only sections hidden from requester
+  - long Russian text does not break UI
+  - attachments/evidence are represented
+- [ ] Record passport/export evidence.
+
+## Slice 11: Agent GUI Live Acceptance
+
+- [ ] Start or connect a live agent path according to project runtime rules.
+- [ ] Verify agent can fetch current form pack/templates.
+- [ ] Create `T-LIVE-08` from agent GUI using a current published template.
+- [ ] Create or preview a schema-backed disposable template from agent path if supported.
+- [ ] Verify GUI form behavior:
+  - required fields
+  - conditional fields
+  - picker fields
+  - file attachment path
+  - diagnostic consent wording
+  - server-preview fallback
+- [ ] Verify post-create result panel:
+  - access code
+  - next action
+  - expected due dates
+  - open ticket action
+  - add message action
+  - create another action
+  - no raw SLA/OLA/internal policy jargon
+- [ ] Verify server receives correct context:
+  - request template snapshot
+  - form schema snapshot
+  - priority/routing decision
+  - requester/device identity
+  - attachment message reference if used
+- [ ] Verify agent logs do not leak token and do not show unexpected tracebacks.
+- [ ] Record GUI screenshots or text evidence and created ticket id.
+
+## Slice 12: RBAC, Security And Negative Live Acceptance
+
+- [ ] Verify settings/admin permissions:
+  - non-admin cannot publish policies/templates
+  - admin can publish
+  - invalid payload rejected with safe error
+- [ ] Verify support permissions:
+  - requester cannot assign queue
+  - requester cannot override priority
+  - requester cannot view OLA/raw diagnostics/internal notes
+  - support can perform allowed workflow transitions
+  - queue lead/admin can perform configured elevated actions
+- [ ] Verify approval permissions:
+  - only approver or admin path can approve, according to policy
+  - reject comment required when configured
+- [ ] Verify diagnostics permissions:
+  - high-risk tool requires consent/role
+  - operation cannot be run against unauthorized device/ticket context
+- [ ] Verify token/log safety:
+  - no raw token in server logs
+  - no raw token in agent logs
+  - artifacts redact sensitive values
+- [ ] Verify API negative cases:
+  - unknown template
+  - inactive template
+  - stale policy version if relevant
+  - invalid workflow transition
+  - invalid queue id
+  - invalid approval actor
+- [ ] Record negative test evidence.
+
+## Slice 13: Browser UX And Console Signoff
+
+- [ ] Browser check `/admin`.
+- [ ] Browser check `/app/admin/forms`.
+- [ ] Browser check `/app/settings`.
+- [ ] Browser check `/app/tickets`.
+- [ ] Browser check each representative ticket detail:
+  - incident
+  - access request
+  - consultation
+  - change request
+- [ ] Browser check `/app/admin/observer`.
+- [ ] Browser check requester/public path if used.
+- [ ] Verify UI quality:
+  - no overlapping text
+  - long Russian labels fit
+  - buttons and controls are understandable
+  - compact panels do not use hero-scale text
+  - no raw internal policy ids leak to requester-facing UI
+  - empty/error/loading states are coherent
+- [ ] Capture screenshots into `artifacts/browser_checks/live-acceptance/`.
+- [ ] Capture browser console and network summary.
+- [ ] Record all active-tab console errors and decide blocker/non-blocker.
+
+## Slice 14: Cleanup, Evidence Review And Final Score
+
+- [ ] Generate live acceptance summary:
+  - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`
+  - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`
+- [ ] List all created disposable templates, policies, tickets and artifacts.
+- [ ] Decide cleanup strategy:
+  - keep tickets as evidence with clear prefix
+  - deactivate disposable templates
+  - remove temporary preferred pack entries if created
+  - do not delete evidence before summary is complete
+- [ ] Run cleanup or deactivation through supported API/scripted path only.
+- [ ] Re-run targeted smoke:
+  - `python scripts\manage_remote_stack.py smoke server`
+  - browser `/app/tickets`
+  - browser `/app/admin/forms`
+- [ ] Stop remote server:
+  - `python scripts\manage_remote_stack.py stop server`
+  - confirm stopped through status
+- [ ] Final local status:
+  - `git status --short`
+  - generated artifacts ignored
+  - only intentional plan/docs/code fixes staged or committed
+- [ ] Update this plan:
+  - completion percentage
+  - passed slices
+  - defects found
+  - blocked items
+  - final system maturity estimate
+- [ ] Commit plan/evidence references and any code fixes separately from generated artifacts.
+
+## Defect Handling Rules
+
+If a live slice finds a defect:
+
+- [ ] Capture scenario id, ticket id, request payload, expected result and actual result.
+- [ ] Capture UI screenshot or API response.
+- [ ] Capture relevant server/agent/observer log lines with tokens redacted.
+- [ ] Classify severity:
+  - P0: data loss, security leak, impossible core ticket flow, raw token leak
+  - P1: wrong workflow/SLA/approval/closure decision, requester sees internal data, diagnostic trace missing
+  - P2: UI inconsistency, missing preview, non-blocking notification/action issue
+  - P3: cosmetic, wording, non-critical artifact cleanup
+- [ ] Add or update focused regression test before code fix where realistic.
+- [ ] Fix in the smallest ownership zone.
+- [ ] Run focused tests plus relevant live re-check.
+- [ ] Update docs/CODEMAP if contract, route, structure or workflow changed.
+- [ ] Commit defect fix separately from plan-only updates when practical.
+
+## Verification Matrix
+
+Minimum command set before final completion claim:
+
+```powershell
+.\scripts\bootstrap_shell_utf8.ps1
+python scripts\verify_workspace.py
+python scripts\docs_inventory.py --check-links
+python scripts\bootstrap_web_toolchain.py
+python -m pytest server\tests\test_web_settings_api.py server\tests\test_web_support_api.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_approval_policy.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short
+python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short
+pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx
+python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3
+python scripts\manage_remote_stack.py smoke server
+```
+
+Minimum browser/live paths before final completion claim:
+
+```text
+http://192.168.100.17:8666/admin
+http://192.168.100.17:8666/app/admin/forms
+http://192.168.100.17:8666/app/settings
+http://192.168.100.17:8666/app/tickets
+http://192.168.100.17:8666/app/tickets/:ticketId
+http://192.168.100.17:8666/app/admin/observer
+```
+
+Minimum live scenario coverage before final completion claim:
+
+- request template settings create/edit/reload
+- form conditional fields and process mapping
+- ticket create from server/API
+- ticket create from agent GUI
+- workflow happy path
+- workflow negative gates
+- priority compute and manual override
+- routing and rerouting
+- SLA start/pause/resume/stop/warning/breach
+- OLA start/pause/stop/risk
+- approval approve/reject
+- diagnostics with consent
+- observer trace
+- notification recipient/action audit
+- visibility/requester-safe projection
+- smart views
+- closure blocking and successful passport
+- RBAC negative cases
+- cleanup/deactivation
+
+## Current State
+
+- Implementation/hardening plan is complete and committed.
+- Latest plan/tooling commit before this live plan: `30e1db8 scripts: add local context index workflow`.
+- Generated live/browser/diagnostic/release artifacts are ignored through `.gitignore`.
+- This plan has not yet executed any live acceptance slice.
 
 ## Handoff
 
-Recommended execution order is the slice order above:
+Recommended execution order is strict:
 
-1. Workflow actions first, because approvals, notifications, closure and auto-close flows depend on reliable transition semantics.
-2. Approvals UI second, because it is the highest-value missing operator/requester surface.
-3. Notification/visibility third, because it governs what each actor sees and receives.
-4. Passport/reporting fourth, because closure rigor depends on missing-facts visibility.
-5. Smart views fifth, because they are operational prioritization rather than core lifecycle.
-6. Agent live UX sixth, after server policy and support surfaces are stable.
-7. Data cleanup seventh, after behavior is stable enough to distinguish code bugs from historical test data.
-8. Final release gates last.
+1. Slice 0 proves the stand and local workspace are ready.
+2. Slice 1 creates controlled disposable settings.
+3. Slices 2-12 exercise the service desk process from creation to closure across server, web UI, agent GUI, observer and security boundaries.
+4. Slice 13 performs browser UX signoff across the real operator pages.
+5. Slice 14 summarizes evidence, cleans/deactivates disposable entities, stops the server and updates the final score.
 
-Keep every slice small enough to test and commit independently.
+Do not skip cleanup/evidence summary. Without a clear created-entity list, the live test campaign is not complete.
