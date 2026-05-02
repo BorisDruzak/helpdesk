@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14h is released: `/app/admin/forms` now has a structured request-template `Паспорт` step for reporting/passport controls, so admins can configure required passport sections, evidence/action packages, export visibility, report tags, official-passport requirement and knowledge hints without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14h release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 89%, agent GUI about 73%, overall about 96.9%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14i is in progress: `/app/admin/forms` is adding structured smart-view controls so operational slices such as SLA/OLA risk can be published without editing raw filter/sort JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14h release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 89%, agent GUI about 73%, overall about 96.9%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -367,6 +367,20 @@ Slice 14h local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `34c6474 webapp: add structured reporting controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed the template `Паспорт` step and structured reporting fields; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/reporting errors, with unrelated existing canary/offline-agent reconcile warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14i target:
+
+- [x] Add structured smart-view controls for excluded statuses, due window, due fields, primary sort field/direction and columns.
+- [x] Keep raw filter/sort JSON as advanced preview/edit path.
+- [x] Add Vitest coverage proving smart view publication from structured fields without manual JSON.
+
+Slice 14i local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "smart view"` failed because the smart-view editor had no `Статусы исключить` structured field.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 23 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 

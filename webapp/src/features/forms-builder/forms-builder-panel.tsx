@@ -2289,6 +2289,17 @@ function csvToList(value: string): string[] {
     .filter(Boolean);
 }
 
+function parseSortDraft(value: string): Array<Record<string, unknown>> {
+  try {
+    const parsed = JSON.parse(value || "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function ReportingPolicyControls({
   config,
   onChange,
@@ -2994,11 +3005,20 @@ function SmartViewsRegistryEditor({
   );
   const [sortText, setSortText] = useState(() => JSON.stringify([{ field: "resolution_due_at", direction: "asc" }], null, 2));
   const [columnsText, setColumnsText] = useState("ticket_id,title,status,assignee_id,resolution_due_at");
+  const smartFilter = parseJsonDraft(filterText);
+  const smartSort = parseSortDraft(sortText);
+  const firstSort = smartSort[0] ?? { field: "resolution_due_at", direction: "asc" };
+  const updateFilter = (patch: Record<string, unknown>) => {
+    setFilterText(prettyJson({ ...parseJsonDraft(filterText), ...patch }));
+  };
+  const updateSort = (patch: Record<string, unknown>) => {
+    setSortText(JSON.stringify([{ ...firstSort, ...patch }], null, 2));
+  };
 
   const mutation = useMutation({
     mutationFn: async () => {
       const filter = parseEditorJson(filterText);
-      const sort = JSON.parse(sortText || "[]") as unknown;
+      const sort = parseSortDraft(sortText);
       if (!Array.isArray(sort)) {
         throw new Error("Сортировка должна быть JSON-массивом.");
       }
@@ -3055,6 +3075,64 @@ function SmartViewsRegistryEditor({
             <span>Описание</span>
             <input className="field-base h-11 w-full px-4 text-sm" onChange={(event) => setDescription(event.currentTarget.value)} value={description} />
           </label>
+          <div className="rounded-[0.9rem] border border-border bg-surface-subtle px-3 py-3 lg:col-span-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Фильтр рабочего среза</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Основные условия собираются в `filter`, а JSON ниже остаётся как расширенный preview.
+                </p>
+              </div>
+              <Badge tone="neutral">smart_view.filter</Badge>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Статусы исключить</span>
+                <input
+                  className="field-base h-11 w-full px-4 text-sm"
+                  onChange={(event) => updateFilter({ status_not_in: csvToList(event.currentTarget.value) })}
+                  value={csvList(smartFilter.status_not_in)}
+                />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Срок до, часов</span>
+                <input
+                  className="field-base h-11 w-full px-4 text-sm"
+                  min={0}
+                  onChange={(event) => updateFilter({ due_before_hours: Number(event.currentTarget.value || 0) })}
+                  type="number"
+                  value={Number(smartFilter.due_before_hours ?? 0)}
+                />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Поля сроков</span>
+                <input
+                  className="field-base h-11 w-full px-4 text-sm"
+                  onChange={(event) => updateFilter({ due_fields: csvToList(event.currentTarget.value) })}
+                  value={csvList(smartFilter.due_fields)}
+                />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Сортировать по</span>
+                <input
+                  className="field-base h-11 w-full px-4 text-sm"
+                  onChange={(event) => updateSort({ field: event.currentTarget.value })}
+                  value={String(firstSort.field ?? "")}
+                />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Направление сортировки</span>
+                <Select
+                  className="field-base h-11 w-full px-4 text-sm"
+                  onChange={(event) => updateSort({ direction: event.currentTarget.value })}
+                  value={String(firstSort.direction ?? "asc")}
+                >
+                  <option value="asc">asc</option>
+                  <option value="desc">desc</option>
+                </Select>
+              </label>
+            </div>
+          </div>
           <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
             <span>Фильтр</span>
             <textarea className="field-base min-h-[180px] w-full resize-y px-4 py-3 font-mono text-xs leading-5" onChange={(event) => setFilterText(event.currentTarget.value)} value={filterText} />

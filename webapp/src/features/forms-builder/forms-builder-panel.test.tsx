@@ -2103,6 +2103,95 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("публикует smart view из структурированных полей без ручного JSON", async () => {
+    const publishCalls: Record<string, unknown>[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: createHelpdeskModelRegistryPayload() });
+        }
+        if (url === "/api/web/admin/helpdesk-model/smart-views/publish" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          publishCalls.push(body);
+          return jsonResponse({
+            status: "success",
+            data: {
+              smart_view: {
+                code: body.code,
+                version: "1.0.1",
+                title: body.title,
+                description: body.description,
+                scope_level: body.scope_level,
+                scope_ref: body.scope_ref,
+                filter: body.filter,
+                sort: body.sort,
+                columns: body.columns,
+                is_active: true,
+                published_at: "2026-05-02T18:30:00+05:00",
+                created_at: "2026-05-02T18:30:00+05:00",
+                created_by: "admin1",
+                updated_at: "2026-05-02T18:30:00+05:00",
+                updated_by: "admin1"
+              },
+              message: "Smart view ola_risk_ops опубликован в реестр как версия 1.0.1."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редактор smart views");
+    const smartViewControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(smartViewControl("Код"), { target: { value: "ola_risk_ops" } });
+    fireEvent.change(smartViewControl("Название"), { target: { value: "OLA риск" } });
+    fireEvent.change(smartViewControl("Статусы исключить"), { target: { value: "closed, canceled, resolved" } });
+    fireEvent.change(smartViewControl("Срок до, часов"), { target: { value: "6" } });
+    fireEvent.change(smartViewControl("Поля сроков"), { target: { value: "ola_ack_due_at, ola_processing_due_at" } });
+    fireEvent.change(smartViewControl("Сортировать по"), { target: { value: "ola_processing_due_at" } });
+    fireEvent.change(smartViewControl("Направление сортировки"), { target: { value: "desc" } });
+    fireEvent.change(smartViewControl("Колонки"), {
+      target: { value: "ticket_id,title,status,queue_id,ola_processing_due_at" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать smart view" }));
+
+    await waitFor(() => {
+      expect(publishCalls).toHaveLength(1);
+    });
+    expect(publishCalls[0]).toMatchObject({
+      code: "ola_risk_ops",
+      title: "OLA риск",
+      scope_level: "system",
+      scope_ref: null,
+      filter: {
+        status_not_in: ["closed", "canceled", "resolved"],
+        due_before_hours: 6,
+        due_fields: ["ola_ack_due_at", "ola_processing_due_at"],
+      },
+      sort: [{ field: "ola_processing_due_at", direction: "desc" }],
+      columns: ["ticket_id", "title", "status", "queue_id", "ola_processing_due_at"],
+    });
+  });
+
   it("вызывает diff, deactivate и rollback для версий политики", async () => {
     const lifecycleCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const registryPayload = createHelpdeskModelRegistryPayload();
