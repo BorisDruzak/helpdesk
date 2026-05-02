@@ -382,11 +382,26 @@ class SupportPlaybookItem(BaseModel):
     updated_at: str | None = None
 
 
+class SupportDiagnosticPolicyPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    suggested_playbooks: list[str] = Field(default_factory=list)
+    auto_run_enabled: bool = False
+    auto_run_priorities: list[str] = Field(default_factory=list)
+    requester_consent_required: bool = False
+    high_risk_consent_required: bool = False
+    attach_to_timeline: bool = False
+    attach_to_passport: bool = False
+    attach_as_evidence: bool = False
+    reroute_by_result: dict[str, str] = Field(default_factory=dict)
+
+
 class SupportTicketPlaybooksPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket_id: str
     device_id: str | None = None
+    diagnostic_policy: SupportDiagnosticPolicyPayload | None = None
     playbooks: list[SupportPlaybookItem] = Field(default_factory=list)
 
 

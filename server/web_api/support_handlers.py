@@ -49,6 +49,7 @@ from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
     SupportBootstrapPayload,
     SupportCountItem,
+    SupportDiagnosticPolicyPayload,
     SupportFilterOption,
     SupportMessageActionResult,
     SupportObserverCapabilities,
@@ -661,6 +662,57 @@ def _required_tools_from_manifest(manifest_json: object) -> list[str]:
     return tools
 
 
+def _string_list(value: object) -> list[str]:
+    raw_items = value if isinstance(value, list) else []
+    items: list[str] = []
+    for raw_item in raw_items:
+        item = str(raw_item or "").strip()
+        if item and item not in items:
+            items.append(item)
+    return items
+
+
+def _support_diagnostic_policy_payload(ticket: object) -> SupportDiagnosticPolicyPayload | None:
+    custom_fields = getattr(ticket, "custom_fields", None)
+    if not isinstance(custom_fields, dict):
+        return None
+    request_template = custom_fields.get("request_template")
+    if not isinstance(request_template, dict):
+        return None
+    policy = request_template.get("diagnostic_policy") or request_template.get("diagnostics")
+    if not isinstance(policy, dict) or not policy:
+        return None
+
+    auto_run = policy.get("auto_run") if isinstance(policy.get("auto_run"), dict) else {}
+    consent = policy.get("consent") if isinstance(policy.get("consent"), dict) else {}
+    attach_results = policy.get("attach_results") if isinstance(policy.get("attach_results"), dict) else {}
+    reroute_raw = policy.get("reroute_by_result") if isinstance(policy.get("reroute_by_result"), dict) else {}
+    reroute_by_result = {
+        str(result_key).strip(): str(queue_code).strip()
+        for result_key, queue_code in reroute_raw.items()
+        if str(result_key).strip() and str(queue_code).strip()
+    }
+
+    suggested_playbooks = _string_list(policy.get("suggested_playbooks"))
+    legacy_playbook = str(policy.get("suggested_playbook_id") or "").strip()
+    if legacy_playbook and legacy_playbook not in suggested_playbooks:
+        suggested_playbooks.append(legacy_playbook)
+
+    return SupportDiagnosticPolicyPayload(
+        suggested_playbooks=suggested_playbooks,
+        auto_run_enabled=bool(auto_run.get("enabled") or policy.get("auto_run_enabled")),
+        auto_run_priorities=_string_list(auto_run.get("only_for_priorities")),
+        requester_consent_required=bool(
+            policy.get("requires_user_consent") or consent.get("required_for_requester_device")
+        ),
+        high_risk_consent_required=bool(consent.get("required_for_high_risk_tools")),
+        attach_to_timeline=bool(attach_results.get("to_timeline")),
+        attach_to_passport=bool(attach_results.get("to_passport")),
+        attach_as_evidence=bool(attach_results.get("as_evidence")),
+        reroute_by_result=reroute_by_result,
+    )
+
+
 async def _build_support_playbooks_payload(session, ticket: object) -> SupportTicketPlaybooksPayload:
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
     rows = await session.execute(
@@ -697,6 +749,7 @@ async def _build_support_playbooks_payload(session, ticket: object) -> SupportTi
     return SupportTicketPlaybooksPayload(
         ticket_id=str(getattr(ticket, "ticket_id")),
         device_id=device_id,
+        diagnostic_policy=_support_diagnostic_policy_payload(ticket),
         playbooks=playbooks,
     )
 

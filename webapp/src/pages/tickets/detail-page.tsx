@@ -847,9 +847,34 @@ export function TicketStatusActionPanel({
 }
 
 type TicketAutomationPlaybook = SupportTicketPlaybooksPayload["playbooks"][number];
+type TicketDiagnosticPolicy = NonNullable<SupportTicketPlaybooksPayload["diagnostic_policy"]>;
+
+function formatDiagnosticPolicyList(items: string[], fallback: string) {
+  return items.length ? items.join(", ") : fallback;
+}
+
+function diagnosticPolicyBadges(policy: TicketDiagnosticPolicy) {
+  const priorities = formatDiagnosticPolicyList(policy.auto_run_priorities, "все приоритеты");
+  const badges = [
+    policy.auto_run_enabled ? `Автозапуск: ${priorities}` : "Автозапуск выключен",
+    policy.requester_consent_required ? "Нужно согласие пользователя" : "Согласие пользователя не требуется",
+    policy.high_risk_consent_required ? "High-risk consent" : "High-risk tools без отдельного consent",
+  ];
+  if (policy.attach_to_timeline) {
+    badges.push("В timeline");
+  }
+  if (policy.attach_to_passport) {
+    badges.push("В паспорт");
+  }
+  if (policy.attach_as_evidence) {
+    badges.push("Evidence");
+  }
+  return badges;
+}
 
 export function TicketAutomationPanel({
   autoPlaybookEvents,
+  diagnosticPolicy = null,
   disabledReason = null,
   latestOperations,
   onRunPlaybook,
@@ -863,6 +888,7 @@ export function TicketAutomationPanel({
   setSelectedPlaybookVersionId,
 }: {
   autoPlaybookEvents: SupportTicketDetailPayload["timeline"];
+  diagnosticPolicy?: TicketDiagnosticPolicy | null;
   disabledReason?: string | null;
   latestOperations: SupportTicketDetailPayload["snapshot"]["latest_operations"];
   onRunPlaybook: (playbookVersionId: number) => void;
@@ -905,6 +931,38 @@ export function TicketAutomationPanel({
 
         {playbooksLoading ? <p className="text-sm text-slate-500">Загружаем опубликованные плейбуки...</p> : null}
         {playbooksErrorMessage ? <p className="text-sm text-rose-700">{playbooksErrorMessage}</p> : null}
+
+        {diagnosticPolicy ? (
+          <div className="rounded-[1rem] border border-emerald-100 bg-emerald-50/60 px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-slate-950">Политика диагностики</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {formatDiagnosticPolicyList(diagnosticPolicy.suggested_playbooks, "Рекомендованные плейбуки не заданы")}
+                </p>
+              </div>
+              <Badge tone={diagnosticPolicy.auto_run_enabled ? "success" : "neutral"}>
+                {diagnosticPolicy.auto_run_enabled ? "auto-run" : "manual"}
+              </Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {diagnosticPolicyBadges(diagnosticPolicy).map((badge) => (
+                <Badge key={badge} tone="neutral">
+                  {badge}
+                </Badge>
+              ))}
+            </div>
+            {Object.keys(diagnosticPolicy.reroute_by_result).length ? (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                {Object.entries(diagnosticPolicy.reroute_by_result).map(([result, queue]) => (
+                  <span className="rounded-pill bg-white px-3 py-1 font-medium" key={`${result}:${queue}`}>
+                    {result} -&gt; {queue}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {latestAutoPlaybook ? (
           <div className="rounded-[1rem] border border-blue-100 bg-blue-50/60 px-4 py-4">
@@ -2244,6 +2302,7 @@ export function TicketDetailPage() {
 
           <TicketAutomationPanel
             autoPlaybookEvents={autoPlaybookEvents}
+            diagnosticPolicy={playbooksQuery.data?.diagnostic_policy ?? null}
             disabledReason={playbookAccess.allowed ? null : playbookAccess.reason}
             latestOperations={latestOperations}
             onRunPlaybook={(playbookVersionId) => {

@@ -235,6 +235,17 @@ export type SupportTicketToolsPayload = {
 export type SupportTicketPlaybooksPayload = {
   ticket_id: string;
   device_id: string | null;
+  diagnostic_policy?: {
+    suggested_playbooks: string[];
+    auto_run_enabled: boolean;
+    auto_run_priorities: string[];
+    requester_consent_required: boolean;
+    high_risk_consent_required: boolean;
+    attach_to_timeline: boolean;
+    attach_to_passport: boolean;
+    attach_as_evidence: boolean;
+    reroute_by_result: Record<string, string>;
+  } | null;
   playbooks: Array<{
     playbook_version_id: number;
     key: string;

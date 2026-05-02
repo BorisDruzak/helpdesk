@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14e is released: `/app/admin/forms` now has structured diagnostic controls in the request-template step, so suggested playbooks, auto-run priorities, requester/high-risk consent, evidence attachment and reroute-by-result can be edited without hand-writing diagnostic JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14e release/browser signoff the working estimate is backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10f is locally implemented: `/app/tickets/:ticketId` support automation now consumes the ticket diagnostic-policy summary from `GET /api/web/support/tickets/{ticket_id}/playbooks`, so operators see suggested playbooks, auto-run priority scope, consent/evidence flags and reroute-by-result next to manual playbook launch. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. After Slice 10f local verification the working estimate is backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -223,7 +223,14 @@ Slice 9b local verification so far:
 - [x] Add result classification contract (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.) from terminal operation/result payloads to routing facts.
 - [x] Tests: consent required/denied/granted, auto-run only for allowed priority/online agent, evidence attachment, reroute by diagnostic result, no ticket status misuse.
 - [x] UI: admin diagnostic editor shows suggested playbooks and consent/evidence behavior.
-- [ ] UI follow-up: support ticket automation panel shows suggested playbooks and consent/evidence behavior outside the admin template editor.
+- [x] UI follow-up: support ticket automation panel shows suggested playbooks and consent/evidence behavior outside the admin template editor.
+
+Slice 10f local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_playbooks_returns_published_playbooks_for_ticket -q --tb=short` failed with missing `diagnostic_policy` in the playbooks payload; `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx --testNamePattern "playbook readiness"` failed because `TicketAutomationPanel` did not render `Политика диагностики`.
+- GREEN focused: same server command -> 1 passed; same Vitest command -> 1 passed.
+- Broader support/API and UI regression: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` -> 27 passed; `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 12 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
 
 Slice 10a verification:
 

@@ -406,6 +406,20 @@ describe("TicketAutomationPanel", () => {
     render(
       <TicketAutomationPanel
         autoPlaybookEvents={[]}
+        diagnosticPolicy={{
+          suggested_playbooks: ["diagnose.website", "diagnose.dns.basic"],
+          auto_run_enabled: true,
+          auto_run_priorities: ["P0", "P1"],
+          requester_consent_required: true,
+          high_risk_consent_required: true,
+          attach_to_timeline: true,
+          attach_to_passport: true,
+          attach_as_evidence: true,
+          reroute_by_result: {
+            DNS_FAIL: "networks",
+            HTTP_500: "information_systems",
+          },
+        }}
         latestOperations={[
           {
             operation_id: "operation-1",
@@ -453,6 +467,14 @@ describe("TicketAutomationPanel", () => {
     expect(screen.getByText("Последние запуски")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить плейбук" }));
+    expect(screen.getByText("Политика диагностики")).toBeInTheDocument();
+    expect(screen.getByText("diagnose.website, diagnose.dns.basic")).toBeInTheDocument();
+    expect(screen.getByText("Автозапуск: P0, P1")).toBeInTheDocument();
+    expect(screen.getByText("Нужно согласие пользователя")).toBeInTheDocument();
+    expect(screen.getByText("High-risk consent")).toBeInTheDocument();
+    expect(screen.getByText("В паспорт")).toBeInTheDocument();
+    expect(screen.getByText("Evidence")).toBeInTheDocument();
+    expect(screen.getByText("DNS_FAIL -> networks")).toBeInTheDocument();
     expect(onRunPlaybook).toHaveBeenCalledWith(7);
   });
 

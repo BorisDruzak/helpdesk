@@ -1249,6 +1249,28 @@ async def test_web_support_ticket_playbooks_returns_published_playbooks_for_tick
             requester_id="user-playbook",
             queue_id=queue.id,
             assignee_id="support-test",
+            custom_fields={
+                "request_template": {
+                    "key": "website_unavailable",
+                    "diagnostic_policy": {
+                        "suggested_playbooks": ["diagnose.website", "diagnose.dns.basic"],
+                        "auto_run": {"enabled": True, "only_for_priorities": ["P0", "P1"]},
+                        "consent": {
+                            "required_for_requester_device": True,
+                            "required_for_high_risk_tools": True,
+                        },
+                        "attach_results": {
+                            "to_timeline": True,
+                            "to_passport": True,
+                            "as_evidence": True,
+                        },
+                        "reroute_by_result": {
+                            "DNS_FAIL": "networks",
+                            "HTTP_500": "information_systems",
+                        },
+                    },
+                }
+            },
         )
         playbook = Playbook(key="printer.quick_diag", name="Быстрая диагностика принтера", domain="diagnostics")
         session.add_all([ticket, playbook])
@@ -1288,6 +1310,17 @@ async def test_web_support_ticket_playbooks_returns_published_playbooks_for_tick
     assert payload["status"] == "success"
     assert payload["data"]["ticket_id"] == ticket_id
     assert payload["data"]["device_id"] == "device-playbooks"
+    assert payload["data"]["diagnostic_policy"] == {
+        "suggested_playbooks": ["diagnose.website", "diagnose.dns.basic"],
+        "auto_run_enabled": True,
+        "auto_run_priorities": ["P0", "P1"],
+        "requester_consent_required": True,
+        "high_risk_consent_required": True,
+        "attach_to_timeline": True,
+        "attach_to_passport": True,
+        "attach_as_evidence": True,
+        "reroute_by_result": {"DNS_FAIL": "networks", "HTTP_500": "information_systems"},
+    }
     assert payload["data"]["playbooks"] == [
         {
             "playbook_version_id": version_id,
