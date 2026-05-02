@@ -1893,6 +1893,62 @@ function DiagnosticPolicyControls({
   );
 }
 
+function VisibilityPolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const mapping = nestedObject(config.public_status_mapping);
+  const updateMapping = (status: string, value: string) =>
+    onChange({ ...config, public_status_mapping: { ...mapping, [status]: value } });
+  const statusControls = [
+    ["new", "Новая публично"],
+    ["queued", "В очереди публично"],
+    ["assigned", "Назначена публично"],
+    ["in_progress", "В работе публично"],
+    ["waiting_user", "Ожидает пользователя публично"],
+    ["waiting_approval", "Ожидает согласование публично"],
+    ["resolved", "Решена публично"],
+    ["closed", "Закрыта публично"],
+    ["canceled", "Отменена публично"],
+  ];
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      {statusControls.map(([status, label]) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={status}>
+          <span>{label}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => updateMapping(status, event.currentTarget.value)}
+            value={String(mapping[status] ?? "")}
+          />
+        </label>
+      ))}
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Скрыть от заявителя</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, hide_from_requester: listFromCsv(event.currentTarget.value) })}
+          placeholder="internal_notes, ola_details, raw_diagnostics"
+          value={listToCsv(config.hide_from_requester)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Показывать заявителю</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, show_to_requester: listFromCsv(event.currentTarget.value) })}
+          placeholder="public_messages, public_status, expected_due_at"
+          value={listToCsv(config.show_to_requester)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -2229,6 +2285,10 @@ function PolicyKindControls({
 
   if (kind === "diagnostic") {
     return <DiagnosticPolicyControls config={config} form={form} onChange={onChange} />;
+  }
+
+  if (kind === "visibility") {
+    return <VisibilityPolicyControls config={config} onChange={onChange} />;
   }
 
   if (kind === "notification") {
@@ -3246,6 +3306,26 @@ function TemplateConstructorPanel({
             title="Правила закрытия"
             value={form.closure_policy_json}
           />
+        ) : null}
+
+        {activeStep === "visibility" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Политика видимости</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Публичные статусы, скрытые внутренние поля и requester-visible metadata настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">visibility policy</Badge>
+            </div>
+            <div className="mt-4">
+              <VisibilityPolicyControls
+                config={parseJsonDraft(form.visibility_policy_json, parseJsonDraft(buildVisibilityPreset()))}
+                onChange={(config) => onUpdatePolicyJson("visibility_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeStep === "visibility" ? (

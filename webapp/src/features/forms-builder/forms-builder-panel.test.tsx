@@ -1491,6 +1491,98 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает visibility policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Видимость")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить видимость" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(templateControl("Новая публично"), { target: { value: "Заявка принята" } });
+    fireEvent.change(templateControl("В работе публично"), { target: { value: "Заявка в работе" } });
+    fireEvent.change(templateControl("Ожидает пользователя публично"), { target: { value: "Нужен ваш ответ" } });
+    fireEvent.change(templateControl("Решена публично"), { target: { value: "Проверьте решение" } });
+    fireEvent.change(templateControl("Закрыта публично"), { target: { value: "Закрыта" } });
+    fireEvent.change(templateControl("Скрыть от заявителя"), { target: { value: "internal_notes, ola_details, raw_diagnostics" } });
+    fireEvent.change(templateControl("Показывать заявителю"), { target: { value: "public_messages, public_status, expected_due_at" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          visibility_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.visibility_policy).toMatchObject({
+      public_status_mapping: {
+        new: "Заявка принята",
+        in_progress: "Заявка в работе",
+        waiting_user: "Нужен ваш ответ",
+        resolved: "Проверьте решение",
+        closed: "Закрыта",
+      },
+      hide_from_requester: ["internal_notes", "ola_details", "raw_diagnostics"],
+      show_to_requester: ["public_messages", "public_status", "expected_due_at"],
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

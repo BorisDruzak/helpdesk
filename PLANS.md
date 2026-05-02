@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10f is released: `/app/tickets/:ticketId` support automation now consumes the ticket diagnostic-policy summary from `GET /api/web/support/tickets/{ticket_id}/playbooks`, so operators see suggested playbooks, auto-run priority scope, consent/evidence flags and reroute-by-result next to manual playbook launch. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. After Slice 10f release/browser signoff the working estimate is backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14f is locally implemented: `/app/admin/forms` now has structured visibility-policy controls for public status mapping, requester-hidden fields and requester-visible metadata in both the request-template step and the standalone policy editor, before the advanced JSON editor. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10f release/browser signoff the working estimate was backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. After Slice 14f local verification the working estimate is backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 10f is released: `/app/tickets/:ticketId` support automation now c
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility policies уже имеют structured controls, а notification/reporting/smart-view UX ещё требует добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -257,6 +257,7 @@ Slice 10b local verification so far:
 - [ ] Expand visibility policy to support field-level requester/support views, public status mapping, raw diagnostics redaction, OLA hiding, passport export visibility.
 - [ ] Tests: each notification group, channel audit, requester redaction, support-visible metadata, public status mapping.
 - [ ] UI: structured notification/visibility editors with preview for requester vs support.
+- [x] Slice 14f UI part: structured visibility controls for public status mapping, `hide_from_requester` and `show_to_requester` in `/app/admin/forms`; requester/support preview and deeper redaction tests remain in this Slice 11 block.
 
 ### Slice 12: Reporting And Passport Policy Completion
 
@@ -326,6 +327,14 @@ Slice 14e local verification:
 - Web build: `pnpm --dir webapp run build` -> passed after widening `DiagnosticPolicyControls.form` to accept the existing `DraftForm | null` policy-editor contract.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `b8ad3c6 webapp: add structured diagnostic controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/forms` confirmed structured diagnostic fields in the template `Диагностика` step; fresh browser console errors -> 0; server status/log tail showed the released server running with authenticated requests and no forms-builder errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14f local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "visibility policy"` failed because the template `Видимость` step had no structured `Новая публично` field.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 20 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
