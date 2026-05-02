@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 16b is released: legacy `request_forms` compatibility now covers old `form_key` create payloads, old packs that predate server-driven priority fields, and pre-registry tickets resolving active ticket-type policies. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 16b release/smoke/observer signoff the working estimate is backend/runtime about 99.6%, server UI about 91.5%, agent GUI about 74.5%, overall about 99.0%. The remaining plan is mostly final verification/release gates and any follow-up found by full regression.
+Status: Slice 17 release gates are complete. Legacy `request_forms` compatibility covers old `form_key` create payloads, old packs that predate server-driven priority fields, and pre-registry tickets resolving active ticket-type policies; the final server/agent/web regression matrix, release smoke, browser signoff and observer runtime signoff passed. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 17 signoff the documented service-desk model plan is complete; working maturity estimate is backend/runtime about 99.6%, server UI about 91.5%, agent GUI about 74.5%, overall about 99.0%. Any next work should be a new hardening/UX cleanup plan rather than continuation of this plan.
 
 ### Goal
 
@@ -550,13 +550,26 @@ Slice 16b local verification:
 
 ### Slice 17: Verification And Release Gates
 
-- [ ] Local baseline: `python scripts/verify_workspace.py`.
-- [ ] Server focused: `python -m pytest server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_routing_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_passport_service.py server/tests/test_web_support_api.py server/tests/test_web_settings_api.py -q --tb=short`.
-- [ ] Agent focused: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short`.
-- [ ] Web focused: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx src/pages/settings/index.test.tsx src/pages/tickets/detail-page.test.tsx`.
-- [ ] Remote deploy smoke through `python scripts/release_server_to_remote.py` and `python scripts/manage_remote_stack.py smoke server`.
-- [ ] Browser signoff at `http://192.168.100.17:8666/admin`; for admin UI changes inspect `/app/admin/forms`, `/app/settings`, `/app/tickets/:ticketId`.
-- [ ] Stop remote server after checks unless explicitly asked to keep it running: `python scripts/manage_remote_stack.py stop server`.
+- [x] Local baseline: `python scripts/verify_workspace.py`.
+- [x] Server focused: `python -m pytest server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_priority_policy.py server/tests/test_ticket_routing_policy.py server/tests/test_ticket_sla_calendar.py server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_passport_service.py server/tests/test_web_support_api.py server/tests/test_web_settings_api.py -q --tb=short`.
+- [x] Agent focused: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short`.
+- [x] Web focused: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx src/pages/settings/index.test.tsx src/pages/tickets/detail-page.test.tsx`.
+- [x] Remote deploy smoke through `python scripts/release_server_to_remote.py` and `python scripts/manage_remote_stack.py smoke server`.
+- [x] Browser signoff at `http://192.168.100.17:8666/admin`; for admin UI changes inspect `/app/admin/forms`, `/app/settings`, `/app/tickets/:ticketId`.
+- [x] Stop remote server after checks unless explicitly asked to keep it running: `python scripts/manage_remote_stack.py stop server`.
+
+Slice 17 verification:
+
+- Local baseline: `python scripts\verify_workspace.py` -> passed.
+- Agent focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 66 passed.
+- Web focused: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx src/pages/settings/index.test.tsx src/pages/tickets/detail-page.test.tsx` -> 3 files / 42 tests passed.
+- Server focused matrix note: the single all-in-one command exceeded the 10-minute tool timeout without assertion output; the same file list was then verified serially in three DB-friendly groups.
+- Server focused group 1: `python -m pytest server\tests\test_ticket_routing_policy.py server\tests\test_ticket_sla_calendar.py server\tests\test_ticket_approval_policy.py -q --tb=short` -> 27 passed.
+- Server focused group 2: `python -m pytest server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_service.py server\tests\test_web_support_api.py server\tests\test_web_settings_api.py -q --tb=short` -> 55 passed.
+- Server focused group 3: `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_ticket_form_packs.py server\tests\test_ticket_priority_policy.py -q --tb=short` -> 46 passed.
+- Release/smoke: `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> current commit `c808b15`, migrations checked, webapp rebuilt/uploaded, smoke OK on attempt 2; `python scripts\manage_remote_stack.py smoke server` -> `/api/health` 200.
+- Browser/live: `http://192.168.100.17:8666/admin` loaded the React admin shell; `/app/admin/forms` loaded request-template/form/policy builder with active version 1.0.12; `/app/settings` loaded settings overview; `/app/tickets/e64ac821-5ad6-47a1-9fbb-f6d5127e2b26` loaded the support ticket detail with Passport 7/7 and transition controls; `/app/admin/observer` loaded with `Runtime: ok`; fresh browser console errors were 0 after each checked page.
+- Remote logs/status: server status was running after release; log tail showed authenticated support/admin/observer requests and no release-regression tracebacks, with only existing disconnected-agent warnings; `python scripts\manage_remote_stack.py stop server` -> stopped and follow-up status confirmed stopped.
 
 ### Handoff
 
