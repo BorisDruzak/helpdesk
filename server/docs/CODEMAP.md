@@ -252,6 +252,7 @@
 - `server/tests/README.md` — канон по локальному server baseline и env vars.
 - `scripts/bootstrap_web_toolchain.py` — каноничный bootstrap `Node.js 24 LTS + corepack + pnpm` для нового `webapp/` и frontend build/release pipeline.
 - `scripts/check_webapp_cutover.py` — preflight по operational readiness нового cutover: built bundle, requested/active флаги и готовность полного default-route switch; путь workspace теперь определяется от самого repo и одинаково работает локально и на Linux.
+- `scripts/helpdesk_data_cleanup.py` — read-only dry-run inventory for historical helpdesk data quality: tickets/requester names/module descriptions/tool descriptions with mojibake, `???` placeholders and token-like samples; outputs UTF-8 JSON/Markdown under `artifacts/diagnostics/` and leaves mutation disabled until reviewed cleanup rules exist.
 - `scripts/run_ci_suite.py` — канонический локальный/self-hosted CI run с artifact layout `artifacts/ci/<sha>/`.
 - `scripts/run_ci_in_temp_workspace.py` — hook-friendly runner для self-hosted CI в отдельном checkout/venv.
 - `requirements-ci.txt` — минимальный CI dependency set.
