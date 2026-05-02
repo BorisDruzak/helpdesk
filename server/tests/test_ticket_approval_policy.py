@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval
@@ -134,6 +134,170 @@ async def test_approval_policy_allows_entering_waiting_status(test_engine) -> No
 
     assert result["applied"] is True
     assert result["updates"]["status"] == "waiting_on_approval"
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_creates_request_when_entering_waiting_status(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        status="new",
+        approval_policy={
+            "required": True,
+            "approval_mode": "any_one",
+            "approver_source": {
+                "type": "explicit_user",
+                "user_id": "service-owner-1",
+            },
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+
+    result = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="new",
+        to_status="waiting_on_approval",
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        rows = await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        approvals = rows.scalars().all()
+
+    assert len(approvals) == 1
+    assert approvals[0].approval_type == "explicit_user"
+    assert approvals[0].approver_id == "service-owner-1"
+    assert approvals[0].status == "requested"
+    assert approvals[0].requested_by == "support-test"
+    assert result["event_payload"]["approval_policy"]["requests_created"] == 1
+    assert result["event_payload"]["approval_policy"]["approval_requests"][0]["approver_id"] == "service-owner-1"
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_creates_request_from_form_field_source(test_engine) -> None:
+    ticket_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=f"device-{ticket_id[:8]}",
+                title="Form field approval",
+                description="Owner is selected in the request form.",
+                status="new",
+                requester_id="requester-approval",
+                ticket_type="access_request",
+                custom_fields={
+                    "request_template": {
+                        "key": "access_request",
+                        "ticket_type": "access_request",
+                        "approval_policy": {
+                            "required": True,
+                            "approval_mode": "any_one",
+                            "approver_source": {
+                                "type": "form_field",
+                                "field": "system_owner",
+                            },
+                            "statuses": {
+                                "waiting_status": "waiting_on_approval",
+                                "approved_transition": "in_progress",
+                                "rejected_transition": "canceled",
+                            },
+                        },
+                    },
+                    "request_form_data": {
+                        "system_owner": "owner-from-form",
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    result = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="new",
+        to_status="waiting_on_approval",
+    )
+
+    async with session_maker() as session:
+        rows = await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        approvals = rows.scalars().all()
+
+    assert len(approvals) == 1
+    assert approvals[0].approval_type == "form_field"
+    assert approvals[0].approver_id == "owner-from-form"
+    assert result["event_payload"]["approval_policy"]["approval_requests"][0]["source"] == "form_field"
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_uses_fallback_source_without_duplicate_requests(test_engine) -> None:
+    ticket_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=f"device-{ticket_id[:8]}",
+                title="Fallback approval",
+                description="Service owner is missing, requester manager should approve.",
+                status="new",
+                requester_id="requester-approval",
+                ticket_type="access_request",
+                custom_fields={
+                    "request_template": {
+                        "key": "access_request",
+                        "ticket_type": "access_request",
+                        "approval_policy": {
+                            "required": True,
+                            "approval_mode": "any_one",
+                            "approver_source": {
+                                "type": "service_owner",
+                                "fallback": {
+                                    "type": "requester_manager",
+                                },
+                            },
+                            "statuses": {
+                                "waiting_status": "waiting_on_approval",
+                                "approved_transition": "in_progress",
+                                "rejected_transition": "canceled",
+                            },
+                        },
+                    },
+                    "requester_profile": {
+                        "manager_id": "manager-1",
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    first = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="new",
+        to_status="waiting_on_approval",
+    )
+    second = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="waiting_on_approval",
+        to_status="waiting_on_approval",
+    )
+
+    async with session_maker() as session:
+        rows = await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        approvals = rows.scalars().all()
+
+    assert len(approvals) == 1
+    assert approvals[0].approval_type == "requester_manager"
+    assert approvals[0].approver_id == "manager-1"
+    assert first["event_payload"]["approval_policy"]["requests_created"] == 1
+    assert second["event_payload"]["approval_policy"]["requests_created"] == 0
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.db.models import TicketApproval, TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from tickets.approval_policy import validate_approval_policy
+from tickets.approval_policy import ensure_approval_requests, validate_approval_policy
 from tickets.closure_policy import validate_closure_policy
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
@@ -347,6 +347,15 @@ class TicketWorkflowService:
             to_status=to_status,
         )
         if approval_decision.get("applied"):
+            if approval_decision.get("gate") == "waiting":
+                approval_decision.update(
+                    await ensure_approval_requests(
+                        self.session,
+                        ticket,
+                        actor_id=actor_id,
+                        actor_role=actor_role,
+                    )
+                )
             event_payload["approval_policy"] = approval_decision
 
         if to_status == "resolved":

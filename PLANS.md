@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 7b is complete, committed and released to the Linux stand. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 8a is in progress. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. Slice 8a targets approval request creation from `approval_policy`; if released, expected maturity becomes backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -104,12 +104,18 @@ Slice 7b local verification:
 
 ### Slice 8: Approval Requests
 
-- [ ] Add service that creates `ticket_approvals` from `approval_policy` when entering waiting approval or on configured transition.
-- [ ] Implement approver sources: requester_manager, service_owner, queue_lead, security role, explicit user/group, form field.
+- [x] Slice 8a: create active `ticket_approvals` from `approval_policy` when entering waiting approval, with explicit user, form field, service owner/requester manager fallback, queue lead, security role and group identifiers.
 - [ ] Implement approval modes: any_one, all, sequential.
 - [ ] Implement due/reminder/escalate timeout behavior and require comment on reject.
 - [ ] Add requester/support UI to show pending approvals and actions.
 - [ ] Tests: approval request creation, source resolution fallback, sequential mode, rejection transition, timeout reminder/escalation, passport logging.
+
+Slice 8a local verification:
+
+- RED confirmed: approval policy tests failed because entering `waiting_on_approval` changed status but created no `ticket_approvals`.
+- GREEN focused: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_creates_request_when_entering_waiting_status server\tests\test_ticket_approval_policy.py::test_approval_policy_creates_request_from_form_field_source -q --tb=short` -> 2 passed.
+- Fallback/idempotency: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_uses_fallback_source_without_duplicate_requests -q --tb=short` -> 1 passed.
+- Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 8 passed.
 
 ### Slice 9: Closure Policy Completion
 
