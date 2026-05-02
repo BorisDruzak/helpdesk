@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10f is locally implemented: `/app/tickets/:ticketId` support automation now consumes the ticket diagnostic-policy summary from `GET /api/web/support/tickets/{ticket_id}/playbooks`, so operators see suggested playbooks, auto-run priority scope, consent/evidence flags and reroute-by-result next to manual playbook launch. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. After Slice 10f local verification the working estimate is backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10f is released: `/app/tickets/:ticketId` support automation now consumes the ticket diagnostic-policy summary from `GET /api/web/support/tickets/{ticket_id}/playbooks`, so operators see suggested playbooks, auto-run priority scope, consent/evidence flags and reroute-by-result next to manual playbook launch. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. After Slice 10f release/browser signoff the working estimate is backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -231,6 +231,7 @@ Slice 10f local verification:
 - GREEN focused: same server command -> 1 passed; same Vitest command -> 1 passed.
 - Broader support/API and UI regression: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` -> 27 passed; `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 12 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
+- Release/live: committed as `67ed964 support: surface diagnostic policy in automation panel`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/admin`, `/app/tickets` and `/app/tickets/:ticketId` confirmed the support queue/detail/automation panel still load after the new playbooks payload; fresh browser console errors -> 0; live API probing found no current remote ticket with a non-empty diagnostic policy snapshot, so the policy-summary rendering itself remains covered by endpoint/component regression tests; server log tail showed authenticated support queue/detail/playbooks/passport requests and no support automation errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 Slice 10a verification:
 
