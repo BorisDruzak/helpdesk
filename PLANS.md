@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10c is locally complete: diagnostic policy auto-run now inspects published playbook risk metadata and blocks high-risk tool playbooks unless diagnostic consent explicitly grants high-risk execution. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. After Slice 9a release/browser signoff the working estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90%. After Slice 9b release/browser signoff the working estimate is backend/runtime about 95%, server UI about 79%, agent GUI about 73%, overall about 91%. After Slice 10a release/browser signoff the working estimate is backend/runtime about 96%, server UI about 79%, agent GUI about 73%, overall about 92%. After Slice 10b release/browser signoff the working estimate is backend/runtime about 97%, server UI about 79%, agent GUI about 73%, overall about 93%. After Slice 10c local verification the working estimate is backend/runtime about 98%, server UI about 79%, agent GUI about 73%, overall about 94%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10d is in progress: shared `policy_action_dispatcher` now turns OLA breach actions into recipient delivery, in-app notifications, external channel sends and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10c release/browser signoff the working estimate was backend/runtime about 98%, server UI about 79%, agent GUI about 73%, overall about 94%. After Slice 10d local focused verification the working estimate is backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -11,7 +11,7 @@ Status: Slice 10c is locally complete: diagnostic policy auto-run now inspects p
 ### Scope
 
 - Backend domain/model: `server/app/db/models.py`, migrations in `server/app/db/migrations/versions/`, `server/app/repos/helpdesk_policy_repo.py`, `server/tickets/helpdesk_policy_runtime.py`.
-- Ticket runtime: `server/tickets/create_flow.py`, `server/tickets/form_catalog.py`, `server/tickets/workflow_profiles.py`, `server/tickets/workflow_service.py`, `server/tickets/priority_policy.py`, `server/tickets/sla_service.py`, `server/tickets/ola_service.py`, `server/tickets/routing_service.py`, `server/tickets/approval_policy.py`, `server/tickets/closure_policy.py`, `server/tickets/diagnostic_policy.py`, `server/tickets/notification_service.py`, `server/tickets/visibility_policy.py`, `server/tickets/passport_service.py`, `server/tickets/smart_views.py`.
+- Ticket runtime: `server/tickets/create_flow.py`, `server/tickets/form_catalog.py`, `server/tickets/workflow_profiles.py`, `server/tickets/workflow_service.py`, `server/tickets/priority_policy.py`, `server/tickets/sla_service.py`, `server/tickets/ola_service.py`, `server/tickets/policy_action_dispatcher.py`, `server/tickets/routing_service.py`, `server/tickets/approval_policy.py`, `server/tickets/closure_policy.py`, `server/tickets/diagnostic_policy.py`, `server/tickets/notification_service.py`, `server/tickets/visibility_policy.py`, `server/tickets/passport_service.py`, `server/tickets/smart_views.py`.
 - Typed web API/UI: `server/web_api/admin_handlers.py`, `server/web_api/settings_handlers.py`, `server/web_api/dto/admin.py`, `webapp/src/features/forms-builder/*`, `webapp/src/features/settings/*`, `webapp/src/pages/settings/index.tsx`, `webapp/src/pages/tickets/detail-page.tsx`.
 - Agent GUI consumer: `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/server_api.py`.
 - Docs/navigation: `server/docs/TICKET_SYSTEM.md`, `server/docs/REQUEST_FORM_BUILDER.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`.
@@ -36,7 +36,7 @@ Status: Slice 10c is locally complete: diagnostic policy auto-run now inspects p
 
 ### Decisions Added 2026-05-02
 
-- External escalation/recipient actions for SLA/OLA breach actions will be implemented as a shared `policy_action_dispatcher`, not inside SLA/OLA services. SLA/OLA services emit canonical policy-aware events with `breach_actions`; dispatcher resolves recipients (`assignee`, `queue_lead`, queue members, admins, explicit actors/groups), applies notification preferences/channel availability, creates delivery audit rows and keeps retry/idempotency by `(ticket_id, event_id, action_key, recipient)`.
+- External escalation/recipient actions for SLA/OLA breach actions are implemented as a shared `policy_action_dispatcher`, not as channel logic inside SLA/OLA services. SLA/OLA services emit canonical policy-aware events with `breach_actions`; dispatcher resolves recipients (`assignee`, `queue_lead`, queue members, explicit actors/groups), applies notification preferences/channel availability, creates delivery audit rows and keeps retry/idempotency by `(ticket_id, source_event_id, action_key, recipient)`. Admin/group recipient expansion beyond explicit actor ids remains a follow-up.
 - Structured OLA editor will be part of the admin policy editor, not the legacy queue target grid. MVP fields: ack/processing P0-P3 targets, start conditions, ack stop conditions, processing stop conditions, pause/resume conditions, breach actions, fallback queue target visibility and JSON advanced preview.
 - OLA risk UI will surface as an operational smart-view slice with counts, not only as a hidden query parameter. The support queue response should expose `summary.smart_view_counts`, and React support/tickets pages should render the OLA risk count next to built-in smart views.
 - The existing `web_settings` warning for calendar JSON shape is a compatibility cleanup: typed settings must accept both dict-shaped and list-shaped `weekly_hours_json` / `holidays_json` stored by historical calendar editors without falling back to an empty settings payload.
@@ -56,6 +56,24 @@ Slice 10c local verification:
 - GREEN focused: `python -m pytest server\tests\test_ticket_diagnostic_policy.py::test_diagnostic_policy_auto_run_skips_high_risk_playbook_without_explicit_consent server\tests\test_ticket_diagnostic_policy.py::test_diagnostic_policy_auto_run_starts_high_risk_playbook_with_explicit_consent -q --tb=short` -> 2 passed.
 - Broader diagnostic/form-trigger: `python -m pytest server\tests\test_ticket_diagnostic_policy.py server\tests\test_playbook_scenarios_no_db.py server\tests\test_ticket_form_packs.py::test_create_ticket_from_form_starts_configured_playbook server\tests\test_ticket_form_packs.py::test_public_create_ticket_from_form_starts_configured_playbook -q --tb=short` -> 18 passed.
 - Full diagnostic policy file: `python -m pytest server\tests\test_ticket_diagnostic_policy.py -q --tb=short` -> 8 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+
+### Slice 10d: Shared Policy Action Dispatcher For OLA Breach Escalation
+
+- [x] Add `server/tickets/policy_action_dispatcher.py` as a reusable dispatcher for policy actions outside raw event payloads.
+- [x] Resolve `notify_queue_lead` to queue members with lead/owner/manager roles; support queue, assignee, requester, watchers and explicit actor recipients for follow-on SLA/workflow use.
+- [x] Create in-app `TicketNotification` rows with source event id/action key metadata and recipient-level idempotency.
+- [x] Create `policy_action_dispatched` audit events with stable event ids.
+- [x] Use existing `ExternalNotificationProvider` contract for configured external channels and record `external_notification_delivery` audit events.
+- [x] Wire OLA breach checks to dispatch `breach_actions` after writing the canonical `ola_breached` event.
+- [ ] Wire SLA warning/breach actions through the same dispatcher after the next watchdog pass.
+- [ ] Extend admin UI policy editors so escalation recipients/channels are structured controls instead of JSON-only fields.
+
+Slice 10d local verification so far:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_ola_policy.py -q` failed on missing `tickets.policy_action_dispatcher`.
+- GREEN focused: `python -m pytest server\tests\test_ticket_ola_policy.py -q` -> 7 passed.
+- Broader notification/OLA regression: `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_stage8.py -q --tb=short` -> 17 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Target Completion Criteria

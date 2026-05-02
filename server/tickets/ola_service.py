@@ -196,10 +196,10 @@ async def _add_ola_event(
     ticket: Ticket,
     event_type: str,
     payload: dict[str, Any],
-) -> None:
+) -> Optional[tuple]:
     from app.repos.ticket_events_repo import TicketEventsRepo
 
-    await TicketEventsRepo(session).add_event(
+    return await TicketEventsRepo(session).add_event(
         ticket_id=ticket.ticket_id,
         device_id=ticket.device_id,
         agent_seq=None,
@@ -519,11 +519,14 @@ async def check_ola_breaches(session: AsyncSession, *, limit: int = 100) -> int:
         if not updates:
             continue
         policy = await _get_ola_policy(session, ticket)
+        breach_types = [key for key in updates.keys() if key != "custom_fields"]
+        breach_actions = _breach_actions(policy)
+        breach_event_id = f"ola-breach-{ticket.ticket_id}-{'-'.join(breach_types)}"
         custom_fields = _set_ola_runtime(
             ticket,
             breached_at=now.isoformat(),
-            breach_types=list(updates.keys()),
-            breach_actions=_breach_actions(policy),
+            breach_types=breach_types,
+            breach_actions=breach_actions,
         )
         updates["custom_fields"] = custom_fields
         await session.execute(update(Ticket).where(Ticket.ticket_id == ticket.ticket_id).values(**updates))
@@ -533,12 +536,29 @@ async def check_ola_breaches(session: AsyncSession, *, limit: int = 100) -> int:
             "ola_breached",
             {
                 "ticket_id": ticket.ticket_id,
-                "breach_types": [key for key in updates.keys() if key != "custom_fields"],
+                "breach_types": breach_types,
+                "source_event_id": breach_event_id,
                 "ts": now.isoformat(),
                 "ola_policy": _ola_policy_metadata(policy),
-                "breach_actions": _breach_actions(policy),
+                "breach_actions": breach_actions,
             },
         )
+        if breach_actions:
+            from tickets.policy_action_dispatcher import dispatch_policy_actions
+
+            await dispatch_policy_actions(
+                session,
+                ticket=ticket,
+                source_event_type="ola_breached",
+                source_event_id=breach_event_id,
+                actions=breach_actions,
+                payload={
+                    "ticket_id": ticket.ticket_id,
+                    "breach_types": breach_types,
+                    "ts": now.isoformat(),
+                    "ola_policy": _ola_policy_metadata(policy),
+                },
+            )
         count += 1
     return count
 

@@ -7,8 +7,26 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketEvent, TicketQueue
+from app.db.models import Ticket, TicketEvent, TicketNotification, TicketQueue, TicketQueueMember
+from tickets.policy_action_dispatcher import dispatch_policy_actions
 from tickets import ola_service
+
+
+class FakeChannelProvider:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def send(self, *, channel: str, actor_id: str, ticket_id: str, event_type: str, payload: dict):
+        self.calls.append(
+            {
+                "channel": channel,
+                "actor_id": actor_id,
+                "ticket_id": ticket_id,
+                "event_type": event_type,
+                "payload": payload,
+            }
+        )
+        return {"delivery_status": "sent", "provider_message_id": f"{channel}-{actor_id}"}
 
 
 class FrozenDateTime(datetime):
@@ -25,6 +43,13 @@ async def _queue(session, code: str = "networks") -> TicketQueue:
     session.add(queue)
     await session.flush()
     return queue
+
+
+async def _queue_member(session, queue_id: int, actor_id: str, role: str | None = None) -> TicketQueueMember:
+    member = TicketQueueMember(queue_id=queue_id, actor_id=actor_id, role_in_queue=role)
+    session.add(member)
+    await session.flush()
+    return member
 
 
 def _policy(**overrides):
@@ -272,3 +297,159 @@ async def test_ola_breach_check_emits_policy_aware_event(test_engine, monkeypatc
         "notify_queue_lead": True,
         "create_internal_event": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_ola_breach_actions_dispatch_to_queue_lead(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(ola_service, "TICKET_OLA_ENABLED", True)
+    monkeypatch.setattr(ola_service, "datetime", FrozenDateTime)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        await _queue_member(session, queue.id, "queue-lead-ola", "lead")
+        await _queue_member(session, queue.id, "queue-member-ola", "member")
+        ticket = _ticket(ticket_id, queue.id, status="in_progress")
+        ticket.ola_queue_id = queue.id
+        ticket.ola_started_at = datetime(2026, 5, 4, 15, 0, tzinfo=timezone.utc)
+        ticket.ola_ack_due_at = datetime(2026, 5, 4, 16, 10, tzinfo=timezone.utc)
+        ticket.ola_processing_due_at = datetime(2026, 5, 4, 16, 20, tzinfo=timezone.utc)
+        session.add(ticket)
+        await session.commit()
+
+    async with session_maker() as session:
+        assert await ola_service.check_ola_breaches(session) == 1
+        await session.commit()
+
+    async with session_maker() as session:
+        notifications = (
+            await session.execute(
+                select(TicketNotification)
+                .where(TicketNotification.ticket_id == ticket_id)
+                .order_by(TicketNotification.id)
+            )
+        ).scalars().all()
+        audit_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "policy_action_dispatched")
+                .order_by(TicketEvent.id)
+            )
+        ).scalars().all()
+
+    assert [item.actor_id for item in notifications] == ["queue-lead-ola"]
+    assert notifications[0].event_type == "ola_breached"
+    assert notifications[0].payload["source_event_type"] == "ola_breached"
+    assert notifications[0].payload["policy_action_key"] == "notify_queue_lead"
+    assert notifications[0].payload["breach_actions"]["notify_queue_lead"] is True
+    assert len(audit_events) == 1
+    assert audit_events[0].payload["actor_id"] == "queue-lead-ola"
+    assert audit_events[0].payload["action_key"] == "notify_queue_lead"
+
+
+@pytest.mark.asyncio
+async def test_policy_action_dispatcher_is_idempotent_per_source_event_and_recipient(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        await _queue_member(session, queue.id, "queue-lead-idempotent", "lead")
+        ticket = _ticket(ticket_id, queue.id, status="in_progress")
+        session.add(ticket)
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        first = await dispatch_policy_actions(
+            session,
+            ticket=ticket,
+            source_event_type="ola_breached",
+            source_event_id="ola-breach-source-1",
+            actions={"notify_queue_lead": True, "create_internal_event": True},
+            payload={"ticket_id": ticket_id},
+        )
+        second = await dispatch_policy_actions(
+            session,
+            ticket=ticket,
+            source_event_type="ola_breached",
+            source_event_id="ola-breach-source-1",
+            actions={"notify_queue_lead": True, "create_internal_event": True},
+            payload={"ticket_id": ticket_id},
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        notifications = (
+            await session.execute(
+                select(TicketNotification)
+                .where(TicketNotification.ticket_id == ticket_id)
+                .order_by(TicketNotification.id)
+            )
+        ).scalars().all()
+        audit_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "policy_action_dispatched")
+                .order_by(TicketEvent.id)
+            )
+        ).scalars().all()
+
+    assert first["created_notifications"] == 1
+    assert first["created_audit_events"] == 1
+    assert second["created_notifications"] == 0
+    assert second["created_audit_events"] == 0
+    assert [item.actor_id for item in notifications] == ["queue-lead-idempotent"]
+    assert len(audit_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_policy_action_dispatcher_sends_external_channels_with_audit(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    provider = FakeChannelProvider()
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        await _queue_member(session, queue.id, "queue-lead-external", "lead")
+        ticket = _ticket(ticket_id, queue.id, status="in_progress")
+        session.add(ticket)
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        result = await dispatch_policy_actions(
+            session,
+            ticket=ticket,
+            source_event_type="ola_breached",
+            source_event_id="ola-breach-source-external",
+            actions={
+                "notify_queue_lead": True,
+                "create_internal_event": True,
+                "channels": {"web": True, "email": True},
+            },
+            payload={"ticket_id": ticket_id},
+            channel_provider=provider,
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        external_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "external_notification_delivery")
+                .order_by(TicketEvent.id)
+            )
+        ).scalars().all()
+
+    assert result["external_deliveries"] == 1
+    assert [item["channel"] for item in provider.calls] == ["email"]
+    assert provider.calls[0]["payload"]["policy_action_key"] == "notify_queue_lead"
+    assert len(external_events) == 1
+    assert external_events[0].payload["channel"] == "email"
+    assert external_events[0].payload["delivery_status"] == "sent"
+    assert external_events[0].payload["provider_message_id"] == "email-queue-lead-external"
