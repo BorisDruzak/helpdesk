@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10d is in progress: shared `policy_action_dispatcher` now turns OLA breach actions into recipient delivery, in-app notifications, external channel sends and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10c release/browser signoff the working estimate was backend/runtime about 98%, server UI about 79%, agent GUI about 73%, overall about 94%. After Slice 10d local focused verification the working estimate is backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10d is released: shared `policy_action_dispatcher` now turns OLA breach actions into recipient delivery, in-app notifications, external channel sends and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10c release/browser signoff the working estimate was backend/runtime about 98%, server UI about 79%, agent GUI about 73%, overall about 94%. After Slice 10d release/browser signoff the working estimate is backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -75,6 +75,7 @@ Slice 10d local verification so far:
 - GREEN focused: `python -m pytest server\tests\test_ticket_ola_policy.py -q` -> 7 passed.
 - Broader notification/OLA regression: `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_stage8.py -q --tb=short` -> 17 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `5aa997d server: dispatch OLA breach policy actions`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/observer` loaded with console errors 0; `python scripts\manage_remote_stack.py status server` -> running before shutdown; log tail contained no policy-action dispatcher errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Target Completion Criteria
 
