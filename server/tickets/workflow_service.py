@@ -71,6 +71,23 @@ def _transition_gate_for_profile(
     return ((profile.transition_gates or {}).get(from_status) or {}).get(to_status_canonical)
 
 
+def _auto_triggered_transition_for_profile(
+    profile: WorkflowProfile,
+    from_status: str,
+    trigger: str,
+) -> tuple[str, WorkflowTransitionGate] | None:
+    normalized_trigger = str(trigger or "").strip()
+    if not normalized_trigger:
+        return None
+    transitions = profile.transitions or DEFAULT_SUPPORT_TRANSITIONS
+    gates = (profile.transition_gates or {}).get(from_status) or {}
+    for to_status in transitions.get(from_status, ()):
+        gate = gates.get(to_status)
+        if gate and gate.auto and gate.trigger == normalized_trigger:
+            return to_status, gate
+    return None
+
+
 def _field_value(ticket, updates: dict, field_name: str):
     field = str(field_name or "").strip()
     if not field:
@@ -257,6 +274,7 @@ class TicketWorkflowService:
         public_comment: Optional[str] = None,
         internal_comment: Optional[str] = None,
         source: str = "api",
+        workflow_trigger: dict | None = None,
     ) -> dict:
         now = datetime.now(timezone.utc)
         ticket = await self.ticket_repo.get_ticket(ticket_id)
@@ -282,6 +300,8 @@ class TicketWorkflowService:
             "next_action_owner": updates["next_action_owner"],
             "requester_status": updates["requester_status"],
         }
+        if workflow_trigger:
+            event_payload["workflow_trigger"] = dict(workflow_trigger)
         if resolution_code is not None:
             event_payload["resolution_code"] = resolution_code
             updates["resolution_code"] = resolution_code
@@ -454,6 +474,63 @@ class TicketWorkflowService:
             "event_payload": event_payload,
             "event_result": event_result,
         }
+
+    async def apply_triggered_transition(
+        self,
+        ticket_id: str,
+        *,
+        trigger: str,
+        actor_id: str,
+        actor_role: str,
+        reason: Optional[str] = None,
+        source: str = "workflow_trigger",
+        trigger_actor_id: str | None = None,
+        trigger_actor_role: str | None = None,
+        fallback_status: str | None = None,
+    ) -> dict:
+        ticket = await self.ticket_repo.get_ticket(ticket_id)
+        if ticket is None:
+            return {"applied": False, "no_op": True, "reason": "ticket_not_found"}
+        from_status = str(getattr(ticket, "status", "") or "").strip()
+        workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
+        matched = _auto_triggered_transition_for_profile(workflow_profile, from_status, trigger)
+        fallback = False
+        if matched:
+            to_status, gate = matched
+            auto = gate.auto
+        elif fallback_status:
+            to_status = fallback_status
+            auto = False
+            fallback = True
+        else:
+            return {
+                "applied": False,
+                "no_op": True,
+                "reason": "no_matching_workflow_trigger",
+                "trigger": trigger,
+            }
+        effective_actor_id = actor_id
+        effective_actor_role = actor_role
+        if fallback and trigger_actor_id:
+            effective_actor_id = trigger_actor_id
+            effective_actor_role = trigger_actor_role or actor_role
+        return await self.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id=effective_actor_id,
+            actor_role=effective_actor_role,
+            reason=reason or trigger,
+            source=source,
+            workflow_trigger={
+                "trigger": trigger,
+                "trigger_actor_id": trigger_actor_id,
+                "trigger_actor_role": trigger_actor_role,
+                "auto": auto,
+                "matched": matched is not None,
+                "fallback": fallback,
+            },
+        )
 
     async def _sync_wait_ledger(
         self,

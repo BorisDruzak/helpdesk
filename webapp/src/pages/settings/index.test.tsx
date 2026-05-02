@@ -446,6 +446,10 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByLabelText("Что сделать со сроками ответа"), {
       target: { value: "pause" },
     });
+    fireEvent.change(screen.getByLabelText("Trigger события"), {
+      target: { value: "requester_replied" },
+    });
+    fireEvent.click(screen.getByLabelText("Автоматический переход"));
     fireEvent.click(screen.getByRole("button", { name: "Применить правило перехода" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить профили процесса" }));
 
@@ -464,6 +468,8 @@ describe("SettingsPage", () => {
       required_comment: "public",
       require_approval: true,
       require_evidence: true,
+      trigger: "requester_replied",
+      auto: true,
       actions: {
         notify: ["assignee", "queue_lead"],
         sla: "pause",

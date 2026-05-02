@@ -88,9 +88,15 @@ class WorkflowTransitionGate:
     require_evidence: bool = False
     notify: tuple[str, ...] = ()
     sla_action: str | None = None
+    trigger: str | None = None
+    auto: bool = False
 
     def to_dict(self) -> dict:
         payload: dict[str, Any] = {"to": self.to_status}
+        if self.trigger:
+            payload["trigger"] = self.trigger
+        if self.auto:
+            payload["auto"] = True
         if self.allowed_roles:
             payload["allowed_roles"] = list(self.allowed_roles)
         if self.required_fields:
@@ -295,6 +301,15 @@ def _normalize_sla_action(value: Any, *, field_name: str) -> str | None:
     return normalized
 
 
+def _normalize_trigger(value: Any, *, field_name: str) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    if any(char.isspace() for char in normalized):
+        raise ValueError(f"{field_name} must be a compact trigger code")
+    return normalized
+
+
 def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str) -> WorkflowTransitionGate:
     if raw_gate is None or isinstance(raw_gate, str):
         return WorkflowTransitionGate(to_status=to_status)
@@ -327,6 +342,11 @@ def _normalize_transition_gate(raw_gate: Any, *, to_status: str, field_name: str
             actions.get("sla") or raw_gate.get("sla_action"),
             field_name=f"{field_name}.actions.sla",
         ),
+        trigger=_normalize_trigger(
+            raw_gate.get("trigger") or raw_gate.get("system_trigger"),
+            field_name=f"{field_name}.trigger",
+        ),
+        auto=bool(raw_gate.get("auto") or raw_gate.get("automatic")),
     )
 
 

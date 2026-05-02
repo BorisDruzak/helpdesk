@@ -163,6 +163,8 @@ type WorkflowProfileDraft = Omit<
   transition_builder_require_evidence: boolean;
   transition_builder_notify_text: string;
   transition_builder_sla_action: string;
+  transition_builder_trigger: string;
+  transition_builder_auto: boolean;
 };
 
 const TAB_ITEMS = [
@@ -614,6 +616,8 @@ function findTransitionBuilderDefaults(profile: WorkflowProfileItem) {
     requireEvidence: Boolean(gate.require_evidence),
     notify: listToCsv(Array.isArray(actions.notify) ? (actions.notify as string[]) : []),
     slaAction: String(actions.sla ?? ""),
+    trigger: String(gate.trigger ?? ""),
+    auto: Boolean(gate.auto),
   };
 }
 
@@ -637,6 +641,12 @@ function buildTransitionRuleFromDraft(draft: WorkflowProfileDraft): Record<strin
   }
   if (draft.transition_builder_require_evidence) {
     rule.require_evidence = true;
+  }
+  if (draft.transition_builder_trigger.trim()) {
+    rule.trigger = draft.transition_builder_trigger.trim();
+  }
+  if (draft.transition_builder_auto) {
+    rule.auto = true;
   }
   const actions: Record<string, unknown> = {};
   if (notify.length) {
@@ -703,6 +713,8 @@ function buildWorkflowProfileDraft(profile: WorkflowProfileItem): WorkflowProfil
     transition_builder_require_evidence: builder.requireEvidence,
     transition_builder_notify_text: builder.notify,
     transition_builder_sla_action: builder.slaAction,
+    transition_builder_trigger: builder.trigger,
+    transition_builder_auto: builder.auto,
   };
 }
 
@@ -761,6 +773,8 @@ function createWorkflowProfileDraft(index: number): WorkflowProfileDraft {
     transition_builder_require_evidence: false,
     transition_builder_notify_text: "",
     transition_builder_sla_action: "",
+    transition_builder_trigger: "",
+    transition_builder_auto: false,
   };
 }
 
@@ -1842,6 +1856,40 @@ export function SettingsPage() {
                                 value={profile.transition_builder_notify_text}
                               />
                             </SettingsField>
+                          </div>
+
+                          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)]">
+                            <SettingsField label="Trigger события">
+                              <Input
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_trigger: value } : item
+                                    )
+                                  );
+                                }}
+                                placeholder="requester_replied"
+                                value={profile.transition_builder_trigger}
+                              />
+                            </SettingsField>
+                            <label className="flex items-center gap-3 rounded-[0.9rem] bg-white px-4 py-3 text-sm font-medium text-slate-800">
+                              <input
+                                checked={profile.transition_builder_auto}
+                                disabled={!canManageRouting}
+                                onChange={(event) => {
+                                  const checked = event.currentTarget.checked;
+                                  setWorkflowProfileDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, transition_builder_auto: checked } : item
+                                    )
+                                  );
+                                }}
+                                type="checkbox"
+                              />
+                              Автоматический переход
+                            </label>
                           </div>
 
                           <div className="mt-4 grid gap-3 md:grid-cols-2">

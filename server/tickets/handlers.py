@@ -1486,14 +1486,16 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
                     )
         if visibility == "public" and sender_role == "user" and getattr(ticket, "status", None) == "waiting_on_user":
             workflow = TicketWorkflowService(session, repo)
-            transition = await workflow.apply_status_transition(
+            transition = await workflow.apply_triggered_transition(
                 ticket_id=ticket.ticket_id,
-                from_status=ticket.status,
-                to_status="assigned",
-                actor_id=auth_context.actor_id,
-                actor_role=auth_context.actor_role,
+                trigger="requester_replied",
+                actor_id="system",
+                actor_role="system",
                 reason="requester_reply",
                 source="requester_reply",
+                trigger_actor_id=auth_context.actor_id,
+                trigger_actor_role=auth_context.actor_role,
+                fallback_status="assigned",
             )
             status_result = transition.get("event_result")
             status_payload = transition.get("event_payload") or {}

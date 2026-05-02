@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 7a is locally implemented and under release verification. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a local verification the working estimate is backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 7b is locally complete and pending remote release/browser signoff. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b local verification the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -85,12 +85,21 @@ Slice 7a local verification:
 
 ### Slice 7: Workflow Profile Builder And Runtime Actions
 
+- [x] Slice 7b: add trigger/auto transition metadata to workflow profiles, execute requester reply through configured transition before legacy fallback, and expose trigger/auto fields in the settings workflow builder.
 - [ ] Extend workflow profile schema to include transition actions: notify, start/pause/stop SLA, create approval, require evidence, require public/internal comment, log fields, auto transitions.
 - [ ] Add typed admin API for workflow profiles with validation and diff/audit, not only raw config save.
 - [ ] Update `TicketWorkflowService` to execute configured transition actions where safe.
 - [ ] Add system-triggered transitions for requester replied, approval received/rejected, auto-close due.
 - [ ] Tests: allowed roles, required fields, required comments, transition actions, auto transition trigger, audit payload.
 - [ ] UI: visual workflow editor for statuses/transitions/gates with safe presets for incident/service_request/access_request/change_request/consultation/problem.
+
+Slice 7b local verification:
+
+- RED confirmed: workflow profile tests failed on missing `WorkflowTransitionGate.trigger` / `auto`; runtime test failed on missing `TicketWorkflowService.apply_triggered_transition`; settings Vitest failed on missing `Trigger события` editor.
+- GREEN focused: `python -m pytest server\tests\test_ticket_workflow_profiles.py::test_workflow_profile_accepts_auto_triggered_transition server\tests\test_ticket_workflow_profiles.py::test_workflow_triggered_transition_uses_configured_target_for_requester_reply -q --tb=short` -> 2 passed; `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx --testNamePattern "builds workflow transition guards"` -> 1 passed.
+- Handler/API regression: `python -m pytest server\tests\test_ticket_create_contracts.py::test_requester_reply_requeues_waiting_ticket server\tests\test_ticket_create_contracts.py::test_requester_reply_uses_workflow_trigger_when_profile_configured -q --tb=short` -> 2 passed.
+- Broader local: `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_create_contracts.py server\tests\test_web_settings_api.py -q --tb=short` -> 36 passed.
+- Web/navigation/workspace: `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed; `pnpm --dir webapp run build` -> passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 8: Approval Requests
 

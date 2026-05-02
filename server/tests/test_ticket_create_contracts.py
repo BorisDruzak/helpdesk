@@ -15,6 +15,7 @@ from app.db.models import (
     TicketSlaTarget,
     UiUser,
 )
+from tickets.workflow_profiles import save_workflow_profiles
 
 
 async def _seed_queue(
@@ -257,6 +258,83 @@ async def test_requester_reply_requeues_waiting_ticket(test_client, test_engine)
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
         assert ticket.status == "assigned"
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_uses_workflow_trigger_when_profile_configured(test_client, test_engine):
+    ticket_id = str(uuid.uuid4())
+    user_login = "workflow_requester"
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident requester reply trigger",
+                        "purpose": "restore_service",
+                        "suggested_path": ["new", "waiting_on_user", "in_progress", "resolved", "closed"],
+                        "allowed_statuses": ["new", "waiting_on_user", "in_progress", "resolved", "closed", "canceled"],
+                        "transitions": {
+                            "new": ["in_progress", "canceled"],
+                            "waiting_on_user": [
+                                {
+                                    "to": "in_progress",
+                                    "trigger": "requester_replied",
+                                    "auto": True,
+                                    "allowed_roles": ["system"],
+                                }
+                            ],
+                            "in_progress": ["waiting_on_user", "resolved", "canceled"],
+                            "resolved": ["closed"],
+                            "closed": [],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        queue = await _seed_queue(session, members=["support-test"])
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=str(uuid.uuid4()),
+                title="Workflow requester reply",
+                description="Configured trigger should choose target status.",
+                status="waiting_on_user",
+                requester_id=user_login,
+                queue_id=queue.id,
+                ticket_type="incident",
+            )
+        )
+        await session.commit()
+
+    message_response = await test_client.post(
+        f"/api/tickets/{ticket_id}/message",
+        json={
+            "message_id": str(uuid.uuid4()),
+            "text": "Отправил данные по запросу.",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert message_response.status == 200, await message_response.text()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "in_progress"
+        rows = await session.execute(
+            select(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id, TicketEvent.event_type == "status_changed")
+            .order_by(TicketEvent.id.desc())
+        )
+        event = rows.scalars().first()
+
+    assert event.payload["to_status"] == "in_progress"
+    assert event.payload["workflow_trigger"]["trigger"] == "requester_replied"
+    assert event.payload["workflow_trigger"]["matched"] is True
+    assert event.payload["workflow_trigger"]["fallback"] is False
 
 
 @pytest.mark.asyncio

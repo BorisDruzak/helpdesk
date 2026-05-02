@@ -183,6 +183,127 @@ async def test_workflow_profile_accepts_advanced_transition_guards_and_actions(t
         }
 
 
+@pytest.mark.asyncio
+async def test_workflow_profile_accepts_auto_triggered_transition(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        profiles = await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident triggered",
+                        "purpose": "restore_service",
+                        "suggested_path": ["new", "waiting_on_user", "in_progress", "resolved", "closed"],
+                        "allowed_statuses": ["new", "waiting_on_user", "in_progress", "resolved", "closed", "canceled"],
+                        "transitions": {
+                            "new": ["in_progress", "canceled"],
+                            "waiting_on_user": [
+                                {
+                                    "to": "in_progress",
+                                    "trigger": "requester_replied",
+                                    "auto": True,
+                                    "allowed_roles": ["system"],
+                                }
+                            ],
+                            "in_progress": ["waiting_on_user", "resolved", "canceled"],
+                            "resolved": ["closed"],
+                            "closed": [],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+
+        incident = {profile.ticket_type: profile for profile in profiles}["incident"]
+        gate = incident.transition_gates["waiting_on_user"]["in_progress"]
+
+        assert gate.trigger == "requester_replied"
+        assert gate.auto is True
+        assert gate.allowed_roles == ("system",)
+        assert gate.to_dict()["trigger"] == "requester_replied"
+        assert gate.to_dict()["auto"] is True
+
+
+@pytest.mark.asyncio
+async def test_workflow_triggered_transition_uses_configured_target_for_requester_reply(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf04"
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident triggered runtime",
+                        "purpose": "restore_service",
+                        "suggested_path": ["new", "waiting_on_user", "in_progress", "resolved", "closed"],
+                        "allowed_statuses": ["new", "waiting_on_user", "in_progress", "resolved", "closed", "canceled"],
+                        "transitions": {
+                            "new": ["in_progress", "canceled"],
+                            "waiting_on_user": [
+                                {
+                                    "to": "in_progress",
+                                    "trigger": "requester_replied",
+                                    "auto": True,
+                                    "allowed_roles": ["system"],
+                                }
+                            ],
+                            "in_progress": ["waiting_on_user", "resolved", "canceled"],
+                            "resolved": ["closed"],
+                            "closed": [],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-trigger",
+                title="Workflow trigger",
+                description="Requester reply should use configured workflow transition.",
+                status="waiting_on_user",
+                requester_id="requester",
+                ticket_type="incident",
+            )
+        )
+        await session.commit()
+
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        result = await workflow.apply_triggered_transition(
+            ticket_id=ticket_id,
+            trigger="requester_replied",
+            actor_id="system",
+            actor_role="system",
+            reason="requester_reply",
+            source="requester_reply",
+            trigger_actor_id="requester",
+            trigger_actor_role="user",
+            fallback_status="assigned",
+        )
+        await session.commit()
+
+        ticket = await repo.get_ticket(ticket_id)
+
+    assert result["applied"] is True
+    assert result["updates"]["status"] == "in_progress"
+    assert ticket.status == "in_progress"
+    assert result["event_payload"]["workflow_trigger"] == {
+        "trigger": "requester_replied",
+        "trigger_actor_id": "requester",
+        "trigger_actor_role": "user",
+        "auto": True,
+        "matched": True,
+        "fallback": False,
+    }
+
+
 async def _seed_gated_workflow_ticket(test_engine) -> str:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket_id = "00000000-0000-0000-0000-00000000wf02"
