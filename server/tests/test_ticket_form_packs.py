@@ -288,6 +288,82 @@ async def test_create_ticket_accepts_request_template_key_as_form_alias(test_cli
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_preserves_form_schema_and_policy_refs_in_template_context(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    form_key = f"schema_template_{uuid.uuid4().hex[:8]}"
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Schema templates",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_template_key": form_key,
+                        "request_template_title": "Schema-backed request",
+                        "request_kind": form_key,
+                        "title": "Schema-backed request",
+                        "ticket_type": "incident",
+                        "form_schema_id": f"{form_key}_schema",
+                        "form_schema_version": 7,
+                        "request_template_version": 3,
+                        "workflow_profile_id": "incident_default",
+                        "priority_policy_code": "incident_priority_policy",
+                        "routing_policy_code": "schema_routing",
+                        "sla_policy_code": "incident_sla",
+                        "closure_policy_code": "incident_closure",
+                        "policy_refs": {
+                            "form_schema": f"{form_key}_schema@7",
+                            "routing": "schema_routing@2",
+                        },
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Schema-backed request",
+            "description": "Schema metadata smoke",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "request_template_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {"summary": "Metadata should survive"},
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
+        ).scalar_one()
+
+    template = ticket.custom_fields["request_template"]
+    assert template["key"] == form_key
+    assert template["form_schema_id"] == f"{form_key}_schema"
+    assert template["form_schema_version"] == 7
+    assert template["request_template_version"] == 3
+    assert template["workflow_profile_id"] == "incident_default"
+    assert template["priority_policy_code"] == "incident_priority_policy"
+    assert template["routing_policy_code"] == "schema_routing"
+    assert template["sla_policy_code"] == "incident_sla"
+    assert template["closure_policy_code"] == "incident_closure"
+    assert template["policy_refs"]["form_schema"] == f"{form_key}_schema@7"
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_accepts_old_form_key_payload_without_injected_priority_fields(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
     form_key = f"legacy_minimal_{uuid.uuid4().hex[:8]}"

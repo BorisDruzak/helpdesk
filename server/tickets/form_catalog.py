@@ -104,6 +104,7 @@ _ROUTING_OPERATOR_OPTIONS = (
     {"value": "is_null", "label": "Пусто / не пусто"},
 )
 _TEMPLATE_DICT_FIELDS = (
+    "policy_refs",
     "priority_policy",
     "routing_policy",
     "sla_policy",
@@ -116,11 +117,27 @@ _TEMPLATE_DICT_FIELDS = (
     "reporting_policy",
 )
 _TEMPLATE_INT_FIELDS = (
+    "request_template_version",
+    "form_schema_version",
     "category_id",
     "service_id",
     "subcategory_id",
     "default_queue_id",
     "sla_policy_id",
+)
+_TEMPLATE_STRING_FIELDS = (
+    "form_schema_id",
+    "workflow_profile_id",
+    "priority_policy_code",
+    "routing_policy_code",
+    "sla_policy_code",
+    "ola_policy_code",
+    "approval_policy_code",
+    "diagnostic_policy_code",
+    "closure_policy_code",
+    "visibility_policy_code",
+    "notification_policy_code",
+    "reporting_policy_code",
 )
 _ALLOWED_FIELD_ROLES = {
     "routing_field",
@@ -645,6 +662,10 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
             "ticket_type": ticket_type,
             "field_roles": normalized_field_roles,
         }
+        for string_field in _TEMPLATE_STRING_FIELDS:
+            value = str(raw_form.get(string_field) or "").strip()
+            if value:
+                template_context[string_field] = value
         for int_field in _TEMPLATE_INT_FIELDS:
             value = _normalize_optional_int(raw_form.get(int_field), int_field)
             if value is not None:
@@ -864,6 +885,21 @@ def validate_form_submission(
             "default_queue_id": form.get("default_queue_id"),
             "sla_policy_id": form.get("sla_policy_id"),
             "suggested_playbook_id": form.get("suggested_playbook_id"),
+            "form_schema_id": form.get("form_schema_id"),
+            "workflow_profile_id": form.get("workflow_profile_id"),
+            "priority_policy_code": form.get("priority_policy_code"),
+            "routing_policy_code": form.get("routing_policy_code"),
+            "sla_policy_code": form.get("sla_policy_code"),
+            "ola_policy_code": form.get("ola_policy_code"),
+            "approval_policy_code": form.get("approval_policy_code"),
+            "diagnostic_policy_code": form.get("diagnostic_policy_code"),
+            "closure_policy_code": form.get("closure_policy_code"),
+            "visibility_policy_code": form.get("visibility_policy_code"),
+            "notification_policy_code": form.get("notification_policy_code"),
+            "reporting_policy_code": form.get("reporting_policy_code"),
+            "request_template_version": form.get("request_template_version"),
+            "form_schema_version": form.get("form_schema_version"),
+            "policy_refs": deepcopy(form.get("policy_refs") or {}),
             "field_roles": deepcopy(form.get("field_roles") or {}),
             "priority_policy": deepcopy(form.get("priority_policy") or {}),
             "routing_policy": deepcopy(form.get("routing_policy") or {}),

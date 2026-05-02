@@ -598,6 +598,54 @@ def test_dynamic_fields_widget_can_clear_file_field(tmp_path):
     assert widget.missing_required_labels() == ["Доказательство"]
 
 
+def test_dynamic_fields_widget_ignores_hidden_required_file_until_condition_matches(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    file_path = tmp_path / "screenshot.png"
+    file_path.write_bytes(b"png")
+
+    widget = chat_panel_module.TicketDynamicFieldsWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {
+                    "key": "problem_area",
+                    "label": "Problem area",
+                    "type": "select",
+                    "required": True,
+                    "options": [
+                        {"value": "printer", "label": "Printer"},
+                        {"value": "website", "label": "Website"},
+                    ],
+                },
+                {
+                    "key": "screenshot",
+                    "label": "Screenshot",
+                    "type": "file",
+                    "required": True,
+                    "visible_when": {"field": "problem_area", "equals": "website"},
+                },
+            ]
+        },
+        values={"problem_area": "printer", "screenshot": {"path": str(file_path)}},
+    )
+
+    assert widget.values() == {"problem_area": "printer"}
+    assert widget.file_attachment_paths() == []
+    assert widget.missing_required_labels() == []
+
+    problem_widget = widget._widgets["problem_area"]
+    assert isinstance(problem_widget, QComboBox)
+    problem_widget.setCurrentIndex(problem_widget.findData("website"))
+
+    assert widget.values() == {
+        "problem_area": "website",
+        "screenshot": {"path": str(file_path), "filename": "screenshot.png"},
+    }
+    assert widget.file_attachment_paths() == [str(file_path)]
+    assert widget.missing_required_labels() == []
+
+
 def test_format_attachment_item_label_includes_file_size(tmp_path):
     file_path = tmp_path / "log.txt"
     file_path.write_bytes(b"x" * 2048)
