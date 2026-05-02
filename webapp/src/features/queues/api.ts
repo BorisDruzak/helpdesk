@@ -184,6 +184,12 @@ export type SupportTicketDetailPayload = {
       label: string;
     }>;
     can_send_internal_note: boolean;
+    closure_requirements?: Array<{
+      key: string;
+      label: string;
+      met: boolean;
+      detail: string;
+    }>;
   };
 };
 

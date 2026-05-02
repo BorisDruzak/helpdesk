@@ -870,6 +870,61 @@ async def test_web_support_status_action_returns_typed_result_and_updates_ticket
 
 
 @pytest.mark.asyncio
+async def test_web_support_resolved_status_respects_confirmation_required_false(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-status-no-confirmation",
+            title="Resolve without requester confirmation",
+            description="Closure policy disables requester confirmation.",
+            status="in_progress",
+            requester_id="user-status",
+            queue_id=queue.id,
+            custom_fields={
+                "request_template": {
+                    "key": "no_confirmation_template",
+                    "ticket_type": "incident",
+                    "closure_policy": {
+                        "requester_confirmation": {
+                            "required": False,
+                            "auto_close_after_days": 3,
+                            "reopen_on_negative_feedback": False,
+                        }
+                    },
+                }
+            },
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/status",
+        headers=_support_headers(),
+        json={
+            "to_status": "resolved",
+            "resolution_code": "fixed_remote",
+            "resolution_summary": "Resolved by operator.",
+            "requester_resolution_summary": "Service restored.",
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["status"] == "resolved"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ((ticket.custom_fields or {}).get("resolution_confirmation") or {}).get("pending") is not True
+        events = await TicketEventsRepo(session).get_events(ticket_id, event_types=["chat_message"])
+        assert not any((event.payload or {}).get("metadata", {}).get("confirmation_request") for event in events)
+
+
+@pytest.mark.asyncio
 async def test_web_support_status_action_reports_workflow_gate_block(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 
@@ -932,6 +987,67 @@ async def test_web_support_status_action_reports_workflow_gate_block(test_client
     assert payload["status"] == "error"
     assert payload["error_code"] == "WORKFLOW_POLICY_BLOCKED"
     assert "allowed_roles" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_support_detail_exposes_closure_policy_requirements(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-closure-req-{uuid.uuid4().hex[:6]}",
+        status="in_progress",
+    )
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.priority = "P1"
+        ticket.custom_fields = {
+            "priority_class": "P0",
+            "request_template": {
+                "key": "website_unavailable",
+                "ticket_type": "incident",
+                "approval_policy": {"required": True},
+                "closure_policy": {
+                    "before_resolved": {
+                        "require_resolution_code": True,
+                        "require_public_summary": True,
+                        "require_internal_summary": True,
+                    },
+                    "allowed_resolution_codes": ["fixed_remote"],
+                    "evidence": {
+                        "require_evidence_for_priorities": ["P0"],
+                        "require_operation_log_if_module_used": True,
+                        "require_approval_if_approval_policy_used": True,
+                    },
+                },
+            },
+        }
+        repo = TicketEventsRepo(session)
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_started",
+            payload={"event": "tool_call_started", "tool_name": "dns.resolve"},
+            operation_id=str(uuid.uuid4()),
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    requirements = payload["data"]["actions"]["closure_requirements"]
+    by_key = {item["key"]: item for item in requirements}
+
+    assert by_key["resolution_code"]["met"] is False
+    assert by_key["public_summary"]["met"] is False
+    assert by_key["internal_summary"]["met"] is False
+    assert by_key["priority_evidence"]["met"] is False
+    assert by_key["operation_log"]["met"] is False
+    assert by_key["approval_evidence"]["met"] is False
+    assert "Код решения" in by_key["resolution_code"]["label"]
 
 
 @pytest.mark.asyncio

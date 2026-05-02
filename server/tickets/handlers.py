@@ -174,6 +174,14 @@ def _resolution_confirmation_pending(ticket: Any) -> bool:
     return bool(_resolution_confirmation_state(ticket).get("pending"))
 
 
+def _resolution_confirmation_policy(ticket: Any) -> Dict[str, Any]:
+    custom_fields = getattr(ticket, "custom_fields", None)
+    if not isinstance(custom_fields, dict):
+        return {}
+    policy = custom_fields.get("resolution_confirmation_policy")
+    return dict(policy) if isinstance(policy, dict) else {}
+
+
 def _build_resolution_confirmation_request() -> Dict[str, Any]:
     request_id = str(uuid.uuid4())
     return {
@@ -1466,18 +1474,22 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
                         responded_option_id="confirm",
                     )
                 elif option_id == "reject":
-                    transition = await workflow.apply_status_transition(
-                        ticket_id=ticket.ticket_id,
-                        from_status=ticket.status,
-                        to_status="assigned",
-                        actor_id=auth_context.actor_id,
-                        actor_role=auth_context.actor_role,
-                        reason="requester_rejected_resolution",
-                        source="requester_confirmation",
-                    )
-                    status_result = transition.get("event_result")
-                    status_payload = transition.get("event_payload") or {}
-                    ticket = await repo.get_ticket(ticket.ticket_id)
+                    confirmation_policy = _resolution_confirmation_policy(ticket)
+                    reopen_policy_present = "reopen_on_negative_feedback" in confirmation_policy
+                    should_reopen = bool(confirmation_policy.get("reopen_on_negative_feedback", True))
+                    if should_reopen:
+                        transition = await workflow.apply_status_transition(
+                            ticket_id=ticket.ticket_id,
+                            from_status=ticket.status,
+                            to_status="in_progress" if reopen_policy_present else "assigned",
+                            actor_id=auth_context.actor_id,
+                            actor_role=auth_context.actor_role,
+                            reason="requester_rejected_resolution",
+                            source="requester_confirmation",
+                        )
+                        status_result = transition.get("event_result")
+                        status_payload = transition.get("event_payload") or {}
+                        ticket = await repo.get_ticket(ticket.ticket_id)
                     ticket = await _store_resolution_confirmation_state(
                         repo,
                         ticket,

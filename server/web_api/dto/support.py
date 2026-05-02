@@ -288,11 +288,25 @@ class SupportStatusAction(BaseModel):
     label: str
 
 
+class SupportClosureRequirement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    met: bool
+    detail: str = ""
+
+
 class SupportTicketActions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status_options: list[SupportStatusAction] = Field(default_factory=list)
     can_send_internal_note: bool = False
+    closure_requirements: list[SupportClosureRequirement] = Field(default_factory=list)
+
+    @property
+    def closure_missing_count(self) -> int:
+        return sum(1 for item in self.closure_requirements if not item.met)
 
 
 class SupportMessageActionResult(BaseModel):

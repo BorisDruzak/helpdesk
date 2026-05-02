@@ -40,6 +40,7 @@ from tickets.statuses import (
     status_label_ru,
 )
 from tickets.sla_service import TicketSlaService
+from tickets.closure_policy import build_closure_requirements
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
@@ -344,6 +345,7 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> S
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
+        closure_requirements=await build_closure_requirements(session, ticket),
     )
 
 
@@ -1576,8 +1578,24 @@ async def handle_web_support_change_status(request: web.Request):
                     status=404,
                 )
 
-            if to_status == "resolved" and is_staff:
+            closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
+            requester_confirmation_policy = (
+                closure_policy_payload.get("requester_confirmation")
+                if isinstance(closure_policy_payload, dict)
+                else None
+            )
+            requires_requester_confirmation = True
+            if isinstance(requester_confirmation_policy, dict) and "required" in requester_confirmation_policy:
+                requires_requester_confirmation = bool(requester_confirmation_policy.get("required"))
+
+            if to_status == "resolved" and is_staff and requires_requester_confirmation:
                 confirmation_request = _build_resolution_confirmation_request()
+                if isinstance(requester_confirmation_policy, dict) and requester_confirmation_policy:
+                    confirmation_request["policy"] = {
+                        key: requester_confirmation_policy.get(key)
+                        for key in ("auto_close_after_days", "reopen_on_negative_feedback")
+                        if requester_confirmation_policy.get(key) is not None
+                    }
                 ticket = await _store_resolution_confirmation_state(
                     repo,
                     ticket,

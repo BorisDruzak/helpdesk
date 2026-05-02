@@ -508,6 +508,191 @@ async def test_resolution_confirmation_reject_requeues_ticket(test_client, test_
 
 
 @pytest.mark.asyncio
+async def test_resolution_confirmation_reject_respects_reopen_policy(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    user_login = "frank-policy"
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(
+            UiUser(
+                user_login="op_reject_policy",
+                password_hash="test",
+                actor_role="support",
+                is_active=True,
+            )
+        )
+        await _seed_queue(session, members=["op_reject_policy", "support-test"])
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "VPN issue with governed confirmation",
+            "description": "VPN still disconnects",
+            "device_id": device_id,
+            "user_display_name": "Frank Policy",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    status_progress = await test_client.post(
+        f"/api/tickets/{ticket_id}/status",
+        json={"to_status": "in_progress"},
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )
+    assert status_progress.status == 200, await status_progress.text()
+
+    status_resolved = await test_client.post(
+        f"/api/tickets/{ticket_id}/status",
+        json={"to_status": "resolved"},
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )
+    assert status_resolved.status == 200, await status_resolved.text()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        custom_fields = dict(ticket.custom_fields or {})
+        custom_fields["resolution_confirmation_policy"] = {
+            "required": True,
+            "auto_close_after_days": 3,
+            "reopen_on_negative_feedback": True,
+        }
+        ticket.custom_fields = custom_fields
+        await session.commit()
+
+    ticket_response = await test_client.get(
+        f"/api/tickets/{ticket_id}",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert ticket_response.status == 200, await ticket_response.text()
+    ticket_data = await ticket_response.json()
+    confirmation_message = next(
+        message
+        for message in reversed(ticket_data["messages"])
+        if isinstance(message.get("metadata"), dict) and message["metadata"].get("confirmation_request")
+    )
+    confirmation_request = confirmation_message["metadata"]["confirmation_request"]
+
+    reject_response = await test_client.post(
+        f"/api/tickets/{ticket_id}/message",
+        json={
+            "message_id": str(uuid.uuid4()),
+            "text": "Не принято",
+            "metadata": {
+                "confirmation_response": {
+                    "request_id": confirmation_request["request_id"],
+                    "kind": "ticket_resolution",
+                    "option_id": "reject",
+                    "label": "Не принято",
+                }
+            },
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert reject_response.status == 200, await reject_response.text()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "in_progress"
+        marker = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
+        assert marker.get("pending") is False
+        assert marker.get("responded_option_id") == "reject"
+
+
+@pytest.mark.asyncio
+async def test_resolution_confirmation_reject_can_keep_resolved_by_policy(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    user_login = "frank-no-reopen"
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(
+            UiUser(
+                user_login="op_reject_no_reopen",
+                password_hash="test",
+                actor_role="support",
+                is_active=True,
+            )
+        )
+        await _seed_queue(session, members=["op_reject_no_reopen", "support-test"])
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "VPN issue no reopen",
+            "description": "VPN still disconnects",
+            "device_id": device_id,
+            "user_display_name": "Frank No Reopen",
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    assert (await test_client.post(
+        f"/api/tickets/{ticket_id}/status",
+        json={"to_status": "in_progress"},
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )).status == 200
+    assert (await test_client.post(
+        f"/api/tickets/{ticket_id}/status",
+        json={"to_status": "resolved"},
+        headers={"Authorization": "Bearer test-ui-support-token"},
+    )).status == 200
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        custom_fields = dict(ticket.custom_fields or {})
+        custom_fields["resolution_confirmation_policy"] = {
+            "required": True,
+            "auto_close_after_days": 3,
+            "reopen_on_negative_feedback": False,
+        }
+        ticket.custom_fields = custom_fields
+        await session.commit()
+
+    ticket_response = await test_client.get(
+        f"/api/tickets/{ticket_id}",
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert ticket_response.status == 200, await ticket_response.text()
+    confirmation_message = next(
+        message
+        for message in reversed((await ticket_response.json())["messages"])
+        if isinstance(message.get("metadata"), dict) and message["metadata"].get("confirmation_request")
+    )
+
+    reject_response = await test_client.post(
+        f"/api/tickets/{ticket_id}/message",
+        json={
+            "message_id": str(uuid.uuid4()),
+            "text": "Не принято",
+            "metadata": {
+                "confirmation_response": {
+                    "request_id": confirmation_message["metadata"]["confirmation_request"]["request_id"],
+                    "kind": "ticket_resolution",
+                    "option_id": "reject",
+                    "label": "Не принято",
+                }
+            },
+        },
+        headers={"Authorization": f"Bearer test-ui-user:{user_login}"},
+    )
+    assert reject_response.status == 200, await reject_response.text()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "resolved"
+        marker = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
+        assert marker.get("pending") is False
+        assert marker.get("responded_option_id") == "reject"
+
+
+@pytest.mark.asyncio
 async def test_support_can_list_and_open_queue_less_ticket(test_client):
     device_id = str(uuid.uuid4())
     user_login = "queue-less-user"

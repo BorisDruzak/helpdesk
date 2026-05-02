@@ -244,6 +244,56 @@ describe("TicketStatusActionPanel", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("shows missing closure requirements for a resolve transition", () => {
+    const onValueChange = vi.fn();
+    const onApply = vi.fn();
+
+    render(
+      <TicketStatusActionPanel
+        closureRequirements={[
+          {
+            key: "resolution_code",
+            label: "Код решения",
+            met: false,
+            detail: "Укажите код из списка",
+          },
+          {
+            key: "operation_log",
+            label: "Журнал операции",
+            met: false,
+            detail: "Модуль запущен, нужен лог операции",
+          },
+          {
+            key: "requester_confirmation",
+            label: "Подтверждение заявителя",
+            met: true,
+            detail: "Будет запрошено после решения",
+          },
+        ]}
+        disabled={false}
+        onApply={onApply}
+        onValueChange={onValueChange}
+        pending={false}
+        selectedStatus="resolved"
+        statusOptions={[{ value: "resolved", label: "Решено" }]}
+        ticket={{
+          status: "in_progress",
+          status_label: "В работе",
+          requester_status_label: "Заявка в работе",
+          next_action_owner: "support",
+          evidence_required: false,
+          evidence_ref: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Чек-лист закрытия")).toBeInTheDocument();
+    expect(screen.getByText("Код решения")).toBeInTheDocument();
+    expect(screen.getByText("Журнал операции")).toBeInTheDocument();
+    expect(screen.getByText("Модуль запущен, нужен лог операции")).toBeInTheDocument();
+    expect(screen.getByText("Подтверждение заявителя")).toBeInTheDocument();
+  });
+
   it("groups quick transition actions without applying until confirmation", () => {
     const onValueChange = vi.fn();
     const onApply = vi.fn();

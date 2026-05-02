@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 9a is complete, committed and released to the Linux stand: closure policy backend/runtime now supports nested closure requirements, operation/approval evidence and policy-driven requester auto-close. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. After Slice 9a release/browser signoff the working estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 9b is in progress: closure policy backend/runtime now supports nested closure requirements, operation/approval evidence, policy-driven requester auto-close, policy-driven negative feedback behavior and support UI closure requirement surfacing. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. After Slice 9a release/browser signoff the working estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -50,7 +50,7 @@ Status: Slice 9a is complete, committed and released to the Linux stand: closure
 - SLA/OLA policies полностью покрывают calendar/start/pause/resume/stop/targets/warnings/breach actions/applies-to.
 - Workflow profile настраивает statuses/transitions/allowed roles/required fields/comments/actions/logging и исполняет это в runtime.
 - Approval policy умеет не только блокировать переход, но и создавать approval requests по источникам согласующих, режиму, timeout/reminder/escalation.
-- Closure policy покрывает resolution code, public/internal summary, evidence, operation log, approval evidence, requester confirmation и auto-close.
+- Closure policy покрывает resolution code, public/internal summary, evidence, operation log, approval evidence, requester confirmation, negative feedback reopen/keep-resolved behavior, auto-close and support-facing missing requirement checklist.
 - Diagnostic policy умеет suggested playbooks, consent, safe auto-run constraints, attach-to-passport/evidence и reroute-by-result.
 - Notification/visibility/reporting/smart views имеют отдельные UI editors и runtime-tests.
 - Админка даёт мастер настройки шаблона без обязательного ручного JSON.
@@ -142,8 +142,8 @@ Slice 8c local verification:
 - [x] Slice 9a: enforce approval evidence when approval policy was used.
 - [x] Slice 9a: implement requester confirmation policy and auto-close-after-days as policy-driven, not just global defaults.
 - [x] Slice 9a tests: resolution code whitelist, public/internal summary requirements, P0/P1 evidence, module evidence, approval evidence and auto-close timer.
-- [ ] Add requester reject/reopen behavior to read `requester_confirmation.reopen_on_negative_feedback` instead of always using legacy `assigned`.
-- [ ] UI: support ticket close panel shows exactly which closure requirements are missing.
+- [x] Slice 9b: requester reject/reopen behavior reads `requester_confirmation.reopen_on_negative_feedback` instead of always using legacy `assigned`.
+- [x] Slice 9b: support ticket detail exposes `actions.closure_requirements`, and the close/resolve panel shows exactly which closure requirements are missing.
 
 Slice 9a local verification:
 
@@ -152,6 +152,15 @@ Slice 9a local verification:
 - Broader local: `python -m pytest server\tests\test_ticket_closure_policy.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_create_contracts.py -q --tb=short` -> 43 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `73eefbf server: complete closure policy runtime`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` loaded admin inventory and `http://192.168.100.17:8666/app/admin/observer` showed `Runtime: ok`; browser console errors -> 0; remote server stopped after verification.
+
+Slice 9b local verification so far:
+
+- RED confirmed: focused backend tests failed because requester reject ignored `reopen_on_negative_feedback`, support detail lacked `actions.closure_requirements`, and typed support status always created requester confirmation even when closure policy set `required=false`; Vitest failed because the resolve panel had no missing-requirements checklist.
+- GREEN focused: `python -m pytest server\tests\test_ticket_create_contracts.py::test_resolution_confirmation_reject_requeues_ticket server\tests\test_ticket_create_contracts.py::test_resolution_confirmation_reject_respects_reopen_policy server\tests\test_ticket_create_contracts.py::test_resolution_confirmation_reject_can_keep_resolved_by_policy server\tests\test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket server\tests\test_web_support_api.py::test_web_support_resolved_status_respects_confirmation_required_false server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 6 passed.
+- GREEN UI focused: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx --testNamePattern "missing closure requirements|status transition"` -> 2 passed.
+- Broader sequential backend: `python -m pytest server\tests\test_ticket_closure_policy.py -q --tb=short` -> 10 passed; `python -m pytest server\tests\test_web_support_api.py -q --tb=short` -> 27 passed; `python -m pytest server\tests\test_ticket_create_contracts.py -q --tb=short` -> 13 passed.
+- Web/navigation/workspace: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 12 passed; `pnpm --dir webapp run build` -> passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Note: one parallel combined backend attempt failed with asyncpg connection-closed/TRUNCATE interference because several pytest processes shared the same test DB; sequential reruns above passed.
 
 ### Slice 10: Diagnostic Policy Completion
 

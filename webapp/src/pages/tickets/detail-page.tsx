@@ -586,6 +586,7 @@ export function TicketWorkVisibilityCard({
 }
 
 export function TicketStatusActionPanel({
+  closureRequirements = [],
   disabled,
   disabledReason = null,
   onApply,
@@ -595,6 +596,7 @@ export function TicketStatusActionPanel({
   statusOptions,
   ticket,
 }: {
+  closureRequirements?: NonNullable<SupportTicketDetailPayload["actions"]["closure_requirements"]>;
   disabled: boolean;
   disabledReason?: string | null;
   onApply: (status: string) => void;
@@ -641,6 +643,7 @@ export function TicketStatusActionPanel({
     : null;
   const evidenceBlocked =
     selectedStatus === "resolved" && Boolean(ticket.evidence_required) && !ticket.evidence_ref;
+  const showClosureRequirements = selectedStatus === "resolved" && closureRequirements.length > 0;
   const transitionOptions = buildTransitionOptions(statusOptions, ticket.status);
   const transitionGroups = groupStatusOptions(transitionOptions.allowed);
   const blockedTransitionGroups = groupStatusOptions(transitionOptions.blocked);
@@ -791,6 +794,35 @@ export function TicketStatusActionPanel({
               <span>Guard: {preview.evidenceLabel}</span>
             </div>
             <p className="text-slate-600">Следующий ответственный: {preview.ownerLabel}</p>
+            {showClosureRequirements ? (
+              <div className="rounded-[0.9rem] border border-slate-200 bg-white px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">Чек-лист закрытия</p>
+                  <Badge tone={closureRequirements.every((item) => item.met) ? "success" : "warning"}>
+                    {closureRequirements.filter((item) => !item.met).length
+                      ? `Не хватает: ${closureRequirements.filter((item) => !item.met).length}`
+                      : "Готово"}
+                  </Badge>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {closureRequirements.map((item) => (
+                    <div
+                      className={cn(
+                        "rounded-[0.75rem] border px-3 py-2",
+                        item.met ? "border-emerald-100 bg-emerald-50/70" : "border-amber-200 bg-amber-50",
+                      )}
+                      key={item.key}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">{item.label}</span>
+                        <Badge tone={item.met ? "success" : "warning"}>{item.met ? "Есть" : "Нужно"}</Badge>
+                      </div>
+                      {item.detail ? <p className="mt-1 text-xs text-slate-600">{item.detail}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {evidenceBlocked ? (
               <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
                 Перед решением нужен evidence или паспорт решения.
@@ -1525,6 +1557,7 @@ export function TicketDetailPage() {
               pending={statusMutation.isPending}
               selectedStatus={statusAction}
               statusOptions={detail.actions.status_options}
+              closureRequirements={detail.actions.closure_requirements ?? []}
               ticket={detail.ticket}
             />
           ) : (

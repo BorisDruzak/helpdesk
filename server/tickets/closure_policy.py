@@ -214,6 +214,140 @@ async def _ticket_has_approved_approval(session: Any, ticket: Any) -> bool:
     return approval_id is not None
 
 
+def _requirement(key: str, label: str, met: bool, detail: str | None = None) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "met": bool(met),
+        "detail": detail or "",
+    }
+
+
+async def build_closure_requirements(session: Any, ticket: Any) -> list[dict[str, Any]]:
+    """Return support-facing closure checklist for the current ticket state."""
+    if ticket is None:
+        return []
+    policy = await resolve_effective_ticket_policy(session, ticket, "closure")
+    requirements: list[dict[str, Any]] = []
+    if not policy:
+        if getattr(ticket, "evidence_required", False):
+            requirements.append(
+                _requirement(
+                    "legacy_evidence",
+                    "Доказательство решения",
+                    await _ticket_has_evidence(session, ticket),
+                    "Добавьте evidence_ref или запись evidence перед решением.",
+                )
+            )
+        return requirements
+
+    resolution_code = getattr(ticket, "resolution_code", None)
+    public_summary = getattr(ticket, "requester_resolution_summary", None) or getattr(ticket, "resolution_summary", None)
+    internal_summary = getattr(ticket, "resolution_summary", None)
+
+    if _policy_bool(policy, "require_resolution_code", section="before_resolved"):
+        allowed_resolution_codes = _normalize_code_list(
+            _policy_value(policy, "allowed_resolution_codes", section="before_resolved")
+        )
+        code_allowed = not allowed_resolution_codes or str(resolution_code or "").strip() in allowed_resolution_codes
+        requirements.append(
+            _requirement(
+                "resolution_code",
+                "Код решения",
+                _has_text(resolution_code) and code_allowed,
+                (
+                    "Укажите код решения из списка: " + ", ".join(allowed_resolution_codes)
+                    if allowed_resolution_codes
+                    else "Укажите код решения."
+                ),
+            )
+        )
+    elif _normalize_code_list(_policy_value(policy, "allowed_resolution_codes", section="before_resolved")):
+        allowed_resolution_codes = _normalize_code_list(
+            _policy_value(policy, "allowed_resolution_codes", section="before_resolved")
+        )
+        requirements.append(
+            _requirement(
+                "allowed_resolution_code",
+                "Код решения из разрешённого списка",
+                str(resolution_code or "").strip() in allowed_resolution_codes,
+                "Разрешённые коды: " + ", ".join(allowed_resolution_codes),
+            )
+        )
+
+    if _policy_bool(policy, "require_public_summary", section="before_resolved"):
+        requirements.append(
+            _requirement(
+                "public_summary",
+                "Публичный итог для заявителя",
+                _has_text(public_summary),
+                "Заполните итог, который увидит заявитель.",
+            )
+        )
+    if _policy_bool(policy, "require_internal_summary", section="before_resolved"):
+        requirements.append(
+            _requirement(
+                "internal_summary",
+                "Внутренний итог решения",
+                _has_text(internal_summary),
+                "Заполните внутреннее описание причины и действий.",
+            )
+        )
+    if _policy_bool(policy, "require_worklog", section="before_resolved"):
+        requirements.append(
+            _requirement(
+                "worklog",
+                "Worklog",
+                await _ticket_has_worklog(session, ticket),
+                "Добавьте запись о выполненной работе.",
+            )
+        )
+
+    priority_class = extract_priority_class(ticket)
+    evidence_priorities = _evidence_priorities(policy)
+    if priority_class in evidence_priorities:
+        requirements.append(
+            _requirement(
+                "priority_evidence",
+                f"Доказательство для {priority_class}",
+                await _ticket_has_evidence(session, ticket),
+                "Для этого приоритета нужно приложить evidence.",
+            )
+        )
+    if _policy_bool(policy, "require_operation_log_if_module_used", section="evidence") and await _ticket_module_was_used(session, ticket):
+        requirements.append(
+            _requirement(
+                "operation_log",
+                "Журнал операции",
+                await _ticket_has_operation_log(session, ticket),
+                "Модуль или playbook запускался, нужен operation log или диагностическое evidence.",
+            )
+        )
+    if _policy_bool(policy, "require_approval_if_approval_policy_used", section="evidence"):
+        approval_used = _approval_policy_used(ticket) or await _ticket_has_any_approval(session, ticket)
+        if approval_used:
+            requirements.append(
+                _requirement(
+                    "approval_evidence",
+                    "Согласование подтверждено",
+                    await _ticket_has_approved_approval(session, ticket),
+                    "Нужна approved-запись в согласованиях.",
+                )
+            )
+
+    requester_confirmation = _requester_confirmation(policy)
+    if requester_confirmation:
+        requirements.append(
+            _requirement(
+                "requester_confirmation",
+                "Подтверждение заявителя",
+                True,
+                "Будет запрошено после перевода в Решено.",
+            )
+        )
+    return requirements
+
+
 async def validate_closure_policy(
     session: Any,
     ticket: Any,
