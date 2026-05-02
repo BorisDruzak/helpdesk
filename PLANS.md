@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14i is in progress: `/app/admin/forms` is adding structured smart-view controls so operational slices such as SLA/OLA risk can be published without editing raw filter/sort JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14h release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 89%, agent GUI about 73%, overall about 96.9%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14i is released: `/app/admin/forms` now has structured smart-view controls so operational slices such as SLA/OLA risk can be published without editing raw filter/sort JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14i release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 90%, agent GUI about 73%, overall about 97.0%. The remaining plan targets final validation/diff/impact UX, deeper smart-view execution validation and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,14 +31,14 @@ Status: Slice 14i is in progress: `/app/admin/forms` is adding structured smart-
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies уже имеют structured controls, а smart-view UX и deeper publish-impact/diff UX ещё требуют добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, а deeper publish-impact/diff UX и строгая smart-view validation ещё требуют добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
 
 - External escalation/recipient actions for SLA/OLA breach actions are implemented as a shared `policy_action_dispatcher`, not as channel logic inside SLA/OLA services. SLA/OLA services emit canonical policy-aware events with `breach_actions`; dispatcher resolves recipients (`assignee`, `queue_lead`, queue members, explicit actors/groups), applies notification preferences/channel availability, creates delivery audit rows and keeps retry/idempotency by `(ticket_id, source_event_id, action_key, recipient)`. Admin/group recipient expansion beyond explicit actor ids remains a follow-up.
 - Structured OLA editor will be part of the admin policy editor, not the legacy queue target grid. MVP fields: ack/processing P0-P3 targets, start conditions, ack stop conditions, processing stop conditions, pause/resume conditions, breach actions, fallback queue target visibility and JSON advanced preview.
-- OLA risk UI will surface as an operational smart-view slice with counts, not only as a hidden query parameter. The support queue response should expose `summary.smart_view_counts`, and React support/tickets pages should render the OLA risk count next to built-in smart views.
+- OLA risk UI surfaces as an operational smart-view slice with counts, not only as a hidden query parameter. The support queue response exposes `summary.smart_view_counts`, and React support/tickets pages render the OLA risk count next to built-in smart views.
 - The existing `web_settings` warning for calendar JSON shape is a compatibility cleanup: typed settings must accept both dict-shaped and list-shaped `weekly_hours_json` / `holidays_json` stored by historical calendar editors without falling back to an empty settings payload.
 
 ### Slice 10c: Diagnostic Auto-Run High-Risk Consent Gate
@@ -271,16 +271,16 @@ Slice 10b local verification so far:
 
 - [ ] Make custom smart views fully executable for filters used in target model: SLA risk, OLA risk, unassigned, waiting approval, stale waits, diagnostics failed, requester replied, mass incident candidates.
 - [ ] Add validation for smart view filters/sorts/columns at publication time.
-- [ ] Add UI builder for smart view filters instead of raw JSON only.
+- [x] Add UI builder for common smart view filters instead of raw JSON only.
 - [ ] Tests: each builtin smart view, published custom filter, invalid filter rejection, support queue counters.
 
 ### Slice 14: Server Admin UX To Remove JSON Dependency
 
-- [ ] Convert policy editors in `/app/admin/forms` from raw JSON-first to structured controls for priority, SLA, OLA, routing, approvals, diagnostics, closure, visibility, notifications, reporting.
+- [x] Convert policy editors in `/app/admin/forms` from raw JSON-first to structured controls for priority, SLA, OLA, routing, approvals, diagnostics, closure, visibility, notifications, reporting and common smart-view fields.
 - [ ] Keep advanced JSON preview/edit behind explicit advanced mode with validation/diff.
 - [ ] Add template wizard screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA/OLA, Согласования, Диагностика, Закрытие, Видимость/Уведомления, Паспорт/Отчётность.
 - [ ] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
-- [ ] Tests: Vitest coverage for each structured editor, publish-from-form, policy publish/diff/deactivate/rollback, smart view publish.
+- [ ] Tests: finish coverage for policy publish/diff/deactivate/rollback and strict smart-view validation; structured editor publish paths now have focused Vitest coverage through Slice 14i.
 - [ ] Browser signoff: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` after deploy.
 
 Slice 14a local verification:
@@ -381,6 +381,7 @@ Slice 14i local verification:
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 23 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `f8428f9 webapp: add structured smart view controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed structured smart-view fields; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/smart-view errors, with unrelated existing canary/offline-agent reconcile warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
