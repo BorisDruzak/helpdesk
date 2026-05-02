@@ -7,7 +7,16 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketBusinessCalendar, TicketEvent, TicketSlaPolicy, TicketSlaTarget
+from app.db.models import (
+    Ticket,
+    TicketBusinessCalendar,
+    TicketEvent,
+    TicketNotification,
+    TicketQueue,
+    TicketQueueMember,
+    TicketSlaPolicy,
+    TicketSlaTarget,
+)
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.ticket_sla_watchdog import TicketSlaWatchdog
 import app.services.ticket_sla_watchdog as sla_watchdog_module
@@ -21,6 +30,18 @@ class FrozenDateTime(datetime):
     def now(cls, tz=None):
         fixed = datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc)
         return fixed if tz is None else fixed.astimezone(tz)
+
+
+async def _queue(session, code: str = "sla-escalation") -> TicketQueue:
+    queue = TicketQueue(code=f"{code}-{uuid.uuid4().hex[:8]}", name="SLA escalation", is_triage=False)
+    session.add(queue)
+    await session.flush()
+    return queue
+
+
+async def _queue_member(session, queue_id: int, actor_id: str, role: str | None = None) -> None:
+    session.add(TicketQueueMember(queue_id=queue_id, actor_id=actor_id, role_in_queue=role))
+    await session.flush()
 
 
 @pytest.mark.asyncio
@@ -476,6 +497,145 @@ async def test_sla_watchdog_emits_configured_warning_before_breach(test_engine, 
         "notify": ["assignee", "queue_lead"],
         "escalate_to_queue_lead": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_sla_warning_dispatches_policy_actions_to_assignee_and_queue_lead(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(sla_watchdog_module, "datetime", FrozenDateTime)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        await _queue_member(session, queue.id, "sla-warning-lead", "lead")
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=f"device-{ticket_id[:8]}",
+            title="Warning policy action",
+            description="SLA warning should dispatch configured recipients.",
+            status="in_progress",
+            requester_id="requester-sla-warning-dispatch",
+            assignee_id="sla-warning-assignee",
+            queue_id=queue.id,
+            ticket_type="incident",
+            priority="P3",
+            first_response_due_at=datetime(2026, 5, 4, 16, 50, tzinfo=timezone.utc),
+            resolution_due_at=datetime(2026, 5, 4, 18, 30, tzinfo=timezone.utc),
+            custom_fields={
+                "priority_class": "P2",
+                "request_template": {
+                    "sla_policy": {
+                        "code": "warning_dispatch_sla",
+                        "version": "4.1.0",
+                        "warnings": {"warning_before": {"first_response": "30m"}},
+                        "breach_actions": {
+                            "notify": ["assignee"],
+                            "escalate_to_queue_lead": True,
+                            "create_internal_event": True,
+                        },
+                    }
+                },
+            },
+        )
+        session.add(ticket)
+        await session.commit()
+
+    watchdog = TicketSlaWatchdog(interval=999)
+    await watchdog._check_warnings()
+
+    async with session_maker() as session:
+        notifications = (
+            await session.execute(
+                select(TicketNotification)
+                .where(TicketNotification.ticket_id == ticket_id)
+                .where(TicketNotification.event_type == "sla_warning")
+                .order_by(TicketNotification.actor_id)
+            )
+        ).scalars().all()
+        audit_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "policy_action_dispatched")
+                .order_by(TicketEvent.payload["actor_id"].astext)
+            )
+        ).scalars().all()
+
+    assert [item.actor_id for item in notifications] == ["sla-warning-assignee", "sla-warning-lead"]
+    assert {item.payload["policy_action_key"] for item in notifications} == {
+        "notify:assignee",
+        "escalate_to_queue_lead",
+    }
+    assert all(item.payload["source_event_type"] == "sla_warning" for item in notifications)
+    assert len(audit_events) == 2
+    assert {item.payload["actor_id"] for item in audit_events} == {"sla-warning-assignee", "sla-warning-lead"}
+
+
+@pytest.mark.asyncio
+async def test_sla_breach_dispatches_policy_actions_to_queue_lead(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(sla_watchdog_module, "datetime", FrozenDateTime)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        await _queue_member(session, queue.id, "sla-breach-lead", "queue_lead")
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=f"device-{ticket_id[:8]}",
+            title="Breach policy action",
+            description="SLA breach should dispatch configured recipients.",
+            status="in_progress",
+            requester_id="requester-sla-breach-dispatch",
+            queue_id=queue.id,
+            ticket_type="incident",
+            priority="P3",
+            first_response_due_at=datetime(2026, 5, 1, 16, 10, tzinfo=timezone.utc),
+            resolution_due_at=datetime(2026, 5, 1, 16, 20, tzinfo=timezone.utc),
+            custom_fields={
+                "priority_class": "P2",
+                "request_template": {
+                    "sla_policy": {
+                        "code": "breach_dispatch_sla",
+                        "version": "4.2.0",
+                        "breach_actions": {
+                            "notify_queue_lead": True,
+                            "create_internal_event": True,
+                        },
+                    }
+                },
+            },
+        )
+        session.add(ticket)
+        await session.commit()
+
+    watchdog = TicketSlaWatchdog(interval=999)
+    await watchdog._check_breaches()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        notifications = (
+            await session.execute(
+                select(TicketNotification)
+                .where(TicketNotification.ticket_id == ticket_id)
+                .where(TicketNotification.event_type == "sla_breached")
+                .where(TicketNotification.payload["policy_action_key"].astext == "notify_queue_lead")
+            )
+        ).scalars().all()
+        audit_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "policy_action_dispatched")
+            )
+        ).scalars().all()
+
+    assert ticket.first_response_breached_at == datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc)
+    assert ticket.resolution_breached_at == datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc)
+    assert [item.actor_id for item in notifications] == ["sla-breach-lead"]
+    assert notifications[0].payload["source_event_type"] == "sla_breached"
+    assert len(audit_events) == 1
+    assert audit_events[0].payload["actor_id"] == "sla-breach-lead"
 
 
 def test_add_business_minutes_handles_seconds_before_interval_end() -> None:

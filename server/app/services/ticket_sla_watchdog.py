@@ -59,6 +59,40 @@ def _last_warning_map(ticket: Ticket) -> dict[str, str]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def _sla_policy_action_source_id(ticket: Ticket, event_type: str, suffix: str) -> str:
+    return f"{event_type}-{ticket.ticket_id}-{suffix}"
+
+
+async def _dispatch_sla_policy_actions(
+    session,
+    *,
+    ticket: Ticket,
+    event_type: str,
+    source_event_id: str,
+    actions: dict,
+    payload: dict,
+) -> None:
+    if not actions:
+        return
+    try:
+        from app.repos.notification_prefs_repo import NotificationPrefsRepo
+        from tickets.policy_action_dispatcher import dispatch_policy_actions
+
+        await dispatch_policy_actions(
+            session,
+            ticket=ticket,
+            source_event_type=event_type,
+            source_event_id=source_event_id,
+            actions=actions,
+            payload=payload,
+            visibility="internal",
+            initiator_id="system",
+            prefs_repo=NotificationPrefsRepo(session),
+        )
+    except Exception as dispatch_err:
+        logger.warning(f"[TicketSlaWatchdog] policy action dispatch {event_type}: {dispatch_err}")
+
+
 class TicketSlaWatchdog:
     """
     Watchdog для SLA тикетов: breach и напоминания.
@@ -108,12 +142,20 @@ class TicketSlaWatchdog:
                             await repo.update_ticket(ticket.ticket_id, **updates)
                             trace_id = str(uuid.uuid4())
                             policy = _standalone_sla_policy_config(ticket)
+                            breach_types = list(updates.keys())
+                            breach_actions = _sla_breach_actions(policy)
+                            source_event_id = _sla_policy_action_source_id(
+                                ticket,
+                                "sla_breached",
+                                "-".join(breach_types),
+                            )
                             payload = {
                                 "ticket_id": ticket.ticket_id,
-                                "breach_types": list(updates.keys()),
+                                "breach_types": breach_types,
+                                "source_event_id": source_event_id,
                                 "ts": now.isoformat(),
                                 "sla_policy": _sla_policy_metadata(policy),
-                                "breach_actions": _sla_breach_actions(policy),
+                                "breach_actions": breach_actions,
                             }
                             ev_result = await repo.add_event(
                                 ticket_id=ticket.ticket_id,
@@ -135,6 +177,14 @@ class TicketSlaWatchdog:
                                     created_at=ev_result[1],
                                     payload=payload,
                                 )
+                            await _dispatch_sla_policy_actions(
+                                session,
+                                ticket=ticket,
+                                event_type="sla_breached",
+                                source_event_id=source_event_id,
+                                actions=breach_actions,
+                                payload=payload,
+                            )
                             try:
                                 from app.repos.notification_repo import NotificationRepo
                                 from app.repos.notification_prefs_repo import NotificationPrefsRepo
@@ -208,13 +258,16 @@ class TicketSlaWatchdog:
                             warning_map[warning_type] = now.isoformat()
                             cf[SLA_LAST_WARNING_AT_KEY] = warning_map
                             await repo.update_ticket(ticket.ticket_id, custom_fields=cf)
+                            breach_actions = _sla_breach_actions(policy)
+                            source_event_id = _sla_policy_action_source_id(ticket, "sla_warning", warning_type)
                             payload = {
                                 "ticket_id": ticket.ticket_id,
                                 "warning_type": warning_type,
+                                "source_event_id": source_event_id,
                                 "due_at": effective_due.isoformat(),
                                 "ts": now.isoformat(),
                                 "sla_policy": _sla_policy_metadata(policy),
-                                "breach_actions": _sla_breach_actions(policy),
+                                "breach_actions": breach_actions,
                             }
                             ev_result = await repo.add_event(
                                 ticket_id=ticket.ticket_id,
@@ -237,6 +290,14 @@ class TicketSlaWatchdog:
                                     created_at=ev_result[1],
                                     payload=payload,
                                 )
+                            await _dispatch_sla_policy_actions(
+                                session,
+                                ticket=ticket,
+                                event_type="sla_warning",
+                                source_event_id=source_event_id,
+                                actions=breach_actions,
+                                payload=payload,
+                            )
                             last_warnings = warning_map
                     except Exception as e:
                         logger.error(

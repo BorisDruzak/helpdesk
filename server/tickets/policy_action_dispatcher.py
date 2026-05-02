@@ -61,6 +61,10 @@ def _notify_specs(actions: dict[str, Any]) -> list[tuple[str, str]]:
             if recipient_key:
                 specs.append((f"notify:{recipient_key}", recipient_key))
 
+    has_queue_lead_spec = any(recipient_key == "queue_lead" for _, recipient_key in specs)
+    if actions.get("escalate_to_queue_lead") and not has_queue_lead_spec:
+        specs.append(("escalate_to_queue_lead", "queue_lead"))
+
     return _unique_action_specs(specs)
 
 

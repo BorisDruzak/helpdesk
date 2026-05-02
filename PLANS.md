@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10d is released: shared `policy_action_dispatcher` now turns OLA breach actions into recipient delivery, in-app notifications, external channel sends and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10c release/browser signoff the working estimate was backend/runtime about 98%, server UI about 79%, agent GUI about 73%, overall about 94%. After Slice 10d release/browser signoff the working estimate is backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10e is locally complete: SLA warning/breach actions now use the shared `policy_action_dispatcher`, matching the OLA path for recipient delivery, in-app notifications and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10d release/browser signoff the working estimate was backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. After Slice 10e local verification the working estimate is backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -66,7 +66,7 @@ Slice 10c local verification:
 - [x] Create `policy_action_dispatched` audit events with stable event ids.
 - [x] Use existing `ExternalNotificationProvider` contract for configured external channels and record `external_notification_delivery` audit events.
 - [x] Wire OLA breach checks to dispatch `breach_actions` after writing the canonical `ola_breached` event.
-- [ ] Wire SLA warning/breach actions through the same dispatcher after the next watchdog pass.
+- [x] Slice 10e: wire SLA warning/breach actions through the same dispatcher after the watchdog writes canonical `sla_warning` / `sla_breached` events.
 - [ ] Extend admin UI policy editors so escalation recipients/channels are structured controls instead of JSON-only fields.
 
 Slice 10d local verification so far:
@@ -76,6 +76,20 @@ Slice 10d local verification so far:
 - Broader notification/OLA regression: `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_stage8.py -q --tb=short` -> 17 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `5aa997d server: dispatch OLA breach policy actions`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/observer` loaded with console errors 0; `python scripts\manage_remote_stack.py status server` -> running before shutdown; log tail contained no policy-action dispatcher errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+### Slice 10e: SLA Warning/Breach Policy Action Dispatch
+
+- [x] Add RED tests proving `sla_warning` and `sla_breached` create dispatcher notifications and `policy_action_dispatched` audit rows.
+- [x] Support `escalate_to_queue_lead` as a dispatcher recipient action when no explicit `notify:queue_lead` exists.
+- [x] Add stable `source_event_id` to SLA warning/breach payloads and use it for dispatcher idempotency.
+- [x] Keep canonical SLA events and legacy notification-policy delivery intact.
+
+Slice 10e local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_sla_calendar.py::test_sla_warning_dispatches_policy_actions_to_assignee_and_queue_lead server\tests\test_ticket_sla_calendar.py::test_sla_breach_dispatches_policy_actions_to_queue_lead -q --tb=short` failed because only `sla_warning` / `sla_breached` events were written, with no dispatcher notifications/audit rows.
+- GREEN focused: same command -> 2 passed.
+- Broader SLA/OLA/notification regression: `python -m pytest server\tests\test_ticket_sla_calendar.py server\tests\test_ticket_ola_policy.py server\tests\test_stage8.py -q --tb=short` -> 27 passed.
+- Navigation: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed.
 
 ### Target Completion Criteria
 
