@@ -1194,6 +1194,100 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает approval policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Согласования")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить согласование" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(templateControl("Источник согласующего"), { target: { value: "form_field" } });
+    fireEvent.change(templateControl("Поле согласующего"), { target: { value: "manager_user_id" } });
+    fireEvent.change(templateControl("Режим согласования"), { target: { value: "sequential" } });
+    fireEvent.change(templateControl("Напомнить через"), { target: { value: "2h" } });
+    fireEvent.change(templateControl("Эскалировать через"), { target: { value: "1d" } });
+    fireEvent.click(templateControl("Комментарий при отказе"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          approval_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.approval_policy).toMatchObject({
+      required: true,
+      approver_source: {
+        type: "form_field",
+        field: "manager_user_id",
+      },
+      approval_mode: "sequential",
+      timeout: {
+        reminder_after: "2h",
+        escalate_after: "1d",
+      },
+      require_comment_on_reject: false,
+      log_to_passport: true,
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

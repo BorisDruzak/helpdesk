@@ -1607,6 +1607,90 @@ function RoutingPolicyControls({
   );
 }
 
+function ApprovalPolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const approverSource = nestedObject(config.approver_source);
+  const timeout = nestedObject(config.timeout);
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <JsonLinkedCheckbox
+        checked={Boolean(config.required)}
+        label="Согласование обязательно"
+        onChange={(checked) => onChange({ ...config, required: checked })}
+      />
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Источник согласующего</span>
+        <Select
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, approver_source: { ...approverSource, type: event.currentTarget.value } })}
+          value={String(approverSource.type ?? "service_owner")}
+        >
+          <option value="service_owner">Владелец сервиса</option>
+          <option value="requester_manager">Руководитель заявителя</option>
+          <option value="security_role">Роль ИБ</option>
+          <option value="form_field">Поле формы</option>
+          <option value="queue_lead">Руководитель очереди</option>
+          <option value="group">Группа</option>
+        </Select>
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Поле согласующего</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, approver_source: { ...approverSource, field: event.currentTarget.value } })}
+          placeholder="manager_user_id"
+          value={String(approverSource.field ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Режим согласования</span>
+        <Select
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, approval_mode: event.currentTarget.value })}
+          value={String(config.approval_mode ?? "any_one")}
+        >
+          <option value="any_one">Достаточно одного</option>
+          <option value="all">Все согласующие</option>
+          <option value="sequential">Последовательно</option>
+        </Select>
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Напомнить через</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, timeout: { ...timeout, reminder_after: event.currentTarget.value } })}
+          placeholder="4h"
+          value={String(timeout.reminder_after ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Эскалировать через</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, timeout: { ...timeout, escalate_after: event.currentTarget.value } })}
+          placeholder="2d"
+          value={String(timeout.escalate_after ?? "")}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(config.require_comment_on_reject ?? true)}
+        label="Комментарий при отказе"
+        onChange={(checked) => onChange({ ...config, require_comment_on_reject: checked })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(config.log_to_passport ?? true)}
+        label="Писать в паспорт решения"
+        onChange={(checked) => onChange({ ...config, log_to_passport: checked })}
+      />
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -1882,6 +1966,7 @@ function PolicyKindControls({
   }
 
   if (kind === "approval") {
+    return <ApprovalPolicyControls config={config} onChange={onChange} />;
     const approverSource =
       typeof config.approver_source === "object" && config.approver_source ? (config.approver_source as Record<string, unknown>) : {};
     const timeout = typeof config.timeout === "object" && config.timeout ? (config.timeout as Record<string, unknown>) : {};
@@ -2927,6 +3012,26 @@ function TemplateConstructorPanel({
             title="Политика маршрутизации"
             value={form.routing_policy_json}
           />
+        ) : null}
+
+        {activeStep === "approvals" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Политика согласования</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Источник согласующего, режим, напоминания, эскалация и правила отказа настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">approval policy</Badge>
+            </div>
+            <div className="mt-4">
+              <ApprovalPolicyControls
+                config={parseJsonDraft(form.approval_policy_json, parseJsonDraft(buildApprovalPreset()))}
+                onChange={(config) => onUpdatePolicyJson("approval_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeStep === "approvals" ? (
