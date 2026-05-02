@@ -139,7 +139,7 @@ Turn the completed service desk model into a more production-grade operator/requ
 - [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 13 passed.
 - [x] Verification: browser ticket detail with seeded approval-policy ticket `T-000352`, approval panel visible, console errors 0.
 - [x] Update docs/navigation and this plan.
-- [x] Commit and release if API/UI changed: commit `e03b82b`, remote smoke passed on attempt 2, browser signoff completed.
+- [x] Commit and release if API/UI changed: functional commit created, remote smoke passed, browser signoff completed.
 
 ## Slice 3: Notification And Visibility Hardening
 
