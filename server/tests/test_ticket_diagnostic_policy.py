@@ -1,15 +1,40 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
 from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Operation, Ticket, TicketEvent, TicketQueue
+from app.db.models import Operation, Playbook, PlaybookRun, PlaybookVersion, Ticket, TicketEvent, TicketQueue
 from app.repos.ticket_events_repo import TicketEventsRepo
+from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.diagnostic_policy import apply_diagnostic_result_policy
+
+
+async def _seed_published_playbook(session, *, key: str) -> PlaybookVersion:
+    playbook = Playbook(
+        key=key,
+        name=key,
+        domain="diagnostics",
+        owner="tests",
+        archived=False,
+    )
+    session.add(playbook)
+    await session.flush()
+    version = PlaybookVersion(
+        playbook_id=playbook.id,
+        version="1.0.0",
+        manifest_json={},
+        status="published",
+        created_at=datetime.now(timezone.utc),
+        published_at=datetime.now(timezone.utc),
+    )
+    session.add(version)
+    await session.flush()
+    return version
 
 
 @pytest.mark.asyncio
@@ -178,3 +203,155 @@ async def test_diagnostic_policy_reroute_is_idempotent_per_operation(test_engine
         assert updated_ticket.custom_fields["routing_decision"]["auto_reroute_count"] == 1
         assert updated_ticket.custom_fields["diagnostics"]["applied_operation_ids"] == [operation_id]
         assert event_count == 3
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_starts_suggested_playbook_when_safe(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_website_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "diagnostic_consent": {
+            "required": True,
+            "granted": True,
+            "scope": "requester_device",
+            "source": "pc_agent_create",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {
+                    "enabled": True,
+                    "only_if_agent_online": True,
+                    "only_for_priorities": ["P0", "P1"],
+                },
+                "consent": {"required_for_requester_device": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            title="Website unavailable",
+            description="DNS does not resolve",
+            status="in_progress",
+            priority="P1",
+            requester_id="user-net",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        run = (await session.execute(select(PlaybookRun).where(PlaybookRun.device_id == device_id))).scalar_one()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "playbook_started",
+                )
+            )
+        ).scalar_one()
+
+        assert started == [run.id]
+        assert run.trigger_type == "diagnostic_policy_auto_run"
+        assert run.context_json["scenario"]["source"] == "diagnostic_policy"
+        assert run.context_json["diagnostic_policy"]["auto_run"]["enabled"] is True
+        assert event.payload["trigger"] == "diagnostic_policy_auto_run"
+        assert event.payload["source"] == "diagnostic_policy"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("custom_overrides", "state_online", "expected_reason"),
+    [
+        ({"diagnostic_consent": {"required": True, "granted": False, "scope": "requester_device"}}, True, "consent_required"),
+        ({"priority_class": "P3"}, True, "priority_not_allowed"),
+        ({}, False, "agent_offline"),
+    ],
+)
+async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
+    test_engine,
+    custom_overrides,
+    state_online,
+    expected_reason,
+):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_safe_gate_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "diagnostic_consent": {
+            "required": True,
+            "granted": True,
+            "scope": "requester_device",
+            "source": "pc_agent_create",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {
+                    "enabled": True,
+                    "only_if_agent_online": True,
+                    "only_for_priorities": ["P0", "P1"],
+                },
+                "consent": {"required_for_requester_device": True},
+            },
+        },
+    }
+    custom_fields.update(custom_overrides)
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            title="Website unavailable",
+            description="DNS does not resolve",
+            status="in_progress",
+            priority=str(custom_fields.get("priority_class") or "P1"),
+            requester_id="user-net",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda _device_id: state_online),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        runs = (await session.execute(select(PlaybookRun).where(PlaybookRun.device_id == device_id))).scalars().all()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalar_one()
+
+        assert started == []
+        assert runs == []
+        assert event.payload["reason"] == expected_reason
+        assert event.payload["playbook_key"] == playbook_key

@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.db.models import Operation, TicketEvidenceItem
+from tickets.statuses import extract_priority_class
 
 TERMINAL_OPERATION_STATUSES = {"succeeded", "failed", "denied", "timed_out", "canceled"}
 ROUTING_DECISION_KEY = "routing_decision"
@@ -65,6 +66,159 @@ def should_materialize_diagnostic_evidence(ticket: Any) -> bool:
         return bool(attach_results.get("as_evidence")) and to_passport is not False
 
     return bool(policy.get("attach_as_evidence") or policy.get("attach_to_passport_as_evidence"))
+
+
+def _bool_from_policy(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _diagnostic_policy_auto_run(policy: dict[str, Any]) -> dict[str, Any]:
+    auto_run = policy.get("auto_run")
+    if isinstance(auto_run, dict):
+        return auto_run
+    if auto_run is True:
+        return {"enabled": True}
+    return {}
+
+
+def _diagnostic_policy_playbooks(policy: dict[str, Any]) -> list[str]:
+    raw_playbooks = policy.get("suggested_playbooks")
+    items = raw_playbooks if isinstance(raw_playbooks, list) else []
+    for legacy_key in ("suggested_playbook_id", "suggested_playbook"):
+        value = policy.get(legacy_key)
+        if value:
+            items.append(value)
+
+    playbooks: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            value = item.get("playbook_key") or item.get("key") or item.get("id")
+        else:
+            value = item
+        playbook_key = str(value or "").strip()
+        if playbook_key and playbook_key not in playbooks:
+            playbooks.append(playbook_key)
+    return playbooks
+
+
+def _policy_requires_requester_device_consent(policy: dict[str, Any]) -> bool:
+    consent = policy.get("consent") if isinstance(policy.get("consent"), dict) else {}
+    return bool(policy.get("requires_user_consent") or consent.get("required_for_requester_device"))
+
+
+def _has_granted_requester_device_consent(custom_fields: dict[str, Any]) -> bool:
+    consent = custom_fields.get("diagnostic_consent")
+    if not isinstance(consent, dict):
+        return False
+    scope = str(consent.get("scope") or "requester_device").strip() or "requester_device"
+    return scope == "requester_device" and bool(consent.get("granted"))
+
+
+def _state_reports_agent_online(state: Any | None, device_id: str) -> bool:
+    if state is None or not device_id:
+        return False
+    checker = getattr(state, "is_agent_online", None)
+    if callable(checker):
+        try:
+            return bool(checker(device_id))
+        except Exception:
+            return False
+    connected_agents = getattr(state, "connected_agents", None)
+    return isinstance(connected_agents, dict) and device_id in connected_agents
+
+
+def _normalize_priority_list(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    items = raw if isinstance(raw, list) else [raw]
+    priorities: list[str] = []
+    for item in items:
+        value = str(item or "").strip().upper()
+        if value and value not in priorities:
+            priorities.append(value)
+    return priorities
+
+
+def collect_diagnostic_policy_auto_run_triggers(
+    *,
+    ticket: Any,
+    custom_fields: dict[str, Any] | None,
+    state: Any | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return safe diagnostic policy auto-run triggers and explain skipped playbooks."""
+    if ticket is None:
+        return [], []
+    fields = custom_fields if isinstance(custom_fields, dict) else {}
+    policy = get_template_diagnostic_policy(ticket)
+    if not policy:
+        request_template = fields.get("request_template")
+        if isinstance(request_template, dict):
+            raw_policy = request_template.get("diagnostic_policy") or request_template.get("diagnostics")
+            policy = raw_policy if isinstance(raw_policy, dict) else {}
+    if not policy:
+        return [], []
+
+    auto_run = _diagnostic_policy_auto_run(policy)
+    if not _bool_from_policy(auto_run.get("enabled"), default=False):
+        return [], []
+
+    playbooks = _diagnostic_policy_playbooks(policy)
+    if not playbooks:
+        return [], []
+
+    device_id = str(getattr(ticket, "device_id", "") or "")
+    priority_class = extract_priority_class(ticket)
+    allowed_priorities = _normalize_priority_list(auto_run.get("only_for_priorities"))
+    consent_required = _policy_requires_requester_device_consent(policy)
+    consent_granted = _has_granted_requester_device_consent(fields)
+    online_required = _bool_from_policy(auto_run.get("only_if_agent_online"), default=False)
+    agent_online = _state_reports_agent_online(state, device_id)
+
+    triggers: list[dict[str, Any]] = []
+    skips: list[dict[str, Any]] = []
+    for playbook_key in playbooks:
+        reason: str | None = None
+        if allowed_priorities and priority_class not in allowed_priorities:
+            reason = "priority_not_allowed"
+        elif online_required and not agent_online:
+            reason = "agent_offline"
+        elif consent_required and not consent_granted:
+            reason = "consent_required"
+
+        if reason:
+            skips.append(
+                {
+                    "playbook_key": playbook_key,
+                    "reason": reason,
+                    "priority_class": priority_class,
+                    "agent_online": agent_online,
+                    "consent_required": consent_required,
+                    "consent_granted": consent_granted,
+                    "source": "diagnostic_policy",
+                }
+            )
+            continue
+
+        triggers.append(
+            {
+                "event": "ticket_created",
+                "playbook_key": playbook_key,
+                "module_kind": "diagnostic",
+                "enabled": True,
+                "source": "diagnostic_policy",
+                "trigger_type": "diagnostic_policy_auto_run",
+                "auto_run": dict(auto_run),
+                "diagnostic_policy": {
+                    "id": policy.get("id"),
+                    "policy_id": policy.get("policy_id"),
+                    "auto_run": dict(auto_run),
+                    "consent_required": consent_required,
+                },
+            }
+        )
+    return triggers, skips
 
 
 def _as_int(value: Any) -> int | None:

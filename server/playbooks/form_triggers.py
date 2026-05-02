@@ -13,6 +13,7 @@ from app.db.models import Playbook, PlaybookVersion
 from app.repos import TicketEventsRepo
 from app.repos.playbook_repo import PlaybookRepo
 from app.services.playbook_engine import start_run
+from tickets.diagnostic_policy import collect_diagnostic_policy_auto_run_triggers
 
 
 def normalize_form_playbook_triggers(raw: Any) -> list[dict[str, Any]]:
@@ -70,6 +71,8 @@ def build_ticket_playbook_context(
             "playbook_key": trigger.get("playbook_key"),
             "class": trigger.get("module_kind") or "diagnostic",
             "trigger_event": trigger.get("event") or "ticket_created",
+            "trigger_type": trigger.get("trigger_type") or trigger.get("event") or "ticket_created",
+            "source": trigger.get("source") or "request_form",
         },
         "facts_package": {
             "request_form_key": fields.get("request_form_key"),
@@ -77,6 +80,7 @@ def build_ticket_playbook_context(
             "request_form_data": deepcopy(fields.get("request_form_data") or {}),
             "request_form_summary": deepcopy(fields.get("request_form_summary") or []),
         },
+        "diagnostic_policy": deepcopy(trigger.get("diagnostic_policy") or {}),
     }
 
 
@@ -108,12 +112,30 @@ async def start_ticket_created_playbooks(
     device_id = str(getattr(ticket, "device_id", "") or "")
     if not ticket_id or not device_id:
         return []
+    started: list[int] = []
+    ticket_repo = TicketEventsRepo(session)
     triggers = collect_ticket_created_playbook_triggers(custom_fields)
+    policy_triggers, policy_skips = collect_diagnostic_policy_auto_run_triggers(
+        ticket=ticket,
+        custom_fields=custom_fields,
+        state=state,
+    )
+    for skip in policy_skips:
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="diagnostic_autorun_skipped",
+            payload={
+                "trigger": "diagnostic_policy_auto_run",
+                **skip,
+            },
+            trace_id=str(uuid.uuid4()),
+        )
+    triggers.extend(policy_triggers)
     if not triggers:
         return []
 
-    started: list[int] = []
-    ticket_repo = TicketEventsRepo(session)
     for trigger in triggers:
         playbook_key = str(trigger.get("playbook_key") or "")
         version = await _latest_published_playbook_version(session, playbook_key)
@@ -126,15 +148,21 @@ async def start_ticket_created_playbooks(
             trigger=trigger,
             custom_fields=custom_fields,
         )
+        trigger_type = str(trigger.get("trigger_type") or trigger.get("event") or "ticket_created").strip()
+        idempotency_key = (
+            f"ticket:{ticket_id}:playbook:{playbook_key}:diagnostic_policy_auto_run"
+            if trigger.get("source") == "diagnostic_policy"
+            else f"ticket:{ticket_id}:playbook:{playbook_key}:ticket_created"
+        )
         try:
             run_id, _operation_id = await start_run(
                 session,
                 state,
                 playbook_version_id=int(version.id),
                 device_id=device_id,
-                trigger_type="ticket_created",
+                trigger_type=trigger_type,
                 context_json=context,
-                idempotency_key=f"ticket:{ticket_id}:playbook:{playbook_key}:ticket_created",
+                idempotency_key=idempotency_key,
             )
         except Exception as exc:
             logger.warning(
@@ -150,8 +178,10 @@ async def start_ticket_created_playbooks(
             payload={
                 "playbook_key": playbook_key,
                 "playbook_run_id": int(run_id),
-                "trigger": "ticket_created",
+                "trigger": trigger_type,
+                "source": trigger.get("source") or "request_form",
                 "facts_package": context["facts_package"],
+                "diagnostic_policy": context["diagnostic_policy"],
             },
             trace_id=str(uuid.uuid4()),
         )

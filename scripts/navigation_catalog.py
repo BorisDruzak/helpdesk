@@ -364,6 +364,8 @@ TOPICS: tuple[Topic, ...] = (
             "operation_log",
             "diagnostic policy",
             "diagnostic_policy",
+            "diagnostic auto run",
+            "diagnostic_autorun_skipped",
             "diagnostic_result",
             "reroute_by_result",
             "diagnostic_result_classified",

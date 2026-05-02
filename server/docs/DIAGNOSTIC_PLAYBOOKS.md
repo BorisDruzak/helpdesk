@@ -2,6 +2,8 @@
 
 Update note 2026-05-02 diagnostic result routing: terminal diagnostic/tool operations now pass through `tickets.diagnostic_policy.apply_diagnostic_result_policy(...)` from the command-result pipeline. The helper extracts a stable `diagnostic_result` class from result payloads or `Operation.error_code` (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.), stores it in `ticket.custom_fields.diagnostic_result` / `diagnostics`, and executes `diagnostic_policy.reroute_by_result` as a queue handoff with `diagnostic_result_classified`, `routing_applied` and `queue_changed` events. This path is idempotent per `operation_id` and does not change `ticket.status`; operation status remains the source for running/succeeded/failed diagnostics.
 
+Update note 2026-05-02 diagnostic policy auto-run: request templates can now run `diagnostic_policy.suggested_playbooks` automatically on ticket creation when `auto_run.enabled=true`. The auto-run path uses the same playbook runtime as form triggers but adds safety gates: `only_for_priorities`, `only_if_agent_online` and requester-device consent (`requires_user_consent` / `consent.required_for_requester_device`). Blocked auto-runs write `diagnostic_autorun_skipped` with a reason (`priority_not_allowed`, `agent_offline`, `consent_required`) instead of silently doing nothing.
+
 Update note 2026-04-30 diagnostic policy evidence: request templates can now execute `diagnostic_policy.attach_results` during passport generation. When `attach_results.as_evidence=true` and `attach_results.to_passport` is not disabled, `server/tickets/diagnostic_policy.py` materializes terminal ticket operations as `ticket_evidence_items` with `evidence_type=diagnostic_result` and `source_ref=operation:<operation_id>`. This keeps `ticket.status` independent from operation status while allowing diagnostic results to satisfy passport/closure evidence requirements.
 
 Update note 2026-04-28 ticket launch: support ticket detail now has typed playbook launch routes. `GET /api/web/support/tickets/{ticket_id}/playbooks` returns published playbook versions with required tools and readiness for the ticket device. `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version through `playbook_engine.start_run` with `trigger_type=support_ticket` and a ticket-bound context.
@@ -101,6 +103,15 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 {
   "diagnostic_policy": {
     "id": "website_diagnostics",
+    "suggested_playbooks": ["diagnose.website"],
+    "auto_run": {
+      "enabled": true,
+      "only_if_agent_online": true,
+      "only_for_priorities": ["P0", "P1"]
+    },
+    "consent": {
+      "required_for_requester_device": true
+    },
     "reroute_by_result": {
       "DNS_FAIL": "networks",
       "HTTP_500": "information_systems",
@@ -117,6 +128,8 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 При генерации паспорта `server/tickets/passport_service.py` вызывает `tickets.diagnostic_policy.materialize_diagnostic_operation_evidence(...)`. Завершённые операции тикета (`succeeded`, `failed`, `denied`, `timed_out`, `canceled`) становятся доказательствами только если policy это разрешает. Повторная генерация паспорта не создаёт дубликаты: идемпотентность строится по `ticket_id`, `evidence_type=diagnostic_result` и `source_ref=operation:<operation_id>`.
 
 Диагностика не является статусом тикета: тикет остаётся, например, `in_progress`, а выполнение/результат живёт в `operations`, playbook tables, timeline и evidence/passport.
+
+На создании тикета `server/playbooks/form_triggers.py` запускает legacy `playbook_triggers` и policy-driven `diagnostic_policy.auto_run` через один runtime. Для policy auto-run `trigger_type=diagnostic_policy_auto_run`, idempotency key строится по `ticket_id + playbook_key + diagnostic_policy_auto_run`, а context содержит `scenario.source=diagnostic_policy` и snapshot `diagnostic_policy.auto_run`.
 
 Если terminal operation содержит результат классификации, `apply_diagnostic_result_policy(...)` пишет структурированный факт в `custom_fields` и может выполнить `reroute_by_result`. Значение policy может быть кодом очереди (`"networks"`), числовым `queue_id` или объектом `{ "queue": "networks" }` / `{ "queue_id": 12 }`. Ручной routing lock блокирует автоматический handoff, но факт диагностики всё равно сохраняется.
 
