@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, after Slice 6.
+Last updated: 2026-05-03, after Slice 7.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 75.0% (6 of 8 slices complete).
+Current plan completion: 87.5% (7 of 8 slices complete).
 
 ## Goal
 
@@ -81,6 +81,7 @@ Turn the completed service desk model into a more production-grade operator/requ
   - `server/docs/CODEMAP.md`
   - `server/docs/TICKET_SYSTEM.md`
   - `scripts/navigation_catalog.py`
+  - `scripts/helpdesk_data_cleanup.py`
   - `PLANS.md`
 
 ## Constraints
@@ -104,7 +105,8 @@ Turn the completed service desk model into a more production-grade operator/requ
 - External SLA/OLA policy actions are dispatched outside event payloads through `policy_action_dispatcher`.
 - Structured OLA editor and OLA risk UI are already present at MVP level.
 - The known old `web_settings` calendar JSON warning cleanup was completed in the previous plan.
-- Remaining gaps are mainly UI completeness, edge coverage, validation depth, and live GUI confidence.
+- Slice 7 added a read-only helpdesk historical data cleanup inventory. Latest remote dry-run report: `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260502_211544.json`.
+- Remaining gaps are mainly final release-gate coverage and live browser/observer signoff.
 
 ## Decisions
 
@@ -193,14 +195,21 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 7: Data Cleanup And Mojibake Hardening
 
-- [ ] Inventory historical live data with mojibake or placeholder `???` in ticket titles, requester names, module descriptions and tool descriptions.
-- [ ] Decide which cleanup is data-only and which requires code hardening.
-- [ ] Add a safe admin/scripted cleanup path for historical test data, with dry-run output and no token leakage.
-- [ ] Add tests for UTF-8 preservation in any new cleanup parser/formatter.
-- [ ] Verification: dry-run report stored under `artifacts/diagnostics/` or documented in this plan.
-- [ ] Browser check representative cleaned pages if cleanup is applied to remote data.
-- [ ] Update docs/navigation and this plan.
-- [ ] Commit script/docs changes if added.
+- [x] Inventory historical live data with mojibake or placeholder `???` in ticket titles, requester names, module descriptions and tool descriptions via `scripts/helpdesk_data_cleanup.py`.
+- [x] Decide which cleanup is data-only and which requires code hardening/security review: placeholder-only findings are `data_only_cleanup_candidate`; mojibake/mixed findings are `manual_review_required`; token-like values are redacted and classified as `security_review_required`.
+- [x] Add a safe admin/scripted cleanup path for historical test data, with dry-run output and no token leakage. Mutation is intentionally disabled: `--apply` returns `apply_requested_but_not_implemented` until deterministic cleanup rules are reviewed.
+- [x] Add tests for UTF-8 preservation in any new cleanup parser/formatter.
+- [x] Verification: remote dry-run report stored at `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260502_211544.json` and Markdown sibling `.md`.
+- [x] Browser check representative cleaned pages if cleanup is applied to remote data: skipped because no cleanup was applied; this slice was inventory-only.
+- [x] Update docs/navigation and this plan.
+- [x] Commit script/docs changes if added: `ec00606 server: add helpdesk data cleanup inventory` plus merge commit `f51fb32` for fast-forward remote deploy after amended detection.
+
+Remote dry-run summary:
+
+- Scanned rows: tickets 338, registry_people 6, modules 53, device_toolset_snapshots 69.
+- Findings: 73 total; mojibake 20, placeholder 33, sensitive_token_like 20.
+- Strategies: data-only cleanup candidates 33, manual review 20, security review 20.
+- No raw token-like values were printed in the report samples; samples use `[REDACTED_TOKEN]`.
 
 ## Slice 8: Final Hardening Release Gates
 
