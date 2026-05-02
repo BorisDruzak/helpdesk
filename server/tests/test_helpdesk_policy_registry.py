@@ -1256,6 +1256,22 @@ async def test_web_admin_rejects_invalid_smart_view_definition(test_client, test
     assert invalid_column_payload["error_code"] == "VALIDATION_ERROR"
     assert "raw_secret" in invalid_column_payload["error"]
 
+    invalid_filter_path_response = await test_client.post(
+        "/api/web/admin/helpdesk-model/smart-views/publish",
+        json={
+            "code": "invalid_filter_path_view",
+            "title": "Некорректный путь фильтра",
+            "filter": {"field_equals": {"raw_secret": "hidden"}},
+            "sort": [{"field": "resolution_due_at", "direction": "asc"}],
+            "columns": ["ticket_id", "title", "resolution_due_at"],
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert invalid_filter_path_response.status == 400
+    invalid_filter_path_payload = await invalid_filter_path_response.json()
+    assert invalid_filter_path_payload["error_code"] == "VALIDATION_ERROR"
+    assert "raw_secret" in invalid_filter_path_payload["error"]
+
     registry_response = await test_client.get(
         "/api/web/admin/helpdesk-model/policies",
         headers=_admin_headers(),

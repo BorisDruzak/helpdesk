@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, after Slice 3.
+Last updated: 2026-05-03, after Slice 5.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 50.0% (4 of 8 slices complete).
+Current plan completion: 62.5% (5 of 8 slices complete).
 
 ## Goal
 
@@ -168,15 +168,15 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 5: Smart Views Execution Coverage
 
-- [ ] Add executable coverage for target smart views: `sla_risk`, `ola_risk`, `unassigned`, `waiting_approval`, `stale_waiting`, `diagnostics_failed`, `requester_replied`, `mass_incident_candidates`.
-- [ ] Add tests for published custom filters, invalid filter rejection and support queue counters.
-- [ ] Make unsupported custom filter paths fail at publication time with actionable validation messages.
-- [ ] Ensure list UI shows custom/built-in smart-view counts consistently and does not confuse smart views with queues.
-- [ ] Verification: `python -m pytest server\tests\test_web_support_api.py server\tests\test_helpdesk_policy_registry.py -q --tb=short`.
-- [ ] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx`.
-- [ ] Browser check `/app/tickets` and `/app/admin/forms` smart-view editor.
-- [ ] Update docs/navigation and this plan.
-- [ ] Commit and release if API/UI changed.
+- [x] Add executable coverage for target smart views: `sla_risk`, `ola_risk`, `unassigned`, `waiting_approval`, `stale_waiting`, `diagnostics_failed`, `requester_reply`, `mass_incident_candidates`.
+- [x] Add tests for published custom filters, invalid filter rejection and support queue counters.
+- [x] Make unsupported custom filter paths fail at publication time with actionable validation messages.
+- [x] Ensure list UI shows custom/built-in smart-view counts consistently and does not confuse smart views with queues.
+- [x] Verification: `python -m pytest server\tests\test_web_support_api.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 50 passed.
+- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx` -> 28 passed.
+- [x] Browser check `/app/tickets` and `/app/admin/forms` smart-view editor: OLA risk filter reduced the queue to 1 ticket, smart-view editor structured filter/sort controls visible, active-tab console errors 0.
+- [x] Update docs/navigation and this plan.
+- [x] Commit and release if API/UI changed: no runtime/API/UI source changed in this slice, only tests and plan; release skipped.
 
 ## Slice 6: Agent Live UX And Template Create Smoke
 

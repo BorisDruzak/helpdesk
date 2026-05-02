@@ -666,6 +666,168 @@ async def test_web_support_queue_applies_published_custom_smart_view(test_client
 
 
 @pytest.mark.asyncio
+async def test_web_support_queue_counts_all_target_smart_views(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="smart_all", name="Smart all", members=["support-test"])
+        tickets = [
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-sla",
+                title="Count SLA risk",
+                description="SLA deadline should be counted",
+                status="in_progress",
+                requester_id="user-count-sla",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                first_response_due_at=now + timedelta(minutes=20),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-ola",
+                title="Count OLA risk",
+                description="OLA deadline should be counted",
+                status="assigned",
+                requester_id="user-count-ola",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                ola_processing_due_at=now + timedelta(minutes=40),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-unassigned",
+                title="Count unassigned",
+                description="Open ticket without assignee should be counted",
+                status="queued",
+                requester_id="user-count-unassigned",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-approval",
+                title="Count waiting approval",
+                description="Approval wait should be counted",
+                status="waiting_on_approval",
+                requester_id="user-count-approval",
+                queue_id=queue.id,
+                assignee_id="support-test",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-stale",
+                title="Count stale waiting",
+                description="Old waiting ticket should be counted",
+                status="waiting_on_user",
+                requester_id="user-count-stale",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                updated_at=now - timedelta(days=4),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-diagnostics",
+                title="Count diagnostics failed",
+                description="Failed diagnostic status should be counted",
+                status="in_progress",
+                requester_id="user-count-diagnostics",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                custom_fields={"diagnostics": {"status": "failed"}},
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-requester-reply",
+                title="Count requester reply",
+                description="Unread requester message should be counted",
+                status="in_progress",
+                requester_id="user-count-requester-reply",
+                queue_id=queue.id,
+                assignee_id="support-test",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-mass",
+                title="Count mass candidate",
+                description="Mass candidate signal should be counted",
+                status="in_progress",
+                requester_id="user-count-mass",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                custom_fields={"similar_tickets": ["T-000111"]},
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-count-closed",
+                title="Closed signals hidden",
+                description="Terminal ticket should not be counted by open-only smart views",
+                status="closed",
+                requester_id="user-count-closed",
+                queue_id=queue.id,
+                assignee_id="support-test",
+                tags=["diagnostics_failed", "mass_incident_candidate"],
+                first_response_due_at=now + timedelta(minutes=5),
+                ola_ack_due_at=now + timedelta(minutes=5),
+            ),
+        ]
+        session.add_all(tickets)
+        await session.flush()
+
+        requester_reply_ticket = next(ticket for ticket in tickets if ticket.title == "Count requester reply")
+        await TicketEventsRepo(session).add_event(
+            ticket_id=requester_reply_ticket.ticket_id,
+            device_id=requester_reply_ticket.device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload={
+                "message_id": "msg-count-user-1",
+                "sender_role": "user",
+                "from": "user",
+                "text": "Пользователь ответил.",
+                "visibility": "public",
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id="msg-count-user-1",
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/support/queue?scope=all", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    counts = {item["value"]: item["count"] for item in payload["data"]["summary"]["smart_view_counts"]}
+    assert counts["sla_risk"] == 1
+    assert counts["ola_risk"] == 1
+    assert counts["unassigned"] == 1
+    assert counts["waiting_approval"] == 1
+    assert counts["stale_waiting"] == 1
+    assert counts["diagnostics_failed"] == 1
+    assert counts["requester_reply"] == 1
+    assert counts["mass_incident_candidates"] == 1
+
+    expected_titles = {
+        "sla_risk": ["Count SLA risk"],
+        "ola_risk": ["Count OLA risk"],
+        "unassigned": ["Count unassigned"],
+        "waiting_approval": ["Count waiting approval"],
+        "stale_waiting": ["Count stale waiting"],
+        "diagnostics_failed": ["Count diagnostics failed"],
+        "requester_reply": ["Count requester reply"],
+        "mass_incident_candidates": ["Count mass candidate"],
+    }
+    for smart_view, titles in expected_titles.items():
+        view_response = await test_client.get(
+            f"/api/web/support/queue?scope=all&smart_view={smart_view}",
+            headers=_support_headers(),
+        )
+        assert view_response.status == 200, await view_response.text()
+        view_payload = await view_response.json()
+        assert [item["title"] for item in view_payload["data"]["tickets"]] == titles
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_includes_observer_summary(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 
