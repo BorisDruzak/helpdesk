@@ -24,15 +24,18 @@ export type SupportQueuePayload = {
   scope: SupportQueueScope;
   query: string;
   status_filter: string;
+  smart_view: string;
   summary: {
     visible_count: number;
     selected_ticket_id: string | null;
     scope_counts: SupportCountItem[];
     status_counts: SupportCountItem[];
+    smart_view_counts: SupportCountItem[];
   };
   filters: {
     scope_options: SupportFilterOption[];
     status_options: SupportFilterOption[];
+    smart_view_options: SupportFilterOption[];
   };
   tickets: Array<{
     ticket_id: string;
@@ -394,6 +397,7 @@ export async function fetchSupportBootstrap(): Promise<SupportBootstrapPayload> 
 type SupportQueueParams = {
   scope: SupportQueueScope;
   statusFilter: string;
+  smartView?: string;
   query: string;
 };
 
@@ -402,6 +406,9 @@ function buildSupportQueueUrl(params: SupportQueueParams): string {
   searchParams.set("scope", params.scope);
   if (params.statusFilter && params.statusFilter !== "all") {
     searchParams.set("status", params.statusFilter);
+  }
+  if (params.smartView && params.smartView !== "all") {
+    searchParams.set("smart_view", params.smartView);
   }
   if (params.query.trim()) {
     searchParams.set("query", params.query.trim());

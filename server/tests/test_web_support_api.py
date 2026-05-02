@@ -436,6 +436,52 @@ async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_e
 
 
 @pytest.mark.asyncio
+async def test_web_support_queue_surfaces_ola_risk_smart_view_count(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="smart_ola", name="Smart OLA", members=["support-test"])
+        session.add_all([
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-ola-risk",
+                title="OLA risk visible",
+                description="Queue deadline should be in smart view",
+                status="in_progress",
+                requester_id="user-ola-risk",
+                queue_id=queue.id,
+                ola_ack_due_at=now + timedelta(minutes=30),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-ola-later",
+                title="OLA later hidden",
+                description="Far OLA deadline should stay outside risk view",
+                status="in_progress",
+                requester_id="user-ola-later",
+                queue_id=queue.id,
+                ola_ack_due_at=now + timedelta(days=2),
+            ),
+        ])
+        await session.commit()
+
+    response = await test_client.get("/api/web/support/queue?scope=all&smart_view=ola_risk", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["smart_view"] == "ola_risk"
+    assert [item["title"] for item in payload["data"]["tickets"]] == ["OLA risk visible"]
+    smart_view_options = payload["data"]["filters"]["smart_view_options"]
+    assert {"value": "ola_risk", "label": "Риск внутренней очереди"} in smart_view_options
+    smart_view_counts = {item["value"]: item["count"] for item in payload["data"]["summary"]["smart_view_counts"]}
+    assert smart_view_counts["ola_risk"] == 1
+
+
+@pytest.mark.asyncio
 async def test_web_support_queue_applies_published_custom_smart_view(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc)

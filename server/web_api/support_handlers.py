@@ -298,6 +298,38 @@ def _build_status_counts(items: list[SupportQueueTicketItem]) -> list[SupportCou
     return result
 
 
+def _build_smart_view_counts(
+    entries: list[tuple[dict, SupportQueueTicketItem]],
+    options: list[dict[str, str]],
+    *,
+    actor_id: str,
+    custom_smart_view_map: dict[str, dict[str, object]],
+) -> list[SupportCountItem]:
+    counts: list[SupportCountItem] = []
+    for option in options:
+        view_id = str(option.get("value") or "").strip()
+        if not view_id:
+            continue
+        count = sum(
+            1
+            for ticket_data, _item in entries
+            if matches_smart_view(
+                ticket_data,
+                view_id,
+                actor_id=actor_id,
+                custom_views=custom_smart_view_map,
+            )
+        )
+        counts.append(
+            SupportCountItem(
+                value=view_id,
+                label=str(option.get("label") or view_id),
+                count=count,
+            )
+        )
+    return counts
+
+
 async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> SupportTicketActions:
     if not is_staff:
         return SupportTicketActions(status_options=[], can_send_internal_note=False)
@@ -976,7 +1008,8 @@ async def handle_web_support_queue(request: web.Request):
                 [getattr(ticket, "ticket_id", None) for ticket in tickets],
             )
 
-            accessible_items: list[SupportQueueTicketItem] = []
+            smart_options = smart_view_options(custom_smart_views)
+            accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
             for ticket in tickets:
                 ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
                 ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
@@ -988,15 +1021,24 @@ async def handle_web_support_queue(request: web.Request):
                         "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
                     }
                 )
-                if not matches_smart_view(
-                    ticket_data,
-                    smart_view,
-                    actor_id=auth_context.actor_id,
-                    custom_views=custom_smart_view_map,
-                ):
-                    continue
-                accessible_items.append(_build_ticket_item(ticket_data))
+                accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
 
+        smart_view_counts = _build_smart_view_counts(
+            accessible_entries,
+            smart_options,
+            actor_id=auth_context.actor_id,
+            custom_smart_view_map=custom_smart_view_map,
+        )
+        accessible_items = [
+            item
+            for ticket_data, item in accessible_entries
+            if matches_smart_view(
+                ticket_data,
+                smart_view,
+                actor_id=auth_context.actor_id,
+                custom_views=custom_smart_view_map,
+            )
+        ]
         scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
         status_counts = _build_status_counts(accessible_items)
         status_values = {item.status for item in accessible_items if item.status}
@@ -1027,11 +1069,12 @@ async def handle_web_support_queue(request: web.Request):
                 selected_ticket_id=typed_items[0].ticket_id if typed_items else None,
                 scope_counts=scope_counts,
                 status_counts=status_counts,
+                smart_view_counts=smart_view_counts,
             ),
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,
                 status_options=_build_status_options(status_values),
-                smart_view_options=[SupportFilterOption(**option) for option in smart_view_options(custom_smart_views)],
+                smart_view_options=[SupportFilterOption(**option) for option in smart_options],
             ),
             tickets=typed_items,
         )

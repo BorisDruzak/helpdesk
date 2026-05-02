@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -326,8 +328,8 @@ class WebSettingsCalendarItem(BaseModel):
     code: str
     name: str
     timezone: str
-    weekly_hours_json: dict | None = None
-    holidays_json: dict | None = None
+    weekly_hours_json: dict[str, Any] | list[Any] | None = None
+    holidays_json: dict[str, Any] | list[Any] | None = None
     is_active: bool
     created_at: str | None = None
     updated_at: str | None = None

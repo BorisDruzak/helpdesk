@@ -48,6 +48,7 @@ class SupportQueueSummary(BaseModel):
     selected_ticket_id: str | None
     scope_counts: list[SupportCountItem] = Field(default_factory=list)
     status_counts: list[SupportCountItem] = Field(default_factory=list)
+    smart_view_counts: list[SupportCountItem] = Field(default_factory=list)
 
 
 class SupportQueueTicketItem(BaseModel):

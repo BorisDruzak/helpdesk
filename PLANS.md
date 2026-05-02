@@ -1,8 +1,8 @@
-# PLANS.md
+﻿# PLANS.md
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 6 is implemented locally and is in verification/release. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 1 (`ticket_types`), Slice 2 (`form_schemas`/`form_fields`/`form_conditions`), Slice 3 (`request_template` policy refs/effective snapshots), Slice 4 (`priority_policy.matrix`, rule modifiers and manual override), Slice 5 (`sla_policy` start/pause/resume/stop/warning events) and Slice 6 (`ola_policy` start/stop/pause/resume/breach events) the working estimate is backend/runtime about 88%, server UI about 74%, agent GUI unchanged about 73%, overall about 84%. The remaining plan still targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 7a is locally implemented and under release verification. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a local verification the working estimate is backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -27,17 +27,19 @@ Status: Slice 6 is implemented locally and is in verification/release. Baseline 
 
 ### Current State
 
-- Уже есть `request_templates` и versioned policy tables для priority, SLA, OLA, routing, approval, closure, diagnostic, notification, visibility, reporting, smart views и audit.
-- Implemented Slice 1: versioned `ticket_types` registry with defaults, feature flags, audit, API lifecycle endpoints and active ticket type exposure in settings/forms-builder selectors.
-- Implemented Slice 2: versioned `form_schemas`, `form_fields` and `form_conditions`; visual publish-from-form now materializes `request_template.form_schema_id` as a first-class schema while preserving legacy `ticket_form_packs` compatibility. Field `process_mapping.roles` is normalized as an alias to current `field_roles`; `validation.required_message` is preserved by submission validation.
-- Implemented Slice 3: `request_templates` now carry explicit refs for the policy assembly, including `sla_policy_code` and `reporting_policy_code`; `resolve_effective_request_template()` prefers policy refs over inline form JSON and ticket creation stores `policy_refs`, `effective_policy_sources` and `effective_policy_snapshots` in the ticket snapshot.
-- Implemented Slice 4: `priority_policy` supports configurable matrix rows/columns, list modifiers with conditions/actions, manual override role/reason enforcement, audit event payloads and requester-safe preview explanations.
-- Implemented Slice 5: `sla_policy` runtime now evaluates configured start/pause/resume/stop conditions, emits policy-aware `sla_started`, `sla_paused`, `sla_resumed`, `sla_first_response_stopped`, `sla_resolution_stopped` and `sla_warning` events, and carries policy code/version/source plus breach actions in observer-visible SLA payloads.
-- Implemented Slice 6: `ola_policy` runtime now evaluates configured start/ack-stop/processing-stop/pause/resume conditions, emits policy-aware OLA lifecycle and breach events, keeps legacy queue target fallback, stores `custom_fields.ola_runtime` source tracking and runs OLA breach detection through the existing watchdog loop.
+- Completed Slice 1-6 summary: versioned `ticket_types`, `form_schemas`/fields/conditions, explicit request-template policy refs/snapshots, configurable priority matrix/modifiers/manual override, policy-aware SLA lifecycle, and policy-aware OLA lifecycle/breach detection are implemented, tested, committed and deployed through `0b9857d server: add policy-aware OLA runtime`.
+- Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
 - Серверный UI `/app/admin/forms` умеет visual chain и registry publication, но часть политик ещё редактируется JSON-блоками.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
+
+### Decisions Added 2026-05-02
+
+- External escalation/recipient actions for SLA/OLA breach actions will be implemented as a shared `policy_action_dispatcher`, not inside SLA/OLA services. SLA/OLA services emit canonical policy-aware events with `breach_actions`; dispatcher resolves recipients (`assignee`, `queue_lead`, queue members, admins, explicit actors/groups), applies notification preferences/channel availability, creates delivery audit rows and keeps retry/idempotency by `(ticket_id, event_id, action_key, recipient)`.
+- Structured OLA editor will be part of the admin policy editor, not the legacy queue target grid. MVP fields: ack/processing P0-P3 targets, start conditions, ack stop conditions, processing stop conditions, pause/resume conditions, breach actions, fallback queue target visibility and JSON advanced preview.
+- OLA risk UI will surface as an operational smart-view slice with counts, not only as a hidden query parameter. The support queue response should expose `summary.smart_view_counts`, and React support/tickets pages should render the OLA risk count next to built-in smart views.
+- The existing `web_settings` warning for calendar JSON shape is a compatibility cleanup: typed settings must accept both dict-shaped and list-shaped `weekly_hours_json` / `holidays_json` stored by historical calendar editors without falling back to an empty settings payload.
 
 ### Target Completion Criteria
 
@@ -54,117 +56,32 @@ Status: Slice 6 is implemented locally and is in verification/release. Baseline 
 - Админка даёт мастер настройки шаблона без обязательного ручного JSON.
 - GUI агента показывает только requester-facing часть модели и всегда получает effective preview с сервера.
 
-### Slice 1: Ticket Type Registry
+### Completed Slices 1-6: Registry, Runtime Policies And OLA Engine
 
-- [x] Add `ticket_types` versioned registry with `code`, `version`, `title`, `default_workflow_profile_id`, default policy refs, feature flags (`sla_required`, `ola_required`, `approval_allowed`, `diagnostics_allowed`, `remediation_allowed`, `closure_policy_code`), visibility flags and audit.
-- [x] Add repo methods in `server/app/repos/helpdesk_policy_repo.py`: publish/list/deactivate/rollback ticket types, resolve defaults for inheritance.
-- [x] Update `request_templates` publication so `ticket_type` resolves active registry defaults when present; keep permissive fallback for legacy packs.
-- [x] Update settings payload to expose active ticket types for UI selectors.
-- [x] Tests: publish ticket type, deactivate old version, resolve template defaults through ticket type, legacy unknown type fallback.
-- [x] Docs: update `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`.
+- [x] Slice 1: versioned `ticket_types` registry, inheritance defaults, settings selectors and legacy fallback.
+- [x] Slice 2: first-class `form_schemas` / `form_fields` / `form_conditions` with request-form compatibility.
+- [x] Slice 3: request-template policy refs, effective resolver and ticket snapshots with policy sources.
+- [x] Slice 4: configurable priority matrix/modifiers/manual override, stored priority fields and create-preview explanation.
+- [x] Slice 5: policy-aware SLA start/pause/resume/stop, calendar-aware targets, warning-before and breach-action payload metadata.
+- [x] Slice 6: policy-aware OLA ack/processing lifecycle, queue handoff behavior, runtime source tracking and watchdog breach events.
 
-Slice 1 verification:
+Verification anchor: Slice 6 was committed and deployed as `0b9857d server: add policy-aware OLA runtime`; local server tests, navigation checks, `verify_workspace.py`, remote smoke, live OLA rollback and browser signoff passed. Remaining external recipient/escalation delivery is intentionally moved to a shared dispatcher slice below, because SLA/OLA services should emit policy events rather than own channel delivery.
 
-- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> 11 passed.
-- `python -m pytest server/tests/test_web_settings_api.py -q --tb=short` -> 9 passed.
-- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
-- `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed.
+### Slice 7a: OLA Risk UI And Calendar Settings Cleanup
 
-### Slice 2: Form Schema Registry
+- [x] Fix `web_settings` calendar JSON compatibility so list-shaped `weekly_hours_json` / `holidays_json` does not trigger fallback payload or warning logs.
+- [x] Expose support queue `summary.smart_view_counts` for built-in and published smart views, including `ola_risk`.
+- [x] Add minimal React queue UI support for smart-view filters/counts so OLA risk is visible as an operational slice.
+- [x] Update docs/navigation for the settings compatibility and OLA risk surfacing.
+- [x] Tests: settings payload accepts list-shaped calendars; support queue returns OLA risk count and filter; web build/typecheck; browser check `/app/tickets` or `/app/admin/forms`.
 
-- [x] Add `form_schemas`, `form_fields`, `form_conditions` or equivalent versioned tables; do not remove `ticket_form_packs` yet.
-- [x] Add migration/adapter that can publish current form pack forms into `form_schemas` and keep `request_template.form_schema_id` as a first-class reference.
-- [x] Move field validation metadata into reusable schema publication while preserving `validate_form_submission(pack, ...)`.
-- [x] Extend field config with `validation.required_message` and explicit `process_mapping` alias to current `field_roles`.
-- [x] Tests: schema publication, conditional fields, invalid field refs through existing pack validation, legacy pack compatibility, agent/public create compatibility via full form-pack regression suite.
-- [x] UI: server admin shows active form schema count and selected template schema version/reference in the registry panel.
+Slice 7a local verification:
 
-Slice 2 verification:
-
-- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_helpdesk_policy_repo_publishes_form_schema_fields_conditions_and_audit server/tests/test_helpdesk_policy_registry.py::test_web_admin_publish_from_form_creates_form_schema_reference server/tests/test_ticket_form_packs.py::test_form_pack_schema_preserves_validation_and_process_mapping_alias -q --tb=short` -> 3 passed.
-- `python -m pytest server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_form_packs.py -q --tb=short` -> 32 passed.
-- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
-- `pnpm --dir webapp run build` -> passed.
-
-### Slice 3: Policy Reference Cleanup For Request Templates
-
-- [x] Make request-template publication prefer policy refs (`priority_policy_code`, `routing_policy_code`, `sla_policy_code` or id, `ola_policy_code`, `approval_policy_code`, `diagnostic_policy_code`, `closure_policy_code`, `visibility_policy_code`, `notification_policy_code`, `reporting_policy_code`) over inline policy JSON.
-- [x] Add effective template resolver that returns policy refs + resolved config + source list for preview and create.
-- [x] Store ticket snapshot with policy codes/versions/sources so historical tickets remain explainable.
-- [x] Tests: create ticket stores snapshot with policy sources, active policy update affects lifecycle runtime where intended, old ticket still renders old template context.
-
-Slice 3 verification:
-
-- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_helpdesk_policy_repo_resolves_request_template_policy_refs_before_inline_config server/tests/test_helpdesk_policy_registry.py::test_ticket_creation_stores_request_template_policy_ref_snapshot -q --tb=short` -> 2 passed after RED failure.
-- `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> 15 passed.
-- `python -m pytest server/tests/test_ticket_priority_policy.py server/tests/test_ticket_form_packs.py server/tests/test_web_settings_api.py -q --tb=short` -> 32 passed.
-- `python -m pytest server/tests/test_ticket_approval_policy.py server/tests/test_ticket_closure_policy.py server/tests/test_ticket_passport_service.py server/tests/test_ticket_workflow_visibility.py server/tests/test_stage8.py -q --tb=short` -> 34 passed.
-- `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 14 passed.
-- `pnpm --dir webapp run build` -> passed.
-- `python -m pytest scripts/test_navigation_catalog.py -q --tb=short` -> 10 passed.
-- `python scripts/verify_workspace.py` -> passed.
-
-### Slice 4: Priority Policy Engine
-
-- [x] Replace fixed `_BASE_MATRIX` path with configurable `priority_policy.matrix` supporting named impact/urgency levels and P0-P3 targets.
-- [x] Support modifiers as list rules: condition, increase/decrease priority, minimum_priority, maximum_priority.
-- [x] Enforce manual override policy: allowed roles, reason required, audit event, old/new computed/manual/effective priority.
-- [x] Store canonical fields: `impact`, `urgency`, `importance`, `computed_priority`, `manual_priority`, `effective_priority`, `priority_source`, `priority_reason`.
-- [x] Add preview endpoint output that explains priority source and matched modifiers in requester-safe language.
-- [x] Tests: matrix calculation, modifiers, security/minimum P1, manual override denial/reason/audit, SLA recalculation after effective priority change.
-
-Slice 4 verification:
-
-- RED confirmed: `python -m pytest server\tests\test_ticket_priority_policy.py::test_compute_priority_from_policy_uses_configurable_matrix_and_rule_modifiers server\tests\test_ticket_priority_policy.py::test_compute_priority_from_policy_enforces_manual_override_policy server\tests\test_ticket_priority_policy.py::test_ticket_create_preview_explains_configurable_priority_policy -q --tb=short` -> failed on fixed matrix/manual override/preview explanation gaps.
-- GREEN focused: same command -> 3 passed.
-- GREEN file regression: `python -m pytest server\tests\test_ticket_priority_policy.py -q --tb=short` -> 7 passed.
-- GREEN broader sequential:
-  - `python -m pytest server\tests\test_ticket_priority_policy.py server\tests\test_ticket_form_packs.py -q --tb=short` -> 26 passed.
-  - `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_ticket_routing_policy.py -q --tb=short` -> 20 passed.
-  - `python -m pytest server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 4 passed.
-  - `python -m pytest server\tests\test_web_settings_api.py -q --tb=short` -> 9 passed.
-  - `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed.
-  - `python scripts\verify_workspace.py` -> passed.
-
-### Slice 5: SLA Policy Engine
-
-- [x] Make standalone `sla_policies.config` cover inline calendar, targets, start/pause/resume/stop conditions, warnings and breach action metadata in runtime.
-- [x] Update `TicketSlaService` to evaluate configured start/pause/resume/stop conditions instead of relying only on hardcoded waiting statuses and first public reply.
-- [x] Add warning scheduler events before breach and carry configured breach action metadata in warning/breach payloads.
-- [x] Add policy-aware SLA event payloads with policy code/version/source.
-- [x] Tests: calendar-aware targets, pause/resume condition variants, stop conditions per first_response/resolution, warning event and policy-aware payloads.
-- [ ] Complete applies-to matching and recipient/escalation execution for breach actions beyond payload/audit metadata.
-- [ ] UI: settings/forms builder provides structured SLA editor for calendar, P0-P3 targets, pause/stop conditions and warnings.
-
-Slice 5 verification:
-
-- RED confirmed: `python -m pytest server\tests\test_ticket_sla_calendar.py::test_start_sla_respects_start_conditions_and_logs_policy_metadata server\tests\test_ticket_sla_calendar.py::test_sla_pause_resume_uses_configured_conditions_and_logs_events server\tests\test_ticket_sla_calendar.py::test_sla_stop_conditions_control_frt_and_resolution_stop server\tests\test_ticket_sla_calendar.py::test_sla_watchdog_emits_configured_warning_before_breach -q --tb=short` -> 4 failed on missing trigger/stop/warning contracts.
-- GREEN focused: same command -> 4 passed.
-- GREEN file regression: `python -m pytest server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 8 passed.
-- GREEN broader sequential: `python -m pytest server\tests\test_ticket_priority_policy.py server\tests\test_ticket_form_packs.py server\tests\test_web_settings_api.py -q --tb=short` -> 35 passed.
-
-### Slice 6: OLA Policy Engine
-
-- [x] Promote queue-level OLA targets into full versioned `ola_policy` execution: ack/processing targets, start/stop/pause conditions, queue handoff behavior and breach action metadata.
-- [x] Keep existing `ticket_queue_ola_targets` as compatibility/default source.
-- [x] Add per-queue OLA source tracking on ticket: policy code/version, queue_id, start reason, stop reason and breach reason in `custom_fields.ola_runtime`.
-- [x] Tests: OLA starts on create/queue change, closes ack on assignment, closes processing on handoff/resolved, pause/resume conditions and breach actions.
-- [ ] Complete external recipient/escalation delivery for OLA breach actions beyond event payload/audit metadata.
-- [ ] UI: structured OLA editor and smart-view surfacing for OLA risk.
-
-Slice 6 verification:
-
-- RED confirmed: `python -m pytest server\tests\test_ticket_ola_policy.py -q --tb=short` -> 4 failed on missing trigger/pause/breach contracts.
-- GREEN focused: same command -> 4 passed.
-- GREEN broader sequential:
-  - `python -m pytest server\tests\test_ticket_queue_routing_contracts.py -q --tb=short` -> 11 passed.
-  - `python -m pytest server\tests\test_web_settings_api.py -q --tb=short` -> 9 passed.
-  - `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_ticket_sla_calendar.py -q --tb=short` -> 12 passed.
-  - `python -m pytest server\tests\test_ticket_ola_policy.py server\tests\test_ticket_sla_calendar.py server\tests\test_ticket_queue_routing_contracts.py server\tests\test_web_settings_api.py -q --tb=short` -> 32 passed.
-- Docs/navigation and workspace:
-  - `python -m py_compile scripts\navigation_catalog.py server\tickets\ola_service.py server\app\services\ticket_sla_watchdog.py server\tickets\workflow_service.py server\tickets\handlers.py server\tickets\create_flow.py server\tickets\public_ticket_handlers.py` -> passed.
-  - `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed.
-  - `python scripts\verify_workspace.py` -> passed.
+- RED confirmed: focused tests failed on list-shaped calendar JSON fallback and missing `summary.smart_view_counts`.
+- GREEN focused: `python -m pytest server\tests\test_web_settings_api.py::test_web_settings_accepts_list_shaped_calendar_json server\tests\test_web_support_api.py::test_web_support_queue_surfaces_ola_risk_smart_view_count -q --tb=short` -> 2 passed.
+- Broader local: `python -m pytest server\tests\test_web_settings_api.py server\tests\test_web_support_api.py -q --tb=short` -> 35 passed.
+- Web: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 7: Workflow Profile Builder And Runtime Actions
 

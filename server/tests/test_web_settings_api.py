@@ -326,6 +326,32 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
 
 
 @pytest.mark.asyncio
+async def test_web_settings_accepts_list_shaped_calendar_json(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        repo = TicketAdminConfigRepo(session)
+        await repo.create_calendar(
+            code="legacy_list_calendar",
+            name="Legacy list calendar",
+            timezone="Asia/Yekaterinburg",
+            weekly_hours_json=[{"day": 1, "start": "09:00", "end": "18:00"}],
+            holidays_json=[],
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/settings", headers=_admin_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    calendars = payload["data"]["calendars"]
+    assert calendars[0]["code"] == "legacy_list_calendar"
+    assert calendars[0]["weekly_hours_json"] == [{"day": 1, "start": "09:00", "end": "18:00"}]
+    assert calendars[0]["holidays_json"] == []
+
+
+@pytest.mark.asyncio
 async def test_web_settings_routing_rule_rejects_legacy_like_condition_json(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 

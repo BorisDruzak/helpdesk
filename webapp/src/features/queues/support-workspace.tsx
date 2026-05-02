@@ -9,6 +9,7 @@ import {
   postSupportTicketMessage,
   postSupportTicketStatus,
   postSupportTicketToolRun,
+  type SupportCountItem,
   type SupportQueuePayload,
   type SupportQueueScope,
   type SupportTicketDetailPayload,
@@ -66,6 +67,10 @@ function describePresence(value: boolean) {
   return value ? "онлайн" : "офлайн";
 }
 
+function getCount(items: SupportCountItem[] | undefined, value: string) {
+  return items?.find((item) => item.value === value)?.count ?? 0;
+}
+
 function describeToolRiskLevel(value: string) {
   if (value === "safe_read") {
     return "Safe read";
@@ -83,9 +88,11 @@ function SupportQueuePanel({
   onSelectTicket,
   onScopeChange,
   onStatusChange,
+  onSmartViewChange,
   onQueryChange,
   scope,
   statusFilter,
+  smartView,
   query,
 }: {
   queue?: SupportQueuePayload;
@@ -94,11 +101,15 @@ function SupportQueuePanel({
   onSelectTicket: (ticketId: string) => void;
   onScopeChange: (scope: SupportQueueScope) => void;
   onStatusChange: (status: string) => void;
+  onSmartViewChange: (smartView: string) => void;
   onQueryChange: (query: string) => void;
   scope: SupportQueueScope;
   statusFilter: string;
+  smartView: string;
   query: string;
 }) {
+  const smartViewCounts = queue?.summary.smart_view_counts ?? [];
+
   return (
     <section className="support-workspace__panel support-workspace__panel--queue">
       <div className="support-workspace__panel-head">
@@ -145,9 +156,24 @@ function SupportQueuePanel({
         </label>
       </div>
 
+      <div className="support-filter-group" role="group" aria-label="Служебные срезы очереди">
+        {(queue?.filters.smart_view_options ?? []).map((option) => (
+          <button
+            className={`support-chip${smartView === option.value ? " active" : ""}`}
+            key={option.value}
+            onClick={() => onSmartViewChange(option.value)}
+            type="button"
+          >
+            {option.label}
+            <span>{getCount(smartViewCounts, option.value)}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="support-queue-summary">
         <span>Видимых тикетов: {queue?.summary.visible_count ?? 0}</span>
         <span>Режим: {describeQueueScope(scope)}</span>
+        <span>OLA риск: {getCount(smartViewCounts, "ola_risk")}</span>
         <span>Автообновление: 15 сек</span>
       </div>
 
@@ -805,6 +831,7 @@ export function SupportWorkspace() {
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [smartView, setSmartView] = useState("all");
   const [query, setQuery] = useState("");
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [toolActionMessage, setToolActionMessage] = useState<string | null>(null);
@@ -817,8 +844,8 @@ export function SupportWorkspace() {
     queryFn: fetchSupportBootstrap,
   });
   const supportQueueQuery = useQuery({
-    queryKey: ["support", "queue", scope, statusFilter, deferredQuery],
-    queryFn: () => fetchSupportQueue({ scope, statusFilter, query: deferredQuery }),
+    queryKey: ["support", "queue", scope, statusFilter, smartView, deferredQuery],
+    queryFn: () => fetchSupportQueue({ scope, statusFilter, smartView, query: deferredQuery }),
     enabled: supportBootstrapQuery.isSuccess,
     refetchInterval: SUPPORT_QUEUE_REFRESH_MS,
   });
@@ -1018,12 +1045,14 @@ export function SupportWorkspace() {
           onQueryChange={setQuery}
           onScopeChange={setScope}
           onSelectTicket={setSelectedTicketId}
+          onSmartViewChange={setSmartView}
           onStatusChange={setStatusFilter}
           query={query}
           queue={supportQueueQuery.data}
           queueStatus={queueStatus}
           scope={scope}
           selectedTicketId={selectedTicketId}
+          smartView={smartView}
           statusFilter={statusFilter}
         />
         <SupportDetailPanel

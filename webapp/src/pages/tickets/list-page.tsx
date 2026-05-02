@@ -40,15 +40,17 @@ export function TicketListPage() {
   const navigate = useNavigate();
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [smartView, setSmartView] = useState("all");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
 
   const queueQuery = useQuery({
-    queryKey: ["tickets-page-queue", scope, statusFilter, deferredQuery],
+    queryKey: ["tickets-page-queue", scope, statusFilter, smartView, deferredQuery],
     queryFn: () =>
       fetchSupportQueue({
         scope,
         statusFilter,
+        smartView,
         query: deferredQuery
       }),
     retry: false,
@@ -58,6 +60,7 @@ export function TicketListPage() {
   const queue = queueQuery.data;
   const scopeCounts = queue?.summary.scope_counts ?? [];
   const statusCounts = queue?.summary.status_counts ?? [];
+  const smartViewCounts = queue?.summary.smart_view_counts ?? [];
 
   return (
     <section className="space-y-6">
@@ -79,7 +82,7 @@ export function TicketListPage() {
         title="Тикеты"
       />
 
-      <div className="grid gap-4 xl:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-5">
         <StatTile helper="Текущий срез" label="Всего доступно" value={String(getCount(scopeCounts, "all"))} />
         <StatTile helper="Назначено на меня" label="Мои тикеты" value={String(getCount(scopeCounts, "mine"))} />
         <StatTile helper="Активная обработка" label="В работе" value={String(getCount(statusCounts, "in_progress"))} />
@@ -88,6 +91,7 @@ export function TicketListPage() {
           label="Ожидают ответа"
           value={String(getCount(statusCounts, "waiting_on_user"))}
         />
+        <StatTile helper="Контроль внутренних сроков" label="OLA риск" value={String(getCount(smartViewCounts, "ola_risk"))} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
@@ -151,6 +155,36 @@ export function TicketListPage() {
                     <span className="font-medium">{item.label}</span>
                     <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-soft">
                       {item.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-3 border-t border-border pt-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Рабочие срезы</p>
+              {(queue?.filters.smart_view_options ?? []).map((option) => {
+                const count = getCount(smartViewCounts, option.value);
+                const active = option.value === smartView;
+
+                return (
+                  <button
+                    key={option.value}
+                    className={`flex w-full items-center justify-between rounded-panel border px-4 py-3 text-left transition-colors ${
+                      active
+                        ? "border-brand-200 bg-brand-50 text-brand-900"
+                        : "border-transparent bg-surface-subtle text-slate-700 hover:border-border hover:bg-white"
+                    }`}
+                    onClick={() => {
+                      startTransition(() => {
+                        setSmartView(option.value);
+                      });
+                    }}
+                    type="button"
+                  >
+                    <span className="font-medium">{option.label}</span>
+                    <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-soft">
+                      {count}
                     </span>
                   </button>
                 );
