@@ -482,6 +482,78 @@ async def test_web_support_queue_surfaces_ola_risk_smart_view_count(test_client,
 
 
 @pytest.mark.asyncio
+async def test_web_support_queue_applies_mass_incident_candidates_smart_view(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="smart_mass", name="Smart mass", members=["support-test"])
+        session.add_all([
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-mass-candidate",
+                title="Mass incident candidate visible",
+                description="Tagged ticket should be in mass incident candidates",
+                status="in_progress",
+                requester_id="user-mass-candidate",
+                queue_id=queue.id,
+                tags=["mass_incident_candidate"],
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-mass-field",
+                title="Mass incident field visible",
+                description="Policy fact should be in mass incident candidates",
+                status="queued",
+                requester_id="user-mass-field",
+                queue_id=queue.id,
+                custom_fields={"mass_incident_detected": True},
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-mass-normal",
+                title="Normal ticket hidden",
+                description="Ticket without mass signal should stay outside smart view",
+                status="in_progress",
+                requester_id="user-mass-normal",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-mass-closed",
+                title="Closed mass hidden",
+                description="Terminal mass ticket should stay outside smart view",
+                status="closed",
+                requester_id="user-mass-closed",
+                queue_id=queue.id,
+                tags=["mass_incident_candidate"],
+            ),
+        ])
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/support/queue?scope=all&smart_view=mass_incident_candidates",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["smart_view"] == "mass_incident_candidates"
+    assert {item["title"] for item in payload["data"]["tickets"]} == {
+        "Mass incident candidate visible",
+        "Mass incident field visible",
+    }
+    assert {
+        "value": "mass_incident_candidates",
+        "label": "Похожие массовые обращения",
+    } in payload["data"]["filters"]["smart_view_options"]
+    smart_view_counts = {item["value"]: item["count"] for item in payload["data"]["summary"]["smart_view_counts"]}
+    assert smart_view_counts["mass_incident_candidates"] == 2
+
+
+@pytest.mark.asyncio
 async def test_web_support_queue_applies_published_custom_smart_view(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc)

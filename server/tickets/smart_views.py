@@ -39,6 +39,7 @@ DEFAULT_SMART_VIEWS: tuple[SmartView, ...] = (
     SmartView("stale_waiting", "Зависшие ожидания", "Тикеты, которые долго стоят в ожидании"),
     SmartView("waiting_approval", "Ожидает согласования", "Тикеты на статусе ожидания согласования"),
     SmartView("diagnostics_failed", "Диагностика с ошибкой", "Тикеты с признаком неуспешной диагностики"),
+    SmartView("mass_incident_candidates", "Похожие массовые обращения", "Открытые тикеты с признаком похожего массового обращения"),
 )
 
 _SMART_VIEW_IDS = {view.id for view in DEFAULT_SMART_VIEWS}
@@ -334,6 +335,28 @@ def _diagnostics_failed(ticket_data: dict[str, Any]) -> bool:
     return isinstance(tags, list) and any(str(tag).strip() == "diagnostics_failed" for tag in tags)
 
 
+def _mass_incident_candidate(ticket_data: dict[str, Any]) -> bool:
+    tags = ticket_data.get("tags") or []
+    if isinstance(tags, list) and any(
+        str(tag).strip() in {"mass_incident_candidate", "mass_incident", "similar_mass_incident"}
+        for tag in tags
+    ):
+        return True
+
+    custom_fields = ticket_data.get("custom_fields") or {}
+    if not isinstance(custom_fields, dict):
+        custom_fields = {}
+    if custom_fields.get("mass_incident_detected") is True or custom_fields.get("mass_incident_candidate") is True:
+        return True
+
+    similar_tickets = custom_fields.get("similar_tickets")
+    if isinstance(similar_tickets, list):
+        return len(similar_tickets) > 0
+    if isinstance(similar_tickets, (int, float)):
+        return similar_tickets > 0
+    return False
+
+
 def _as_set(value: Any) -> set[str]:
     if value is None:
         return set()
@@ -491,4 +514,6 @@ def matches_smart_view(
         return status == "waiting_on_approval"
     if view_id == "diagnostics_failed":
         return _is_open(ticket_data) and _diagnostics_failed(ticket_data)
+    if view_id == "mass_incident_candidates":
+        return _is_open(ticket_data) and _mass_incident_candidate(ticket_data)
     return True

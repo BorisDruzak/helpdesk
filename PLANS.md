@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 13a is released: smart-view publication now rejects unsupported filter keys, unsafe field paths, invalid sort directions and unsupported display columns before writing a registry version. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 13a release/browser/observer signoff the working estimate is backend/runtime about 99.2%, server UI about 90%, agent GUI about 73%, overall about 97.2%. The remaining plan targets final publish diff/impact UX, deeper smart-view execution coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 13b is in progress: the support queue now has a built-in `mass_incident_candidates` smart view for "Похожие массовые обращения", with backend filtering by open-ticket mass-incident tags and stored policy facts. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After local Slice 13b checks the working estimate is backend/runtime about 99.3%, server UI about 90.2%, agent GUI about 73%, overall about 97.3%. The remaining plan targets final publish diff/impact UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 13a is released: smart-view publication now rejects unsupported fi
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, а smart-view publish validation закрывается в Slice 13a; deeper publish-impact/diff UX ещё требует добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, а built-in operational smart views теперь включают `mass_incident_candidates`; deeper publish-impact/diff UX ещё требует добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -289,6 +289,20 @@ Slice 13a local verification:
 - Broader backend regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_web_support_api.py -q --tb=short` -> 43 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `eb02b28 server: validate smart view publication`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, migration check, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed the smart-view editor loads; live POST to `/api/web/admin/helpdesk-model/smart-views/publish` with invalid `raw_sql` filter returned `400 VALIDATION_ERROR`; registry check confirmed `activeInvalidViews=0`; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server logs showed authenticated forms/policies/observer requests and no smart-view validation errors, with unrelated existing reconcile/offline-agent warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 13b target:
+
+- [x] Add built-in support queue smart view `mass_incident_candidates` / "Похожие массовые обращения".
+- [x] Match only open tickets that carry mass-incident tags or stored mass-incident custom-field facts.
+- [x] Expose the view in `filters.smart_view_options` and `summary.smart_view_counts`.
+- [x] Add support API regression proving hidden normal/closed tickets stay outside the slice.
+
+Slice 13b local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_queue_applies_mass_incident_candidates_smart_view -q --tb=short` failed because unknown `mass_incident_candidates` fell back to `all`.
+- GREEN focused: same command -> 1 passed.
+- Smart-view focused regression: `python -m pytest server\tests\test_web_support_api.py::test_web_support_queue_applies_smart_view_sla_risk server\tests\test_web_support_api.py::test_web_support_queue_surfaces_ola_risk_smart_view_count server\tests\test_web_support_api.py::test_web_support_queue_applies_mass_incident_candidates_smart_view server\tests\test_web_support_api.py::test_web_support_queue_applies_published_custom_smart_view -q --tb=short` -> 4 passed.
+- Broader support API regression: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` -> 28 passed.
 
 ### Slice 14: Server Admin UX To Remove JSON Dependency
 
