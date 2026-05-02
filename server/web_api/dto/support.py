@@ -103,6 +103,48 @@ class SupportTicketQueueMember(BaseModel):
     role_in_queue: str | None
 
 
+class SupportTicketApprovalItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    approval_type: str
+    approver_id: str | None = None
+    status: str
+    reason: str | None = None
+    requested_by: str | None = None
+    requested_at: str | None = None
+    decided_at: str | None = None
+    due_at: str | None = None
+    reminder_at: str | None = None
+    escalation_at: str | None = None
+    reminded_at: str | None = None
+    escalated_at: str | None = None
+    timed_out_at: str | None = None
+    current: bool = False
+
+
+class SupportTicketApprovalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    required: bool = False
+    status: str = "not_started"
+    approval_mode: str = "any_one"
+    approver_source: str | None = None
+    current_action_owner: str | None = None
+    require_comment_on_reject: bool = False
+    waiting_status: str | None = None
+    approved_transition: str | None = None
+    rejected_transition: str | None = None
+    due_in: str | None = None
+    reminder_after: str | None = None
+    escalate_after: str | None = None
+    pending_count: int = 0
+    approved_count: int = 0
+    rejected_count: int = 0
+    timed_out_count: int = 0
+    items: list[SupportTicketApprovalItem] = Field(default_factory=list)
+
+
 class SupportTicketDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -143,6 +185,7 @@ class SupportTicketDetail(BaseModel):
     evidence_required: bool = False
     evidence_ref: str | None = None
     closure_feedback: dict[str, Any] = Field(default_factory=dict)
+    approval_summary: SupportTicketApprovalSummary | None = None
     visibility: dict[str, Any] = Field(default_factory=dict)
     requester_visible_fields: list[str] = Field(default_factory=list)
     support_visible_fields: list[str] = Field(default_factory=list)
@@ -303,6 +346,7 @@ class SupportTicketActions(BaseModel):
     status_options: list[SupportStatusAction] = Field(default_factory=list)
     can_send_internal_note: bool = False
     closure_requirements: list[SupportClosureRequirement] = Field(default_factory=list)
+    approval: dict[str, Any] | None = None
 
     @property
     def closure_missing_count(self) -> int:

@@ -18,6 +18,7 @@ from app.db.models import (
     PlaybookStep,
     PlaybookVersion,
     Ticket,
+    TicketApproval,
     UiUser,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
@@ -1120,6 +1121,82 @@ async def test_web_support_detail_exposes_closure_policy_requirements(test_clien
     assert by_key["operation_log"]["met"] is False
     assert by_key["approval_evidence"]["met"] is False
     assert "Код решения" in by_key["resolution_code"]["label"]
+
+
+@pytest.mark.asyncio
+async def test_web_support_detail_exposes_approval_policy_summary(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-approval-summary-{uuid.uuid4().hex[:6]}",
+        status="waiting_on_approval",
+    )
+    requested_at = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.custom_fields = {
+            "approval_runtime": {"approvals": {"1": {"reminded_at": "2026-01-01T13:00:00+00:00", "escalated_at": "2026-01-02T09:00:00+00:00"}}},
+            "request_template": {
+                "key": "access_request",
+                "ticket_type": "access_request",
+                "policy_refs": {"approval": f"approval_summary_{uuid.uuid4().hex[:8]}"},
+                "approval_policy": {
+                    "required": True,
+                    "approval_mode": "sequential",
+                    "approver_source": {"type": "service_owner", "fallback": "requester_manager"},
+                    "statuses": {
+                        "waiting_status": "waiting_on_approval",
+                        "approved_transition": "in_progress",
+                        "rejected_transition": "canceled",
+                    },
+                    "timeout": {"due_in": "2d", "reminder_after": "4h", "escalate_after": "1d"},
+                    "require_comment_on_reject": True,
+                },
+            },
+        }
+        approval = TicketApproval(
+            ticket_id=ticket_id,
+            approval_type="service_owner",
+            approver_id="owner-1",
+            status="requested",
+            reason="approval_policy_request",
+            requested_by="support-test",
+            requested_at=requested_at,
+        )
+        session.add(approval)
+        await session.flush()
+        ticket.custom_fields["approval_runtime"]["approvals"][str(approval.id)] = ticket.custom_fields[
+            "approval_runtime"
+        ]["approvals"].pop("1")
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    summary = payload["data"]["ticket"]["approval_summary"]
+
+    assert summary["required"] is True
+    assert summary["approval_mode"] == "sequential"
+    assert summary["approver_source"] == "service_owner"
+    assert summary["current_action_owner"] == "approver"
+    assert summary["require_comment_on_reject"] is True
+    assert summary["waiting_status"] == "waiting_on_approval"
+    assert summary["approved_transition"] == "in_progress"
+    assert summary["rejected_transition"] == "canceled"
+    assert summary["pending_count"] == 1
+    assert summary["items"][0]["approver_id"] == "owner-1"
+    assert summary["items"][0]["current"] is True
+    assert summary["items"][0]["due_at"] == "2026-01-03T09:00:00+00:00"
+    assert summary["items"][0]["reminder_at"] == "2026-01-01T13:00:00+00:00"
+    assert summary["items"][0]["escalation_at"] == "2026-01-02T09:00:00+00:00"
+    assert summary["items"][0]["reminded_at"] == "2026-01-01T13:00:00+00:00"
+    assert summary["items"][0]["escalated_at"] == "2026-01-02T09:00:00+00:00"
+    assert payload["data"]["actions"]["approval"]["approved_transition"] == "in_progress"
+    assert payload["data"]["actions"]["approval"]["rejected_transition"] == "canceled"
+    assert payload["data"]["actions"]["approval"]["reject_requires_comment"] is True
 
 
 @pytest.mark.asyncio

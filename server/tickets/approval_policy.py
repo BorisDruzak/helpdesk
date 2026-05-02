@@ -268,6 +268,124 @@ def _approval_runtime(ticket: Ticket) -> tuple[dict[str, Any], dict[str, Any], d
     return custom_fields, runtime, approvals
 
 
+def _datetime_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _ensure_aware(value).isoformat()
+
+
+def _duration_due_at(start: datetime | None, raw_duration: Any) -> str | None:
+    seconds = _duration_to_seconds(raw_duration)
+    if start is None or seconds is None:
+        return None
+    return (_ensure_aware(start) + timedelta(seconds=seconds)).isoformat()
+
+
+def _source_type_from_policy(policy: dict[str, Any], fallback: str | None = None) -> str | None:
+    source = policy.get("approver_source") or policy.get("approvers") or {}
+    if isinstance(source, str):
+        return source.strip() or fallback
+    if isinstance(source, dict):
+        source_type = str(source.get("type") or source.get("source") or "").strip()
+        return source_type or fallback
+    return fallback
+
+
+async def build_approval_summary(
+    session: Any,
+    ticket: Any,
+    *,
+    requester_safe: bool = False,
+) -> dict[str, Any] | None:
+    """Build a compact approval state for support/requester ticket surfaces."""
+    if ticket is None:
+        return None
+    policy = await resolve_effective_ticket_policy(session, ticket, "approval")
+    rows = await session.execute(
+        select(TicketApproval)
+        .where(TicketApproval.ticket_id == ticket.ticket_id)
+        .order_by(TicketApproval.requested_at.asc(), TicketApproval.id.asc())
+    )
+    approvals = list(rows.scalars().all())
+    if not approvals and (not policy or not policy.get("required")):
+        return None
+
+    policy = policy if isinstance(policy, dict) else {}
+    statuses = _policy_statuses(policy)
+    timeout = _approval_timeout(policy)
+    _custom_fields, _runtime, approvals_runtime = _approval_runtime(ticket)
+    approval_mode = _approval_mode(policy)
+    resolved_source, _approver_ids = await _resolve_approvers(session, ticket, policy) if policy else ("", [])
+    approver_source = _source_type_from_policy(policy, resolved_source or None)
+
+    pending_statuses = ACTIVE_APPROVAL_STATUSES
+    current_approval_ids: set[int] = set()
+    if approval_mode == "sequential":
+        for approval in approvals:
+            if _approval_status(approval.status) == "requested":
+                current_approval_ids.add(int(approval.id))
+                break
+    else:
+        current_approval_ids.update(
+            int(approval.id) for approval in approvals if _approval_status(approval.status) in pending_statuses
+        )
+
+    items: list[dict[str, Any]] = []
+    for approval in approvals:
+        approval_runtime = dict(approvals_runtime.get(str(approval.id)) or {})
+        requested_at = _ensure_aware(approval.requested_at) if approval.requested_at else None
+        status = _approval_status(approval.status)
+        item = {
+            "id": int(approval.id),
+            "approval_type": approval.approval_type,
+            "approver_id": None if requester_safe else approval.approver_id,
+            "status": status,
+            "reason": None if requester_safe else approval.reason,
+            "requested_by": None if requester_safe else approval.requested_by,
+            "requested_at": _datetime_iso(requested_at),
+            "decided_at": _datetime_iso(approval.decided_at),
+            "due_at": _duration_due_at(requested_at, timeout.get("due_in")),
+            "reminder_at": _duration_due_at(requested_at, timeout.get("reminder_after")),
+            "escalation_at": _duration_due_at(requested_at, timeout.get("escalate_after")),
+            "reminded_at": approval_runtime.get("reminded_at"),
+            "escalated_at": approval_runtime.get("escalated_at"),
+            "timed_out_at": approval_runtime.get("timed_out_at"),
+            "current": int(approval.id) in current_approval_ids,
+        }
+        items.append(item)
+
+    approved_statuses = {"approved"}
+    rejected_statuses = {"rejected", "denied", "declined"}
+    timed_out_statuses = {"timed_out", "timeout", "expired"}
+    pending_count = sum(1 for item in items if item["status"] in pending_statuses)
+    approved_count = sum(1 for item in items if item["status"] in approved_statuses)
+    rejected_count = sum(1 for item in items if item["status"] in rejected_statuses)
+    timed_out_count = sum(1 for item in items if item["status"] in timed_out_statuses or item.get("timed_out_at"))
+    current_action_owner = "approver" if any(item["current"] for item in items) else None
+    if timed_out_count and not current_action_owner:
+        current_action_owner = "support"
+
+    return {
+        "required": bool(policy.get("required")),
+        "status": "pending" if pending_count else "complete" if approved_count else "not_started",
+        "approval_mode": approval_mode,
+        "approver_source": approver_source,
+        "current_action_owner": current_action_owner,
+        "require_comment_on_reject": bool(policy.get("require_comment_on_reject")),
+        "waiting_status": statuses["waiting_status"],
+        "approved_transition": statuses["approved_transition"] or None,
+        "rejected_transition": statuses["rejected_transition"] or None,
+        "due_in": str(timeout.get("due_in")) if timeout.get("due_in") is not None else None,
+        "reminder_after": str(timeout.get("reminder_after")) if timeout.get("reminder_after") is not None else None,
+        "escalate_after": str(timeout.get("escalate_after")) if timeout.get("escalate_after") is not None else None,
+        "pending_count": pending_count,
+        "approved_count": approved_count,
+        "rejected_count": rejected_count,
+        "timed_out_count": timed_out_count,
+        "items": items,
+    }
+
+
 async def _active_approval_keys(session: Any, ticket_id: str) -> dict[tuple[str, str | None], str]:
     rows = await session.execute(
         select(TicketApproval.approval_type, TicketApproval.approver_id, TicketApproval.status)

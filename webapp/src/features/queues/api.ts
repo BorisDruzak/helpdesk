@@ -100,6 +100,41 @@ export type SupportTicketDetailPayload = {
     evidence_required?: boolean;
     evidence_ref?: string | null;
     closure_feedback?: Record<string, unknown>;
+    approval_summary?: {
+      required: boolean;
+      status: string;
+      approval_mode: string;
+      approver_source: string | null;
+      current_action_owner: string | null;
+      require_comment_on_reject: boolean;
+      waiting_status: string | null;
+      approved_transition: string | null;
+      rejected_transition: string | null;
+      due_in: string | null;
+      reminder_after: string | null;
+      escalate_after: string | null;
+      pending_count: number;
+      approved_count: number;
+      rejected_count: number;
+      timed_out_count: number;
+      items: Array<{
+        id: number;
+        approval_type: string;
+        approver_id: string | null;
+        status: string;
+        reason: string | null;
+        requested_by: string | null;
+        requested_at: string | null;
+        decided_at: string | null;
+        due_at: string | null;
+        reminder_at: string | null;
+        escalation_at: string | null;
+        reminded_at: string | null;
+        escalated_at: string | null;
+        timed_out_at: string | null;
+        current: boolean;
+      }>;
+    } | null;
     queue_members: Array<{
       actor_id: string;
       role_in_queue: string | null;
@@ -190,6 +225,14 @@ export type SupportTicketDetailPayload = {
       met: boolean;
       detail: string;
     }>;
+    approval?: {
+      waiting_status?: string | null;
+      approved_transition?: string | null;
+      rejected_transition?: string | null;
+      reject_requires_comment?: boolean;
+      current_action_owner?: string | null;
+      pending_count?: number;
+    } | null;
   };
 };
 

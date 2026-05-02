@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  TicketApprovalsPanel,
   TicketAutomationPanel,
   TicketPassportPanel,
   TicketRequestFormCard,
@@ -151,6 +152,67 @@ describe("TicketWorkVisibilityCard", () => {
 });
 
 describe("TicketStatusActionPanel", () => {
+  it("renders approval policy summary and action guard hints", () => {
+    render(
+      <TicketApprovalsPanel
+        action={{
+          approved_transition: "in_progress",
+          current_action_owner: "approver",
+          pending_count: 1,
+          reject_requires_comment: true,
+          rejected_transition: "canceled",
+          waiting_status: "waiting_on_approval",
+        }}
+        summary={{
+          approval_mode: "sequential",
+          approved_count: 0,
+          approved_transition: "in_progress",
+          approver_source: "service_owner",
+          current_action_owner: "approver",
+          due_in: "2d",
+          escalate_after: "1d",
+          items: [
+            {
+              approval_type: "service_owner",
+              approver_id: "owner-1",
+              current: true,
+              decided_at: null,
+              due_at: "2026-01-03T09:00:00+00:00",
+              escalated_at: "2026-01-02T09:00:00+00:00",
+              escalation_at: "2026-01-02T09:00:00+00:00",
+              id: 1,
+              reason: "approval_policy_request",
+              reminded_at: "2026-01-01T13:00:00+00:00",
+              reminder_at: "2026-01-01T13:00:00+00:00",
+              requested_at: "2026-01-01T09:00:00+00:00",
+              requested_by: "support-test",
+              status: "requested",
+              timed_out_at: null,
+            },
+          ],
+          pending_count: 1,
+          rejected_count: 0,
+          rejected_transition: "canceled",
+          reminder_after: "4h",
+          require_comment_on_reject: true,
+          required: true,
+          status: "pending",
+          timed_out_count: 0,
+          waiting_status: "waiting_on_approval",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Согласования")).toBeInTheDocument();
+    expect(screen.getByText("Ожидает согласующего")).toBeInTheDocument();
+    expect(screen.getByText("service_owner")).toBeInTheDocument();
+    expect(screen.getByText("owner-1")).toBeInTheDocument();
+    expect(screen.getByText("При отказе нужен комментарий. Без причины сервер заблокирует reject transition.")).toBeInTheDocument();
+    expect(screen.getByText(/Срок:/)).toBeInTheDocument();
+    expect(screen.getByText(/Эскалация:/)).toBeInTheDocument();
+    expect(screen.getByText(/События:/)).toBeInTheDocument();
+  });
+
   it("previews status transition and applies it only after explicit confirmation", () => {
     const onValueChange = vi.fn();
     const onApply = vi.fn();

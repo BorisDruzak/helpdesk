@@ -40,6 +40,7 @@ from tickets.statuses import (
     status_label_ru,
 )
 from tickets.sla_service import TicketSlaService
+from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
@@ -343,10 +344,22 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> S
             continue
         if await validate_transition_for_ticket(session, ticket, value, True):
             options.append(SupportStatusAction(value=value, label=label))
+    approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
+    approval_action = None
+    if approval_summary:
+        approval_action = {
+            "waiting_status": approval_summary.get("waiting_status"),
+            "approved_transition": approval_summary.get("approved_transition"),
+            "rejected_transition": approval_summary.get("rejected_transition"),
+            "reject_requires_comment": bool(approval_summary.get("require_comment_on_reject")),
+            "current_action_owner": approval_summary.get("current_action_owner"),
+            "pending_count": approval_summary.get("pending_count", 0),
+        }
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
         closure_requirements=await build_closure_requirements(session, ticket),
+        approval=approval_action,
     )
 
 
@@ -935,6 +948,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
+    approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
 
     return SupportTicketDetailPayload(
         ticket=SupportTicketDetail(
@@ -979,6 +993,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             evidence_required=bool(ticket_data.get("evidence_required")),
             evidence_ref=ticket_data.get("evidence_ref"),
             closure_feedback=ticket_data.get("closure_feedback") or {},
+            approval_summary=approval_summary,
             visibility=ticket_data.get("visibility") if isinstance(ticket_data.get("visibility"), dict) else {},
             requester_visible_fields=ticket_data.get("requester_visible_fields") if isinstance(ticket_data.get("requester_visible_fields"), list) else [],
             support_visible_fields=ticket_data.get("support_visible_fields") if isinstance(ticket_data.get("support_visible_fields"), list) else [],
