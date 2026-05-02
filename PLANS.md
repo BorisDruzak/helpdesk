@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 15a is locally implemented: Agent GUI cached form packs now preserve schema/policy version metadata and refresh even when policy refs change without a pack version bump. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 15a local verification the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 74.5%, overall about 97.8%. The remaining plan targets release/deploy signoff for Slice 15a, any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 15a is released: Agent GUI cached form packs now preserve schema/policy version metadata and refresh even when policy refs change without a pack version bump. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 15a release/smoke/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 74.5%, overall about 97.8%. The remaining plan targets any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -485,6 +485,7 @@ Slice 15a local verification:
 - GREEN focused: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_agent_normalizes_request_template_schema_and_policy_versions pc_agent\tests\test_chat_panel_helpers.py::test_ticket_form_pack_refresh_decision_detects_policy_ref_change_without_version_bump pc_agent\tests\test_chat_panel_helpers.py::test_open_create_wizard_refreshes_when_form_pack_changes -q --tb=short` -> 3 passed.
 - Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 62 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Release/live: committed as `d570d0c pc_agent: refresh cached request form policy metadata`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated observer requests and no errors related to agent cached form-pack metadata, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 16: Migration, Backfill And Compatibility
 
