@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 8a is in progress. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. Slice 8a targets approval request creation from `approval_policy`; if released, expected maturity becomes backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 8a is complete, committed and released to the Linux stand. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate is backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -116,6 +116,8 @@ Slice 8a local verification:
 - GREEN focused: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_creates_request_when_entering_waiting_status server\tests\test_ticket_approval_policy.py::test_approval_policy_creates_request_from_form_field_source -q --tb=short` -> 2 passed.
 - Fallback/idempotency: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_uses_fallback_source_without_duplicate_requests -q --tb=short` -> 1 passed.
 - Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 8 passed.
+- Broader local: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 30 passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `85c016b server: create approval requests from policy`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` loaded admin workspace and `http://192.168.100.17:8666/app/admin/observer` loaded runtime quick traces; browser console errors -> 0.
 
 ### Slice 9: Closure Policy Completion
 
