@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 8a is complete, committed and released to the Linux stand. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate is backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 8b is locally complete and pending remote release/browser signoff. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release, expected maturity is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -105,7 +105,7 @@ Slice 7b local verification:
 ### Slice 8: Approval Requests
 
 - [x] Slice 8a: create active `ticket_approvals` from `approval_policy` when entering waiting approval, with explicit user, form field, service owner/requester manager fallback, queue lead, security role and group identifiers.
-- [ ] Implement approval modes: any_one, all, sequential.
+- [x] Slice 8b: implement `approval_mode=all` execution semantics and `approval_mode=sequential` request creation semantics (`requested` first step, `pending` later steps).
 - [ ] Implement due/reminder/escalate timeout behavior and require comment on reject.
 - [ ] Add requester/support UI to show pending approvals and actions.
 - [ ] Tests: approval request creation, source resolution fallback, sequential mode, rejection transition, timeout reminder/escalation, passport logging.
@@ -118,6 +118,12 @@ Slice 8a local verification:
 - Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 8 passed.
 - Broader local: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 30 passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `85c016b server: create approval requests from policy`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` loaded admin workspace and `http://192.168.100.17:8666/app/admin/observer` loaded runtime quick traces; browser console errors -> 0.
+
+Slice 8b local verification:
+
+- RED confirmed: sequential mode created both approvers as parallel `requested`; all-mode execution test showed the need to isolate inline policy from active registry overrides in the regression setup.
+- GREEN focused: `python -m pytest server\tests\test_ticket_approval_policy.py::test_approval_policy_sequential_mode_creates_one_requested_step server\tests\test_ticket_approval_policy.py::test_approval_policy_all_mode_requires_every_approval -q --tb=short` -> 2 passed.
+- Broader approval suite: `python -m pytest server\tests\test_ticket_approval_policy.py -q --tb=short` -> 10 passed.
 
 ### Slice 9: Closure Policy Completion
 

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import select
 
@@ -193,13 +192,18 @@ async def _list_ticket_approval_statuses(session: Any, ticket_id: str) -> list[s
     return [_approval_status(item) for item in rows.scalars().all()]
 
 
-async def _active_approval_keys(session: Any, ticket_id: str) -> set[tuple[str, str | None]]:
+def _approval_mode(policy: dict[str, Any]) -> str:
+    mode = str(policy.get("approval_mode") or "any_one").strip().lower()
+    return mode if mode in {"any_one", "all", "sequential"} else "any_one"
+
+
+async def _active_approval_keys(session: Any, ticket_id: str) -> dict[tuple[str, str | None], str]:
     rows = await session.execute(
         select(TicketApproval.approval_type, TicketApproval.approver_id, TicketApproval.status)
         .where(TicketApproval.ticket_id == ticket_id)
     )
     return {
-        (str(approval_type or "").strip(), str(approver_id).strip() if approver_id is not None else None)
+        (str(approval_type or "").strip(), str(approver_id).strip() if approver_id is not None else None): _approval_status(status)
         for approval_type, approver_id, status in rows.all()
         if _approval_status(status) in ACTIVE_APPROVAL_STATUSES
     }
@@ -218,19 +222,26 @@ async def ensure_approval_requests(
     if not policy or not policy.get("required"):
         return {"requests_created": 0, "approval_requests": []}
     source_type, approver_ids = await _resolve_approvers(session, ticket, policy)
+    approval_mode = _approval_mode(policy)
     active_keys = await _active_approval_keys(session, ticket.ticket_id)
+    sequential_has_requested = any(status == "requested" for status in active_keys.values())
     now = datetime.now(timezone.utc)
     created: list[dict[str, Any]] = []
     for approver_id in dict.fromkeys(approver_ids):
         key = (source_type or "approval_policy", approver_id)
         if key in active_keys:
             continue
+        status = "requested"
+        if approval_mode == "sequential" and sequential_has_requested:
+            status = "pending"
+        elif approval_mode == "sequential":
+            sequential_has_requested = True
         session.add(
             TicketApproval(
                 ticket_id=ticket.ticket_id,
                 approval_type=key[0],
                 approver_id=approver_id,
-                status="requested",
+                status=status,
                 reason="approval_policy_request",
                 requested_by=actor_id,
                 requested_at=now,
@@ -241,7 +252,7 @@ async def ensure_approval_requests(
                 "approval_type": key[0],
                 "approver_id": approver_id,
                 "source": source_type or "approval_policy",
-                "status": "requested",
+                "status": status,
             }
         )
     if created:
@@ -249,6 +260,7 @@ async def ensure_approval_requests(
     return {
         "requests_created": len(created),
         "approval_requests": created,
+        "approval_mode": approval_mode,
         "approver_source": source_type or None,
         "actor_id": actor_id,
         "actor_role": actor_role,
@@ -268,7 +280,7 @@ def _decision_for_statuses(policy: dict[str, Any], approval_statuses: list[str])
     if rejected_count:
         raise ValueError("approval_policy rejected approval blocks transition")
 
-    approval_mode = str(policy.get("approval_mode") or "any_one").strip().lower()
+    approval_mode = _approval_mode(policy)
     if approval_mode in {"all", "sequential"}:
         if not requested_count or approved_count != requested_count or pending_count:
             raise ValueError("approval_policy requires all approvals to be approved")

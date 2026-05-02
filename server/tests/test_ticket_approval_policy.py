@@ -301,6 +301,121 @@ async def test_approval_policy_uses_fallback_source_without_duplicate_requests(t
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_sequential_mode_creates_one_requested_step(test_engine) -> None:
+    await _clear_approval_registry(test_engine)
+    ticket_id = await _seed_ticket(
+        test_engine,
+        status="new",
+        approval_policy={
+            "required": True,
+            "approval_mode": "sequential",
+            "approver_source": {
+                "type": "explicit_users",
+                "user_ids": ["line-manager", "security-officer"],
+            },
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+
+    result = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="new",
+        to_status="waiting_on_approval",
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        rows = await session.execute(
+            select(TicketApproval)
+            .where(TicketApproval.ticket_id == ticket_id)
+            .order_by(TicketApproval.id.asc())
+        )
+        approvals = rows.scalars().all()
+
+    assert [item.approver_id for item in approvals] == ["line-manager", "security-officer"]
+    assert [item.status for item in approvals] == ["requested", "pending"]
+    assert result["event_payload"]["approval_policy"]["approval_mode"] == "sequential"
+    assert [item["status"] for item in result["event_payload"]["approval_policy"]["approval_requests"]] == [
+        "requested",
+        "pending",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_all_mode_requires_every_approval(test_engine) -> None:
+    await _clear_approval_registry(test_engine)
+    ticket_id = await _seed_ticket(
+        test_engine,
+        approval_policy={
+            "required": True,
+            "approval_mode": "all",
+            "statuses": {
+                "waiting_status": "waiting_on_approval",
+                "approved_transition": "in_progress",
+                "rejected_transition": "canceled",
+            },
+        },
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                TicketApproval(
+                    ticket_id=ticket_id,
+                    approval_type="explicit_users",
+                    approver_id="line-manager",
+                    status="approved",
+                    reason="test approval",
+                    requested_by="support-test",
+                    requested_at=datetime.now(timezone.utc),
+                    decided_at=datetime.now(timezone.utc),
+                ),
+                TicketApproval(
+                    ticket_id=ticket_id,
+                    approval_type="explicit_users",
+                    approver_id="security-officer",
+                    status="requested",
+                    reason="test approval",
+                    requested_by="support-test",
+                    requested_at=datetime.now(timezone.utc),
+                ),
+            ]
+        )
+        await session.commit()
+
+    with pytest.raises(ValueError, match="all approvals"):
+        await _transition_ticket(
+            test_engine,
+            ticket_id,
+            from_status="waiting_on_approval",
+            to_status="in_progress",
+        )
+
+    async with session_maker() as session:
+        rows = await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        for approval in rows.scalars().all():
+            approval.status = "approved"
+            approval.decided_at = datetime.now(timezone.utc)
+        await session.commit()
+
+    result = await _transition_ticket(
+        test_engine,
+        ticket_id,
+        from_status="waiting_on_approval",
+        to_status="in_progress",
+    )
+
+    assert result["updates"]["status"] == "in_progress"
+    assert result["event_payload"]["approval_policy"]["approval_mode"] == "all"
+    assert result["event_payload"]["approval_policy"]["approved_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_blocks_execution_without_approval(test_engine) -> None:
     ticket_id = await _seed_ticket(test_engine)
 
