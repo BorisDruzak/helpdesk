@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 13a is in progress: smart-view publication now rejects unsupported filter keys, unsafe field paths, invalid sort directions and unsupported display columns before writing a registry version. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14i release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 90%, agent GUI about 73%, overall about 97.0%; Slice 13a should move this to about 97.2% after release/browser/observer signoff. The remaining plan targets final publish diff/impact UX, deeper smart-view execution coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 13a is released: smart-view publication now rejects unsupported filter keys, unsafe field paths, invalid sort directions and unsupported display columns before writing a registry version. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 13a release/browser/observer signoff the working estimate is backend/runtime about 99.2%, server UI about 90%, agent GUI about 73%, overall about 97.2%. The remaining plan targets final publish diff/impact UX, deeper smart-view execution coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -287,6 +287,8 @@ Slice 13a local verification:
 - GREEN focused: same command -> 1 passed.
 - Registry/support regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py::test_web_admin_publishes_sla_ola_and_smart_view_versions server\tests\test_web_support_api.py::test_web_support_queue_applies_published_custom_smart_view -q --tb=short` -> 2 passed.
 - Broader backend regression: `python -m pytest server\tests\test_helpdesk_policy_registry.py server\tests\test_web_support_api.py -q --tb=short` -> 43 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `eb02b28 server: validate smart view publication`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, migration check, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed the smart-view editor loads; live POST to `/api/web/admin/helpdesk-model/smart-views/publish` with invalid `raw_sql` filter returned `400 VALIDATION_ERROR`; registry check confirmed `activeInvalidViews=0`; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server logs showed authenticated forms/policies/observer requests and no smart-view validation errors, with unrelated existing reconcile/offline-agent warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 14: Server Admin UX To Remove JSON Dependency
 
