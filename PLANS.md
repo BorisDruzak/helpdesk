@@ -162,9 +162,9 @@ Turn the completed service desk model into a more production-grade operator/requ
 - [x] Render support passport tab requirements, missing facts and export preview in ticket detail.
 - [x] Verification: `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_web_support_api.py -q --tb=short` -> 50 passed.
 - [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 14 passed.
-- [ ] Browser check ticket detail passport tab and closure requirement checklist.
+- [x] Browser check ticket detail passport tab and closure requirement checklist: live ticket `T-000353` showed passport missing facts/export preview and resolved-transition close checklist.
 - [x] Update docs/navigation and this plan.
-- [ ] Commit and release if API/runtime/UI changed.
+- [x] Commit and release if API/runtime/UI changed: `af13e86 server: enforce passport reporting requirements`, remote smoke passed.
 
 ## Slice 5: Smart Views Execution Coverage
 
