@@ -1682,6 +1682,110 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает reporting policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Паспорт")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить паспорт" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(templateControl("Разделы паспорта"), {
+      target: { value: "problem, evidence, user_result, action_package" }
+    });
+    fireEvent.change(templateControl("Теги отчёта"), {
+      target: { value: "standard_passport, knowledge_candidate" }
+    });
+    fireEvent.change(templateControl("Скрыть из экспорта"), {
+      target: { value: "internal_result, raw_diagnostics" }
+    });
+    fireEvent.click(templateControl("Включать журнал действий"));
+    fireEvent.click(templateControl("Включать связанные объекты"));
+    fireEvent.click(templateControl("Включать внутренние заметки"));
+    fireEvent.click(templateControl("Требовать официальный паспорт"));
+    fireEvent.click(templateControl("Подсказки для базы знаний"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          reporting_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.reporting_policy).toMatchObject({
+      required_sections: ["problem", "evidence", "user_result", "action_package"],
+      evidence_package: {
+        include_action_log: false,
+        include_related_objects: false,
+      },
+      export_visibility: {
+        hide_sections: ["internal_result", "raw_diagnostics"],
+      },
+      report_tags: ["standard_passport", "knowledge_candidate"],
+      include_internal_notes: true,
+      require_official_passport: true,
+      knowledge_draft_hints: {
+        enabled: true,
+      },
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

@@ -106,6 +106,7 @@ type DraftForm = {
   closure_policy_json: string;
   visibility_policy_json: string;
   notification_policy_json: string;
+  reporting_policy_json: string;
   playbook_triggers: AdminFormsPlaybookTrigger[];
   fields: DraftField[];
 };
@@ -140,7 +141,8 @@ type TemplateStepKey =
   | "diagnostics"
   | "closure"
   | "visibility"
-  | "notifications";
+  | "notifications"
+  | "reporting";
 
 const WORKFLOW_PROFILE_OPTIONS = [
   { value: "incident", label: "Инцидент" },
@@ -393,6 +395,7 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
       closure_policy_json: jsonDraft(form.closure_policy),
       visibility_policy_json: jsonDraft(form.visibility_policy),
       notification_policy_json: jsonDraft(form.notification_policy),
+      reporting_policy_json: jsonDraft(form.reporting_policy),
       playbook_triggers: form.playbook_triggers ?? [],
       fields: form.fields.map((field) => ({
         key: field.key,
@@ -459,6 +462,7 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
         closure_policy_json: jsonDraft((form as { closure_policy?: unknown }).closure_policy),
         visibility_policy_json: jsonDraft((form as { visibility_policy?: unknown }).visibility_policy),
         notification_policy_json: jsonDraft((form as { notification_policy?: unknown }).notification_policy),
+        reporting_policy_json: jsonDraft((form as { reporting_policy?: unknown }).reporting_policy),
         playbook_triggers: Array.isArray((form as { playbook_triggers?: unknown[] }).playbook_triggers)
           ? ((form as { playbook_triggers: unknown[] }).playbook_triggers ?? [])
               .map((triggerRaw) => {
@@ -553,6 +557,7 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
       closure_policy: parseJsonDraft(form.closure_policy_json),
       visibility_policy: parseJsonDraft(form.visibility_policy_json),
       notification_policy: parseJsonDraft(form.notification_policy_json),
+      reporting_policy: parseJsonDraft(form.reporting_policy_json),
       playbook_triggers: form.playbook_triggers,
       fields: form.fields.map((field) => {
         const options = field.options.filter((option) => option.value.trim() && option.label.trim());
@@ -673,6 +678,7 @@ function createEmptyForm(index: number): DraftForm {
     closure_policy_json: "",
     visibility_policy_json: "",
     notification_policy_json: "",
+    reporting_policy_json: "",
     playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
   };
@@ -1139,6 +1145,13 @@ const TEMPLATE_STEPS: Array<{
     description: "Кому писать при событиях",
     icon: BellRing,
   },
+  {
+    key: "reporting",
+    title: "Паспорт решения",
+    shortTitle: "Паспорт",
+    description: "Разделы, evidence package и экспорт",
+    icon: FileCheck2,
+  },
 ];
 
 type PolicyJsonField =
@@ -1148,7 +1161,8 @@ type PolicyJsonField =
   | "ola_policy_json"
   | "closure_policy_json"
   | "visibility_policy_json"
-  | "notification_policy_json";
+  | "notification_policy_json"
+  | "reporting_policy_json";
 
 function policyObject(form: DraftForm, field: PolicyJsonField): Record<string, unknown> {
   return parseJsonDraft(form[field]);
@@ -1327,10 +1341,18 @@ function buildReportingPreset(): string {
       include_action_log: true,
       include_related_objects: true,
     },
+    action_package: {
+      include_worklog: true,
+      include_approvals: true,
+    },
     export_visibility: {
       hide_sections: ["internal_result"],
     },
     report_tags: ["standard_passport"],
+    require_official_passport: false,
+    knowledge_draft_hints: {
+      enabled: false,
+    },
   });
 }
 
@@ -1440,6 +1462,7 @@ function policyEditorPreset(kind: PolicyEditorKind, form: DraftForm): Record<str
     diagnostic: "diagnostic_policy_json",
     notification: "notification_policy_json",
     visibility: "visibility_policy_json",
+    reporting: "reporting_policy_json",
   };
   const fieldName = fieldByKind[kind];
   const existing = fieldName ? parseJsonDraft(form[fieldName]) : {};
@@ -2255,6 +2278,102 @@ function SlaPolicyControls({
   );
 }
 
+function csvList(value: unknown): string {
+  return Array.isArray(value) ? value.map((item) => String(item)).join(", ") : "";
+}
+
+function csvToList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function ReportingPolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const evidencePackage = nestedObject(config.evidence_package);
+  const actionPackage = nestedObject(config.action_package);
+  const exportVisibility = nestedObject(config.export_visibility);
+  const knowledgeDraftHints = nestedObject(config.knowledge_draft_hints);
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Разделы паспорта</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, required_sections: csvToList(event.currentTarget.value) })}
+          value={csvList(config.required_sections)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Теги отчёта</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, report_tags: csvToList(event.currentTarget.value) })}
+          value={csvList(config.report_tags)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Скрыть из экспорта</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...config,
+              export_visibility: {
+                ...exportVisibility,
+                hide_sections: csvToList(event.currentTarget.value),
+              },
+            })
+          }
+          value={csvList(exportVisibility.hide_sections)}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(evidencePackage.include_action_log ?? true)}
+        label="Включать журнал действий"
+        onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_action_log: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(evidencePackage.include_related_objects ?? true)}
+        label="Включать связанные объекты"
+        onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_related_objects: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(actionPackage.include_worklog ?? true)}
+        label="Включать worklog"
+        onChange={(checked) => onChange({ ...config, action_package: { ...actionPackage, include_worklog: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(actionPackage.include_approvals ?? true)}
+        label="Включать согласования"
+        onChange={(checked) => onChange({ ...config, action_package: { ...actionPackage, include_approvals: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(config.include_internal_notes)}
+        label="Включать внутренние заметки"
+        onChange={(checked) => onChange({ ...config, include_internal_notes: checked })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(config.require_official_passport)}
+        label="Требовать официальный паспорт"
+        onChange={(checked) => onChange({ ...config, require_official_passport: checked })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(knowledgeDraftHints.enabled)}
+        label="Подсказки для базы знаний"
+        onChange={(checked) => onChange({ ...config, knowledge_draft_hints: { ...knowledgeDraftHints, enabled: checked } })}
+      />
+    </div>
+  );
+}
+
 function PolicyKindControls({
   config,
   form,
@@ -2397,75 +2516,7 @@ function PolicyKindControls({
   }
 
   if (kind === "reporting") {
-    const evidencePackage =
-      typeof config.evidence_package === "object" && config.evidence_package
-        ? (config.evidence_package as Record<string, unknown>)
-        : {};
-    const exportVisibility =
-      typeof config.export_visibility === "object" && config.export_visibility
-        ? (config.export_visibility as Record<string, unknown>)
-        : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-3">
-        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
-          <span>Разделы паспорта</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange({
-                ...config,
-                required_sections: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
-              })
-            }
-            value={Array.isArray(config.required_sections) ? config.required_sections.join(", ") : ""}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Теги отчёта</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange({
-                ...config,
-                report_tags: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
-              })
-            }
-            value={Array.isArray(config.report_tags) ? config.report_tags.join(", ") : ""}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
-          <span>Скрыть из экспорта</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange({
-                ...config,
-                export_visibility: {
-                  ...exportVisibility,
-                  hide_sections: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
-                },
-              })
-            }
-            value={Array.isArray(exportVisibility.hide_sections) ? exportVisibility.hide_sections.join(", ") : ""}
-          />
-        </label>
-        <JsonLinkedCheckbox
-          checked={Boolean(evidencePackage.include_action_log ?? true)}
-          label="Включать журнал действий"
-          onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_action_log: checked } })}
-        />
-        <JsonLinkedCheckbox
-          checked={Boolean(evidencePackage.include_related_objects ?? true)}
-          label="Включать связанные объекты"
-          onChange={(checked) => onChange({ ...config, evidence_package: { ...evidencePackage, include_related_objects: checked } })}
-        />
-        <JsonLinkedCheckbox
-          checked={Boolean(config.include_internal_notes)}
-          label="Включать внутренние заметки"
-          onChange={(checked) => onChange({ ...config, include_internal_notes: checked })}
-        />
-      </div>
-    );
+    return <ReportingPolicyControls config={config} onChange={onChange} />;
   }
 
   const mapping =
@@ -3055,6 +3106,7 @@ function TemplateConstructorPanel({
     closure: policySize(form, "closure_policy_json"),
     visibility: policySize(form, "visibility_policy_json"),
     notifications: policySize(form, "notification_policy_json"),
+    reporting: policySize(form, "reporting_policy_json"),
   };
   const requiredCount = form.fields.filter((field) => field.required).length;
   const activeStepMeta = TEMPLATE_STEPS.find((step) => step.key === activeStep) ?? TEMPLATE_STEPS[0];
@@ -3450,6 +3502,37 @@ function TemplateConstructorPanel({
             presetValue={buildNotificationPreset()}
             title="Политика уведомлений"
             value={form.notification_policy_json}
+          />
+        ) : null}
+
+        {activeStep === "reporting" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Паспорт решения и отчётность</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Разделы паспорта, evidence package, видимость экспорта, теги отчёта и knowledge hints настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">reporting policy</Badge>
+            </div>
+            <div className="mt-4">
+              <ReportingPolicyControls
+                config={parseJsonDraft(form.reporting_policy_json, parseJsonDraft(buildReportingPreset()))}
+                onChange={(config) => onUpdatePolicyJson("reporting_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === "reporting" ? (
+          <PolicyJsonEditor
+            description="Разделы паспорта решения, evidence package, export visibility, report tags и knowledge hints."
+            onChange={(value) => onUpdatePolicyJson("reporting_policy_json", value)}
+            presetLabel="Вставить паспорт"
+            presetValue={buildReportingPreset()}
+            title="Паспорт решения и отчётность"
+            value={form.reporting_policy_json}
           />
         ) : null}
       </div>

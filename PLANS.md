@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14g is released: `/app/admin/forms` now has structured notification-policy controls, so the request-template `Уведомления` step can edit event recipients/channels without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14f release/browser/observer signoff the working estimate was backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. After Slice 14g release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 88%, agent GUI about 73%, overall about 96.8%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14h is in progress: `/app/admin/forms` is adding structured reporting/passport controls to the request-template wizard so admins can configure required passport sections, evidence/export packages, report tags and knowledge hints without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14g release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 88%, agent GUI about 73%, overall about 96.8%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 14g is released: `/app/admin/forms` now has structured notificatio
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility policies уже имеют structured controls, а notification/reporting/smart-view UX ещё требует добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification policies уже имеют structured controls, а reporting/passport и smart-view UX ещё требуют добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -351,6 +351,21 @@ Slice 14g local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `00ccad7 webapp: add structured notification controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed structured notification fields in the template `Уведомления` step; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/notification errors, with unrelated offline-device/module reconcile warnings from existing canary data; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14h target:
+
+- [x] Add `reporting_policy_json` to the request-template draft/load/save path.
+- [x] Add a request-template `Паспорт` / reporting step after notifications.
+- [x] Reuse structured reporting-policy controls for required sections, evidence package, export visibility, report tags, official-passport requirement and knowledge draft hints.
+- [x] Add Vitest coverage proving `reporting_policy` saves from structured controls without manual JSON.
+
+Slice 14h local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "reporting policy в шаблоне"` failed because the template wizard had no `Паспорт` step.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 22 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
