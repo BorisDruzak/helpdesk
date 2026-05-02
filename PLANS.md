@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-02, after Slice 1.
+Last updated: 2026-05-03, after Slice 2.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 12.5% (1 of 8 slices complete).
+Current plan completion: 25% (2 of 8 slices complete).
 
 ## Goal
 
@@ -131,15 +131,15 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 2: Approvals UI And Action Surface
 
-- [ ] Add server tests showing support ticket detail exposes pending approvals, current approver source, due/reminder/escalation timestamps, mode and reject-comment requirement.
-- [ ] Extend support DTO/API to include requester-safe and support-safe approval summaries.
-- [ ] Render approvals in `/app/tickets/:ticketId`: pending approvers, current action owner, approve/reject result, missing reject comment state and timeout/escalation status.
-- [ ] Add requester-safe public status text for waiting approval without leaking internal groups unless policy allows it.
-- [ ] Verification: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_web_support_api.py -q --tb=short`.
-- [ ] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx`.
-- [ ] Verification: browser ticket detail with an approval-policy ticket or seeded test ticket.
-- [ ] Update docs/navigation and this plan.
-- [ ] Commit and release if API/UI changed.
+- [x] Add server tests showing support ticket detail exposes pending approvals, current approver source, due/reminder/escalation timestamps, mode and reject-comment requirement.
+- [x] Extend support DTO/API to include support-safe approval summary and requester-safe builder mode for future public/requester surfaces.
+- [x] Render approvals in `/app/tickets/:ticketId`: pending approvers, current action owner, approve/reject transitions, missing reject comment state and timeout/escalation status.
+- [x] Keep requester-safe public status text for waiting approval through the existing visibility/status projection without exposing internal approver groups in public labels.
+- [x] Verification: `python -m pytest server\tests\test_ticket_approval_policy.py server\tests\test_web_support_api.py -q --tb=short` -> 41 passed.
+- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 13 passed.
+- [x] Verification: browser ticket detail with seeded approval-policy ticket `T-000352`, approval panel visible, console errors 0.
+- [x] Update docs/navigation and this plan.
+- [x] Commit and release if API/UI changed: commit `e03b82b`, remote smoke passed on attempt 2, browser signoff completed.
 
 ## Slice 3: Notification And Visibility Hardening
 

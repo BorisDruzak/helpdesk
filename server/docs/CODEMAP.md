@@ -314,6 +314,7 @@
 - 2026-05-02 update: `/app/admin/forms` has structured smart-view controls for excluded statuses, due-window hours, due fields, primary sort and columns before the advanced filter/sort JSON editor.
 - 2026-05-02 update: `POST /api/web/admin/helpdesk-model/smart-views/publish` rejects unsupported smart-view filter keys, unsafe field paths, invalid sort directions and unsupported display columns before creating a registry version.
 - 2026-05-02 update: `GET /api/web/support/tickets/{ticket_id}/playbooks` returns a typed diagnostic-policy summary for the ticket request template, and `/app/tickets/:ticketId` shows suggested playbooks, auto-run priority scope, consent/evidence flags and reroute-by-result queues in the support automation panel.
+- 2026-05-03 update: `server/tickets/approval_policy.py` now builds typed approval summaries for support/requester-safe surfaces; `GET /api/web/support/tickets/{ticket_id}` includes `ticket.approval_summary` and `actions.approval`, and `/app/tickets/:ticketId` renders pending approvers, current action owner, due/reminder/escalation timestamps, reject-comment guard hints and runtime reminder/escalation state.
 - The UI is now organized around one working catalog: a left navigator, a central form editor, and a right field-parameters panel with shared height and independent scrolling.
 - Clicking a form opens its fields directly; clicking a field opens its parameters. The builder keeps `title` / `description` of the catalog in a hidden service section so the main flow stays focused on forms.
 
