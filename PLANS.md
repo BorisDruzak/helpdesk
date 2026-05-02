@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 16b is in local verification: legacy `request_forms` compatibility now covers old `form_key` create payloads, old packs that predate server-driven priority fields, and pre-registry tickets resolving active ticket-type policies. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 16b local focused regressions the working estimate is backend/runtime about 99.6%, server UI about 91.5%, agent GUI about 74.5%, overall about 98.9%. The remaining plan is mostly final verification/release gates and any follow-up found by full regression.
+Status: Slice 16b is released: legacy `request_forms` compatibility now covers old `form_key` create payloads, old packs that predate server-driven priority fields, and pre-registry tickets resolving active ticket-type policies. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 16b release/smoke/observer signoff the working estimate is backend/runtime about 99.6%, server UI about 91.5%, agent GUI about 74.5%, overall about 99.0%. The remaining plan is mostly final verification/release gates and any follow-up found by full regression.
 
 ### Goal
 
@@ -546,6 +546,7 @@ Slice 16b local verification:
 - Compatibility coverage: `python -m pytest server\tests\test_ticket_form_packs.py::test_create_ticket_accepts_old_form_key_payload_without_injected_priority_fields server\tests\test_helpdesk_policy_registry.py::test_legacy_ticket_created_before_registry_resolves_ticket_type_policy -q --tb=short` -> 2 passed.
 - Broader focused regression: `python -m pytest server\tests\test_ticket_form_packs.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 39 passed; `python -m pytest server\tests\test_ticket_priority_policy.py -q --tb=short` -> 7 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `git diff --check -- server/tickets/form_catalog.py server/tests/test_ticket_form_packs.py server/tests/test_helpdesk_policy_registry.py PLANS.md server/docs/TICKET_SYSTEM.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md scripts/navigation_catalog.py` -> no whitespace errors; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `bdd3893 server: preserve legacy form priority compatibility`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload, migration check and smoke OK on attempt 2; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/observer` loaded the React admin/observer shell, observer showed `Runtime: ok`, fresh browser console errors -> 0; server status showed running after release, log tail contained authenticated observer/agent requests and no form compatibility errors, with unrelated existing offline-agent warning; `python scripts\manage_remote_stack.py stop server` -> stopped and follow-up status confirmed stopped.
 
 ### Slice 17: Verification And Release Gates
 
