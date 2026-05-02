@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14j is locally implemented: `/app/admin/forms` policy editors now show a publication impact preview for active request templates and ticket-type defaults that reference the draft policy code. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14j local Vitest/build signoff the working estimate is backend/runtime about 99.3%, server UI about 90.7%, agent GUI about 73%, overall about 97.4%. The remaining plan targets final publish diff UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14j is released: `/app/admin/forms` policy editors now show a publication impact preview for active request templates and ticket-type defaults that reference the draft policy code. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14j release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 90.7%, agent GUI about 73%, overall about 97.4%. The remaining plan targets final publish diff UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -428,6 +428,8 @@ Slice 14j local verification:
 - GREEN focused: same command -> 1 passed, 23 skipped.
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 24 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Release/live: committed as `f6d85c1 webapp: add policy publish impact preview`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed `Предпросмотр влияния публикации` in policy editors; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/policy-preview errors, with unrelated existing SLA reminder, module reconcile and offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
