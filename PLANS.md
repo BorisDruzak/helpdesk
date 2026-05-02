@@ -502,6 +502,7 @@ Slice 15b local verification:
 - Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 64 passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
 - Commit: `78c09a9 pc_agent: hide internal request form fields`.
+- Release/live: committed docs handoff as `aba884c docs: record agent form visibility slice`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward to `aba884c`, webapp rebuild/upload and smoke OK on attempt 2; browser observer signoff on `http://192.168.100.17:8666/app/admin/observer` confirmed `Runtime: ok` and fresh console errors -> 0; server status/log tail showed authenticated observer requests and no agent form visibility errors, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped, follow-up status confirmed stopped.
 
 ### Slice 16: Migration, Backfill And Compatibility
 
