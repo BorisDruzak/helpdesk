@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14g is in progress: the next JSON-dependency removal target is structured notification-policy controls in `/app/admin/forms`, so the request-template `Уведомления` step can edit event recipients/channels without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10f release/browser signoff the working estimate was backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. After Slice 14f release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14g is released: `/app/admin/forms` now has structured notification-policy controls, so the request-template `Уведомления` step can edit event recipients/channels without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14f release/browser/observer signoff the working estimate was backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. After Slice 14g release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 88%, agent GUI about 73%, overall about 96.8%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -350,6 +350,7 @@ Slice 14g local verification:
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 21 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `00ccad7 webapp: add structured notification controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed structured notification fields in the template `Уведомления` step; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/notification errors, with unrelated offline-device/module reconcile warnings from existing canary data; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
