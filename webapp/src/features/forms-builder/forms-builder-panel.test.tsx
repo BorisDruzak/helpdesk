@@ -1388,6 +1388,109 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает diagnostic policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Диагностика")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить диагностику" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(templateControl("Плейбуки"), { target: { value: "diagnose.website, diagnose.dns.basic" } });
+    fireEvent.click(templateControl("Автозапуск"));
+    fireEvent.change(templateControl("Автозапуск для приоритетов"), { target: { value: "P0, P1" } });
+    fireEvent.click(templateControl("Нужно согласие пользователя"));
+    fireEvent.click(templateControl("Согласие для high-risk tools"));
+    fireEvent.click(templateControl("Прикладывать к timeline"));
+    fireEvent.click(templateControl("Считать доказательством"));
+    fireEvent.change(templateControl("DNS_FAIL очередь"), { target: { value: "networks_l2" } });
+    fireEvent.change(templateControl("HTTP_500 очередь"), { target: { value: "apps" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          diagnostic_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.diagnostic_policy).toMatchObject({
+      suggested_playbooks: ["diagnose.website", "diagnose.dns.basic"],
+      auto_run: {
+        enabled: true,
+        only_for_priorities: ["P0", "P1"],
+      },
+      consent: {
+        required_for_requester_device: false,
+        required_for_high_risk_tools: false,
+      },
+      attach_results: {
+        to_timeline: false,
+        to_passport: true,
+        as_evidence: false,
+      },
+      reroute_by_result: {
+        DNS_FAIL: "networks_l2",
+        HTTP_500: "apps",
+      },
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

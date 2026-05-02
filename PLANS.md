@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14d is released: `/app/admin/forms` now has structured closure controls in the request-template step, so resolution summaries, worklog/evidence requirements, requester confirmation, autoclose, negative-feedback behavior and resolution codes can be edited without hand-writing closure JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14d release/browser signoff the working estimate is backend/runtime about 99%, server UI about 84%, agent GUI about 73%, overall about 96.1%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14e is locally implemented: `/app/admin/forms` now has structured diagnostic controls in the request-template step, so suggested playbooks, auto-run priorities, requester/high-risk consent, evidence attachment and reroute-by-result can be edited without hand-writing diagnostic JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14e local verification the working estimate is backend/runtime about 99%, server UI about 85%, agent GUI about 73%, overall about 96.3%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -308,6 +308,14 @@ Slice 14d local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `8b3ddb3 webapp: add structured closure controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/admin` and `/app/admin/forms` confirmed structured closure fields in the template `Закрытие` step; fresh browser console errors -> 0; server log tail contained authenticated forms/policy/settings requests and no forms-builder errors, with unrelated reconcile warnings for offline/missing modules; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14e local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "diagnostic policy"` failed because the template `Диагностика` step had no structured `Плейбуки` control.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 19 passed.
+- Web build: `pnpm --dir webapp run build` -> passed after widening `DiagnosticPolicyControls.form` to accept the existing `DraftForm | null` policy-editor contract.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 

@@ -306,6 +306,7 @@
 - `webapp/src/features/forms-builder/forms-builder-panel.tsx` and `webapp/src/features/forms-builder/api.ts` now mirror the same authoring flow inside `/app/admin` via typed `GET /api/web/admin/forms/current` and `POST /api/web/admin/forms/save`.
 - 2026-05-02 update: `/app/admin/forms` has structured request-template approval-policy controls for approver source, optional form-field approver key, approval mode, reminder/escalation timing, reject-comment requirement and passport logging before the advanced JSON editor.
 - 2026-05-02 update: `/app/admin/forms` has structured request-template closure-policy controls for resolution/public/internal summary requirements, worklog, evidence by priority, operation/approval evidence, requester confirmation, autoclose days, negative-feedback reopen behavior and resolution codes before the advanced JSON editor.
+- 2026-05-02 update: `/app/admin/forms` has structured request-template diagnostic-policy controls for suggested playbooks, auto-run priorities, requester-device and high-risk-tool consent, attach-to-timeline/passport/evidence flags and reroute-by-result queues before the advanced JSON editor.
 - The UI is now organized around one working catalog: a left navigator, a central form editor, and a right field-parameters panel with shared height and independent scrolling.
 - Clicking a form opens its fields directly; clicking a field opens its parameters. The builder keeps `title` / `description` of the catalog in a hidden service section so the main flow stays focused on forms.
 

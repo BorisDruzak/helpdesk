@@ -1799,6 +1799,100 @@ function ClosurePolicyControls({
   );
 }
 
+function DiagnosticPolicyControls({
+  config,
+  form,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  form?: DraftForm | null;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const autoRun = nestedObject(config.auto_run);
+  const consent = nestedObject(config.consent);
+  const attach = nestedObject(config.attach_results);
+  const reroute = nestedObject(config.reroute_by_result);
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Плейбуки</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, suggested_playbooks: listFromCsv(event.currentTarget.value) })}
+          placeholder={form?.suggested_playbook_id || "diagnose.website"}
+          value={listToCsv(config.suggested_playbooks)}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(autoRun.enabled)}
+        label="Автозапуск"
+        onChange={(checked) => onChange({ ...config, auto_run: { ...autoRun, enabled: checked } })}
+      />
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Автозапуск для приоритетов</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, auto_run: { ...autoRun, only_for_priorities: listFromCsv(event.currentTarget.value) } })}
+          placeholder="P0, P1, P2"
+          value={listToCsv(autoRun.only_for_priorities)}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(consent.required_for_requester_device ?? true)}
+        label="Нужно согласие пользователя"
+        onChange={(checked) => onChange({ ...config, consent: { ...consent, required_for_requester_device: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(consent.required_for_high_risk_tools ?? true)}
+        label="Согласие для high-risk tools"
+        onChange={(checked) => onChange({ ...config, consent: { ...consent, required_for_high_risk_tools: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(attach.to_timeline ?? true)}
+        label="Прикладывать к timeline"
+        onChange={(checked) => onChange({ ...config, attach_results: { ...attach, to_timeline: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(attach.to_passport ?? true)}
+        label="Прикладывать к паспорту"
+        onChange={(checked) => onChange({ ...config, attach_results: { ...attach, to_passport: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(attach.as_evidence ?? true)}
+        label="Считать доказательством"
+        onChange={(checked) => onChange({ ...config, attach_results: { ...attach, as_evidence: checked } })}
+      />
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>DNS_FAIL очередь</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, reroute_by_result: { ...reroute, DNS_FAIL: event.currentTarget.value } })}
+          placeholder="networks"
+          value={String(reroute.DNS_FAIL ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>HTTP_500 очередь</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, reroute_by_result: { ...reroute, HTTP_500: event.currentTarget.value } })}
+          placeholder="information_systems"
+          value={String(reroute.HTTP_500 ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>TLS_CERT_INVALID очередь</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, reroute_by_result: { ...reroute, TLS_CERT_INVALID: event.currentTarget.value } })}
+          placeholder="security_or_servers"
+          value={String(reroute.TLS_CERT_INVALID ?? "")}
+        />
+      </label>
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -2134,26 +2228,7 @@ function PolicyKindControls({
   }
 
   if (kind === "diagnostic") {
-    const autoRun = typeof config.auto_run === "object" && config.auto_run ? (config.auto_run as Record<string, unknown>) : {};
-    const consent = typeof config.consent === "object" && config.consent ? (config.consent as Record<string, unknown>) : {};
-    const attach = typeof config.attach_results === "object" && config.attach_results ? (config.attach_results as Record<string, unknown>) : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-3">
-        <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
-          <span>Плейбуки</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) => onChange({ ...config, suggested_playbooks: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean) })}
-            placeholder={form?.suggested_playbook_id || "diagnose.website"}
-            value={Array.isArray(config.suggested_playbooks) ? config.suggested_playbooks.join(", ") : ""}
-          />
-        </label>
-        <JsonLinkedCheckbox checked={Boolean(autoRun.enabled)} label="Автозапуск" onChange={(checked) => onChange({ ...config, auto_run: { ...autoRun, enabled: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(consent.required_for_requester_device ?? true)} label="Нужно согласие пользователя" onChange={(checked) => onChange({ ...config, consent: { ...consent, required_for_requester_device: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(attach.to_passport ?? true)} label="Прикладывать к паспорту" onChange={(checked) => onChange({ ...config, attach_results: { ...attach, to_passport: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(attach.as_evidence ?? true)} label="Считать доказательством" onChange={(checked) => onChange({ ...config, attach_results: { ...attach, as_evidence: checked } })} />
-      </div>
-    );
+    return <DiagnosticPolicyControls config={config} form={form} onChange={onChange} />;
   }
 
   if (kind === "notification") {
@@ -3108,6 +3183,27 @@ function TemplateConstructorPanel({
             title="Политика согласования"
             value={form.approval_policy_json}
           />
+        ) : null}
+
+        {activeStep === "diagnostics" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Политика диагностики</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Playbook, автозапуск, consent, evidence и reroute-by-result настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">diagnostic policy</Badge>
+            </div>
+            <div className="mt-4">
+              <DiagnosticPolicyControls
+                config={parseJsonDraft(form.diagnostic_policy_json, parseJsonDraft(buildDiagnosticPreset(form)))}
+                form={form}
+                onChange={(config) => onUpdatePolicyJson("diagnostic_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeStep === "diagnostics" ? (
