@@ -1691,6 +1691,114 @@ function ApprovalPolicyControls({
   );
 }
 
+function listFromCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function listToCsv(list: unknown): string {
+  return Array.isArray(list) ? list.map((item) => String(item)).join(", ") : "";
+}
+
+function ClosurePolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const before = nestedObject(config.before_resolved);
+  const evidence = nestedObject(config.evidence);
+  const confirmation = nestedObject(config.requester_confirmation);
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <JsonLinkedCheckbox
+        checked={Boolean(before.require_resolution_code ?? true)}
+        label="Код решения обязателен"
+        onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(before.require_public_summary ?? true)}
+        label="Публичный итог обязателен"
+        onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_public_summary: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(before.require_internal_summary)}
+        label="Внутренний итог обязателен"
+        onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_internal_summary: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(before.require_worklog)}
+        label="Worklog обязателен"
+        onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_worklog: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(evidence.require_operation_log_if_module_used)}
+        label="Evidence после модуля"
+        onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_operation_log_if_module_used: checked } })}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(evidence.require_approval_if_approval_policy_used)}
+        label="Evidence по согласованию"
+        onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_approval_if_approval_policy_used: checked } })}
+      />
+      {["P0", "P1", "P2"].map((priority) => (
+        <JsonLinkedCheckbox
+          checked={
+            Array.isArray(evidence.require_evidence_for_priorities)
+              ? evidence.require_evidence_for_priorities.map((item) => String(item)).includes(priority)
+              : false
+          }
+          key={priority}
+          label={`Evidence для ${priority}`}
+          onChange={(checked) =>
+            onChange({
+              ...config,
+              evidence: {
+                ...evidence,
+                require_evidence_for_priorities: toggleStringInList(evidence.require_evidence_for_priorities, priority, checked),
+              },
+            })
+          }
+        />
+      ))}
+      <JsonLinkedCheckbox
+        checked={Boolean(confirmation.required ?? true)}
+        label="Подтверждение пользователя"
+        onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, required: checked } })}
+      />
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Автозакрытие через дней</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          min={0}
+          onChange={(event) =>
+            onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
+          }
+          type="number"
+          value={Number(confirmation.auto_close_after_days ?? 3)}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(confirmation.reopen_on_negative_feedback ?? true)}
+        label="Открывать при отрицательном отзыве"
+        onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, reopen_on_negative_feedback: checked } })}
+      />
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Коды решения</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, allowed_resolution_codes: listFromCsv(event.currentTarget.value) })}
+          placeholder="fixed_remote, duplicate, cannot_reproduce"
+          value={listToCsv(config.allowed_resolution_codes)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -2022,50 +2130,7 @@ function PolicyKindControls({
   }
 
   if (kind === "closure") {
-    const before = typeof config.before_resolved === "object" && config.before_resolved ? (config.before_resolved as Record<string, unknown>) : {};
-    const evidence = typeof config.evidence === "object" && config.evidence ? (config.evidence as Record<string, unknown>) : {};
-    const confirmation =
-      typeof config.requester_confirmation === "object" && config.requester_confirmation
-        ? (config.requester_confirmation as Record<string, unknown>)
-        : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-3">
-        <JsonLinkedCheckbox checked={Boolean(before.require_resolution_code ?? true)} label="Нужен код решения" onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(before.require_public_summary ?? true)} label="Нужен публичный итог" onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_public_summary: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(evidence.require_operation_log_if_module_used)} label="Evidence после модуля" onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_operation_log_if_module_used: checked } })} />
-        {["P0", "P1", "P2"].map((priority) => (
-          <JsonLinkedCheckbox
-            checked={
-              Array.isArray(evidence.require_evidence_for_priorities)
-                ? evidence.require_evidence_for_priorities.map((item) => String(item)).includes(priority)
-                : false
-            }
-            key={priority}
-            label={`Evidence для ${priority}`}
-            onChange={(checked) =>
-              onChange({
-                ...config,
-                evidence: {
-                  ...evidence,
-                  require_evidence_for_priorities: toggleStringInList(evidence.require_evidence_for_priorities, priority, checked),
-                },
-              })
-            }
-          />
-        ))}
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Автозакрытие через дней</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
-            }
-            type="number"
-            value={Number(confirmation.auto_close_after_days ?? 3)}
-          />
-        </label>
-      </div>
-    );
+    return <ClosurePolicyControls config={config} onChange={onChange} />;
   }
 
   if (kind === "diagnostic") {
@@ -3054,6 +3119,26 @@ function TemplateConstructorPanel({
             title="Политика диагностики"
             value={form.diagnostic_policy_json}
           />
+        ) : null}
+
+        {activeStep === "closure" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Правила закрытия</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Код решения, итоги, evidence, подтверждение пользователя и автозакрытие настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">closure policy</Badge>
+            </div>
+            <div className="mt-4">
+              <ClosurePolicyControls
+                config={parseJsonDraft(form.closure_policy_json, parseJsonDraft(buildClosurePreset()))}
+                onChange={(config) => onUpdatePolicyJson("closure_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeStep === "closure" ? (

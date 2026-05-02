@@ -1288,6 +1288,106 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает closure policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Закрытие")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить закрытие" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.click(templateControl("Внутренний итог обязателен"));
+    fireEvent.click(templateControl("Worklog обязателен"));
+    fireEvent.click(templateControl("Evidence для P2"));
+    fireEvent.click(templateControl("Подтверждение пользователя"));
+    fireEvent.change(templateControl("Автозакрытие через дней"), { target: { value: "5" } });
+    fireEvent.click(templateControl("Открывать при отрицательном отзыве"));
+    fireEvent.change(templateControl("Коды решения"), { target: { value: "fixed_remote, duplicate, cannot_reproduce" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          closure_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.closure_policy).toMatchObject({
+      before_resolved: {
+        require_resolution_code: true,
+        require_public_summary: true,
+        require_internal_summary: true,
+        require_worklog: true,
+      },
+      evidence: {
+        require_evidence_for_priorities: ["P0", "P1", "P2"],
+        require_operation_log_if_module_used: true,
+        require_approval_if_approval_policy_used: true,
+      },
+      requester_confirmation: {
+        required: false,
+        auto_close_after_days: 5,
+        reopen_on_negative_feedback: false,
+      },
+      allowed_resolution_codes: ["fixed_remote", "duplicate", "cannot_reproduce"],
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 
